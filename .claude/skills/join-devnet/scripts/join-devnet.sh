@@ -3,6 +3,10 @@ set -euo pipefail
 
 # Join an ethpandaops devnet with a local EL+CL Docker node pair
 # Usage: join-devnet.sh <devnet-name> <config-dir> [el_client] [cl_client] [el_image] [cl_image]
+#
+# Environment variables:
+#   CHECKPOINT_SYNC_URL  Beacon API URL for checkpoint sync (e.g. https://beacon.<devnet>.ethpandaops.io)
+#                        Dramatically speeds up CL sync on long-running devnets.
 
 if [ $# -lt 2 ]; then
   echo "Usage: $0 <devnet-name> <config-dir> [el_client] [cl_client] [el_image] [cl_image]"
@@ -13,6 +17,9 @@ if [ $# -lt 2 ]; then
   echo "  cl_client    lighthouse (default), lodestar"
   echo "  el_image     Override EL Docker image (default: ethpandaops/<el>:<devnet>)"
   echo "  cl_image     Override CL Docker image (default: ethpandaops/<cl>:<devnet>)"
+  echo ""
+  echo "Environment variables:"
+  echo "  CHECKPOINT_SYNC_URL  Beacon API URL for checkpoint sync"
   exit 1
 fi
 
@@ -95,12 +102,18 @@ EL_P2P=30303
 CL_HTTP=5052
 CL_P2P=9000
 
+# Checkpoint sync URL (optional, set via env or auto-detect)
+CHECKPOINT_SYNC_URL="${CHECKPOINT_SYNC_URL:-}"
+
 echo "=== Joining $DEVNET ==="
 echo "EL: $EL ($EL_IMAGE)"
 echo "CL: $CL ($CL_IMAGE)"
 echo "Chain ID: $CHAIN_ID"
 echo "Data: $DATA_DIR"
 echo "IP: $MY_IP"
+if [ -n "$CHECKPOINT_SYNC_URL" ]; then
+  echo "Checkpoint sync: $CHECKPOINT_SYNC_URL"
+fi
 echo ""
 
 # Clean up previous containers
@@ -292,6 +305,10 @@ echo "Starting CL ($CL)..."
 
 case "$CL" in
   lighthouse)
+    LH_EXTRA_ARGS=()
+    if [ -n "$CHECKPOINT_SYNC_URL" ]; then
+      LH_EXTRA_ARGS+=(--checkpoint-sync-url "$CHECKPOINT_SYNC_URL")
+    fi
     docker run -d --name "$CONTAINER_CL" \
       --network "$DEVNET" \
       -v "$CONFIG_DIR:/config:ro" \
@@ -310,10 +327,15 @@ case "$CL" in
       --boot-nodes "$BOOTNODES" \
       --allow-insecure-genesis-sync \
       --reconstruct-historic-states \
-      --disable-upnp
+      --disable-upnp \
+      "${LH_EXTRA_ARGS[@]}"
     ;;
 
   lodestar)
+    LS_EXTRA_ARGS=()
+    if [ -n "$CHECKPOINT_SYNC_URL" ]; then
+      LS_EXTRA_ARGS+=(--checkpointSyncUrl "$CHECKPOINT_SYNC_URL")
+    fi
     docker run -d --name "$CONTAINER_CL" \
       --network "$DEVNET" \
       -v "$CONFIG_DIR:/config:ro" \
@@ -330,7 +352,8 @@ case "$CL" in
       --rest --rest.address 0.0.0.0 --rest.port 5052 \
       --rest.namespace '*' \
       --enr.ip "$MY_IP" --enr.tcp 9000 --enr.udp 9000 \
-      --bootnodes "$BOOTNODES"
+      --bootnodes "$BOOTNODES" \
+      "${LS_EXTRA_ARGS[@]}"
     ;;
 
   *)

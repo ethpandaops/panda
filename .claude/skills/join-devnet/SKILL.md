@@ -33,10 +33,23 @@ bash ${CLAUDE_SKILL_DIR}/scripts/join-devnet.sh <devnet-name> <config-dir> [el_c
 | `el_image` | `ethpandaops/<el>:<devnet>` | Override EL Docker image |
 | `cl_image` | `ethpandaops/<cl>:<devnet>` | Override CL Docker image |
 
+**Environment variables:**
+
+| Var | Description |
+|-----|-------------|
+| `CHECKPOINT_SYNC_URL` | Beacon API URL for checkpoint sync. Dramatically speeds up CL sync on long-running devnets. Typically `https://beacon.<devnet>.ethpandaops.io`. |
+
 **Example — join with default images:**
 
 ```bash
 bash ${CLAUDE_SKILL_DIR}/scripts/join-devnet.sh bal-devnet-2 ~/devnet-2/network-config geth lighthouse
+```
+
+**Example — with checkpoint sync (recommended for long-running devnets):**
+
+```bash
+CHECKPOINT_SYNC_URL=https://beacon.bal-devnet-2.ethpandaops.io \
+  bash ${CLAUDE_SKILL_DIR}/scripts/join-devnet.sh bal-devnet-2 ~/devnet-2/network-config geth lighthouse
 ```
 
 **Example — test a local fix image:**
