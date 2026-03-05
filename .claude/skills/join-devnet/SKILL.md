@@ -137,7 +137,7 @@ docker network rm <devnet> 2>/dev/null
 - **Nethermind**: Uses `chainspec.json`, not `genesis.json`.
 - **Ethrex**: Requires `--syncmode full`. Log level set via `RUST_LOG` env var.
 - **Reth**: Uses `--full` flag for full sync. Uses `genesis.json`.
-- **Erigon**: Uses `genesis.json`. May need `--syncmode=full` depending on version.
+- **Erigon**: Requires `init` with `genesis.json` before starting (like geth). Uses `--networkid` + `--prune.mode=archive`.
 - **Geth**: Needs one-time `init` with `genesis.json` before starting.
 - **Teku**: Uses `--network` for config.yaml, `--initial-state` for genesis.ssz. Java-based, may need memory tuning.
 - **Prysm**: Requires `--accept-terms-of-use`. Uses `--grpc-gateway-port` for REST API (not `--http-port`). Checkpoint sync needs both `--checkpoint-sync-url` and `--genesis-beacon-api-url`.

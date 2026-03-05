@@ -27,12 +27,17 @@ DEVNET="$1"
 CONFIG_DIR="$(cd "$2" && pwd)"
 EL="${3:-geth}"
 CL="${4:-lighthouse}"
-EL_IMAGE="${5:-ethpandaops/$EL:$DEVNET}"
+# nimbus-el Docker image is published as nimbus-eth1
+EL_DOCKER_NAME="$EL"
+if [ "$EL" = "nimbus-el" ]; then
+  EL_DOCKER_NAME="nimbus-eth1"
+fi
+EL_IMAGE="${5:-ethpandaops/$EL_DOCKER_NAME:$DEVNET}"
 CL_IMAGE="${6:-ethpandaops/$CL:$DEVNET}"
 
 # Use -local suffix images if they exist and no override given
-if docker image inspect "ethpandaops/$EL:${DEVNET}-local" >/dev/null 2>&1 && [ -z "${5:-}" ]; then
-  EL_IMAGE="ethpandaops/$EL:${DEVNET}-local"
+if docker image inspect "ethpandaops/$EL_DOCKER_NAME:${DEVNET}-local" >/dev/null 2>&1 && [ -z "${5:-}" ]; then
+  EL_IMAGE="ethpandaops/$EL_DOCKER_NAME:${DEVNET}-local"
   echo "Using local EL image: $EL_IMAGE"
 fi
 if docker image inspect "ethpandaops/$CL:${DEVNET}-local" >/dev/null 2>&1 && [ -z "${6:-}" ]; then
@@ -126,11 +131,18 @@ docker network create "$DEVNET" 2>/dev/null || true
 
 mkdir -p "$EL_DATADIR" "$CL_DATADIR"
 
-# Pull images
+# Pull images (skip for local-only images)
 echo "Pulling images..."
-docker pull "$EL_IMAGE" &
-docker pull "$CL_IMAGE" &
-wait
+if docker image inspect "$EL_IMAGE" >/dev/null 2>&1; then
+  echo "EL image exists locally, skipping pull"
+else
+  docker pull "$EL_IMAGE"
+fi
+if docker image inspect "$CL_IMAGE" >/dev/null 2>&1; then
+  echo "CL image exists locally, skipping pull"
+else
+  docker pull "$CL_IMAGE"
+fi
 
 # --- Start EL ---
 echo "Starting EL ($EL)..."
@@ -253,6 +265,13 @@ case "$EL" in
     ;;
 
   erigon)
+    # Erigon requires init before first run (like geth)
+    docker run --rm \
+      -v "$CONFIG_DIR:/config:ro" \
+      -v "$EL_DATADIR:/data" \
+      "$EL_IMAGE" \
+      init --datadir /data /config/genesis.json 2>&1 || true
+
     docker run -d --name "$CONTAINER_EL" \
       --network "$DEVNET" \
       -v "$CONFIG_DIR:/config:ro" \
@@ -260,7 +279,6 @@ case "$EL" in
       -p $EL_RPC:8545 -p $EL_AUTH:8551 -p $EL_P2P:30303/tcp -p $EL_P2P:30303/udp \
       "$EL_IMAGE" \
       --datadir /data \
-      --chain /config/genesis.json \
       --networkid "$CHAIN_ID" \
       --port 30303 \
       --http --http.addr 0.0.0.0 --http.port 8545 \
@@ -269,7 +287,8 @@ case "$EL" in
       --authrpc.addr 0.0.0.0 --authrpc.port 8551 \
       --authrpc.jwtsecret /config/jwt.hex \
       --nat "extip:$MY_IP" \
-      --bootnodes "$ENODES"
+      --bootnodes "$ENODES" \
+      --prune.mode=archive
     ;;
 
   nimbus-el)
@@ -280,9 +299,11 @@ case "$EL" in
       -p $EL_RPC:8545 -p $EL_AUTH:8551 -p $EL_P2P:30303/tcp -p $EL_P2P:30303/udp \
       "$EL_IMAGE" \
       --data-dir=/data \
-      --custom-network=/config/genesis.json \
-      --tcp-port=30303 --udp-port=30303 \
+      --network=/config/genesis.json \
+      --tcp-port=30303 \
       --http-port=8545 --http-address=0.0.0.0 \
+      --rpc --rpc-api=admin,eth,debug \
+      --ws --ws-api=admin,eth,debug \
       --engine-api --engine-api-port=8551 --engine-api-address=0.0.0.0 \
       --jwt-secret=/config/jwt.hex \
       --nat="extip:$MY_IP" \
@@ -307,7 +328,10 @@ case "$CL" in
   lighthouse)
     LH_EXTRA_ARGS=()
     if [ -n "$CHECKPOINT_SYNC_URL" ]; then
+      # --checkpoint-sync-url and --allow-insecure-genesis-sync are mutually exclusive
       LH_EXTRA_ARGS+=(--checkpoint-sync-url "$CHECKPOINT_SYNC_URL")
+    else
+      LH_EXTRA_ARGS+=(--allow-insecure-genesis-sync)
     fi
     docker run -d --name "$CONTAINER_CL" \
       --network "$DEVNET" \
@@ -325,7 +349,6 @@ case "$CL" in
       --enr-address "$MY_IP" --enr-tcp-port 9000 --enr-udp-port 9000 \
       --quic-port 9001 --enr-quic-port 9001 \
       --boot-nodes "$BOOTNODES" \
-      --allow-insecure-genesis-sync \
       --reconstruct-historic-states \
       --disable-upnp \
       "${LH_EXTRA_ARGS[@]}"
