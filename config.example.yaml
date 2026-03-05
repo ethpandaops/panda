@@ -37,6 +37,11 @@ plugins:
   # dora:
   #   enabled: true  # Set to false to disable Dora integration
 
+  # Ethereum node API (direct beacon/execution node access)
+  # Requires ethnode credentials in proxy-config.yaml.
+  # ethnode:
+  #   enabled: true
+
 
 # Sandbox configuration
 sandbox:

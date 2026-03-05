@@ -6,9 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ethpandaops/mcp is an MCP (Model Context Protocol) server that provides AI assistants with Ethereum network analytics capabilities. It enables agents to execute Python code in sandboxed containers with access to ClickHouse blockchain data, Prometheus metrics, Loki logs, and S3-compatible storage for outputs.
 
-Data queries connect directly to configured datasources (ClickHouse, Prometheus, Loki) without intermediate proxies.
-
-The server uses a **plugin architecture** where each datasource (ClickHouse, Prometheus, Loki) is a self-contained plugin that owns its config schema, validation, environment variables, Python module, examples, and optional MCP resources.
+The server uses a **plugin architecture** where each datasource (ClickHouse, Prometheus, Loki, Dora) is a self-contained plugin. All datasource access flows through a separate **credential proxy** — the MCP server never holds datasource credentials directly.
 
 ## Commands
 
@@ -17,262 +15,187 @@ The server uses a **plugin architecture** where each datasource (ClickHouse, Pro
 make build                    # Build binary
 make docker                   # Build Docker image
 make docker-sandbox           # Build sandbox container image
+make download-models          # Download embedding model + libllama (required before first run)
 
 # Test
 make test                     # Run tests with race detector
 make test-coverage            # Run tests with coverage report
+go test -race -v ./pkg/sandbox/...  # Run tests for a single package
 
 # Lint and format
-make lint                     # Run golangci-lint
+make lint                     # Run golangci-lint (v2 config)
 make lint-fix                 # Run golangci-lint with auto-fix
-make fmt                      # Format code
+make fmt                      # Format code (gofmt -s)
+make vet                      # Run go vet
 
 # Run
-make run                      # Run with stdio transport
-make run-sse                  # Run with SSE transport on port 2480
-./mcp serve                   # Start server (default: stdio)
-./mcp serve -t sse -p 2480   # Start with SSE transport
+make run                      # Build + download models + run with stdio transport
+make run-sse                  # Build + run with SSE transport on port 2480
+docker-compose up -d          # Full stack: MCP server + MinIO + sandbox builder
 
 # Evaluation tests (in tests/eval/)
-cd tests/eval && uv sync      # Install Python dependencies
-uv run python -m scripts.run_eval  # Run eval tests
-uv run python -m scripts.repl      # Interactive REPL
+cd tests/eval && uv sync                          # Install Python dependencies
+uv run python -m scripts.run_eval                  # Run all eval tests
+uv run python -m scripts.run_eval --category basic_queries  # Run specific category
+uv run python -m scripts.repl                      # Interactive REPL
 ```
 
 ## Architecture
 
-```
-pkg/
-├── types/           # Shared types (DatasourceInfo, ExampleCategory, ModuleDoc)
-├── plugin/          # Plugin interface and registry
-│   ├── plugin.go    # Plugin interface contract
-│   └── registry.go  # Plugin lifecycle management
-├── server/          # MCP server implementation
-│   ├── server.go    # Service interface, transport handlers (stdio/SSE/HTTP)
-│   └── builder.go   # Dependency injection, plugin lifecycle, service wiring
-├── tool/            # MCP tools (execute_python, search_examples)
-│   ├── registry.go  # Tool registration interface
-│   └── execute_python.go  # Main tool for Python sandbox execution
-├── resource/        # MCP resources (datasources, networks, examples, API docs)
-│   ├── registry.go  # Static and template resource handlers
-│   └── *.go         # Individual resource providers
-├── sandbox/         # Sandboxed code execution
-│   ├── sandbox.go   # Service interface (Docker/gVisor backends)
-│   ├── docker.go    # Docker container execution
-│   ├── gvisor.go    # gVisor-based execution (production)
-│   └── session.go   # Session management for persistent containers
-├── auth/            # GitHub OAuth authentication
-├── config/          # Configuration loading and validation
-├── embedding/       # GGUF embedding model for semantic search
-└── observability/   # Prometheus metrics
+### Key Components
 
-plugins/
-├── clickhouse/      # ClickHouse datasource plugin
-│   ├── plugin.go    # Plugin implementation
-│   ├── config.go    # Cluster and schema discovery config
-│   ├── schema.go    # ClickHouse schema discovery client
-│   ├── resources.go # clickhouse://tables MCP resources
-│   ├── examples.go  # Embedded query examples
-│   ├── examples.yaml
-│   └── python/
-│       └── clickhouse.py  # Python module for sandbox
-├── prometheus/      # Prometheus datasource plugin
-│   ├── plugin.go
-│   ├── config.go
-│   ├── examples.go
-│   ├── examples.yaml
-│   └── python/
-│       └── prometheus.py
-└── loki/            # Loki datasource plugin
-    ├── plugin.go
-    ├── config.go
-    ├── examples.go
-    ├── examples.yaml
-    └── python/
-        └── loki.py
+- **MCP server** (`pkg/server/`): Control plane — transport, auth, tool/resource registration, sandbox orchestration
+- **Credential proxy** (`pkg/proxy/`, `cmd/proxy/`): Trust boundary — holds all datasource + S3 credentials, proxies all data access. Runs as a separate binary (`cmd/proxy/`)
+- **Sandbox** (`pkg/sandbox/`): Data plane — executes Python in isolated containers (Docker for dev, gVisor for production)
+- **Plugins** (`plugins/`): Per-datasource packages — config, schema discovery, resources, examples, Python API docs
 
-sandbox/             # Sandbox Docker image
-├── Dockerfile       # Python 3.11 slim with data analysis libraries
-├── requirements.txt # Shared pip dependencies
-└── ethpandaops/     # Platform Python package
-    ├── pyproject.toml
-    └── ethpandaops/
-        ├── __init__.py   # Lazy imports for plugin modules
-        ├── _time.py      # Shared time utilities
-        └── storage.py    # S3 storage module
+### Data Flow
 
-tests/eval/          # LLM evaluation harness
-├── agent/           # Claude Agent SDK wrapper
-├── metrics/         # Custom DeepEval metrics
-├── cases/           # Test cases in YAML format
-└── scripts/         # CLI tools (run_eval, repl, langfuse)
-```
+1. Client connects to MCP server (stdio/SSE/streamable-http)
+2. MCP server builds a **credential-free** sandbox environment with proxy URL + auth token + datasource metadata
+3. Sandbox runs Python; all data access flows through the credential proxy
+4. Proxy validates auth, rate-limits, audits, and forwards to ClickHouse/Prometheus/Loki/S3
 
-## Key Patterns
+### Plugin System
 
-### Plugin Architecture
-Each datasource is a self-contained plugin implementing `plugin.Plugin`:
-- **Config**: Own YAML schema, defaults, and validation
-- **Env vars**: Builds environment variables for sandbox containers
-- **Resources**: Registers custom MCP resources (e.g., `clickhouse://tables`)
-- **Examples**: Embedded query examples for semantic search
-- **API docs**: Python module documentation
-- **Lifecycle**: `Start()` for async init (schema discovery), `Stop()` for cleanup
+Four compiled-in plugins registered in `pkg/server/builder.go`:
+- `clickhouse` — schema discovery via proxy, `clickhouse://tables` resources
+- `prometheus` — Prometheus metrics queries
+- `loki` — Loki log queries
+- `dora` — Beacon chain explorer (auto-enabled via `DefaultEnabled` interface, needs no config)
 
-Plugins are registered in `pkg/server/builder.go` and initialized from the `plugins:` config section.
+Each plugin implements `plugin.Plugin` (`pkg/plugin/plugin.go`). Optional interfaces:
+- `ProxyAware` — receives proxy client for credential-proxied operations
+- `CartographoorAware` — receives network discovery client
+- `DefaultEnabled` — activates without explicit config
 
-### Builder Pattern
-`pkg/server/builder.go` wires all dependencies. Services are created and started in order:
-1. Plugin registry (init, validate, start all plugins)
-2. Sandbox service
-3. Cartographoor client (network discovery)
-4. Auth service
-5. Example index (semantic search)
-6. Tool and resource registries
-7. MCP server
+### Builder Startup Order (`pkg/server/builder.go`)
 
-### Registry Pattern
-Tools and resources use registries (`tool.Registry`, `resource.Registry`) that allow registration of handlers and definitions. The server iterates over registries to register with the MCP server.
+1. Plugin registry (register + init all plugins)
+2. Sandbox service (Docker/gVisor)
+3. Proxy client (connects to separate proxy server, discovers datasources)
+4. Inject proxy into `ProxyAware` plugins → start all plugins
+5. Cartographoor client (Ethereum network discovery) → inject into `CartographoorAware` plugins
+6. Auth service (GitHub OAuth for HTTP transports)
+7. Example index (GGUF embedding model for semantic search)
+8. Runbook index (embedded markdown runbooks with semantic search)
+9. Tool registry: `execute_python`, `manage_session`, `search_examples`, `search_runbooks`
+10. Resource registry
 
-### Sandbox Execution Flow
-1. `execute_python` tool receives code
-2. Builds environment variables from plugin registry (each plugin provides its own env vars) plus platform S3 vars
-3. Calls `sandbox.Service.Execute()` which creates/reuses a Docker container
-4. Container runs Python with the `ethpandaops` library pre-installed
-5. Python code connects directly to ClickHouse/Prometheus/Loki using credentials from env
-6. Output, files, and session info returned to caller
+### MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `execute_python` | Execute Python in sandbox with `ethpandaops` library |
+| `manage_session` | List/create/destroy persistent sandbox sessions |
+| `search_examples` | Semantic search over query examples |
+| `search_runbooks` | Semantic search over procedural runbooks |
+
+### CLI Subcommands (`cmd/mcp/`)
+
+- `serve` — start MCP server (`--transport/-t`: stdio/sse/streamable-http, `--port/-p`)
+- `test` — run a sandbox test without full server (`--code`, `--timeout/-t`)
+- `auth login` — OAuth PKCE login (`--issuer`, `--client-id`)
+- `auth logout` / `auth status` — manage stored tokens
+- `version`
+
+The proxy is a **separate binary**: `cmd/proxy/main.go` (built with `go build -o proxy ./cmd/proxy`)
 
 ## Configuration
 
-Configuration uses `plugins:` key for datasources:
+Two config files:
+- `config.yaml` — MCP server (copy from `config.example.yaml`)
+- `proxy-config.yaml` — Credential proxy (copy from `proxy-config.example.yaml`)
+
+Key config sections:
 ```yaml
+server:
+  transport: stdio|sse|streamable-http
+  base_url: "http://localhost:2480"    # Required for SSE/HTTP
+
+proxy:
+  url: "http://localhost:18081"        # Proxy server URL
+  auth:                                # Optional, for production JWT auth
+    issuer_url: "..."
+    client_id: "..."
+
 plugins:
   clickhouse:
-    clusters: [...]
-    schema_discovery: { ... }
-  prometheus:
-    instances: [...]
-  loki:
-    instances: [...]
+    schema_discovery:                  # References proxy datasource names, NOT direct credentials
+      datasources: [...]
+  # dora: enabled by default, no config needed
+
+sandbox:
+  backend: docker|gvisor
+  image: "ethpandaops-mcp-sandbox:latest"
+  sessions:                            # Persistent containers between calls
+    enabled: true
+    ttl: 30m
+    max_sessions: 10
+
+semantic_search:
+  model_path: "models/MiniLM-L6-v2.Q8_0.gguf"  # Required; run make download-models
+
+storage: { endpoint, access_key, secret_key, bucket, public_url_prefix }
 ```
 
-Platform config stays at top level:
-- `sandbox.backend` - `docker` (local) or `gvisor` (production)
-- `storage` - S3-compatible storage for output files
-- `auth` - GitHub OAuth configuration
+Environment variables are substituted using `${VAR_NAME}` or `${VAR_NAME:-default}` syntax.
 
-Environment variables are substituted using `${VAR_NAME}` syntax in YAML.
+## Linting
 
-## Testing
+Uses golangci-lint v2 (`.golangci.yml`):
+- Linters: errcheck, govet, staticcheck, unused, misspell, unconvert, gocritic
+- Formatters: gofmt, goimports (local prefix: `github.com/ethpandaops/mcp`)
 
-The eval harness in `tests/eval/` tests end-to-end task completion:
-- Uses Claude Agent SDK with native MCP support
-- DeepEval for metrics (tool correctness, task completion)
-- Test cases defined in YAML (`cases/*.yaml`)
-- Traces stored locally or in Langfuse
+## Project Layout
 
-Run a specific test category:
-```bash
-uv run python -m scripts.run_eval --category basic_queries
 ```
-
-## MCP Resources
-
-Key resources exposed by the server:
-- `datasources://list` - All configured datasources (ClickHouse, Prometheus, Loki)
-- `datasources://clickhouse` - ClickHouse clusters only
-- `datasources://prometheus` - Prometheus instances only
-- `datasources://loki` - Loki instances only
-- `networks://active` - Active Ethereum networks
-- `networks://{name}` - Specific network details
-- `clickhouse://tables` - List all tables (if schema discovery enabled)
-- `clickhouse://tables/{table}` - Table schema details
-- `python://ethpandaops` - Python library function signatures
-- `examples://queries` - Common query patterns
-- `ethpandaops://getting-started` - Getting started guide
+cmd/mcp/           # MCP server binary entry point
+cmd/proxy/         # Credential proxy binary entry point
+pkg/
+  server/          # MCP server + builder (dependency injection)
+  plugin/          # Plugin interface and registry
+  proxy/           # Proxy client and server (auth, handlers, rate limiting, audit)
+  sandbox/         # Sandboxed execution (Docker/gVisor backends, sessions)
+  tool/            # MCP tool definitions and handlers
+  resource/        # MCP resource definitions (datasources, networks, examples, API docs)
+  auth/            # GitHub OAuth + JWT (client/, store/ sub-packages)
+  embedding/       # GGUF embedding model wrapper for semantic search
+  config/          # Configuration loading and validation
+  observability/   # Prometheus metrics
+  types/           # Shared types (DatasourceInfo, ExampleCategory, ModuleDoc)
+plugins/
+  clickhouse/      # ClickHouse plugin (schema discovery, examples, Python module)
+  prometheus/      # Prometheus plugin
+  loki/            # Loki plugin
+  dora/            # Beacon chain explorer plugin (auto-enabled)
+runbooks/          # Embedded markdown runbooks with YAML frontmatter
+sandbox/           # Sandbox Docker image (Python 3.11, ethpandaops package)
+tests/eval/        # LLM evaluation harness (Claude Agent SDK + DeepEval)
+docs/              # Deployment architecture docs
+```
 
 ## Local Development
 
-### Testing Changes Locally
+1. `cp config.example.yaml config.yaml` — edit with datasource details
+2. `make docker-sandbox` — build the Python sandbox image
+3. `make download-models` — download embedding model for semantic search
+4. `docker-compose up -d` — start full stack (MCP server + proxy + MinIO)
 
-1. **Build the sandbox image** (required for Python execution):
-   ```bash
-   make docker-sandbox
-   ```
+### Docker Compose
 
-2. **Set up configuration**:
-   ```bash
-   cp config.example.yaml config.yaml
-   # Edit config.yaml with your datasource credentials
-   ```
+Main stack (`docker-compose.yaml`): MCP server, MinIO (S3), sandbox builder.
+- MCP server: port 2480, metrics: port 31490
+- MinIO: API port 31400, console port 31401
+- Networks: `ethpandaops-mcp-external` (host-exposed), `ethpandaops-mcp-internal` (sandbox → MinIO/datasources)
 
-3. **Run the server locally**:
-    - full stack with MinIO:
-   ```bash
-   docker-compose up -d
-   ```
+Langfuse stack (`tests/eval/docker-compose.langfuse.yaml`): self-hosted tracing for eval tests.
+- Web UI: http://localhost:31700 (admin@mcp.local / adminadmin)
+- Enable with: `export MCP_EVAL_LANGFUSE_ENABLED=true`
 
-4. **Run the tests**:
-   ```bash
-   cd tests/eval
-   uv run python -m scripts.run_eval --category basic_queries # Or whatever new tests you've added
-   ```
+## Deployment Modes
 
-### Docker Compose Stacks
-
-#### Main Stack (`docker-compose.yaml`)
-
-Runs the MCP server with S3-compatible storage for output files.
-
-```bash
-docker-compose up -d                            # Start all services
-docker-compose logs -f ethpandaops-mcp-server   # View server logs
-docker-compose down                             # Stop all services
-```
-
-**Services:**
-- `ethpandaops-mcp-server` - The MCP server (ports 2480 for MCP, 31490 for metrics)
-- `minio` - S3-compatible storage for chart/file uploads (port 31400 API, 31401 console)
-- `minio-init` - Creates the output bucket on startup
-- `sandbox-builder` - Builds the sandbox Docker image
-
-**Requirements:**
-- Docker socket mounted for sandbox container creation
-- `config.yaml` in project root
-
-**Networks:**
-- `ethpandaops-mcp-external` - Exposed to host (MCP server, MinIO)
-- `ethpandaops-mcp-internal` - Sandbox containers reach MinIO and external datasources (ClickHouse, Prometheus, Loki). Not marked `internal` so containers can resolve external DNS. In stdio mode (outside docker-compose), the server auto-creates this network on startup.
-
-#### Langfuse Stack (`tests/eval/docker-compose.langfuse.yaml`)
-
-Self-hosted Langfuse for viewing evaluation traces and metrics over time.
-
-```bash
-cd tests/eval
-docker compose -f docker-compose.langfuse.yaml up -d   # Start Langfuse
-docker compose -f docker-compose.langfuse.yaml down    # Stop Langfuse
-
-# Or use the helper script:
-uv run python -m scripts.langfuse up
-uv run python -m scripts.langfuse down
-```
-
-**Services:**
-- `langfuse-web` - Web UI (http://localhost:31700, login: admin@mcp.local / adminadmin)
-- `langfuse-worker` - Background trace processing
-- `postgres` - Main database
-- `clickhouse` - Analytics database
-- `redis` - Cache
-- `minio` - Blob storage (separate from main stack, port 31909)
-
-**Pre-configured API keys** (no manual setup needed):
-- Public key: `pk-lf-mcp-eval-local`
-- Secret key: `sk-lf-mcp-eval-local`
-- Username: `admin@mcp.local`
-- Password: `adminadmin`
-
-To enable tracing to LANGFUSE, set in your environment:
-```bash
-export MCP_EVAL_LANGFUSE_ENABLED=true
-```
+See `docs/deployments.md` for details:
+- **Dev**: proxy + MCP on localhost, `auth.mode: none`
+- **Local-agent**: production proxy with JWT, local MCP + sandboxes
+- **Remote-agent**: all in production (K8s), gVisor backend, GitHub OAuth for clients

@@ -55,6 +55,7 @@ type server struct {
 	prometheusHandler *handlers.PrometheusHandler
 	lokiHandler       *handlers.LokiHandler
 	s3Handler         *handlers.S3Handler
+	ethNodeHandler    *handlers.EthNodeHandler
 
 	mu      sync.RWMutex
 	started bool
@@ -106,7 +107,7 @@ func NewServer(log logrus.FieldLogger, cfg ServerConfig) (Server, error) {
 	}
 
 	// Create handlers from config.
-	chConfigs, promConfigs, lokiConfigs, s3Config := cfg.ToHandlerConfigs()
+	chConfigs, promConfigs, lokiConfigs, s3Config, ethNodeConfig := cfg.ToHandlerConfigs()
 
 	if len(chConfigs) > 0 {
 		s.clickhouseHandler = handlers.NewClickHouseHandler(log, chConfigs)
@@ -122,6 +123,10 @@ func NewServer(log logrus.FieldLogger, cfg ServerConfig) (Server, error) {
 
 	if s3Config != nil && s3Config.Endpoint != "" {
 		s.s3Handler = handlers.NewS3Handler(log, s3Config)
+	}
+
+	if ethNodeConfig != nil {
+		s.ethNodeHandler = handlers.NewEthNodeHandler(log, *ethNodeConfig)
 	}
 
 	// Register routes.
@@ -175,6 +180,11 @@ func (s *server) registerRoutes() {
 	if s.s3Handler != nil {
 		s.mux.Handle("/s3/", chain(s.s3Handler))
 	}
+
+	if s.ethNodeHandler != nil {
+		s.mux.Handle("/beacon/", chain(s.ethNodeHandler))
+		s.mux.Handle("/execution/", chain(s.ethNodeHandler))
+	}
 }
 
 // buildMiddlewareChain builds the middleware chain for authenticated routes.
@@ -210,6 +220,7 @@ type DatasourcesResponse struct {
 	LokiInfo          []types.DatasourceInfo `json:"loki_info,omitempty"`
 	S3Bucket          string                 `json:"s3_bucket,omitempty"`
 	S3PublicURLPrefix string                 `json:"s3_public_url_prefix,omitempty"`
+	EthNodeAvailable  bool                   `json:"ethnode_available,omitempty"`
 }
 
 // handleDatasources returns the list of available datasources.
@@ -223,6 +234,7 @@ func (s *server) handleDatasources(w http.ResponseWriter, _ *http.Request) {
 		LokiInfo:          s.LokiDatasourceInfo(),
 		S3Bucket:          s.S3Bucket(),
 		S3PublicURLPrefix: s.S3PublicURLPrefix(),
+		EthNodeAvailable:  s.EthNodeAvailable(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -434,4 +446,9 @@ func (s *server) S3PublicURLPrefix() string {
 	}
 
 	return s.s3Handler.PublicURLPrefix()
+}
+
+// EthNodeAvailable returns true if the ethnode handler is configured.
+func (s *server) EthNodeAvailable() bool {
+	return s.ethNodeHandler != nil
 }

@@ -68,6 +68,9 @@ services:
       - LOKI_URL=${LOKI_URL}
       - LOKI_USERNAME=${LOKI_USERNAME}
       - LOKI_PASSWORD=${LOKI_PASSWORD}
+      # Ethereum node API (beacon/execution)
+      - ETHPANDAOPS_ETHNODE_USERNAME=${ETHPANDAOPS_ETHNODE_USERNAME}
+      - ETHPANDAOPS_ETHNODE_PASSWORD=${ETHPANDAOPS_ETHNODE_PASSWORD}
       # S3 Storage - must be reachable from sandbox containers
       - S3_ENDPOINT=http://minio:9000
       - S3_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}

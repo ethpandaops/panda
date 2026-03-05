@@ -20,6 +20,7 @@ import (
 
 	clickhouseplugin "github.com/ethpandaops/mcp/plugins/clickhouse"
 	doraplugin "github.com/ethpandaops/mcp/plugins/dora"
+	ethnodeplugin "github.com/ethpandaops/mcp/plugins/ethnode"
 	lokiplugin "github.com/ethpandaops/mcp/plugins/loki"
 	prometheusplugin "github.com/ethpandaops/mcp/plugins/prometheus"
 )
@@ -201,6 +202,7 @@ func (b *Builder) buildPluginRegistry() (*plugin.Registry, error) {
 	// Register all compiled-in plugins.
 	reg.Add(clickhouseplugin.New())
 	reg.Add(doraplugin.New())
+	reg.Add(ethnodeplugin.New())
 	reg.Add(lokiplugin.New())
 	reg.Add(prometheusplugin.New())
 

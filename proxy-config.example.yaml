@@ -75,6 +75,12 @@ loki:
     username: "${LOKI_USERNAME}"
     password: "${LOKI_PASSWORD}"
 
+# Ethereum node API access (beacon and execution nodes)
+# Single credential pair for all bn-*.srv.*.ethpandaops.io and rpc-*.srv.*.ethpandaops.io endpoints
+# ethnode:
+#   username: "${ETHPANDAOPS_ETHNODE_USERNAME}"
+#   password: "${ETHPANDAOPS_ETHNODE_PASSWORD}"
+
 # S3 storage for file uploads
 s3:
   endpoint: "${S3_ENDPOINT}"

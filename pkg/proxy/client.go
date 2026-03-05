@@ -60,6 +60,9 @@ type Client interface {
 	// S3PublicURLPrefix returns the discovered S3 public URL prefix.
 	S3PublicURLPrefix() string
 
+	// EthNodeAvailable returns true if the proxy has ethnode credentials configured.
+	EthNodeAvailable() bool
+
 	// Discover fetches datasource information from the proxy.
 	Discover(ctx context.Context) error
 
@@ -349,6 +352,14 @@ func (c *proxyClient) S3PublicURLPrefix() string {
 	defer c.mu.RUnlock()
 
 	return c.datasources.S3PublicURLPrefix
+}
+
+// EthNodeAvailable returns true if the proxy has ethnode credentials configured.
+func (c *proxyClient) EthNodeAvailable() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return c.datasources.EthNodeAvailable
 }
 
 // Discover fetches datasource information from the proxy's /datasources endpoint.

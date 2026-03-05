@@ -75,7 +75,10 @@ def get_base_url(network: str) -> str:
 
 def get_network_overview(network: str) -> dict[str, Any]:
     """Get network overview: current epoch, slot, validator counts."""
-    data = _api_get(network, "/api/v1/epoch/head").get("data", {})
+    try:
+        data = _api_get(network, "/api/v1/epoch/head").get("data", {})
+    except Exception:
+        data = _api_get(network, "/api/v1/epoch/latest").get("data", {})
     epoch = data.get("epoch", 0)
     result = {
         "current_epoch": epoch,

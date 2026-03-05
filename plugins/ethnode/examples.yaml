@@ -1,0 +1,167 @@
+ethnode_sync_status:
+  name: Node Sync Status
+  description: Check sync status of beacon and execution nodes
+  examples:
+    - name: Check beacon node sync status
+      description: Get sync status from a specific beacon node
+      query: |
+        from ethpandaops import ethnode
+
+        network = "dencun-devnet-12"
+        instance = "lighthouse-geth-1"
+
+        syncing = ethnode.get_node_syncing(network, instance)
+        print(f"Node {instance} sync status:")
+        print(f"  Head slot: {syncing['data']['head_slot']}")
+        print(f"  Sync distance: {syncing['data']['sync_distance']}")
+        print(f"  Is syncing: {syncing['data']['is_syncing']}")
+
+    - name: Check execution node sync status
+      description: Get sync status from a specific execution node
+      query: |
+        from ethpandaops import ethnode
+
+        network = "dencun-devnet-12"
+        instance = "lighthouse-geth-1"
+
+        syncing = ethnode.eth_syncing(network, instance)
+        block_number = ethnode.eth_block_number(network, instance)
+        print(f"EL sync status: {syncing}")
+        print(f"Current block: {block_number}")
+
+    - name: Compare sync across multiple nodes
+      description: Compare sync status across multiple nodes to detect splits
+      query: |
+        from ethpandaops import ethnode
+
+        network = "dencun-devnet-12"
+        instances = ["lighthouse-geth-1", "prysm-geth-1", "teku-geth-1"]
+
+        for instance in instances:
+            try:
+                syncing = ethnode.get_node_syncing(network, instance)
+                head_slot = syncing['data']['head_slot']
+                print(f"{instance}: head_slot={head_slot}")
+            except Exception as e:
+                print(f"{instance}: ERROR - {e}")
+
+ethnode_node_info:
+  name: Node Information
+  description: Get node identity, version, and peer information
+  examples:
+    - name: Get node version
+      description: Get the software version of a beacon node
+      query: |
+        from ethpandaops import ethnode
+
+        network = "dencun-devnet-12"
+        instance = "lighthouse-geth-1"
+
+        # Beacon node version
+        version = ethnode.get_node_version(network, instance)
+        print(f"CL version: {version['data']['version']}")
+
+        # Execution node version
+        el_version = ethnode.web3_client_version(network, instance)
+        print(f"EL version: {el_version}")
+
+    - name: Check peer connectivity
+      description: Check peer count and connectivity of a node
+      query: |
+        from ethpandaops import ethnode
+
+        network = "dencun-devnet-12"
+        instance = "lighthouse-geth-1"
+
+        # CL peers
+        peer_count = ethnode.get_peer_count(network, instance)
+        print(f"CL peers: {peer_count['data']}")
+
+        # EL peers
+        el_peers = ethnode.net_peer_count(network, instance)
+        print(f"EL peers: {el_peers}")
+
+ethnode_chain_status:
+  name: Chain Status
+  description: Check finality, chain config, and block information
+  examples:
+    - name: Check finality checkpoints
+      description: Get finality checkpoint information from a beacon node
+      query: |
+        from ethpandaops import ethnode
+
+        network = "dencun-devnet-12"
+        instance = "lighthouse-geth-1"
+
+        checkpoints = ethnode.get_finality_checkpoints(network, instance)
+        data = checkpoints['data']
+        print(f"Finalized: epoch {data['finalized']['epoch']}")
+        print(f"Justified: epoch {data['current_justified']['epoch']}")
+        print(f"Previous justified: epoch {data['previous_justified']['epoch']}")
+
+    - name: Get chain configuration
+      description: Get the chain spec and fork schedule
+      query: |
+        from ethpandaops import ethnode
+
+        network = "dencun-devnet-12"
+        instance = "lighthouse-geth-1"
+
+        spec = ethnode.get_config_spec(network, instance)
+        print(f"Config name: {spec['data'].get('CONFIG_NAME', 'unknown')}")
+        print(f"Preset: {spec['data'].get('PRESET_BASE', 'unknown')}")
+
+        forks = ethnode.get_fork_schedule(network, instance)
+        for fork in forks['data']:
+            print(f"  Fork {fork['current_version']}: epoch {fork['epoch']}")
+
+    - name: Get latest beacon header and EL block
+      description: Get the latest beacon block header and execution block number
+      query: |
+        from ethpandaops import ethnode
+
+        network = "dencun-devnet-12"
+        instance = "lighthouse-geth-1"
+
+        # Latest beacon header
+        header = ethnode.get_beacon_headers(network, instance)
+        slot = header['data']['header']['message']['slot']
+        print(f"Latest CL slot: {slot}")
+
+        # Latest EL block
+        block_num = ethnode.eth_block_number(network, instance)
+        print(f"Latest EL block: {block_num}")
+
+ethnode_advanced:
+  name: Advanced Queries
+  description: Use generic pass-through for advanced API calls
+  examples:
+    - name: Generic beacon API call
+      description: Use the generic beacon_get function for any beacon API endpoint
+      query: |
+        from ethpandaops import ethnode
+
+        network = "dencun-devnet-12"
+        instance = "lighthouse-geth-1"
+
+        # Get deposit contract info
+        deposit = ethnode.beacon_get(network, instance, "/eth/v1/config/deposit_contract")
+        print(f"Deposit contract: {deposit}")
+
+        # Get node identity
+        identity = ethnode.beacon_get(network, instance, "/eth/v1/node/identity")
+        print(f"Peer ID: {identity['data']['peer_id']}")
+
+    - name: Generic execution RPC call
+      description: Use the generic execution_rpc function for any JSON-RPC method
+      query: |
+        from ethpandaops import ethnode
+
+        network = "dencun-devnet-12"
+        instance = "lighthouse-geth-1"
+
+        # Get a specific block
+        block = ethnode.execution_rpc(network, instance, "eth_getBlockByNumber", ["latest", False])
+        print(f"Block number: {block['number']}")
+        print(f"Block hash: {block['hash']}")
+        print(f"Transactions: {len(block.get('transactions', []))}")

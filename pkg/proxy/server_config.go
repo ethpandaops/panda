@@ -33,6 +33,9 @@ type ServerConfig struct {
 	// S3 holds S3 storage configuration.
 	S3 *S3Config `yaml:"s3,omitempty"`
 
+	// EthNode holds Ethereum node API access configuration.
+	EthNode *EthNodeInstanceConfig `yaml:"ethnode,omitempty"`
+
 	// RateLimiting holds rate limiting configuration.
 	RateLimiting RateLimitConfig `yaml:"rate_limiting"`
 
@@ -97,6 +100,13 @@ type LokiInstanceConfig struct {
 	URL         string `yaml:"url"`
 	Username    string `yaml:"username,omitempty"`
 	Password    string `yaml:"password,omitempty"`
+}
+
+// EthNodeInstanceConfig holds Ethereum node API access configuration.
+// A single credential pair is used for all beacon and execution node endpoints.
+type EthNodeInstanceConfig struct {
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
 }
 
 // S3Config holds S3 storage configuration.
@@ -209,8 +219,8 @@ func (c *ServerConfig) Validate() error {
 	}
 
 	// Validate at least one datasource is configured.
-	if len(c.ClickHouse) == 0 && len(c.Prometheus) == 0 && len(c.Loki) == 0 {
-		return fmt.Errorf("at least one datasource (clickhouse, prometheus, or loki) must be configured")
+	if len(c.ClickHouse) == 0 && len(c.Prometheus) == 0 && len(c.Loki) == 0 && c.EthNode == nil {
+		return fmt.Errorf("at least one datasource (clickhouse, prometheus, loki, or ethnode) must be configured")
 	}
 
 	// Validate ClickHouse configs.
@@ -250,7 +260,7 @@ func (c *ServerConfig) Validate() error {
 }
 
 // ToHandlerConfigs converts the server config to handler configs.
-func (c *ServerConfig) ToHandlerConfigs() ([]handlers.ClickHouseConfig, []handlers.PrometheusConfig, []handlers.LokiConfig, *handlers.S3Config) {
+func (c *ServerConfig) ToHandlerConfigs() ([]handlers.ClickHouseConfig, []handlers.PrometheusConfig, []handlers.LokiConfig, *handlers.S3Config, *handlers.EthNodeConfig) {
 	// Convert ClickHouse configs.
 	chConfigs := make([]handlers.ClickHouseConfig, len(c.ClickHouse))
 	for i, ch := range c.ClickHouse {
@@ -302,7 +312,16 @@ func (c *ServerConfig) ToHandlerConfigs() ([]handlers.ClickHouseConfig, []handle
 		}
 	}
 
-	return chConfigs, promConfigs, lokiConfigs, s3Config
+	// Convert EthNode config.
+	var ethNodeConfig *handlers.EthNodeConfig
+	if c.EthNode != nil && c.EthNode.Username != "" {
+		ethNodeConfig = &handlers.EthNodeConfig{
+			Username: c.EthNode.Username,
+			Password: c.EthNode.Password,
+		}
+	}
+
+	return chConfigs, promConfigs, lokiConfigs, s3Config, ethNodeConfig
 }
 
 // envVarWithDefaultPattern matches ${VAR_NAME:-default} patterns.
