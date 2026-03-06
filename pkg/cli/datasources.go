@@ -101,6 +101,16 @@ func buildApp(ctx context.Context, cfg *config.Config) (*app.App, error) {
 	return a, nil
 }
 
+// buildLightApp creates an App with only plugins + proxy (no sandbox, no embedding).
+func buildLightApp(ctx context.Context, cfg *config.Config) (*app.App, error) {
+	a := app.New(log, cfg)
+	if err := a.BuildLight(ctx); err != nil {
+		return nil, err
+	}
+
+	return a, nil
+}
+
 func collectDatasourceInfo(proxyClient proxy.Client, filterType string) []types.DatasourceInfo {
 	var all []types.DatasourceInfo
 

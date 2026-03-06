@@ -130,6 +130,40 @@ func (a *App) Build(ctx context.Context) error {
 	return nil
 }
 
+// BuildLight initializes only the plugin registry and proxy client.
+// Plugins are started (e.g., schema discovery) but sandbox, cartographoor,
+// and semantic search indices are not created.
+func (a *App) BuildLight(ctx context.Context) error {
+	a.log.Info("Building lightweight application dependencies")
+
+	pluginReg, err := a.buildPluginRegistry()
+	if err != nil {
+		return fmt.Errorf("building plugin registry: %w", err)
+	}
+
+	a.PluginRegistry = pluginReg
+
+	proxyClient := a.buildProxyClient()
+	if err := proxyClient.Start(ctx); err != nil {
+		return fmt.Errorf("starting proxy client: %w", err)
+	}
+
+	a.ProxyClient = proxyClient
+	a.log.WithField("url", proxyClient.URL()).Info("Proxy client connected")
+
+	a.injectProxyClient()
+
+	if err := a.PluginRegistry.StartAll(ctx); err != nil {
+		a.stop(ctx)
+
+		return fmt.Errorf("starting plugins: %w", err)
+	}
+
+	a.log.Info("All plugins started")
+
+	return nil
+}
+
 // Stop cleans up all started components in reverse order.
 func (a *App) Stop(ctx context.Context) error {
 	a.stop(ctx)
