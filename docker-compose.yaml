@@ -40,6 +40,8 @@ services:
     command: ["--config", "/config/proxy-config.yaml"]
     ports:
       - "18081:18081"  # Proxy for sandbox containers
+    env_file:
+      - path: .env
     environment:
       # ClickHouse - Xatu cluster
       - CLICKHOUSE_XATU_HOST=${CLICKHOUSE_XATU_HOST}
