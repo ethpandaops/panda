@@ -29,8 +29,11 @@ GOBIN ?= $(shell go env GOPATH)/bin
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-build: ## Build the binary
+build: ## Build the MCP server binary
 	go build -ldflags "$(LDFLAGS)" -o mcp ./cmd/mcp
+
+build-cli: ## Build the CLI binary
+	go build -ldflags "$(LDFLAGS)" -o ep ./cmd/cli
 
 build-linux: ## Build for Linux (amd64)
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o mcp-linux-amd64 ./cmd/mcp
@@ -60,7 +63,7 @@ tidy: ## Run go mod tidy
 	go mod tidy
 
 clean: ## Clean build artifacts
-	rm -f mcp mcp-linux-amd64
+	rm -f mcp ep mcp-linux-amd64
 	rm -f coverage.out coverage.html
 
 docker: ## Build Docker image

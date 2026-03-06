@@ -1,5 +1,6 @@
 # Binaries
 /mcp
+/ep
 mcp-linux-*
 *.exe
 
