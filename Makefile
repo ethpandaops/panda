@@ -1,4 +1,4 @@
-.PHONY: build test lint clean docker docker-push docker-sandbox test-sandbox run help download-models clean-models
+.PHONY: build test lint clean docker docker-push docker-sandbox test-sandbox run help download-models clean-models setup-hooks
 
 # Embedding model and shared library configuration
 # Downloaded from HuggingFace and kelindar/search GitHub repo
@@ -48,7 +48,7 @@ test-coverage: ## Run tests with coverage
 	go tool cover -html=coverage.out -o coverage.html
 
 lint: ## Run linters
-	@which golangci-lint > /dev/null || (echo "Installing golangci-lint..." && go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest)
+	@which golangci-lint > /dev/null || (echo "Installing golangci-lint v2..." && go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest)
 	golangci-lint run ./...
 
 lint-fix: ## Run linters and fix issues
@@ -109,6 +109,10 @@ logs: ## View docker-compose logs
 
 install: build ## Install binary to GOBIN
 	cp mcp $(GOBIN)/mcp
+
+setup-hooks: ## Install git pre-commit hooks
+	git config core.hooksPath .githooks
+	@echo "Git hooks configured to use .githooks/"
 
 version: ## Show version info
 	@echo "Version:    $(VERSION)"

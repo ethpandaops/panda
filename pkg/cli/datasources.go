@@ -91,16 +91,6 @@ func buildProxyClient(cfg *config.Config) proxy.Client {
 	return proxy.NewClient(log, proxyCfg)
 }
 
-// buildApp creates and builds the full App from config. Shared by commands needing all components.
-func buildApp(ctx context.Context, cfg *config.Config) (*app.App, error) {
-	a := app.New(log, cfg)
-	if err := a.Build(ctx); err != nil {
-		return nil, err
-	}
-
-	return a, nil
-}
-
 // buildLightApp creates an App with only plugins + proxy (no sandbox, no embedding).
 func buildLightApp(ctx context.Context, cfg *config.Config) (*app.App, error) {
 	a := app.New(log, cfg)
