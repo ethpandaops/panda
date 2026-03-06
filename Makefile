@@ -6,9 +6,11 @@ MODELS_DIR := ./models
 EMBEDDING_MODEL_PATH := $(MODELS_DIR)/MiniLM-L6-v2.Q8_0.gguf
 LLAMA_SO_PATH := $(MODELS_DIR)/libllama_go.so
 
-# Download URLs (using GitHub media server for LFS files)
+# Download URLs
 EMBEDDING_MODEL_URL := https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-Q8_0.gguf
-LLAMA_SO_URL := https://media.githubusercontent.com/media/kelindar/search/main/dist/linux-x64-avx/libllama_go.so
+
+# Source build directory for libllama_go.so
+LLAMA_BUILD_DIR := $(MODELS_DIR)/llama-build
 
 # Build variables
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -124,10 +126,19 @@ $(EMBEDDING_MODEL_PATH):
 	@echo "Model downloaded to $(EMBEDDING_MODEL_PATH)"
 
 $(LLAMA_SO_PATH):
-	@mkdir -p $(MODELS_DIR)
-	@echo "Downloading llama.cpp shared library from GitHub..."
-	@curl -L -o $(LLAMA_SO_PATH) $(LLAMA_SO_URL)
-	@echo "Shared library downloaded to $(LLAMA_SO_PATH)"
+	@mkdir -p $(LLAMA_BUILD_DIR)
+	@echo "Building libllama_go.so from source (requires cmake, g++)..."
+	@cd $(LLAMA_BUILD_DIR) && \
+		if [ ! -d search ]; then \
+			git clone --depth 1 --recurse-submodules https://github.com/kelindar/search.git; \
+		fi && \
+		cd search && mkdir -p build && cd build && \
+		cmake -DBUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release \
+			-DGGML_NATIVE=OFF \
+			-DCMAKE_CXX_COMPILER=g++ -DCMAKE_C_COMPILER=gcc .. && \
+		cmake --build . --config Release
+	@cp $(LLAMA_BUILD_DIR)/search/build/lib/libllama_go.so.1.0 $(LLAMA_SO_PATH)
+	@echo "Shared library built at $(LLAMA_SO_PATH)"
 
-clean-models: ## Clean downloaded models
-	rm -rf $(MODELS_DIR)
+clean-models: ## Clean downloaded models and build artifacts
+	rm -rf $(MODELS_DIR) libllama_go.so
