@@ -12,6 +12,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/ethpandaops/mcp/pkg/config"
+	"github.com/ethpandaops/mcp/pkg/eips"
 	"github.com/ethpandaops/mcp/pkg/embedding"
 	"github.com/ethpandaops/mcp/pkg/plugin"
 	"github.com/ethpandaops/mcp/pkg/proxy"
@@ -38,6 +39,8 @@ type App struct {
 	ExampleIndex    *resource.ExampleIndex
 	RunbookRegistry *runbooks.Registry
 	RunbookIndex    *resource.RunbookIndex
+	EIPRegistry     *eips.Registry
+	EIPIndex        *resource.EIPIndex
 	Embedder        *embedding.Embedder
 }
 
@@ -122,7 +125,7 @@ func (a *App) Build(ctx context.Context) error {
 	a.injectCartographoorClient()
 
 	// 7. Build semantic search indices.
-	if err := a.buildSearchIndices(); err != nil {
+	if err := a.buildSearchIndices(ctx); err != nil {
 		a.stop(ctx)
 
 		return fmt.Errorf("building search indices: %w", err)
@@ -161,6 +164,25 @@ func (a *App) BuildLight(ctx context.Context) error {
 	}
 
 	a.log.Info("All plugins started")
+
+	return nil
+}
+
+// BuildSearchOnly initializes only the plugin registry and semantic search indices.
+// No proxy, sandbox, or cartographoor. Used by CLI search commands.
+func (a *App) BuildSearchOnly(ctx context.Context) error {
+	a.log.Info("Building search-only application dependencies")
+
+	pluginReg, err := a.buildPluginRegistry()
+	if err != nil {
+		return fmt.Errorf("building plugin registry: %w", err)
+	}
+
+	a.PluginRegistry = pluginReg
+
+	if err := a.buildSearchIndices(ctx); err != nil {
+		return fmt.Errorf("building search indices: %w", err)
+	}
 
 	return nil
 }
@@ -371,7 +393,7 @@ func (a *App) SandboxEnv() (map[string]string, error) {
 	return env, nil
 }
 
-func (a *App) buildSearchIndices() error {
+func (a *App) buildSearchIndices(ctx context.Context) error {
 	cfg := a.cfg.SemanticSearch
 	if cfg.ModelPath == "" {
 		return fmt.Errorf("semantic_search.model_path is required")
@@ -416,6 +438,33 @@ func (a *App) buildSearchIndices() error {
 
 	a.RunbookIndex = runbookIndex
 	a.log.Info("Semantic search runbook index built")
+
+	// Build EIP index (non-fatal: depends on GitHub availability).
+	eipReg, err := eips.NewRegistry(ctx, a.log, "")
+	if err != nil {
+		a.log.WithError(err).Warn("Failed to load EIPs, EIP search will be disabled")
+
+		return nil
+	}
+
+	a.EIPRegistry = eipReg
+
+	if eipReg.Count() > 0 {
+		eipIndex, updatedVectors, err := resource.NewEIPIndex(a.log, embedder, eipReg.All(), eipReg.CachedVectors())
+		if err != nil {
+			a.log.WithError(err).Warn("Failed to build EIP index, EIP search will be disabled")
+
+			return nil
+		}
+
+		a.EIPIndex = eipIndex
+
+		if err := eipReg.SaveVectors(updatedVectors); err != nil {
+			a.log.WithError(err).Warn("Failed to save EIP embedding vectors")
+		}
+
+		a.log.Info("Semantic search EIP index built")
+	}
 
 	return nil
 }

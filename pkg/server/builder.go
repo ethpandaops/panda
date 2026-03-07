@@ -9,6 +9,7 @@ import (
 	"github.com/ethpandaops/mcp/pkg/app"
 	"github.com/ethpandaops/mcp/pkg/auth"
 	"github.com/ethpandaops/mcp/pkg/config"
+	"github.com/ethpandaops/mcp/pkg/eips"
 	"github.com/ethpandaops/mcp/pkg/plugin"
 	"github.com/ethpandaops/mcp/pkg/proxy"
 	"github.com/ethpandaops/mcp/pkg/resource"
@@ -77,6 +78,8 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 		application.ProxyClient,
 		application.RunbookRegistry,
 		application.RunbookIndex,
+		application.EIPRegistry,
+		application.EIPIndex,
 	)
 
 	// Create resource registry and register resources (MCP-server-specific).
@@ -112,6 +115,8 @@ func (b *Builder) buildToolRegistry(
 	proxyClient proxy.Service,
 	runbookReg *runbooks.Registry,
 	runbookIndex *resource.RunbookIndex,
+	eipReg *eips.Registry,
+	eipIndex *resource.EIPIndex,
 ) tool.Registry {
 	reg := tool.NewRegistry(b.log)
 
@@ -129,6 +134,11 @@ func (b *Builder) buildToolRegistry(
 	// Register search_runbooks tool (requires runbook index).
 	if runbookIndex != nil && runbookReg != nil {
 		reg.Register(tool.NewSearchRunbooksTool(b.log, runbookIndex, runbookReg))
+	}
+
+	// Register search_eips tool (requires EIP index).
+	if eipIndex != nil && eipReg != nil {
+		reg.Register(tool.NewSearchEIPsTool(b.log, eipIndex, eipReg))
 	}
 
 	b.log.WithField("tool_count", len(reg.List())).Info("Tool registry built")

@@ -14,12 +14,13 @@ import (
 
 var searchCmd = &cobra.Command{
 	Use:   "search",
-	Short: "Search examples and runbooks",
-	Long: `Semantic search over query examples and investigation runbooks.
+	Short: "Search examples, runbooks, and EIPs",
+	Long: `Semantic search over query examples, investigation runbooks, and Ethereum Improvement Proposals.
 
 Examples:
   ep search examples "attestation participation"
-  ep search runbooks "finality delay"`,
+  ep search runbooks "finality delay"
+  ep search eips "account abstraction"`,
 }
 
 // --- search examples ---
@@ -66,6 +67,30 @@ Examples:
 	RunE: runSearchRunbooks,
 }
 
+// --- search eips ---
+
+var (
+	searchEIPStatus   string
+	searchEIPCategory string
+	searchEIPType     string
+	searchEIPLimit    int
+	searchEIPJSON     bool
+)
+
+var searchEIPsCmd = &cobra.Command{
+	Use:   "eips <query>",
+	Short: "Search Ethereum Improvement Proposals",
+	Long: `Semantic search over Ethereum Improvement Proposals (EIPs).
+Returns matching EIPs with metadata, status, and links to full content.
+
+Examples:
+  ep search eips "account abstraction"
+  ep search eips "gas pricing" --category Core
+  ep search eips "token" --status Final --json`,
+	Args: cobra.ExactArgs(1),
+	RunE: runSearchEIPs,
+}
+
 func init() {
 	rootCmd.AddCommand(searchCmd)
 
@@ -78,6 +103,13 @@ func init() {
 	searchRunbooksCmd.Flags().StringVar(&searchRbTag, "tag", "", "Filter by tag")
 	searchRunbooksCmd.Flags().IntVar(&searchRbLimit, "limit", 3, "Max results (default: 3, max: 5)")
 	searchRunbooksCmd.Flags().BoolVar(&searchRbJSON, "json", false, "Output in JSON format")
+
+	searchCmd.AddCommand(searchEIPsCmd)
+	searchEIPsCmd.Flags().StringVar(&searchEIPStatus, "status", "", "Filter by status (Draft, Final, etc.)")
+	searchEIPsCmd.Flags().StringVar(&searchEIPCategory, "category", "", "Filter by category (Core, ERC, etc.)")
+	searchEIPsCmd.Flags().StringVar(&searchEIPType, "type", "", "Filter by type (Standards Track, Meta, etc.)")
+	searchEIPsCmd.Flags().IntVar(&searchEIPLimit, "limit", 5, "Max results (default: 5, max: 10)")
+	searchEIPsCmd.Flags().BoolVar(&searchEIPJSON, "json", false, "Output in JSON format")
 }
 
 func buildSearchApp(ctx context.Context) (*app.App, error) {
@@ -86,11 +118,8 @@ func buildSearchApp(ctx context.Context) (*app.App, error) {
 		return nil, fmt.Errorf("loading config: %w", err)
 	}
 
-	// Search only needs plugins (for examples) + embedding model.
-	// Use BuildLight for proxy+plugins, then the indices are built via full Build.
-	// Actually we need the full build for search indices.
 	a := app.New(log, cfg)
-	if err := a.Build(ctx); err != nil {
+	if err := a.BuildSearchOnly(ctx); err != nil {
 		return nil, fmt.Errorf("building app: %w", err)
 	}
 
@@ -254,6 +283,96 @@ func runSearchRunbooks(_ *cobra.Command, args []string) error {
 		}
 
 		fmt.Printf("\n%s\n", r.Runbook.Content)
+	}
+
+	return nil
+}
+
+func runSearchEIPs(_ *cobra.Command, args []string) error {
+	ctx := context.Background()
+
+	a, err := buildSearchApp(ctx)
+	if err != nil {
+		return err
+	}
+
+	defer func() { _ = a.Stop(ctx) }()
+
+	if a.EIPIndex == nil {
+		return fmt.Errorf("EIP search index not available")
+	}
+
+	limit := searchEIPLimit
+	if limit < 1 {
+		limit = 1
+	} else if limit > 10 {
+		limit = 10
+	}
+
+	fetchLimit := limit
+	if searchEIPStatus != "" || searchEIPCategory != "" || searchEIPType != "" {
+		fetchLimit = limit * 3
+	}
+
+	results, err := a.EIPIndex.Search(args[0], fetchLimit)
+	if err != nil {
+		return fmt.Errorf("searching: %w", err)
+	}
+
+	var filtered []resource.EIPSearchResult
+
+	for _, r := range results {
+		if r.Score < 0.25 {
+			continue
+		}
+
+		if searchEIPStatus != "" && r.EIP.Status != searchEIPStatus {
+			continue
+		}
+
+		if searchEIPCategory != "" && r.EIP.Category != searchEIPCategory {
+			continue
+		}
+
+		if searchEIPType != "" && r.EIP.Type != searchEIPType {
+			continue
+		}
+
+		filtered = append(filtered, r)
+
+		if len(filtered) >= limit {
+			break
+		}
+	}
+
+	if searchEIPJSON {
+		return printJSON(map[string]any{
+			"query":   args[0],
+			"results": filtered,
+		})
+	}
+
+	if len(filtered) == 0 {
+		fmt.Println("No matching EIPs found.")
+
+		return nil
+	}
+
+	for i, r := range filtered {
+		if i > 0 {
+			fmt.Println("---")
+		}
+
+		fmt.Printf("EIP-%d: %s (score: %.2f)\n", r.EIP.Number, r.EIP.Title, r.Score)
+		fmt.Printf("  %s\n", r.EIP.Description)
+		fmt.Printf("  Status: %s | Type: %s", r.EIP.Status, r.EIP.Type)
+
+		if r.EIP.Category != "" {
+			fmt.Printf(" | Category: %s", r.EIP.Category)
+		}
+
+		fmt.Println()
+		fmt.Printf("  %s\n\n", r.EIP.URL)
 	}
 
 	return nil
