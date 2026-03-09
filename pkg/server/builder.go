@@ -121,14 +121,9 @@ func (b *Builder) buildToolRegistry(
 	// Register manage_session tool.
 	reg.Register(tool.NewManageSessionTool(b.log, sandboxSvc))
 
-	// Register search_examples tool (requires example index).
-	if exampleIndex != nil {
-		reg.Register(tool.NewSearchExamplesTool(b.log, exampleIndex, pluginReg))
-	}
-
-	// Register search_runbooks tool (requires runbook index).
-	if runbookIndex != nil && runbookReg != nil {
-		reg.Register(tool.NewSearchRunbooksTool(b.log, runbookIndex, runbookReg))
+	// Register unified search tool when either search index is available.
+	if exampleIndex != nil || (runbookIndex != nil && runbookReg != nil) {
+		reg.Register(tool.NewSearchTool(b.log, exampleIndex, pluginReg, runbookIndex, runbookReg))
 	}
 
 	b.log.WithField("tool_count", len(reg.List())).Info("Tool registry built")

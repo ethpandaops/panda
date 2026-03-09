@@ -196,7 +196,7 @@ async def test_basic_query_with_examples_search(
     agent: MCPAgent,
     eval_settings: EvalSettings,
 ) -> None:
-    """Test that agent can use search_examples tool effectively."""
+    """Test that agent can use the unified search tool effectively."""
     prompt = "Search for examples of querying block data and then query the last 10 blocks on mainnet."
 
     result = await agent.execute(prompt)
@@ -204,13 +204,19 @@ async def test_basic_query_with_examples_search(
     if result.is_error:
         pytest.fail(f"Agent execution failed: {result.error_message}")
 
-    # Check that search_examples was used
-    tool_names = [tc.name for tc in result.tool_calls]
+    # Check that search was used with the examples type
+    search_calls = [
+        tc
+        for tc in result.tool_calls
+        if tc.name == "search" or tc.name.endswith("__search")
+    ]
+    assert search_calls, f"Expected search to be called, got: {[tc.name for tc in result.tool_calls]}"
     assert any(
-        "search_examples" in name for name in tool_names
-    ), f"Expected search_examples to be called, got: {tool_names}"
+        tc.input.get("type") == "examples" for tc in search_calls
+    ), f"Expected search(type='examples'), got: {[tc.input for tc in search_calls]}"
 
     # Check that execute_python was also used
+    tool_names = [tc.name for tc in result.tool_calls]
     assert any(
         "execute_python" in name for name in tool_names
     ), f"Expected execute_python to be called, got: {tool_names}"

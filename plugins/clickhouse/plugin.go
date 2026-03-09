@@ -158,7 +158,7 @@ func (p *Plugin) Examples() map[string]types.ExampleCategory {
 func (p *Plugin) PythonAPIDocs() map[string]types.ModuleDoc {
 	return map[string]types.ModuleDoc{
 		"clickhouse": {
-			Description: "Query ClickHouse databases for Ethereum blockchain data. Use search_examples tool for query patterns.",
+			Description: "Query ClickHouse databases for Ethereum blockchain data. Use the search tool with type='examples' for query patterns.",
 			Functions: map[string]types.FunctionDoc{
 				"list_datasources": {
 					Signature:   "clickhouse.list_datasources() -> list[dict]",
