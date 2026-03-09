@@ -15,7 +15,7 @@ const (
 	// AuthModeNone disables authentication (for local development only).
 	AuthModeNone AuthMode = "none"
 
-	// AuthModeToken uses local per-execution tokens (for embedded proxy in MCP server).
+	// AuthModeToken uses local per-execution tokens for trusted runtime hops.
 	AuthModeToken AuthMode = "token"
 
 	// AuthModeJWT uses JWTs validated against a remote JWKS (for standalone K8s deployment).

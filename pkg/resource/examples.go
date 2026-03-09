@@ -8,12 +8,12 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/sirupsen/logrus"
 
-	"github.com/ethpandaops/mcp/pkg/plugin"
+	"github.com/ethpandaops/mcp/pkg/extension"
 	"github.com/ethpandaops/mcp/pkg/types"
 )
 
 // RegisterExamplesResources registers the examples://queries resource.
-func RegisterExamplesResources(log logrus.FieldLogger, reg Registry, pluginReg *plugin.Registry) {
+func RegisterExamplesResources(log logrus.FieldLogger, reg Registry, extensionReg *extension.Registry) {
 	log = log.WithField("resource", "examples")
 
 	reg.RegisterStatic(StaticResource{
@@ -24,17 +24,17 @@ func RegisterExamplesResources(log logrus.FieldLogger, reg Registry, pluginReg *
 			mcp.WithMIMEType("application/json"),
 			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.6),
 		),
-		Handler: createExamplesHandler(pluginReg),
+		Handler: createExamplesHandler(extensionReg),
 	})
 
 	log.Debug("Registered examples resources")
 }
 
-func createExamplesHandler(pluginReg *plugin.Registry) ReadHandler {
+func createExamplesHandler(extensionReg *extension.Registry) ReadHandler {
 	return func(_ context.Context, _ string) (string, error) {
-		// Use AllExamples to include examples from all plugins,
+		// Use AllExamples to include examples from all extensions,
 		// not just initialized ones (examples don't need credentials).
-		examples := pluginReg.AllExamples()
+		examples := extensionReg.AllExamples()
 
 		data, err := json.MarshalIndent(examples, "", "  ")
 		if err != nil {
@@ -45,8 +45,8 @@ func createExamplesHandler(pluginReg *plugin.Registry) ReadHandler {
 	}
 }
 
-// GetQueryExamples returns all query examples from ALL registered plugins,
+// GetQueryExamples returns all query examples from ALL registered extensions,
 // regardless of initialization status. Examples are static embedded data.
-func GetQueryExamples(pluginReg *plugin.Registry) map[string]types.ExampleCategory {
-	return pluginReg.AllExamples()
+func GetQueryExamples(extensionReg *extension.Registry) map[string]types.ExampleCategory {
+	return extensionReg.AllExamples()
 }

@@ -1,5 +1,5 @@
 // Package app provides the shared application core used by both the MCP server and the CLI.
-// It handles plugin initialization, proxy connection, sandbox setup, and semantic search indices.
+// It handles extension initialization, proxy connection, sandbox setup, and semantic search indices.
 package app
 
 import (
@@ -7,23 +7,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/ethpandaops/mcp/pkg/cartographoor"
 	"github.com/ethpandaops/mcp/pkg/config"
-	"github.com/ethpandaops/mcp/pkg/embedding"
-	"github.com/ethpandaops/mcp/pkg/plugin"
+	"github.com/ethpandaops/mcp/pkg/extension"
 	"github.com/ethpandaops/mcp/pkg/proxy"
-	"github.com/ethpandaops/mcp/pkg/resource"
 	"github.com/ethpandaops/mcp/pkg/sandbox"
-	"github.com/ethpandaops/mcp/runbooks"
 
-	clickhouseplugin "github.com/ethpandaops/mcp/plugins/clickhouse"
-	doraplugin "github.com/ethpandaops/mcp/plugins/dora"
-	ethnodeplugin "github.com/ethpandaops/mcp/plugins/ethnode"
-	lokiplugin "github.com/ethpandaops/mcp/plugins/loki"
-	prometheusplugin "github.com/ethpandaops/mcp/plugins/prometheus"
+	clickhouseextension "github.com/ethpandaops/mcp/extensions/clickhouse"
+	doraextension "github.com/ethpandaops/mcp/extensions/dora"
+	ethnodeextension "github.com/ethpandaops/mcp/extensions/ethnode"
+	lokiextension "github.com/ethpandaops/mcp/extensions/loki"
+	prometheusextension "github.com/ethpandaops/mcp/extensions/prometheus"
 )
 
 // App contains the shared core components used by both the MCP server and CLI.
@@ -31,14 +28,10 @@ type App struct {
 	log logrus.FieldLogger
 	cfg *config.Config
 
-	PluginRegistry  *plugin.Registry
-	Sandbox         sandbox.Service
-	ProxyClient     proxy.Client
-	Cartographoor   resource.CartographoorClient
-	ExampleIndex    *resource.ExampleIndex
-	RunbookRegistry *runbooks.Registry
-	RunbookIndex    *resource.RunbookIndex
-	Embedder        *embedding.Embedder
+	ExtensionRegistry *extension.Registry
+	Sandbox           sandbox.Service
+	ProxyClient       proxy.Client
+	Cartographoor     cartographoor.CartographoorClient
 }
 
 // New creates a new App.
@@ -55,17 +48,17 @@ func (a *App) Config() *config.Config {
 }
 
 // Build initializes all shared components in dependency order:
-// plugin registry -> sandbox -> proxy -> plugins start -> cartographoor -> search indices.
+// extension registry -> sandbox -> proxy -> extensions start -> cartographoor -> search indices.
 func (a *App) Build(ctx context.Context) error {
 	a.log.Info("Building application dependencies")
 
-	// 1. Build and initialize plugin registry.
-	pluginReg, err := a.buildPluginRegistry()
+	// 1. Build and initialize extension registry.
+	extensionReg, err := a.buildExtensionRegistry()
 	if err != nil {
-		return fmt.Errorf("building plugin registry: %w", err)
+		return fmt.Errorf("building extension registry: %w", err)
 	}
 
-	a.PluginRegistry = pluginReg
+	a.ExtensionRegistry = extensionReg
 
 	// 2. Create and start sandbox service.
 	sandboxSvc, err := sandbox.New(a.cfg.Sandbox, a.log)
@@ -91,22 +84,22 @@ func (a *App) Build(ctx context.Context) error {
 	a.ProxyClient = proxyClient
 	a.log.WithField("url", proxyClient.URL()).Info("Proxy client connected")
 
-	// 4. Inject proxy client into plugins and start all plugins.
+	// 4. Inject proxy client into extensions and start all extensions.
 	a.injectProxyClient()
 
-	if err := a.PluginRegistry.StartAll(ctx); err != nil {
+	if err := a.ExtensionRegistry.StartAll(ctx); err != nil {
 		a.stop(ctx)
 
-		return fmt.Errorf("starting plugins: %w", err)
+		return fmt.Errorf("starting extensions: %w", err)
 	}
 
-	a.log.Info("All plugins started")
+	a.log.Info("All extensions started")
 
 	// 5. Create and start cartographoor client.
-	cartographoorClient := resource.NewCartographoorClient(a.log, resource.CartographoorConfig{
-		URL:      resource.DefaultCartographoorURL,
-		CacheTTL: resource.DefaultCacheTTL,
-		Timeout:  resource.DefaultHTTPTimeout,
+	cartographoorClient := cartographoor.NewCartographoorClient(a.log, cartographoor.CartographoorConfig{
+		URL:      cartographoor.DefaultCartographoorURL,
+		CacheTTL: cartographoor.DefaultCacheTTL,
+		Timeout:  cartographoor.DefaultHTTPTimeout,
 	})
 
 	if err := cartographoorClient.Start(ctx); err != nil {
@@ -118,31 +111,24 @@ func (a *App) Build(ctx context.Context) error {
 	a.Cartographoor = cartographoorClient
 	a.log.Info("Cartographoor client started")
 
-	// 6. Inject cartographoor client into plugins.
+	// 6. Inject cartographoor client into extensions.
 	a.injectCartographoorClient()
-
-	// 7. Build semantic search indices.
-	if err := a.buildSearchIndices(); err != nil {
-		a.stop(ctx)
-
-		return fmt.Errorf("building search indices: %w", err)
-	}
 
 	return nil
 }
 
-// BuildLight initializes only the plugin registry and proxy client.
-// Plugins are started (e.g., schema discovery) but sandbox, cartographoor,
+// BuildLight initializes only the extension registry and proxy client.
+// Extensions are started (e.g., schema discovery) but sandbox, cartographoor,
 // and semantic search indices are not created.
 func (a *App) BuildLight(ctx context.Context) error {
 	a.log.Info("Building lightweight application dependencies")
 
-	pluginReg, err := a.buildPluginRegistry()
+	extensionReg, err := a.buildExtensionRegistry()
 	if err != nil {
-		return fmt.Errorf("building plugin registry: %w", err)
+		return fmt.Errorf("building extension registry: %w", err)
 	}
 
-	a.PluginRegistry = pluginReg
+	a.ExtensionRegistry = extensionReg
 
 	proxyClient := a.buildProxyClient()
 	if err := proxyClient.Start(ctx); err != nil {
@@ -154,28 +140,28 @@ func (a *App) BuildLight(ctx context.Context) error {
 
 	a.injectProxyClient()
 
-	if err := a.PluginRegistry.StartAll(ctx); err != nil {
+	if err := a.ExtensionRegistry.StartAll(ctx); err != nil {
 		a.stop(ctx)
 
-		return fmt.Errorf("starting plugins: %w", err)
+		return fmt.Errorf("starting extensions: %w", err)
 	}
 
-	a.log.Info("All plugins started")
+	a.log.Info("All extensions started")
 
 	return nil
 }
 
-// BuildWithSandbox initializes plugins, proxy, and sandbox — but skips
+// BuildWithSandbox initializes extensions, proxy, and sandbox — but skips
 // cartographoor and semantic search indices. Used by the CLI execute command.
 func (a *App) BuildWithSandbox(ctx context.Context) error {
 	a.log.Info("Building application dependencies (with sandbox)")
 
-	pluginReg, err := a.buildPluginRegistry()
+	extensionReg, err := a.buildExtensionRegistry()
 	if err != nil {
-		return fmt.Errorf("building plugin registry: %w", err)
+		return fmt.Errorf("building extension registry: %w", err)
 	}
 
-	a.PluginRegistry = pluginReg
+	a.ExtensionRegistry = extensionReg
 
 	sandboxSvc, err := sandbox.New(a.cfg.Sandbox, a.log)
 	if err != nil {
@@ -201,13 +187,13 @@ func (a *App) BuildWithSandbox(ctx context.Context) error {
 
 	a.injectProxyClient()
 
-	if err := a.PluginRegistry.StartAll(ctx); err != nil {
+	if err := a.ExtensionRegistry.StartAll(ctx); err != nil {
 		a.stop(ctx)
 
-		return fmt.Errorf("starting plugins: %w", err)
+		return fmt.Errorf("starting extensions: %w", err)
 	}
 
-	a.log.Info("All plugins started")
+	a.log.Info("All extensions started")
 
 	return nil
 }
@@ -220,18 +206,12 @@ func (a *App) Stop(ctx context.Context) error {
 }
 
 func (a *App) stop(ctx context.Context) {
-	if a.ExampleIndex != nil {
-		_ = a.ExampleIndex.Close()
-	} else if a.Embedder != nil {
-		_ = a.Embedder.Close()
-	}
-
 	if a.Cartographoor != nil {
 		_ = a.Cartographoor.Stop()
 	}
 
-	if a.PluginRegistry != nil {
-		a.PluginRegistry.StopAll(ctx)
+	if a.ExtensionRegistry != nil {
+		a.ExtensionRegistry.StopAll(ctx)
 	}
 
 	if a.ProxyClient != nil {
@@ -243,58 +223,58 @@ func (a *App) stop(ctx context.Context) {
 	}
 }
 
-func (a *App) buildPluginRegistry() (*plugin.Registry, error) {
-	reg := plugin.NewRegistry(a.log)
+func (a *App) buildExtensionRegistry() (*extension.Registry, error) {
+	reg := extension.NewRegistry(a.log)
 
-	// Register all compiled-in plugins.
-	reg.Add(clickhouseplugin.New())
-	reg.Add(doraplugin.New())
-	reg.Add(ethnodeplugin.New())
-	reg.Add(lokiplugin.New())
-	reg.Add(prometheusplugin.New())
+	// Register all compiled-in extensions.
+	reg.Add(clickhouseextension.New())
+	reg.Add(doraextension.New())
+	reg.Add(ethnodeextension.New())
+	reg.Add(lokiextension.New())
+	reg.Add(prometheusextension.New())
 
-	// Initialize plugins that have config or are default-enabled.
+	// Initialize extensions that have config or are default-enabled.
 	for _, name := range reg.All() {
-		rawYAML, err := a.cfg.PluginConfigYAML(name)
+		rawYAML, err := a.cfg.ExtensionConfigYAML(name)
 		if err != nil {
-			return nil, fmt.Errorf("getting config for plugin %q: %w", name, err)
+			return nil, fmt.Errorf("getting config for extension %q: %w", name, err)
 		}
 
 		if rawYAML == nil {
-			// Check if plugin is default-enabled.
-			p := reg.Get(name)
-			if de, ok := p.(plugin.DefaultEnabled); ok && de.DefaultEnabled() {
-				if err := reg.InitPlugin(name, nil); err != nil {
-					if errors.Is(err, plugin.ErrNoValidConfig) {
-						a.log.WithField("plugin", name).Debug("Default-enabled plugin has no valid config, skipping")
+			// Check if the extension is default-enabled.
+			ext := reg.Get(name)
+			if de, ok := ext.(extension.DefaultEnabled); ok && de.DefaultEnabled() {
+				if err := reg.InitExtension(name, nil); err != nil {
+					if errors.Is(err, extension.ErrNoValidConfig) {
+						a.log.WithField("extension", name).Debug("Default-enabled extension has no valid config, skipping")
 
 						continue
 					}
 
-					return nil, fmt.Errorf("initializing default-enabled plugin %q: %w", name, err)
+					return nil, fmt.Errorf("initializing default-enabled extension %q: %w", name, err)
 				}
 
 				continue
 			}
 
-			a.log.WithField("plugin", name).Debug("Plugin not configured, skipping")
+			a.log.WithField("extension", name).Debug("Extension not configured, skipping")
 
 			continue
 		}
 
-		if err := reg.InitPlugin(name, rawYAML); err != nil {
+		if err := reg.InitExtension(name, rawYAML); err != nil {
 			// Skip if no valid config (e.g., env vars not set).
-			if errors.Is(err, plugin.ErrNoValidConfig) {
-				a.log.WithField("plugin", name).Debug("Plugin has no valid config entries, skipping")
+			if errors.Is(err, extension.ErrNoValidConfig) {
+				a.log.WithField("extension", name).Debug("Extension has no valid config entries, skipping")
 
 				continue
 			}
 
-			return nil, fmt.Errorf("initializing plugin %q: %w", name, err)
+			return nil, fmt.Errorf("initializing extension %q: %w", name, err)
 		}
 	}
 
-	a.log.WithField("initialized_count", len(reg.Initialized())).Info("Plugin registry built")
+	a.log.WithField("initialized_count", len(reg.Initialized())).Info("Extension registry built")
 
 	return reg, nil
 }
@@ -313,19 +293,19 @@ func (a *App) buildProxyClient() proxy.Client {
 }
 
 func (a *App) injectProxyClient() {
-	for _, p := range a.PluginRegistry.Initialized() {
-		if aware, ok := p.(plugin.ProxyAware); ok {
+	for _, ext := range a.ExtensionRegistry.Initialized() {
+		if aware, ok := ext.(extension.ProxyAware); ok {
 			aware.SetProxyClient(a.ProxyClient)
-			a.log.WithField("plugin", p.Name()).Debug("Injected proxy client into plugin")
+			a.log.WithField("extension", ext.Name()).Debug("Injected proxy client into extension")
 		}
 	}
 }
 
 func (a *App) injectCartographoorClient() {
-	for _, p := range a.PluginRegistry.Initialized() {
-		if aware, ok := p.(plugin.CartographoorAware); ok {
+	for _, ext := range a.ExtensionRegistry.Initialized() {
+		if aware, ok := ext.(extension.CartographoorAware); ok {
 			aware.SetCartographoorClient(a.Cartographoor)
-			a.log.WithField("plugin", p.Name()).Debug("Injected cartographoor client into plugin")
+			a.log.WithField("extension", ext.Name()).Debug("Injected cartographoor client into extension")
 		}
 	}
 }
@@ -333,7 +313,7 @@ func (a *App) injectCartographoorClient() {
 // SandboxEnv builds credential-free environment variables for sandbox execution.
 // Includes proxy URL, datasource info, and S3 bucket — but no credentials.
 func (a *App) SandboxEnv() (map[string]string, error) {
-	env, err := a.PluginRegistry.SandboxEnv()
+	env, err := a.ExtensionRegistry.SandboxEnv()
 	if err != nil {
 		return nil, fmt.Errorf("collecting sandbox env: %w", err)
 	}
@@ -348,7 +328,7 @@ func (a *App) SandboxEnv() (map[string]string, error) {
 		env["ETHPANDAOPS_S3_PUBLIC_URL_PREFIX"] = prefix
 	}
 
-	// Datasources are proxy-authoritative; override plugin-provided lists.
+	// Datasources are proxy-authoritative; override extension-provided lists.
 	delete(env, "ETHPANDAOPS_CLICKHOUSE_DATASOURCES")
 	delete(env, "ETHPANDAOPS_PROMETHEUS_DATASOURCES")
 	delete(env, "ETHPANDAOPS_LOKI_DATASOURCES")
@@ -369,53 +349,4 @@ func (a *App) SandboxEnv() (map[string]string, error) {
 	}
 
 	return env, nil
-}
-
-func (a *App) buildSearchIndices() error {
-	cfg := a.cfg.SemanticSearch
-	if cfg.ModelPath == "" {
-		return fmt.Errorf("semantic_search.model_path is required")
-	}
-
-	if _, err := os.Stat(cfg.ModelPath); os.IsNotExist(err) {
-		return fmt.Errorf("embedding model not found at %s (run 'make download-models' to fetch it)", cfg.ModelPath)
-	}
-
-	embedder, err := embedding.New(cfg.ModelPath, cfg.GPULayers)
-	if err != nil {
-		return fmt.Errorf("creating embedder: %w", err)
-	}
-
-	a.Embedder = embedder
-
-	exampleIndex, err := resource.NewExampleIndex(a.log, embedder, resource.GetQueryExamples(a.PluginRegistry))
-	if err != nil {
-		return fmt.Errorf("building example index: %w", err)
-	}
-
-	a.ExampleIndex = exampleIndex
-	a.log.Info("Semantic search example index built")
-
-	runbookReg, err := runbooks.NewRegistry(a.log)
-	if err != nil {
-		return fmt.Errorf("creating runbook registry: %w", err)
-	}
-
-	a.RunbookRegistry = runbookReg
-
-	if runbookReg.Count() == 0 {
-		a.log.Warn("No runbooks found, runbook search will be disabled")
-
-		return nil
-	}
-
-	runbookIndex, err := resource.NewRunbookIndex(a.log, embedder, runbookReg.All())
-	if err != nil {
-		return fmt.Errorf("building runbook index: %w", err)
-	}
-
-	a.RunbookIndex = runbookIndex
-	a.log.Info("Semantic search runbook index built")
-
-	return nil
 }

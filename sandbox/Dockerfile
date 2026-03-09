@@ -25,12 +25,12 @@ RUN uv pip install --system --no-cache -r /tmp/requirements.txt && \
 # Install the ethpandaops platform library
 COPY sandbox/ethpandaops /opt/ethpandaops-pkg
 
-# Copy plugin Python modules into the package
-COPY plugins/clickhouse/python/clickhouse.py /opt/ethpandaops-pkg/ethpandaops/clickhouse.py
-COPY plugins/dora/python/dora.py /opt/ethpandaops-pkg/ethpandaops/dora.py
-COPY plugins/loki/python/loki.py /opt/ethpandaops-pkg/ethpandaops/loki.py
-COPY plugins/prometheus/python/prometheus.py /opt/ethpandaops-pkg/ethpandaops/prometheus.py
-COPY plugins/ethnode/python/ethnode.py /opt/ethpandaops-pkg/ethpandaops/ethnode.py
+# Copy extension Python modules into the package
+COPY extensions/clickhouse/python/clickhouse.py /opt/ethpandaops-pkg/ethpandaops/clickhouse.py
+COPY extensions/dora/python/dora.py /opt/ethpandaops-pkg/ethpandaops/dora.py
+COPY extensions/loki/python/loki.py /opt/ethpandaops-pkg/ethpandaops/loki.py
+COPY extensions/prometheus/python/prometheus.py /opt/ethpandaops-pkg/ethpandaops/prometheus.py
+COPY extensions/ethnode/python/ethnode.py /opt/ethpandaops-pkg/ethpandaops/ethnode.py
 
 RUN uv pip install --system --no-cache /opt/ethpandaops-pkg && rm -rf /opt/ethpandaops-pkg
 

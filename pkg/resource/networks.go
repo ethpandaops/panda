@@ -10,6 +10,8 @@ import (
 	"github.com/ethpandaops/cartographoor/pkg/discovery"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/sirupsen/logrus"
+
+	"github.com/ethpandaops/mcp/pkg/cartographoor"
 )
 
 // networkURIPattern matches networks://{name} URIs.
@@ -54,7 +56,7 @@ type GroupDetailResponse struct {
 }
 
 // RegisterNetworksResources registers all network-related resources with the registry.
-func RegisterNetworksResources(log logrus.FieldLogger, reg Registry, client CartographoorClient) {
+func RegisterNetworksResources(log logrus.FieldLogger, reg Registry, client cartographoor.CartographoorClient) {
 	log = log.WithField("resource", "networks")
 
 	// Register networks://active - compact list of active networks
@@ -98,7 +100,7 @@ func RegisterNetworksResources(log logrus.FieldLogger, reg Registry, client Cart
 }
 
 // createActiveNetworksHandler returns a handler for networks://active.
-func createActiveNetworksHandler(client CartographoorClient) ReadHandler {
+func createActiveNetworksHandler(client cartographoor.CartographoorClient) ReadHandler {
 	return func(_ context.Context, _ string) (string, error) {
 		networks := client.GetActiveNetworks()
 		groups := client.GetGroups()
@@ -130,7 +132,7 @@ func createActiveNetworksHandler(client CartographoorClient) ReadHandler {
 }
 
 // createAllNetworksHandler returns a handler for networks://all.
-func createAllNetworksHandler(client CartographoorClient) ReadHandler {
+func createAllNetworksHandler(client cartographoor.CartographoorClient) ReadHandler {
 	return func(_ context.Context, _ string) (string, error) {
 		networks := client.GetAllNetworks()
 		groups := client.GetGroups()
@@ -159,7 +161,7 @@ func createAllNetworksHandler(client CartographoorClient) ReadHandler {
 }
 
 // createNetworkDetailHandler returns a handler for networks://{name}.
-func createNetworkDetailHandler(log logrus.FieldLogger, client CartographoorClient) ReadHandler {
+func createNetworkDetailHandler(log logrus.FieldLogger, client cartographoor.CartographoorClient) ReadHandler {
 	return func(_ context.Context, uri string) (string, error) {
 		matches := networkURIPattern.FindStringSubmatch(uri)
 		if len(matches) != 2 {

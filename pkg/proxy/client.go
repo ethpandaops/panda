@@ -32,7 +32,7 @@ type Client interface {
 
 	// RegisterToken creates a new auth token for a sandbox execution.
 	// For JWT-based auth, returns the user's JWT.
-	// For token-based auth, this would require coordination with an embedded proxy (not supported by Client).
+	// For token-based auth, this would require server-managed token minting outside the plain HTTP client.
 	RegisterToken(executionID string) string
 
 	// RevokeToken revokes a token for an execution.

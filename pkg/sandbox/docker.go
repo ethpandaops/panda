@@ -1236,7 +1236,7 @@ func (b *DockerBackend) ensureImage(ctx context.Context) error {
 
 // ensureNetwork ensures the configured Docker network exists.
 // For user-defined networks, it checks if the network exists and creates it
-// if missing. This enables stdio mode (outside docker-compose) to work without
+// if missing. This enables stdio mode (outside docker compose) to work without
 // requiring manual network creation. Built-in network modes (host, none,
 // bridge, default) are skipped.
 func (b *DockerBackend) ensureNetwork(ctx context.Context) error {

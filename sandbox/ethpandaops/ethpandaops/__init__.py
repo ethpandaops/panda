@@ -28,14 +28,14 @@ Example usage:
 
 from . import storage
 
-# Plugin modules are assembled at Docker build time
+# Extension modules are assembled at Docker build time
 # and can be imported as: from ethpandaops import clickhouse, prometheus, loki
 __all__ = ["storage"]
 __version__ = "0.1.0"
 
 
 def __getattr__(name):
-    """Lazy import for plugin modules (clickhouse, prometheus, loki, dora)."""
+    """Lazy import for extension modules (clickhouse, prometheus, loki, dora)."""
     if name in ("clickhouse", "prometheus", "loki", "dora", "ethnode"):
         import importlib
 

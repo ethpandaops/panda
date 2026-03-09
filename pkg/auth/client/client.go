@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -197,32 +198,55 @@ func (c *client) discover(ctx context.Context) error {
 		return nil
 	}
 
-	discoveryURL := strings.TrimSuffix(c.cfg.IssuerURL, "/") + "/.well-known/openid-configuration"
+	issuer := strings.TrimSuffix(c.cfg.IssuerURL, "/")
+	discoveryPaths := []string{
+		"/.well-known/openid-configuration",
+		"/.well-known/oauth-authorization-server",
+	}
 
+	var errs []string
+
+	for _, discoveryPath := range discoveryPaths {
+		oidc, err := c.fetchDiscovery(ctx, issuer+discoveryPath)
+		if err == nil {
+			c.oidc = oidc
+			c.loaded = true
+			return nil
+		}
+
+		errs = append(errs, fmt.Sprintf("%s: %v", discoveryPath, err))
+	}
+
+	return fmt.Errorf("discovering auth metadata failed: %s", strings.Join(errs, "; "))
+}
+
+func (c *client) fetchDiscovery(ctx context.Context, discoveryURL string) (*OIDCConfig, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, discoveryURL, nil)
 	if err != nil {
-		return fmt.Errorf("creating request: %w", err)
+		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("making request: %w", err)
+		return nil, fmt.Errorf("making request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("discovery endpoint returned status %d", resp.StatusCode)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		if len(body) == 0 {
+			return nil, fmt.Errorf("discovery endpoint returned status %d", resp.StatusCode)
+		}
+
+		return nil, fmt.Errorf("discovery endpoint returned status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	var oidc OIDCConfig
 	if err := json.NewDecoder(resp.Body).Decode(&oidc); err != nil {
-		return fmt.Errorf("decoding response: %w", err)
+		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
-	c.oidc = &oidc
-	c.loaded = true
-
-	return nil
+	return &oidc, nil
 }
 
 // buildAuthURL builds the authorization URL.

@@ -19,15 +19,16 @@ const DatasourceHeader = "X-Datasource"
 
 // ClickHouseConfig holds ClickHouse proxy configuration for a single cluster.
 type ClickHouseConfig struct {
-	Name       string
-	Host       string
-	Port       int
-	Database   string
-	Username   string
-	Password   string
-	Secure     bool
-	SkipVerify bool
-	Timeout    int
+	Name        string
+	Description string
+	Host        string
+	Port        int
+	Database    string
+	Username    string
+	Password    string
+	Secure      bool
+	SkipVerify  bool
+	Timeout     int
 }
 
 // ClickHouseHandler handles requests to ClickHouse clusters.

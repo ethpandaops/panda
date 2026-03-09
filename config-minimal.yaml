@@ -1,5 +1,5 @@
-# Minimal config for testing the new proxy architecture
-# No plugins configured - datasources discovered from proxy
+# Minimal server config
+# ep itself only needs server.url in its own client config
 
 server:
   host: "0.0.0.0"

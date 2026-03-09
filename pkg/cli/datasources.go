@@ -6,11 +6,6 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-
-	"github.com/ethpandaops/mcp/pkg/app"
-	"github.com/ethpandaops/mcp/pkg/config"
-	"github.com/ethpandaops/mcp/pkg/proxy"
-	"github.com/ethpandaops/mcp/pkg/types"
 )
 
 var (
@@ -20,8 +15,8 @@ var (
 
 var datasourcesCmd = &cobra.Command{
 	Use:   "datasources",
-	Short: "List available datasources from the proxy",
-	Long: `List all datasources discovered from the credential proxy, including
+	Short: "List available datasources from the server",
+	Long: `List all datasources exposed by the configured server, including
 ClickHouse clusters, Prometheus instances, and Loki instances.
 
 Examples:
@@ -39,33 +34,22 @@ func init() {
 
 func runDatasources(_ *cobra.Command, _ []string) error {
 	ctx := context.Background()
-
-	cfg, err := config.Load(cfgFile)
+	response, err := listDatasources(ctx, datasourcesType)
 	if err != nil {
-		return fmt.Errorf("loading config: %w", err)
+		return fmt.Errorf("listing datasources: %w", err)
 	}
-
-	// Only need the proxy client for datasource discovery.
-	proxyClient := buildProxyClient(cfg)
-	if err := proxyClient.Start(ctx); err != nil {
-		return fmt.Errorf("connecting to proxy: %w", err)
-	}
-
-	defer func() { _ = proxyClient.Stop(ctx) }()
-
-	infos := collectDatasourceInfo(proxyClient, datasourcesType)
 
 	if datasourcesJSON {
-		return printJSON(map[string]any{"datasources": infos})
+		return printJSON(response)
 	}
 
-	if len(infos) == 0 {
+	if len(response.Datasources) == 0 {
 		fmt.Println("No datasources found.")
 
 		return nil
 	}
 
-	for _, info := range infos {
+	for _, info := range response.Datasources {
 		desc := info.Description
 		if desc == "" {
 			desc = info.Name
@@ -75,51 +59,6 @@ func runDatasources(_ *cobra.Command, _ []string) error {
 	}
 
 	return nil
-}
-
-// buildProxyClient creates a proxy client from config. Shared by multiple commands.
-func buildProxyClient(cfg *config.Config) proxy.Client {
-	proxyCfg := proxy.ClientConfig{
-		URL: cfg.Proxy.URL,
-	}
-
-	if cfg.Proxy.Auth != nil {
-		proxyCfg.IssuerURL = cfg.Proxy.Auth.IssuerURL
-		proxyCfg.ClientID = cfg.Proxy.Auth.ClientID
-	}
-
-	return proxy.NewClient(log, proxyCfg)
-}
-
-// buildLightApp creates an App with only plugins + proxy (no sandbox, no embedding).
-func buildLightApp(ctx context.Context, cfg *config.Config) (*app.App, error) {
-	a := app.New(log, cfg)
-	if err := a.BuildLight(ctx); err != nil {
-		return nil, err
-	}
-
-	return a, nil
-}
-
-func collectDatasourceInfo(proxyClient proxy.Client, filterType string) []types.DatasourceInfo {
-	var all []types.DatasourceInfo
-
-	all = append(all, proxyClient.ClickHouseDatasourceInfo()...)
-	all = append(all, proxyClient.PrometheusDatasourceInfo()...)
-	all = append(all, proxyClient.LokiDatasourceInfo()...)
-
-	if filterType == "" {
-		return all
-	}
-
-	var filtered []types.DatasourceInfo
-	for _, info := range all {
-		if info.Type == filterType {
-			filtered = append(filtered, info)
-		}
-	}
-
-	return filtered
 }
 
 // printJSON marshals v as indented JSON and prints it.

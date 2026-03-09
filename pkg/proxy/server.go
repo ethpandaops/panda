@@ -46,12 +46,15 @@ type server struct {
 	cfg     ServerConfig
 	httpSrv *http.Server
 	mux     *http.ServeMux
+	url     string
 
 	authenticator Authenticator
 	rateLimiter   *RateLimiter
 	auditor       *Auditor
+	tokens        *TokenStore
 
 	clickhouseHandler *handlers.ClickHouseHandler
+	operationsHandler *handlers.OperationsHandler
 	prometheusHandler *handlers.PrometheusHandler
 	lokiHandler       *handlers.LokiHandler
 	s3Handler         *handlers.S3Handler
@@ -62,14 +65,24 @@ type server struct {
 }
 
 // Compile-time interface check.
-var _ Server = (*server)(nil)
+var (
+	_ Server  = (*server)(nil)
+	_ Service = (*server)(nil)
+)
 
 // NewServer creates a new proxy server.
 func NewServer(log logrus.FieldLogger, cfg ServerConfig) (Server, error) {
+	hostURL, port := advertisedURLs(cfg.Server.ListenAddr)
+
+	return newServer(log, cfg, hostURL, port)
+}
+
+func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (*server, error) {
 	s := &server{
 		log: log.WithField("component", "proxy"),
 		cfg: cfg,
 		mux: http.NewServeMux(),
+		url: hostURL,
 	}
 
 	// Create authenticator based on mode.
@@ -77,8 +90,8 @@ func NewServer(log logrus.FieldLogger, cfg ServerConfig) (Server, error) {
 	case AuthModeNone:
 		s.authenticator = NewNoneAuthenticator(log)
 	case AuthModeToken:
-		tokens := NewTokenStore(cfg.Auth.TokenTTL)
-		s.authenticator = NewTokenAuthenticator(log, tokens)
+		s.tokens = NewTokenStore(cfg.Auth.TokenTTL)
+		s.authenticator = NewTokenAuthenticator(log, s.tokens)
 	case AuthModeJWT:
 		if cfg.Auth.JWT == nil {
 			return nil, fmt.Errorf("JWT config is required for JWT auth mode")
@@ -129,6 +142,12 @@ func NewServer(log logrus.FieldLogger, cfg ServerConfig) (Server, error) {
 		s.ethNodeHandler = handlers.NewEthNodeHandler(log, *ethNodeConfig)
 	}
 
+	s.operationsHandler = handlers.NewOperationsHandler(log, chConfigs, promConfigs, lokiConfigs, ethNodeConfig)
+
+	if s.url == "" {
+		s.url = fmt.Sprintf("http://localhost:%s", port)
+	}
+
 	// Register routes.
 	s.registerRoutes()
 
@@ -167,6 +186,10 @@ func (s *server) registerRoutes() {
 	// Authenticated routes.
 	if s.clickhouseHandler != nil {
 		s.mux.Handle("/clickhouse/", chain(s.clickhouseHandler))
+	}
+
+	if s.operationsHandler != nil {
+		s.mux.Handle("/api/v1/operations/", chain(s.operationsHandler))
 	}
 
 	if s.prometheusHandler != nil {
@@ -307,6 +330,10 @@ func (s *server) Stop(ctx context.Context) error {
 		s.rateLimiter.Stop()
 	}
 
+	if s.tokens != nil {
+		s.tokens.Stop()
+	}
+
 	// Shutdown HTTP server.
 	if s.httpSrv != nil {
 		if err := s.httpSrv.Shutdown(ctx); err != nil {
@@ -322,13 +349,25 @@ func (s *server) Stop(ctx context.Context) error {
 
 // URL returns the proxy URL.
 func (s *server) URL() string {
-	// Extract port from listen address.
-	port := "18081"
-	if _, p, err := net.SplitHostPort(s.cfg.Server.ListenAddr); err == nil && p != "" {
-		port = p
+	return s.url
+}
+
+// RegisterToken creates a token for the given execution ID.
+func (s *server) RegisterToken(executionID string) string {
+	if s.tokens == nil {
+		return "none"
 	}
 
-	return fmt.Sprintf("http://localhost:%s", port)
+	return s.tokens.Register(executionID)
+}
+
+// RevokeToken revokes a token for the given execution ID.
+func (s *server) RevokeToken(executionID string) {
+	if s.tokens == nil {
+		return
+	}
+
+	s.tokens.Revoke(executionID)
 }
 
 // ClickHouseDatasources returns the list of ClickHouse datasource names.
@@ -451,4 +490,15 @@ func (s *server) S3PublicURLPrefix() string {
 // EthNodeAvailable returns true if the ethnode handler is configured.
 func (s *server) EthNodeAvailable() bool {
 	return s.ethNodeHandler != nil
+}
+
+func advertisedURLs(listenAddr string) (string, string) {
+	port := "18081"
+	if _, p, err := net.SplitHostPort(listenAddr); err == nil && p != "" {
+		port = p
+	}
+
+	url := fmt.Sprintf("http://localhost:%s", port)
+
+	return url, port
 }

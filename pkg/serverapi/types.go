@@ -1,0 +1,94 @@
+package serverapi
+
+import (
+	"time"
+
+	"github.com/ethpandaops/mcp/pkg/sandbox"
+	"github.com/ethpandaops/mcp/pkg/types"
+)
+
+type DatasourcesResponse struct {
+	Datasources []types.DatasourceInfo `json:"datasources"`
+}
+
+type ResourceResponse struct {
+	URI      string `json:"uri"`
+	MIMEType string `json:"mime_type"`
+	Content  string `json:"content"`
+}
+
+type SearchExampleResult struct {
+	CategoryKey     string  `json:"category_key"`
+	CategoryName    string  `json:"category_name"`
+	ExampleName     string  `json:"example_name"`
+	Description     string  `json:"description"`
+	Query           string  `json:"query"`
+	TargetCluster   string  `json:"target_cluster"`
+	SimilarityScore float64 `json:"similarity_score"`
+}
+
+type SearchExamplesResponse struct {
+	Type                string                 `json:"type"`
+	Query               string                 `json:"query"`
+	CategoryFilter      string                 `json:"category_filter,omitempty"`
+	TotalMatches        int                    `json:"total_matches"`
+	Results             []*SearchExampleResult `json:"results"`
+	AvailableCategories []string               `json:"available_categories"`
+}
+
+type SearchRunbookResult struct {
+	Name            string   `json:"name"`
+	Description     string   `json:"description"`
+	Tags            []string `json:"tags"`
+	Prerequisites   []string `json:"prerequisites"`
+	Content         string   `json:"content"`
+	FilePath        string   `json:"file_path"`
+	SimilarityScore float64  `json:"similarity_score"`
+}
+
+type SearchRunbooksResponse struct {
+	Type          string                 `json:"type"`
+	Query         string                 `json:"query"`
+	TagFilter     string                 `json:"tag_filter,omitempty"`
+	TotalMatches  int                    `json:"total_matches"`
+	Results       []*SearchRunbookResult `json:"results"`
+	AvailableTags []string               `json:"available_tags"`
+}
+
+type ExecuteRequest struct {
+	Code      string `json:"code"`
+	Timeout   int    `json:"timeout,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
+}
+
+type ExecuteResponse struct {
+	Stdout              string                `json:"stdout,omitempty"`
+	Stderr              string                `json:"stderr,omitempty"`
+	ExitCode            int                   `json:"exit_code"`
+	ExecutionID         string                `json:"execution_id"`
+	OutputFiles         []string              `json:"output_files,omitempty"`
+	Metrics             map[string]any        `json:"metrics,omitempty"`
+	DurationSeconds     float64               `json:"duration_seconds"`
+	SessionID           string                `json:"session_id,omitempty"`
+	SessionFiles        []sandbox.SessionFile `json:"session_files,omitempty"`
+	SessionTTLRemaining string                `json:"session_ttl_remaining,omitempty"`
+}
+
+type SessionResponse struct {
+	SessionID      string                `json:"session_id"`
+	CreatedAt      time.Time             `json:"created_at"`
+	LastUsed       time.Time             `json:"last_used"`
+	TTLRemaining   string                `json:"ttl_remaining"`
+	WorkspaceFiles []sandbox.SessionFile `json:"workspace_files,omitempty"`
+}
+
+type ListSessionsResponse struct {
+	Sessions    []SessionResponse `json:"sessions"`
+	Total       int               `json:"total"`
+	MaxSessions int               `json:"max_sessions"`
+}
+
+type CreateSessionResponse struct {
+	SessionID    string `json:"session_id"`
+	TTLRemaining string `json:"ttl_remaining,omitempty"`
+}
