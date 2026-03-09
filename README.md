@@ -73,7 +73,9 @@ Resources are available for getting started (`mcp://getting-started`), datasourc
 ## Development
 
 ```bash
-make build           # Build binary
+make build           # Build mcp and ep
+make install         # Install mcp and ep to GOPATH/bin
+make build-proxy     # Build standalone proxy binary
 make test            # Run tests
 make lint            # Run linters
 make docker          # Build Docker image
