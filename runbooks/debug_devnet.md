@@ -73,28 +73,34 @@ Before collecting data, determine which datasources have the target network. Thi
            instances = loki.get_label_values("ethpandaops", "instance", f'{{testnet="{network}"}}')
        except Exception:
            pass
+
+   # Check ethnode (direct node API access)
+   import os
+   has_ethnode = os.environ.get("ETHPANDAOPS_ETHNODE_AVAILABLE") == "true"
    ```
 
    Record the **data profile** in the debug report:
    - `has_dora: true/false`
    - `has_loki: true/false`
+   - `has_ethnode: true/false`
    - List of discovered instances (if Loki is available)
 
    **Routing rules:**
    - If the network is not found in **any** datasource → report to the user that the network doesn't exist in any known datasource and **stop**.
    - `has_dora = true` → Phase 1 (Dora) runs normally.
-   - `has_dora = false` → **Skip Phase 1 entirely.** Note in the debug report that Dora is unavailable. Phase 2 (Loki) becomes the primary data collection phase.
+   - `has_dora = false` → **Skip Phase 1 entirely.** Note in the debug report that Dora is unavailable. If `has_ethnode = true`, use ethnode to build a basic network baseline before proceeding to Phase 2 — query head slots, finality checkpoints, and sync status across discovered instances to approximate what Dora would have provided (see Phase 1 fallback below).
    - `has_loki = false` → Phase 2 is limited; note that log investigation is unavailable.
+   - `has_ethnode = true` → Direct node RPC queries are available in Phase 3 for hypothesis validation.
 
 ## Phase 1: Data Collection with Dora
 
-**Skip this phase if Phase 0 determined `has_dora = false`.**
+**Skip this phase if Phase 0 determined `has_dora = false`.** If `has_ethnode = true`, use the ethnode plugin (`search_examples("ethnode")` for patterns) to build a partial baseline: query head slots/roots, finality checkpoints, and sync status across the discovered instances. This helps answer the baseline questions in step 2 (single fork vs split, finalizing, which nodes are behind) without Dora. Append results to the debug report, then proceed to Phase 2.
 
 1. **Collect all Dora data** - In a single step, gather all network data and append raw responses to the debug report. You MAY combine these into one `execute_python` call:
 
    - **Network overview** — use `search_examples("network overview")` for the pattern. Note: `current_slot` is `epoch * 32` (epoch's first slot), not actual head slot.
    - **Network splits** — use `search_examples("network splits")`. A healthy network has one fork.
-   - **Epoch details** — use `search_examples("epoch summary")`. Iterate through ~9 epochs per hour across the active timeframe. You SHOULD use try/except per epoch to handle failures without crashing.
+   - **Epoch details** — use `search_examples("epoch summary")`. Iterate through ~9 epochs per hour across the active timeframe. **Always start from head epoch - 1** (the most recent completed epoch) — the head epoch is still in progress and will show artificially low participation. You SHOULD use try/except per epoch to handle failures without crashing.
    - **Missing proposers** — use `search_examples("missing proposers")`. Adjust `slot_lookback` to match the active timeframe (~300 slots per hour).
    - **Offline attesters** — use `search_examples("offline attesters")`.
 
@@ -107,7 +113,7 @@ Before collecting data, determine which datasources have the target network. Thi
 2. **Build a baseline summary** - You MUST summarize the network state before proceeding to log investigation:
    - Is the network on a single fork or has it split? (if split, this likely explains most other symptoms)
    - Is the network finalizing? How many epochs behind?
-   - What is the participation rate? (>66.7% required for finality)
+   - What is the participation rate? (>66.7% required for finality) **Use the last completed epoch, not the head epoch** — the head epoch is still in progress and will report misleadingly low participation.
    - Are there missed slots or empty epochs?
    - Which specific nodes/validators are offline or underperforming?
    - If there are multiple forks, which nodes are on which fork?
@@ -145,7 +151,7 @@ The standard Loki instance is `"ethpandaops"`. Refer to the query skill for Loki
 
    If multiple nodes are offline, you MUST query each one. Look for common error patterns across nodes — the same error on multiple CL nodes likely points to a shared cause (CL client bug, consensus rule issue).
 
-   **If Loki returns no logs at all** for a node, that is itself a signal — the node is likely completely down. Report this to the user so they can check the node directly.
+   **If Loki returns no logs at all** for a node, that is itself a signal — but it does not necessarily mean the node is down (it may just not be shipping logs). If `has_ethnode = true`, verify by querying the node directly (e.g. sync status or health check). If the node responds, it is running but not logging; if it is unreachable, it is truly down. Report either finding to the user.
 
 5. **Fetch EL logs if CL points to execution issues** - You MAY investigate EL logs if CL logs show:
    - Engine API errors (e.g. `engine_newPayload` failures, timeouts)
@@ -192,6 +198,18 @@ This concludes the **data collection phase**. If Dora was available, you should 
    - If you suspect a specific EIP is involved, and an EIP skill is available, use it to fetch the exact specification to confirm or rule out a faulty implementation.
 
    Append theories and reasoning to the debug report.
+
+### RPC Validation (requires `has_ethnode = true`)
+
+**If the ethnode plugin is available**, use direct node RPC queries via `from ethpandaops import ethnode` to validate hypotheses and gather concrete proof. Use `search_examples("ethnode")` for API patterns. Target the instances discovered in Phase 0 or identified as problematic in Phases 1–2.
+
+**When to use RPC:**
+- **Network split suspected** → compare head slots/roots and finality checkpoints across nodes on different forks; fetch the divergence block from each side
+- **Node offline/stuck** → check sync status and peer counts to confirm whether the node is down, syncing, or isolated
+- **Verifying a hypothesis** → when you need to confirm or rule out a theory, query the relevant nodes directly using curated functions or generic pass-through (`beacon_get`, `execution_rpc`) to get concrete evidence that strengthens the root cause analysis
+- **Finality stalled** → compare finality checkpoints across all nodes to find disagreements
+
+Append all RPC query results and analysis to the debug report.
 
 9. **Summarize findings** - You MUST present the user with:
    - A clear description of what is happening (symptoms)
