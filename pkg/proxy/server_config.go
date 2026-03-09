@@ -265,15 +265,16 @@ func (c *ServerConfig) ToHandlerConfigs() ([]handlers.ClickHouseConfig, []handle
 	chConfigs := make([]handlers.ClickHouseConfig, len(c.ClickHouse))
 	for i, ch := range c.ClickHouse {
 		chConfigs[i] = handlers.ClickHouseConfig{
-			Name:       ch.Name,
-			Host:       ch.Host,
-			Port:       ch.Port,
-			Database:   ch.Database,
-			Username:   ch.Username,
-			Password:   ch.Password,
-			Secure:     ch.Secure,
-			SkipVerify: ch.SkipVerify,
-			Timeout:    ch.Timeout,
+			Name:        ch.Name,
+			Description: ch.Description,
+			Host:        ch.Host,
+			Port:        ch.Port,
+			Database:    ch.Database,
+			Username:    ch.Username,
+			Password:    ch.Password,
+			Secure:      ch.Secure,
+			SkipVerify:  ch.SkipVerify,
+			Timeout:     ch.Timeout,
 		}
 	}
 

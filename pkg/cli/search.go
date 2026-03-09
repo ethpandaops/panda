@@ -9,7 +9,7 @@ import (
 
 	"github.com/ethpandaops/mcp/pkg/app"
 	"github.com/ethpandaops/mcp/pkg/config"
-	"github.com/ethpandaops/mcp/pkg/resource"
+	"github.com/ethpandaops/mcp/pkg/searchsvc"
 )
 
 var searchCmd = &cobra.Command{
@@ -107,72 +107,38 @@ func runSearchExamples(_ *cobra.Command, args []string) error {
 
 	defer func() { _ = a.Stop(ctx) }()
 
-	if a.ExampleIndex == nil {
-		return fmt.Errorf("example search index not available")
-	}
-
-	limit := searchExLimit
-	if limit < 1 {
-		limit = 1
-	} else if limit > 10 {
-		limit = 10
-	}
-
-	// Fetch extra results if filtering by category.
-	fetchLimit := limit
-	if searchExCategory != "" {
-		fetchLimit = limit * 3
-	}
-
-	results, err := a.ExampleIndex.Search(args[0], fetchLimit)
+	service := searchsvc.New(a.ExampleIndex, a.PluginRegistry, a.RunbookIndex, a.RunbookRegistry)
+	response, err := service.SearchExamples(args[0], searchExCategory, searchExLimit)
 	if err != nil {
-		return fmt.Errorf("searching: %w", err)
-	}
-
-	// Filter by category and score threshold.
-	var filtered []resource.SearchResult
-	for _, r := range results {
-		if r.Score < 0.3 {
-			continue
-		}
-
-		if searchExCategory != "" && r.CategoryKey != searchExCategory {
-			continue
-		}
-
-		filtered = append(filtered, r)
-
-		if len(filtered) >= limit {
-			break
-		}
+		return err
 	}
 
 	if searchExJSON {
 		return printJSON(map[string]any{
 			"query":   args[0],
-			"results": filtered,
+			"results": response.Results,
 		})
 	}
 
-	if len(filtered) == 0 {
+	if len(response.Results) == 0 {
 		fmt.Println("No matching examples found.")
 
 		return nil
 	}
 
-	for i, r := range filtered {
+	for i, r := range response.Results {
 		if i > 0 {
 			fmt.Println("---")
 		}
 
-		fmt.Printf("[%s] %s (score: %.2f)\n", r.CategoryName, r.Example.Name, r.Score)
-		fmt.Printf("  %s\n", r.Example.Description)
+		fmt.Printf("[%s] %s (score: %.2f)\n", r.CategoryName, r.ExampleName, r.SimilarityScore)
+		fmt.Printf("  %s\n", r.Description)
 
-		if r.Example.Cluster != "" {
-			fmt.Printf("  Cluster: %s\n", r.Example.Cluster)
+		if r.TargetCluster != "" {
+			fmt.Printf("  Cluster: %s\n", r.TargetCluster)
 		}
 
-		fmt.Printf("\n%s\n\n", r.Example.Query)
+		fmt.Printf("\n%s\n\n", r.Query)
 	}
 
 	return nil
@@ -188,83 +154,40 @@ func runSearchRunbooks(_ *cobra.Command, args []string) error {
 
 	defer func() { _ = a.Stop(ctx) }()
 
-	if a.RunbookIndex == nil {
-		return fmt.Errorf("runbook search index not available")
-	}
-
-	limit := searchRbLimit
-	if limit < 1 {
-		limit = 1
-	} else if limit > 5 {
-		limit = 5
-	}
-
-	fetchLimit := limit
-	if searchRbTag != "" {
-		fetchLimit = limit * 2
-	}
-
-	results, err := a.RunbookIndex.Search(args[0], fetchLimit)
+	service := searchsvc.New(a.ExampleIndex, a.PluginRegistry, a.RunbookIndex, a.RunbookRegistry)
+	response, err := service.SearchRunbooks(args[0], searchRbTag, searchRbLimit)
 	if err != nil {
-		return fmt.Errorf("searching: %w", err)
-	}
-
-	// Filter by tag and score threshold.
-	var filtered []resource.RunbookSearchResult
-	for _, r := range results {
-		if r.Score < 0.25 {
-			continue
-		}
-
-		if searchRbTag != "" && !containsTag(r.Runbook.Tags, searchRbTag) {
-			continue
-		}
-
-		filtered = append(filtered, r)
-
-		if len(filtered) >= limit {
-			break
-		}
+		return err
 	}
 
 	if searchRbJSON {
 		return printJSON(map[string]any{
 			"query":   args[0],
-			"results": filtered,
+			"results": response.Results,
 		})
 	}
 
-	if len(filtered) == 0 {
+	if len(response.Results) == 0 {
 		fmt.Println("No matching runbooks found.")
 
 		return nil
 	}
 
-	for i, r := range filtered {
+	for i, r := range response.Results {
 		if i > 0 {
 			fmt.Print("\n===\n\n")
 		}
 
-		fmt.Printf("%s (score: %.2f)\n", r.Runbook.Name, r.Score)
-		fmt.Printf("  %s\n", r.Runbook.Description)
-		fmt.Printf("  Tags: %s\n", strings.Join(r.Runbook.Tags, ", "))
+		fmt.Printf("%s (score: %.2f)\n", r.Name, r.SimilarityScore)
+		fmt.Printf("  %s\n", r.Description)
+		fmt.Printf("  Tags: %s\n", strings.Join(r.Tags, ", "))
 
-		if len(r.Runbook.Prerequisites) > 0 {
-			fmt.Printf("  Prerequisites: %s\n", strings.Join(r.Runbook.Prerequisites, ", "))
+		if len(r.Prerequisites) > 0 {
+			fmt.Printf("  Prerequisites: %s\n", strings.Join(r.Prerequisites, ", "))
 		}
 
-		fmt.Printf("\n%s\n", r.Runbook.Content)
+		fmt.Printf("\n%s\n", r.Content)
 	}
 
 	return nil
-}
-
-func containsTag(tags []string, target string) bool {
-	for _, t := range tags {
-		if strings.EqualFold(t, target) {
-			return true
-		}
-	}
-
-	return false
 }

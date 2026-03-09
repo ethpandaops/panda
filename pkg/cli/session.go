@@ -9,6 +9,7 @@ import (
 
 	"github.com/ethpandaops/mcp/pkg/app"
 	"github.com/ethpandaops/mcp/pkg/config"
+	"github.com/ethpandaops/mcp/pkg/execsvc"
 )
 
 var sessionJSON bool
@@ -77,11 +78,12 @@ func runSessionList(_ *cobra.Command, _ []string) error {
 
 	defer func() { _ = a.Stop(ctx) }()
 
-	if !a.Sandbox.SessionsEnabled() {
+	service := execsvc.New(log, a.Sandbox, a.Config(), a.PluginRegistry, a.ProxyClient)
+	if !service.SessionsEnabled() {
 		return fmt.Errorf("sessions are not enabled")
 	}
 
-	sessions, err := a.Sandbox.ListSessions(ctx, "")
+	sessions, _, err := service.ListSessions(ctx, "")
 	if err != nil {
 		return fmt.Errorf("listing sessions: %w", err)
 	}
@@ -118,17 +120,12 @@ func runSessionCreate(_ *cobra.Command, _ []string) error {
 
 	defer func() { _ = a.Stop(ctx) }()
 
-	if !a.Sandbox.SessionsEnabled() {
+	service := execsvc.New(log, a.Sandbox, a.Config(), a.PluginRegistry, a.ProxyClient)
+	if !service.SessionsEnabled() {
 		return fmt.Errorf("sessions are not enabled")
 	}
 
-	// Build env for the session container.
-	env, envErr := a.SandboxEnv()
-	if envErr != nil {
-		return fmt.Errorf("building sandbox env: %w", envErr)
-	}
-
-	sessionID, err := a.Sandbox.CreateSession(ctx, "", env)
+	sessionID, err := service.CreateSession(ctx, "")
 	if err != nil {
 		return fmt.Errorf("creating session: %w", err)
 	}
@@ -152,7 +149,8 @@ func runSessionDestroy(_ *cobra.Command, args []string) error {
 
 	defer func() { _ = a.Stop(ctx) }()
 
-	if err := a.Sandbox.DestroySession(ctx, args[0], ""); err != nil {
+	service := execsvc.New(log, a.Sandbox, a.Config(), a.PluginRegistry, a.ProxyClient)
+	if err := service.DestroySession(ctx, args[0], ""); err != nil {
 		return fmt.Errorf("destroying session: %w", err)
 	}
 

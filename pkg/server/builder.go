@@ -119,7 +119,7 @@ func (b *Builder) buildToolRegistry(
 	reg.Register(tool.NewExecutePythonTool(b.log, sandboxSvc, b.cfg, pluginReg, proxyClient))
 
 	// Register manage_session tool.
-	reg.Register(tool.NewManageSessionTool(b.log, sandboxSvc))
+	reg.Register(tool.NewManageSessionTool(b.log, sandboxSvc, b.cfg, pluginReg, proxyClient))
 
 	// Register unified search tool when either search index is available.
 	if exampleIndex != nil || (runbookIndex != nil && runbookReg != nil) {

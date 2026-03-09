@@ -52,6 +52,7 @@ type server struct {
 	auditor       *Auditor
 
 	clickhouseHandler *handlers.ClickHouseHandler
+	clickhouseOps     *handlers.ClickHouseOperationsHandler
 	prometheusHandler *handlers.PrometheusHandler
 	lokiHandler       *handlers.LokiHandler
 	s3Handler         *handlers.S3Handler
@@ -111,6 +112,7 @@ func NewServer(log logrus.FieldLogger, cfg ServerConfig) (Server, error) {
 
 	if len(chConfigs) > 0 {
 		s.clickhouseHandler = handlers.NewClickHouseHandler(log, chConfigs)
+		s.clickhouseOps = handlers.NewClickHouseOperationsHandler(log, chConfigs)
 	}
 
 	if len(promConfigs) > 0 {
@@ -167,6 +169,10 @@ func (s *server) registerRoutes() {
 	// Authenticated routes.
 	if s.clickhouseHandler != nil {
 		s.mux.Handle("/clickhouse/", chain(s.clickhouseHandler))
+	}
+
+	if s.clickhouseOps != nil {
+		s.mux.Handle("/api/v1/operations/", chain(s.clickhouseOps))
 	}
 
 	if s.prometheusHandler != nil {

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ethpandaops/mcp/pkg/config"
+	"github.com/ethpandaops/mcp/pkg/operations"
 	"github.com/ethpandaops/mcp/pkg/proxy"
 )
 
@@ -91,6 +93,32 @@ func proxyPost(ctx context.Context, pc proxy.Client, path string, body io.Reader
 	}
 
 	return data, nil
+}
+
+func proxyOperation(ctx context.Context, pc proxy.Client, operationID string, args map[string]any) (*operations.Response, error) {
+	payload, err := json.Marshal(operations.Request{Args: args})
+	if err != nil {
+		return nil, fmt.Errorf("marshaling operation request: %w", err)
+	}
+
+	data, err := proxyPost(
+		ctx,
+		pc,
+		"/api/v1/operations/"+operationID,
+		bytes.NewReader(payload),
+		nil,
+		map[string]string{"Content-Type": "application/json"},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	var response operations.Response
+	if err := json.Unmarshal(data, &response); err != nil {
+		return nil, fmt.Errorf("decoding operation response: %w", err)
+	}
+
+	return &response, nil
 }
 
 // dsHeader returns a header map with the X-Datasource header set.

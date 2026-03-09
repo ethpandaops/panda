@@ -8,12 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
 	"github.com/ethpandaops/mcp/pkg/app"
 	"github.com/ethpandaops/mcp/pkg/config"
-	"github.com/ethpandaops/mcp/pkg/sandbox"
+	"github.com/ethpandaops/mcp/pkg/execsvc"
 )
 
 var (
@@ -72,30 +71,10 @@ func runExecute(_ *cobra.Command, _ []string) error {
 
 	defer func() { _ = a.Stop(ctx) }()
 
-	// Build sandbox environment.
-	env, err := a.SandboxEnv()
-	if err != nil {
-		return fmt.Errorf("building sandbox env: %w", err)
-	}
-
-	// Register proxy token.
-	executionID := uuid.New().String()
-	token := a.ProxyClient.RegisterToken(executionID)
-	env["ETHPANDAOPS_PROXY_TOKEN"] = token
-
-	defer a.ProxyClient.RevokeToken(executionID)
-
-	// Resolve timeout.
-	timeout := cfg.Sandbox.Timeout
-	if executeTimeout > 0 {
-		timeout = executeTimeout
-	}
-
-	// Execute.
-	result, err := a.Sandbox.Execute(ctx, sandbox.ExecuteRequest{
+	service := execsvc.New(log, a.Sandbox, cfg, a.PluginRegistry, a.ProxyClient)
+	result, err := service.Execute(ctx, execsvc.ExecuteRequest{
 		Code:      code,
-		Env:       env,
-		Timeout:   time.Duration(timeout) * time.Second,
+		Timeout:   executeTimeout,
 		SessionID: executeSession,
 	})
 	if err != nil {
