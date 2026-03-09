@@ -12,7 +12,8 @@ The server uses a **plugin architecture** where each datasource (ClickHouse, Pro
 
 ```bash
 # Build
-make build                    # Build binary
+make build                    # Build MCP server binary
+make build-cli                # Build CLI binary (ep)
 make docker                   # Build Docker image
 make docker-sandbox           # Build sandbox container image
 make download-models          # Download embedding model + libllama (required before first run)
@@ -33,6 +34,15 @@ make run                      # Build + download models + run with stdio transpo
 make run-sse                  # Build + run with SSE transport on port 2480
 docker-compose up -d          # Full stack: MCP server + MinIO + sandbox builder
 
+# CLI (requires: make build-cli && make download-models)
+./ep datasources                          # List available datasources
+./ep schema                               # Show ClickHouse table schemas
+./ep docs                                 # Show Python API docs
+./ep execute --code 'print("hello")'      # Execute Python in sandbox
+./ep session list                         # Manage sandbox sessions
+./ep search examples "block count"        # Semantic search examples
+./ep search runbooks "finality delay"     # Semantic search runbooks
+
 # Evaluation tests (in tests/eval/)
 cd tests/eval && uv sync                          # Install Python dependencies
 uv run python -m scripts.run_eval                  # Run all eval tests
@@ -44,7 +54,9 @@ uv run python -m scripts.repl                      # Interactive REPL
 
 ### Key Components
 
+- **App kernel** (`pkg/app/`): Shared initialization — plugin registry, proxy client, sandbox, cartographoor, search indices. Used by both MCP server and CLI
 - **MCP server** (`pkg/server/`): Control plane — transport, auth, tool/resource registration, sandbox orchestration
+- **CLI** (`pkg/cli/`, `cmd/cli/`): Direct command-line interface — same capabilities as MCP server without the protocol layer
 - **Credential proxy** (`pkg/proxy/`, `cmd/proxy/`): Trust boundary — holds all datasource + S3 credentials, proxies all data access. Runs as a separate binary (`cmd/proxy/`)
 - **Sandbox** (`pkg/sandbox/`): Data plane — executes Python in isolated containers (Docker for dev, gVisor for production)
 - **Plugins** (`plugins/`): Per-datasource packages — config, schema discovery, resources, examples, Python API docs
@@ -58,18 +70,19 @@ uv run python -m scripts.repl                      # Interactive REPL
 
 ### Plugin System
 
-Four compiled-in plugins registered in `pkg/server/builder.go`:
+Five compiled-in plugins registered in `pkg/app/app.go`:
 - `clickhouse` — schema discovery via proxy, `clickhouse://tables` resources
 - `prometheus` — Prometheus metrics queries
 - `loki` — Loki log queries
 - `dora` — Beacon chain explorer (auto-enabled via `DefaultEnabled` interface, needs no config)
+- `ethnode` — Direct Ethereum node RPC access
 
 Each plugin implements `plugin.Plugin` (`pkg/plugin/plugin.go`). Optional interfaces:
 - `ProxyAware` — receives proxy client for credential-proxied operations
 - `CartographoorAware` — receives network discovery client
 - `DefaultEnabled` — activates without explicit config
 
-### Builder Startup Order (`pkg/server/builder.go`)
+### Builder Startup Order (`pkg/app/app.go` + `pkg/server/builder.go`)
 
 1. Plugin registry (register + init all plugins)
 2. Sandbox service (Docker/gVisor)
@@ -91,13 +104,24 @@ Each plugin implements `plugin.Plugin` (`pkg/plugin/plugin.go`). Optional interf
 | `search_examples` | Semantic search over query examples |
 | `search_runbooks` | Semantic search over procedural runbooks |
 
-### CLI Subcommands (`cmd/mcp/`)
+### MCP Server Subcommands (`cmd/mcp/`)
 
 - `serve` — start MCP server (`--transport/-t`: stdio/sse/streamable-http, `--port/-p`)
 - `test` — run a sandbox test without full server (`--code`, `--timeout/-t`)
 - `auth login` — OAuth PKCE login (`--issuer`, `--client-id`)
 - `auth logout` / `auth status` — manage stored tokens
 - `version`
+
+### CLI Subcommands (`cmd/cli/` → `ep` binary)
+
+- `datasources [--type] [--json]` — list available datasources from proxy
+- `schema [table-name] [--json]` — show ClickHouse table schemas
+- `docs [module-name] [--json]` — show Python API documentation
+- `execute [--code|--file|stdin] [--timeout] [--session] [--json]` — execute Python in sandbox
+- `session {list,create,destroy} [--json]` — manage persistent sandbox sessions
+- `search examples <query> [--category] [--limit] [--json]` — semantic search over query examples
+- `search runbooks <query> [--tag] [--limit] [--json]` — semantic search over investigation runbooks
+- `version [--json]` — show version info
 
 The proxy is a **separate binary**: `cmd/proxy/main.go` (built with `go build -o proxy ./cmd/proxy`)
 
@@ -151,8 +175,11 @@ Uses golangci-lint v2 (`.golangci.yml`):
 
 ```
 cmd/mcp/           # MCP server binary entry point
+cmd/cli/           # CLI binary entry point (ep)
 cmd/proxy/         # Credential proxy binary entry point
 pkg/
+  app/             # Shared application kernel (used by both MCP server and CLI)
+  cli/             # CLI command definitions (cobra)
   server/          # MCP server + builder (dependency injection)
   plugin/          # Plugin interface and registry
   proxy/           # Proxy client and server (auth, handlers, rate limiting, audit)
@@ -169,6 +196,7 @@ plugins/
   prometheus/      # Prometheus plugin
   loki/            # Loki plugin
   dora/            # Beacon chain explorer plugin (auto-enabled)
+  ethnode/         # Ethereum node RPC plugin
 runbooks/          # Embedded markdown runbooks with YAML frontmatter
 sandbox/           # Sandbox Docker image (Python 3.11, ethpandaops package)
 tests/eval/        # LLM evaluation harness (Claude Agent SDK + DeepEval)

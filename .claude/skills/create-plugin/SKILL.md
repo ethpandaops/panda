@@ -29,12 +29,11 @@ Copy from `plugins/prometheus/` for a simple plugin, or `plugins/clickhouse/` fo
 
 ## Registration Steps
 
-1. **builder.go** - Import and add `reg.Add({name}plugin.New())`
-2. **builder.go** - Add case to `buildProxy()` type switch
-3. **pkg/proxy/proxy.go** - Add field to `Options` struct
-4. **pkg/proxy/proxy.go** - Register handler in `Start()`
-5. **sandbox/ethpandaops/ethpandaops/__init__.py** - Add to lazy imports
-6. Copy Python module to `sandbox/ethpandaops/ethpandaops/`
+1. **pkg/app/app.go** - Import and add `reg.Add({name}plugin.New())` in `buildPluginRegistry()`
+2. **pkg/proxy/proxy.go** - Add field to `Options` struct
+3. **pkg/proxy/proxy.go** - Register handler in `Start()`
+4. **sandbox/ethpandaops/ethpandaops/__init__.py** - Add to lazy imports
+5. Copy Python module to `sandbox/ethpandaops/ethpandaops/`
 
 ## Key Rules
 

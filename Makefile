@@ -1,4 +1,4 @@
-.PHONY: build test lint clean docker docker-push docker-sandbox test-sandbox run help download-models clean-models
+.PHONY: build test lint clean docker docker-push docker-sandbox test-sandbox run help download-models clean-models setup-hooks
 
 # Embedding model and shared library configuration
 # Downloaded from HuggingFace and kelindar/search GitHub repo
@@ -6,9 +6,11 @@ MODELS_DIR := ./models
 EMBEDDING_MODEL_PATH := $(MODELS_DIR)/MiniLM-L6-v2.Q8_0.gguf
 LLAMA_SO_PATH := $(MODELS_DIR)/libllama_go.so
 
-# Download URLs (using GitHub media server for LFS files)
+# Download URLs
 EMBEDDING_MODEL_URL := https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-Q8_0.gguf
-LLAMA_SO_URL := https://media.githubusercontent.com/media/kelindar/search/main/dist/linux-x64-avx/libllama_go.so
+
+# Source build directory for libllama_go.so
+LLAMA_BUILD_DIR := $(MODELS_DIR)/llama-build
 
 # Build variables
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -29,8 +31,11 @@ GOBIN ?= $(shell go env GOPATH)/bin
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-build: ## Build the binary
+build: ## Build the MCP server binary
 	go build -ldflags "$(LDFLAGS)" -o mcp ./cmd/mcp
+
+build-cli: ## Build the CLI binary
+	go build -ldflags "$(LDFLAGS)" -o ep ./cmd/cli
 
 build-linux: ## Build for Linux (amd64)
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o mcp-linux-amd64 ./cmd/mcp
@@ -43,7 +48,7 @@ test-coverage: ## Run tests with coverage
 	go tool cover -html=coverage.out -o coverage.html
 
 lint: ## Run linters
-	@which golangci-lint > /dev/null || (echo "Installing golangci-lint..." && go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest)
+	@which golangci-lint > /dev/null || (echo "Installing golangci-lint v2..." && go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest)
 	golangci-lint run ./...
 
 lint-fix: ## Run linters and fix issues
@@ -60,7 +65,7 @@ tidy: ## Run go mod tidy
 	go mod tidy
 
 clean: ## Clean build artifacts
-	rm -f mcp mcp-linux-amd64
+	rm -f mcp ep mcp-linux-amd64
 	rm -f coverage.out coverage.html
 
 docker: ## Build Docker image
@@ -105,12 +110,17 @@ logs: ## View docker-compose logs
 install: build ## Install binary to GOBIN
 	cp mcp $(GOBIN)/mcp
 
+setup-hooks: ## Install git pre-commit hooks
+	git config core.hooksPath .githooks
+	@echo "Git hooks configured to use .githooks/"
+
 version: ## Show version info
 	@echo "Version:    $(VERSION)"
 	@echo "Git Commit: $(GIT_COMMIT)"
 	@echo "Build Time: $(BUILD_TIME)"
 
 download-models: $(EMBEDDING_MODEL_PATH) $(LLAMA_SO_PATH) ## Download embedding model and shared library
+	@ln -sf $(LLAMA_SO_PATH) libllama_go.so
 	@echo "All models downloaded to $(MODELS_DIR)"
 
 $(EMBEDDING_MODEL_PATH):
@@ -120,10 +130,19 @@ $(EMBEDDING_MODEL_PATH):
 	@echo "Model downloaded to $(EMBEDDING_MODEL_PATH)"
 
 $(LLAMA_SO_PATH):
-	@mkdir -p $(MODELS_DIR)
-	@echo "Downloading llama.cpp shared library from GitHub..."
-	@curl -L -o $(LLAMA_SO_PATH) $(LLAMA_SO_URL)
-	@echo "Shared library downloaded to $(LLAMA_SO_PATH)"
+	@mkdir -p $(LLAMA_BUILD_DIR)
+	@echo "Building libllama_go.so from source (requires cmake, g++)..."
+	@cd $(LLAMA_BUILD_DIR) && \
+		if [ ! -d search ]; then \
+			git clone --depth 1 --recurse-submodules https://github.com/kelindar/search.git; \
+		fi && \
+		cd search && mkdir -p build && cd build && \
+		cmake -DBUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release \
+			-DGGML_NATIVE=OFF \
+			-DCMAKE_CXX_COMPILER=g++ -DCMAKE_C_COMPILER=gcc .. && \
+		cmake --build . --config Release
+	@cp $(LLAMA_BUILD_DIR)/search/build/lib/libllama_go.so.1.0 $(LLAMA_SO_PATH)
+	@echo "Shared library built at $(LLAMA_SO_PATH)"
 
-clean-models: ## Clean downloaded models
-	rm -rf $(MODELS_DIR)
+clean-models: ## Clean downloaded models and build artifacts
+	rm -rf $(MODELS_DIR) libllama_go.so

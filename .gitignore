@@ -1,5 +1,6 @@
 # Binaries
 /mcp
+/ep
 mcp-linux-*
 *.exe
 
@@ -48,3 +49,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
+
+# Binaries
+/cli
+
+# Claude settings
+.claude/settings.json

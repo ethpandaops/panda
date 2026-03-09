@@ -90,6 +90,8 @@ type ClickHouseSchemaClient interface {
 	Start(ctx context.Context) error
 	// Stop stops background refresh.
 	Stop() error
+	// WaitForReady blocks until the initial schema fetch completes or ctx is cancelled.
+	WaitForReady(ctx context.Context) error
 	// GetAllTables returns all tables across all clusters.
 	GetAllTables() map[string]*ClusterTables
 	// GetTable returns schema for a specific table (searches all clusters).
@@ -108,8 +110,9 @@ type clickhouseSchemaClient struct {
 	clusters    map[string]*ClusterTables
 	datasources map[string]string // cluster name -> datasource name
 
-	done chan struct{}
-	wg   sync.WaitGroup
+	done  chan struct{}
+	ready chan struct{} // closed when initial fetch completes
+	wg    sync.WaitGroup
 
 	httpClient *http.Client
 }
@@ -135,6 +138,7 @@ func NewClickHouseSchemaClient(
 		clusters:    make(map[string]*ClusterTables, 2),
 		datasources: make(map[string]string, 2),
 		done:        make(chan struct{}),
+		ready:       make(chan struct{}),
 		httpClient:  &http.Client{},
 	}
 }
@@ -159,6 +163,7 @@ func (c *clickhouseSchemaClient) Start(ctx context.Context) error {
 
 	go func() {
 		defer c.wg.Done()
+		defer close(c.ready)
 
 		fetchCtx, cancel := context.WithTimeout(context.Background(), c.cfg.QueryTimeout*10)
 		defer cancel()
@@ -231,6 +236,16 @@ func (c *clickhouseSchemaClient) Stop() error {
 	c.log.Info("ClickHouse schema client stopped")
 
 	return nil
+}
+
+// WaitForReady blocks until the initial schema fetch completes or ctx is cancelled.
+func (c *clickhouseSchemaClient) WaitForReady(ctx context.Context) error {
+	select {
+	case <-c.ready:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // GetAllTables returns all tables across all clusters.

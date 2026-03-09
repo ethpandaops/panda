@@ -1,49 +1,73 @@
 ---
 name: query
-description: Query Ethereum network data via ethpandaops MCP server. Use when analyzing blockchain data, block timing, attestations, validator performance, network health, or infrastructure metrics. Provides access to ClickHouse (blockchain data), Prometheus (metrics), Loki (logs), and Dora (explorer APIs).
+description: Query Ethereum network data via ethpandaops CLI or MCP server. Use when analyzing blockchain data, block timing, attestations, validator performance, network health, or infrastructure metrics. Provides access to ClickHouse (blockchain data), Prometheus (metrics), Loki (logs), and Dora (explorer APIs).
 argument-hint: <query or question>
 user-invocable: false
 ---
 
-# ethpandaops MCP Server Usage Guide
+# ethpandaops Query Guide
 
-Query Ethereum network data through the ethpandaops MCP server. Execute Python code in sandboxed containers with access to ClickHouse blockchain data, Prometheus metrics, Loki logs, and Dora explorer APIs.
+Query Ethereum network data through the ethpandaops tools. Execute Python code in sandboxed containers with access to ClickHouse blockchain data, Prometheus metrics, Loki logs, and Dora explorer APIs.
 
 ## Workflow
 
-1. **Discover** - Read MCP resources to find available datasources and schemas
-2. **Find patterns** - Use search tools to find query examples and runbooks
-3. **Execute** - Run Python with `execute_python` using the `ethpandaops` library
+1. **Discover** - Find available datasources and schemas
+2. **Find patterns** - Search for query examples and runbooks
+3. **Execute** - Run Python using the `ethpandaops` library
 
-## Quick Reference
+## Access Methods
 
-### Discovering Data Sources
+This skill works with **either** the CLI (`ep`) or the MCP server. Use whichever is available.
 
-Read these resources to understand what data is available:
+### CLI (`ep` binary)
+
+```bash
+# Discovery
+ep datasources                          # List all datasources
+ep datasources --type clickhouse        # Filter by type
+ep schema                               # List ClickHouse tables
+ep schema beacon_api_eth_v1_events_block  # Show table schema
+ep docs                                 # List Python API modules
+ep docs clickhouse                      # Show module docs
+
+# Search
+ep search examples "block arrival time"
+ep search examples "attestation" --category attestations --limit 5
+ep search runbooks "finality delay"
+ep search runbooks "validator" --tag performance
+
+# Execute
+ep execute --code 'from ethpandaops import clickhouse; print(clickhouse.list_datasources())'
+ep execute --file script.py
+ep execute --code '...' --session <id>  # Reuse session
+echo 'print("hello")' | ep execute
+
+# Sessions
+ep session list
+ep session create
+ep session destroy <session-id>
+```
+
+All commands support `--json` for structured output.
+
+### MCP Server (when available as plugin)
 
 | Resource | Description |
 |----------|-------------|
 | `datasources://list` | All configured datasources |
-| `datasources://clickhouse` | ClickHouse clusters (blockchain data) |
-| `datasources://prometheus` | Prometheus instances (metrics) |
-| `datasources://loki` | Loki instances (logs) |
+| `datasources://clickhouse` | ClickHouse clusters |
+| `datasources://prometheus` | Prometheus instances |
+| `datasources://loki` | Loki instances |
 | `networks://active` | Active Ethereum networks |
-| `clickhouse://tables` | Available tables (if schema discovery enabled) |
+| `clickhouse://tables` | Available tables |
 | `clickhouse://tables/{table}` | Table schema details |
 | `python://ethpandaops` | Python library API docs |
 
-### Finding Query Patterns
-
-**Search for example queries:**
 ```
 search_examples(query="block arrival time")
-search_examples(query="attestation participation", category="attestations")
-```
-
-**Search for investigation runbooks:**
-```
 search_runbooks(query="network not finalizing")
-search_runbooks(query="slow queries", tag="performance")
+execute_python(code="...")
+manage_session(operation="list")
 ```
 
 ## The ethpandaops Python Library
@@ -220,11 +244,11 @@ files = storage.list_files()
 
 ## Session Management
 
-**Critical:** Each `execute_python` call runs in a **fresh Python process**. Variables do NOT persist.
+**Critical:** Each execution runs in a **fresh Python process**. Variables do NOT persist.
 
 **Files persist:** Save to `/workspace/` to share data between calls.
 
-**Reuse sessions:** Pass `session_id` from tool responses for faster startup and workspace persistence.
+**Reuse sessions:** Pass `--session <id>` (CLI) or `session_id` (MCP) for faster startup and workspace persistence.
 
 ### Multi-Step Analysis Pattern
 
@@ -236,7 +260,7 @@ df.to_parquet("/workspace/data.parquet")
 ```
 
 ```python
-# Call 2: Load and visualize (pass session_id from Call 1)
+# Call 2: Load and visualize (reuse session from Call 1)
 import pandas as pd
 import matplotlib.pyplot as plt
 from ethpandaops import storage
@@ -249,14 +273,6 @@ url = storage.upload("/workspace/chart.png")
 print(f"Chart: {url}")
 ```
 
-### Session Tools
-
-```
-manage_session(operation="list")     # View active sessions
-manage_session(operation="create")   # Pre-create a session
-manage_session(operation="destroy", session_id="...")  # Free a session
-```
-
 ## Error Handling
 
 ClickHouse errors include actionable suggestions:
@@ -265,7 +281,7 @@ ClickHouse errors include actionable suggestions:
 - Query timeout → Break into smaller time windows
 
 Default execution timeout is 60s, max 600s. For large analyses:
-- Use `search_examples` to find optimized patterns
+- Search for optimized patterns first (`ep search examples "..."`)
 - Break work into smaller time windows
 - Save intermediate results to `/workspace/`
 
@@ -273,8 +289,8 @@ Default execution timeout is 60s, max 600s. For large analyses:
 
 - Always filter ClickHouse queries on partition keys (`slot_start_date_time`)
 - Use `xatu-cbt` for pre-aggregated metrics, `xatu` for raw event data
-- Check `python://ethpandaops` resource for complete API documentation
-- Use `search_examples` before writing complex queries from scratch
-- Use `search_runbooks` to find runbooks for common workflows
+- Use `ep docs` or `python://ethpandaops` resource for complete API documentation
+- Search for examples before writing complex queries from scratch
+- Search for runbooks to find common investigation workflows
 - Upload visualizations with `storage.upload()` for shareable URLs
 - NEVER just copy/paste/recite base64 of images. You MUST save the image to the workspace and upload it to give it back to the user.

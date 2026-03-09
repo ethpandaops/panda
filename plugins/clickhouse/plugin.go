@@ -30,6 +30,9 @@ func New() *Plugin {
 
 func (p *Plugin) Name() string { return "clickhouse" }
 
+// SchemaClient returns the schema discovery client, or nil if not initialized.
+func (p *Plugin) SchemaClient() ClickHouseSchemaClient { return p.schemaClient }
+
 // SetProxyClient injects the proxy service for schema discovery.
 func (p *Plugin) SetProxyClient(client any) {
 	if svc, ok := client.(proxy.Service); ok {
