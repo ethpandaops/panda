@@ -111,7 +111,7 @@ Validates Ethereum-specific data constraints:
 ### ResourceDiscoveryMetric
 Checks if agent reads schemas/resources before querying:
 - Penalizes blind queries without schema discovery
-- Rewards use of `search_examples` tool
+- Rewards use of the `search` tool
 
 ### VisualizationURLMetric
 Validates visualization output:

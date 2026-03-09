@@ -66,7 +66,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 | Tool | Description |
 |------|-------------|
 | `execute_python` | Execute Python in a sandbox with the `ethpandaops` library |
-| `search_examples` | Search for query examples and patterns |
+| `search` | Semantic search over examples and runbooks (`type=examples|runbooks`) |
 
 Resources are available for getting started (`mcp://getting-started`), datasource discovery (`datasources://`), network info (`networks://`), table schemas (`clickhouse://`), and Python API docs (`python://ethpandaops`).
 

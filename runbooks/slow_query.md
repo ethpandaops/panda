@@ -53,7 +53,7 @@ When a query runs slowly or times out, you MUST understand the query execution p
 
 6. **Use materialized views** - For repeated queries, you MAY suggest creating a materialized view if the query pattern is common.
 
-7. **Check for missing indexes** - Use `search_examples("clickhouse schema")` to understand available indexes.
+7. **Check for missing indexes** - Use `search(type="examples", query="clickhouse schema")` to understand available indexes.
 
 ## Common Performance Issues
 
@@ -99,4 +99,4 @@ ORDER BY block_count DESC
 - Query timeout is typically 30 seconds - design queries to complete faster
 - Memory limit per query may cause OOM errors on large aggregations
 - Consider breaking large analyses into smaller time windows
-- Use `search_examples` to find optimized query patterns for common analyses
+- Use `search(type="examples", query="...")` to find optimized query patterns for common analyses

@@ -23,9 +23,9 @@ const gettingStartedHeader = `# Getting Started Guide
 ## Workflow
 
 1. **Discover** → Read datasource resources to find available data sources and schemas
-2. **Find patterns** → Use the right search tool for your need:
-   - ` + "`search_examples`" + ` → Query snippets (SQL, PromQL, LogQL)
-   - ` + "`search_runbooks`" + ` → Multi-step investigation procedures
+2. **Find patterns** → Use the ` + "`search`" + ` tool with the right type for your need:
+   - ` + "`search(type=\"examples\", query=\"...\")`" + ` → Query snippets (SQL, PromQL, LogQL)
+   - ` + "`search(type=\"runbooks\", query=\"...\")`" + ` → Multi-step investigation procedures
 3. **Execute** → ` + "`execute_python`" + ` tool with the ethpandaops library
 
 `

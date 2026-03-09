@@ -92,7 +92,7 @@ Each plugin implements `plugin.Plugin` (`pkg/plugin/plugin.go`). Optional interf
 6. Auth service (GitHub OAuth for HTTP transports)
 7. Example index (GGUF embedding model for semantic search)
 8. Runbook index (embedded markdown runbooks with semantic search)
-9. Tool registry: `execute_python`, `manage_session`, `search_examples`, `search_runbooks`
+9. Tool registry: `execute_python`, `manage_session`, `search`
 10. Resource registry
 
 ### MCP Tools
@@ -101,8 +101,7 @@ Each plugin implements `plugin.Plugin` (`pkg/plugin/plugin.go`). Optional interf
 |------|-------------|
 | `execute_python` | Execute Python in sandbox with `ethpandaops` library |
 | `manage_session` | List/create/destroy persistent sandbox sessions |
-| `search_examples` | Semantic search over query examples |
-| `search_runbooks` | Semantic search over procedural runbooks |
+| `search` | Semantic search over query examples and procedural runbooks (`type=examples|runbooks`) |
 
 ### MCP Server Subcommands (`cmd/mcp/`)
 

@@ -73,9 +73,11 @@ class ResourceDiscoveryMetric(BaseMetric):
             "execute_python" in str(tc.get("name", "")) for tc in tool_calls
         )
 
-        # Check if search_examples was used (also counts as resource discovery)
-        searched_examples = any(
-            "search_examples" in str(tc.get("name", "")) for tc in tool_calls
+        # Check if the search tool was used (also counts as resource discovery)
+        searched_resources = any(
+            str(tc.get("name", "")).endswith("__search")
+            or str(tc.get("name", "")) == "search"
+            for tc in tool_calls
         )
 
         if not executed_code:
@@ -83,15 +85,15 @@ class ResourceDiscoveryMetric(BaseMetric):
             self.score = 1.0
             self.reason = "No code execution occurred, resource discovery N/A"
             self._success = True
-        elif resource_uris_accessed or searched_examples:
+        elif resource_uris_accessed or searched_resources:
             # Good: agent read resources before querying
             discovery_methods = []
             if resource_uris_accessed:
                 discovery_methods.append(
                     f"read {len(resource_uris_accessed)} resource(s)"
                 )
-            if searched_examples:
-                discovery_methods.append("searched examples")
+            if searched_resources:
+                discovery_methods.append("used semantic search")
 
             self.score = 1.0
             self.reason = f"Agent {', '.join(discovery_methods)} before querying"
@@ -99,7 +101,7 @@ class ResourceDiscoveryMetric(BaseMetric):
         else:
             # Bad: executed code without reading resources
             self.score = 0.0
-            self.reason = "Executed code without reading schema/API resources or examples"
+            self.reason = "Executed code without reading schema/API resources or using semantic search"
             self._success = False
 
         return self.score

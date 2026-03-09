@@ -20,25 +20,25 @@ When the network isn't finalizing, you MUST verify current status before deep di
    print(f"Finalized epoch: {overview.get('finalized_epoch', 'N/A')}")
    ```
 
-2. **Query attestation participation** - If finality is delayed >2 epochs, check participation rates. You MUST use the xatu-cbt cluster for participation queries (pre-aggregated, faster). Use `search_examples("attestation participation")` for the query pattern.
+2. **Query attestation participation** - If finality is delayed >2 epochs, check participation rates. You MUST use the xatu-cbt cluster for participation queries (pre-aggregated, faster). Use `search(type="examples", query="attestation participation")` for the query pattern.
 
    Key metrics to check:
    - Target participation rate (should be >66.7% for finality)
    - Source participation rate
    - Head participation rate
 
-3. **Check proposer health** - You MAY skip this if participation looks normal. Look for patterns in missed slots using `search_examples("missed slots")`.
+3. **Check proposer health** - You MAY skip this if participation looks normal. Look for patterns in missed slots using `search(type="examples", query="missed slots")`.
 
    Questions to answer:
    - Are specific validators missing proposals?
    - Is there geographic correlation in missed slots?
    - Did missed slots spike at a particular time?
 
-4. **Identify problematic validators** - If participation is low, find which validators are underperforming. Use `search_examples("validator performance")` for query patterns.
+4. **Identify problematic validators** - If participation is low, find which validators are underperforming. Use `search(type="examples", query="validator performance")` for query patterns.
 
-5. **Check for client bugs** - You SHOULD check if issues correlate with specific client types. Use `search_examples("client distribution")` to understand the client mix.
+5. **Check for client bugs** - You SHOULD check if issues correlate with specific client types. Use `search(type="examples", query="client distribution")` to understand the client mix.
 
-6. **Generate Dora links** - Always provide the user with Dora deep links so they can explore further in the UI. Use `search_examples("dora")` for link generation patterns.
+6. **Generate Dora links** - Always provide the user with Dora deep links so they can explore further in the UI. Use `search(type="examples", query="dora")` for link generation patterns.
 
 ## Key Thresholds
 
@@ -46,4 +46,3 @@ When the network isn't finalizing, you MUST verify current status before deep di
 - Normal finality lag is 2 epochs (~13 minutes on mainnet)
 - >4 epochs without finality is cause for concern
 - >8 epochs suggests a significant network issue
-

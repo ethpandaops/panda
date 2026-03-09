@@ -94,15 +94,15 @@ Before collecting data, determine which datasources have the target network. Thi
 
 ## Phase 1: Data Collection with Dora
 
-**Skip this phase if Phase 0 determined `has_dora = false`.** If `has_ethnode = true`, use the ethnode plugin (`search_examples("ethnode")` for patterns) to build a partial baseline: query head slots/roots, finality checkpoints, and sync status across the discovered instances. This helps answer the baseline questions in step 2 (single fork vs split, finalizing, which nodes are behind) without Dora. Append results to the debug report, then proceed to Phase 2.
+**Skip this phase if Phase 0 determined `has_dora = false`.** If `has_ethnode = true`, use the ethnode plugin (`search(type="examples", query="ethnode")` for patterns) to build a partial baseline: query head slots/roots, finality checkpoints, and sync status across the discovered instances. This helps answer the baseline questions in step 2 (single fork vs split, finalizing, which nodes are behind) without Dora. Append results to the debug report, then proceed to Phase 2.
 
 1. **Collect all Dora data** - In a single step, gather all network data and append raw responses to the debug report. You MAY combine these into one `execute_python` call:
 
-   - **Network overview** — use `search_examples("network overview")` for the pattern. Note: `current_slot` is `epoch * 32` (epoch's first slot), not actual head slot.
-   - **Network splits** — use `search_examples("network splits")`. A healthy network has one fork.
-   - **Epoch details** — use `search_examples("epoch summary")`. Iterate through ~9 epochs per hour across the active timeframe. **Always start from head epoch - 1** (the most recent completed epoch) — the head epoch is still in progress and will show artificially low participation. You SHOULD use try/except per epoch to handle failures without crashing.
-   - **Missing proposers** — use `search_examples("missing proposers")`. Adjust `slot_lookback` to match the active timeframe (~300 slots per hour).
-   - **Offline attesters** — use `search_examples("offline attesters")`.
+   - **Network overview** — use `search(type="examples", query="network overview")` for the pattern. Note: `current_slot` is `epoch * 32` (epoch's first slot), not actual head slot.
+   - **Network splits** — use `search(type="examples", query="network splits")`. A healthy network has one fork.
+   - **Epoch details** — use `search(type="examples", query="epoch summary")`. Iterate through ~9 epochs per hour across the active timeframe. **Always start from head epoch - 1** (the most recent completed epoch) — the head epoch is still in progress and will show artificially low participation. You SHOULD use try/except per epoch to handle failures without crashing.
+   - **Missing proposers** — use `search(type="examples", query="missing proposers")`. Adjust `slot_lookback` to match the active timeframe (~300 slots per hour).
+   - **Offline attesters** — use `search(type="examples", query="offline attesters")`.
 
    If there are multiple forks:
    - **IMPORTANT:** A network split overrides the active timeframe. You MUST identify the divergence slot/epoch where the split occurred and refocus the entire investigation around that point. All subsequent steps MUST use this divergence-centered timeframe.
@@ -201,7 +201,7 @@ This concludes the **data collection phase**. If Dora was available, you should 
 
 ### RPC Validation (requires `has_ethnode = true`)
 
-**If the ethnode plugin is available**, use direct node RPC queries via `from ethpandaops import ethnode` to validate hypotheses and gather concrete proof. Use `search_examples("ethnode")` for API patterns. Target the instances discovered in Phase 0 or identified as problematic in Phases 1–2.
+**If the ethnode plugin is available**, use direct node RPC queries via `from ethpandaops import ethnode` to validate hypotheses and gather concrete proof. Use `search(type="examples", query="ethnode")` for API patterns. Target the instances discovered in Phase 0 or identified as problematic in Phases 1–2.
 
 **When to use RPC:**
 - **Network split suspected** → compare head slots/roots and finality checkpoints across nodes on different forks; fetch the divergence block from each side

@@ -93,7 +93,7 @@ const executePythonDescription = `Execute Python code with the ethpandaops libra
 
 **BEFORE YOUR FIRST QUERY:** Read mcp://getting-started for workflow guidance and critical syntax rules.
 
-Use search_examples tool for query patterns. Reuse session_id from responses.`
+Use the search tool with ` + "`type=\"examples\"`" + ` for query patterns. Reuse session_id from responses.`
 
 // NewExecutePythonTool creates the execute_python tool definition.
 func NewExecutePythonTool(

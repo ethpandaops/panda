@@ -231,7 +231,7 @@ class MCPAgent:
             },
             allowed_tools=[
                 "mcp__ethpandaops__execute_python",
-                "mcp__ethpandaops__search_examples",
+                "mcp__ethpandaops__search",
             ],
             hooks={
                 "PreToolUse": [HookMatcher(hooks=[self._trace_pre_tool])],
