@@ -1,23 +1,12 @@
 package cli
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"sort"
-	"time"
 
 	"github.com/spf13/cobra"
-
-	"github.com/ethpandaops/mcp/pkg/resource"
 )
 
-var (
-	doraJSON       bool
-	doraHTTPClient = &http.Client{Timeout: 30 * time.Second}
-)
+var doraJSON bool
 
 var doraCmd = &cobra.Command{
 	Use:   "dora",
@@ -45,123 +34,32 @@ func init() {
 	)
 }
 
-// startCartographoor creates and starts a cartographoor client.
-func startCartographoor(ctx context.Context) (resource.CartographoorClient, func(), error) {
-	client := resource.NewCartographoorClient(log, resource.CartographoorConfig{
-		URL:      resource.DefaultCartographoorURL,
-		CacheTTL: resource.DefaultCacheTTL,
-		Timeout:  resource.DefaultHTTPTimeout,
-	})
-
-	if err := client.Start(ctx); err != nil {
-		return nil, nil, fmt.Errorf("starting cartographoor client: %w", err)
-	}
-
-	cleanup := func() { _ = client.Stop() }
-
-	return client, cleanup, nil
-}
-
-// getDoraNetworks returns a map of network name -> Dora URL from cartographoor.
-func getDoraNetworks(client resource.CartographoorClient) map[string]string {
-	networks := client.GetActiveNetworks()
-	doraNetworks := make(map[string]string, len(networks))
-
-	for name, network := range networks {
-		if network.ServiceURLs != nil && network.ServiceURLs.Dora != "" {
-			doraNetworks[name] = network.ServiceURLs.Dora
-		}
-	}
-
-	return doraNetworks
-}
-
-// getDoraURL returns the Dora URL for a network or an error if not found.
-func getDoraURL(client resource.CartographoorClient, network string) (string, error) {
-	networks := getDoraNetworks(client)
-
-	url, ok := networks[network]
-	if !ok {
-		available := make([]string, 0, len(networks))
-		for name := range networks {
-			available = append(available, name)
-		}
-
-		sort.Strings(available)
-
-		return "", fmt.Errorf("unknown network %q. Available: %v", network, available)
-	}
-
-	return url, nil
-}
-
-// doraGet makes a GET request to a Dora explorer endpoint.
-func doraGet(doraURL, path string) ([]byte, error) {
-	resp, err := doraHTTPClient.Get(doraURL + path)
-	if err != nil {
-		return nil, fmt.Errorf("dora request failed: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading response: %w", err)
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(data))
-	}
-
-	return data, nil
-}
-
 var doraNetworksCmd = &cobra.Command{
 	Use:   "networks",
 	Short: "List networks with Dora explorers",
 	Args:  cobra.NoArgs,
 	RunE: func(_ *cobra.Command, _ []string) error {
-		ctx := context.Background()
-
-		client, cleanup, err := startCartographoor(ctx)
+		response, err := runServerOperation("dora.list_networks", map[string]any{})
 		if err != nil {
 			return err
 		}
 
-		defer cleanup()
-
-		networks := getDoraNetworks(client)
-
 		if doraJSON {
-			type networkInfo struct {
-				Name    string `json:"name"`
-				DoraURL string `json:"dora_url"`
-			}
-
-			result := make([]networkInfo, 0, len(networks))
-			for name, url := range networks {
-				result = append(result, networkInfo{Name: name, DoraURL: url})
-			}
-
-			sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
-
-			return printJSON(map[string]any{"networks": result, "total": len(result)})
+			return printJSON(response)
 		}
 
-		if len(networks) == 0 {
+		data, _ := response.Data.(map[string]any)
+		items, _ := data["networks"].([]any)
+		if len(items) == 0 {
 			fmt.Println("No networks with Dora explorers found.")
-
 			return nil
 		}
 
-		names := make([]string, 0, len(networks))
-		for name := range networks {
-			names = append(names, name)
-		}
-
-		sort.Strings(names)
-
-		for _, name := range names {
-			fmt.Printf("  %-30s  %s\n", name, networks[name])
+		for _, item := range items {
+			network, _ := item.(map[string]any)
+			name, _ := network["name"].(string)
+			doraURL, _ := network["dora_url"].(string)
+			fmt.Printf("  %-30s  %s\n", name, doraURL)
 		}
 
 		return nil
@@ -173,61 +71,35 @@ var doraOverviewCmd = &cobra.Command{
 	Short: "Get network overview",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
-		ctx := context.Background()
-
-		client, cleanup, err := startCartographoor(ctx)
+		response, err := runServerOperation("dora.get_network_overview", map[string]any{
+			"network": args[0],
+		})
 		if err != nil {
 			return err
-		}
-
-		defer cleanup()
-
-		doraURL, err := getDoraURL(client, args[0])
-		if err != nil {
-			return err
-		}
-
-		data, err := doraGet(doraURL, "/api/v1/epoch/head")
-		if err != nil {
-			// Fallback to /latest.
-			data, err = doraGet(doraURL, "/api/v1/epoch/latest")
-			if err != nil {
-				return err
-			}
 		}
 
 		if doraJSON {
-			return printJSONBytes(data)
+			return printJSON(response)
 		}
 
-		var resp struct {
-			Data struct {
-				Epoch                   json.Number `json:"epoch"`
-				Finalized               bool        `json:"finalized"`
-				GlobalParticipationRate float64     `json:"globalparticipationrate"`
-				ValidatorInfo           *struct {
-					Active  int `json:"active"`
-					Total   int `json:"total"`
-					Pending int `json:"pending"`
-					Exited  int `json:"exited"`
-				} `json:"validatorinfo"`
-			} `json:"data"`
-		}
-
-		if err := json.Unmarshal(data, &resp); err != nil {
-			return printJSONBytes(data)
-		}
-
+		data, _ := response.Data.(map[string]any)
 		fmt.Printf("Network:            %s\n", args[0])
-		fmt.Printf("Current epoch:      %s\n", resp.Data.Epoch)
-		fmt.Printf("Finalized:          %v\n", resp.Data.Finalized)
-		fmt.Printf("Participation rate: %.2f\n", resp.Data.GlobalParticipationRate)
+		fmt.Printf("Current epoch:      %v\n", data["current_epoch"])
+		fmt.Printf("Current slot:       %v\n", data["current_slot"])
+		fmt.Printf("Finalized:          %v\n", data["finalized"])
+		fmt.Printf("Participation rate: %v\n", data["participation_rate"])
 
-		if vi := resp.Data.ValidatorInfo; vi != nil {
-			fmt.Printf("Active validators:  %d\n", vi.Active)
-			fmt.Printf("Total validators:   %d\n", vi.Total)
-			fmt.Printf("Pending validators: %d\n", vi.Pending)
-			fmt.Printf("Exited validators:  %d\n", vi.Exited)
+		if value, ok := data["active_validator_count"]; ok {
+			fmt.Printf("Active validators:  %v\n", value)
+		}
+		if value, ok := data["total_validator_count"]; ok {
+			fmt.Printf("Total validators:   %v\n", value)
+		}
+		if value, ok := data["pending_validator_count"]; ok {
+			fmt.Printf("Pending validators: %v\n", value)
+		}
+		if value, ok := data["exited_validator_count"]; ok {
+			fmt.Printf("Exited validators:  %v\n", value)
 		}
 
 		return nil
@@ -239,26 +111,15 @@ var doraValidatorCmd = &cobra.Command{
 	Short: "Get validator details",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		ctx := context.Background()
-
-		client, cleanup, err := startCartographoor(ctx)
+		response, err := runServerOperationRaw("dora.get_validator", map[string]any{
+			"network":         args[0],
+			"index_or_pubkey": args[1],
+		})
 		if err != nil {
 			return err
 		}
 
-		defer cleanup()
-
-		doraURL, err := getDoraURL(client, args[0])
-		if err != nil {
-			return err
-		}
-
-		data, err := doraGet(doraURL, fmt.Sprintf("/api/v1/validator/%s", args[1]))
-		if err != nil {
-			return err
-		}
-
-		return printJSONBytes(data)
+		return printJSONBytes(response.Body)
 	},
 }
 
@@ -267,26 +128,15 @@ var doraSlotCmd = &cobra.Command{
 	Short: "Get slot details",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		ctx := context.Background()
-
-		client, cleanup, err := startCartographoor(ctx)
+		response, err := runServerOperationRaw("dora.get_slot", map[string]any{
+			"network":      args[0],
+			"slot_or_hash": args[1],
+		})
 		if err != nil {
 			return err
 		}
 
-		defer cleanup()
-
-		doraURL, err := getDoraURL(client, args[0])
-		if err != nil {
-			return err
-		}
-
-		data, err := doraGet(doraURL, fmt.Sprintf("/api/v1/slot/%s", args[1]))
-		if err != nil {
-			return err
-		}
-
-		return printJSONBytes(data)
+		return printJSONBytes(response.Body)
 	},
 }
 
@@ -295,25 +145,14 @@ var doraEpochCmd = &cobra.Command{
 	Short: "Get epoch summary",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		ctx := context.Background()
-
-		client, cleanup, err := startCartographoor(ctx)
+		response, err := runServerOperationRaw("dora.get_epoch", map[string]any{
+			"network": args[0],
+			"epoch":   args[1],
+		})
 		if err != nil {
 			return err
 		}
 
-		defer cleanup()
-
-		doraURL, err := getDoraURL(client, args[0])
-		if err != nil {
-			return err
-		}
-
-		data, err := doraGet(doraURL, fmt.Sprintf("/api/v1/epoch/%s", args[1]))
-		if err != nil {
-			return err
-		}
-
-		return printJSONBytes(data)
+		return printJSONBytes(response.Body)
 	},
 }

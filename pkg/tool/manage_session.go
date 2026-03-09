@@ -10,6 +10,10 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/ethpandaops/mcp/pkg/auth"
+	"github.com/ethpandaops/mcp/pkg/config"
+	"github.com/ethpandaops/mcp/pkg/execsvc"
+	"github.com/ethpandaops/mcp/pkg/extension"
+	"github.com/ethpandaops/mcp/pkg/proxy"
 	"github.com/ethpandaops/mcp/pkg/sandbox"
 )
 
@@ -55,15 +59,21 @@ type CreateSessionResponse struct {
 }
 
 type manageSessionHandler struct {
-	log        logrus.FieldLogger
-	sandboxSvc sandbox.Service
+	log     logrus.FieldLogger
+	service *execsvc.Service
 }
 
 // NewManageSessionTool creates the manage_session tool definition.
-func NewManageSessionTool(log logrus.FieldLogger, sandboxSvc sandbox.Service) Definition {
+func NewManageSessionTool(
+	log logrus.FieldLogger,
+	sandboxSvc sandbox.Service,
+	cfg *config.Config,
+	extensionReg *extension.Registry,
+	proxySvc proxy.Service,
+) Definition {
 	h := &manageSessionHandler{
-		log:        log.WithField("tool", ManageSessionToolName),
-		sandboxSvc: sandboxSvc,
+		log:     log.WithField("tool", ManageSessionToolName),
+		service: execsvc.New(log, sandboxSvc, cfg, extensionReg, proxySvc),
 	}
 
 	return Definition{
@@ -92,7 +102,7 @@ func NewManageSessionTool(log logrus.FieldLogger, sandboxSvc sandbox.Service) De
 
 func (h *manageSessionHandler) handle(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	// Check if sessions are enabled.
-	if !h.sandboxSvc.SessionsEnabled() {
+	if !h.service.SessionsEnabled() {
 		return CallToolError(fmt.Errorf("sessions are disabled")), nil
 	}
 
@@ -127,13 +137,10 @@ func (h *manageSessionHandler) handle(ctx context.Context, request mcp.CallToolR
 func (h *manageSessionHandler) handleList(ctx context.Context, ownerID string) (*mcp.CallToolResult, error) {
 	h.log.WithField("owner_id", ownerID).Debug("Listing sessions")
 
-	sessions, err := h.sandboxSvc.ListSessions(ctx, ownerID)
+	sessions, maxSessions, err := h.service.ListSessions(ctx, ownerID)
 	if err != nil {
 		return CallToolError(fmt.Errorf("listing sessions: %w", err)), nil
 	}
-
-	// Get max sessions from CanCreateSession.
-	_, _, maxSessions := h.sandboxSvc.CanCreateSession(ctx, ownerID)
 
 	details := make([]SessionDetail, 0, len(sessions))
 	for _, s := range sessions {
@@ -173,13 +180,13 @@ func (h *manageSessionHandler) handleList(ctx context.Context, ownerID string) (
 func (h *manageSessionHandler) handleCreate(ctx context.Context, ownerID string) (*mcp.CallToolResult, error) {
 	h.log.WithField("owner_id", ownerID).Debug("Creating session")
 
-	sessionID, err := h.sandboxSvc.CreateSession(ctx, ownerID, nil)
+	sessionID, err := h.service.CreateSession(ctx, ownerID)
 	if err != nil {
 		return CallToolError(err), nil
 	}
 
 	// Get TTL from listing the newly created session.
-	sessions, err := h.sandboxSvc.ListSessions(ctx, ownerID)
+	sessions, _, err := h.service.ListSessions(ctx, ownerID)
 	if err != nil {
 		// Session was created but we couldn't get TTL - return with generic TTL.
 		response := &CreateSessionResponse{
@@ -228,7 +235,7 @@ func (h *manageSessionHandler) handleDestroy(
 		"owner_id":   ownerID,
 	}).Debug("Destroying session")
 
-	if err := h.sandboxSvc.DestroySession(ctx, sessionID, ownerID); err != nil {
+	if err := h.service.DestroySession(ctx, sessionID, ownerID); err != nil {
 		return CallToolError(err), nil
 	}
 

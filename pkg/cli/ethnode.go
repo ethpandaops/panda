@@ -1,14 +1,11 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
-
-	"github.com/ethpandaops/mcp/pkg/proxy"
 )
 
 var ethnodeJSON bool
@@ -43,115 +40,29 @@ func init() {
 	)
 }
 
-// beaconGet makes a GET request to a beacon node via the proxy.
-func beaconGet(ctx context.Context, pc proxy.Client, network, instance, path string) ([]byte, error) {
-	return proxyGet(ctx, pc, fmt.Sprintf("/beacon/%s/%s%s", network, instance, path), nil, nil)
-}
-
-// execRPC makes a JSON-RPC call to an execution node via the proxy.
-func execRPC(ctx context.Context, pc proxy.Client, network, instance, method string, params []any) (json.RawMessage, error) {
-	payload, err := json.Marshal(map[string]any{
-		"jsonrpc": "2.0",
-		"method":  method,
-		"params":  params,
-		"id":      1,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	data, err := proxyPost(ctx, pc, fmt.Sprintf("/execution/%s/%s/", network, instance),
-		strings.NewReader(string(payload)), nil,
-		map[string]string{"Content-Type": "application/json"})
-	if err != nil {
-		return nil, err
-	}
-
-	var rpcResp struct {
-		Result json.RawMessage `json:"result"`
-		Error  *struct {
-			Code    int    `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-
-	if err := json.Unmarshal(data, &rpcResp); err != nil {
-		return nil, fmt.Errorf("parsing JSON-RPC response: %w", err)
-	}
-
-	if rpcResp.Error != nil {
-		return nil, fmt.Errorf("JSON-RPC error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
-	}
-
-	return rpcResp.Result, nil
-}
-
-// hexToUint64 parses a hex string like "0x1a2b" to uint64.
-func hexToUint64(s string) (uint64, error) {
-	s = strings.TrimPrefix(s, "0x")
-
-	var val uint64
-
-	for _, c := range s {
-		val <<= 4
-
-		switch {
-		case c >= '0' && c <= '9':
-			val += uint64(c - '0')
-		case c >= 'a' && c <= 'f':
-			val += uint64(c - 'a' + 10)
-		case c >= 'A' && c <= 'F':
-			val += uint64(c - 'A' + 10)
-		default:
-			return 0, fmt.Errorf("invalid hex character: %c", c)
-		}
-	}
-
-	return val, nil
-}
-
 var ethNodeSyncingCmd = &cobra.Command{
 	Use:   "syncing <network> <instance>",
 	Short: "Get beacon node sync status",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		ctx := context.Background()
-
-		pc, cleanup, err := startProxy(ctx)
-		if err != nil {
-			return err
-		}
-
-		defer cleanup()
-
-		data, err := beaconGet(ctx, pc, args[0], args[1], "/eth/v1/node/syncing")
+		response, err := runServerOperation("ethnode.get_node_syncing", map[string]any{
+			"network":  args[0],
+			"instance": args[1],
+		})
 		if err != nil {
 			return err
 		}
 
 		if ethnodeJSON {
-			return printJSONBytes(data)
+			return printJSON(response.Data)
 		}
 
-		var resp struct {
-			Data struct {
-				HeadSlot     string `json:"head_slot"`
-				SyncDistance string `json:"sync_distance"`
-				IsSyncing    bool   `json:"is_syncing"`
-				IsOptimistic bool   `json:"is_optimistic"`
-				ELOffline    bool   `json:"el_offline"`
-			} `json:"data"`
-		}
-
-		if err := json.Unmarshal(data, &resp); err != nil {
-			return printJSONBytes(data)
-		}
-
-		fmt.Printf("Head slot:     %s\n", resp.Data.HeadSlot)
-		fmt.Printf("Sync distance: %s\n", resp.Data.SyncDistance)
-		fmt.Printf("Is syncing:    %v\n", resp.Data.IsSyncing)
-		fmt.Printf("Is optimistic: %v\n", resp.Data.IsOptimistic)
-		fmt.Printf("EL offline:    %v\n", resp.Data.ELOffline)
+		data := nestedMap(response.Data, "data")
+		fmt.Printf("Head slot:     %v\n", data["head_slot"])
+		fmt.Printf("Sync distance: %v\n", data["sync_distance"])
+		fmt.Printf("Is syncing:    %v\n", data["is_syncing"])
+		fmt.Printf("Is optimistic: %v\n", data["is_optimistic"])
+		fmt.Printf("EL offline:    %v\n", data["el_offline"])
 
 		return nil
 	},
@@ -162,51 +73,44 @@ var ethNodeVersionCmd = &cobra.Command{
 	Short: "Get node software version",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		ctx := context.Background()
-
-		pc, cleanup, err := startProxy(ctx)
-		if err != nil {
-			return err
-		}
-
-		defer cleanup()
-
-		data, err := beaconGet(ctx, pc, args[0], args[1], "/eth/v1/node/version")
+		beaconResp, err := runServerOperation("ethnode.get_node_version", map[string]any{
+			"network":  args[0],
+			"instance": args[1],
+		})
 		if err != nil {
 			return err
 		}
 
 		if ethnodeJSON {
-			return printJSONBytes(data)
+			executionResp, execErr := runServerOperation("ethnode.web3_client_version", map[string]any{
+				"network":  args[0],
+				"instance": args[1],
+			})
+			if execErr != nil {
+				return printJSON(map[string]any{
+					"beacon":          beaconResp.Data,
+					"execution_error": execErr.Error(),
+				})
+			}
+
+			return printJSON(map[string]any{
+				"beacon":    beaconResp.Data,
+				"execution": executionResp.Data,
+			})
 		}
 
-		var resp struct {
-			Data struct {
-				Version string `json:"version"`
-			} `json:"data"`
-		}
+		fmt.Printf("CL: %v\n", nestedMap(beaconResp.Data, "data")["version"])
 
-		if err := json.Unmarshal(data, &resp); err != nil {
-			return printJSONBytes(data)
-		}
-
-		fmt.Printf("CL: %s\n", resp.Data.Version)
-
-		// Also get EL version.
-		elResult, err := execRPC(ctx, pc, args[0], args[1], "web3_clientVersion", nil)
-		if err != nil {
-			_, _ = fmt.Fprintf(log.Writer(), "EL: (error: %v)\n", err)
-
+		executionResp, execErr := runServerOperation("ethnode.web3_client_version", map[string]any{
+			"network":  args[0],
+			"instance": args[1],
+		})
+		if execErr != nil {
+			_, _ = fmt.Fprintf(log.Writer(), "EL: (error: %v)\n", execErr)
 			return nil
 		}
 
-		var elVersion string
-		if err := json.Unmarshal(elResult, &elVersion); err != nil {
-			fmt.Printf("EL: %s\n", string(elResult))
-		} else {
-			fmt.Printf("EL: %s\n", elVersion)
-		}
-
+		fmt.Printf("EL: %v\n", executionResp.Data)
 		return nil
 	},
 }
@@ -216,27 +120,22 @@ var ethNodeHealthCmd = &cobra.Command{
 	Short: "Get beacon node health status",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		ctx := context.Background()
-
-		pc, cleanup, err := startProxy(ctx)
+		response, err := runServerOperation("ethnode.get_node_health", map[string]any{
+			"network":  args[0],
+			"instance": args[1],
+		})
 		if err != nil {
 			return err
 		}
 
-		defer cleanup()
-
-		_, status, err := proxyDo(ctx, pc, "GET",
-			fmt.Sprintf("/beacon/%s/%s/eth/v1/node/health", args[0], args[1]),
-			nil, nil, nil)
-		if err != nil {
-			return err
-		}
+		data, _ := response.Data.(map[string]any)
+		statusValue := intFromAny(data["status_code"])
 
 		if ethnodeJSON {
-			return printJSON(map[string]any{"status_code": status})
+			return printJSON(response.Data)
 		}
 
-		switch status {
+		switch statusValue {
 		case 200:
 			fmt.Println("Healthy (200)")
 		case 206:
@@ -244,7 +143,7 @@ var ethNodeHealthCmd = &cobra.Command{
 		case 503:
 			fmt.Println("Not initialized (503)")
 		default:
-			fmt.Printf("Status: %d\n", status)
+			fmt.Printf("Status: %d\n", statusValue)
 		}
 
 		return nil
@@ -256,41 +155,23 @@ var ethNodePeersCmd = &cobra.Command{
 	Short: "Get peer count",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		ctx := context.Background()
-
-		pc, cleanup, err := startProxy(ctx)
-		if err != nil {
-			return err
-		}
-
-		defer cleanup()
-
-		data, err := beaconGet(ctx, pc, args[0], args[1], "/eth/v1/node/peer_count")
+		response, err := runServerOperation("ethnode.get_peer_count", map[string]any{
+			"network":  args[0],
+			"instance": args[1],
+		})
 		if err != nil {
 			return err
 		}
 
 		if ethnodeJSON {
-			return printJSONBytes(data)
+			return printJSON(response.Data)
 		}
 
-		var resp struct {
-			Data struct {
-				Connected     string `json:"connected"`
-				Disconnected  string `json:"disconnected"`
-				Connecting    string `json:"connecting"`
-				Disconnecting string `json:"disconnecting"`
-			} `json:"data"`
-		}
-
-		if err := json.Unmarshal(data, &resp); err != nil {
-			return printJSONBytes(data)
-		}
-
-		fmt.Printf("Connected:     %s\n", resp.Data.Connected)
-		fmt.Printf("Disconnected:  %s\n", resp.Data.Disconnected)
-		fmt.Printf("Connecting:    %s\n", resp.Data.Connecting)
-		fmt.Printf("Disconnecting: %s\n", resp.Data.Disconnecting)
+		data := nestedMap(response.Data, "data")
+		fmt.Printf("Connected:     %v\n", data["connected"])
+		fmt.Printf("Disconnected:  %v\n", data["disconnected"])
+		fmt.Printf("Connecting:    %v\n", data["connecting"])
+		fmt.Printf("Disconnecting: %v\n", data["disconnecting"])
 
 		return nil
 	},
@@ -301,39 +182,22 @@ var ethNodeFinalityCmd = &cobra.Command{
 	Short: "Get finality checkpoints",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		ctx := context.Background()
-
-		pc, cleanup, err := startProxy(ctx)
-		if err != nil {
-			return err
-		}
-
-		defer cleanup()
-
-		data, err := beaconGet(ctx, pc, args[0], args[1], "/eth/v1/beacon/states/head/finality_checkpoints")
+		response, err := runServerOperation("ethnode.get_finality_checkpoints", map[string]any{
+			"network":  args[0],
+			"instance": args[1],
+		})
 		if err != nil {
 			return err
 		}
 
 		if ethnodeJSON {
-			return printJSONBytes(data)
+			return printJSON(response.Data)
 		}
 
-		var resp struct {
-			Data struct {
-				Finalized         struct{ Epoch string } `json:"finalized"`
-				CurrentJustified  struct{ Epoch string } `json:"current_justified"`
-				PreviousJustified struct{ Epoch string } `json:"previous_justified"`
-			} `json:"data"`
-		}
-
-		if err := json.Unmarshal(data, &resp); err != nil {
-			return printJSONBytes(data)
-		}
-
-		fmt.Printf("Finalized:          epoch %s\n", resp.Data.Finalized.Epoch)
-		fmt.Printf("Current justified:  epoch %s\n", resp.Data.CurrentJustified.Epoch)
-		fmt.Printf("Previous justified: epoch %s\n", resp.Data.PreviousJustified.Epoch)
+		data := nestedMap(response.Data, "data")
+		fmt.Printf("Finalized:          epoch %v\n", nestedMap(data["finalized"], "")["epoch"])
+		fmt.Printf("Current justified:  epoch %v\n", nestedMap(data["current_justified"], "")["epoch"])
+		fmt.Printf("Previous justified: epoch %v\n", nestedMap(data["previous_justified"], "")["epoch"])
 
 		return nil
 	},
@@ -344,55 +208,34 @@ var ethNodeHeaderCmd = &cobra.Command{
 	Short: "Get beacon block header",
 	Args:  cobra.RangeArgs(2, 3),
 	RunE: func(_ *cobra.Command, args []string) error {
-		ctx := context.Background()
-
-		pc, cleanup, err := startProxy(ctx)
-		if err != nil {
-			return err
-		}
-
-		defer cleanup()
-
 		slot := "head"
 		if len(args) == 3 {
 			slot = args[2]
 		}
 
-		data, err := beaconGet(ctx, pc, args[0], args[1], fmt.Sprintf("/eth/v1/beacon/headers/%s", slot))
+		response, err := runServerOperation("ethnode.get_beacon_headers", map[string]any{
+			"network":  args[0],
+			"instance": args[1],
+			"slot":     slot,
+		})
 		if err != nil {
 			return err
 		}
 
 		if ethnodeJSON {
-			return printJSONBytes(data)
+			return printJSON(response.Data)
 		}
 
-		var resp struct {
-			Data struct {
-				Root   string `json:"root"`
-				Header struct {
-					Message struct {
-						Slot          string `json:"slot"`
-						ProposerIndex string `json:"proposer_index"`
-						ParentRoot    string `json:"parent_root"`
-						StateRoot     string `json:"state_root"`
-						BodyRoot      string `json:"body_root"`
-					} `json:"message"`
-				} `json:"header"`
-			} `json:"data"`
-		}
+		data := nestedMap(response.Data, "data")
+		header := nestedMap(data["header"], "")
+		message := nestedMap(header["message"], "")
 
-		if err := json.Unmarshal(data, &resp); err != nil {
-			return printJSONBytes(data)
-		}
-
-		msg := resp.Data.Header.Message
-		fmt.Printf("Slot:           %s\n", msg.Slot)
-		fmt.Printf("Proposer index: %s\n", msg.ProposerIndex)
-		fmt.Printf("Root:           %s\n", resp.Data.Root)
-		fmt.Printf("Parent root:    %s\n", msg.ParentRoot)
-		fmt.Printf("State root:     %s\n", msg.StateRoot)
-		fmt.Printf("Body root:      %s\n", msg.BodyRoot)
+		fmt.Printf("Slot:           %v\n", message["slot"])
+		fmt.Printf("Proposer index: %v\n", message["proposer_index"])
+		fmt.Printf("Root:           %v\n", data["root"])
+		fmt.Printf("Parent root:    %v\n", message["parent_root"])
+		fmt.Printf("State root:     %v\n", message["state_root"])
+		fmt.Printf("Body root:      %v\n", message["body_root"])
 
 		return nil
 	},
@@ -403,50 +246,20 @@ var ethNodeBlockNumberCmd = &cobra.Command{
 	Short: "Get latest execution layer block number",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		ctx := context.Background()
-
-		pc, cleanup, err := startProxy(ctx)
+		response, err := runServerOperation("ethnode.eth_block_number", map[string]any{
+			"network":  args[0],
+			"instance": args[1],
+		})
 		if err != nil {
 			return err
 		}
 
-		defer cleanup()
-
-		result, err := execRPC(ctx, pc, args[0], args[1], "eth_blockNumber", nil)
-		if err != nil {
-			return err
-		}
-
+		data, _ := response.Data.(map[string]any)
 		if ethnodeJSON {
-			var hex string
-			if err := json.Unmarshal(result, &hex); err != nil {
-				return printJSONBytes(result)
-			}
-
-			num, err := hexToUint64(hex)
-			if err != nil {
-				return printJSONBytes(result)
-			}
-
-			return printJSON(map[string]any{"block_number": num, "hex": hex})
+			return printJSON(data)
 		}
 
-		var hex string
-		if err := json.Unmarshal(result, &hex); err != nil {
-			fmt.Println(string(result))
-
-			return nil
-		}
-
-		num, err := hexToUint64(hex)
-		if err != nil {
-			fmt.Println(hex)
-
-			return nil
-		}
-
-		fmt.Println(num)
-
+		fmt.Println(intFromAny(data["block_number"]))
 		return nil
 	},
 }
@@ -462,26 +275,21 @@ Examples:
   ep ethnode beacon-get my-devnet lighthouse-geth-1 /eth/v1/config/deposit_contract`,
 	Args: cobra.ExactArgs(3),
 	RunE: func(_ *cobra.Command, args []string) error {
-		ctx := context.Background()
-
-		pc, cleanup, err := startProxy(ctx)
-		if err != nil {
-			return err
-		}
-
-		defer cleanup()
-
 		path := args[2]
 		if !strings.HasPrefix(path, "/") {
 			path = "/" + path
 		}
 
-		data, err := beaconGet(ctx, pc, args[0], args[1], path)
+		response, err := runServerOperationRaw("ethnode.beacon_get", map[string]any{
+			"network":  args[0],
+			"instance": args[1],
+			"path":     path,
+		})
 		if err != nil {
 			return err
 		}
 
-		return printJSONBytes(data)
+		return printJSONBytes(response.Body)
 	},
 }
 
@@ -497,15 +305,6 @@ Examples:
   ep ethnode exec-rpc my-devnet lighthouse-geth-1 eth_chainId`,
 	Args: cobra.RangeArgs(3, 4),
 	RunE: func(_ *cobra.Command, args []string) error {
-		ctx := context.Background()
-
-		pc, cleanup, err := startProxy(ctx)
-		if err != nil {
-			return err
-		}
-
-		defer cleanup()
-
 		var params []any
 		if len(args) == 4 {
 			if err := json.Unmarshal([]byte(args[3]), &params); err != nil {
@@ -513,11 +312,49 @@ Examples:
 			}
 		}
 
-		result, err := execRPC(ctx, pc, args[0], args[1], args[2], params)
+		response, err := runServerOperationRaw("ethnode.execution_rpc", map[string]any{
+			"network":  args[0],
+			"instance": args[1],
+			"method":   args[2],
+			"params":   params,
+		})
 		if err != nil {
 			return err
 		}
 
-		return printJSONBytes(result)
+		if ethnodeJSON {
+			return printJSONBytes(response.Body)
+		}
+
+		var payload map[string]any
+		if err := json.Unmarshal(response.Body, &payload); err != nil {
+			return printJSONBytes(response.Body)
+		}
+
+		return printJSON(payload["result"])
 	},
+}
+
+func nestedMap(value any, key string) map[string]any {
+	if key == "" {
+		data, _ := value.(map[string]any)
+		return data
+	}
+
+	data, _ := value.(map[string]any)
+	nested, _ := data[key].(map[string]any)
+	return nested
+}
+
+func intFromAny(value any) int64 {
+	switch typed := value.(type) {
+	case float64:
+		return int64(typed)
+	case int:
+		return int64(typed)
+	case int64:
+		return typed
+	default:
+		return 0
+	}
 }

@@ -6,14 +6,10 @@ import (
 	"io"
 	"os"
 	"strings"
-	"time"
 
-	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
-	"github.com/ethpandaops/mcp/pkg/app"
-	"github.com/ethpandaops/mcp/pkg/config"
-	"github.com/ethpandaops/mcp/pkg/sandbox"
+	"github.com/ethpandaops/mcp/pkg/serverapi"
 )
 
 var (
@@ -58,44 +54,9 @@ func runExecute(_ *cobra.Command, _ []string) error {
 	}
 
 	ctx := context.Background()
-
-	cfg, err := config.Load(cfgFile)
-	if err != nil {
-		return fmt.Errorf("loading config: %w", err)
-	}
-
-	// Build app with sandbox + proxy + plugins (no embedding needed).
-	a := app.New(log, cfg)
-	if err := a.BuildWithSandbox(ctx); err != nil {
-		return fmt.Errorf("building app: %w", err)
-	}
-
-	defer func() { _ = a.Stop(ctx) }()
-
-	// Build sandbox environment.
-	env, err := a.SandboxEnv()
-	if err != nil {
-		return fmt.Errorf("building sandbox env: %w", err)
-	}
-
-	// Register proxy token.
-	executionID := uuid.New().String()
-	token := a.ProxyClient.RegisterToken(executionID)
-	env["ETHPANDAOPS_PROXY_TOKEN"] = token
-
-	defer a.ProxyClient.RevokeToken(executionID)
-
-	// Resolve timeout.
-	timeout := cfg.Sandbox.Timeout
-	if executeTimeout > 0 {
-		timeout = executeTimeout
-	}
-
-	// Execute.
-	result, err := a.Sandbox.Execute(ctx, sandbox.ExecuteRequest{
+	result, err := executeCodeRemotely(ctx, serverapi.ExecuteRequest{
 		Code:      code,
-		Env:       env,
-		Timeout:   time.Duration(timeout) * time.Second,
+		Timeout:   executeTimeout,
 		SessionID: executeSession,
 	})
 	if err != nil {
@@ -121,8 +82,11 @@ func runExecute(_ *cobra.Command, _ []string) error {
 	}
 
 	if result.SessionID != "" {
-		fmt.Fprintf(os.Stderr, "[session] %s (ttl: %s)\n",
-			result.SessionID, result.SessionTTLRemaining.Round(time.Second))
+		ttl := result.SessionTTLRemaining
+		if ttl == "" {
+			ttl = "unknown"
+		}
+		fmt.Fprintf(os.Stderr, "[session] %s (ttl: %s)\n", result.SessionID, ttl)
 	}
 
 	if result.ExitCode != 0 {

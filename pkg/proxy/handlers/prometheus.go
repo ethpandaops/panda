@@ -17,12 +17,13 @@ import (
 
 // PrometheusConfig holds Prometheus proxy configuration for a single instance.
 type PrometheusConfig struct {
-	Name       string
-	URL        string
-	Username   string
-	Password   string
-	SkipVerify bool
-	Timeout    int
+	Name        string
+	Description string
+	URL         string
+	Username    string
+	Password    string
+	SkipVerify  bool
+	Timeout     int
 }
 
 // PrometheusHandler handles requests to Prometheus instances.

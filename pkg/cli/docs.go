@@ -7,14 +7,14 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ethpandaops/mcp/pkg/plugin"
+	"github.com/ethpandaops/mcp/pkg/extension"
 	"github.com/ethpandaops/mcp/pkg/types"
 
-	clickhouseplugin "github.com/ethpandaops/mcp/plugins/clickhouse"
-	doraplugin "github.com/ethpandaops/mcp/plugins/dora"
-	ethnodeplugin "github.com/ethpandaops/mcp/plugins/ethnode"
-	lokiplugin "github.com/ethpandaops/mcp/plugins/loki"
-	prometheusplugin "github.com/ethpandaops/mcp/plugins/prometheus"
+	clickhouseextension "github.com/ethpandaops/mcp/extensions/clickhouse"
+	doraextension "github.com/ethpandaops/mcp/extensions/dora"
+	ethnodeextension "github.com/ethpandaops/mcp/extensions/ethnode"
+	lokiextension "github.com/ethpandaops/mcp/extensions/loki"
+	prometheusextension "github.com/ethpandaops/mcp/extensions/prometheus"
 )
 
 var docsJSON bool
@@ -132,14 +132,14 @@ func showModule(docs map[string]types.ModuleDoc, name string) error {
 	return nil
 }
 
-// getAllPythonAPIDocs returns docs from all plugins (static data, no credentials needed).
+// getAllPythonAPIDocs returns docs from all extensions (static data, no credentials needed).
 func getAllPythonAPIDocs() map[string]types.ModuleDoc {
-	reg := plugin.NewRegistry(log)
-	reg.Add(clickhouseplugin.New())
-	reg.Add(doraplugin.New())
-	reg.Add(ethnodeplugin.New())
-	reg.Add(lokiplugin.New())
-	reg.Add(prometheusplugin.New())
+	reg := extension.NewRegistry(log)
+	reg.Add(clickhouseextension.New())
+	reg.Add(doraextension.New())
+	reg.Add(ethnodeextension.New())
+	reg.Add(lokiextension.New())
+	reg.Add(prometheusextension.New())
 
 	return reg.AllPythonAPIDocs()
 }

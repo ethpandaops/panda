@@ -1,91 +1,85 @@
-# Deployment modes
+# Deployments
 
-This document describes how ethpandaops/mcp is deployed in three modes and how the pieces fit together. The goal is a clear separation of concerns with minimal magic and predictable plugin behavior.
+This repo has one intended product topology:
+
+```text
+ep -> server -> proxy -> datasources
+```
+
+- `ep` is a client.
+- `server` owns MCP, HTTP API, sandbox execution, sessions, and search.
+- `proxy` owns datasource and storage credentials.
+- sandboxed Python talks to the proxy using server-issued auth.
 
 ## Components
 
-- MCP server: control plane. Owns transport, auth, tool/resource registration, and sandbox orchestration.
-- Sandbox runners: data plane. Execute Python in isolated containers (Docker for dev, gVisor for prod).
-- Credential proxy: trust boundary. Holds datasource + S3 credentials and proxies all datasource/S3 traffic.
-- Plugins: per-datasource packages that define config, schema discovery, resources, examples, and Python API docs.
+- `ep`: local CLI that talks to `server` over HTTP.
+- `server`: runs MCP transports, the CLI-facing HTTP API, sandboxes, sessions, and search.
+- `proxy`: credential boundary for ClickHouse, Prometheus, Loki, ethnode, Dora, and S3.
+- `extensions`: datasource integrations, docs, resources, examples, and schema discovery.
 
-## Data flow (all modes)
+## Local Docker Compose
 
-1) Client connects to MCP server (stdio/SSE/HTTP).
-2) MCP server builds a credential-free sandbox environment and injects:
-   - proxy URL
-   - proxy auth token (JWT or "none" for local dev)
-   - datasource metadata (names/URLs) discovered from proxy
-3) Sandbox runs Python; all data access flows through the proxy.
-4) Proxy validates auth, rate-limits/audits, and forwards to ClickHouse/Prometheus/Loki/S3.
+Use this for repo development and normal local use.
 
-## Mode 1: Dev mode (proxy + MCP on this host)
+```text
+ep -> localhost:2480 (server container)
+server -> http://ethpandaops-mcp-proxy:18081
+proxy -> datasources
+```
 
-Use when iterating locally.
+- `docker compose up -d` runs `server`, `proxy`, and `minio`.
+- `config.yaml` configures the server.
+- `proxy-config.yaml` configures datasource credentials.
+- `ep init` writes the client config with `server.url`.
+- if server auth is enabled, authenticate the CLI with `mcp auth login --issuer <server-url> --client-id ep`
 
-- Proxy runs locally with auth.mode: none.
-- MCP runs locally and points proxy.url to localhost.
-- Sandboxes run via local Docker and reach proxy/S3 on the local Docker network.
-- Typical entrypoint: docker-compose.yaml (builds sandbox, runs proxy, MCP, and MinIO).
+## Local Server + Hosted Proxy
 
-## Mode 2: Local-agent mode (proxy in prod, MCP + sandboxes on this host)
+Use this when users should execute code locally but access your hosted credential proxy.
 
-Use when the MCP server runs locally but must reach production datasources.
+```text
+ep -> local server
+local server -> hosted proxy
+hosted proxy -> datasources
+```
 
-- Proxy runs in production with auth.mode: jwt.
-- MCP runs locally with proxy.url set to the production proxy and proxy.auth configured for OIDC.
-- Local MCP uses mcp auth login to obtain a JWT; that JWT is injected into sandbox executions.
-- Sandboxes must be able to reach the production proxy over the network.
+- the user runs `server` locally
+- the user points `ep` at that local server
+- the local server points `proxy.url` at the hosted proxy
+- code still executes on the user’s machine
 
-## Mode 3: Remote-agent mode (proxy + MCP + sandboxes in prod)
+This is the recommended external-user shape when you do not want to execute code on your own servers.
 
-Use for hosted deployments.
+## Hosted Server + Hosted Proxy
 
-- Proxy and MCP run together in production, typically in Kubernetes or on VMs.
-- MCP uses gVisor backend for stronger isolation.
-- MCP HTTP auth is enabled (GitHub OAuth) for external clients.
-- Sandboxes run in the same network and only reach datasources via the proxy.
+Use this only when you intentionally want a managed deployment.
 
-## Configuration surface (per mode)
+```text
+ep / MCP client -> hosted server -> hosted proxy -> datasources
+```
 
-Required config knobs:
+- `server` and `proxy` run on your infra
+- HTTP auth on the server can be enabled for external clients
+- stronger sandboxing like `gvisor` belongs here
 
-- proxy.url
-  - dev: http://localhost:18081
-  - local-agent: https://proxy.prod.example
-  - remote-agent: http://proxy:18081 (service DNS)
-- proxy.auth
-  - dev: not set (proxy auth.mode: none)
-  - local-agent/remote-agent: issuer_url + client_id for JWT
-- sandbox.backend
-  - dev/local-agent: docker
-  - remote-agent: gvisor
-- storage
-  - endpoint must be reachable from sandboxes (no localhost)
-  - public_url_prefix should be publicly reachable for user downloads
+## Configuration Split
 
-Examples to start from:
+- `ep` config:
+  - `server.url` or `server.base_url`
+- `server` config:
+  - sandbox settings
+  - extension config
+  - `proxy.url`
+  - optional `proxy.auth`
+- `proxy` config:
+  - datasource credentials
+  - storage credentials
+  - proxy auth/rate-limit/audit settings
 
-- config.example.yaml (MCP)
-- proxy-config.example.yaml (proxy)
-- docker-compose.yaml (dev)
+## Notes
 
-## Separation of concerns
-
-- Credential proxy is the sole holder of datasource + S3 credentials.
-- MCP server never holds datasource creds and only uses the proxy for discovery and access.
-- Sandboxes are credential-free; they only receive proxy URL + token and datasource metadata.
-- Plugins remain purely declarative for schemas/resources/examples and use the proxy client for lookup.
-
-## Plugin behavior across modes
-
-- Plugin schema discovery and resources that require live data must use the proxy client.
-- Datasource metadata is proxy-authoritative; plugin metadata is only used for docs/examples.
-- Avoid embedding credentials or direct datasource URLs in plugin config for MCP.
-
-## Related patterns (external)
-
-- Anthropic MCP code execution architecture
-- Cloudflare "Code Mode" (sandboxed code using MCP tools)
-- JupyterHub hub/proxy separation and per-user servers
-- gVisor runtime isolation model
+- there is no client-side `proxy.mode`
+- `ep` does not embed the proxy
+- `ep` does not run sandboxes itself
+- if the server is not running, `ep` cannot execute or query anything

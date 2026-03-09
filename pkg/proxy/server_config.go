@@ -9,6 +9,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/ethpandaops/mcp/pkg/configpath"
 	"github.com/ethpandaops/mcp/pkg/proxy/handlers"
 )
 
@@ -265,15 +266,16 @@ func (c *ServerConfig) ToHandlerConfigs() ([]handlers.ClickHouseConfig, []handle
 	chConfigs := make([]handlers.ClickHouseConfig, len(c.ClickHouse))
 	for i, ch := range c.ClickHouse {
 		chConfigs[i] = handlers.ClickHouseConfig{
-			Name:       ch.Name,
-			Host:       ch.Host,
-			Port:       ch.Port,
-			Database:   ch.Database,
-			Username:   ch.Username,
-			Password:   ch.Password,
-			Secure:     ch.Secure,
-			SkipVerify: ch.SkipVerify,
-			Timeout:    ch.Timeout,
+			Name:        ch.Name,
+			Description: ch.Description,
+			Host:        ch.Host,
+			Port:        ch.Port,
+			Database:    ch.Database,
+			Username:    ch.Username,
+			Password:    ch.Password,
+			Secure:      ch.Secure,
+			SkipVerify:  ch.SkipVerify,
+			Timeout:     ch.Timeout,
 		}
 	}
 
@@ -281,10 +283,11 @@ func (c *ServerConfig) ToHandlerConfigs() ([]handlers.ClickHouseConfig, []handle
 	promConfigs := make([]handlers.PrometheusConfig, len(c.Prometheus))
 	for i, prom := range c.Prometheus {
 		promConfigs[i] = handlers.PrometheusConfig{
-			Name:     prom.Name,
-			URL:      prom.URL,
-			Username: prom.Username,
-			Password: prom.Password,
+			Name:        prom.Name,
+			Description: prom.Description,
+			URL:         prom.URL,
+			Username:    prom.Username,
+			Password:    prom.Password,
 		}
 	}
 
@@ -292,10 +295,11 @@ func (c *ServerConfig) ToHandlerConfigs() ([]handlers.ClickHouseConfig, []handle
 	lokiConfigs := make([]handlers.LokiConfig, len(c.Loki))
 	for i, loki := range c.Loki {
 		lokiConfigs[i] = handlers.LokiConfig{
-			Name:     loki.Name,
-			URL:      loki.URL,
-			Username: loki.Username,
-			Password: loki.Password,
+			Name:        loki.Name,
+			Description: loki.Description,
+			URL:         loki.URL,
+			Username:    loki.Username,
+			Password:    loki.Password,
 		}
 	}
 
@@ -329,16 +333,14 @@ var envVarWithDefaultPattern = regexp.MustCompile(`\$\{([^}:]+)(?::-([^}]*))?\}`
 
 // LoadServerConfig loads a proxy server config from a YAML file.
 func LoadServerConfig(path string) (*ServerConfig, error) {
-	if path == "" {
-		path = os.Getenv("CONFIG_PATH")
-		if path == "" {
-			path = "proxy-config.yaml"
-		}
+	resolvedPath, err := configpath.ResolveProxyConfigPath(path, "")
+	if err != nil {
+		return nil, err
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(resolvedPath)
 	if err != nil {
-		return nil, fmt.Errorf("reading config file %s: %w", path, err)
+		return nil, fmt.Errorf("reading config file %s: %w", resolvedPath, err)
 	}
 
 	// Substitute environment variables.

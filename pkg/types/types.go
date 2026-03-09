@@ -1,5 +1,5 @@
 // Package types provides shared types used across the MCP server
-// and plugins to avoid circular dependencies.
+// and extensions to avoid circular dependencies.
 package types
 
 // DatasourceInfo describes a configured datasource for the

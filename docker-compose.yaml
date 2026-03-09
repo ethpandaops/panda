@@ -5,12 +5,15 @@
 #   2. MCP server - connects to proxy, runs sandbox containers
 #
 # Usage:
-#   docker-compose up -d                        # Start all services
-#   docker-compose logs -f ethpandaops-mcp-server # View server logs
+#   docker compose up -d                        # Start all services
+#   docker compose logs -f ethpandaops-mcp-server # View server logs
 #
 # Optional environment variables (with defaults):
 #   MINIO_ACCESS_KEY    - MinIO access key (default: minioadmin)
 #   MINIO_SECRET_KEY    - MinIO secret key (default: minioadmin)
+#   MCP_PROXY_HOST      - Host interface for published proxy port (default: 127.0.0.1)
+#   MCP_SERVER_HOST     - Host interface for published server + metrics ports (default: 127.0.0.1)
+#   MINIO_HOST          - Host interface for published MinIO ports (default: 127.0.0.1)
 #   MINIO_API_PORT      - MinIO S3 API port (default: 31400)
 #   MINIO_CONSOLE_PORT  - MinIO console port (default: 31401)
 #   MCP_SERVER_PORT     - MCP server port (default: 2480)
@@ -39,7 +42,7 @@ services:
     entrypoint: ["/app/proxy"]
     command: ["--config", "/config/proxy-config.yaml"]
     ports:
-      - "18081:18081"  # Proxy for sandbox containers
+      - "${MCP_PROXY_HOST:-127.0.0.1}:18081:18081"  # Proxy for local clients
     env_file:
       - path: .env
     environment:
@@ -103,8 +106,8 @@ services:
         - GIT_COMMIT=${GIT_COMMIT:-unknown}
         - BUILD_TIME=${BUILD_TIME:-unknown}
     ports:
-      - "${MCP_SERVER_PORT:-2480}:2480"   # MCP server
-      - "${MCP_METRICS_PORT:-31490}:2490"  # Metrics
+      - "${MCP_SERVER_HOST:-127.0.0.1}:${MCP_SERVER_PORT:-2480}:2480"   # MCP server
+      - "${MCP_SERVER_HOST:-127.0.0.1}:${MCP_METRICS_PORT:-31490}:2490"  # Metrics
     environment:
       - CONFIG_PATH=/config/config.yaml
     volumes:
@@ -128,8 +131,8 @@ services:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
     ports:
-      - "${MINIO_API_PORT:-31400}:9000"       # S3 API
-      - "${MINIO_CONSOLE_PORT:-31401}:9001"   # Console
+      - "${MINIO_HOST:-127.0.0.1}:${MINIO_API_PORT:-31400}:9000"       # S3 API
+      - "${MINIO_HOST:-127.0.0.1}:${MINIO_CONSOLE_PORT:-31401}:9001"   # Console
     environment:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}

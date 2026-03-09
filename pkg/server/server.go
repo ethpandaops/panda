@@ -17,9 +17,12 @@ import (
 	"github.com/ethpandaops/mcp/internal/version"
 	"github.com/ethpandaops/mcp/pkg/auth"
 	"github.com/ethpandaops/mcp/pkg/config"
+	"github.com/ethpandaops/mcp/pkg/execsvc"
+	"github.com/ethpandaops/mcp/pkg/extension"
 	"github.com/ethpandaops/mcp/pkg/observability"
+	"github.com/ethpandaops/mcp/pkg/proxy"
 	"github.com/ethpandaops/mcp/pkg/resource"
-	"github.com/ethpandaops/mcp/pkg/sandbox"
+	"github.com/ethpandaops/mcp/pkg/searchsvc"
 	"github.com/ethpandaops/mcp/pkg/tool"
 )
 
@@ -42,11 +45,15 @@ type Service interface {
 type service struct {
 	log                  logrus.FieldLogger
 	cfg                  config.ServerConfig
-	authCfg              config.AuthConfig
 	toolRegistry         tool.Registry
 	resourceRegistry     resource.Registry
-	sandbox              sandbox.Service
 	auth                 auth.SimpleService
+	searchService        *searchsvc.Service
+	execService          *execsvc.Service
+	proxyService         proxy.Service
+	extensionRegistry    *extension.Registry
+	cleanup              func(context.Context) error
+	httpClient           *http.Client
 	mcpServer            *mcpserver.MCPServer
 	sseServer            *mcpserver.SSEServer
 	streamableHTTPServer *mcpserver.StreamableHTTPServer
@@ -60,21 +67,28 @@ type service struct {
 func NewService(
 	log logrus.FieldLogger,
 	cfg config.ServerConfig,
-	authCfg config.AuthConfig,
 	toolRegistry tool.Registry,
 	resourceRegistry resource.Registry,
-	sandboxSvc sandbox.Service,
 	authSvc auth.SimpleService,
+	searchSvc *searchsvc.Service,
+	execSvc *execsvc.Service,
+	proxySvc proxy.Service,
+	extensionReg *extension.Registry,
+	cleanup func(context.Context) error,
 ) Service {
 	return &service{
-		log:              log.WithField("component", "server"),
-		cfg:              cfg,
-		authCfg:          authCfg,
-		toolRegistry:     toolRegistry,
-		resourceRegistry: resourceRegistry,
-		sandbox:          sandboxSvc,
-		auth:             authSvc,
-		done:             make(chan struct{}),
+		log:               log.WithField("component", "server"),
+		cfg:               cfg,
+		toolRegistry:      toolRegistry,
+		resourceRegistry:  resourceRegistry,
+		auth:              authSvc,
+		searchService:     searchSvc,
+		execService:       execSvc,
+		proxyService:      proxySvc,
+		extensionRegistry: extensionReg,
+		cleanup:           cleanup,
+		httpClient:        &http.Client{Timeout: 0},
+		done:              make(chan struct{}),
 	}
 }
 
@@ -165,10 +179,9 @@ func (s *service) Stop() error {
 		}
 	}
 
-	// Stop the sandbox service.
-	if s.sandbox != nil {
-		if err := s.sandbox.Stop(shutdownCtx); err != nil {
-			s.log.WithError(err).Error("Failed to stop sandbox service")
+	if s.cleanup != nil {
+		if err := s.cleanup(shutdownCtx); err != nil {
+			s.log.WithError(err).Error("Failed to stop server dependencies")
 		}
 	}
 
@@ -420,6 +433,8 @@ func (s *service) buildHTTPHandler(routes map[string]http.Handler) http.Handler 
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ready"))
 	})
+
+	s.mountAPIRoutes(r)
 
 	// Mount MCP handler at specified routes.
 	for pattern, handler := range routes {

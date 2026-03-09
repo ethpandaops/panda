@@ -17,12 +17,13 @@ import (
 
 // LokiConfig holds Loki proxy configuration for a single instance.
 type LokiConfig struct {
-	Name       string
-	URL        string
-	Username   string
-	Password   string
-	SkipVerify bool
-	Timeout    int
+	Name        string
+	Description string
+	URL         string
+	Username    string
+	Password    string
+	SkipVerify  bool
+	Timeout     int
 }
 
 // LokiHandler handles requests to Loki instances.

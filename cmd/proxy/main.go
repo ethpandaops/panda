@@ -49,7 +49,7 @@ the proxy runs centrally and MCP clients connect using JWTs for authentication.`
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: proxy-config.yaml or $CONFIG_PATH)")
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: $ETHPANDAOPS_PROXY_CONFIG, ~/.config/ethpandaops/proxy-config.yaml, or ./proxy-config.yaml)")
 	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "log level (debug, info, warn, error)")
 }
 

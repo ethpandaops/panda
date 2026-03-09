@@ -9,19 +9,41 @@ Read more: https://www.anthropic.com/engineering/code-execution-with-mcp
 ## Quick Start
 
 ```bash
-# Configure
+# Configure the server + proxy runtime
 cp config.example.yaml config.yaml
-# Edit config.yaml with your datasource credentials (ClickHouse, Prometheus, Loki)
+cp proxy-config.example.yaml proxy-config.yaml
 
-# Run (builds sandbox image, starts MinIO + MCP server)
-docker-compose up -d
+# Configure the CLI client
+ep init
+# Edit ~/.config/ethpandaops/config.yaml if your server is not at localhost:2480
+
+# Run the local stack
+docker compose up -d
 ```
 
-The server runs on port 2480 (SSE transport, configurable via `MCP_SERVER_PORT`) with MinIO on ports 2400/2401 (configurable via `MINIO_API_PORT`/`MINIO_CONSOLE_PORT`).
+The local stack runs:
+- `server` on port `2480`
+- `proxy` on port `18081`
+- `minio` on ports `31400` / `31401` by default
+
+By default `docker compose` publishes those ports on `127.0.0.1` only. Override `MCP_SERVER_HOST`, `MCP_PROXY_HOST`, or `MINIO_HOST` if you intentionally want them exposed on another interface.
 
 ## Deployment Modes
 
-See `docs/deployments.md` for dev, local-agent, and remote-agent deployment modes, plus separation-of-concerns notes.
+See [docs/deployments.md](/Users/samcm/go/src/github.com/ethpandaops/mcp/docs/deployments.md) for the supported runtime shapes.
+
+The intended topology is:
+- `ep` talks to `server`
+- `server` talks to `proxy`
+- `proxy` talks to datasources
+
+`ep` is a client. It does not embed the proxy or run sandboxes itself.
+
+If the server enables HTTP auth, authenticate the CLI first:
+
+```bash
+mcp auth login --issuer http://localhost:2480 --client-id ep
+```
 
 ## Claude Code
 
@@ -73,12 +95,22 @@ Resources are available for getting started (`mcp://getting-started`), datasourc
 ## Development
 
 ```bash
-make build           # Build binary
+make build           # Build mcp and ep
+make install         # Install mcp, ep, and local search assets to GOBIN
+make build-proxy     # Build standalone proxy binary
 make test            # Run tests
 make lint            # Run linters
 make docker          # Build Docker image
 make docker-sandbox  # Build sandbox image
 ```
+
+Installed binaries look for config in this order:
+- `--config`
+- `$ETHPANDAOPS_CONFIG` or `$EP_CONFIG`
+- `~/.config/ethpandaops/config.yaml`
+- `./config.yaml`
+
+If no config is found, `ep` tells the user to run `ep init`.
 
 ## License
 

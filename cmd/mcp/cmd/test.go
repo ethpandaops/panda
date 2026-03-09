@@ -8,13 +8,13 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ethpandaops/mcp/pkg/config"
-	"github.com/ethpandaops/mcp/pkg/plugin"
+	"github.com/ethpandaops/mcp/pkg/extension"
 	"github.com/ethpandaops/mcp/pkg/sandbox"
 
-	clickhouseplugin "github.com/ethpandaops/mcp/plugins/clickhouse"
-	doraplugin "github.com/ethpandaops/mcp/plugins/dora"
-	lokiplugin "github.com/ethpandaops/mcp/plugins/loki"
-	prometheusplugin "github.com/ethpandaops/mcp/plugins/prometheus"
+	clickhouseextension "github.com/ethpandaops/mcp/extensions/clickhouse"
+	doraextension "github.com/ethpandaops/mcp/extensions/dora"
+	lokiextension "github.com/ethpandaops/mcp/extensions/loki"
+	prometheusextension "github.com/ethpandaops/mcp/extensions/prometheus"
 )
 
 var testCmd = &cobra.Command{
@@ -45,10 +45,10 @@ func runTest(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("loading config: %w", err)
 	}
 
-	// Build plugin registry to get env vars.
-	pluginReg, err := buildTestPluginRegistry(cfg)
+	// Build extension registry to get env vars.
+	extensionReg, err := buildTestExtensionRegistry(cfg)
 	if err != nil {
-		return fmt.Errorf("building plugin registry: %w", err)
+		return fmt.Errorf("building extension registry: %w", err)
 	}
 
 	// Create sandbox.
@@ -78,8 +78,8 @@ func runTest(_ *cobra.Command, _ []string) error {
 	fmt.Println(code)
 	fmt.Println("=== Running... ===")
 
-	// Build environment from plugin registry.
-	env, err := buildTestEnv(cfg, pluginReg)
+	// Build environment from extension registry.
+	env, err := buildTestEnv(cfg, extensionReg)
 	if err != nil {
 		return fmt.Errorf("building test environment: %w", err)
 	}
@@ -165,39 +165,39 @@ print("\nAll tests passed!")
 `
 }
 
-func buildTestPluginRegistry(cfg *config.Config) (*plugin.Registry, error) {
-	reg := plugin.NewRegistry(log)
+func buildTestExtensionRegistry(cfg *config.Config) (*extension.Registry, error) {
+	reg := extension.NewRegistry(log)
 
-	// Register all compiled-in plugins.
-	reg.Add(clickhouseplugin.New())
-	reg.Add(doraplugin.New())
-	reg.Add(lokiplugin.New())
-	reg.Add(prometheusplugin.New())
+	// Register all compiled-in extensions.
+	reg.Add(clickhouseextension.New())
+	reg.Add(doraextension.New())
+	reg.Add(lokiextension.New())
+	reg.Add(prometheusextension.New())
 
-	// Initialize plugins that have config.
+	// Initialize extensions that have config.
 	for _, name := range reg.All() {
-		rawYAML, err := cfg.PluginConfigYAML(name)
+		rawYAML, err := cfg.ExtensionConfigYAML(name)
 		if err != nil {
-			return nil, fmt.Errorf("getting config for plugin %q: %w", name, err)
+			return nil, fmt.Errorf("getting config for extension %q: %w", name, err)
 		}
 
 		if rawYAML == nil {
 			continue
 		}
 
-		if err := reg.InitPlugin(name, rawYAML); err != nil {
-			return nil, fmt.Errorf("initializing plugin %q: %w", name, err)
+		if err := reg.InitExtension(name, rawYAML); err != nil {
+			return nil, fmt.Errorf("initializing extension %q: %w", name, err)
 		}
 	}
 
 	return reg, nil
 }
 
-func buildTestEnv(cfg *config.Config, pluginReg *plugin.Registry) (map[string]string, error) {
-	// Get env vars from all initialized plugins.
-	env, err := pluginReg.SandboxEnv()
+func buildTestEnv(cfg *config.Config, extensionReg *extension.Registry) (map[string]string, error) {
+	// Get env vars from all initialized extensions.
+	env, err := extensionReg.SandboxEnv()
 	if err != nil {
-		return nil, fmt.Errorf("getting sandbox env from plugins: %w", err)
+		return nil, fmt.Errorf("getting sandbox env from extensions: %w", err)
 	}
 
 	// Add platform S3 vars.
