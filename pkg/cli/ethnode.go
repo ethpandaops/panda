@@ -280,7 +280,7 @@ Examples:
 			path = "/" + path
 		}
 
-		response, err := runProxyOperation("ethnode.beacon_get", map[string]any{
+		response, err := runProxyOperationRaw("ethnode.beacon_get", map[string]any{
 			"network":  args[0],
 			"instance": args[1],
 			"path":     path,
@@ -289,7 +289,7 @@ Examples:
 			return err
 		}
 
-		return printJSON(response.Data)
+		return printJSONBytes(response.Body)
 	},
 }
 
@@ -312,7 +312,7 @@ Examples:
 			}
 		}
 
-		response, err := runProxyOperation("ethnode.execution_rpc", map[string]any{
+		response, err := runProxyOperationRaw("ethnode.execution_rpc", map[string]any{
 			"network":  args[0],
 			"instance": args[1],
 			"method":   args[2],
@@ -322,8 +322,16 @@ Examples:
 			return err
 		}
 
-		data, _ := response.Data.(map[string]any)
-		return printJSON(data["result"])
+		if ethnodeJSON {
+			return printJSONBytes(response.Body)
+		}
+
+		var payload map[string]any
+		if err := json.Unmarshal(response.Body, &payload); err != nil {
+			return printJSONBytes(response.Body)
+		}
+
+		return printJSON(payload["result"])
 	},
 }
 

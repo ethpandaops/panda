@@ -22,34 +22,49 @@ def get_network_overview(network: str) -> dict[str, Any]:
 
 
 def get_validator(network: str, index_or_pubkey: str) -> dict[str, Any]:
-    return _runtime.invoke_data(
+    payload = _runtime.invoke_json(
         "dora.get_validator",
         {"network": network, "index_or_pubkey": index_or_pubkey},
     )
+    if not isinstance(payload, dict):
+        return {}
+    data = payload.get("data")
+    return data if isinstance(data, dict) else {}
 
 
 def get_validators(
     network: str, status: str | None = None, limit: int = 100
 ) -> list[dict[str, Any]]:
-    data = _runtime.invoke_data(
+    payload = _runtime.invoke_json(
         "dora.get_validators",
         {"network": network, "status": status, "limit": limit},
     )
-    return data.get("validators", [])
+    if not isinstance(payload, dict):
+        return []
+    data = payload.get("data")
+    return data if isinstance(data, list) else []
 
 
 def get_slot(network: str, slot_or_hash: str) -> dict[str, Any]:
-    return _runtime.invoke_data(
+    payload = _runtime.invoke_json(
         "dora.get_slot",
         {"network": network, "slot_or_hash": slot_or_hash},
     )
+    if not isinstance(payload, dict):
+        return {}
+    data = payload.get("data")
+    return data if isinstance(data, dict) else {}
 
 
 def get_epoch(network: str, epoch: int) -> dict[str, Any]:
-    return _runtime.invoke_data(
+    payload = _runtime.invoke_json(
         "dora.get_epoch",
         {"network": network, "epoch": str(epoch)},
     )
+    if not isinstance(payload, dict):
+        return {}
+    data = payload.get("data")
+    return data if isinstance(data, dict) else {}
 
 
 def link_validator(network: str, index_or_pubkey: str) -> str:

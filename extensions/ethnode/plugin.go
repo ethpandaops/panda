@@ -94,9 +94,9 @@ func (p *Extension) PythonAPIDocs() map[string]types.ModuleDoc {
 				"net_peer_count":          {Signature: "net_peer_count(network, instance) -> int", Description: "Get EL peer count"},
 				"web3_client_version":     {Signature: "web3_client_version(network, instance) -> str", Description: "Get EL client version"},
 				// Generic pass-through.
-				"beacon_get":    {Signature: "beacon_get(network, instance, path, params=None) -> dict", Description: "GET any beacon API endpoint"},
-				"beacon_post":   {Signature: "beacon_post(network, instance, path, body=None) -> dict", Description: "POST any beacon API endpoint"},
-				"execution_rpc": {Signature: "execution_rpc(network, instance, method, params=None) -> any", Description: "Call any JSON-RPC method"},
+				"beacon_get":    {Signature: "beacon_get(network, instance, path, params=None) -> dict", Description: "GET any beacon API endpoint and return the raw JSON payload"},
+				"beacon_post":   {Signature: "beacon_post(network, instance, path, body=None) -> dict", Description: "POST any beacon API endpoint and return the raw JSON payload"},
+				"execution_rpc": {Signature: "execution_rpc(network, instance, method, params=None) -> any", Description: "Call any JSON-RPC method and return the raw result"},
 			},
 		},
 	}

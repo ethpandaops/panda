@@ -92,7 +92,7 @@ var promQueryCmd = &cobra.Command{
 	Short: "Execute an instant PromQL query",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		response, err := runProxyOperation("prometheus.query", map[string]any{
+		response, err := runProxyOperationRaw("prometheus.query", map[string]any{
 			"datasource": args[0],
 			"query":      args[1],
 			"time":       promQueryTime,
@@ -102,10 +102,10 @@ var promQueryCmd = &cobra.Command{
 		}
 
 		if prometheusJSON {
-			return printJSON(response)
+			return printJSONBytes(response.Body)
 		}
 
-		return printPromData(response.Data)
+		return printPromResult(response.Body)
 	},
 }
 
@@ -114,7 +114,7 @@ var promQueryRangeCmd = &cobra.Command{
 	Short: "Execute a range PromQL query",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		response, err := runProxyOperation("prometheus.query_range", map[string]any{
+		response, err := runProxyOperationRaw("prometheus.query_range", map[string]any{
 			"datasource": args[0],
 			"query":      args[1],
 			"start":      promRangeStart,
@@ -126,10 +126,10 @@ var promQueryRangeCmd = &cobra.Command{
 		}
 
 		if prometheusJSON {
-			return printJSON(response)
+			return printJSONBytes(response.Body)
 		}
 
-		return printPromData(response.Data)
+		return printPromResult(response.Body)
 	},
 }
 
@@ -138,7 +138,7 @@ var promLabelsCmd = &cobra.Command{
 	Short: "List all label names",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
-		response, err := runProxyOperation("prometheus.get_labels", map[string]any{
+		response, err := runProxyOperationRaw("prometheus.get_labels", map[string]any{
 			"datasource": args[0],
 		})
 		if err != nil {
@@ -146,10 +146,10 @@ var promLabelsCmd = &cobra.Command{
 		}
 
 		if prometheusJSON {
-			return printJSON(response)
+			return printJSONBytes(response.Body)
 		}
 
-		return printStringValues(response.Data, "labels")
+		return printAPIStringValues(response.Body)
 	},
 }
 
@@ -158,7 +158,7 @@ var promLabelValuesCmd = &cobra.Command{
 	Short: "Get all values for a label",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		response, err := runProxyOperation("prometheus.get_label_values", map[string]any{
+		response, err := runProxyOperationRaw("prometheus.get_label_values", map[string]any{
 			"datasource": args[0],
 			"label":      args[1],
 		})
@@ -167,42 +167,11 @@ var promLabelValuesCmd = &cobra.Command{
 		}
 
 		if prometheusJSON {
-			return printJSON(response)
+			return printJSONBytes(response.Body)
 		}
 
-		return printStringValues(response.Data, "values")
+		return printAPIStringValues(response.Body)
 	},
-}
-
-func printPromData(data any) error {
-	payload, err := json.Marshal(map[string]any{
-		"status": "success",
-		"data":   data,
-	})
-	if err != nil {
-		return err
-	}
-
-	return printPromResult(payload)
-}
-
-func printStringValues(data any, key string) error {
-	values, ok := extractAnySlice(data, key)
-	if !ok {
-		return printJSON(data)
-	}
-
-	for _, value := range values {
-		fmt.Println(value)
-	}
-
-	return nil
-}
-
-func extractAnySlice(data any, key string) ([]any, bool) {
-	payload, _ := data.(map[string]any)
-	values, ok := payload[key].([]any)
-	return values, ok
 }
 
 // printPromResult formats a Prometheus API response for human output.
@@ -253,6 +222,22 @@ func printPromResult(data []byte) error {
 				}
 			}
 		}
+	}
+
+	return nil
+}
+
+func printAPIStringValues(data []byte) error {
+	var resp struct {
+		Data []any `json:"data"`
+	}
+
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return printJSONBytes(data)
+	}
+
+	for _, value := range resp.Data {
+		fmt.Println(value)
 	}
 
 	return nil

@@ -19,8 +19,8 @@ def query(
     start: str | None = None,
     end: str | None = None,
     direction: str = "backward",
-) -> list[dict[str, Any]]:
-    data = _runtime.invoke_data(
+) -> dict[str, Any]:
+    data = _runtime.invoke_json_data(
         "loki.query",
         {
             "datasource": instance_name,
@@ -31,7 +31,7 @@ def query(
             "direction": direction,
         },
     )
-    return data.get("entries", [])
+    return data if isinstance(data, dict) else {}
 
 
 def query_instant(
@@ -40,8 +40,8 @@ def query_instant(
     time: str | None = None,
     limit: int = 100,
     direction: str = "backward",
-) -> list[dict[str, Any]]:
-    data = _runtime.invoke_data(
+) -> dict[str, Any]:
+    data = _runtime.invoke_json_data(
         "loki.query_instant",
         {
             "datasource": instance_name,
@@ -51,7 +51,7 @@ def query_instant(
             "direction": direction,
         },
     )
-    return data.get("entries", [])
+    return data if isinstance(data, dict) else {}
 
 
 def get_labels(
@@ -59,7 +59,7 @@ def get_labels(
     start: str | None = None,
     end: str | None = None,
 ) -> list[str]:
-    data = _runtime.invoke_data(
+    data = _runtime.invoke_json_data(
         "loki.get_labels",
         {
             "datasource": instance_name,
@@ -67,7 +67,7 @@ def get_labels(
             "end": end,
         },
     )
-    return data.get("labels", [])
+    return data if isinstance(data, list) else []
 
 
 def get_label_values(
@@ -76,7 +76,7 @@ def get_label_values(
     start: str | None = None,
     end: str | None = None,
 ) -> list[str]:
-    data = _runtime.invoke_data(
+    data = _runtime.invoke_json_data(
         "loki.get_label_values",
         {
             "datasource": instance_name,
@@ -85,4 +85,4 @@ def get_label_values(
             "end": end,
         },
     )
-    return data.get("values", [])
+    return data if isinstance(data, list) else []

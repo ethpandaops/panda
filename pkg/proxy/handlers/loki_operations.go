@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -160,23 +159,13 @@ func (h *LokiOperationsHandler) handleQuery(w http.ResponseWriter, r *http.Reque
 		params.Set("time", parsedTime)
 	}
 
-	data, status, err := h.executeAPIRequest(r.Context(), instance, path, params)
+	body, contentType, status, err := h.executeAPIRequest(r.Context(), instance, path, params)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return
 	}
 
-	entries, err := flattenLokiEntries(data)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-
-	writeOperationResponse(h.log, w, http.StatusOK, operations.Response{
-		Kind: operations.ResultKindObject,
-		Data: map[string]any{"entries": entries},
-		Meta: map[string]any{"datasource": datasource},
-	})
+	writePassthroughResponse(w, http.StatusOK, contentType, body)
 }
 
 func (h *LokiOperationsHandler) handleLabels(w http.ResponseWriter, r *http.Request) {
@@ -204,17 +193,13 @@ func (h *LokiOperationsHandler) handleLabels(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	data, status, err := h.executeAPIRequest(r.Context(), instance, "/loki/api/v1/labels", params)
+	body, contentType, status, err := h.executeAPIRequest(r.Context(), instance, "/loki/api/v1/labels", params)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return
 	}
 
-	writeOperationResponse(h.log, w, http.StatusOK, operations.Response{
-		Kind: operations.ResultKindObject,
-		Data: map[string]any{"labels": data},
-		Meta: map[string]any{"datasource": datasource},
-	})
+	writePassthroughResponse(w, http.StatusOK, contentType, body)
 }
 
 func (h *LokiOperationsHandler) handleLabelValues(w http.ResponseWriter, r *http.Request) {
@@ -249,17 +234,13 @@ func (h *LokiOperationsHandler) handleLabelValues(w http.ResponseWriter, r *http
 	}
 
 	path := fmt.Sprintf("/loki/api/v1/label/%s/values", url.PathEscape(label))
-	data, status, err := h.executeAPIRequest(r.Context(), instance, path, params)
+	body, contentType, status, err := h.executeAPIRequest(r.Context(), instance, path, params)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return
 	}
 
-	writeOperationResponse(h.log, w, http.StatusOK, operations.Response{
-		Kind: operations.ResultKindObject,
-		Data: map[string]any{"values": data},
-		Meta: map[string]any{"datasource": datasource},
-	})
+	writePassthroughResponse(w, http.StatusOK, contentType, body)
 }
 
 func (h *LokiOperationsHandler) buildLabelParams(args map[string]any) (url.Values, error) {
@@ -292,7 +273,7 @@ func (h *LokiOperationsHandler) executeAPIRequest(
 	instance *lokiOperationInstance,
 	path string,
 	params url.Values,
-) (map[string]any, int, error) {
+) ([]byte, string, int, error) {
 	requestURL := strings.TrimRight(instance.cfg.URL, "/") + path
 	if len(params) > 0 {
 		requestURL += "?" + params.Encode()
@@ -300,7 +281,7 @@ func (h *LokiOperationsHandler) executeAPIRequest(
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 	if err != nil {
-		return nil, http.StatusInternalServerError, fmt.Errorf("creating Loki request: %w", err)
+		return nil, "", http.StatusInternalServerError, fmt.Errorf("creating Loki request: %w", err)
 	}
 
 	if instance.cfg.Username != "" {
@@ -309,59 +290,23 @@ func (h *LokiOperationsHandler) executeAPIRequest(
 
 	resp, err := instance.client.Do(req)
 	if err != nil {
-		return nil, http.StatusBadGateway, fmt.Errorf("executing Loki request: %w", err)
+		return nil, "", http.StatusBadGateway, fmt.Errorf("executing Loki request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, http.StatusBadGateway, fmt.Errorf("reading Loki response: %w", err)
+		return nil, "", http.StatusBadGateway, fmt.Errorf("reading Loki response: %w", err)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, resp.StatusCode, fmt.Errorf("%s", strings.TrimSpace(string(body)))
+		return nil, "", resp.StatusCode, fmt.Errorf("%s", strings.TrimSpace(string(body)))
 	}
 
-	var payload map[string]any
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil, http.StatusBadGateway, fmt.Errorf("invalid Loki JSON response: %w", err)
+	contentType := resp.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/json"
 	}
 
-	if status, _ := payload["status"].(string); status != "success" {
-		message, _ := payload["error"].(string)
-		if message == "" {
-			message = "unknown Loki error"
-		}
-
-		return nil, http.StatusBadGateway, fmt.Errorf("%s", message)
-	}
-
-	return payload, http.StatusOK, nil
-}
-
-func flattenLokiEntries(payload map[string]any) ([]map[string]any, error) {
-	data, _ := payload["data"].(map[string]any)
-	results, _ := data["result"].([]any)
-
-	entries := make([]map[string]any, 0)
-	for _, rawStream := range results {
-		stream, _ := rawStream.(map[string]any)
-		labels, _ := stream["stream"].(map[string]any)
-		values, _ := stream["values"].([]any)
-
-		for _, rawValue := range values {
-			pair, _ := rawValue.([]any)
-			if len(pair) < 2 {
-				continue
-			}
-
-			entries = append(entries, map[string]any{
-				"timestamp": pair[0],
-				"labels":    labels,
-				"line":      pair[1],
-			})
-		}
-	}
-
-	return entries, nil
+	return body, contentType, http.StatusOK, nil
 }

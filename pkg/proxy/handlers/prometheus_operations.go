@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -150,19 +149,13 @@ func (h *PrometheusOperationsHandler) handleQuery(w http.ResponseWriter, r *http
 		params.Set("time", parsedTime)
 	}
 
-	data, status, err := h.executeAPIRequest(r.Context(), instance, path, params)
+	body, contentType, status, err := h.executeAPIRequest(r.Context(), instance, path, params)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return
 	}
 
-	writeOperationResponse(h.log, w, http.StatusOK, operations.Response{
-		Kind: operations.ResultKindObject,
-		Data: data,
-		Meta: map[string]any{
-			"datasource": datasource,
-		},
-	})
+	writePassthroughResponse(w, http.StatusOK, contentType, body)
 }
 
 func (h *PrometheusOperationsHandler) handleLabels(w http.ResponseWriter, r *http.Request) {
@@ -184,17 +177,13 @@ func (h *PrometheusOperationsHandler) handleLabels(w http.ResponseWriter, r *htt
 		return
 	}
 
-	data, status, err := h.executeAPIRequest(r.Context(), instance, "/api/v1/labels", nil)
+	body, contentType, status, err := h.executeAPIRequest(r.Context(), instance, "/api/v1/labels", nil)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return
 	}
 
-	writeOperationResponse(h.log, w, http.StatusOK, operations.Response{
-		Kind: operations.ResultKindObject,
-		Data: map[string]any{"labels": data},
-		Meta: map[string]any{"datasource": datasource},
-	})
+	writePassthroughResponse(w, http.StatusOK, contentType, body)
 }
 
 func (h *PrometheusOperationsHandler) handleLabelValues(w http.ResponseWriter, r *http.Request) {
@@ -223,17 +212,13 @@ func (h *PrometheusOperationsHandler) handleLabelValues(w http.ResponseWriter, r
 	}
 
 	path := fmt.Sprintf("/api/v1/label/%s/values", url.PathEscape(label))
-	data, status, err := h.executeAPIRequest(r.Context(), instance, path, nil)
+	body, contentType, status, err := h.executeAPIRequest(r.Context(), instance, path, nil)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return
 	}
 
-	writeOperationResponse(h.log, w, http.StatusOK, operations.Response{
-		Kind: operations.ResultKindObject,
-		Data: map[string]any{"values": data},
-		Meta: map[string]any{"datasource": datasource},
-	})
+	writePassthroughResponse(w, http.StatusOK, contentType, body)
 }
 
 func (h *PrometheusOperationsHandler) executeAPIRequest(
@@ -241,7 +226,7 @@ func (h *PrometheusOperationsHandler) executeAPIRequest(
 	instance *prometheusOperationInstance,
 	path string,
 	params url.Values,
-) (any, int, error) {
+) ([]byte, string, int, error) {
 	requestURL := strings.TrimRight(instance.cfg.URL, "/") + path
 	if len(params) > 0 {
 		requestURL += "?" + params.Encode()
@@ -249,7 +234,7 @@ func (h *PrometheusOperationsHandler) executeAPIRequest(
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 	if err != nil {
-		return nil, http.StatusInternalServerError, fmt.Errorf("creating Prometheus request: %w", err)
+		return nil, "", http.StatusInternalServerError, fmt.Errorf("creating Prometheus request: %w", err)
 	}
 
 	if instance.cfg.Username != "" {
@@ -258,32 +243,23 @@ func (h *PrometheusOperationsHandler) executeAPIRequest(
 
 	resp, err := instance.client.Do(req)
 	if err != nil {
-		return nil, http.StatusBadGateway, fmt.Errorf("executing Prometheus request: %w", err)
+		return nil, "", http.StatusBadGateway, fmt.Errorf("executing Prometheus request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, http.StatusBadGateway, fmt.Errorf("reading Prometheus response: %w", err)
+		return nil, "", http.StatusBadGateway, fmt.Errorf("reading Prometheus response: %w", err)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, resp.StatusCode, fmt.Errorf("%s", strings.TrimSpace(string(body)))
+		return nil, "", resp.StatusCode, fmt.Errorf("%s", strings.TrimSpace(string(body)))
 	}
 
-	var payload map[string]any
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil, http.StatusBadGateway, fmt.Errorf("invalid Prometheus JSON response: %w", err)
+	contentType := resp.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/json"
 	}
 
-	if status, _ := payload["status"].(string); status != "success" {
-		message, _ := payload["error"].(string)
-		if message == "" {
-			message = "unknown Prometheus error"
-		}
-
-		return nil, http.StatusBadGateway, fmt.Errorf("%s", message)
-	}
-
-	return payload["data"], http.StatusOK, nil
+	return body, contentType, http.StatusOK, nil
 }

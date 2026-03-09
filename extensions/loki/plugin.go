@@ -136,8 +136,8 @@ func (p *Extension) PythonAPIDocs() map[string]types.ModuleDoc {
 					Returns:     "List of dicts with 'name', 'description', 'url' keys",
 				},
 				"query": {
-					Signature:   "loki.query(datasource: str, logql: str, limit: int = 100, start: str = None, end: str = None, direction: str = 'backward') -> list[dict]",
-					Description: "Execute LogQL range query",
+					Signature:   "loki.query(datasource: str, logql: str, limit: int = 100, start: str = None, end: str = None, direction: str = 'backward') -> dict",
+					Description: "Execute LogQL range query and return the raw Loki data payload",
 					Parameters: map[string]string{
 						"datasource": "Datasource name from datasources://loki",
 						"logql":      "LogQL query string",
@@ -146,11 +146,11 @@ func (p *Extension) PythonAPIDocs() map[string]types.ModuleDoc {
 						"end":        "End time (default: now)",
 						"direction":  "'forward' or 'backward' (default)",
 					},
-					Returns: "List of dicts with 'timestamp', 'labels', 'line' keys",
+					Returns: "Dict with Loki stream/vector data under 'resultType' and 'result'",
 				},
 				"query_instant": {
-					Signature:   "loki.query_instant(datasource: str, logql: str, time: str = None, limit: int = 100, direction: str = 'backward') -> list[dict]",
-					Description: "Execute instant LogQL query",
+					Signature:   "loki.query_instant(datasource: str, logql: str, time: str = None, limit: int = 100, direction: str = 'backward') -> dict",
+					Description: "Execute instant LogQL query and return the raw Loki data payload",
 					Parameters: map[string]string{
 						"datasource": "Datasource name",
 						"logql":      "LogQL query string",
@@ -158,7 +158,7 @@ func (p *Extension) PythonAPIDocs() map[string]types.ModuleDoc {
 						"limit":      "Max entries (default: 100)",
 						"direction":  "'forward' or 'backward'",
 					},
-					Returns: "List of dicts with 'timestamp', 'labels', 'line' keys",
+					Returns: "Dict with Loki stream/vector data under 'resultType' and 'result'",
 				},
 				"get_labels": {
 					Signature:   "loki.get_labels(datasource: str, start: str = None, end: str = None) -> list[str]",

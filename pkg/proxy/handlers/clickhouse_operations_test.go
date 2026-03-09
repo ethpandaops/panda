@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/sirupsen/logrus"
@@ -16,10 +17,11 @@ import (
 
 func TestClickHouseOperationsQuery(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.URL.Query().Get("default_format"); got != "JSON" {
+		if got := r.URL.Query().Get("default_format"); got != "TabSeparatedWithNames" {
 			t.Fatalf("unexpected format: %s", got)
 		}
-		_, _ = w.Write([]byte(`{"meta":[{"name":"value","type":"UInt8"}],"data":[{"value":1}],"rows":1}`))
+		w.Header().Set("Content-Type", "text/tab-separated-values")
+		_, _ = w.Write([]byte("value\n1\n"))
 	}))
 	defer upstream.Close()
 
@@ -48,29 +50,21 @@ func TestClickHouseOperationsQuery(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("unexpected status: %d body=%s", rec.Code, rec.Body.String())
 	}
-
-	var response operations.Response
-	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
-		t.Fatalf("unmarshal response: %v", err)
+	if !strings.Contains(rec.Header().Get("Content-Type"), "text/tab-separated-values") {
+		t.Fatalf("unexpected content-type: %s", rec.Header().Get("Content-Type"))
 	}
-
-	if response.Kind != operations.ResultKindTable {
-		t.Fatalf("unexpected kind: %s", response.Kind)
-	}
-	if response.RowEncoding != operations.RowEncodingObject {
-		t.Fatalf("unexpected row encoding: %s", response.RowEncoding)
-	}
-	if len(response.Rows) != 1 || response.Rows[0]["value"] != float64(1) {
-		t.Fatalf("unexpected rows: %#v", response.Rows)
+	if body := rec.Body.String(); body != "value\n1\n" {
+		t.Fatalf("unexpected body: %q", body)
 	}
 }
 
 func TestClickHouseOperationsQueryRaw(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.URL.Query().Get("default_format"); got != "JSONCompact" {
+		if got := r.URL.Query().Get("default_format"); got != "TabSeparatedWithNames" {
 			t.Fatalf("unexpected format: %s", got)
 		}
-		_, _ = w.Write([]byte(`{"meta":[{"name":"value","type":"UInt8"}],"data":[[1],[2]],"rows":2}`))
+		w.Header().Set("Content-Type", "text/tab-separated-values")
+		_, _ = w.Write([]byte("value\n1\n2\n"))
 	}))
 	defer upstream.Close()
 
@@ -99,17 +93,11 @@ func TestClickHouseOperationsQueryRaw(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("unexpected status: %d body=%s", rec.Code, rec.Body.String())
 	}
-
-	var response operations.Response
-	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
-		t.Fatalf("unmarshal response: %v", err)
+	if !strings.Contains(rec.Header().Get("Content-Type"), "text/tab-separated-values") {
+		t.Fatalf("unexpected content-type: %s", rec.Header().Get("Content-Type"))
 	}
-
-	if response.RowEncoding != operations.RowEncodingArray {
-		t.Fatalf("unexpected row encoding: %s", response.RowEncoding)
-	}
-	if len(response.Matrix) != 2 || len(response.Matrix[0]) != 1 {
-		t.Fatalf("unexpected matrix: %#v", response.Matrix)
+	if body := rec.Body.String(); body != "value\n1\n2\n" {
+		t.Fatalf("unexpected body: %q", body)
 	}
 }
 

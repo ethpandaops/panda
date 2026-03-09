@@ -33,10 +33,10 @@ type DoraOperationsHandler struct {
 
 func NewDoraOperationsHandler(log logrus.FieldLogger) *DoraOperationsHandler {
 	return &DoraOperationsHandler{
-		log:         log.WithField("handler", "dora-operations"),
-		httpClient:  &http.Client{Timeout: cartographoor.DefaultHTTPTimeout},
-		networksURL: cartographoor.DefaultCartographoorURL,
-		cacheTTL:    cartographoor.DefaultCacheTTL,
+		log:          log.WithField("handler", "dora-operations"),
+		httpClient:   &http.Client{Timeout: cartographoor.DefaultHTTPTimeout},
+		networksURL:  cartographoor.DefaultCartographoorURL,
+		cacheTTL:     cartographoor.DefaultCacheTTL,
 		doraNetworks: map[string]string{},
 	}
 }
@@ -142,10 +142,10 @@ func (h *DoraOperationsHandler) handleNetworkOverview(w http.ResponseWriter, r *
 
 	payload, _ := data["data"].(map[string]any)
 	overview := map[string]any{
-		"current_epoch":       payload["epoch"],
-		"current_slot":        multiplyEpoch(payload["epoch"]),
-		"finalized":           payload["finalized"],
-		"participation_rate":  payload["globalparticipationrate"],
+		"current_epoch":      payload["epoch"],
+		"current_slot":       multiplyEpoch(payload["epoch"]),
+		"finalized":          payload["finalized"],
+		"participation_rate": payload["globalparticipationrate"],
 	}
 	if validatorInfo, ok := payload["validatorinfo"].(map[string]any); ok {
 		overview["active_validator_count"] = validatorInfo["active"]
@@ -162,15 +162,15 @@ func (h *DoraOperationsHandler) handleNetworkOverview(w http.ResponseWriter, r *
 }
 
 func (h *DoraOperationsHandler) handleValidator(w http.ResponseWriter, r *http.Request) {
-	h.handleDataGet(w, r, "index_or_pubkey", "/api/v1/validator/%s")
+	h.handleDataGetPassthrough(w, r, "index_or_pubkey", "/api/v1/validator/%s")
 }
 
 func (h *DoraOperationsHandler) handleSlot(w http.ResponseWriter, r *http.Request) {
-	h.handleDataGet(w, r, "slot_or_hash", "/api/v1/slot/%s")
+	h.handleDataGetPassthrough(w, r, "slot_or_hash", "/api/v1/slot/%s")
 }
 
 func (h *DoraOperationsHandler) handleEpoch(w http.ResponseWriter, r *http.Request) {
-	h.handleDataGet(w, r, "epoch", "/api/v1/epoch/%s")
+	h.handleDataGetPassthrough(w, r, "epoch", "/api/v1/epoch/%s")
 }
 
 func (h *DoraOperationsHandler) handleValidators(w http.ResponseWriter, r *http.Request) {
@@ -193,20 +193,20 @@ func (h *DoraOperationsHandler) handleValidators(w http.ResponseWriter, r *http.
 		params.Set("status", statusFilter)
 	}
 
-	data, status, err := h.apiGet(r.Context(), baseURL, "/api/v1/validators", params)
+	body, contentType, status, err := h.apiGetRaw(r.Context(), baseURL, "/api/v1/validators", params)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return
 	}
 
-	writeOperationResponse(h.log, w, http.StatusOK, operations.Response{
-		Kind: operations.ResultKindObject,
-		Data: map[string]any{"validators": data["data"]},
-		Meta: map[string]any{"network": optionalStringArg(req.Args, "network")},
-	})
+	writePassthroughResponse(w, http.StatusOK, contentType, body)
 }
 
-func (h *DoraOperationsHandler) handleDataGet(w http.ResponseWriter, r *http.Request, argName, pathTemplate string) {
+func (h *DoraOperationsHandler) handleDataGetPassthrough(
+	w http.ResponseWriter,
+	r *http.Request,
+	argName, pathTemplate string,
+) {
 	req, err := decodeOperationRequest(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -225,17 +225,13 @@ func (h *DoraOperationsHandler) handleDataGet(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	data, status, err := h.apiGet(r.Context(), baseURL, fmt.Sprintf(pathTemplate, identifier), nil)
+	body, contentType, status, err := h.apiGetRaw(r.Context(), baseURL, fmt.Sprintf(pathTemplate, identifier), nil)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return
 	}
 
-	writeOperationResponse(h.log, w, http.StatusOK, operations.Response{
-		Kind: operations.ResultKindObject,
-		Data: data["data"],
-		Meta: map[string]any{"network": optionalStringArg(req.Args, "network")},
-	})
+	writePassthroughResponse(w, http.StatusOK, contentType, body)
 }
 
 func (h *DoraOperationsHandler) handleLink(w http.ResponseWriter, r *http.Request, pathTemplate string) {
@@ -343,29 +339,9 @@ func (h *DoraOperationsHandler) apiGet(
 	baseURL, path string,
 	params url.Values,
 ) (map[string]any, int, error) {
-	requestURL := strings.TrimRight(baseURL, "/") + path
-	if len(params) > 0 {
-		requestURL += "?" + params.Encode()
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	body, _, status, err := h.apiGetRaw(ctx, baseURL, path, params)
 	if err != nil {
-		return nil, http.StatusInternalServerError, fmt.Errorf("creating Dora request: %w", err)
-	}
-
-	resp, err := h.httpClient.Do(req)
-	if err != nil {
-		return nil, http.StatusBadGateway, fmt.Errorf("executing Dora request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, http.StatusBadGateway, fmt.Errorf("reading Dora response: %w", err)
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, resp.StatusCode, fmt.Errorf("%s", strings.TrimSpace(string(body)))
+		return nil, status, err
 	}
 
 	var payload map[string]any
@@ -374,6 +350,44 @@ func (h *DoraOperationsHandler) apiGet(
 	}
 
 	return payload, http.StatusOK, nil
+}
+
+func (h *DoraOperationsHandler) apiGetRaw(
+	ctx context.Context,
+	baseURL, path string,
+	params url.Values,
+) ([]byte, string, int, error) {
+	requestURL := strings.TrimRight(baseURL, "/") + path
+	if len(params) > 0 {
+		requestURL += "?" + params.Encode()
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		return nil, "", http.StatusInternalServerError, fmt.Errorf("creating Dora request: %w", err)
+	}
+
+	resp, err := h.httpClient.Do(req)
+	if err != nil {
+		return nil, "", http.StatusBadGateway, fmt.Errorf("executing Dora request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, "", http.StatusBadGateway, fmt.Errorf("reading Dora response: %w", err)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, "", resp.StatusCode, fmt.Errorf("%s", strings.TrimSpace(string(body)))
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/json"
+	}
+
+	return body, contentType, http.StatusOK, nil
 }
 
 func multiplyEpoch(value any) any {

@@ -23,7 +23,7 @@ def query(
     parameters: dict[str, Any] | None = None,
 ) -> pd.DataFrame:
     """Execute a SQL query against a ClickHouse cluster."""
-    return _runtime.invoke_dataframe(
+    return _runtime.invoke_tsv_dataframe(
         "clickhouse.query",
         {
             "cluster": cluster_name,
@@ -39,7 +39,7 @@ def query_raw(
     parameters: dict[str, Any] | None = None,
 ) -> tuple[list[tuple], list[str]]:
     """Execute a SQL query and return raw rows plus column names."""
-    return _runtime.invoke_raw_table(
+    return _runtime.invoke_tsv_rows(
         "clickhouse.query_raw",
         {
             "cluster": cluster_name,

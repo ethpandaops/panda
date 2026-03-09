@@ -91,21 +91,21 @@ func (h *EthNodeOperationsHandler) handleBeaconGet(w http.ResponseWriter, r *htt
 		return
 	}
 
-	data, status, err := h.doBeaconRequest(r.Context(), http.MethodGet, network, instance, path, optionalMapArg(req.Args, "params"), nil)
+	body, contentType, status, err := h.doBeaconRequestRaw(
+		r.Context(),
+		http.MethodGet,
+		network,
+		instance,
+		path,
+		optionalMapArg(req.Args, "params"),
+		nil,
+	)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return
 	}
 
-	writeOperationResponse(h.log, w, http.StatusOK, operations.Response{
-		Kind: operations.ResultKindObject,
-		Data: data,
-		Meta: map[string]any{
-			"network":  network,
-			"instance": instance,
-			"path":     path,
-		},
-	})
+	writePassthroughResponse(w, http.StatusOK, contentType, body)
 }
 
 func (h *EthNodeOperationsHandler) handleBeaconPost(w http.ResponseWriter, r *http.Request) {
@@ -121,21 +121,21 @@ func (h *EthNodeOperationsHandler) handleBeaconPost(w http.ResponseWriter, r *ht
 		return
 	}
 
-	data, status, err := h.doBeaconRequest(r.Context(), http.MethodPost, network, instance, path, nil, req.Args["body"])
+	body, contentType, status, err := h.doBeaconRequestRaw(
+		r.Context(),
+		http.MethodPost,
+		network,
+		instance,
+		path,
+		nil,
+		req.Args["body"],
+	)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return
 	}
 
-	writeOperationResponse(h.log, w, http.StatusOK, operations.Response{
-		Kind: operations.ResultKindObject,
-		Data: data,
-		Meta: map[string]any{
-			"network":  network,
-			"instance": instance,
-			"path":     path,
-		},
-	})
+	writePassthroughResponse(w, http.StatusOK, contentType, body)
 }
 
 func (h *EthNodeOperationsHandler) handleExecutionRPC(w http.ResponseWriter, r *http.Request) {
@@ -157,21 +157,19 @@ func (h *EthNodeOperationsHandler) handleExecutionRPC(w http.ResponseWriter, r *
 		return
 	}
 
-	result, status, err := h.doExecutionRPC(r.Context(), network, instance, method, optionalSliceArg(req.Args, "params"))
+	body, contentType, status, err := h.doExecutionRPCRaw(
+		r.Context(),
+		network,
+		instance,
+		method,
+		optionalSliceArg(req.Args, "params"),
+	)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return
 	}
 
-	writeOperationResponse(h.log, w, http.StatusOK, operations.Response{
-		Kind: operations.ResultKindObject,
-		Data: map[string]any{"result": result},
-		Meta: map[string]any{
-			"network":  network,
-			"instance": instance,
-			"method":   method,
-		},
-	})
+	writePassthroughResponse(w, http.StatusOK, contentType, body)
 }
 
 func (h *EthNodeOperationsHandler) handleCuratedBeaconGet(w http.ResponseWriter, r *http.Request, path string) {
@@ -326,8 +324,8 @@ func (h *EthNodeOperationsHandler) handleHexRPC(w http.ResponseWriter, r *http.R
 	writeOperationResponse(h.log, w, http.StatusOK, operations.Response{
 		Kind: operations.ResultKindObject,
 		Data: map[string]any{
-			"hex":   hexValue,
-			field:    parsedValue,
+			"hex": hexValue,
+			field: parsedValue,
 		},
 		Meta: map[string]any{
 			"network":  network,
@@ -450,6 +448,29 @@ func (h *EthNodeOperationsHandler) doBeaconRequest(
 	params map[string]any,
 	body any,
 ) (any, int, error) {
+	responseBody, _, status, err := h.doBeaconRequestRaw(ctx, method, network, instance, path, params, body)
+	if err != nil {
+		return nil, status, err
+	}
+
+	if len(responseBody) == 0 {
+		return map[string]any{}, http.StatusOK, nil
+	}
+
+	var data any
+	if err := json.Unmarshal(responseBody, &data); err != nil {
+		return nil, http.StatusBadGateway, fmt.Errorf("invalid beacon JSON response: %w", err)
+	}
+
+	return data, http.StatusOK, nil
+}
+
+func (h *EthNodeOperationsHandler) doBeaconRequestRaw(
+	ctx context.Context,
+	method, network, instance, path string,
+	params map[string]any,
+	body any,
+) ([]byte, string, int, error) {
 	requestURL := fmt.Sprintf("https://bn-%s.srv.%s.ethpandaops.io%s", instance, network, path)
 	if len(params) > 0 {
 		values := url.Values{}
@@ -463,14 +484,14 @@ func (h *EthNodeOperationsHandler) doBeaconRequest(
 	if body != nil {
 		payload, err := json.Marshal(body)
 		if err != nil {
-			return nil, http.StatusBadRequest, fmt.Errorf("marshaling request body: %w", err)
+			return nil, "", http.StatusBadRequest, fmt.Errorf("marshaling request body: %w", err)
 		}
 		reader = bytes.NewReader(payload)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, requestURL, reader)
 	if err != nil {
-		return nil, http.StatusInternalServerError, fmt.Errorf("creating beacon request: %w", err)
+		return nil, "", http.StatusInternalServerError, fmt.Errorf("creating beacon request: %w", err)
 	}
 
 	if body != nil {
@@ -482,29 +503,25 @@ func (h *EthNodeOperationsHandler) doBeaconRequest(
 
 	resp, err := h.client.Do(req)
 	if err != nil {
-		return nil, http.StatusBadGateway, fmt.Errorf("executing beacon request: %w", err)
+		return nil, "", http.StatusBadGateway, fmt.Errorf("executing beacon request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, http.StatusBadGateway, fmt.Errorf("reading beacon response: %w", err)
+		return nil, "", http.StatusBadGateway, fmt.Errorf("reading beacon response: %w", err)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, resp.StatusCode, fmt.Errorf("%s", strings.TrimSpace(string(responseBody)))
+		return nil, "", resp.StatusCode, fmt.Errorf("%s", strings.TrimSpace(string(responseBody)))
 	}
 
-	if len(responseBody) == 0 {
-		return map[string]any{}, http.StatusOK, nil
+	contentType := resp.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/json"
 	}
 
-	var data any
-	if err := json.Unmarshal(responseBody, &data); err != nil {
-		return nil, http.StatusBadGateway, fmt.Errorf("invalid beacon JSON response: %w", err)
-	}
-
-	return data, http.StatusOK, nil
+	return responseBody, contentType, http.StatusOK, nil
 }
 
 func (h *EthNodeOperationsHandler) doBeaconHealthRequest(ctx context.Context, network, instance string) (int, int, error) {
@@ -532,6 +549,26 @@ func (h *EthNodeOperationsHandler) doExecutionRPC(
 	network, instance, method string,
 	params []any,
 ) (any, int, error) {
+	body, _, status, err := h.doExecutionRPCRaw(ctx, network, instance, method, params)
+	if err != nil {
+		return nil, status, err
+	}
+
+	var rpcResp struct {
+		Result any `json:"result"`
+	}
+	if err := json.Unmarshal(body, &rpcResp); err != nil {
+		return nil, http.StatusBadGateway, fmt.Errorf("invalid JSON-RPC response: %w", err)
+	}
+
+	return rpcResp.Result, http.StatusOK, nil
+}
+
+func (h *EthNodeOperationsHandler) doExecutionRPCRaw(
+	ctx context.Context,
+	network, instance, method string,
+	params []any,
+) ([]byte, string, int, error) {
 	payload, err := json.Marshal(map[string]any{
 		"jsonrpc": "2.0",
 		"method":  method,
@@ -539,13 +576,13 @@ func (h *EthNodeOperationsHandler) doExecutionRPC(
 		"id":      1,
 	})
 	if err != nil {
-		return nil, http.StatusBadRequest, fmt.Errorf("marshaling JSON-RPC request: %w", err)
+		return nil, "", http.StatusBadRequest, fmt.Errorf("marshaling JSON-RPC request: %w", err)
 	}
 
 	requestURL := fmt.Sprintf("https://rpc-%s.srv.%s.ethpandaops.io/", instance, network)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, bytes.NewReader(payload))
 	if err != nil {
-		return nil, http.StatusInternalServerError, fmt.Errorf("creating JSON-RPC request: %w", err)
+		return nil, "", http.StatusInternalServerError, fmt.Errorf("creating JSON-RPC request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -555,36 +592,40 @@ func (h *EthNodeOperationsHandler) doExecutionRPC(
 
 	resp, err := h.client.Do(req)
 	if err != nil {
-		return nil, http.StatusBadGateway, fmt.Errorf("executing JSON-RPC request: %w", err)
+		return nil, "", http.StatusBadGateway, fmt.Errorf("executing JSON-RPC request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, http.StatusBadGateway, fmt.Errorf("reading JSON-RPC response: %w", err)
+		return nil, "", http.StatusBadGateway, fmt.Errorf("reading JSON-RPC response: %w", err)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, resp.StatusCode, fmt.Errorf("%s", strings.TrimSpace(string(body)))
+		return nil, "", resp.StatusCode, fmt.Errorf("%s", strings.TrimSpace(string(body)))
 	}
 
 	var rpcResp struct {
-		Result any `json:"result"`
-		Error  *struct {
+		Error *struct {
 			Code    int    `json:"code"`
 			Message string `json:"message"`
 		} `json:"error"`
 	}
 
 	if err := json.Unmarshal(body, &rpcResp); err != nil {
-		return nil, http.StatusBadGateway, fmt.Errorf("invalid JSON-RPC response: %w", err)
+		return nil, "", http.StatusBadGateway, fmt.Errorf("invalid JSON-RPC response: %w", err)
 	}
 
 	if rpcResp.Error != nil {
-		return nil, http.StatusBadGateway, fmt.Errorf("JSON-RPC error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
+		return nil, "", http.StatusBadGateway, fmt.Errorf("JSON-RPC error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
 	}
 
-	return rpcResp.Result, http.StatusOK, nil
+	contentType := resp.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/json"
+	}
+
+	return body, contentType, http.StatusOK, nil
 }
 
 func parseHexUint64(value string) (uint64, error) {

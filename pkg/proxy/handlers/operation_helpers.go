@@ -34,6 +34,19 @@ func writeOperationResponse(log logrus.FieldLogger, w http.ResponseWriter, statu
 	}
 }
 
+func writePassthroughResponse(w http.ResponseWriter, status int, contentType string, body []byte) {
+	if contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	}
+	w.Header().Set("X-Operation-Transport", "passthrough")
+	w.WriteHeader(status)
+	if len(body) == 0 {
+		return
+	}
+
+	_, _ = w.Write(body)
+}
+
 func requiredStringArg(args map[string]any, key string) (string, error) {
 	value, _ := args[key].(string)
 	if value == "" {

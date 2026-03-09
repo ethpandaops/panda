@@ -3,7 +3,6 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"strconv"
 
 	"github.com/spf13/cobra"
 )
@@ -98,7 +97,7 @@ var lokiQueryCmd = &cobra.Command{
 	Short: "Execute a LogQL range query",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		response, err := runProxyOperation("loki.query", map[string]any{
+		response, err := runProxyOperationRaw("loki.query", map[string]any{
 			"datasource": args[0],
 			"query":      args[1],
 			"limit":      lokiLimit,
@@ -111,10 +110,10 @@ var lokiQueryCmd = &cobra.Command{
 		}
 
 		if lokiJSON {
-			return printJSON(response)
+			return printJSONBytes(response.Body)
 		}
 
-		return printLokiEntries(response.Data)
+		return printLokiResult(response.Body)
 	},
 }
 
@@ -123,7 +122,7 @@ var lokiQueryInstantCmd = &cobra.Command{
 	Short: "Execute an instant LogQL query",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		response, err := runProxyOperation("loki.query_instant", map[string]any{
+		response, err := runProxyOperationRaw("loki.query_instant", map[string]any{
 			"datasource": args[0],
 			"query":      args[1],
 			"limit":      lokiLimit,
@@ -135,10 +134,10 @@ var lokiQueryInstantCmd = &cobra.Command{
 		}
 
 		if lokiJSON {
-			return printJSON(response)
+			return printJSONBytes(response.Body)
 		}
 
-		return printLokiEntries(response.Data)
+		return printLokiResult(response.Body)
 	},
 }
 
@@ -147,7 +146,7 @@ var lokiLabelsCmd = &cobra.Command{
 	Short: "List all label names",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
-		response, err := runProxyOperation("loki.get_labels", map[string]any{
+		response, err := runProxyOperationRaw("loki.get_labels", map[string]any{
 			"datasource": args[0],
 			"start":      lokiStart,
 			"end":        lokiEnd,
@@ -157,10 +156,10 @@ var lokiLabelsCmd = &cobra.Command{
 		}
 
 		if lokiJSON {
-			return printJSON(response)
+			return printJSONBytes(response.Body)
 		}
 
-		return printStringValues(response.Data, "labels")
+		return printAPIStringValues(response.Body)
 	},
 }
 
@@ -169,7 +168,7 @@ var lokiLabelValuesCmd = &cobra.Command{
 	Short: "Get all values for a label",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		response, err := runProxyOperation("loki.get_label_values", map[string]any{
+		response, err := runProxyOperationRaw("loki.get_label_values", map[string]any{
 			"datasource": args[0],
 			"label":      args[1],
 			"start":      lokiStart,
@@ -180,26 +179,11 @@ var lokiLabelValuesCmd = &cobra.Command{
 		}
 
 		if lokiJSON {
-			return printJSON(response)
+			return printJSONBytes(response.Body)
 		}
 
-		return printStringValues(response.Data, "values")
+		return printAPIStringValues(response.Body)
 	},
-}
-
-func printLokiEntries(data any) error {
-	entries, ok := extractAnySlice(data, "entries")
-	if !ok {
-		return printJSON(data)
-	}
-
-	for _, entry := range entries {
-		item, _ := entry.(map[string]any)
-		line, _ := item["line"].(string)
-		fmt.Println(line)
-	}
-
-	return nil
 }
 
 func printLokiResult(data []byte) error {
@@ -227,15 +211,4 @@ func printLokiResult(data []byte) error {
 	}
 
 	return nil
-}
-
-func stringifyAny(value any) string {
-	switch typed := value.(type) {
-	case string:
-		return typed
-	case float64:
-		return strconv.FormatFloat(typed, 'f', -1, 64)
-	default:
-		return fmt.Sprint(value)
-	}
 }

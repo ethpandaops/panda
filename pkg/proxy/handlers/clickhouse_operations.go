@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,27 +25,6 @@ type clickhouseOperationCluster struct {
 	cfg     ClickHouseConfig
 	baseURL string
 	client  *http.Client
-}
-
-type clickhouseResponseMeta struct {
-	Name string `json:"name"`
-	Type string `json:"type"`
-}
-
-type clickhouseJSONResponse struct {
-	Meta       []clickhouseResponseMeta `json:"meta"`
-	Data       []map[string]any         `json:"data"`
-	Rows       int                      `json:"rows"`
-	RowsBefore int                      `json:"rows_before_limit_at_least"`
-	Statistics map[string]any           `json:"statistics"`
-}
-
-type clickhouseJSONCompactResponse struct {
-	Meta       []clickhouseResponseMeta `json:"meta"`
-	Data       [][]any                  `json:"data"`
-	Rows       int                      `json:"rows"`
-	RowsBefore int                      `json:"rows_before_limit_at_least"`
-	Statistics map[string]any           `json:"statistics"`
 }
 
 func NewClickHouseOperationsHandler(log logrus.FieldLogger, configs []ClickHouseConfig) *ClickHouseOperationsHandler {
@@ -85,9 +63,9 @@ func (h *ClickHouseOperationsHandler) HandleOperation(operationID string, w http
 	case "clickhouse.list_datasources":
 		h.handleListDatasources(w)
 	case "clickhouse.query":
-		h.handleQuery(w, r, false)
+		h.handleQuery(w, r)
 	case "clickhouse.query_raw":
-		h.handleQuery(w, r, true)
+		h.handleQuery(w, r)
 	default:
 		return false
 	}
@@ -113,21 +91,22 @@ func (h *ClickHouseOperationsHandler) handleListDatasources(w http.ResponseWrite
 	})
 }
 
-func (h *ClickHouseOperationsHandler) handleQuery(w http.ResponseWriter, r *http.Request, raw bool) {
+func (h *ClickHouseOperationsHandler) handleQuery(w http.ResponseWriter, r *http.Request) {
 	req, err := decodeOperationRequest(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	clusterName, _ := req.Args["cluster"].(string)
-	sql, _ := req.Args["sql"].(string)
-	if clusterName == "" {
-		http.Error(w, "cluster is required", http.StatusBadRequest)
+	clusterName, err := requiredStringArg(req.Args, "cluster")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if sql == "" {
-		http.Error(w, "sql is required", http.StatusBadRequest)
+
+	sql, err := requiredStringArg(req.Args, "sql")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -137,100 +116,19 @@ func (h *ClickHouseOperationsHandler) handleQuery(w http.ResponseWriter, r *http
 		return
 	}
 
-	argsParams := map[string]any{}
-	if rawParams, ok := req.Args["parameters"].(map[string]any); ok {
-		argsParams = rawParams
-	}
-
-	if raw {
-		resp, status, err := h.executeJSONCompactQuery(r.Context(), cluster, sql, argsParams)
-		if err != nil {
-			http.Error(w, err.Error(), status)
-			return
-		}
-
-		columns := make([]string, 0, len(resp.Meta))
-		for _, meta := range resp.Meta {
-			columns = append(columns, meta.Name)
-		}
-
-		writeOperationResponse(h.log, w, http.StatusOK, operations.Response{
-			Kind:        operations.ResultKindTable,
-			RowEncoding: operations.RowEncodingArray,
-			Columns:     columns,
-			Matrix:      resp.Data,
-			Meta: map[string]any{
-				"cluster":                    clusterName,
-				"rows":                       resp.Rows,
-				"rows_before_limit_at_least": resp.RowsBefore,
-				"statistics":                 resp.Statistics,
-			},
-		})
-
-		return
-	}
-
-	resp, status, err := h.executeJSONQuery(r.Context(), cluster, sql, argsParams)
+	body, contentType, status, err := h.executeQuery(
+		r.Context(),
+		cluster,
+		sql,
+		"TabSeparatedWithNames",
+		optionalMapArg(req.Args, "parameters"),
+	)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return
 	}
 
-	columns := make([]string, 0, len(resp.Meta))
-	for _, meta := range resp.Meta {
-		columns = append(columns, meta.Name)
-	}
-
-	writeOperationResponse(h.log, w, http.StatusOK, operations.Response{
-		Kind:        operations.ResultKindTable,
-		RowEncoding: operations.RowEncodingObject,
-		Columns:     columns,
-		Rows:        resp.Data,
-		Meta: map[string]any{
-			"cluster":                    clusterName,
-			"rows":                       resp.Rows,
-			"rows_before_limit_at_least": resp.RowsBefore,
-			"statistics":                 resp.Statistics,
-		},
-	})
-}
-
-func (h *ClickHouseOperationsHandler) executeJSONQuery(
-	ctx context.Context,
-	cluster *clickhouseOperationCluster,
-	sql string,
-	parameters map[string]any,
-) (*clickhouseJSONResponse, int, error) {
-	body, status, err := h.executeQuery(ctx, cluster, sql, "JSON", parameters)
-	if err != nil {
-		return nil, status, err
-	}
-
-	var resp clickhouseJSONResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, http.StatusBadGateway, fmt.Errorf("invalid ClickHouse JSON response: %w", err)
-	}
-
-	return &resp, http.StatusOK, nil
-}
-
-func (h *ClickHouseOperationsHandler) executeJSONCompactQuery(
-	ctx context.Context,
-	cluster *clickhouseOperationCluster,
-	sql string,
-	parameters map[string]any,
-) (*clickhouseJSONCompactResponse, int, error) {
-	body, status, err := h.executeQuery(ctx, cluster, sql, "JSONCompact", parameters)
-	if err != nil {
-		return nil, status, err
-	}
-
-	var resp clickhouseJSONCompactResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, http.StatusBadGateway, fmt.Errorf("invalid ClickHouse JSONCompact response: %w", err)
-	}
-
-	return &resp, http.StatusOK, nil
+	writePassthroughResponse(w, http.StatusOK, contentType, body)
 }
 
 func (h *ClickHouseOperationsHandler) executeQuery(
@@ -238,7 +136,7 @@ func (h *ClickHouseOperationsHandler) executeQuery(
 	cluster *clickhouseOperationCluster,
 	sql, format string,
 	parameters map[string]any,
-) ([]byte, int, error) {
+) ([]byte, string, int, error) {
 	params := url.Values{
 		"default_format": []string{format},
 	}
@@ -257,7 +155,7 @@ func (h *ClickHouseOperationsHandler) executeQuery(
 		bytes.NewBufferString(sql),
 	)
 	if err != nil {
-		return nil, http.StatusInternalServerError, fmt.Errorf("creating ClickHouse request: %w", err)
+		return nil, "", http.StatusInternalServerError, fmt.Errorf("creating ClickHouse request: %w", err)
 	}
 
 	if cluster.cfg.Username != "" {
@@ -266,20 +164,25 @@ func (h *ClickHouseOperationsHandler) executeQuery(
 
 	resp, err := cluster.client.Do(req)
 	if err != nil {
-		return nil, http.StatusBadGateway, fmt.Errorf("executing ClickHouse request: %w", err)
+		return nil, "", http.StatusBadGateway, fmt.Errorf("executing ClickHouse request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, http.StatusBadGateway, fmt.Errorf("reading ClickHouse response: %w", err)
+		return nil, "", http.StatusBadGateway, fmt.Errorf("reading ClickHouse response: %w", err)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, resp.StatusCode, fmt.Errorf("%s", strings.TrimSpace(string(body)))
+		return nil, "", resp.StatusCode, fmt.Errorf("%s", strings.TrimSpace(string(body)))
 	}
 
-	return body, http.StatusOK, nil
+	contentType := resp.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "text/tab-separated-values; charset=utf-8"
+	}
+
+	return body, contentType, http.StatusOK, nil
 }
 
 func formatParamValue(value any) string {

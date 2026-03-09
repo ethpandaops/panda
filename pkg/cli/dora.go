@@ -111,7 +111,7 @@ var doraValidatorCmd = &cobra.Command{
 	Short: "Get validator details",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		response, err := runProxyOperation("dora.get_validator", map[string]any{
+		response, err := runProxyOperationRaw("dora.get_validator", map[string]any{
 			"network":         args[0],
 			"index_or_pubkey": args[1],
 		})
@@ -119,7 +119,7 @@ var doraValidatorCmd = &cobra.Command{
 			return err
 		}
 
-		return printJSON(response.Data)
+		return printJSONBytes(response.Body)
 	},
 }
 
@@ -128,7 +128,7 @@ var doraSlotCmd = &cobra.Command{
 	Short: "Get slot details",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		response, err := runProxyOperation("dora.get_slot", map[string]any{
+		response, err := runProxyOperationRaw("dora.get_slot", map[string]any{
 			"network":      args[0],
 			"slot_or_hash": args[1],
 		})
@@ -136,7 +136,7 @@ var doraSlotCmd = &cobra.Command{
 			return err
 		}
 
-		return printJSON(response.Data)
+		return printJSONBytes(response.Body)
 	},
 }
 
@@ -145,7 +145,7 @@ var doraEpochCmd = &cobra.Command{
 	Short: "Get epoch summary",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		response, err := runProxyOperation("dora.get_epoch", map[string]any{
+		response, err := runProxyOperationRaw("dora.get_epoch", map[string]any{
 			"network": args[0],
 			"epoch":   args[1],
 		})
@@ -153,6 +153,6 @@ var doraEpochCmd = &cobra.Command{
 			return err
 		}
 
-		return printJSON(response.Data)
+		return printJSONBytes(response.Body)
 	},
 }

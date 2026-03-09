@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import csv
+import io
+import json
 import os
 from typing import Any
 
@@ -28,16 +31,40 @@ def _get_client() -> httpx.Client:
     )
 
 
-def invoke(operation: str, args: dict[str, Any] | None = None) -> dict[str, Any]:
+def _invoke_bytes(
+    operation: str, args: dict[str, Any] | None = None
+) -> tuple[bytes, str]:
     payload = {"args": args or {}}
     with _get_client() as client:
         response = client.post(f"/api/v1/operations/{operation}", json=payload)
+        body = response.read()
         if not response.is_success:
             raise ValueError(
                 f"Operation {operation} failed (HTTP {response.status_code}): "
-                f"{response.text.strip()}"
+                f"{body.decode('utf-8', errors='replace').strip()}"
             )
-        data = response.json()
+
+        content_type = response.headers.get("content-type", "")
+
+    return body, content_type
+
+
+def _decode_json(body: bytes, operation: str) -> Any:
+    if not body.strip():
+        return {}
+
+    try:
+        return json.loads(body)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            "Unsupported proxy response shape. "
+            "The proxy must implement /api/v1/operations/*."
+        ) from exc
+
+
+def invoke(operation: str, args: dict[str, Any] | None = None) -> dict[str, Any]:
+    body, _ = _invoke_bytes(operation, args)
+    data = _decode_json(body, operation)
 
     if not isinstance(data, dict) or "kind" not in data:
         raise ValueError(
@@ -48,23 +75,46 @@ def invoke(operation: str, args: dict[str, Any] | None = None) -> dict[str, Any]
     return data
 
 
-def invoke_dataframe(operation: str, args: dict[str, Any] | None = None) -> pd.DataFrame:
-    response = invoke(operation, args)
-    if response.get("kind") != "table":
-        raise ValueError(f"Operation {operation} did not return a table result")
+def invoke_json(operation: str, args: dict[str, Any] | None = None) -> Any:
+    body, _ = _invoke_bytes(operation, args)
+    return _decode_json(body, operation)
 
-    row_encoding = response.get("row_encoding", "object")
-    if row_encoding != "object":
-        raise ValueError(
-            f"Operation {operation} returned row_encoding={row_encoding}, expected object"
-        )
 
-    rows = response.get("rows", [])
-    columns = response.get("columns", [])
-    if not rows:
-        return pd.DataFrame(columns=columns)
+def invoke_json_data(operation: str, args: dict[str, Any] | None = None) -> Any:
+    payload = invoke_json(operation, args)
+    if not isinstance(payload, dict):
+        raise ValueError(f"Operation {operation} did not return a JSON object")
 
-    return pd.DataFrame(rows, columns=columns or None)
+    return payload.get("data")
+
+
+def invoke_tsv_dataframe(
+    operation: str, args: dict[str, Any] | None = None
+) -> pd.DataFrame:
+    body, _ = _invoke_bytes(operation, args)
+    text = body.decode("utf-8")
+    if not text.strip():
+        return pd.DataFrame()
+
+    return pd.read_csv(io.StringIO(text), sep="\t")
+
+
+def invoke_tsv_rows(
+    operation: str, args: dict[str, Any] | None = None
+) -> tuple[list[tuple[str, ...]], list[str]]:
+    body, _ = _invoke_bytes(operation, args)
+    text = body.decode("utf-8")
+    if not text.strip():
+        return [], []
+
+    reader = csv.reader(io.StringIO(text), delimiter="\t")
+    records = list(reader)
+    if not records:
+        return [], []
+
+    columns = records[0]
+    rows = [tuple(row) for row in records[1:]]
+    return rows, columns
 
 
 def invoke_data(operation: str, args: dict[str, Any] | None = None) -> Any:
@@ -75,20 +125,11 @@ def invoke_data(operation: str, args: dict[str, Any] | None = None) -> Any:
     return response.get("data")
 
 
+def invoke_dataframe(operation: str, args: dict[str, Any] | None = None) -> pd.DataFrame:
+    return invoke_tsv_dataframe(operation, args)
+
+
 def invoke_raw_table(
     operation: str, args: dict[str, Any] | None = None
-) -> tuple[list[tuple], list[str]]:
-    response = invoke(operation, args)
-    if response.get("kind") != "table":
-        raise ValueError(f"Operation {operation} did not return a table result")
-
-    row_encoding = response.get("row_encoding", "object")
-    if row_encoding != "array":
-        raise ValueError(
-            f"Operation {operation} returned row_encoding={row_encoding}, expected array"
-        )
-
-    matrix = response.get("matrix", [])
-    columns = response.get("columns", [])
-    rows = [tuple(row) for row in matrix]
-    return rows, columns
+) -> tuple[list[tuple[str, ...]], list[str]]:
+    return invoke_tsv_rows(operation, args)

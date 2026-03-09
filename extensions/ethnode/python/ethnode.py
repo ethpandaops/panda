@@ -13,7 +13,7 @@ def beacon_get(
     path: str,
     params: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return _runtime.invoke_data(
+    payload = _runtime.invoke_json(
         "ethnode.beacon_get",
         {
             "network": network,
@@ -22,6 +22,7 @@ def beacon_get(
             "params": params,
         },
     )
+    return payload if isinstance(payload, dict) else {}
 
 
 def beacon_post(
@@ -30,7 +31,7 @@ def beacon_post(
     path: str,
     body: Any | None = None,
 ) -> dict[str, Any]:
-    return _runtime.invoke_data(
+    payload = _runtime.invoke_json(
         "ethnode.beacon_post",
         {
             "network": network,
@@ -39,6 +40,7 @@ def beacon_post(
             "body": body,
         },
     )
+    return payload if isinstance(payload, dict) else {}
 
 
 def execution_rpc(
@@ -47,7 +49,7 @@ def execution_rpc(
     method: str,
     params: list[Any] | None = None,
 ) -> Any:
-    data = _runtime.invoke_data(
+    data = _runtime.invoke_json(
         "ethnode.execution_rpc",
         {
             "network": network,
@@ -56,7 +58,9 @@ def execution_rpc(
             "params": params,
         },
     )
-    return data.get("result")
+    if isinstance(data, dict):
+        return data.get("result")
+    return None
 
 
 def get_node_version(network: str, instance: str) -> dict[str, Any]:

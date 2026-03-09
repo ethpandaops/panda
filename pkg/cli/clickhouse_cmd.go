@@ -1,13 +1,12 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"encoding/csv"
 	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
-
-	"github.com/ethpandaops/mcp/pkg/operations"
 )
 
 var clickhouseJSON bool
@@ -117,7 +116,7 @@ func runClickHouseOperation(operationID, cluster, sql string, raw bool) error {
 	}
 	defer cleanup()
 
-	response, err := proxyOperation(ctx, pc, operationID, map[string]any{
+	response, err := proxyOperationRaw(ctx, pc, operationID, map[string]any{
 		"cluster": cluster,
 		"sql":     sql,
 	})
@@ -125,29 +124,72 @@ func runClickHouseOperation(operationID, cluster, sql string, raw bool) error {
 		return err
 	}
 
-	if clickhouseJSON || raw {
-		return printJSON(response)
+	if raw {
+		return printClickHouseJSON(response.Body, true)
 	}
 
-	return printOperationTable(response)
+	if clickhouseJSON {
+		return printClickHouseJSON(response.Body, false)
+	}
+
+	fmt.Print(string(response.Body))
+	return nil
 }
 
-func printOperationTable(response *operations.Response) error {
-	if response.Kind != operations.ResultKindTable {
-		return printJSON(response)
+func printClickHouseJSON(data []byte, raw bool) error {
+	columns, rows, err := parseClickHouseTSV(data)
+	if err != nil {
+		return fmt.Errorf("parsing ClickHouse TSV response: %w", err)
 	}
 
-	if len(response.Columns) > 0 {
-		fmt.Println(strings.Join(response.Columns, "\t"))
-	}
-
-	for _, row := range response.Rows {
-		values := make([]string, 0, len(response.Columns))
-		for _, column := range response.Columns {
-			values = append(values, fmt.Sprint(row[column]))
+	if raw {
+		matrix := make([][]string, 0, len(rows))
+		for _, row := range rows {
+			matrix = append(matrix, row)
 		}
-		fmt.Println(strings.Join(values, "\t"))
+
+		return printJSON(map[string]any{
+			"columns": columns,
+			"rows":    matrix,
+		})
 	}
 
-	return nil
+	items := make([]map[string]string, 0, len(rows))
+	for _, row := range rows {
+		item := make(map[string]string, len(columns))
+		for idx, column := range columns {
+			if idx < len(row) {
+				item[column] = row[idx]
+			}
+		}
+
+		items = append(items, item)
+	}
+
+	return printJSON(map[string]any{
+		"columns": columns,
+		"rows":    items,
+	})
+}
+
+func parseClickHouseTSV(data []byte) ([]string, [][]string, error) {
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 {
+		return nil, nil, nil
+	}
+
+	reader := csv.NewReader(bytes.NewReader(trimmed))
+	reader.Comma = '\t'
+	reader.FieldsPerRecord = -1
+	reader.LazyQuotes = true
+
+	records, err := reader.ReadAll()
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(records) == 0 {
+		return nil, nil, nil
+	}
+
+	return records[0], records[1:], nil
 }
