@@ -132,7 +132,8 @@ func findSearchHelper() (string, string, error) {
 }
 
 func resolveSearchRuntimeDir(helperDir string) (string, error) {
-	for _, dir := range []string{mustGetwd(), helperDir} {
+	candidates := uniqueDirs(mustGetwd(), helperDir)
+	for _, dir := range candidates {
 		if dir == "" {
 			continue
 		}
@@ -141,8 +142,22 @@ func resolveSearchRuntimeDir(helperDir string) (string, error) {
 		}
 	}
 
+	for _, dir := range candidates {
+		if dir == "" || !canBootstrapSearchRuntime(dir) {
+			continue
+		}
+
+		if err := bootstrapSearchRuntime(dir); err != nil {
+			return "", err
+		}
+
+		if hasSearchRuntime(dir) {
+			return dir, nil
+		}
+	}
+
 	return "", fmt.Errorf(
-		"search runtime is not installed. run `make download-models` in the repo or install search assets next to ep-search",
+		"search runtime is not installed. reinstall with `make install` or place search assets next to ep-search",
 	)
 }
 
@@ -161,6 +176,47 @@ func hasSearchRuntime(dir string) bool {
 
 	_, err := os.Stat(filepath.Join(dir, libName))
 	return err == nil
+}
+
+func canBootstrapSearchRuntime(dir string) bool {
+	if _, err := exec.LookPath("make"); err != nil {
+		return false
+	}
+
+	info, err := os.Stat(filepath.Join(dir, "Makefile"))
+	return err == nil && !info.IsDir()
+}
+
+func bootstrapSearchRuntime(dir string) error {
+	fmt.Fprintln(os.Stderr, "Preparing search runtime...")
+
+	cmd := exec.Command("make", "download-models")
+	cmd.Dir = dir
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("bootstrapping search runtime in %s: %w", dir, err)
+	}
+
+	return nil
+}
+
+func uniqueDirs(values ...string) []string {
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+
+	return out
 }
 
 func mustGetwd() string {

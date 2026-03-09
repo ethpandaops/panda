@@ -124,7 +124,7 @@ stop-docker: ## Stop docker-compose services
 logs: ## View docker-compose logs
 	docker-compose logs -f mcp-server
 
-install: install-mcp install-cli install-search ## Install primary binaries to GOBIN
+install: install-mcp install-cli install-search install-search-assets ## Install primary binaries to GOBIN
 
 install-mcp: ## Install the MCP server binary to GOBIN
 	@mkdir -p $(GOBIN)
