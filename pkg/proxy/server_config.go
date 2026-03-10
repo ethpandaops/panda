@@ -9,6 +9,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	simpleauth "github.com/ethpandaops/mcp/pkg/auth"
 	"github.com/ethpandaops/mcp/pkg/configpath"
 	"github.com/ethpandaops/mcp/pkg/proxy/handlers"
 )
@@ -61,14 +62,20 @@ type HTTPServerConfig struct {
 
 // AuthConfig holds authentication configuration for the proxy.
 type AuthConfig struct {
-	// Mode is the authentication mode (token or jwt).
+	// Mode is the authentication mode.
 	Mode AuthMode `yaml:"mode"`
 
-	// JWT holds JWT validation configuration (used when mode is "jwt").
-	JWT *JWTValidatorConfig `yaml:"jwt,omitempty"`
+	// GitHub configures the GitHub OAuth app used for user authentication.
+	GitHub *simpleauth.GitHubConfig `yaml:"github,omitempty"`
 
-	// TokenTTL is the token lifetime (used when mode is "token").
-	TokenTTL time.Duration `yaml:"token_ttl,omitempty"`
+	// AllowedOrgs restricts access to members of these GitHub orgs.
+	AllowedOrgs []string `yaml:"allowed_orgs,omitempty"`
+
+	// Tokens configures proxy-issued bearer tokens.
+	Tokens simpleauth.TokensConfig `yaml:"tokens"`
+
+	// AccessTokenTTL is the lifetime of proxy-issued access tokens.
+	AccessTokenTTL time.Duration `yaml:"access_token_ttl,omitempty"`
 }
 
 // ClickHouseClusterConfig holds ClickHouse cluster configuration.
@@ -164,17 +171,13 @@ func (c *ServerConfig) ApplyDefaults() {
 	}
 
 	// Auth defaults.
-	// Default to no auth for local development. Production should explicitly set jwt mode.
+	// Default to no auth for local development. Hosted deployments should explicitly set oauth mode.
 	if c.Auth.Mode == "" {
 		c.Auth.Mode = AuthModeNone
 	}
 
-	if c.Auth.TokenTTL == 0 {
-		c.Auth.TokenTTL = 1 * time.Hour
-	}
-
-	if c.Auth.JWT != nil {
-		c.Auth.JWT.ApplyDefaults()
+	if c.Auth.AccessTokenTTL == 0 {
+		c.Auth.AccessTokenTTL = 1 * time.Hour
 	}
 
 	// Rate limiting defaults.
@@ -205,17 +208,21 @@ func (c *ServerConfig) ApplyDefaults() {
 
 // Validate validates the server config.
 func (c *ServerConfig) Validate() error {
-	if c.Auth.Mode == AuthModeJWT {
-		if c.Auth.JWT == nil {
-			return fmt.Errorf("auth.jwt is required when auth.mode is 'jwt'")
+	if c.Auth.Mode == AuthModeOAuth {
+		if c.Auth.GitHub == nil {
+			return fmt.Errorf("auth.github is required when auth.mode is 'oauth'")
 		}
 
-		if c.Auth.JWT.JWKSURL == "" {
-			return fmt.Errorf("auth.jwt.jwks_url is required")
+		if c.Auth.GitHub.ClientID == "" {
+			return fmt.Errorf("auth.github.client_id is required")
 		}
 
-		if c.Auth.JWT.Issuer == "" {
-			return fmt.Errorf("auth.jwt.issuer is required")
+		if c.Auth.GitHub.ClientSecret == "" {
+			return fmt.Errorf("auth.github.client_secret is required")
+		}
+
+		if c.Auth.Tokens.SecretKey == "" {
+			return fmt.Errorf("auth.tokens.secret_key is required")
 		}
 	}
 

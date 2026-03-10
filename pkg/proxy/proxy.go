@@ -1,5 +1,5 @@
-// Package proxy provides the credential proxy for sandboxed code execution.
-// The proxy holds datasource credentials and proxies requests from sandbox containers.
+// Package proxy provides the credential proxy for server-side upstream access.
+// The proxy holds datasource credentials and serves raw credentialed routes.
 package proxy
 
 import (
@@ -18,15 +18,13 @@ type Service interface {
 	// Stop stops the service.
 	Stop(ctx context.Context) error
 
-	// URL returns the proxy URL for sandbox environment variables.
+	// URL returns the proxy URL.
 	URL() string
 
-	// RegisterToken creates a new token for an execution and returns it.
-	// For Client implementations using JWT auth, this returns the user's JWT.
+	// RegisterToken returns the current access token for server-to-proxy requests.
 	RegisterToken(executionID string) string
 
-	// RevokeToken revokes a token for an execution.
-	// For Client implementations using JWT auth, this is a no-op.
+	// RevokeToken is a no-op for client-managed bearer tokens.
 	RevokeToken(executionID string)
 
 	// ClickHouseDatasources returns the list of ClickHouse datasource names.

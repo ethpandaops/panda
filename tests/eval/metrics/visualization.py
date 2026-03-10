@@ -22,20 +22,20 @@ class VisualizationURLMetric(BaseMetric):
     def __init__(
         self,
         threshold: float = 0.8,
-        allowed_extensions: list[str] | None = None,
+        allowed_suffixes: list[str] | None = None,
         url_patterns: list[str] | None = None,
     ) -> None:
         """Initialize the metric.
 
         Args:
             threshold: Minimum score to pass (0.0 to 1.0).
-            allowed_extensions: File extensions to look for.
+            allowed_suffixes: File suffixes to look for.
                 Defaults to common image and document types.
             url_patterns: Regex patterns to match valid URLs.
                 Defaults to common cloud storage patterns.
         """
         self.threshold = threshold
-        self.allowed_extensions = allowed_extensions or [
+        self.allowed_suffixes = allowed_suffixes or [
             "png",
             "jpg",
             "jpeg",
@@ -44,7 +44,7 @@ class VisualizationURLMetric(BaseMetric):
             "pdf",
         ]
         self.url_patterns = url_patterns or [
-            r"https?://[^\s]+\.(" + "|".join(self.allowed_extensions) + r")",
+            r"https?://[^\s]+\.(" + "|".join(self.allowed_suffixes) + r")",
             r"https?://[^\s]*r2\.cloudflarestorage\.com[^\s]*",
             r"https?://[^\s]*s3\.[^\s]*amazonaws\.com[^\s]*",
             r"https?://[^\s]*storage\.googleapis\.com[^\s]*",
@@ -75,11 +75,11 @@ class VisualizationURLMetric(BaseMetric):
         for pattern in self.url_patterns:
             matches = re.findall(pattern, output, re.IGNORECASE)
             if matches:
-                # For extension pattern, reconstruct full URLs
+                # For suffix pattern, reconstruct full URLs
                 if pattern.startswith(r"https?://[^\s]+\.("):
-                    # Find full URLs with these extensions
+                    # Find full URLs with these suffixes
                     full_url_pattern = r"https?://[^\s]+\.(" + "|".join(
-                        self.allowed_extensions
+                        self.allowed_suffixes
                     ) + r")"
                     full_matches = re.findall(full_url_pattern, output, re.IGNORECASE)
                     for ext in full_matches:

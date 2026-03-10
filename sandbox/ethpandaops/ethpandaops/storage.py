@@ -1,8 +1,8 @@
-"""S3-compatible storage for output files via credential proxy.
+"""Storage helpers for output files via the local server.
 
-This module provides functions to upload files to S3-compatible storage
-and get public URLs for sharing. All requests go through the credential
-proxy - credentials are never exposed to sandbox containers.
+This module provides functions to upload files and get public URLs for sharing.
+All requests go through the local server API - credentials are never exposed to
+sandbox containers.
 
 Example:
     from ethpandaops import storage
@@ -15,35 +15,20 @@ Example:
     url = storage.upload("/workspace/data.csv", remote_name="results.csv")
 """
 
-import os
 from pathlib import Path
 
 import httpx
 
-# Proxy configuration (required).
-_PROXY_URL = os.environ.get("ETHPANDAOPS_PROXY_URL", "")
-_PROXY_TOKEN = os.environ.get("ETHPANDAOPS_PROXY_TOKEN", "")
-
-# S3 configuration.
-_S3_BUCKET = os.environ.get("ETHPANDAOPS_S3_BUCKET", "mcp-outputs")
-_S3_PUBLIC_URL_PREFIX = os.environ.get("ETHPANDAOPS_S3_PUBLIC_URL_PREFIX", "")
-
-
-def _check_proxy_config() -> None:
-    """Verify proxy is configured."""
-    if not _PROXY_URL or not _PROXY_TOKEN:
-        raise ValueError(
-            "Proxy not configured. ETHPANDAOPS_PROXY_URL and ETHPANDAOPS_PROXY_TOKEN are required."
-        )
+from ethpandaops import _runtime
 
 
 def _get_client() -> httpx.Client:
-    """Get an HTTP client configured for the proxy."""
-    _check_proxy_config()
+    """Get an HTTP client configured for the local server API."""
+    _runtime._check_api_config()
 
     return httpx.Client(
-        base_url=_PROXY_URL,
-        headers={"Authorization": f"Bearer {_PROXY_TOKEN}"},
+        base_url=_runtime._API_URL,
+        headers={"Authorization": f"Bearer {_runtime._API_TOKEN}"},
         timeout=httpx.Timeout(connect=5.0, read=300.0, write=300.0, pool=5.0),
     )
 
@@ -74,37 +59,20 @@ def upload(local_path: str, remote_name: str | None = None) -> str:
     if remote_name is None:
         remote_name = path.name
 
-    # Generate a unique key using execution context (set by sandbox).
-    execution_id = os.environ.get("ETHPANDAOPS_EXECUTION_ID")
-    if not execution_id:
-        raise ValueError(
-            "ETHPANDAOPS_EXECUTION_ID environment variable is required for uploads. "
-            "This should be set automatically by the sandbox."
-        )
-    key = f"{execution_id}/{remote_name}"
-
     content_type = _get_content_type(path.suffix)
 
     with _get_client() as client:
         with open(path, "rb") as f:
-            response = client.put(
-                f"/s3/{_S3_BUCKET}/{key}",
+            response = client.post(
+                "/api/v1/runtime/storage/upload",
                 content=f.read(),
+                params={"name": remote_name},
                 headers={"Content-Type": content_type},
             )
             response.raise_for_status()
+            payload = response.json()
 
-    # Build public URL.
-    return _get_public_url(key)
-
-
-def _get_public_url(key: str) -> str:
-    """Build the public URL for an S3 object."""
-    if _S3_PUBLIC_URL_PREFIX:
-        return f"{_S3_PUBLIC_URL_PREFIX.rstrip('/')}/{key}"
-    else:
-        # Fallback to proxy URL (won't work for public access, but useful for debugging).
-        return f"{_PROXY_URL.rstrip('/')}/s3/{_S3_BUCKET}/{key}"
+    return payload.get("url", "")
 
 
 def _get_content_type(suffix: str) -> str:
@@ -142,74 +110,17 @@ def list_files(prefix: str = "") -> list[dict]:
     Returns:
         List of file info dictionaries with 'key', 'size', 'last_modified'.
     """
-    _check_proxy_config()
-
-    params: dict[str, str] = {"list-type": "2"}
+    params: dict[str, str] = {}
     if prefix:
         params["prefix"] = prefix
 
-    results: list[dict] = []
-    continuation_token: str | None = None
-
     with _get_client() as client:
-        while True:
-            if continuation_token:
-                params["continuation-token"] = continuation_token
+        response = client.get("/api/v1/runtime/storage/files", params=params)
+        response.raise_for_status()
+        payload = response.json()
 
-            response = client.get(f"/s3/{_S3_BUCKET}", params=params)
-            response.raise_for_status()
-
-            page_results, continuation_token = _parse_list_response(response.text)
-            results.extend(page_results)
-            if not continuation_token:
-                break
-
-    return results
-
-
-def _parse_list_response(xml_text: str) -> tuple[list[dict], str | None]:
-    """Parse S3 list response XML into file info dicts and continuation token."""
-    import xml.etree.ElementTree as ET
-
-    root = ET.fromstring(xml_text)
-
-    namespace = ""
-    if root.tag.startswith("{"):
-        namespace = root.tag.split("}")[0].strip("{")
-
-    def _tag(name: str) -> str:
-        return f"{{{namespace}}}{name}" if namespace else name
-
-    results: list[dict] = []
-    for entry in root.findall(_tag("Contents")):
-        key_elem = entry.find(_tag("Key"))
-        size_elem = entry.find(_tag("Size"))
-        last_modified_elem = entry.find(_tag("LastModified"))
-
-        key = key_elem.text if key_elem is not None and key_elem.text else ""
-        size_text = size_elem.text if size_elem is not None and size_elem.text else "0"
-        last_modified = (
-            last_modified_elem.text
-            if last_modified_elem is not None and last_modified_elem.text
-            else ""
-        )
-
-        try:
-            size = int(size_text)
-        except ValueError:
-            size = 0
-
-        if key:
-            results.append(
-                {"key": key, "size": size, "last_modified": last_modified}
-            )
-
-    is_truncated = root.findtext(_tag("IsTruncated"), default="false").lower()
-    if is_truncated != "true":
-        return results, None
-
-    token = root.findtext(_tag("NextContinuationToken"), default="")
-    return results, token or None
+    files = payload.get("files", [])
+    return files if isinstance(files, list) else []
 
 
 def get_url(key: str) -> str:
@@ -221,4 +132,9 @@ def get_url(key: str) -> str:
     Returns:
         Public URL for the file.
     """
-    return _get_public_url(key)
+    with _get_client() as client:
+        response = client.get("/api/v1/runtime/storage/url", params={"key": key})
+        response.raise_for_status()
+        payload = response.json()
+
+    return payload.get("url", "")

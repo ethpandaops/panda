@@ -1,23 +1,23 @@
 ---
-name: create-extension
-description: "Add a new datasource extension to ethpandaops/mcp. Triggers on: add extension, new extension, create extension, add plugin, new plugin, create plugin, add datasource."
-argument-hint: <extension-name>
+name: create-module
+description: "Add a new datasource module to ethpandaops/mcp. Triggers on: add module, new module, create module, add plugin, new plugin, create plugin, add datasource."
+argument-hint: <module-name>
 disable-model-invocation: true
 ---
 
-# Create New Extension
+# Create New Module
 
 Use this when adding a new integration like ClickHouse, Prometheus, Loki, Dora, or Ethnode.
-The architecture is **extension + operations**, not plugins + bespoke proxy endpoints.
+The architecture is **module + server operations**, not plugins + bespoke proxy endpoints.
 
 ## Files To Create
 
-Create the extension folder:
+Create the module folder:
 
 ```text
-extensions/{name}/
+modules/{name}/
 ├── config.go
-├── extension.go
+├── module.go
 ├── examples.go
 ├── examples.yaml
 └── python/{name}.py
@@ -31,52 +31,42 @@ Add these when needed:
 
 ## Copy From
 
-- `extensions/prometheus/` or `extensions/loki/` for simple JSON passthrough APIs
-- `extensions/clickhouse/` for streamed table results and datasource discovery
-- `extensions/dora/` or `extensions/ethnode/` for external HTTP APIs with curated helpers
+- `modules/prometheus/` or `modules/loki/` for simple JSON passthrough APIs
+- `modules/clickhouse/` for streamed table results and datasource discovery
+- `modules/dora/` or `modules/ethnode/` for external HTTP APIs with curated helpers
 
 ## Required Wiring
 
 1. `pkg/app/app.go`
-   Add `reg.Add({name}extension.New())` in `buildExtensionRegistry()`.
-2. `pkg/proxy/handlers/operations.go`
-   Add the new operations handler field, constructor wiring, and dispatch.
-3. `pkg/proxy/server.go`
-   Ensure the operations handler is created with any config the new extension needs.
+   Add `reg.Add({name}module.New())` in `buildModuleRegistry()`.
+2. `pkg/server/operations_<domain>.go`
+   Add new server-owned operation handling for the module.
+3. `pkg/server/operations_dispatch.go`
+   Wire the module's handler into dispatch.
 4. `pkg/proxy/server_config.go`
-   Add proxy server config translation if the extension needs proxy-held credentials or typed proxy config.
+   Add proxy server config translation only if the module needs proxy-held credentials or typed proxy config.
 5. `sandbox/ethpandaops/ethpandaops/__init__.py`
-   Add the lazy import if the extension exposes a Python module.
+   Add the lazy import if the module exposes a Python module.
 6. `sandbox/Dockerfile`
-   Copy `extensions/{name}/python/{name}.py` into the installed `ethpandaops` package.
+   Copy `modules/{name}/python/{name}.py` into the installed `ethpandaops` package.
 
 ## Architecture Rules
 
 - Do **not** add a new MCP tool. MCP stays limited to platform primitives.
-- Extension semantics live in Go.
+- Module semantics live in Go.
 - Python wrappers stay thin and go through `sandbox/ethpandaops/ethpandaops/_runtime.py`.
-- Default remote execution path is `POST /api/v1/operations/{extension.operation}`.
-- Operation handlers own validation, defaults, routing, and error mapping.
+- Default remote execution path is `POST /api/v1/operations/{module.operation}`.
+- Server operation handlers own validation, defaults, routing, and error mapping.
 - Upstream-backed bulk data must stay passthrough when possible.
-  Do not materialize large tables into row-object JSON in the proxy.
+  Do not materialize large tables into row-object JSON in the server.
 - Small synthetic/object operations can still return the JSON envelope.
-- Credentials never go into the sandbox. Only metadata and proxy URL/token do.
+- Credentials never go into the sandbox. Only metadata and server runtime tokens do.
 
-## Extension Contract
+## Module Contract
 
-Implement `extension.Extension` from `pkg/extension/extension.go`:
-- `Name`
-- `Init`
-- `ApplyDefaults`
-- `Validate`
-- `SandboxEnv`
-- `DatasourceInfo`
-- `Examples`
-- `PythonAPIDocs`
-- `GettingStartedSnippet`
-- `RegisterResources`
-- `Start`
-- `Stop`
+Implement `module.Module` from `pkg/module/module.go` and only the optional capability interfaces you need:
+- base lifecycle: `Name`, `Init`, `ApplyDefaults`, `Validate`, `Start`, `Stop`
+- optional capabilities: `SandboxEnvProvider`, `DatasourceInfoProvider`, `ExamplesProvider`, `PythonAPIDocsProvider`, `GettingStartedSnippetProvider`, `ResourceProvider`
 
 ## Python Rules
 
@@ -87,15 +77,15 @@ Implement `extension.Extension` from `pkg/extension/extension.go`:
 
 ## CLI Rules
 
-- Extension-specific CLI commands should be thin adapters over operations.
-- Do not duplicate validation/default logic already implemented in the proxy operation handler.
+- Module-specific CLI commands should be thin adapters over server operations.
+- Do not duplicate validation/default logic already implemented in the server operation handler.
 - Pretty-printing belongs in CLI; semantic behavior does not.
 
 ## Checklist
 
-- [ ] New extension implements `extension.Extension`
+- [ ] New module implements `module.Module`
 - [ ] Examples and Python API docs are added
-- [ ] Proxy operation handler is wired into `pkg/proxy/handlers/operations.go`
+- [ ] Server operation handler is wired into `pkg/server/operations_dispatch.go`
 - [ ] No new MCP tool was added
 - [ ] Python module is thin and copied via `sandbox/Dockerfile`
 - [ ] CLI, if added, calls operations instead of bespoke transport logic

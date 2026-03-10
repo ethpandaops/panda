@@ -1,9 +1,9 @@
-// Package auth provides simplified GitHub-based authentication for MCP.
+// Package auth provides simplified GitHub-based OAuth for local product edges.
 //
 // This implements a minimal OAuth 2.1 authorization server that:
 // - Delegates identity verification to GitHub
-// - Issues JWTs with proper resource (audience) binding per RFC 8707
-// - Validates JWTs on protected endpoints
+// - Issues signed bearer tokens with proper resource (audience) binding per RFC 8707
+// - Validates bearer tokens on protected endpoints
 //
 // The flow is:
 // 1. Client calls /auth/authorize with resource + PKCE
@@ -33,7 +33,6 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/ethpandaops/mcp/pkg/auth/github"
-	"github.com/ethpandaops/mcp/pkg/config"
 )
 
 const (
@@ -56,7 +55,7 @@ type SimpleService interface {
 // simpleService implements SimpleService.
 type simpleService struct {
 	log         logrus.FieldLogger
-	cfg         config.AuthConfig
+	cfg         Config
 	baseURL     string
 	github      *github.Client
 	secretKey   []byte
@@ -107,7 +106,7 @@ type tokenClaims struct {
 }
 
 // NewSimpleService creates a new simplified auth service.
-func NewSimpleService(log logrus.FieldLogger, cfg config.AuthConfig, baseURL string) (SimpleService, error) {
+func NewSimpleService(log logrus.FieldLogger, cfg Config, baseURL string) (SimpleService, error) {
 	log = log.WithField("component", "auth")
 
 	if !cfg.Enabled {
@@ -127,7 +126,7 @@ func NewSimpleService(log logrus.FieldLogger, cfg config.AuthConfig, baseURL str
 		log:         log,
 		cfg:         cfg,
 		baseURL:     strings.TrimSuffix(baseURL, "/"),
-		github:      github.NewClient(log, cfg.GitHub),
+		github:      github.NewClient(log, cfg.GitHub.ClientID, cfg.GitHub.ClientSecret),
 		secretKey:   []byte(cfg.Tokens.SecretKey),
 		allowedOrgs: cfg.AllowedOrgs,
 		pending:     make(map[string]*pendingAuth),
@@ -414,7 +413,7 @@ func (s *simpleService) handleCallback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
 
-// handleToken exchanges an authorization code for a JWT.
+// handleToken exchanges an authorization code for a bearer token.
 func (s *simpleService) handleToken(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		s.writeError(w, http.StatusBadRequest, "invalid_request", "invalid form data")
@@ -488,7 +487,7 @@ func (s *simpleService) handleToken(w http.ResponseWriter, r *http.Request) {
 	issued.Used = true
 	s.codesMu.Unlock()
 
-	// Create JWT.
+	// Create signed bearer token.
 	now := time.Now()
 	claims := &tokenClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -526,7 +525,7 @@ func (s *simpleService) handleToken(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Middleware returns JWT validation middleware.
+// Middleware returns bearer-token validation middleware.
 func (s *simpleService) Middleware() func(http.Handler) http.Handler {
 	if !s.cfg.Enabled {
 		return func(next http.Handler) http.Handler { return next }

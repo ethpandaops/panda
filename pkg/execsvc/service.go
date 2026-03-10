@@ -4,15 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 
 	"github.com/ethpandaops/mcp/pkg/config"
-	"github.com/ethpandaops/mcp/pkg/extension"
+	"github.com/ethpandaops/mcp/pkg/module"
 	"github.com/ethpandaops/mcp/pkg/proxy"
 	"github.com/ethpandaops/mcp/pkg/sandbox"
+	"github.com/ethpandaops/mcp/pkg/tokenstore"
 	"github.com/ethpandaops/mcp/pkg/types"
 )
 
@@ -29,26 +31,29 @@ type ExecuteRequest struct {
 }
 
 type Service struct {
-	log          logrus.FieldLogger
-	sandboxSvc   sandbox.Service
-	cfg          *config.Config
-	extensionReg *extension.Registry
-	proxySvc     proxy.Service
+	log           logrus.FieldLogger
+	sandboxSvc    sandbox.Service
+	cfg           *config.Config
+	moduleReg     *module.Registry
+	proxySvc      proxy.Service
+	runtimeTokens *tokenstore.Store
 }
 
 func New(
 	log logrus.FieldLogger,
 	sandboxSvc sandbox.Service,
 	cfg *config.Config,
-	extensionReg *extension.Registry,
+	moduleReg *module.Registry,
 	proxySvc proxy.Service,
+	runtimeTokens *tokenstore.Store,
 ) *Service {
 	return &Service{
-		log:          log.WithField("component", "exec-service"),
-		sandboxSvc:   sandboxSvc,
-		cfg:          cfg,
-		extensionReg: extensionReg,
-		proxySvc:     proxySvc,
+		log:           log.WithField("component", "exec-service"),
+		sandboxSvc:    sandboxSvc,
+		cfg:           cfg,
+		moduleReg:     moduleReg,
+		proxySvc:      proxySvc,
+		runtimeTokens: runtimeTokens,
 	}
 }
 
@@ -72,9 +77,9 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*sandbox.Exe
 	}
 
 	executionID := uuid.New().String()
-	proxyToken := s.proxySvc.RegisterToken(executionID)
-	env["ETHPANDAOPS_PROXY_TOKEN"] = proxyToken
-	defer s.proxySvc.RevokeToken(executionID)
+	runtimeToken := s.runtimeTokens.Register(executionID)
+	env["ETHPANDAOPS_API_TOKEN"] = runtimeToken
+	defer s.runtimeTokens.Revoke(executionID)
 
 	if req.SessionID == "" && s.sandboxSvc.SessionsEnabled() {
 		canCreate, count, maxAllowed := s.sandboxSvc.CanCreateSession(ctx, req.OwnerID)
@@ -125,20 +130,16 @@ func (s *Service) DestroySession(ctx context.Context, sessionID, ownerID string)
 }
 
 func (s *Service) BuildSandboxEnv() (map[string]string, error) {
-	env, err := s.extensionReg.SandboxEnv()
+	env, err := s.moduleReg.SandboxEnv()
 	if err != nil {
 		return nil, fmt.Errorf("collecting sandbox env: %w", err)
 	}
 
-	env["ETHPANDAOPS_PROXY_URL"] = s.proxySvc.URL()
-
-	if bucket := s.proxySvc.S3Bucket(); bucket != "" {
-		env["ETHPANDAOPS_S3_BUCKET"] = bucket
+	apiURL := sandboxAPIURL(s.cfg)
+	if apiURL == "" {
+		return nil, fmt.Errorf("server.sandbox_url or server.base_url is required for sandbox API access")
 	}
-
-	if prefix := s.proxySvc.S3PublicURLPrefix(); prefix != "" {
-		env["ETHPANDAOPS_S3_PUBLIC_URL_PREFIX"] = prefix
-	}
+	env["ETHPANDAOPS_API_URL"] = apiURL
 
 	delete(env, "ETHPANDAOPS_CLICKHOUSE_DATASOURCES")
 	delete(env, "ETHPANDAOPS_PROMETHEUS_DATASOURCES")
@@ -157,6 +158,26 @@ func (s *Service) BuildSandboxEnv() (map[string]string, error) {
 	}
 
 	return env, nil
+}
+
+func sandboxAPIURL(cfg *config.Config) string {
+	if cfg == nil {
+		return ""
+	}
+
+	if value := strings.TrimSpace(cfg.Server.SandboxURL); value != "" {
+		return strings.TrimRight(value, "/")
+	}
+
+	if value := strings.TrimSpace(cfg.Server.BaseURL); value != "" {
+		return strings.TrimRight(value, "/")
+	}
+
+	if value := strings.TrimSpace(cfg.Server.URL); value != "" {
+		return strings.TrimRight(value, "/")
+	}
+
+	return ""
 }
 
 func buildClickhouseDatasourceJSON(infos []types.DatasourceInfo) string {

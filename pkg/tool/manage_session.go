@@ -10,11 +10,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/ethpandaops/mcp/pkg/auth"
-	"github.com/ethpandaops/mcp/pkg/config"
 	"github.com/ethpandaops/mcp/pkg/execsvc"
-	"github.com/ethpandaops/mcp/pkg/extension"
-	"github.com/ethpandaops/mcp/pkg/proxy"
-	"github.com/ethpandaops/mcp/pkg/sandbox"
 )
 
 const (
@@ -66,14 +62,11 @@ type manageSessionHandler struct {
 // NewManageSessionTool creates the manage_session tool definition.
 func NewManageSessionTool(
 	log logrus.FieldLogger,
-	sandboxSvc sandbox.Service,
-	cfg *config.Config,
-	extensionReg *extension.Registry,
-	proxySvc proxy.Service,
+	service *execsvc.Service,
 ) Definition {
 	h := &manageSessionHandler{
 		log:     log.WithField("tool", ManageSessionToolName),
-		service: execsvc.New(log, sandboxSvc, cfg, extensionReg, proxySvc),
+		service: service,
 	}
 
 	return Definition{

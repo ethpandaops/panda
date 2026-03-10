@@ -10,7 +10,7 @@ import (
 
 	"github.com/ethpandaops/mcp/pkg/config"
 	"github.com/ethpandaops/mcp/pkg/embedding"
-	"github.com/ethpandaops/mcp/pkg/extension"
+	"github.com/ethpandaops/mcp/pkg/module"
 	"github.com/ethpandaops/mcp/pkg/resource"
 	"github.com/ethpandaops/mcp/runbooks"
 )
@@ -25,12 +25,12 @@ type Runtime struct {
 func Build(
 	log logrus.FieldLogger,
 	cfg config.SemanticSearchConfig,
-	extensionRegistry *extension.Registry,
+	moduleRegistry *module.Registry,
 ) (*Runtime, error) {
 	modelPath, searched := resolveModelPath(cfg.ModelPath)
 	if modelPath == "" {
 		return nil, fmt.Errorf(
-			"embedding model not found. looked in: %s. run 'make download-models' or 'make install'",
+			"embedding model not found. looked in: %s. run 'make download-models' or 'make install-server-runtime'",
 			strings.Join(searched, ", "),
 		)
 	}
@@ -42,7 +42,7 @@ func Build(
 
 	runtime := &Runtime{embedder: embedder}
 
-	exampleIndex, err := resource.NewExampleIndex(log, embedder, resource.GetQueryExamples(extensionRegistry))
+	exampleIndex, err := resource.NewExampleIndex(log, embedder, resource.GetQueryExamples(moduleRegistry))
 	if err != nil {
 		_ = runtime.Close()
 		return nil, fmt.Errorf("building example index: %w", err)

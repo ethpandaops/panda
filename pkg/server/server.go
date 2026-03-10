@@ -15,14 +15,16 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/ethpandaops/mcp/internal/version"
-	"github.com/ethpandaops/mcp/pkg/auth"
+	"github.com/ethpandaops/mcp/pkg/cartographoor"
 	"github.com/ethpandaops/mcp/pkg/config"
 	"github.com/ethpandaops/mcp/pkg/execsvc"
-	"github.com/ethpandaops/mcp/pkg/extension"
+	"github.com/ethpandaops/mcp/pkg/module"
 	"github.com/ethpandaops/mcp/pkg/observability"
 	"github.com/ethpandaops/mcp/pkg/proxy"
 	"github.com/ethpandaops/mcp/pkg/resource"
 	"github.com/ethpandaops/mcp/pkg/searchsvc"
+	"github.com/ethpandaops/mcp/pkg/serverapi"
+	"github.com/ethpandaops/mcp/pkg/tokenstore"
 	"github.com/ethpandaops/mcp/pkg/tool"
 )
 
@@ -47,11 +49,13 @@ type service struct {
 	cfg                  config.ServerConfig
 	toolRegistry         tool.Registry
 	resourceRegistry     resource.Registry
-	auth                 auth.SimpleService
 	searchService        *searchsvc.Service
 	execService          *execsvc.Service
 	proxyService         proxy.Service
-	extensionRegistry    *extension.Registry
+	moduleRegistry       *module.Registry
+	cartographoorClient  cartographoor.CartographoorClient
+	proxyAuthMetadata    *serverapi.ProxyAuthMetadataResponse
+	runtimeTokens        *tokenstore.Store
 	cleanup              func(context.Context) error
 	httpClient           *http.Client
 	mcpServer            *mcpserver.MCPServer
@@ -69,26 +73,30 @@ func NewService(
 	cfg config.ServerConfig,
 	toolRegistry tool.Registry,
 	resourceRegistry resource.Registry,
-	authSvc auth.SimpleService,
 	searchSvc *searchsvc.Service,
 	execSvc *execsvc.Service,
 	proxySvc proxy.Service,
-	extensionReg *extension.Registry,
+	moduleReg *module.Registry,
+	cartographoorClient cartographoor.CartographoorClient,
+	proxyAuthMetadata *serverapi.ProxyAuthMetadataResponse,
+	runtimeTokens *tokenstore.Store,
 	cleanup func(context.Context) error,
 ) Service {
 	return &service{
-		log:               log.WithField("component", "server"),
-		cfg:               cfg,
-		toolRegistry:      toolRegistry,
-		resourceRegistry:  resourceRegistry,
-		auth:              authSvc,
-		searchService:     searchSvc,
-		execService:       execSvc,
-		proxyService:      proxySvc,
-		extensionRegistry: extensionReg,
-		cleanup:           cleanup,
-		httpClient:        &http.Client{Timeout: 0},
-		done:              make(chan struct{}),
+		log:                 log.WithField("component", "server"),
+		cfg:                 cfg,
+		toolRegistry:        toolRegistry,
+		resourceRegistry:    resourceRegistry,
+		searchService:       searchSvc,
+		execService:         execSvc,
+		proxyService:        proxySvc,
+		moduleRegistry:      moduleReg,
+		cartographoorClient: cartographoorClient,
+		proxyAuthMetadata:   proxyAuthMetadata,
+		runtimeTokens:       runtimeTokens,
+		cleanup:             cleanup,
+		httpClient:          &http.Client{Timeout: 0},
+		done:                make(chan struct{}),
 	}
 }
 
@@ -172,17 +180,14 @@ func (s *service) Stop() error {
 		}
 	}
 
-	// Stop the auth service.
-	if s.auth != nil {
-		if err := s.auth.Stop(); err != nil {
-			s.log.WithError(err).Error("Failed to stop auth service")
-		}
-	}
-
 	if s.cleanup != nil {
 		if err := s.cleanup(shutdownCtx); err != nil {
 			s.log.WithError(err).Error("Failed to stop server dependencies")
 		}
+	}
+
+	if s.runtimeTokens != nil {
+		s.runtimeTokens.Stop()
 	}
 
 	s.log.Info("MCP server stopped")
@@ -410,19 +415,9 @@ func (s *service) runStreamableHTTP(ctx context.Context) error {
 	}
 }
 
-// buildHTTPHandler creates an HTTP handler with auth, health, and MCP routes.
+// buildHTTPHandler creates an HTTP handler with health, API, and MCP routes.
 func (s *service) buildHTTPHandler(routes map[string]http.Handler) http.Handler {
 	r := chi.NewRouter()
-
-	// Apply auth middleware if enabled.
-	if s.auth != nil && s.auth.Enabled() {
-		r.Use(s.auth.Middleware())
-	}
-
-	// Mount auth routes (discovery endpoints, OAuth flow).
-	if s.auth != nil {
-		s.auth.MountRoutes(r)
-	}
 
 	// Health endpoints.
 	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {

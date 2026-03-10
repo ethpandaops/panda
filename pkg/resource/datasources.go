@@ -8,7 +8,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/sirupsen/logrus"
 
-	"github.com/ethpandaops/mcp/pkg/extension"
+	"github.com/ethpandaops/mcp/pkg/module"
 	"github.com/ethpandaops/mcp/pkg/proxy"
 	"github.com/ethpandaops/mcp/pkg/types"
 )
@@ -18,22 +18,22 @@ type DatasourcesJSONResponse struct {
 	Datasources []types.DatasourceInfo `json:"datasources"`
 }
 
-// DatasourceProvider provides datasource information from either extensions or proxy.
+// DatasourceProvider provides datasource information from either modules or proxy.
 type DatasourceProvider struct {
-	extensionReg *extension.Registry
-	proxyClient  proxy.Service
+	moduleReg   *module.Registry
+	proxyClient proxy.Service
 }
 
 // NewDatasourceProvider creates a new datasource provider.
-func NewDatasourceProvider(extensionReg *extension.Registry, proxyClient proxy.Service) *DatasourceProvider {
+func NewDatasourceProvider(moduleReg *module.Registry, proxyClient proxy.Service) *DatasourceProvider {
 	return &DatasourceProvider{
-		extensionReg: extensionReg,
-		proxyClient:  proxyClient,
+		moduleReg:   moduleReg,
+		proxyClient: proxyClient,
 	}
 }
 
 // DatasourceInfo returns datasource info from the proxy.
-// If the proxy is unavailable, it falls back to extension-derived info.
+// If the proxy is unavailable, it falls back to module-derived info.
 func (p *DatasourceProvider) DatasourceInfo() []types.DatasourceInfo {
 	if p.proxyClient != nil {
 		var result []types.DatasourceInfo
@@ -45,11 +45,11 @@ func (p *DatasourceProvider) DatasourceInfo() []types.DatasourceInfo {
 		return result
 	}
 
-	if p.extensionReg == nil {
+	if p.moduleReg == nil {
 		return nil
 	}
 
-	return p.extensionReg.DatasourceInfo()
+	return p.moduleReg.DatasourceInfo()
 }
 
 // RegisterDatasourcesResources registers the datasources:// resources
@@ -57,11 +57,11 @@ func (p *DatasourceProvider) DatasourceInfo() []types.DatasourceInfo {
 func RegisterDatasourcesResources(
 	log logrus.FieldLogger,
 	reg Registry,
-	extensionReg *extension.Registry,
+	moduleReg *module.Registry,
 	proxyClient proxy.Service,
 ) {
 	log = log.WithField("resource", "datasources")
-	provider := NewDatasourceProvider(extensionReg, proxyClient)
+	provider := NewDatasourceProvider(moduleReg, proxyClient)
 
 	// datasources://list - all datasources
 	reg.RegisterStatic(StaticResource{

@@ -3,9 +3,11 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,10 +18,8 @@ import (
 	"github.com/ethpandaops/mcp/pkg/types"
 )
 
-// Client connects to a proxy server and provides:
-// - Datasource discovery from /datasources
-// - Token/JWT management for sandbox authentication
-// - Sandbox environment variable building
+// Client connects to a proxy server and provides datasource discovery plus
+// proxy-scoped bearer tokens for server-to-proxy calls.
 type Client interface {
 	// Start starts the client and performs initial discovery.
 	Start(ctx context.Context) error
@@ -27,16 +27,13 @@ type Client interface {
 	// Stop stops the client.
 	Stop(ctx context.Context) error
 
-	// URL returns the proxy URL for sandbox containers.
+	// URL returns the proxy URL.
 	URL() string
 
-	// RegisterToken creates a new auth token for a sandbox execution.
-	// For JWT-based auth, returns the user's JWT.
-	// For token-based auth, this would require server-managed token minting outside the plain HTTP client.
+	// RegisterToken returns the current proxy access token for server-to-proxy calls.
 	RegisterToken(executionID string) string
 
-	// RevokeToken revokes a token for an execution.
-	// No-op for JWT-based auth where tokens expire naturally.
+	// RevokeToken is a no-op for client-managed bearer tokens.
 	RevokeToken(executionID string)
 
 	// ClickHouseDatasources returns the discovered ClickHouse datasource names.
@@ -75,12 +72,16 @@ type ClientConfig struct {
 	// URL is the base URL of the proxy server (e.g., http://localhost:18081).
 	URL string
 
-	// IssuerURL is the OIDC issuer URL for authentication.
-	// If empty, the client will not use JWT authentication.
+	// IssuerURL is the OAuth issuer URL for proxy authentication.
+	// If empty, URL is used and the client will only work against auth.mode=none proxies.
 	IssuerURL string
 
 	// ClientID is the OAuth client ID for authentication.
 	ClientID string
+
+	// Resource is the OAuth protected resource to request tokens for.
+	// Defaults to URL when omitted.
+	Resource string
 
 	// DiscoveryInterval is how often to refresh datasource info (default: 5 minutes).
 	// Set to 0 to disable background refresh.
@@ -115,10 +116,12 @@ type proxyClient struct {
 	stopped     bool
 }
 
+var ErrAuthenticationRequired = errors.New("proxy authentication required")
+
 // Compile-time interface checks.
 var (
 	_ Client  = (*proxyClient)(nil)
-	_ Service = (*proxyClient)(nil) // Client also implements Service for compatibility
+	_ Service = (*proxyClient)(nil)
 )
 
 // NewClient creates a new proxy client.
@@ -136,14 +139,28 @@ func NewClient(log logrus.FieldLogger, cfg ClientConfig) Client {
 	}
 
 	// Set up auth client and credential store if OIDC is configured.
-	if cfg.IssuerURL != "" && cfg.ClientID != "" {
+	issuerURL := strings.TrimRight(cfg.IssuerURL, "/")
+	if issuerURL == "" {
+		issuerURL = strings.TrimRight(cfg.URL, "/")
+	}
+
+	resource := strings.TrimRight(cfg.Resource, "/")
+	if resource == "" {
+		resource = strings.TrimRight(cfg.URL, "/")
+	}
+
+	if issuerURL != "" && cfg.ClientID != "" {
 		c.authClient = client.New(log, client.Config{
-			IssuerURL: cfg.IssuerURL,
+			IssuerURL: issuerURL,
 			ClientID:  cfg.ClientID,
+			Resource:  resource,
 		})
 
 		c.credStore = store.New(log, store.Config{
 			AuthClient: c.authClient,
+			IssuerURL:  issuerURL,
+			ClientID:   cfg.ClientID,
+			Resource:   resource,
 		})
 	}
 
@@ -156,7 +173,11 @@ func (c *proxyClient) Start(ctx context.Context) error {
 
 	// Perform initial discovery.
 	if err := c.Discover(ctx); err != nil {
-		return fmt.Errorf("initial discovery failed: %w", err)
+		if errors.Is(err, ErrAuthenticationRequired) {
+			c.log.WithError(err).Warn("Proxy discovery skipped until authentication is configured")
+		} else {
+			return fmt.Errorf("initial discovery failed: %w", err)
+		}
 	}
 
 	// Start background refresh if configured.
@@ -189,18 +210,18 @@ func (c *proxyClient) URL() string {
 	return c.cfg.URL
 }
 
-// RegisterToken returns the user's JWT for authentication.
-// For Client-based architecture, the proxy uses JWT auth not per-execution tokens.
-// When no auth is configured (local dev mode), returns a placeholder token.
 func (c *proxyClient) RegisterToken(_ string) string {
 	if c.credStore == nil {
-		// No auth configured - return placeholder for proxy with auth.mode=none.
 		return "none"
 	}
 
-	token, err := c.credStore.GetAccessToken()
+	token, err := c.loadAccessToken()
 	if err != nil {
-		c.log.WithError(err).Error("Failed to get access token from credential store")
+		if errors.Is(err, ErrAuthenticationRequired) {
+			c.log.WithError(err).Debug("Proxy access token is not available")
+		} else {
+			c.log.WithError(err).Error("Failed to get proxy access token from credential store")
+		}
 
 		return ""
 	}
@@ -208,9 +229,8 @@ func (c *proxyClient) RegisterToken(_ string) string {
 	return token
 }
 
-// RevokeToken is a no-op for JWT-based auth - JWTs expire naturally.
 func (c *proxyClient) RevokeToken(_ string) {
-	// No-op: JWTs are managed by the OIDC provider, not revoked per-execution
+	// No-op: tokens are managed by the proxy control plane.
 }
 
 func namesFromInfo(infos []types.DatasourceInfo) []string {
@@ -371,6 +391,19 @@ func (c *proxyClient) Discover(ctx context.Context) error {
 		return fmt.Errorf("creating request: %w", err)
 	}
 
+	token, err := c.loadAccessToken()
+	if err != nil {
+		if errors.Is(err, ErrAuthenticationRequired) {
+			return err
+		}
+
+		return fmt.Errorf("loading access token: %w", err)
+	}
+
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("fetching datasources: %w", err)
@@ -379,6 +412,10 @@ func (c *proxyClient) Discover(ctx context.Context) error {
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			return fmt.Errorf("%w: %s", ErrAuthenticationRequired, strings.TrimSpace(string(body)))
+		}
 
 		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
 	}
@@ -424,15 +461,37 @@ func (c *proxyClient) EnsureAuthenticated(_ context.Context) error {
 		return nil
 	}
 
-	if c.credStore.IsAuthenticated() {
-		return nil
+	_, err := c.loadAccessToken()
+	if err != nil {
+		return fmt.Errorf(
+			"not authenticated to proxy. Run `ep auth login` first: %w",
+			err,
+		)
 	}
 
-	return fmt.Errorf(
-		"not authenticated to proxy. Run 'mcp auth login --issuer %s --client-id %s' first",
-		c.cfg.IssuerURL,
-		c.cfg.ClientID,
-	)
+	return nil
+}
+
+func (c *proxyClient) loadAccessToken() (string, error) {
+	if c.credStore == nil {
+		return "", nil
+	}
+
+	tokens, err := c.credStore.Load()
+	if err != nil {
+		return "", fmt.Errorf("loading stored credentials: %w", err)
+	}
+
+	if tokens == nil {
+		return "", ErrAuthenticationRequired
+	}
+
+	token, err := c.credStore.GetAccessToken()
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrAuthenticationRequired, err)
+	}
+
+	return token, nil
 }
 
 // backgroundRefresh periodically refreshes datasource information.

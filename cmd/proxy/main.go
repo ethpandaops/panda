@@ -32,8 +32,9 @@ var rootCmd = &cobra.Command{
 	Use:   "ethpandaops-proxy",
 	Short: "ethpandaops credential proxy for Ethereum network analytics",
 	Long: `A standalone credential proxy that securely proxies requests to ClickHouse,
-Prometheus, and Loki backends. This is designed for Kubernetes deployment where
-the proxy runs centrally and MCP clients connect using JWTs for authentication.`,
+Prometheus, and Loki backends. This is designed for centralized deployment where
+the proxy holds upstream credentials and can optionally issue proxy-scoped tokens
+after GitHub authentication.`,
 	PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
 		level, err := logrus.ParseLevel(logLevel)
 		if err != nil {

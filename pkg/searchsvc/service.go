@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ethpandaops/mcp/pkg/extension"
+	"github.com/ethpandaops/mcp/pkg/module"
 	"github.com/ethpandaops/mcp/pkg/resource"
 	"github.com/ethpandaops/mcp/runbooks"
 )
@@ -77,20 +77,20 @@ type SearchRunbooksResponse struct {
 
 type Service struct {
 	exampleIndex ExampleSearcher
-	extensionReg *extension.Registry
+	moduleReg    *module.Registry
 	runbookIndex RunbookSearcher
 	runbookReg   RunbookTagProvider
 }
 
 func New(
 	exampleIndex ExampleSearcher,
-	extensionReg *extension.Registry,
+	moduleReg *module.Registry,
 	runbookIndex RunbookSearcher,
 	runbookReg RunbookTagProvider,
 ) *Service {
 	return &Service{
 		exampleIndex: exampleIndex,
-		extensionReg: extensionReg,
+		moduleReg:    moduleReg,
 		runbookIndex: runbookIndex,
 		runbookReg:   runbookReg,
 	}
@@ -114,7 +114,7 @@ func (s *Service) SearchExamples(query, categoryFilter string, limit int) (*Sear
 
 	limit = clampSearchLimit(limit, MaxExampleSearchLimit)
 
-	examples := resource.GetQueryExamples(s.extensionReg)
+	examples := resource.GetQueryExamples(s.moduleReg)
 	categories := make([]string, 0, len(examples))
 	for key := range examples {
 		categories = append(categories, key)

@@ -1,20 +1,16 @@
 package cli
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
 
-	"github.com/ethpandaops/mcp/pkg/extension"
+	"github.com/ethpandaops/mcp/pkg/resource"
 	"github.com/ethpandaops/mcp/pkg/types"
-
-	clickhouseextension "github.com/ethpandaops/mcp/extensions/clickhouse"
-	doraextension "github.com/ethpandaops/mcp/extensions/dora"
-	ethnodeextension "github.com/ethpandaops/mcp/extensions/ethnode"
-	lokiextension "github.com/ethpandaops/mcp/extensions/loki"
-	prometheusextension "github.com/ethpandaops/mcp/extensions/prometheus"
 )
 
 var docsJSON bool
@@ -40,8 +36,10 @@ func init() {
 }
 
 func runDocs(_ *cobra.Command, args []string) error {
-	// API docs are static embedded data — no proxy or config needed.
-	allDocs := getAllPythonAPIDocs()
+	allDocs, err := getAllPythonAPIDocs(context.Background())
+	if err != nil {
+		return err
+	}
 
 	if docsJSON {
 		if len(args) > 0 {
@@ -132,14 +130,16 @@ func showModule(docs map[string]types.ModuleDoc, name string) error {
 	return nil
 }
 
-// getAllPythonAPIDocs returns docs from all extensions (static data, no credentials needed).
-func getAllPythonAPIDocs() map[string]types.ModuleDoc {
-	reg := extension.NewRegistry(log)
-	reg.Add(clickhouseextension.New())
-	reg.Add(doraextension.New())
-	reg.Add(ethnodeextension.New())
-	reg.Add(lokiextension.New())
-	reg.Add(prometheusextension.New())
+func getAllPythonAPIDocs(ctx context.Context) (map[string]types.ModuleDoc, error) {
+	response, err := readResource(ctx, "python://ethpandaops")
+	if err != nil {
+		return nil, err
+	}
 
-	return reg.AllPythonAPIDocs()
+	var payload resource.APIDocResponse
+	if err := json.Unmarshal([]byte(response.Content), &payload); err != nil {
+		return nil, fmt.Errorf("decoding API docs: %w", err)
+	}
+
+	return payload.Modules, nil
 }

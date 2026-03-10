@@ -10,17 +10,13 @@ import (
 	"net/url"
 	"strings"
 
-	clickhouseextension "github.com/ethpandaops/mcp/extensions/clickhouse"
-	authclient "github.com/ethpandaops/mcp/pkg/auth/client"
-	authstore "github.com/ethpandaops/mcp/pkg/auth/store"
+	clickhousemodule "github.com/ethpandaops/mcp/modules/clickhouse"
 	"github.com/ethpandaops/mcp/pkg/config"
 	"github.com/ethpandaops/mcp/pkg/operations"
 	"github.com/ethpandaops/mcp/pkg/serverapi"
 )
 
 var serverHTTP = &http.Client{Timeout: 0}
-
-const serverAuthClientID = "ep"
 
 type rawServerResponse struct {
 	Body        []byte
@@ -58,11 +54,6 @@ func serverDo(
 		return nil, 0, nil, fmt.Errorf("creating request: %w", err)
 	}
 
-	authAttached, err := attachServerAuthorization(req, baseURL)
-	if err != nil {
-		return nil, 0, nil, err
-	}
-
 	for key, value := range headers {
 		req.Header.Set(key, value)
 	}
@@ -78,52 +69,7 @@ func serverDo(
 		return nil, resp.StatusCode, resp.Header.Clone(), fmt.Errorf("reading response: %w", err)
 	}
 
-	if resp.StatusCode == http.StatusUnauthorized && !authAttached {
-		return nil, resp.StatusCode, resp.Header.Clone(), fmt.Errorf(
-			"server requires authentication. Run `mcp auth login --issuer %s --client-id %s` and retry",
-			baseURL,
-			serverAuthClientID,
-		)
-	}
-
 	return data, resp.StatusCode, resp.Header.Clone(), nil
-}
-
-func attachServerAuthorization(req *http.Request, baseURL string) (bool, error) {
-	if req.Header.Get("Authorization") != "" {
-		return true, nil
-	}
-
-	authClient := authclient.New(log, authclient.Config{
-		IssuerURL: baseURL,
-		ClientID:  serverAuthClientID,
-	})
-
-	credStore := authstore.New(log, authstore.Config{
-		AuthClient: authClient,
-	})
-
-	tokens, err := credStore.Load()
-	if err != nil {
-		return false, fmt.Errorf("loading stored credentials: %w", err)
-	}
-
-	if tokens == nil {
-		return false, nil
-	}
-
-	token, err := credStore.GetAccessToken()
-	if err != nil {
-		return false, fmt.Errorf(
-			"loading server access token: %w. Run `mcp auth login --issuer %s --client-id %s` to re-authenticate",
-			err,
-			baseURL,
-			serverAuthClientID,
-		)
-	}
-
-	req.Header.Set("Authorization", "Bearer "+token)
-	return true, nil
 }
 
 func serverGetJSON(ctx context.Context, path string, query url.Values, target any) error {
@@ -250,6 +196,15 @@ func listDatasources(ctx context.Context, filterType string) (*serverapi.Datasou
 	return &response, nil
 }
 
+func proxyAuthMetadata(ctx context.Context) (*serverapi.ProxyAuthMetadataResponse, error) {
+	var response serverapi.ProxyAuthMetadataResponse
+	if err := serverGetJSON(ctx, "/api/v1/proxy/auth", nil, &response); err != nil {
+		return nil, err
+	}
+
+	return &response, nil
+}
+
 func executeCodeRemotely(ctx context.Context, req serverapi.ExecuteRequest) (*serverapi.ExecuteResponse, error) {
 	var response serverapi.ExecuteResponse
 	if err := serverPostJSON(ctx, "/api/v1/execute", req, &response); err != nil {
@@ -334,13 +289,13 @@ func readResource(ctx context.Context, uri string) (*serverapi.ResourceResponse,
 	}, nil
 }
 
-func readClickHouseTables(ctx context.Context) (*clickhouseextension.TablesListResponse, error) {
+func readClickHouseTables(ctx context.Context) (*clickhousemodule.TablesListResponse, error) {
 	response, err := readResource(ctx, "clickhouse://tables")
 	if err != nil {
 		return nil, err
 	}
 
-	var payload clickhouseextension.TablesListResponse
+	var payload clickhousemodule.TablesListResponse
 	if err := json.Unmarshal([]byte(response.Content), &payload); err != nil {
 		return nil, fmt.Errorf("decoding tables list: %w", err)
 	}
@@ -348,13 +303,13 @@ func readClickHouseTables(ctx context.Context) (*clickhouseextension.TablesListR
 	return &payload, nil
 }
 
-func readClickHouseTable(ctx context.Context, tableName string) (*clickhouseextension.TableDetailResponse, error) {
+func readClickHouseTable(ctx context.Context, tableName string) (*clickhousemodule.TableDetailResponse, error) {
 	response, err := readResource(ctx, "clickhouse://tables/"+tableName)
 	if err != nil {
 		return nil, err
 	}
 
-	var payload clickhouseextension.TableDetailResponse
+	var payload clickhousemodule.TableDetailResponse
 	if err := json.Unmarshal([]byte(response.Content), &payload); err != nil {
 		return nil, fmt.Errorf("decoding table detail: %w", err)
 	}

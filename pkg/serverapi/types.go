@@ -11,10 +11,38 @@ type DatasourcesResponse struct {
 	Datasources []types.DatasourceInfo `json:"datasources"`
 }
 
+type ProxyAuthMetadataResponse struct {
+	Enabled   bool   `json:"enabled"`
+	IssuerURL string `json:"issuer_url,omitempty"`
+	ClientID  string `json:"client_id,omitempty"`
+	Resource  string `json:"resource,omitempty"`
+}
+
 type ResourceResponse struct {
 	URI      string `json:"uri"`
 	MIMEType string `json:"mime_type"`
 	Content  string `json:"content"`
+}
+
+type RuntimeStorageUploadResponse struct {
+	Key string `json:"key"`
+	URL string `json:"url"`
+}
+
+type RuntimeStorageFile struct {
+	Key          string `json:"key"`
+	Size         int64  `json:"size"`
+	LastModified string `json:"last_modified,omitempty"`
+	URL          string `json:"url,omitempty"`
+}
+
+type RuntimeStorageListResponse struct {
+	Files []RuntimeStorageFile `json:"files"`
+}
+
+type RuntimeStorageURLResponse struct {
+	Key string `json:"key"`
+	URL string `json:"url"`
 }
 
 type SearchExampleResult struct {

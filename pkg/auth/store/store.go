@@ -3,10 +3,13 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,6 +20,9 @@ import (
 
 // Store manages local credential storage.
 type Store interface {
+	// Path returns the resolved credentials file path.
+	Path() string
+
 	// Save saves tokens to the store.
 	Save(tokens *client.Tokens) error
 
@@ -36,8 +42,17 @@ type Store interface {
 // Config configures the credential store.
 type Config struct {
 	// Path is the path to the credentials file.
-	// Defaults to ~/.config/ethpandaops-mcp/credentials.json
+	// Defaults to a namespaced file in ~/.config/ethpandaops-mcp/credentials/
 	Path string
+
+	// IssuerURL namespaces stored credentials by auth issuer.
+	IssuerURL string
+
+	// ClientID namespaces stored credentials by OAuth client.
+	ClientID string
+
+	// Resource namespaces stored credentials by requested resource.
+	Resource string
 
 	// RefreshBuffer is how long before expiry to refresh the token.
 	RefreshBuffer time.Duration
@@ -57,8 +72,7 @@ type store struct {
 // New creates a new credential store.
 func New(log logrus.FieldLogger, cfg Config) Store {
 	if cfg.Path == "" {
-		home, _ := os.UserHomeDir()
-		cfg.Path = filepath.Join(home, ".config", "ethpandaops-mcp", "credentials.json")
+		cfg.Path = defaultCredentialPath(cfg)
 	}
 
 	if cfg.RefreshBuffer == 0 {
@@ -69,6 +83,10 @@ func New(log logrus.FieldLogger, cfg Config) Store {
 		log: log.WithField("component", "credential-store"),
 		cfg: cfg,
 	}
+}
+
+func (s *store) Path() string {
+	return s.cfg.Path
 }
 
 // Save saves tokens to the store.
@@ -220,4 +238,31 @@ func (s *store) refresh(refreshToken string) (*client.Tokens, error) {
 	}
 
 	return newTokens, nil
+}
+
+func defaultCredentialPath(cfg Config) string {
+	home, _ := os.UserHomeDir()
+	baseDir := filepath.Join(home, ".config", "ethpandaops-mcp")
+
+	key := credentialNamespaceKey(cfg.IssuerURL, cfg.ClientID, cfg.Resource)
+	if key == "" {
+		return filepath.Join(baseDir, "credentials.json")
+	}
+
+	return filepath.Join(baseDir, "credentials", key+".json")
+}
+
+func credentialNamespaceKey(issuerURL, clientID, resource string) string {
+	normalized := strings.Join([]string{
+		strings.TrimSpace(strings.TrimRight(issuerURL, "/")),
+		strings.TrimSpace(clientID),
+		strings.TrimSpace(strings.TrimRight(resource, "/")),
+	}, "\n")
+
+	if strings.TrimSpace(strings.ReplaceAll(normalized, "\n", "")) == "" {
+		return ""
+	}
+
+	sum := sha256.Sum256([]byte(normalized))
+	return hex.EncodeToString(sum[:8])
 }

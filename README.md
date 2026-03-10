@@ -16,13 +16,15 @@ ep (CLI) ──→ server ──→ proxy ──→ datasources
               └──→ sandbox containers (credential-free)
 ```
 
-- **Server** (`mcp`) — MCP server + HTTP API. Runs sandboxed Python, registers tools/resources, manages auth and sessions.
-- **Proxy** (`proxy`) — Credential boundary. Holds all datasource and S3 credentials. The only component that talks directly to upstream systems (ClickHouse, Prometheus, Loki, S3, Dora, Ethereum nodes).
+- **Server** (`mcp`) — MCP server + HTTP API. Runs sandboxed Python, registers tools/resources, and manages sessions.
+- **Proxy** (`proxy`) — Credential boundary. Holds all datasource and S3 credentials. The only component that talks directly to credentialed upstream systems (ClickHouse, Prometheus, Loki, S3, Ethereum nodes).
 - **CLI** (`ep`) — HTTP client for the server API. Does not embed the proxy or run sandboxes.
 
-Sandbox containers receive a proxy URL and short-lived tokens — credentials never reach the sandbox.
+Sandbox containers receive a local server API URL and short-lived runtime tokens — credentials never reach the sandbox.
 
-Extensions (e.g. `clickhouse`, `prometheus`, `dora`) provide integration-specific behavior: examples, Python API docs, MCP resources, proxy operations, and CLI commands.
+Modules (e.g. `clickhouse`, `prometheus`, `dora`) are server-side integrations with explicit optional capabilities. A module can contribute sandbox env, datasource metadata, examples, Python docs, getting-started snippets, custom resources, or runtime behavior without having to implement every hook.
+
+The canonical boundary definition lives in [docs/architecture.md](docs/architecture.md).
 
 ## Quick Start
 
@@ -55,8 +57,6 @@ See [docs/deployments.md](docs/deployments.md) for the supported runtime shapes:
 
 1. **Local Docker Compose** — Everything on one machine. Good for development.
 2. **Local Server + Hosted Proxy** — Run the server locally, point it at a hosted proxy. Code executes locally; credentials stay remote.
-3. **Hosted Server + Hosted Proxy** — Fully managed. Use `gvisor` sandbox backend and enable HTTP auth.
-
 ## Client Setup
 
 ### Claude Code
@@ -97,10 +97,10 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ### Auth
 
-If the server enables HTTP auth, authenticate first:
+If your configured proxy is hosted and requires auth, authenticate first:
 
 ```bash
-mcp auth login --issuer http://localhost:2480 --client-id ep
+ep auth login
 ```
 
 ## MCP Tools
@@ -118,7 +118,8 @@ Resources are available for getting started (`ethpandaops://getting-started`), d
 ```bash
 make build              # Build mcp and ep
 make build-proxy        # Build standalone proxy binary
-make install            # Install mcp, ep, and search assets to GOBIN
+make install            # Install mcp and ep binaries to GOBIN
+make install-server-runtime # Install mcp plus local search assets to GOBIN
 make test               # Run tests with race detector
 make lint               # Run golangci-lint (v2)
 make docker             # Build server Docker image
