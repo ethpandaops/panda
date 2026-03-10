@@ -75,12 +75,6 @@ type simpleServiceAuthenticator struct {
 	svc simpleauth.SimpleService
 }
 
-// JWTClaims exposes optional audit metadata derived from authenticated requests.
-// Proxy-issued tokens do not currently expose extra claims beyond the auth user.
-type JWTClaims struct {
-	Email string
-}
-
 func NewSimpleServiceAuthenticator(svc simpleauth.SimpleService) Authenticator {
 	return &simpleServiceAuthenticator{svc: svc}
 }
@@ -105,9 +99,4 @@ func GetUserID(ctx context.Context) string {
 	}
 
 	return strconv.FormatInt(user.GitHubID, 10)
-}
-
-// GetJWTClaims returns nil for proxy-issued tokens.
-func GetJWTClaims(_ context.Context) *JWTClaims {
-	return nil
 }
