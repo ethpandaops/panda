@@ -1,10 +1,10 @@
-# CLAUDE.md
+# Repository Guide
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to coding agents working in this repository.
 
 ## Project Overview
 
-ethpandaops/mcp is a server + proxy system for Ethereum analytics. The server exposes MCP tools plus a product HTTP API, runs sandboxed Python locally or in deployment, and delegates datasource access to a separate credential proxy.
+ethpandaops/mcp is a server + proxy system for Ethereum analytics. The server is the only product API boundary, runs sandboxed Python locally, and delegates credentialed upstream access to a separate proxy.
 
 The architecture is:
 - `ep` talks to `server`
@@ -14,6 +14,23 @@ The architecture is:
 Modules provide integration-specific metadata and behavior for ClickHouse, Prometheus, Loki, Dora, and Ethnode.
 
 See `docs/architecture.md` for the canonical boundary definition.
+
+## Architectural Guardrails
+
+- `server` is the only public/runtime API boundary for `ep`, MCP clients, and sandbox code
+- sandboxed Python calls back into `server`, never directly into `proxy`
+- `proxy` is a thin credentialed upstream gateway, not a product operations API
+- module behavior is exposed through `execute_python`, resources, docs, and search; do not add per-module MCP tools
+- use the top-level config key `modules:` for integrations
+
+## Supported Deployment Modes
+
+Only two deployment modes are supported:
+
+1. all local: `ep -> local server -> local proxy`
+2. local server + hosted proxy: `ep -> local server -> hosted proxy`
+
+In both modes, sandbox code still executes locally and calls back into local `server`.
 
 ## Commands
 
@@ -90,6 +107,7 @@ Each module implements `module.Module` in `pkg/module/module.go`. Optional capab
 - `ProxyAware` — receives proxy client for proxy-backed operations
 - `CartographoorAware` — receives network discovery client
 - `DefaultEnabled` — activates without explicit config
+- provider interfaces such as sandbox env, datasource info, examples, Python docs, getting-started snippets, and resources are optional and capability-based
 
 ### Server Startup Order
 
