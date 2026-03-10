@@ -26,7 +26,7 @@ func (p *Module) Init(rawConfig []byte) error {
 		return err
 	}
 
-	// Filter out instances with empty required fields.
+	// Drop unnamed instances; remaining fields are optional when proxy is authoritative.
 	validInstances := make([]InstanceConfig, 0, len(p.cfg.Instances))
 
 	for _, inst := range p.cfg.Instances {
@@ -37,7 +37,7 @@ func (p *Module) Init(rawConfig []byte) error {
 
 	p.cfg.Instances = validInstances
 
-	// If no valid instances remain, signal that this module should be skipped.
+	// If no named instances remain, signal that this module should be skipped.
 	if len(p.cfg.Instances) == 0 {
 		return module.ErrNoValidConfig
 	}
