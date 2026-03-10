@@ -119,7 +119,6 @@ Resources are available for getting started (`ethpandaops://getting-started`), d
 make build              # Build mcp and ep
 make build-proxy        # Build standalone proxy binary
 make install            # Install mcp and ep binaries to GOBIN
-make install-server-runtime # Install mcp plus local search assets to GOBIN
 make test               # Run tests with race detector
 make lint               # Run golangci-lint (v2)
 make docker             # Build server Docker image

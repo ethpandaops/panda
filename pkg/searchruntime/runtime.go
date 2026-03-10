@@ -30,7 +30,7 @@ func Build(
 	modelPath, searched := resolveModelPath(cfg.ModelPath)
 	if modelPath == "" {
 		return nil, fmt.Errorf(
-			"embedding model not found. looked in: %s. run 'make download-models' or 'make install-server-runtime'",
+			"embedding model not found. looked in: %s. run 'make download-models'",
 			strings.Join(searched, ", "),
 		)
 	}

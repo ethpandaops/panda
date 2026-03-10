@@ -25,7 +25,6 @@ make docker                   # Build Docker image
 make docker-sandbox           # Build sandbox container image
 make download-models          # Download embedding model + libllama for local search
 make install                  # Install mcp + ep binaries into GOBIN
-make install-server-runtime   # Install mcp plus local search assets into GOBIN
 
 # Test
 make test                     # Run tests with race detector

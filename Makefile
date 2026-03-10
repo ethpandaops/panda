@@ -1,4 +1,4 @@
-.PHONY: build build-mcp build-cli build-proxy install install-mcp install-cli install-proxy install-search-assets install-server-runtime test lint clean docker docker-push docker-sandbox test-sandbox run help download-models clean-models setup-hooks
+.PHONY: build build-mcp build-cli build-proxy install install-mcp install-cli install-proxy test lint clean docker docker-push docker-sandbox test-sandbox run help download-models clean-models setup-hooks
 
 # Embedding model and shared library configuration
 # Downloaded from HuggingFace and kelindar/search GitHub repo
@@ -137,13 +137,6 @@ install-cli: ## Install the CLI binary to GOBIN
 install-proxy: ## Install the standalone proxy binary to GOBIN
 	@mkdir -p $(GOBIN)
 	go build -ldflags "$(LDFLAGS)" -o $(GOBIN)/proxy ./cmd/proxy
-
-install-server-runtime: install-mcp install-search-assets ## Install mcp plus local search runtime assets
-
-install-search-assets: download-models ## Install search runtime assets next to installed binaries
-	@mkdir -p $(GOBIN)/models
-	cp $(EMBEDDING_MODEL_PATH) $(GOBIN)/models/MiniLM-L6-v2.Q8_0.gguf
-	cp $(LLAMA_LIB_PATH) $(GOBIN)/$(LLAMA_LIB_FILENAME)
 
 setup-hooks: ## Install git pre-commit hooks
 	git config core.hooksPath .githooks
