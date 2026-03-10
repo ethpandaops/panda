@@ -25,18 +25,18 @@ func (p *Extension) Init(rawConfig []byte) error {
 		return err
 	}
 
-	// Filter out instances with empty required fields (e.g., missing env vars).
+	// Drop unnamed instances; remaining fields are optional when proxy is authoritative.
 	validInstances := make([]InstanceConfig, 0, len(p.cfg.Instances))
 
 	for _, inst := range p.cfg.Instances {
-		if inst.Name != "" && inst.URL != "" {
+		if inst.Name != "" {
 			validInstances = append(validInstances, inst)
 		}
 	}
 
 	p.cfg.Instances = validInstances
 
-	// If no valid instances remain, signal that this extension should be skipped.
+	// If no named instances remain, signal that this extension should be skipped.
 	if len(p.cfg.Instances) == 0 {
 		return extension.ErrNoValidConfig
 	}
@@ -62,9 +62,6 @@ func (p *Extension) Validate() error {
 			return fmt.Errorf("instances[%d].name %q is duplicated", i, inst.Name)
 		}
 		names[inst.Name] = struct{}{}
-		if inst.URL == "" {
-			return fmt.Errorf("instances[%d].url is required", i)
-		}
 	}
 	return nil
 }
