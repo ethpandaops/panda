@@ -5,20 +5,31 @@ on:
     types: [labeled, synchronize]
 
 jobs:
+  meta:
+    if: contains(github.event.pull_request.labels.*.name, 'build') && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    outputs:
+      short-sha: ${{ steps.sha.outputs.short }}
+    steps:
+      - id: sha
+        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: meta
     if: contains(github.event.pull_request.labels.*.name, 'build') && github.event.pull_request.head.repo.full_name == github.repository
     uses: ./.github/workflows/build-and-push.yaml
     with:
-      version: pr-${{ github.event.pull_request.number }}
-      server-tags: server-pr-${{ github.event.pull_request.number }}
-      cli-tags: pr-${{ github.event.pull_request.number }}
-      proxy-tags: proxy-pr-${{ github.event.pull_request.number }}
+      version: pr-${{ github.event.pull_request.number }}-${{ needs.meta.outputs.short-sha }}
+      server-tags: server-pr-${{ github.event.pull_request.number }}-${{ needs.meta.outputs.short-sha }},server-pr-${{ github.event.pull_request.number }}
+      cli-tags: pr-${{ github.event.pull_request.number }}-${{ needs.meta.outputs.short-sha }},pr-${{ github.event.pull_request.number }}
+      proxy-tags: proxy-pr-${{ github.event.pull_request.number }}-${{ needs.meta.outputs.short-sha }},proxy-pr-${{ github.event.pull_request.number }}
+      sandbox-tags: sandbox-pr-${{ github.event.pull_request.number }}-${{ needs.meta.outputs.short-sha }},sandbox-pr-${{ github.event.pull_request.number }}
     secrets:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
 
   comment:
-    needs: build
+    needs: [meta, build]
     if: contains(github.event.pull_request.labels.*.name, 'build') && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
@@ -27,14 +38,18 @@ jobs:
         with:
           script: |
             const pr = ${{ github.event.pull_request.number }};
+            const sha = '${{ needs.meta.outputs.short-sha }}';
             const body = [
               '### Docker images built',
               '',
+              `Commit: \`${sha}\``,
+              '',
               '| Component | Image |',
               '|-----------|-------|',
-              `| Server | \`ethpandaops/panda:server-pr-${pr}\` |`,
-              `| CLI | \`ethpandaops/panda:pr-${pr}\` |`,
-              `| Proxy | \`ethpandaops/panda:proxy-pr-${pr}\` |`,
+              `| Server | \`ethpandaops/panda:server-pr-${pr}-${sha}\` |`,
+              `| CLI | \`ethpandaops/panda:pr-${pr}-${sha}\` |`,
+              `| Proxy | \`ethpandaops/panda:proxy-pr-${pr}-${sha}\` |`,
+              `| Sandbox | \`ethpandaops/panda:sandbox-pr-${pr}-${sha}\` |`,
             ].join('\n');
 
             const comments = await github.rest.issues.listComments({

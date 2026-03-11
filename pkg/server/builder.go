@@ -67,11 +67,23 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 		return nil, fmt.Errorf("building search runtime: %w", err)
 	}
 
+	var (
+		exampleIndex    *resource.ExampleIndex
+		runbookRegistry *runbooks.Registry
+		runbookIndex    *resource.RunbookIndex
+	)
+
+	if searchRuntime != nil {
+		exampleIndex = searchRuntime.ExampleIndex
+		runbookRegistry = searchRuntime.RunbookRegistry
+		runbookIndex = searchRuntime.RunbookIndex
+	}
+
 	searchSvc := searchsvc.New(
-		searchRuntime.ExampleIndex,
+		exampleIndex,
 		application.ModuleRegistry,
-		searchRuntime.RunbookIndex,
-		searchRuntime.RunbookRegistry,
+		runbookIndex,
+		runbookRegistry,
 	)
 
 	runtimeTokens := tokenstore.New(2 * time.Hour)
@@ -88,10 +100,10 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 	toolReg := b.buildToolRegistry(
 		application.Sandbox,
 		execSvc,
-		searchRuntime.ExampleIndex,
+		exampleIndex,
 		application.ModuleRegistry,
-		searchRuntime.RunbookRegistry,
-		searchRuntime.RunbookIndex,
+		runbookRegistry,
+		runbookIndex,
 	)
 
 	// Create resource registry and register resources (MCP-server-specific).

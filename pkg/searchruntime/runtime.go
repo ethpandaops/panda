@@ -29,15 +29,17 @@ func Build(
 ) (*Runtime, error) {
 	modelPath, searched := resolveModelPath(cfg.ModelPath)
 	if modelPath == "" {
-		return nil, fmt.Errorf(
-			"embedding model not found. looked in: %s. run 'make download-models'",
-			strings.Join(searched, ", "),
-		)
+		log.WithField("searched", strings.Join(searched, ", ")).
+			Warn("Embedding model not found — semantic search disabled. Run 'make download-models' to enable it.")
+
+		return nil, nil
 	}
 
 	embedder, err := embedding.New(modelPath, cfg.GPULayers)
 	if err != nil {
-		return nil, fmt.Errorf("creating embedder: %w", err)
+		log.WithError(err).Warn("Failed to initialize embedder — semantic search disabled")
+
+		return nil, nil
 	}
 
 	runtime := &Runtime{embedder: embedder}

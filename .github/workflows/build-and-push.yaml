@@ -19,6 +19,10 @@ on:
         description: "Comma-separated Docker tags for proxy image"
         required: true
         type: string
+      sandbox-tags:
+        description: "Comma-separated Docker tags for sandbox image"
+        required: true
+        type: string
     secrets:
       DOCKERHUB_USERNAME:
         required: true
@@ -106,5 +110,19 @@ jobs:
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --file goreleaser.proxy.Dockerfile \
+            ${TAGS} \
+            --push .
+
+      - name: Build and push sandbox image
+        run: |
+          TAGS=""
+          IFS=',' read -ra TAG_ARRAY <<< "${{ inputs.sandbox-tags }}"
+          for TAG in "${TAG_ARRAY[@]}"; do
+            TAGS="${TAGS} --tag ethpandaops/panda:${TAG}"
+          done
+
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --file sandbox/Dockerfile \
             ${TAGS} \
             --push .

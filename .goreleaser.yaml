@@ -76,6 +76,7 @@ dockers_v2:
       - "ethpandaops/panda"
     tags:
       - "server-{{ .Version }}"
+      - "server-{{ .Version }}-{{ .ShortCommit }}"
       - "server-{{ .Env.LATEST_TAG }}"
     platforms:
       - linux/amd64
@@ -90,6 +91,7 @@ dockers_v2:
       - "ethpandaops/panda"
     tags:
       - "{{ .Version }}"
+      - "{{ .Version }}-{{ .ShortCommit }}"
       - "{{ .Env.LATEST_TAG }}"
     platforms:
       - linux/amd64
@@ -104,6 +106,7 @@ dockers_v2:
       - "ethpandaops/panda"
     tags:
       - "proxy-{{ .Version }}"
+      - "proxy-{{ .Version }}-{{ .ShortCommit }}"
       - "proxy-{{ .Env.LATEST_TAG }}"
     platforms:
       - linux/amd64

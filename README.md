@@ -16,47 +16,49 @@ panda (CLI) ──→ server ──→ proxy ──→ datasources
                  └──→ sandbox containers (credential-free)
 ```
 
-- **Server** (`panda-server`) — MCP server + HTTP API. Runs sandboxed Python, registers tools/resources, and manages sessions.
-- **Proxy** (`panda-proxy`) — Credential boundary. Holds all datasource and S3 credentials. The only component that talks directly to credentialed upstream systems (ClickHouse, Prometheus, Loki, S3, Ethereum nodes).
-- **CLI** (`panda`) — HTTP client for the server API. Does not embed the proxy or run sandboxes.
+- **Server** (`panda-server`) — MCP server + HTTP API. Runs sandboxed Python, registers tools/resources, and manages sessions. Runs locally in Docker.
+- **Proxy** (`panda-proxy`) — Credential boundary. Holds all datasource and S3 credentials. The only component that talks directly to credentialed upstream systems (ClickHouse, Prometheus, Loki, S3, Ethereum nodes). Runs remotely at `panda-proxy.ethpandaops.io`.
+- **CLI** (`panda`) — HTTP client for the server API and Docker lifecycle manager. Does not embed the proxy or run sandboxes.
 
 Sandbox containers receive a local server API URL and short-lived runtime tokens — credentials never reach the sandbox.
-
-Modules (e.g. `clickhouse`, `prometheus`, `dora`) are server-side integrations with explicit optional capabilities. A module can contribute sandbox env, datasource metadata, examples, Python docs, getting-started snippets, custom resources, or runtime behavior without having to implement every hook.
 
 The canonical boundary definition lives in [docs/architecture.md](docs/architecture.md).
 
 ## Quick Start
 
 ```bash
-# Configure the server + proxy runtime
-cp config.example.yaml config.yaml
-cp proxy-config.example.yaml proxy-config.yaml
+# 1. Install the CLI
+curl -sSfL https://raw.githubusercontent.com/ethpandaops/panda/master/scripts/install.sh | sh
 
-# Build the sandbox image
-make docker-sandbox
-
-# Run the local stack
-docker compose up -d
-
-# Configure the CLI client
+# 2. Set up: check Docker, pull images, write config + compose file
 panda init
-# Edit ~/.config/ethpandaops/config.yaml if your server is not at localhost:2480
+
+# 3. Authenticate against the hosted proxy
+panda auth login
+
+# 4. Start the server (runs in Docker)
+panda server start
+
+# 5. Use it
+panda datasources
+panda execute --code 'print("hello")'
 ```
 
-The local stack runs:
-- `server` on port `2480`
-- `proxy` on port `18081`
-- `minio` on ports `31400` / `31401`
+The server runs locally at `http://localhost:2480`. MCP clients connect via SSE transport.
 
-By default `docker compose` publishes those ports on `127.0.0.1` only. Override `PANDA_SERVER_HOST`, `PANDA_PROXY_HOST`, or `MINIO_HOST` to expose on another interface.
+## Server Management
 
-## Deployment Modes
+The `panda server` commands manage the local Docker container:
 
-See [docs/deployments.md](docs/deployments.md) for the supported runtime shapes:
+```bash
+panda server start     # Start the server container
+panda server stop      # Stop the server container
+panda server restart   # Restart the server container
+panda server status    # Show container status, health, and auth
+panda server logs      # Stream server logs
+panda server update    # Pull latest images and restart
+```
 
-1. **Local Docker Compose** — Everything on one machine. Good for development.
-2. **Local Server + Hosted Proxy** — Run the server locally, point it at a hosted proxy. Code executes locally; credentials stay remote.
 ## Client Setup
 
 ### Claude Code
@@ -97,7 +99,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ### Auth
 
-If your configured proxy is hosted and requires auth, authenticate first:
+If your configured proxy requires auth, authenticate first:
 
 ```bash
 panda auth login
@@ -115,6 +117,18 @@ Resources are available for getting started (`ethpandaops://getting-started`), d
 
 ## Development
 
+For local development (building from source instead of Docker images):
+
+```bash
+# Configure the server + proxy runtime
+cp config.example.yaml config.yaml
+cp proxy-config.example.yaml proxy-config.yaml
+
+# Build and run the local stack
+make docker-sandbox
+docker compose up -d
+```
+
 ```bash
 make build              # Build panda-server and panda
 make build-proxy        # Build standalone proxy binary
@@ -128,7 +142,7 @@ make run                # Build + download models + run server (stdio)
 make run-sse            # Build + run server with SSE on port 2480
 ```
 
-Config lookup order for `panda`: `--config` → `$ETHPANDAOPS_CONFIG` / `$EP_CONFIG` → `~/.config/ethpandaops/config.yaml` → `./config.yaml`
+Config lookup order for `panda`: `--config` → `$PANDA_CONFIG` → `~/.config/panda/config.yaml` → `./config.yaml`
 
 ## License
 

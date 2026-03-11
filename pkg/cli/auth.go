@@ -10,6 +10,7 @@ import (
 
 	authclient "github.com/ethpandaops/panda/pkg/auth/client"
 	authstore "github.com/ethpandaops/panda/pkg/auth/store"
+	"github.com/ethpandaops/panda/pkg/config"
 )
 
 const defaultProxyAuthClientID = "panda"
@@ -177,6 +178,7 @@ func runAuthStatus(_ *cobra.Command, _ []string) error {
 }
 
 func resolveAuthTarget(ctx context.Context) (*authTarget, error) {
+	// 1. Explicit CLI flags take priority.
 	if strings.TrimSpace(authIssuerURL) != "" || strings.TrimSpace(authClientID) != "" || strings.TrimSpace(authResource) != "" {
 		target := &authTarget{
 			issuerURL: strings.TrimSpace(authIssuerURL),
@@ -200,9 +202,19 @@ func resolveAuthTarget(ctx context.Context) (*authTarget, error) {
 		return target, nil
 	}
 
+	// 2. Try reading proxy.auth from local config file (works without a running server).
+	if target := resolveAuthTargetFromConfig(); target != nil {
+		return target, nil
+	}
+
+	// 3. Fall back to querying the running server's proxy auth metadata endpoint.
 	metadata, err := proxyAuthMetadata(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("loading proxy auth metadata from server: %w", err)
+		return nil, fmt.Errorf(
+			"could not resolve proxy auth settings: no proxy.auth in config and server unreachable (%w). "+
+				"Run 'panda init' to create a config with proxy auth settings, or start the server first",
+			err,
+		)
 	}
 
 	target := &authTarget{
@@ -221,4 +233,44 @@ func resolveAuthTarget(ctx context.Context) (*authTarget, error) {
 	}
 
 	return target, nil
+}
+
+// resolveAuthTargetFromConfig attempts to read proxy auth settings directly
+// from the local config file, enabling auth to work without a running server.
+func resolveAuthTargetFromConfig() *authTarget {
+	cfg, err := config.LoadClient(cfgFile)
+	if err != nil {
+		return nil
+	}
+
+	if cfg.Proxy.Auth == nil {
+		return nil
+	}
+
+	issuerURL := strings.TrimSpace(cfg.Proxy.Auth.IssuerURL)
+	if issuerURL == "" {
+		// Fall back to proxy URL as issuer if issuer_url is not explicitly set.
+		issuerURL = strings.TrimRight(strings.TrimSpace(cfg.Proxy.URL), "/")
+	}
+
+	if issuerURL == "" {
+		return nil
+	}
+
+	clientID := strings.TrimSpace(cfg.Proxy.Auth.ClientID)
+	if clientID == "" {
+		clientID = defaultProxyAuthClientID
+	}
+
+	resource := strings.TrimRight(strings.TrimSpace(cfg.Proxy.URL), "/")
+	if resource == "" {
+		resource = issuerURL
+	}
+
+	return &authTarget{
+		issuerURL: issuerURL,
+		clientID:  clientID,
+		resource:  resource,
+		enabled:   true,
+	}
 }
