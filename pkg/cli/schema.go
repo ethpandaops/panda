@@ -29,6 +29,7 @@ Examples:
 func init() {
 	rootCmd.AddCommand(schemaCmd)
 	schemaCmd.Flags().BoolVar(&schemaJSON, "json", false, "Output in JSON format")
+	schemaCmd.ValidArgsFunction = completeTableNames
 }
 
 func runSchema(_ *cobra.Command, args []string) error {

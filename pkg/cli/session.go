@@ -48,6 +48,7 @@ func init() {
 	sessionCmd.AddCommand(sessionDestroyCmd)
 
 	sessionCmd.PersistentFlags().BoolVar(&sessionJSON, "json", false, "Output in JSON format")
+	sessionDestroyCmd.ValidArgsFunction = completeSessionIDs
 }
 
 func runSessionList(_ *cobra.Command, _ []string) error {

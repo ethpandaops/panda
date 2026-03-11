@@ -30,6 +30,10 @@ func init() {
 	rootCmd.AddCommand(datasourcesCmd)
 	datasourcesCmd.Flags().StringVar(&datasourcesType, "type", "", "Filter by type (clickhouse, prometheus, loki)")
 	datasourcesCmd.Flags().BoolVar(&datasourcesJSON, "json", false, "Output in JSON format")
+
+	_ = datasourcesCmd.RegisterFlagCompletionFunc("type", cobra.FixedCompletions(
+		[]string{"clickhouse", "prometheus", "loki"}, cobra.ShellCompDirectiveNoFileComp,
+	))
 }
 
 func runDatasources(_ *cobra.Command, _ []string) error {

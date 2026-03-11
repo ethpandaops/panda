@@ -38,6 +38,16 @@ func init() {
 		ethNodeBeaconGetCmd,
 		ethNodeExecRPCCmd,
 	)
+
+	ethNodeSyncingCmd.ValidArgsFunction = completeNetworkNames
+	ethNodeVersionCmd.ValidArgsFunction = completeNetworkNames
+	ethNodeHealthCmd.ValidArgsFunction = completeNetworkNames
+	ethNodePeersCmd.ValidArgsFunction = completeNetworkNames
+	ethNodeFinalityCmd.ValidArgsFunction = completeNetworkNames
+	ethNodeHeaderCmd.ValidArgsFunction = completeNetworkNames
+	ethNodeBlockNumberCmd.ValidArgsFunction = completeNetworkNames
+	ethNodeBeaconGetCmd.ValidArgsFunction = completeNetworkNames
+	ethNodeExecRPCCmd.ValidArgsFunction = completeNetworkNames
 }
 
 var ethNodeSyncingCmd = &cobra.Command{

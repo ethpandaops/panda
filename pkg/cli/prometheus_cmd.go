@@ -47,6 +47,11 @@ func init() {
 
 	prometheusCmd.AddCommand(promLabelsCmd)
 	prometheusCmd.AddCommand(promLabelValuesCmd)
+
+	promQueryCmd.ValidArgsFunction = completeDatasourceNames("prometheus")
+	promQueryRangeCmd.ValidArgsFunction = completeDatasourceNames("prometheus")
+	promLabelsCmd.ValidArgsFunction = completeDatasourceNames("prometheus")
+	promLabelValuesCmd.ValidArgsFunction = completeDatasourceNames("prometheus")
 }
 
 var promListDatasourcesCmd = &cobra.Command{

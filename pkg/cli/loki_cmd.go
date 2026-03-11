@@ -52,6 +52,17 @@ func init() {
 	lokiCmd.AddCommand(lokiLabelValuesCmd)
 	lokiLabelValuesCmd.Flags().StringVar(&lokiStart, "start", "", "Start time")
 	lokiLabelValuesCmd.Flags().StringVar(&lokiEnd, "end", "", "End time")
+
+	lokiQueryCmd.ValidArgsFunction = completeDatasourceNames("loki")
+	lokiQueryInstantCmd.ValidArgsFunction = completeDatasourceNames("loki")
+	lokiLabelsCmd.ValidArgsFunction = completeDatasourceNames("loki")
+	lokiLabelValuesCmd.ValidArgsFunction = completeDatasourceNames("loki")
+	_ = lokiQueryCmd.RegisterFlagCompletionFunc("direction", cobra.FixedCompletions(
+		[]string{"forward", "backward"}, cobra.ShellCompDirectiveNoFileComp,
+	))
+	_ = lokiQueryInstantCmd.RegisterFlagCompletionFunc("direction", cobra.FixedCompletions(
+		[]string{"forward", "backward"}, cobra.ShellCompDirectiveNoFileComp,
+	))
 }
 
 var lokiListDatasourcesCmd = &cobra.Command{

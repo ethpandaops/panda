@@ -32,6 +32,11 @@ func init() {
 		doraSlotCmd,
 		doraEpochCmd,
 	)
+
+	doraOverviewCmd.ValidArgsFunction = completeNetworkNames
+	doraValidatorCmd.ValidArgsFunction = completeNetworkNames
+	doraSlotCmd.ValidArgsFunction = completeNetworkNames
+	doraEpochCmd.ValidArgsFunction = completeNetworkNames
 }
 
 var doraNetworksCmd = &cobra.Command{
