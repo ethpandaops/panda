@@ -18,10 +18,10 @@ jobs:
     uses: ./.github/workflows/build-and-push.yaml
     with:
       version: master-${{ needs.meta.outputs.short-sha }}
-      server-tags: server-master,server-master-latest
-      cli-tags: master,master-latest
-      proxy-tags: proxy-master,proxy-master-latest
-      sandbox-tags: sandbox-master,sandbox-master-latest
+      server-tags: server-master-${{ needs.meta.outputs.short-sha }},server-master-latest
+      cli-tags: master-${{ needs.meta.outputs.short-sha }},master-latest
+      proxy-tags: proxy-master-${{ needs.meta.outputs.short-sha }},proxy-master-latest
+      sandbox-tags: sandbox-master-${{ needs.meta.outputs.short-sha }},sandbox-master-latest
     secrets:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
