@@ -304,17 +304,17 @@ func (c *client) startCallbackServer(_ context.Context, expectedState string, co
 			return
 		}
 
-		w.Header().Set("Content-Type", "text/html")
-		_, _ = w.Write([]byte(`
-			<html>
-			<head><title>Authentication Successful</title></head>
-			<body>
-				<h1>Authentication Successful!</h1>
-				<p>You can close this window and return to the terminal.</p>
-				<script>window.close();</script>
-			</body>
-			</html>
-		`))
+		user := callbackUser{
+			Login:     r.URL.Query().Get("login"),
+			AvatarURL: r.URL.Query().Get("avatar_url"),
+		}
+
+		if orgsParam := r.URL.Query().Get("orgs"); orgsParam != "" {
+			user.Orgs = strings.Split(orgsParam, ",")
+		}
+
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(buildSuccessPage(user)))
 
 		codeCh <- code
 	})

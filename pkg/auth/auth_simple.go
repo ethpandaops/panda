@@ -515,10 +515,17 @@ func (s *simpleService) handleCallback(w http.ResponseWriter, r *http.Request) {
 		"client_id": pending.ClientID,
 	}).Info("Authorization successful")
 
-	// Redirect back to client.
+	// Redirect back to client with user info for the success page.
 	redirectParams := url.Values{"code": {codeStr}}
 	if pending.State != "" {
 		redirectParams.Set("state", pending.State)
+	}
+
+	redirectParams.Set("login", githubUser.Login)
+	redirectParams.Set("avatar_url", githubUser.AvatarURL)
+
+	if len(githubUser.Organizations) > 0 {
+		redirectParams.Set("orgs", strings.Join(githubUser.Organizations, ","))
 	}
 
 	redirectURL := fmt.Sprintf("%s?%s", pending.RedirectURI, redirectParams.Encode())
