@@ -7,76 +7,21 @@ on:
 jobs:
   build:
     if: contains(github.event.pull_request.labels.*.name, 'build') && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on:
-      - self-hosted-ghr
-      - size-l-x64
+    uses: ./.github/workflows/build-and-push.yaml
+    with:
+      version: pr-${{ github.event.pull_request.number }}
+      server-tags: server-pr-${{ github.event.pull_request.number }}
+      cli-tags: pr-${{ github.event.pull_request.number }}
+      proxy-tags: proxy-pr-${{ github.event.pull_request.number }}
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+
+  comment:
+    needs: build
+    if: contains(github.event.pull_request.labels.*.name, 'build') && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      - uses: docker/setup-qemu-action@v3
-
-      - uses: docker/setup-buildx-action@v3
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build binaries
-        env:
-          PR: ${{ github.event.pull_request.number }}
-          SHA: ${{ github.sha }}
-        run: |
-          BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
-          LDFLAGS="-s -w \
-            -X github.com/ethpandaops/panda/internal/version.Version=pr-${PR} \
-            -X github.com/ethpandaops/panda/internal/version.GitCommit=${SHA} \
-            -X github.com/ethpandaops/panda/internal/version.BuildTime=${BUILD_TIME}"
-
-          for GOARCH in amd64 arm64; do
-            PLATFORM="linux/${GOARCH}"
-            mkdir -p "${PLATFORM}"
-            echo "Building for ${PLATFORM}..."
-            CGO_ENABLED=0 GOOS=linux GOARCH=${GOARCH} go build -ldflags "${LDFLAGS}" -o "${PLATFORM}/panda-server" ./cmd/server
-            CGO_ENABLED=0 GOOS=linux GOARCH=${GOARCH} go build -ldflags "${LDFLAGS}" -o "${PLATFORM}/panda" ./cmd/panda
-            CGO_ENABLED=0 GOOS=linux GOARCH=${GOARCH} go build -ldflags "${LDFLAGS}" -o "${PLATFORM}/panda-proxy" ./cmd/proxy
-          done
-
-      - name: Build and push server image
-        env:
-          PR: ${{ github.event.pull_request.number }}
-        run: |
-          docker buildx build \
-            --platform linux/amd64,linux/arm64 \
-            --file goreleaser.server.Dockerfile \
-            --tag ethpandaops/panda:server-pr-${PR} \
-            --push .
-
-      - name: Build and push CLI image
-        env:
-          PR: ${{ github.event.pull_request.number }}
-        run: |
-          docker buildx build \
-            --platform linux/amd64,linux/arm64 \
-            --file goreleaser.panda.Dockerfile \
-            --tag ethpandaops/panda:pr-${PR} \
-            --push .
-
-      - name: Build and push proxy image
-        env:
-          PR: ${{ github.event.pull_request.number }}
-        run: |
-          docker buildx build \
-            --platform linux/amd64,linux/arm64 \
-            --file goreleaser.proxy.Dockerfile \
-            --tag ethpandaops/panda:proxy-pr-${PR} \
-            --push .
-
       - name: Comment PR with image tags
         uses: actions/github-script@v7
         with:

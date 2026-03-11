@@ -9,15 +9,9 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/ethpandaops/panda/pkg/module"
+	"github.com/ethpandaops/panda/pkg/serverapi"
 	"github.com/ethpandaops/panda/pkg/types"
 )
-
-// APIDocResponse is the response for the python://ethpandaops resource.
-type APIDocResponse struct {
-	Library     string                     `json:"library"`
-	Description string                     `json:"description"`
-	Modules     map[string]types.ModuleDoc `json:"modules"`
-}
 
 // RegisterAPIResources registers the python://ethpandaops resource
 // with the registry.
@@ -68,7 +62,7 @@ func createAPIHandler(moduleReg *module.Registry) ReadHandler {
 			},
 		}
 
-		response := APIDocResponse{
+		response := serverapi.APIDocResponse{
 			Library:     "ethpandaops",
 			Description: "Data access library for Ethereum network analytics. Import: from ethpandaops import clickhouse, prometheus, loki, storage",
 			Modules:     modules,
