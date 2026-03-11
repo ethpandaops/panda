@@ -1,43 +1,77 @@
-// Package embedding provides text embedding capabilities using local GGUF models.
+// Package embedding provides text embedding capabilities using ONNX models via hugot.
 package embedding
 
 import (
 	"fmt"
 
-	"github.com/kelindar/search"
+	"github.com/knights-analytics/hugot"
+	"github.com/knights-analytics/hugot/pipelines"
 )
 
-const (
-	// DefaultGPULayers is the default number of GPU layers (0 = CPU only).
-	DefaultGPULayers = 0
-)
-
-// Embedder provides text embedding capabilities using llama.cpp via kelindar/search.
+// Embedder provides text embedding capabilities using hugot's pure Go ONNX backend.
 type Embedder struct {
-	vectorizer *search.Vectorizer
+	session  *hugot.Session
+	pipeline *pipelines.FeatureExtractionPipeline
 }
 
-// New creates a new Embedder with the given GGUF model file path.
-// Set gpuLayers > 0 to enable GPU acceleration (requires Vulkan).
-func New(modelPath string, gpuLayers int) (*Embedder, error) {
+// New creates a new Embedder with the given ONNX model directory path.
+func New(modelPath string) (*Embedder, error) {
 	if modelPath == "" {
 		return nil, fmt.Errorf("model path is required")
 	}
 
-	vectorizer, err := search.NewVectorizer(modelPath, gpuLayers)
+	session, err := hugot.NewGoSession()
 	if err != nil {
-		return nil, fmt.Errorf("initializing vectorizer from %s: %w", modelPath, err)
+		return nil, fmt.Errorf("creating hugot session: %w", err)
 	}
 
-	return &Embedder{vectorizer: vectorizer}, nil
+	config := hugot.FeatureExtractionConfig{
+		ModelPath:    modelPath,
+		Name:         "embedder",
+		OnnxFilename: "model.onnx",
+		Options: []hugot.FeatureExtractionOption{
+			pipelines.WithNormalization(),
+		},
+	}
+
+	pipeline, err := hugot.NewPipeline(session, config)
+	if err != nil {
+		_ = session.Destroy()
+		return nil, fmt.Errorf("creating embedding pipeline from %s: %w", modelPath, err)
+	}
+
+	return &Embedder{session: session, pipeline: pipeline}, nil
 }
 
-// Embed returns the embedding vector for a single text string.
+// Embed returns the L2-normalized embedding vector for a single text string.
 func (e *Embedder) Embed(text string) ([]float32, error) {
-	return e.vectorizer.EmbedText(text)
+	result, err := e.pipeline.RunPipeline([]string{text})
+	if err != nil {
+		return nil, fmt.Errorf("embedding text: %w", err)
+	}
+
+	if len(result.Embeddings) == 0 {
+		return nil, fmt.Errorf("no embeddings returned")
+	}
+
+	return result.Embeddings[0], nil
+}
+
+// EmbedBatch returns L2-normalized embedding vectors for multiple texts.
+func (e *Embedder) EmbedBatch(texts []string) ([][]float32, error) {
+	result, err := e.pipeline.RunPipeline(texts)
+	if err != nil {
+		return nil, fmt.Errorf("embedding batch: %w", err)
+	}
+
+	return result.Embeddings, nil
 }
 
 // Close releases resources held by the embedder.
 func (e *Embedder) Close() error {
-	return e.vectorizer.Close()
+	if e.session != nil {
+		return e.session.Destroy()
+	}
+
+	return nil
 }

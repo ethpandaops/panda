@@ -2,8 +2,8 @@ package resource
 
 import (
 	"fmt"
+	"sort"
 
-	"github.com/kelindar/search"
 	"github.com/sirupsen/logrus"
 
 	"github.com/ethpandaops/panda/pkg/embedding"
@@ -18,17 +18,17 @@ type SearchResult struct {
 	Score        float64       `json:"similarity_score"`
 }
 
-// indexedExample holds metadata for a searchable example.
+// indexedExample holds metadata and embedding for a searchable example.
 type indexedExample struct {
 	CategoryKey  string
 	CategoryName string
 	Example      types.Example
+	Vector       []float32
 }
 
 // ExampleIndex provides semantic search over query examples.
 type ExampleIndex struct {
 	embedder *embedding.Embedder
-	index    *search.Index[int]
 	examples []indexedExample
 }
 
@@ -41,10 +41,7 @@ func NewExampleIndex(
 ) (*ExampleIndex, error) {
 	log = log.WithField("component", "example_index")
 
-	index := search.NewIndex[int]()
 	var examples []indexedExample
-
-	i := 0
 
 	for catKey, cat := range categories {
 		for _, ex := range cat.Examples {
@@ -55,14 +52,12 @@ func NewExampleIndex(
 				return nil, fmt.Errorf("embedding example %q: %w", ex.Name, err)
 			}
 
-			index.Add(vec, i)
-
 			examples = append(examples, indexedExample{
 				CategoryKey:  catKey,
 				CategoryName: cat.Name,
 				Example:      ex,
+				Vector:       vec,
 			})
-			i++
 		}
 	}
 
@@ -70,7 +65,6 @@ func NewExampleIndex(
 
 	return &ExampleIndex{
 		embedder: embedder,
-		index:    index,
 		examples: examples,
 	}, nil
 }
@@ -82,16 +76,32 @@ func (idx *ExampleIndex) Search(query string, limit int) ([]SearchResult, error)
 		return nil, fmt.Errorf("embedding query: %w", err)
 	}
 
-	matches := idx.index.Search(queryVec, limit)
+	type scored struct {
+		index int
+		score float64
+	}
 
-	results := make([]SearchResult, 0, len(matches))
-	for _, match := range matches {
-		ex := idx.examples[match.Value]
+	scores := make([]scored, 0, len(idx.examples))
+	for i, ex := range idx.examples {
+		scores = append(scores, scored{index: i, score: dotProduct(queryVec, ex.Vector)})
+	}
+
+	sort.Slice(scores, func(i, j int) bool {
+		return scores[i].score > scores[j].score
+	})
+
+	if limit > len(scores) {
+		limit = len(scores)
+	}
+
+	results := make([]SearchResult, 0, limit)
+	for _, s := range scores[:limit] {
+		ex := idx.examples[s.index]
 		results = append(results, SearchResult{
 			CategoryKey:  ex.CategoryKey,
 			CategoryName: ex.CategoryName,
 			Example:      ex.Example,
-			Score:        match.Relevance,
+			Score:        s.score,
 		})
 	}
 
@@ -101,4 +111,15 @@ func (idx *ExampleIndex) Search(query string, limit int) ([]SearchResult, error)
 // Close releases resources held by the index.
 func (idx *ExampleIndex) Close() error {
 	return idx.embedder.Close()
+}
+
+// dotProduct computes the dot product of two vectors.
+// For L2-normalized vectors this equals cosine similarity.
+func dotProduct(a, b []float32) float64 {
+	var sum float64
+	for i := range a {
+		sum += float64(a[i]) * float64(b[i])
+	}
+
+	return sum
 }
