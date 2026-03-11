@@ -19,7 +19,7 @@ import (
 
 	"github.com/ethpandaops/panda/pkg/cartographoor"
 	"github.com/ethpandaops/panda/pkg/operations"
-	"github.com/ethpandaops/panda/pkg/proxy/handlers"
+	"github.com/ethpandaops/panda/pkg/proxy"
 	"github.com/ethpandaops/panda/pkg/types"
 )
 
@@ -132,7 +132,7 @@ func TestHandleAPIOperationPassthroughs(t *testing.T) {
 				assert.Equal(t, tc.expectedPath, r.URL.Path)
 				assert.Equal(t, tc.expectedQuery.Encode(), r.URL.Query().Encode())
 				if tc.expectedDatasource != "" {
-					assert.Equal(t, tc.expectedDatasource, r.Header.Get(handlers.DatasourceHeader))
+					assert.Equal(t, tc.expectedDatasource, r.Header.Get(proxy.DatasourceHeader))
 				}
 
 				body, err := io.ReadAll(r.Body)
@@ -206,7 +206,7 @@ func TestHandleAPIOperationObjectResponses(t *testing.T) {
 
 		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			assert.Equal(t, "/prometheus/api/v1/labels", r.URL.Path)
-			assert.Equal(t, "metrics", r.Header.Get(handlers.DatasourceHeader))
+			assert.Equal(t, "metrics", r.Header.Get(proxy.DatasourceHeader))
 			http.Error(w, "upstream unavailable", http.StatusServiceUnavailable)
 		}))
 		defer upstream.Close()

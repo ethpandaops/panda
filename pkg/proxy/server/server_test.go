@@ -1,4 +1,4 @@
-package proxy
+package proxyserver
 
 import (
 	"net/http"
@@ -36,5 +36,25 @@ func TestRegisterRoutesMatchesClickHouseSubpaths(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected clickhouse handler status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+func TestNewServerRejectsInvalidLokiConfig(t *testing.T) {
+	t.Parallel()
+
+	cfg := ServerConfig{
+		Auth: AuthConfig{Mode: AuthModeNone},
+		Loki: []LokiInstanceConfig{
+			{
+				Name: "broken",
+				URL:  "not-a-url",
+			},
+		},
+	}
+	cfg.ApplyDefaults()
+
+	_, err := newServer(logrus.New(), cfg, "http://proxy.test", "18081")
+	if err == nil {
+		t.Fatal("expected newServer to fail")
 	}
 }

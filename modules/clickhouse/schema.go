@@ -15,7 +15,6 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/ethpandaops/panda/pkg/proxy"
-	"github.com/ethpandaops/panda/pkg/proxy/handlers"
 )
 
 // Pre-compiled regexes for schema parsing.
@@ -479,7 +478,7 @@ func (c *clickhouseSchemaClient) queryJSON(ctx context.Context, datasourceName, 
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
-	req.Header.Set(handlers.DatasourceHeader, datasourceName)
+	req.Header.Set(proxy.DatasourceHeader, datasourceName)
 	if err := c.proxySvc.AuthorizeRequest(req); err != nil {
 		return nil, fmt.Errorf("authorizing request: %w", err)
 	}

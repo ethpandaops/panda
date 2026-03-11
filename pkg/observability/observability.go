@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
 
@@ -28,6 +29,7 @@ type Service interface {
 type service struct {
 	log    logrus.FieldLogger
 	cfg    config.ObservabilityConfig
+	reg    *prometheus.Registry
 	server *http.Server
 	mu     sync.Mutex
 }
@@ -55,10 +57,15 @@ func (s *service) Start(ctx context.Context) error {
 		return errors.New("metrics server already started")
 	}
 
+	reg := prometheus.NewRegistry()
+	if err := RegisterMetrics(reg); err != nil {
+		return fmt.Errorf("registering observability metrics: %w", err)
+	}
+
 	addr := fmt.Sprintf(":%d", s.cfg.MetricsPort)
 
 	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.Handler())
+	mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 	mux.HandleFunc("/health", s.healthHandler)
 	mux.HandleFunc("/ready", s.readyHandler)
 
@@ -70,6 +77,7 @@ func (s *service) Start(ctx context.Context) error {
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
+	s.reg = reg
 
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -106,6 +114,7 @@ func (s *service) Stop() error {
 	}
 
 	s.server = nil
+	s.reg = nil
 
 	s.log.Info("Metrics server stopped")
 

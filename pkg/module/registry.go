@@ -42,7 +42,7 @@ func (r *Registry) Add(ext Module) {
 }
 
 // InitModule initializes a module with the given raw YAML config.
-// It calls Init, ApplyDefaults, and Validate in sequence.
+// It calls Init, optional defaults application, and Validate in sequence.
 // Returns ErrNoValidConfig if the module has no valid configuration entries,
 // which should be handled by the caller as a graceful skip.
 func (r *Registry) InitModule(name string, rawConfig []byte) error {
@@ -58,7 +58,9 @@ func (r *Registry) InitModule(name string, rawConfig []byte) error {
 		return fmt.Errorf("initializing module %q: %w", name, err)
 	}
 
-	ext.ApplyDefaults()
+	if applier, ok := ext.(DefaultsApplier); ok {
+		applier.ApplyDefaults()
+	}
 
 	if err := ext.Validate(); err != nil {
 		return fmt.Errorf("validating module %q: %w", name, err)
@@ -91,7 +93,9 @@ func (r *Registry) InitModuleFromDiscovery(name string, datasources []types.Data
 		return fmt.Errorf("initializing module %q from discovery: %w", name, err)
 	}
 
-	ext.ApplyDefaults()
+	if applier, ok := ext.(DefaultsApplier); ok {
+		applier.ApplyDefaults()
+	}
 
 	if err := ext.Validate(); err != nil {
 		return fmt.Errorf("validating module %q: %w", name, err)

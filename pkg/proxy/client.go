@@ -377,7 +377,7 @@ func (c *proxyClient) DatasourceInfo() []types.DatasourceInfo {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	return cloneDatasourceInfo(c.datasources.Datasources)
+	return CloneDatasourceInfo(c.datasources.Datasources)
 }
 
 // Discover fetches datasource information from the proxy's /datasources endpoint.

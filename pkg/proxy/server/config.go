@@ -1,86 +1,47 @@
-package proxy
+package proxyserver
 
 import (
 	"fmt"
 	"os"
-	"regexp"
-	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
 
 	simpleauth "github.com/ethpandaops/panda/pkg/auth"
 	"github.com/ethpandaops/panda/pkg/configpath"
+	"github.com/ethpandaops/panda/pkg/configutil"
 )
 
-// ServerConfig is the configuration for the proxy server.
-// This is the single configuration schema used for both local and K8s deployments.
+// ServerConfig is the single configuration schema for the standalone proxy server.
 type ServerConfig struct {
-	// Server holds HTTP server configuration.
-	Server HTTPServerConfig `yaml:"server"`
-
-	// Auth holds authentication configuration.
-	Auth AuthConfig `yaml:"auth"`
-
-	// ClickHouse holds ClickHouse datasource configurations.
-	ClickHouse []ClickHouseDatasourceConfig `yaml:"clickhouse,omitempty"`
-
-	// Prometheus holds Prometheus instance configurations.
-	Prometheus []PrometheusInstanceConfig `yaml:"prometheus,omitempty"`
-
-	// Loki holds Loki instance configurations.
-	Loki []LokiInstanceConfig `yaml:"loki,omitempty"`
-
-	// S3 holds S3 storage configuration.
-	S3 *S3Config `yaml:"s3,omitempty"`
-
-	// EthNode holds Ethereum node API access configuration.
-	EthNode *EthNodeInstanceConfig `yaml:"ethnode,omitempty"`
-
-	// RateLimiting holds rate limiting configuration.
-	RateLimiting RateLimitConfig `yaml:"rate_limiting"`
-
-	// Audit holds audit logging configuration.
-	Audit AuditConfig `yaml:"audit"`
-
-	// Metrics holds Prometheus metrics configuration.
-	Metrics MetricsConfig `yaml:"metrics"`
+	Server       HTTPServerConfig             `yaml:"server"`
+	Auth         AuthConfig                   `yaml:"auth"`
+	ClickHouse   []ClickHouseDatasourceConfig `yaml:"clickhouse,omitempty"`
+	Prometheus   []PrometheusInstanceConfig   `yaml:"prometheus,omitempty"`
+	Loki         []LokiInstanceConfig         `yaml:"loki,omitempty"`
+	S3           *S3Config                    `yaml:"s3,omitempty"`
+	EthNode      *EthNodeInstanceConfig       `yaml:"ethnode,omitempty"`
+	RateLimiting RateLimitConfig              `yaml:"rate_limiting"`
+	Audit        AuditConfig                  `yaml:"audit"`
+	Metrics      MetricsConfig                `yaml:"metrics"`
 }
 
-// HTTPServerConfig holds HTTP server configuration.
+// HTTPServerConfig controls the proxy listener and HTTP timeouts.
 type HTTPServerConfig struct {
-	// ListenAddr is the address to listen on (default: ":18081").
-	ListenAddr string `yaml:"listen_addr,omitempty"`
-
-	// ReadTimeout is the maximum duration for reading the entire request.
-	ReadTimeout time.Duration `yaml:"read_timeout,omitempty"`
-
-	// WriteTimeout is the maximum duration before timing out writes of the response.
+	ListenAddr   string        `yaml:"listen_addr,omitempty"`
+	ReadTimeout  time.Duration `yaml:"read_timeout,omitempty"`
 	WriteTimeout time.Duration `yaml:"write_timeout,omitempty"`
-
-	// IdleTimeout is the maximum amount of time to wait for the next request.
-	IdleTimeout time.Duration `yaml:"idle_timeout,omitempty"`
+	IdleTimeout  time.Duration `yaml:"idle_timeout,omitempty"`
 }
 
 // AuthConfig holds authentication configuration for the proxy.
 type AuthConfig struct {
-	// Mode is the authentication mode.
-	Mode AuthMode `yaml:"mode"`
-
-	// GitHub configures the GitHub OAuth app used for user authentication.
-	GitHub *simpleauth.GitHubConfig `yaml:"github,omitempty"`
-
-	// AllowedOrgs restricts access to members of these GitHub orgs.
-	AllowedOrgs []string `yaml:"allowed_orgs,omitempty"`
-
-	// Tokens configures proxy-issued bearer tokens.
-	Tokens simpleauth.TokensConfig `yaml:"tokens"`
-
-	// AccessTokenTTL is the lifetime of proxy-issued access tokens.
-	AccessTokenTTL time.Duration `yaml:"access_token_ttl,omitempty"`
-
-	// SuccessPage customizes the OAuth callback success page shown in the browser.
-	SuccessPage *simpleauth.SuccessPageConfig `yaml:"success_page,omitempty"`
+	Mode           AuthMode                      `yaml:"mode"`
+	GitHub         *simpleauth.GitHubConfig      `yaml:"github,omitempty"`
+	AllowedOrgs    []string                      `yaml:"allowed_orgs,omitempty"`
+	Tokens         simpleauth.TokensConfig       `yaml:"tokens"`
+	AccessTokenTTL time.Duration                 `yaml:"access_token_ttl,omitempty"`
+	SuccessPage    *simpleauth.SuccessPageConfig `yaml:"success_page,omitempty"`
 }
 
 // ClickHouseDatasourceConfig holds ClickHouse datasource configuration.
@@ -101,7 +62,6 @@ type ClickHouseDatasourceConfig struct {
 // to the datasource terminology.
 type ClickHouseClusterConfig = ClickHouseDatasourceConfig
 
-// PrometheusInstanceConfig holds Prometheus instance configuration.
 type PrometheusInstanceConfig struct {
 	Name        string `yaml:"name"`
 	Description string `yaml:"description,omitempty"`
@@ -110,7 +70,6 @@ type PrometheusInstanceConfig struct {
 	Password    string `yaml:"password,omitempty"`
 }
 
-// LokiInstanceConfig holds Loki instance configuration.
 type LokiInstanceConfig struct {
 	Name        string `yaml:"name"`
 	Description string `yaml:"description,omitempty"`
@@ -119,14 +78,12 @@ type LokiInstanceConfig struct {
 	Password    string `yaml:"password,omitempty"`
 }
 
-// EthNodeInstanceConfig holds Ethereum node API access configuration.
-// A single credential pair is used for all beacon and execution node endpoints.
+// EthNodeInstanceConfig uses one credential pair for beacon and execution endpoints.
 type EthNodeInstanceConfig struct {
 	Username string `yaml:"username"`
 	Password string `yaml:"password"`
 }
 
-// S3Config holds S3 storage configuration.
 type S3Config struct {
 	Endpoint        string `yaml:"endpoint"`
 	AccessKey       string `yaml:"access_key"`
@@ -136,28 +93,16 @@ type S3Config struct {
 	PublicURLPrefix string `yaml:"public_url_prefix,omitempty"`
 }
 
-// RateLimitConfig holds rate limiting configuration.
 type RateLimitConfig struct {
-	// Enabled controls whether rate limiting is active.
-	Enabled bool `yaml:"enabled"`
-
-	// RequestsPerMinute is the maximum requests per minute per user.
-	RequestsPerMinute int `yaml:"requests_per_minute,omitempty"`
-
-	// BurstSize is the maximum burst size.
-	BurstSize int `yaml:"burst_size,omitempty"`
+	Enabled           bool `yaml:"enabled"`
+	RequestsPerMinute int  `yaml:"requests_per_minute,omitempty"`
+	BurstSize         int  `yaml:"burst_size,omitempty"`
 }
 
-// AuditConfig holds audit logging configuration.
 type AuditConfig struct {
-	// Enabled controls whether audit logging is active.
-	Enabled bool `yaml:"enabled"`
-
-	// LogQueries controls whether to log query content.
-	LogQueries bool `yaml:"log_queries,omitempty"`
-
-	// MaxQueryLength is the maximum length of query to log.
-	MaxQueryLength int `yaml:"max_query_length,omitempty"`
+	Enabled        bool `yaml:"enabled"`
+	LogQueries     bool `yaml:"log_queries,omitempty"`
+	MaxQueryLength int  `yaml:"max_query_length,omitempty"`
 }
 
 // MetricsConfig holds Prometheus metrics configuration for the proxy.
@@ -290,9 +235,6 @@ func (c *ServerConfig) Validate() error {
 	return nil
 }
 
-// envVarWithDefaultPattern matches ${VAR_NAME:-default} patterns.
-var envVarWithDefaultPattern = regexp.MustCompile(`\$\{([^}:]+)(?::-([^}]*))?\}`)
-
 // LoadServerConfig loads a proxy server config from a YAML file.
 func LoadServerConfig(path string) (*ServerConfig, error) {
 	resolvedPath, err := configpath.ResolveProxyConfigPath(path, "")
@@ -306,7 +248,7 @@ func LoadServerConfig(path string) (*ServerConfig, error) {
 	}
 
 	// Substitute environment variables.
-	substituted, err := substituteEnvVars(string(data))
+	substituted, err := configutil.SubstituteEnvVars(string(data))
 	if err != nil {
 		return nil, fmt.Errorf("substituting env vars: %w", err)
 	}
@@ -323,37 +265,4 @@ func LoadServerConfig(path string) (*ServerConfig, error) {
 	}
 
 	return &cfg, nil
-}
-
-// substituteEnvVars replaces ${VAR_NAME} and ${VAR_NAME:-default} patterns with environment variable values.
-// Lines that are comments (starting with #) are skipped.
-// Missing environment variables without defaults are replaced with empty strings (lenient mode).
-func substituteEnvVars(content string) (string, error) {
-	lines := strings.Split(content, "\n")
-
-	for i, line := range lines {
-		// Skip lines that are YAML comments.
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-
-		lines[i] = envVarWithDefaultPattern.ReplaceAllStringFunc(line, func(match string) string {
-			parts := envVarWithDefaultPattern.FindStringSubmatch(match)
-			varName := parts[1]
-			defaultVal := ""
-			if len(parts) > 2 {
-				defaultVal = parts[2]
-			}
-
-			value := os.Getenv(varName)
-			if value == "" {
-				return defaultVal // Use default or empty string
-			}
-
-			return value
-		})
-	}
-
-	return strings.Join(lines, "\n"), nil
 }

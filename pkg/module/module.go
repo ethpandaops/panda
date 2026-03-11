@@ -41,6 +41,12 @@ type Stopper interface {
 	Stop(ctx context.Context) error
 }
 
+// DefaultsApplier is an optional interface for modules that need a post-init
+// defaults pass before validation.
+type DefaultsApplier interface {
+	ApplyDefaults()
+}
+
 // ProxyDiscoverable modules initialize from datasources discovered via the proxy.
 type ProxyDiscoverable interface {
 	// InitFromDiscovery initializes the module from discovered datasources.
@@ -106,9 +112,6 @@ type Module interface {
 
 	// Init parses the raw YAML config section for this module.
 	Init(rawConfig []byte) error
-
-	// ApplyDefaults sets default values before validation.
-	ApplyDefaults()
 
 	// Validate checks that the parsed config is valid.
 	Validate() error

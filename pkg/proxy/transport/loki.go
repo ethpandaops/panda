@@ -1,4 +1,4 @@
-package handlers
+package transport
 
 import (
 	"context"
@@ -12,8 +12,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// PrometheusConfig holds Prometheus proxy configuration for a single instance.
-type PrometheusConfig struct {
+// LokiConfig holds Loki proxy configuration for a single instance.
+type LokiConfig struct {
 	Name        string
 	Description string
 	URL         string
@@ -23,37 +23,40 @@ type PrometheusConfig struct {
 	Timeout     int
 }
 
-// PrometheusHandler handles requests to Prometheus instances.
-type PrometheusHandler struct {
+// LokiHandler handles requests to Loki instances.
+type LokiHandler struct {
 	log       logrus.FieldLogger
-	instances map[string]*prometheusInstance
+	instances map[string]*lokiInstance
 }
 
-type prometheusInstance struct {
-	cfg   PrometheusConfig
+type lokiInstance struct {
+	cfg   LokiConfig
 	proxy *httputil.ReverseProxy
 }
 
-// NewPrometheusHandler creates a new Prometheus handler.
-func NewPrometheusHandler(log logrus.FieldLogger, configs []PrometheusConfig) *PrometheusHandler {
-	h := &PrometheusHandler{
-		log:       log.WithField("handler", "prometheus"),
-		instances: make(map[string]*prometheusInstance, len(configs)),
+// NewLokiHandler creates a new Loki handler.
+func NewLokiHandler(log logrus.FieldLogger, configs []LokiConfig) (*LokiHandler, error) {
+	h := &LokiHandler{
+		log:       log.WithField("handler", "loki"),
+		instances: make(map[string]*lokiInstance, len(configs)),
 	}
 
 	for _, cfg := range configs {
-		h.instances[cfg.Name] = h.createInstance(cfg)
+		instance, err := h.createInstance(cfg)
+		if err != nil {
+			return nil, fmt.Errorf("instance %q: %w", cfg.Name, err)
+		}
+
+		h.instances[cfg.Name] = instance
 	}
 
-	return h
+	return h, nil
 }
 
-func (h *PrometheusHandler) createInstance(cfg PrometheusConfig) *prometheusInstance {
-	targetURL, err := url.Parse(cfg.URL)
+func (h *LokiHandler) createInstance(cfg LokiConfig) (*lokiInstance, error) {
+	targetURL, err := parseTargetURL(cfg.URL)
 	if err != nil {
-		h.log.WithError(err).WithField("instance", cfg.Name).Error("Failed to parse URL")
-
-		return nil
+		return nil, err
 	}
 
 	// Create reverse proxy.
@@ -88,14 +91,27 @@ func (h *PrometheusHandler) createInstance(cfg PrometheusConfig) *prometheusInst
 		http.Error(w, fmt.Sprintf("proxy error: %v", err), http.StatusBadGateway)
 	}
 
-	return &prometheusInstance{
+	return &lokiInstance{
 		cfg:   cfg,
 		proxy: rp,
-	}
+	}, nil
 }
 
-// ServeHTTP handles Prometheus requests. The instance is specified via X-Datasource header.
-func (h *PrometheusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func parseTargetURL(raw string) (*url.URL, error) {
+	targetURL, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return nil, fmt.Errorf("parse URL: %w", err)
+	}
+
+	if targetURL.Scheme == "" || targetURL.Host == "" {
+		return nil, fmt.Errorf("invalid URL %q: expected scheme and host", raw)
+	}
+
+	return targetURL, nil
+}
+
+// ServeHTTP handles Loki requests. The instance is specified via X-Datasource header.
+func (h *LokiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Extract instance name from header.
 	instanceName := r.Header.Get(DatasourceHeader)
 	if instanceName == "" {
@@ -111,14 +127,8 @@ func (h *PrometheusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if instance == nil {
-		http.Error(w, fmt.Sprintf("instance %s not properly configured", instanceName), http.StatusInternalServerError)
-
-		return
-	}
-
-	// Strip /prometheus prefix from path, keep the rest for the upstream.
-	path := strings.TrimPrefix(r.URL.Path, "/prometheus")
+	// Strip /loki prefix from path, keep the rest for the upstream.
+	path := strings.TrimPrefix(r.URL.Path, "/loki")
 	if path == "" {
 		path = "/"
 	}
@@ -136,13 +146,13 @@ func (h *PrometheusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"instance": instanceName,
 		"path":     path,
 		"method":   r.Method,
-	}).Debug("Proxying Prometheus request")
+	}).Debug("Proxying Loki request")
 
 	instance.proxy.ServeHTTP(w, r)
 }
 
 // Instances returns the list of configured instance names.
-func (h *PrometheusHandler) Instances() []string {
+func (h *LokiHandler) Instances() []string {
 	names := make([]string, 0, len(h.instances))
 	for name := range h.instances {
 		names = append(names, name)

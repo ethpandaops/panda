@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -132,6 +133,10 @@ type ProxyAuthConfig struct {
 
 // Load loads configuration from a YAML file with environment variable substitution.
 func Load(path string) (*Config, error) {
+	return load(path, true)
+}
+
+func load(path string, validate bool) (*Config, error) {
 	resolvedPath, err := configpath.ResolveAppConfigPath(path)
 	if err != nil {
 		return nil, err
@@ -159,8 +164,10 @@ func Load(path string) (*Config, error) {
 	// Apply defaults
 	applyDefaults(&cfg)
 
-	if err := cfg.Validate(); err != nil {
-		return nil, fmt.Errorf("validating config: %w", err)
+	if validate {
+		if err := cfg.Validate(); err != nil {
+			return nil, fmt.Errorf("validating config: %w", err)
+		}
 	}
 
 	cfg.path = resolvedPath
@@ -171,6 +178,58 @@ func Load(path string) (*Config, error) {
 // Path returns the resolved path this config was loaded from.
 func (c *Config) Path() string {
 	return c.path
+}
+
+// ServerURL returns the resolved server base URL for client use.
+func (c *Config) ServerURL() string {
+	if c == nil {
+		return ""
+	}
+
+	if c.Server.URL != "" {
+		return strings.TrimRight(c.Server.URL, "/")
+	}
+
+	if c.Server.BaseURL != "" {
+		return strings.TrimRight(c.Server.BaseURL, "/")
+	}
+
+	host := strings.TrimSpace(c.Server.Host)
+	if host == "" || host == "0.0.0.0" || host == "::" || host == "::0" {
+		host = "localhost"
+	}
+
+	if strings.Contains(host, ":") && !strings.HasPrefix(host, "[") {
+		host = "[" + host + "]"
+	}
+
+	port := c.Server.Port
+	if port == 0 {
+		port = 2480
+	}
+
+	return fmt.Sprintf("http://%s", net.JoinHostPort(host, fmt.Sprintf("%d", port)))
+}
+
+// MaxSandboxTimeout is the maximum allowed sandbox timeout in seconds.
+const MaxSandboxTimeout = 600
+
+// Validate validates the configuration.
+func (c *Config) Validate() error {
+	if c.Sandbox.Image == "" {
+		return errors.New("sandbox.image is required")
+	}
+
+	// Validate sandbox timeout is within bounds.
+	if c.Sandbox.Timeout > MaxSandboxTimeout {
+		return fmt.Errorf("sandbox.timeout cannot exceed %d seconds", MaxSandboxTimeout)
+	}
+
+	if c.Proxy.URL == "" {
+		return errors.New("proxy.url is required")
+	}
+
+	return nil
 }
 
 // envVarWithDefaultPattern matches ${VAR_NAME:-default} patterns.
@@ -269,25 +328,4 @@ func applyDefaults(cfg *Config) {
 
 	// Semantic search defaults — model path is resolved at runtime by searchruntime.
 	// Leave empty to use the default search paths.
-}
-
-// MaxSandboxTimeout is the maximum allowed sandbox timeout in seconds.
-const MaxSandboxTimeout = 600
-
-// Validate validates the configuration.
-func (c *Config) Validate() error {
-	if c.Sandbox.Image == "" {
-		return errors.New("sandbox.image is required")
-	}
-
-	// Validate sandbox timeout is within bounds.
-	if c.Sandbox.Timeout > MaxSandboxTimeout {
-		return fmt.Errorf("sandbox.timeout cannot exceed %d seconds", MaxSandboxTimeout)
-	}
-
-	if c.Proxy.URL == "" {
-		return errors.New("proxy.url is required")
-	}
-
-	return nil
 }

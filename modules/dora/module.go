@@ -22,30 +22,26 @@ func New() *Module {
 	return &Module{}
 }
 
-func (p *Module) Name() string { return "dora" }
+func (ext *Module) Name() string { return "dora" }
 
 // Enabled reports whether Dora operations should be exposed.
-func (p *Module) Enabled() bool { return p.cfg.IsEnabled() }
+func (ext *Module) Enabled() bool { return ext.cfg.IsEnabled() }
 
 // DefaultEnabled implements module.DefaultEnabled.
 // Dora is enabled by default since it requires no configuration.
-func (p *Module) DefaultEnabled() bool { return true }
+func (ext *Module) DefaultEnabled() bool { return true }
 
-func (p *Module) Init(rawConfig []byte) error {
+func (ext *Module) Init(rawConfig []byte) error {
 	if len(rawConfig) == 0 {
 		// No config provided, use defaults (enabled = true).
 		return nil
 	}
 
-	return yaml.Unmarshal(rawConfig, &p.cfg)
+	return yaml.Unmarshal(rawConfig, &ext.cfg)
 }
 
-func (p *Module) ApplyDefaults() {
-	// Defaults are handled by Config.IsEnabled().
-}
-
-func (p *Module) Validate() error {
-	if err := p.ensureExamplesLoaded(); err != nil {
+func (ext *Module) Validate() error {
+	if err := ext.ensureExamplesLoaded(); err != nil {
 		return err
 	}
 
@@ -55,19 +51,19 @@ func (p *Module) Validate() error {
 
 // SandboxEnv returns environment variables for the sandbox.
 // Returns ETHPANDAOPS_DORA_NETWORKS with network->URL mapping from cartographoor.
-func (p *Module) SandboxEnv() (map[string]string, error) {
-	if !p.cfg.IsEnabled() {
+func (ext *Module) SandboxEnv() (map[string]string, error) {
+	if !ext.cfg.IsEnabled() {
 		return nil, nil
 	}
 
-	if p.cartographoorClient == nil {
+	if ext.cartographoorClient == nil {
 		// Cartographoor client not yet set - return empty.
 		// This will be populated after SetCartographoorClient is called.
 		return nil, nil
 	}
 
 	// Build network -> Dora URL mapping from cartographoor data.
-	networks := p.cartographoorClient.GetActiveNetworks()
+	networks := ext.cartographoorClient.GetActiveNetworks()
 	doraNetworks := make(map[string]string, len(networks))
 
 	for name, network := range networks {
@@ -90,21 +86,21 @@ func (p *Module) SandboxEnv() (map[string]string, error) {
 	}, nil
 }
 
-func (p *Module) Examples() map[string]types.ExampleCategory {
-	if !p.cfg.IsEnabled() {
+func (ext *Module) Examples() map[string]types.ExampleCategory {
+	if !ext.cfg.IsEnabled() {
 		return nil
 	}
 
-	result := make(map[string]types.ExampleCategory, len(p.examples))
-	for k, v := range p.examples {
+	result := make(map[string]types.ExampleCategory, len(ext.examples))
+	for k, v := range ext.examples {
 		result[k] = v
 	}
 
 	return result
 }
 
-func (p *Module) PythonAPIDocs() map[string]types.ModuleDoc {
-	if !p.cfg.IsEnabled() {
+func (ext *Module) PythonAPIDocs() map[string]types.ModuleDoc {
+	if !ext.cfg.IsEnabled() {
 		return nil
 	}
 
@@ -129,8 +125,8 @@ func (p *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 	}
 }
 
-func (p *Module) GettingStartedSnippet() string {
-	if !p.cfg.IsEnabled() {
+func (ext *Module) GettingStartedSnippet() string {
+	if !ext.cfg.IsEnabled() {
 		return ""
 	}
 
@@ -159,12 +155,12 @@ print(f"View in Dora: {link}")
 
 // SetCartographoorClient implements module.CartographoorAware.
 // This is called by the builder to inject the cartographoor client.
-func (p *Module) SetCartographoorClient(client cartographoor.CartographoorClient) {
-	p.cartographoorClient = client
+func (ext *Module) SetCartographoorClient(client cartographoor.CartographoorClient) {
+	ext.cartographoorClient = client
 }
 
-func (p *Module) ensureExamplesLoaded() error {
-	if p.examples != nil {
+func (ext *Module) ensureExamplesLoaded() error {
+	if ext.examples != nil {
 		return nil
 	}
 
@@ -173,7 +169,7 @@ func (p *Module) ensureExamplesLoaded() error {
 		return err
 	}
 
-	p.examples = examples
+	ext.examples = examples
 
 	return nil
 }

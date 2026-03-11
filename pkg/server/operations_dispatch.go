@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/ethpandaops/panda/pkg/proxy/handlers"
+	"github.com/ethpandaops/panda/pkg/proxy"
 )
 
 type operationHandler func(http.ResponseWriter, *http.Request)
@@ -50,7 +50,7 @@ func (s *service) proxyPassthroughGet(
 		http.MethodGet,
 		requestPath,
 		nil,
-		http.Header{handlers.DatasourceHeader: []string{datasource}},
+		http.Header{proxy.DatasourceHeader: []string{datasource}},
 	)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)

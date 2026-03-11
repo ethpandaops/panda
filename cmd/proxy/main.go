@@ -15,7 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ethpandaops/panda/internal/version"
-	"github.com/ethpandaops/panda/pkg/proxy"
+	proxyserver "github.com/ethpandaops/panda/pkg/proxy/server"
 )
 
 var (
@@ -63,7 +63,7 @@ func runServe(_ *cobra.Command, _ []string) error {
 	log.WithField("version", version.Version).Info("Starting panda credential proxy")
 
 	// Load configuration.
-	cfg, err := proxy.LoadServerConfig(cfgFile)
+	cfg, err := proxyserver.LoadServerConfig(cfgFile)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
@@ -96,7 +96,7 @@ func runServe(_ *cobra.Command, _ []string) error {
 	}
 
 	// Create the proxy server.
-	svc, err := proxy.NewServer(log, *cfg)
+	svc, err := proxyserver.NewServer(log, *cfg)
 	if err != nil {
 		return fmt.Errorf("creating proxy: %w", err)
 	}

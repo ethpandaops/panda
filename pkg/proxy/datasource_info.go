@@ -6,7 +6,7 @@ import (
 	"github.com/ethpandaops/panda/pkg/types"
 )
 
-func cloneDatasourceInfo(infos []types.DatasourceInfo) []types.DatasourceInfo {
+func CloneDatasourceInfo(infos []types.DatasourceInfo) []types.DatasourceInfo {
 	if len(infos) == 0 {
 		return nil
 	}

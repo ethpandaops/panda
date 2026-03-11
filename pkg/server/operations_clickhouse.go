@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/ethpandaops/panda/pkg/operations"
-	"github.com/ethpandaops/panda/pkg/proxy/handlers"
+	"github.com/ethpandaops/panda/pkg/proxy"
 )
 
 func (s *service) registerClickHouseOperations() {
@@ -77,8 +77,8 @@ func (s *service) handleClickHouseQueryOperation(w http.ResponseWriter, r *http.
 		"/clickhouse/?"+params.Encode(),
 		strings.NewReader(request.SQL),
 		http.Header{
-			handlers.DatasourceHeader: []string{datasource},
-			"Content-Type":            []string{"text/plain"},
+			proxy.DatasourceHeader: []string{datasource},
+			"Content-Type":         []string{"text/plain"},
 		},
 	)
 	if err != nil {

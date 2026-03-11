@@ -1,4 +1,4 @@
-package proxy
+package proxyserver
 
 import (
 	"context"
@@ -14,7 +14,8 @@ import (
 	"github.com/sirupsen/logrus"
 
 	simpleauth "github.com/ethpandaops/panda/pkg/auth"
-	"github.com/ethpandaops/panda/pkg/proxy/handlers"
+	proxyapi "github.com/ethpandaops/panda/pkg/proxy"
+	"github.com/ethpandaops/panda/pkg/proxy/transport"
 	"github.com/ethpandaops/panda/pkg/serverapi"
 	"github.com/ethpandaops/panda/pkg/types"
 )
@@ -57,11 +58,11 @@ type server struct {
 	rateLimiter   *RateLimiter
 	auditor       *Auditor
 
-	clickhouseHandler *handlers.ClickHouseHandler
-	prometheusHandler *handlers.PrometheusHandler
-	lokiHandler       *handlers.LokiHandler
-	s3Handler         *handlers.S3Handler
-	ethNodeHandler    *handlers.EthNodeHandler
+	clickhouseHandler *transport.ClickHouseHandler
+	prometheusHandler *transport.PrometheusHandler
+	lokiHandler       *transport.LokiHandler
+	s3Handler         *transport.S3Handler
+	ethNodeHandler    *transport.EthNodeHandler
 
 	mu      sync.RWMutex
 	started bool
@@ -69,8 +70,7 @@ type server struct {
 
 // Compile-time interface check.
 var (
-	_ Server  = (*server)(nil)
-	_ Service = (*server)(nil)
+	_ Server = (*server)(nil)
 )
 
 // NewServer creates a new proxy server.
@@ -131,9 +131,17 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 	// Create handlers from config.
 	s.clickhouseHandler = newClickHouseHandler(log, cfg.ClickHouse)
 	s.prometheusHandler = newPrometheusHandler(log, cfg.Prometheus)
-	s.lokiHandler = newLokiHandler(log, cfg.Loki)
-	s.s3Handler = newS3Handler(log, cfg.S3)
-	s.ethNodeHandler = newEthNodeHandler(log, cfg.EthNode)
+	s3Handler := newS3Handler(log, cfg.S3)
+	ethNodeHandler := newEthNodeHandler(log, cfg.EthNode)
+
+	lokiHandler, err := newLokiHandler(log, cfg.Loki)
+	if err != nil {
+		return nil, fmt.Errorf("creating loki handler: %w", err)
+	}
+
+	s.lokiHandler = lokiHandler
+	s.s3Handler = s3Handler
+	s.ethNodeHandler = ethNodeHandler
 
 	if s.url == "" {
 		s.url = fmt.Sprintf("http://localhost:%s", port)
@@ -477,7 +485,7 @@ func (s *server) DatasourceInfo() []types.DatasourceInfo {
 		})
 	}
 
-	return cloneDatasourceInfo(infos)
+	return proxyapi.CloneDatasourceInfo(infos)
 }
 
 func advertisedURLs(listenAddr string) (string, string) {

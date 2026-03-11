@@ -1,5 +1,5 @@
-// Package handlers provides reverse proxy handlers for each datasource type.
-package handlers
+// Package transport provides reverse proxy handlers for each datasource type.
+package transport
 
 import (
 	"context"

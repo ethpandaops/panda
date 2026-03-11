@@ -18,10 +18,10 @@ func New() *Module {
 	return &Module{}
 }
 
-func (p *Module) Name() string { return "ethnode" }
+func (ext *Module) Name() string { return "ethnode" }
 
 // InitFromDiscovery enables the module if an ethnode datasource exists.
-func (p *Module) InitFromDiscovery(datasources []types.DatasourceInfo) error {
+func (ext *Module) InitFromDiscovery(datasources []types.DatasourceInfo) error {
 	for _, ds := range datasources {
 		if ds.Type == "ethnode" {
 			return nil // module defaults to enabled
@@ -32,25 +32,23 @@ func (p *Module) InitFromDiscovery(datasources []types.DatasourceInfo) error {
 }
 
 // Enabled reports whether ethnode operations should be exposed.
-func (p *Module) Enabled() bool { return p.cfg.IsEnabled() }
+func (ext *Module) Enabled() bool { return ext.cfg.IsEnabled() }
 
-func (p *Module) Init(rawConfig []byte) error {
+func (ext *Module) Init(rawConfig []byte) error {
 	if len(rawConfig) == 0 {
 		return nil
 	}
 
-	return yaml.Unmarshal(rawConfig, &p.cfg)
+	return yaml.Unmarshal(rawConfig, &ext.cfg)
 }
 
-func (p *Module) ApplyDefaults() {}
-
-func (p *Module) Validate() error {
-	return p.ensureExamplesLoaded()
+func (ext *Module) Validate() error {
+	return ext.ensureExamplesLoaded()
 }
 
 // SandboxEnv returns environment variables for the sandbox.
-func (p *Module) SandboxEnv() (map[string]string, error) {
-	if !p.cfg.IsEnabled() {
+func (ext *Module) SandboxEnv() (map[string]string, error) {
+	if !ext.cfg.IsEnabled() {
 		return nil, nil
 	}
 
@@ -60,13 +58,13 @@ func (p *Module) SandboxEnv() (map[string]string, error) {
 }
 
 // Examples returns query examples for ethnode.
-func (p *Module) Examples() map[string]types.ExampleCategory {
-	if !p.cfg.IsEnabled() {
+func (ext *Module) Examples() map[string]types.ExampleCategory {
+	if !ext.cfg.IsEnabled() {
 		return nil
 	}
 
-	result := make(map[string]types.ExampleCategory, len(p.examples))
-	for k, v := range p.examples {
+	result := make(map[string]types.ExampleCategory, len(ext.examples))
+	for k, v := range ext.examples {
 		result[k] = v
 	}
 
@@ -74,8 +72,8 @@ func (p *Module) Examples() map[string]types.ExampleCategory {
 }
 
 // PythonAPIDocs returns API documentation for the ethnode Python module.
-func (p *Module) PythonAPIDocs() map[string]types.ModuleDoc {
-	if !p.cfg.IsEnabled() {
+func (ext *Module) PythonAPIDocs() map[string]types.ModuleDoc {
+	if !ext.cfg.IsEnabled() {
 		return nil
 	}
 
@@ -111,8 +109,8 @@ func (p *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 }
 
 // GettingStartedSnippet returns a Markdown snippet for the getting-started resource.
-func (p *Module) GettingStartedSnippet() string {
-	if !p.cfg.IsEnabled() {
+func (ext *Module) GettingStartedSnippet() string {
+	if !ext.cfg.IsEnabled() {
 		return ""
 	}
 
@@ -144,8 +142,8 @@ identity = ethnode.beacon_get("my-devnet", "lighthouse-geth-1", "/eth/v1/node/id
 `
 }
 
-func (p *Module) ensureExamplesLoaded() error {
-	if p.examples != nil {
+func (ext *Module) ensureExamplesLoaded() error {
+	if ext.examples != nil {
 		return nil
 	}
 
@@ -154,7 +152,7 @@ func (p *Module) ensureExamplesLoaded() error {
 		return err
 	}
 
-	p.examples = examples
+	ext.examples = examples
 
 	return nil
 }

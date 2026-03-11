@@ -26,10 +26,10 @@ type Module struct {
 // New creates a new Prometheus module.
 func New() *Module { return &Module{} }
 
-func (p *Module) Name() string { return "prometheus" }
+func (ext *Module) Name() string { return "prometheus" }
 
 // InitFromDiscovery initializes the module from discovered datasources.
-func (p *Module) InitFromDiscovery(datasources []types.DatasourceInfo) error {
+func (ext *Module) InitFromDiscovery(datasources []types.DatasourceInfo) error {
 	var filtered []types.DatasourceInfo
 
 	for _, ds := range datasources {
@@ -44,35 +44,35 @@ func (p *Module) InitFromDiscovery(datasources []types.DatasourceInfo) error {
 		return module.ErrNoValidConfig
 	}
 
-	p.datasources = filtered
+	ext.datasources = filtered
 
 	return nil
 }
 
 // Init parses the raw YAML config for this module.
-func (p *Module) Init(rawConfig []byte) error {
-	if err := yaml.Unmarshal(rawConfig, &p.cfg); err != nil {
+func (ext *Module) Init(rawConfig []byte) error {
+	if err := yaml.Unmarshal(rawConfig, &ext.cfg); err != nil {
 		return err
 	}
 
 	// Drop unnamed instances.
-	validInstances := make([]InstanceConfig, 0, len(p.cfg.Instances))
-	for _, inst := range p.cfg.Instances {
+	validInstances := make([]InstanceConfig, 0, len(ext.cfg.Instances))
+	for _, inst := range ext.cfg.Instances {
 		if inst.Name != "" {
 			validInstances = append(validInstances, inst)
 		}
 	}
 
-	p.cfg.Instances = validInstances
+	ext.cfg.Instances = validInstances
 
-	if len(p.cfg.Instances) == 0 {
+	if len(ext.cfg.Instances) == 0 {
 		return module.ErrNoValidConfig
 	}
 
 	// Populate internal datasources from config.
-	p.datasources = make([]types.DatasourceInfo, 0, len(p.cfg.Instances))
-	for _, inst := range p.cfg.Instances {
-		p.datasources = append(p.datasources, types.DatasourceInfo{
+	ext.datasources = make([]types.DatasourceInfo, 0, len(ext.cfg.Instances))
+	for _, inst := range ext.cfg.Instances {
+		ext.datasources = append(ext.datasources, types.DatasourceInfo{
 			Type:        "prometheus",
 			Name:        inst.Name,
 			Description: inst.Description,
@@ -86,16 +86,14 @@ func (p *Module) Init(rawConfig []byte) error {
 }
 
 // ApplyDefaults sets default values before validation.
-func (p *Module) ApplyDefaults() {}
-
 // Validate checks that the parsed config is valid.
-func (p *Module) Validate() error {
-	if err := p.ensureExamplesLoaded(); err != nil {
+func (ext *Module) Validate() error {
+	if err := ext.ensureExamplesLoaded(); err != nil {
 		return err
 	}
 
-	names := make(map[string]struct{}, len(p.datasources))
-	for i, ds := range p.datasources {
+	names := make(map[string]struct{}, len(ext.datasources))
+	for i, ds := range ext.datasources {
 		if ds.Name == "" {
 			return fmt.Errorf("datasource[%d].name is required", i)
 		}
@@ -111,15 +109,15 @@ func (p *Module) Validate() error {
 }
 
 // Examples returns query examples for the Prometheus module.
-func (p *Module) Examples() map[string]types.ExampleCategory {
-	result := make(map[string]types.ExampleCategory, len(p.examples))
-	maps.Copy(result, p.examples)
+func (ext *Module) Examples() map[string]types.ExampleCategory {
+	result := make(map[string]types.ExampleCategory, len(ext.examples))
+	maps.Copy(result, ext.examples)
 
 	return result
 }
 
-func (p *Module) ensureExamplesLoaded() error {
-	if p.examples != nil {
+func (ext *Module) ensureExamplesLoaded() error {
+	if ext.examples != nil {
 		return nil
 	}
 
@@ -128,13 +126,13 @@ func (p *Module) ensureExamplesLoaded() error {
 		return err
 	}
 
-	p.examples = examples
+	ext.examples = examples
 
 	return nil
 }
 
 // PythonAPIDocs returns the Prometheus module documentation.
-func (p *Module) PythonAPIDocs() map[string]types.ModuleDoc {
+func (ext *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 	return map[string]types.ModuleDoc{
 		"prometheus": {
 			Description: "Query Prometheus metrics",

@@ -218,3 +218,16 @@ func TestWriteConfigFile(t *testing.T) {
 		require.Error(t, err)
 	})
 }
+
+func TestResolveInitDirUsesRuntimeDefault(t *testing.T) {
+	xdgHome := filepath.Join(t.TempDir(), "xdg")
+	t.Setenv("XDG_CONFIG_HOME", xdgHome)
+
+	if got := resolveInitDir(""); got != filepath.Join(xdgHome, "panda") {
+		t.Fatalf("resolveInitDir(\"\") = %q, want %q", got, filepath.Join(xdgHome, "panda"))
+	}
+
+	if got := resolveInitDir("/tmp/custom"); got != "/tmp/custom" {
+		t.Fatalf("resolveInitDir(custom) = %q, want %q", got, "/tmp/custom")
+	}
+}
