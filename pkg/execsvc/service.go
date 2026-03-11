@@ -3,6 +3,7 @@ package execsvc
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"strings"
 	"time"
 
@@ -166,5 +167,20 @@ func sandboxAPIURL(cfg *config.Config) string {
 		return strings.TrimRight(value, "/")
 	}
 
-	return ""
+	// Auto-detect a sandbox-reachable URL when nothing is configured.
+	// On macOS/Windows, Docker Desktop provides host.docker.internal.
+	// On Linux, containers on a user-defined bridge can reach the host
+	// via host.docker.internal (Docker 20.10+) as well.
+	port := cfg.Server.Port
+	if port == 0 {
+		port = 2480
+	}
+
+	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
+		return fmt.Sprintf("http://host.docker.internal:%d", port)
+	}
+
+	// Linux: host.docker.internal works with --add-host or Docker 20.10+
+	// user-defined bridge networks. Use it as a reasonable default.
+	return fmt.Sprintf("http://host.docker.internal:%d", port)
 }

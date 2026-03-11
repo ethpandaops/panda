@@ -21,6 +21,7 @@ jobs:
       server-tags: server-master,server-master-latest
       cli-tags: master,master-latest
       proxy-tags: proxy-master,proxy-master-latest
+      sandbox-tags: sandbox-master,sandbox-master-latest
     secrets:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}

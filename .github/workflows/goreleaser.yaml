@@ -51,3 +51,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LATEST_TAG: ${{ steps.meta.outputs.latest_tag }}
+
+      - name: Build and push sandbox image
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          LATEST_TAG=${{ steps.meta.outputs.latest_tag }}
+
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --file sandbox/Dockerfile \
+            --tag "ethpandaops/panda:sandbox-${TAG}" \
+            --tag "ethpandaops/panda:sandbox-${LATEST_TAG}" \
+            --push .

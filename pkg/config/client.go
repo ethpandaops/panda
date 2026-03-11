@@ -11,9 +11,10 @@ import (
 	"github.com/ethpandaops/panda/pkg/configpath"
 )
 
-// ClientConfig is the subset of configuration needed by ep when operating as a server client.
+// ClientConfig is the subset of configuration needed by the CLI when operating as a server client.
 type ClientConfig struct {
 	Server ServerConfig `yaml:"server"`
+	Proxy  ProxyConfig  `yaml:"proxy"`
 
 	path string `yaml:"-"`
 }

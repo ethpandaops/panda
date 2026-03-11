@@ -127,7 +127,7 @@ jobs:
 
           sandbox:
             backend: docker
-            image: "ghcr.io/ethpandaops/panda-sandbox:latest"
+            image: "ethpandaops/panda:sandbox-latest"
             network: "host"
 
           proxy:

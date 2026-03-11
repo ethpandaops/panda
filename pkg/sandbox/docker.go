@@ -448,6 +448,7 @@ func (b *DockerBackend) createSessionContainer(ctx context.Context, sessionID st
 	// Create workspace directory inside container.
 	hostConfig := &container.HostConfig{
 		NetworkMode: container.NetworkMode(b.cfg.Network),
+		ExtraHosts:  []string{"host.docker.internal:host-gateway"},
 	}
 
 	// Apply security configuration.
@@ -806,6 +807,7 @@ func (b *DockerBackend) buildContainerConfig(
 	hostConfig := &container.HostConfig{
 		NetworkMode: container.NetworkMode(b.cfg.Network),
 		Mounts:      CreateMounts(hostSharedDir, hostOutputDir),
+		ExtraHosts:  []string{"host.docker.internal:host-gateway"},
 	}
 
 	// Apply security configuration.
