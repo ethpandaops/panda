@@ -1,0 +1,26 @@
+name: Build Master Images
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  meta:
+    runs-on: ubuntu-latest
+    outputs:
+      short-sha: ${{ steps.sha.outputs.short }}
+    steps:
+      - id: sha
+        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: meta
+    uses: ./.github/workflows/build-and-push.yaml
+    with:
+      version: master-${{ needs.meta.outputs.short-sha }}
+      server-tags: server-master,server-master-latest
+      cli-tags: master,master-latest
+      proxy-tags: proxy-master,proxy-master-latest
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}

@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ethpandaops/panda/pkg/resource"
+	"github.com/ethpandaops/panda/pkg/serverapi"
 	"github.com/ethpandaops/panda/pkg/types"
 )
 
@@ -136,7 +136,7 @@ func getAllPythonAPIDocs(ctx context.Context) (map[string]types.ModuleDoc, error
 		return nil, err
 	}
 
-	var payload resource.APIDocResponse
+	var payload serverapi.APIDocResponse
 	if err := json.Unmarshal([]byte(response.Content), &payload); err != nil {
 		return nil, fmt.Errorf("decoding API docs: %w", err)
 	}

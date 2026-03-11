@@ -1,28 +1,55 @@
-name: Docker Build
+name: Build Check
 
 on:
   workflow_dispatch:
   pull_request:
     branches: [master]
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Makefile'
+      - '.goreleaser.yaml'
+      - 'goreleaser.*.Dockerfile'
+      - 'sandbox/Dockerfile'
   push:
     branches: [master]
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Makefile'
+      - '.goreleaser.yaml'
+      - 'goreleaser.*.Dockerfile'
+      - 'sandbox/Dockerfile'
+
+concurrency:
+  group: build-check-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build-mcp:
+  goreleaser-check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Build MCP image
-        run: docker build -f Dockerfile.mcp .
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
 
-  build-proxy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
 
-      - name: Build proxy image
-        run: docker build -f Dockerfile.proxy .
+      - uses: docker/setup-buildx-action@v3
+
+      - name: GoReleaser dry-run
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: release --snapshot --skip=publish --clean
+        env:
+          LATEST_TAG: latest
 
   build-sandbox:
     runs-on: ubuntu-latest

@@ -1,0 +1,123 @@
+version: 2
+
+builds:
+  - id: panda-server
+    main: ./cmd/server
+    binary: panda-server
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/ethpandaops/panda/internal/version.Version={{.Version}}
+      - -X github.com/ethpandaops/panda/internal/version.GitCommit={{.Commit}}
+      - -X github.com/ethpandaops/panda/internal/version.BuildTime={{.Date}}
+
+  - id: panda
+    main: ./cmd/panda
+    binary: panda
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/ethpandaops/panda/internal/version.Version={{.Version}}
+      - -X github.com/ethpandaops/panda/internal/version.GitCommit={{.Commit}}
+      - -X github.com/ethpandaops/panda/internal/version.BuildTime={{.Date}}
+
+  - id: panda-proxy
+    main: ./cmd/proxy
+    binary: panda-proxy
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/ethpandaops/panda/internal/version.Version={{.Version}}
+      - -X github.com/ethpandaops/panda/internal/version.GitCommit={{.Commit}}
+      - -X github.com/ethpandaops/panda/internal/version.BuildTime={{.Date}}
+
+archives:
+  - id: panda-server
+    ids:
+      - panda-server
+    name_template: "panda-server_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+  - id: panda
+    ids:
+      - panda
+    name_template: "panda_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+  - id: panda-proxy
+    ids:
+      - panda-proxy
+    name_template: "panda-proxy_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+dockers_v2:
+  # Server
+  - id: server
+    ids:
+      - panda-server
+    dockerfile: goreleaser.server.Dockerfile
+    images:
+      - "ethpandaops/panda"
+    tags:
+      - "server-{{ .Version }}"
+      - "server-{{ .Env.LATEST_TAG }}"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+
+  # CLI (panda) — unprefixed, CLI is the default
+  - id: panda
+    ids:
+      - panda
+    dockerfile: goreleaser.panda.Dockerfile
+    images:
+      - "ethpandaops/panda"
+    tags:
+      - "{{ .Version }}"
+      - "{{ .Env.LATEST_TAG }}"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+
+  # Proxy
+  - id: proxy
+    ids:
+      - panda-proxy
+    dockerfile: goreleaser.proxy.Dockerfile
+    images:
+      - "ethpandaops/panda"
+    tags:
+      - "proxy-{{ .Version }}"
+      - "proxy-{{ .Env.LATEST_TAG }}"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+
+release:
+  prerelease: auto
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"

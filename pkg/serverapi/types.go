@@ -7,6 +7,13 @@ import (
 	"github.com/ethpandaops/panda/pkg/types"
 )
 
+// APIDocResponse is the response for the python://ethpandaops resource.
+type APIDocResponse struct {
+	Library     string                     `json:"library"`
+	Description string                     `json:"description"`
+	Modules     map[string]types.ModuleDoc `json:"modules"`
+}
+
 type DatasourcesResponse struct {
 	Datasources []types.DatasourceInfo `json:"datasources"`
 }
