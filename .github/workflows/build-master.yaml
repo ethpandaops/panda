@@ -7,8 +7,8 @@ on:
 jobs:
   build:
     runs-on:
-      group: self-hosted-ghr
-      labels: [size-l-x64]
+      - self-hosted-ghr
+      - size-l-x64
     steps:
       - uses: actions/checkout@v4
 
