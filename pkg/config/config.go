@@ -18,7 +18,6 @@ import (
 // Config is the main configuration structure.
 type Config struct {
 	Server         ServerConfig         `yaml:"server"`
-	Modules        map[string]yaml.Node `yaml:"modules,omitempty"`
 	Sandbox        SandboxConfig        `yaml:"sandbox"`
 	Proxy          ProxyConfig          `yaml:"proxy"`
 	Observability  ObservabilityConfig  `yaml:"observability"`
@@ -162,22 +161,6 @@ func Load(path string) (*Config, error) {
 // Path returns the resolved path this config was loaded from.
 func (c *Config) Path() string {
 	return c.path
-}
-
-// ModuleConfigYAML returns the raw YAML bytes for a given module name.
-// Returns nil if the module is not configured.
-func (c *Config) ModuleConfigYAML(name string) ([]byte, error) {
-	node, ok := c.Modules[name]
-	if !ok {
-		return nil, nil
-	}
-
-	data, err := yaml.Marshal(&node)
-	if err != nil {
-		return nil, fmt.Errorf("marshaling module %q config: %w", name, err)
-	}
-
-	return data, nil
 }
 
 // envVarWithDefaultPattern matches ${VAR_NAME:-default} patterns.

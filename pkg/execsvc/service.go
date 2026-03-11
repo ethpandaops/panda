@@ -2,7 +2,6 @@ package execsvc
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -12,10 +11,8 @@ import (
 
 	"github.com/ethpandaops/mcp/pkg/config"
 	"github.com/ethpandaops/mcp/pkg/module"
-	"github.com/ethpandaops/mcp/pkg/proxy"
 	"github.com/ethpandaops/mcp/pkg/sandbox"
 	"github.com/ethpandaops/mcp/pkg/tokenstore"
-	"github.com/ethpandaops/mcp/pkg/types"
 )
 
 const (
@@ -23,6 +20,7 @@ const (
 	MaxTimeout = 600
 )
 
+// ExecuteRequest describes a sandbox execution request.
 type ExecuteRequest struct {
 	Code      string
 	Timeout   int
@@ -30,21 +28,21 @@ type ExecuteRequest struct {
 	OwnerID   string
 }
 
+// Service orchestrates sandbox execution with module-provided env and runtime tokens.
 type Service struct {
 	log           logrus.FieldLogger
 	sandboxSvc    sandbox.Service
 	cfg           *config.Config
 	moduleReg     *module.Registry
-	proxySvc      proxy.Service
 	runtimeTokens *tokenstore.Store
 }
 
+// New creates a new execution service.
 func New(
 	log logrus.FieldLogger,
 	sandboxSvc sandbox.Service,
 	cfg *config.Config,
 	moduleReg *module.Registry,
-	proxySvc proxy.Service,
 	runtimeTokens *tokenstore.Store,
 ) *Service {
 	return &Service{
@@ -52,11 +50,11 @@ func New(
 		sandboxSvc:    sandboxSvc,
 		cfg:           cfg,
 		moduleReg:     moduleReg,
-		proxySvc:      proxySvc,
 		runtimeTokens: runtimeTokens,
 	}
 }
 
+// Execute runs code in the sandbox.
 func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*sandbox.ExecutionResult, error) {
 	if req.Code == "" {
 		return nil, fmt.Errorf("code is required")
@@ -101,10 +99,12 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*sandbox.Exe
 	})
 }
 
+// SessionsEnabled reports whether the sandbox supports persistent sessions.
 func (s *Service) SessionsEnabled() bool {
 	return s.sandboxSvc.SessionsEnabled()
 }
 
+// ListSessions returns all sessions for the given owner.
 func (s *Service) ListSessions(ctx context.Context, ownerID string) ([]sandbox.SessionInfo, int, error) {
 	sessions, err := s.sandboxSvc.ListSessions(ctx, ownerID)
 	if err != nil {
@@ -116,6 +116,7 @@ func (s *Service) ListSessions(ctx context.Context, ownerID string) ([]sandbox.S
 	return sessions, maxSessions, nil
 }
 
+// CreateSession creates a new persistent sandbox session.
 func (s *Service) CreateSession(ctx context.Context, ownerID string) (string, error) {
 	env, err := s.BuildSandboxEnv()
 	if err != nil {
@@ -125,10 +126,13 @@ func (s *Service) CreateSession(ctx context.Context, ownerID string) (string, er
 	return s.sandboxSvc.CreateSession(ctx, ownerID, env)
 }
 
+// DestroySession destroys a persistent sandbox session.
 func (s *Service) DestroySession(ctx context.Context, sessionID, ownerID string) error {
 	return s.sandboxSvc.DestroySession(ctx, sessionID, ownerID)
 }
 
+// BuildSandboxEnv collects environment variables from all initialized modules
+// and adds the sandbox API URL.
 func (s *Service) BuildSandboxEnv() (map[string]string, error) {
 	env, err := s.moduleReg.SandboxEnv()
 	if err != nil {
@@ -139,23 +143,8 @@ func (s *Service) BuildSandboxEnv() (map[string]string, error) {
 	if apiURL == "" {
 		return nil, fmt.Errorf("server.sandbox_url or server.base_url is required for sandbox API access")
 	}
+
 	env["ETHPANDAOPS_API_URL"] = apiURL
-
-	delete(env, "ETHPANDAOPS_CLICKHOUSE_DATASOURCES")
-	delete(env, "ETHPANDAOPS_PROMETHEUS_DATASOURCES")
-	delete(env, "ETHPANDAOPS_LOKI_DATASOURCES")
-
-	if ds := s.proxySvc.ClickHouseDatasourceInfo(); len(ds) > 0 {
-		env["ETHPANDAOPS_CLICKHOUSE_DATASOURCES"] = buildClickhouseDatasourceJSON(ds)
-	}
-
-	if ds := s.proxySvc.PrometheusDatasourceInfo(); len(ds) > 0 {
-		env["ETHPANDAOPS_PROMETHEUS_DATASOURCES"] = buildPrometheusDatasourceJSON(ds)
-	}
-
-	if ds := s.proxySvc.LokiDatasourceInfo(); len(ds) > 0 {
-		env["ETHPANDAOPS_LOKI_DATASOURCES"] = buildLokiDatasourceJSON(ds)
-	}
 
 	return env, nil
 }
@@ -178,70 +167,4 @@ func sandboxAPIURL(cfg *config.Config) string {
 	}
 
 	return ""
-}
-
-func buildClickhouseDatasourceJSON(infos []types.DatasourceInfo) string {
-	type dsInfo struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-		Database    string `json:"database"`
-	}
-
-	result := make([]dsInfo, 0, len(infos))
-	for _, info := range infos {
-		result = append(result, dsInfo{
-			Name:        info.Name,
-			Description: info.Description,
-			Database:    info.Metadata["database"],
-		})
-	}
-
-	return marshalDatasourceJSON(result)
-}
-
-func buildPrometheusDatasourceJSON(infos []types.DatasourceInfo) string {
-	type dsInfo struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-		URL         string `json:"url"`
-	}
-
-	result := make([]dsInfo, 0, len(infos))
-	for _, info := range infos {
-		result = append(result, dsInfo{
-			Name:        info.Name,
-			Description: info.Description,
-			URL:         info.Metadata["url"],
-		})
-	}
-
-	return marshalDatasourceJSON(result)
-}
-
-func buildLokiDatasourceJSON(infos []types.DatasourceInfo) string {
-	type dsInfo struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-		URL         string `json:"url"`
-	}
-
-	result := make([]dsInfo, 0, len(infos))
-	for _, info := range infos {
-		result = append(result, dsInfo{
-			Name:        info.Name,
-			Description: info.Description,
-			URL:         info.Metadata["url"],
-		})
-	}
-
-	return marshalDatasourceJSON(result)
-}
-
-func marshalDatasourceJSON(v any) string {
-	data, err := json.Marshal(v)
-	if err != nil {
-		return "[]"
-	}
-
-	return string(data)
 }

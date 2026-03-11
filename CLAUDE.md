@@ -21,7 +21,7 @@ See `docs/architecture.md` for the canonical boundary definition.
 - sandboxed Python calls back into `server`, never directly into `proxy`
 - `proxy` is a thin credentialed upstream gateway, not a product operations API
 - module behavior is exposed through `execute_python`, resources, docs, and search; do not add per-module MCP tools
-- use the top-level config key `modules:` for integrations
+- datasource identity is owned by the proxy; modules initialize from proxy discovery
 
 ## Supported Deployment Modes
 
@@ -105,21 +105,25 @@ Five compiled-in modules are registered in `pkg/app/app.go`:
 
 Each module implements `module.Module` in `pkg/module/module.go`. Optional capability interfaces live alongside it in `pkg/module/module.go`.
 - `ProxyAware` — receives proxy client for proxy-backed operations
+- `ProxyDiscoverable` — initializes from discovered datasources
 - `CartographoorAware` — receives network discovery client
-- `DefaultEnabled` — activates without explicit config
+- `DefaultEnabled` — activates without explicit config (e.g., dora)
 - provider interfaces such as sandbox env, datasource info, examples, Python docs, getting-started snippets, and resources are optional and capability-based
+
+Datasource identity is owned by the proxy. Modules that implement `ProxyDiscoverable` initialize from discovered datasources. The proxy client refreshes every 5 minutes.
 
 ### Server Startup Order
 
-1. Module registry (register + init all configured/default-enabled modules)
+1. Module registry (register all compiled-in modules, no init yet)
 2. Sandbox service
-3. Proxy client
-4. Inject proxy into `ProxyAware` modules and start modules
-5. Cartographoor client
-6. Semantic search runtime
-7. MCP tool registry: `execute_python`, `manage_session`, `search`
-8. MCP resource registry
-9. Product HTTP API
+3. Proxy client (initial datasource discovery + background refresh every 5m)
+4. Module initialization (proxy discovery or DefaultEnabled)
+5. Inject proxy into `ProxyAware` modules and start modules
+6. Cartographoor client
+7. Semantic search runtime
+8. MCP tool registry: `execute_python`, `manage_session`, `search`
+9. MCP resource registry
+10. Product HTTP API
 
 ### Public Surfaces
 
@@ -167,11 +171,6 @@ proxy:
   auth:
     issuer_url: "..."
     client_id: "..."
-
-modules:
-  clickhouse:
-    schema_discovery:
-      datasources: [...]
 
 sandbox:
   backend: docker|gvisor

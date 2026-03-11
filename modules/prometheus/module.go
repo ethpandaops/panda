@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 
 	"gopkg.in/yaml.v3"
 
@@ -11,9 +12,16 @@ import (
 	"github.com/ethpandaops/mcp/pkg/types"
 )
 
-// Module implements the module.Module interface for the Prometheus module.
+// Compile-time interface checks.
+var (
+	_ module.Module            = (*Module)(nil)
+	_ module.ProxyDiscoverable = (*Module)(nil)
+)
+
+// Module implements the module.Module interface for Prometheus.
 type Module struct {
-	cfg Config
+	cfg         Config
+	datasources []types.DatasourceInfo
 }
 
 // New creates a new Prometheus module.
@@ -21,14 +29,35 @@ func New() *Module { return &Module{} }
 
 func (p *Module) Name() string { return "prometheus" }
 
+// InitFromDiscovery initializes the module from discovered datasources.
+func (p *Module) InitFromDiscovery(datasources []types.DatasourceInfo) error {
+	var filtered []types.DatasourceInfo
+
+	for _, ds := range datasources {
+		if ds.Type != "prometheus" {
+			continue
+		}
+
+		filtered = append(filtered, ds)
+	}
+
+	if len(filtered) == 0 {
+		return module.ErrNoValidConfig
+	}
+
+	p.datasources = filtered
+
+	return nil
+}
+
+// Init parses the raw YAML config for this module.
 func (p *Module) Init(rawConfig []byte) error {
 	if err := yaml.Unmarshal(rawConfig, &p.cfg); err != nil {
 		return err
 	}
 
-	// Drop unnamed instances; remaining fields are optional when proxy is authoritative.
+	// Drop unnamed instances.
 	validInstances := make([]InstanceConfig, 0, len(p.cfg.Instances))
-
 	for _, inst := range p.cfg.Instances {
 		if inst.Name != "" {
 			validInstances = append(validInstances, inst)
@@ -37,55 +66,63 @@ func (p *Module) Init(rawConfig []byte) error {
 
 	p.cfg.Instances = validInstances
 
-	// If no named instances remain, signal that this module should be skipped.
 	if len(p.cfg.Instances) == 0 {
 		return module.ErrNoValidConfig
 	}
 
+	// Populate internal datasources from config.
+	p.datasources = make([]types.DatasourceInfo, 0, len(p.cfg.Instances))
+	for _, inst := range p.cfg.Instances {
+		p.datasources = append(p.datasources, types.DatasourceInfo{
+			Type:        "prometheus",
+			Name:        inst.Name,
+			Description: inst.Description,
+			Metadata: map[string]string{
+				"url": inst.URL,
+			},
+		})
+	}
+
 	return nil
 }
 
-func (p *Module) ApplyDefaults() {
-	for i := range p.cfg.Instances {
-		if p.cfg.Instances[i].Timeout == 0 {
-			p.cfg.Instances[i].Timeout = 60
-		}
-	}
-}
+// ApplyDefaults sets default values before validation.
+func (p *Module) ApplyDefaults() {}
 
+// Validate checks that the parsed config is valid.
 func (p *Module) Validate() error {
-	names := make(map[string]struct{}, len(p.cfg.Instances))
-	for i, inst := range p.cfg.Instances {
-		if inst.Name == "" {
-			return fmt.Errorf("instances[%d].name is required", i)
+	names := make(map[string]struct{}, len(p.datasources))
+	for i, ds := range p.datasources {
+		if ds.Name == "" {
+			return fmt.Errorf("datasource[%d].name is required", i)
 		}
-		if _, exists := names[inst.Name]; exists {
-			return fmt.Errorf("instances[%d].name %q is duplicated", i, inst.Name)
+
+		if _, exists := names[ds.Name]; exists {
+			return fmt.Errorf("datasource[%d].name %q is duplicated", i, ds.Name)
 		}
-		names[inst.Name] = struct{}{}
+
+		names[ds.Name] = struct{}{}
 	}
+
 	return nil
 }
 
-// SandboxEnv returns credential-free environment variables for the sandbox.
-// Credentials are never passed to sandbox containers - they connect via
-// the credential proxy instead.
+// SandboxEnv returns environment variables for the sandbox.
 func (p *Module) SandboxEnv() (map[string]string, error) {
-	if len(p.cfg.Instances) == 0 {
+	if len(p.datasources) == 0 {
 		return nil, nil
 	}
 
-	// Return datasource info without credentials.
 	type datasourceInfo struct {
 		Name        string `json:"name"`
 		Description string `json:"description"`
 	}
 
-	infos := make([]datasourceInfo, 0, len(p.cfg.Instances))
-	for _, inst := range p.cfg.Instances {
+	infos := make([]datasourceInfo, 0, len(p.datasources))
+	for _, ds := range p.datasources {
 		infos = append(infos, datasourceInfo{
-			Name:        inst.Name,
-			Description: inst.Description,
+			Name:        ds.Name,
+			Description: ds.Description,
 		})
 	}
 
@@ -99,29 +136,23 @@ func (p *Module) SandboxEnv() (map[string]string, error) {
 	}, nil
 }
 
+// DatasourceInfo returns datasource metadata for datasources:// resources.
 func (p *Module) DatasourceInfo() []types.DatasourceInfo {
-	infos := make([]types.DatasourceInfo, 0, len(p.cfg.Instances))
-	for _, inst := range p.cfg.Instances {
-		infos = append(infos, types.DatasourceInfo{
-			Type:        "prometheus",
-			Name:        inst.Name,
-			Description: inst.Description,
-			Metadata: map[string]string{
-				"url": inst.URL,
-			},
-		})
-	}
-	return infos
-}
+	result := make([]types.DatasourceInfo, len(p.datasources))
+	copy(result, p.datasources)
 
-func (p *Module) Examples() map[string]types.ExampleCategory {
-	result := make(map[string]types.ExampleCategory, len(queryExamples))
-	for k, v := range queryExamples {
-		result[k] = v
-	}
 	return result
 }
 
+// Examples returns query examples for the Prometheus module.
+func (p *Module) Examples() map[string]types.ExampleCategory {
+	result := make(map[string]types.ExampleCategory, len(queryExamples))
+	maps.Copy(result, queryExamples)
+
+	return result
+}
+
+// PythonAPIDocs returns the Prometheus module documentation.
 func (p *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 	return map[string]types.ModuleDoc{
 		"prometheus": {
@@ -176,6 +207,8 @@ func (p *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 	}
 }
 
+// Start performs async initialization.
 func (p *Module) Start(_ context.Context) error { return nil }
 
+// Stop cleans up resources.
 func (p *Module) Stop(_ context.Context) error { return nil }

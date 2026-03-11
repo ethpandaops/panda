@@ -5,6 +5,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/ethpandaops/mcp/pkg/module"
 	"github.com/ethpandaops/mcp/pkg/types"
 )
 
@@ -19,6 +20,17 @@ func New() *Module {
 }
 
 func (p *Module) Name() string { return "ethnode" }
+
+// InitFromDiscovery enables the module if an ethnode datasource exists.
+func (p *Module) InitFromDiscovery(datasources []types.DatasourceInfo) error {
+	for _, ds := range datasources {
+		if ds.Type == "ethnode" {
+			return nil // module defaults to enabled
+		}
+	}
+
+	return module.ErrNoValidConfig
+}
 
 // Enabled reports whether ethnode operations should be exposed.
 func (p *Module) Enabled() bool { return p.cfg.IsEnabled() }
@@ -36,7 +48,6 @@ func (p *Module) ApplyDefaults() {}
 func (p *Module) Validate() error { return nil }
 
 // SandboxEnv returns environment variables for the sandbox.
-// Only a credential-free availability signal is sent; actual requests go through the proxy.
 func (p *Module) SandboxEnv() (map[string]string, error) {
 	if !p.cfg.IsEnabled() {
 		return nil, nil

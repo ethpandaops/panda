@@ -82,16 +82,13 @@ func (s *service) handleAPIProxyAuthMetadata(w http.ResponseWriter, _ *http.Requ
 }
 
 func (s *service) handleAPIDatasources(w http.ResponseWriter, r *http.Request) {
-	if s.proxyService == nil {
-		writeAPIError(w, http.StatusServiceUnavailable, "proxy service is unavailable")
+	if s.moduleRegistry == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "module registry is unavailable")
 		return
 	}
 
 	filterType := strings.TrimSpace(r.URL.Query().Get("type"))
-	all := make([]types.DatasourceInfo, 0)
-	all = append(all, s.proxyService.ClickHouseDatasourceInfo()...)
-	all = append(all, s.proxyService.PrometheusDatasourceInfo()...)
-	all = append(all, s.proxyService.LokiDatasourceInfo()...)
+	all := s.moduleRegistry.DatasourceInfo()
 
 	if filterType != "" {
 		filtered := make([]types.DatasourceInfo, 0, len(all))
@@ -100,6 +97,7 @@ func (s *service) handleAPIDatasources(w http.ResponseWriter, r *http.Request) {
 				filtered = append(filtered, info)
 			}
 		}
+
 		all = filtered
 	}
 

@@ -9,9 +9,5 @@ type Config struct {
 type InstanceConfig struct {
 	Name        string `yaml:"name" json:"name"`
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
-	URL         string `yaml:"url" json:"url"`
-	Username    string `yaml:"username,omitempty" json:"username,omitempty"`
-	Password    string `yaml:"password,omitempty" json:"password,omitempty"`
-	SkipVerify  bool   `yaml:"skip_verify,omitempty" json:"skip_verify,omitempty"`
-	Timeout     int    `yaml:"timeout,omitempty" json:"timeout,omitempty"`
+	URL         string `yaml:"url,omitempty" json:"url,omitempty"`
 }

@@ -30,6 +30,13 @@ type ProxyAware interface {
 	SetProxyClient(client proxy.Service)
 }
 
+// ProxyDiscoverable modules initialize from datasources discovered via the proxy.
+type ProxyDiscoverable interface {
+	// InitFromDiscovery initializes the module from discovered datasources.
+	// Returns ErrNoValidConfig if no relevant datasources exist.
+	InitFromDiscovery(datasources []types.DatasourceInfo) error
+}
+
 // DefaultEnabled is an optional interface that modules can implement
 // to indicate they should be initialized even without explicit config.
 // This is useful for modules like dora that work with discovered data
@@ -54,7 +61,7 @@ type ResourceRegistry interface {
 	RegisterTemplate(res types.TemplateResource)
 }
 
-// SandboxEnvProvider contributes credential-free sandbox environment values.
+// SandboxEnvProvider contributes sandbox environment variables.
 type SandboxEnvProvider interface {
 	SandboxEnv() (map[string]string, error)
 }
