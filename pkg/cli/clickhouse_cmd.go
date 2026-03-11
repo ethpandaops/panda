@@ -29,6 +29,9 @@ func init() {
 	clickhouseCmd.AddCommand(clickhouseListDatasourcesCmd)
 	clickhouseCmd.AddCommand(clickhouseQueryCmd)
 	clickhouseCmd.AddCommand(clickhouseQueryRawCmd)
+
+	clickhouseQueryCmd.ValidArgsFunction = completeDatasourceNames("clickhouse")
+	clickhouseQueryRawCmd.ValidArgsFunction = completeDatasourceNames("clickhouse")
 }
 
 var clickhouseListDatasourcesCmd = &cobra.Command{

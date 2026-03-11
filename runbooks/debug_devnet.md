@@ -100,7 +100,7 @@ Before collecting data, determine which datasources have the target network. Thi
 
    - **Network overview** — use `search(type="examples", query="network overview")` for the pattern. Note: `current_slot` is `epoch * 32` (epoch's first slot), not actual head slot.
    - **Network splits** — use `search(type="examples", query="network splits")`. A healthy network has one fork.
-   - **Epoch details** — use `search(type="examples", query="epoch summary")`. Iterate through ~9 epochs per hour across the active timeframe. **Always start from head epoch - 1** (the most recent completed epoch) — the head epoch is still in progress and will show artificially low participation. You SHOULD use try/except per epoch to handle failures without crashing.
+   - **Epoch details** — use `search(type="examples", query="epoch summary")`. Iterate through ~9 epochs per hour across the active timeframe. **Always start from head epoch - 1** (the most recent completed epoch) — the head epoch is still in progress and will show artificially low participation. You SHOULD also check the head epoch, but treat its data as preliminary since the epoch may not be finished — it is still useful for identifying offline proposers in recent slots. You SHOULD use try/except per epoch to handle failures without crashing.
    - **Missing proposers** — use `search(type="examples", query="missing proposers")`. Adjust `slot_lookback` to match the active timeframe (~300 slots per hour).
    - **Offline attesters** — use `search(type="examples", query="offline attesters")`.
 
@@ -137,6 +137,12 @@ The standard Loki instance is `"ethpandaops"`. Refer to the query skill for Loki
 - `ethereum_el` = the second part (e.g. `geth`)
 - The full name maps to the `instance` label
 
+**Trimming log payloads with `line_format`:** Loki returns full stream metadata (labels, container info, timestamps) for every log entry. This is verbose and wastes context window space. **Always** append `| json | line_format` to your LogQL queries to extract only the log message. The `| json` step parses the log body so that fields like `message` become available to `line_format`. Without `| json`, template fields will be empty. Use:
+```
+| json | line_format "{{.message}}"
+```
+If `message` is still empty after `| json`, try `{{.log}}` or `{{.msg}}` instead — field names vary by log shipper. As a last resort, drop `| json | line_format` entirely and use the raw line.
+
 **You SHOULD start with the consensus layer (CL).** The network moves forward via the CL — block proposals, attestations, and finality are all CL concerns. Most devnet issues originate at the CL level. Only investigate EL logs after reviewing CL logs, and only if the CL logs suggest the problem is on the execution side (e.g. payload validation errors, engine API failures, execution timeouts).
 
 3. **Discover Loki labels** - In Loki-only mode (no Dora), you MUST fetch available labels and values from the `"ethpandaops"` Loki instance to understand the network topology — this is the only way to discover what nodes exist. When Dora is available, you MAY fetch labels to confirm that the expected `testnet`, `ethereum_cl`, `ethereum_el`, and `instance` labels exist and contain the target network/nodes. Append to debug report.
@@ -144,8 +150,10 @@ The standard Loki instance is `"ethpandaops"`. Refer to the query skill for Loki
 4. **Fetch CL logs first (CRIT/ERR)** - For each problematic node (or all CL clients in Loki-only mode), query CL logs at the most severe log levels:
 
    ```
-   {testnet="<network>", ethereum_cl="<cl_type>", instance="<instance_name>"} |~ "(?i)(CRIT|ERR)"
+   {testnet="<network>", ethereum_cl="<cl_type>", instance="<instance_name>"} |~ "(?i)(CRIT|ERR)" | json | line_format "{{.message}}"
    ```
+
+   If `line_format` returns empty results, the field name may differ — try `{{.log}}` or `{{.msg}}`. If all are empty, drop `| json | line_format` and use the raw line.
 
    Log level formats vary by client — see the query skill's Loki section for format details and fallback strategies.
 

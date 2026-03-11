@@ -1,14 +1,19 @@
 loki_basics:
   name: Loki Log Queries
-  description: Common LogQL query patterns for Ethereum node log analysis
+  description: Common LogQL query patterns for Ethereum node log analysis. Always use | line_format to trim payloads and reduce response size.
   examples:
     - name: Recent beacon node errors
-      description: Get recent error logs from beacon nodes
+      description: Get recent error logs from beacon nodes with trimmed output
       cluster: loki
       query: |
-        {app="beacon-node"} |= "error"
+        {app="beacon-node"} |= "error" | json | line_format "{{.message}}"
     - name: Consensus warnings
-      description: Get warning-level logs related to consensus
+      description: Get warning-level logs related to consensus with trimmed output
       cluster: loki
       query: |
-        {app="beacon-node"} |= "warn" |= "consensus"
+        {app="beacon-node"} |= "warn" |= "consensus" | json | line_format "{{.message}}"
+    - name: Kurtosis local devnet CL errors
+      description: Get CL error logs from a local Kurtosis devnet with trimmed output
+      cluster: loki
+      query: |
+        {job="kurtosis"} | json | kurtosis_service_name=~"cl-.*" | log=~"(?i)(CRIT|ERR|error)" | line_format "{{.log}}"

@@ -47,4 +47,11 @@ func Execute() {
 func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: $ETHPANDAOPS_CONFIG, $EP_CONFIG, ~/.config/ethpandaops/config.yaml, or ./config.yaml)")
 	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "log level (debug, info, warn, error)")
+
+	_ = rootCmd.RegisterFlagCompletionFunc("log-level", cobra.FixedCompletions(
+		[]string{"debug", "info", "warn", "error"}, cobra.ShellCompDirectiveNoFileComp,
+	))
+	_ = rootCmd.RegisterFlagCompletionFunc("config", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		return []string{"yaml", "yml"}, cobra.ShellCompDirectiveFilterFileExt
+	})
 }

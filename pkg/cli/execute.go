@@ -45,6 +45,11 @@ func init() {
 	executeCmd.Flags().IntVar(&executeTimeout, "timeout", 0, "Execution timeout in seconds (default: from config)")
 	executeCmd.Flags().StringVar(&executeSession, "session", "", "Session ID to reuse")
 	executeCmd.Flags().BoolVar(&executeJSON, "json", false, "Output result as JSON")
+
+	_ = executeCmd.RegisterFlagCompletionFunc("file", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		return []string{"py"}, cobra.ShellCompDirectiveFilterFileExt
+	})
+	_ = executeCmd.RegisterFlagCompletionFunc("session", completeSessionIDs)
 }
 
 func runExecute(_ *cobra.Command, _ []string) error {
