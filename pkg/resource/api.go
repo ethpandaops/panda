@@ -8,7 +8,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/sirupsen/logrus"
 
-	"github.com/ethpandaops/mcp/pkg/extension"
+	"github.com/ethpandaops/mcp/pkg/module"
 	"github.com/ethpandaops/mcp/pkg/types"
 )
 
@@ -21,7 +21,7 @@ type APIDocResponse struct {
 
 // RegisterAPIResources registers the python://ethpandaops resource
 // with the registry.
-func RegisterAPIResources(log logrus.FieldLogger, reg Registry, extensionReg *extension.Registry) {
+func RegisterAPIResources(log logrus.FieldLogger, reg Registry, moduleReg *module.Registry) {
 	log = log.WithField("resource", "api")
 
 	reg.RegisterStatic(StaticResource{
@@ -32,17 +32,15 @@ func RegisterAPIResources(log logrus.FieldLogger, reg Registry, extensionReg *ex
 			mcp.WithMIMEType("application/json"),
 			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.9),
 		),
-		Handler: createAPIHandler(extensionReg),
+		Handler: createAPIHandler(moduleReg),
 	})
 
 	log.Debug("Registered API resources")
 }
 
-func createAPIHandler(extensionReg *extension.Registry) ReadHandler {
+func createAPIHandler(moduleReg *module.Registry) ReadHandler {
 	return func(_ context.Context, _ string) (string, error) {
-		// Use AllPythonAPIDocs to include docs from all extensions,
-		// not just initialized ones (API docs don't need credentials).
-		modules := extensionReg.AllPythonAPIDocs()
+		modules := moduleReg.PythonAPIDocs()
 
 		// Add platform-owned storage module.
 		modules["storage"] = types.ModuleDoc{

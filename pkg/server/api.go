@@ -1,10 +1,12 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -13,7 +15,7 @@ import (
 
 	"github.com/ethpandaops/mcp/pkg/auth"
 	"github.com/ethpandaops/mcp/pkg/execsvc"
-	"github.com/ethpandaops/mcp/pkg/extension"
+	"github.com/ethpandaops/mcp/pkg/module"
 	"github.com/ethpandaops/mcp/pkg/serverapi"
 	"github.com/ethpandaops/mcp/pkg/types"
 )
@@ -21,6 +23,7 @@ import (
 func (s *service) mountAPIRoutes(r chi.Router) {
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/datasources", s.handleAPIDatasources)
+		r.Get("/proxy/auth", s.handleAPIProxyAuthMetadata)
 		r.Get("/search/examples", s.handleAPISearchExamples)
 		r.Get("/search/runbooks", s.handleAPISearchRunbooks)
 		r.Post("/execute", s.handleAPIExecute)
@@ -29,7 +32,53 @@ func (s *service) mountAPIRoutes(r chi.Router) {
 		r.Delete("/sessions/{sessionID}", s.handleAPIDestroySession)
 		r.Get("/resources/read", s.handleAPIReadResource)
 		r.HandleFunc("/operations/{operationID}", s.handleAPIOperation)
+
+		r.Route("/runtime", func(r chi.Router) {
+			r.Use(s.runtimeAuthMiddleware)
+			r.HandleFunc("/operations/{operationID}", s.handleAPIOperation)
+			r.Post("/storage/upload", s.handleRuntimeStorageUpload)
+			r.Get("/storage/files", s.handleRuntimeStorageList)
+			r.Get("/storage/url", s.handleRuntimeStorageURL)
+		})
 	})
+}
+
+type runtimeContextKey string
+
+const runtimeExecutionIDKey runtimeContextKey = "runtime_execution_id"
+
+func (s *service) runtimeAuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.runtimeTokens == nil {
+			writeAPIError(w, http.StatusServiceUnavailable, "runtime token service is unavailable")
+			return
+		}
+
+		authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
+		if !strings.HasPrefix(authHeader, "Bearer ") {
+			writeAPIError(w, http.StatusUnauthorized, "missing runtime Authorization header")
+			return
+		}
+
+		token := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
+		executionID := s.runtimeTokens.Validate(token)
+		if executionID == "" {
+			writeAPIError(w, http.StatusUnauthorized, "invalid or expired runtime token")
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), runtimeExecutionIDKey, executionID)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func (s *service) handleAPIProxyAuthMetadata(w http.ResponseWriter, _ *http.Request) {
+	if s.proxyAuthMetadata == nil {
+		writeJSON(w, http.StatusOK, serverapi.ProxyAuthMetadataResponse{})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, s.proxyAuthMetadata)
 }
 
 func (s *service) handleAPIDatasources(w http.ResponseWriter, r *http.Request) {
@@ -272,52 +321,213 @@ func (s *service) handleAPIOperation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if extensionName := operationExtensionName(operationID); extensionName != "" &&
-		s.extensionRegistry != nil &&
-		s.extensionRegistry.Get(extensionName) != nil {
-		ext := s.extensionRegistry.Get(extensionName)
-		if enabledAware, ok := ext.(extension.EnabledAware); ok && !enabledAware.Enabled() {
-			writeAPIError(w, http.StatusNotFound, fmt.Sprintf("extension %q is not enabled", extensionName))
+	if moduleName := operationExtensionName(operationID); moduleName != "" &&
+		s.moduleRegistry != nil &&
+		s.moduleRegistry.Get(moduleName) != nil {
+		ext := s.moduleRegistry.Get(moduleName)
+		if enabledAware, ok := ext.(module.EnabledAware); ok && !enabledAware.Enabled() {
+			writeAPIError(w, http.StatusNotFound, fmt.Sprintf("module %q is not enabled", moduleName))
 			return
 		}
 
-		if !s.extensionRegistry.IsInitialized(extensionName) {
-			writeAPIError(w, http.StatusNotFound, fmt.Sprintf("extension %q is not enabled", extensionName))
+		if !s.moduleRegistry.IsInitialized(moduleName) {
+			writeAPIError(w, http.StatusNotFound, fmt.Sprintf("module %q is not enabled", moduleName))
 			return
 		}
 	}
 
-	targetURL := strings.TrimRight(s.proxyService.URL(), "/") + "/api/v1/operations/" + operationID
-	req, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL, r.Body)
-	if err != nil {
-		writeAPIError(w, http.StatusInternalServerError, fmt.Sprintf("creating proxy request: %v", err))
+	if !s.dispatchOperation(operationID, w, r) {
+		writeAPIError(w, http.StatusNotFound, fmt.Sprintf("unknown operation %q", operationID))
+		return
+	}
+}
+
+func (s *service) handleRuntimeStorageUpload(w http.ResponseWriter, r *http.Request) {
+	bucket := strings.TrimSpace(s.proxyService.S3Bucket())
+	if bucket == "" {
+		writeAPIError(w, http.StatusServiceUnavailable, "storage is unavailable")
 		return
 	}
 
-	for key, values := range r.Header {
+	name := strings.TrimSpace(r.URL.Query().Get("name"))
+	name = strings.TrimLeft(name, "/")
+	if name == "" {
+		writeAPIError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+
+	executionID := runtimeExecutionID(r.Context())
+	if executionID == "" {
+		writeAPIError(w, http.StatusUnauthorized, "runtime execution ID is missing")
+		return
+	}
+
+	key, relativeKey, err := serverapi.RuntimeStorageScopedKey(executionID, name)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	proxyPath := "/s3/" + bucket + "/" + key
+
+	headers := make(http.Header)
+	if contentType := strings.TrimSpace(r.Header.Get("Content-Type")); contentType != "" {
+		headers.Set("Content-Type", contentType)
+	}
+
+	data, status, _, err := s.proxyRequest(r.Context(), http.MethodPut, proxyPath, r.Body, headers)
+	if err != nil {
+		writeAPIError(w, http.StatusBadGateway, fmt.Sprintf("upload failed: %v", err))
+		return
+	}
+
+	if status < 200 || status >= 300 {
+		writeAPIError(w, status, strings.TrimSpace(string(data)))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, serverapi.RuntimeStorageUploadResponse{
+		Key: relativeKey,
+		URL: s.runtimeStoragePublicURL(key),
+	})
+}
+
+func (s *service) handleRuntimeStorageList(w http.ResponseWriter, r *http.Request) {
+	bucket := strings.TrimSpace(s.proxyService.S3Bucket())
+	if bucket == "" {
+		writeAPIError(w, http.StatusServiceUnavailable, "storage is unavailable")
+		return
+	}
+
+	executionID := runtimeExecutionID(r.Context())
+	if executionID == "" {
+		writeAPIError(w, http.StatusUnauthorized, "runtime execution ID is missing")
+		return
+	}
+
+	prefix := strings.TrimSpace(r.URL.Query().Get("prefix"))
+	scopedPrefix := serverapi.RuntimeStorageScopedPrefix(executionID, prefix)
+	files := make([]serverapi.RuntimeStorageFile, 0, 16)
+	continuationToken := ""
+
+	for {
+		query := url.Values{"list-type": {"2"}}
+		query.Set("prefix", scopedPrefix)
+		if continuationToken != "" {
+			query.Set("continuation-token", continuationToken)
+		}
+
+		data, status, _, err := s.proxyRequest(r.Context(), http.MethodGet, "/s3/"+bucket+"?"+query.Encode(), nil, nil)
+		if err != nil {
+			writeAPIError(w, http.StatusBadGateway, fmt.Sprintf("listing files failed: %v", err))
+			return
+		}
+
+		if status < 200 || status >= 300 {
+			writeAPIError(w, status, strings.TrimSpace(string(data)))
+			return
+		}
+
+		pageFiles, nextToken, err := serverapi.ParseRuntimeStorageList(data, executionID, s.runtimeStoragePublicURL)
+		if err != nil {
+			writeAPIError(w, http.StatusBadGateway, fmt.Sprintf("decoding storage listing failed: %v", err))
+			return
+		}
+
+		files = append(files, pageFiles...)
+		if nextToken == "" {
+			break
+		}
+
+		continuationToken = nextToken
+	}
+
+	writeJSON(w, http.StatusOK, serverapi.RuntimeStorageListResponse{Files: files})
+}
+
+func (s *service) handleRuntimeStorageURL(w http.ResponseWriter, r *http.Request) {
+	executionID := runtimeExecutionID(r.Context())
+	if executionID == "" {
+		writeAPIError(w, http.StatusUnauthorized, "runtime execution ID is missing")
+		return
+	}
+
+	key := strings.TrimSpace(r.URL.Query().Get("key"))
+	if key == "" {
+		writeAPIError(w, http.StatusBadRequest, "key is required")
+		return
+	}
+
+	scopedKey, relativeKey, err := serverapi.RuntimeStorageScopedKey(executionID, key)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, serverapi.RuntimeStorageURLResponse{
+		Key: relativeKey,
+		URL: s.runtimeStoragePublicURL(scopedKey),
+	})
+}
+
+func (s *service) proxyRequest(
+	ctx context.Context,
+	method string,
+	requestPath string,
+	body io.Reader,
+	headers http.Header,
+) ([]byte, int, http.Header, error) {
+	if s.proxyService == nil {
+		return nil, http.StatusServiceUnavailable, nil, fmt.Errorf("proxy service is unavailable")
+	}
+
+	targetURL := strings.TrimRight(s.proxyService.URL(), "/") + requestPath
+	req, err := http.NewRequestWithContext(ctx, method, targetURL, body)
+	if err != nil {
+		return nil, http.StatusInternalServerError, nil, fmt.Errorf("creating proxy request: %w", err)
+	}
+
+	for key, values := range headers {
 		for _, value := range values {
 			req.Header.Add(key, value)
 		}
 	}
+	req.Header.Del("Authorization")
 
 	tokenID := fmt.Sprintf("server-api-%d", time.Now().UnixNano())
 	token := s.proxyService.RegisterToken(tokenID)
 	defer s.proxyService.RevokeToken(tokenID)
 
-	if token != "" {
+	if token != "" && token != "none" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		writeAPIError(w, http.StatusBadGateway, fmt.Sprintf("proxy request failed: %v", err))
-		return
+		return nil, http.StatusBadGateway, nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	copyHeaders(w.Header(), resp.Header)
-	w.WriteHeader(resp.StatusCode)
-	_, _ = io.Copy(w, resp.Body)
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, resp.StatusCode, resp.Header.Clone(), fmt.Errorf("reading proxy response: %w", err)
+	}
+
+	return data, resp.StatusCode, resp.Header.Clone(), nil
+}
+
+func (s *service) runtimeStoragePublicURL(key string) string {
+	if prefix := strings.TrimSpace(s.proxyService.S3PublicURLPrefix()); prefix != "" {
+		return strings.TrimRight(prefix, "/") + "/" + key
+	}
+
+	bucket := strings.TrimSpace(s.proxyService.S3Bucket())
+	return strings.TrimRight(s.proxyService.URL(), "/") + "/s3/" + bucket + "/" + key
+}
+
+func runtimeExecutionID(ctx context.Context) string {
+	value, _ := ctx.Value(runtimeExecutionIDKey).(string)
+	return value
 }
 
 func authOwnerID(r *http.Request) string {
@@ -364,18 +574,6 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeAPIError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
-}
-
-func copyHeaders(dst, src http.Header) {
-	for key := range dst {
-		dst.Del(key)
-	}
-
-	for key, values := range src {
-		for _, value := range values {
-			dst.Add(key, value)
-		}
-	}
 }
 
 func operationExtensionName(operationID string) string {

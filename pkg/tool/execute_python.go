@@ -14,8 +14,6 @@ import (
 	"github.com/ethpandaops/mcp/pkg/auth"
 	"github.com/ethpandaops/mcp/pkg/config"
 	"github.com/ethpandaops/mcp/pkg/execsvc"
-	"github.com/ethpandaops/mcp/pkg/extension"
-	"github.com/ethpandaops/mcp/pkg/proxy"
 	"github.com/ethpandaops/mcp/pkg/sandbox"
 )
 
@@ -61,7 +59,7 @@ func (c *resourceTipCache) cleanupLocked() {
 }
 
 const resourceTipMessage = `
-TIP: Read mcp://getting-started for cluster rules and workflow guidance.`
+TIP: Read ethpandaops://getting-started for cluster rules and workflow guidance.`
 
 const (
 	ExecutePythonToolName = "execute_python"
@@ -72,7 +70,7 @@ const (
 
 const executePythonDescription = `Execute Python code with the ethpandaops library for Ethereum data analysis.
 
-**BEFORE YOUR FIRST QUERY:** Read mcp://getting-started for workflow guidance and critical syntax rules.
+**BEFORE YOUR FIRST QUERY:** Read ethpandaops://getting-started for workflow guidance and critical syntax rules.
 
 Use the search tool with ` + "`type=\"examples\"`" + ` for query patterns. Reuse session_id from responses.`
 
@@ -80,8 +78,7 @@ func NewExecutePythonTool(
 	log logrus.FieldLogger,
 	sandboxSvc sandbox.Service,
 	cfg *config.Config,
-	extensionReg *extension.Registry,
-	proxySvc proxy.Service,
+	service *execsvc.Service,
 ) Definition {
 	return Definition{
 		Tool: mcp.Tool{
@@ -108,7 +105,7 @@ func NewExecutePythonTool(
 				Required: []string{"code"},
 			},
 		},
-		Handler: newExecutePythonHandler(log, sandboxSvc, cfg, extensionReg, proxySvc),
+		Handler: newExecutePythonHandler(log, sandboxSvc, cfg, service),
 	}
 }
 
@@ -116,11 +113,9 @@ func newExecutePythonHandler(
 	log logrus.FieldLogger,
 	sandboxSvc sandbox.Service,
 	cfg *config.Config,
-	extensionReg *extension.Registry,
-	proxySvc proxy.Service,
+	service *execsvc.Service,
 ) Handler {
 	handlerLog := log.WithField("tool", ExecutePythonToolName)
-	service := execsvc.New(log, sandboxSvc, cfg, extensionReg, proxySvc)
 
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		code, err := request.RequireString("code")
@@ -227,12 +222,6 @@ func formatExecutionResult(result *sandbox.ExecutionResult, cfg *config.Config) 
 	}
 
 	parts = append(parts, fmt.Sprintf("[exit=%d duration=%.2fs]", result.ExitCode, result.DurationSeconds))
-
-	if cfg.Storage != nil && strings.Contains(cfg.Storage.PublicURLPrefix, "localhost") {
-		if strings.Contains(result.Stdout, "localhost") {
-			parts = append(parts, "[note] Storage URLs use localhost - these are accessible to the user.")
-		}
-	}
 
 	return strings.Join(parts, "\n")
 }

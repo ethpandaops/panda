@@ -1,4 +1,4 @@
-.PHONY: build build-mcp build-cli build-proxy install install-mcp install-cli install-proxy install-search-assets test lint clean docker docker-push docker-sandbox test-sandbox run help download-models clean-models setup-hooks
+.PHONY: build build-mcp build-cli build-proxy install install-mcp install-cli install-proxy test lint clean docker docker-push docker-sandbox test-sandbox run help download-models clean-models setup-hooks
 
 # Embedding model and shared library configuration
 # Downloaded from HuggingFace and kelindar/search GitHub repo
@@ -98,13 +98,8 @@ docker-push: docker ## Push Docker image
 docker-sandbox: ## Build sandbox Docker image
 	docker build -t ethpandaops-mcp-sandbox:latest -f sandbox/Dockerfile .
 
-test-sandbox: build-mcp docker-sandbox ## Test sandbox execution (requires .env)
-	@if [ -f .env ]; then \
-		set -a && . .env && set +a && ./mcp test; \
-	else \
-		echo "Error: .env file not found. Copy .env.example and configure it."; \
-		exit 1; \
-	fi
+test-sandbox: ## Run sandbox package tests
+	go test -race -v ./pkg/sandbox/...
 
 run: build-mcp download-models ## Run the server with stdio transport
 	./mcp serve
@@ -121,7 +116,7 @@ stop-docker: ## Stop docker compose services
 logs: ## View docker compose logs
 	docker compose logs -f mcp-server
 
-install: install-mcp install-cli install-search-assets ## Install primary binaries and search assets to GOBIN
+install: install-mcp install-cli ## Install primary binaries to GOBIN
 
 install-mcp: ## Install the MCP server binary to GOBIN
 	@mkdir -p $(GOBIN)
@@ -142,11 +137,6 @@ install-cli: ## Install the CLI binary to GOBIN
 install-proxy: ## Install the standalone proxy binary to GOBIN
 	@mkdir -p $(GOBIN)
 	go build -ldflags "$(LDFLAGS)" -o $(GOBIN)/proxy ./cmd/proxy
-
-install-search-assets: download-models ## Install search runtime assets next to installed binaries
-	@mkdir -p $(GOBIN)/models
-	cp $(EMBEDDING_MODEL_PATH) $(GOBIN)/models/MiniLM-L6-v2.Q8_0.gguf
-	cp $(LLAMA_LIB_PATH) $(GOBIN)/$(LLAMA_LIB_FILENAME)
 
 setup-hooks: ## Install git pre-commit hooks
 	git config core.hooksPath .githooks

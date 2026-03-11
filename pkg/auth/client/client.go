@@ -43,6 +43,10 @@ type Config struct {
 	// ClientID is the OAuth client ID.
 	ClientID string
 
+	// Resource is the OAuth protected resource to request tokens for.
+	// Defaults to IssuerURL when omitted.
+	Resource string
+
 	// RedirectPort is the local port for the callback server.
 	RedirectPort int
 
@@ -72,6 +76,10 @@ type OIDCConfig struct {
 func New(log logrus.FieldLogger, cfg Config) Client {
 	if cfg.RedirectPort == 0 {
 		cfg.RedirectPort = 8085
+	}
+
+	if cfg.Resource == "" {
+		cfg.Resource = strings.TrimSuffix(cfg.IssuerURL, "/")
 	}
 
 	if len(cfg.Scopes) == 0 {
@@ -159,6 +167,7 @@ func (c *client) Refresh(ctx context.Context, refreshToken string) (*Tokens, err
 		"grant_type":    {"refresh_token"},
 		"refresh_token": {refreshToken},
 		"client_id":     {c.cfg.ClientID},
+		"resource":      {c.cfg.Resource},
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.oidc.TokenEndpoint, strings.NewReader(data.Encode()))
@@ -183,9 +192,14 @@ func (c *client) Refresh(ctx context.Context, refreshToken string) (*Tokens, err
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
+	resolvedRefreshToken := tokenResp.RefreshToken
+	if resolvedRefreshToken == "" {
+		resolvedRefreshToken = refreshToken
+	}
+
 	return &Tokens{
 		AccessToken:  tokenResp.AccessToken,
-		RefreshToken: tokenResp.RefreshToken,
+		RefreshToken: resolvedRefreshToken,
 		TokenType:    tokenResp.TokenType,
 		ExpiresIn:    tokenResp.ExpiresIn,
 		ExpiresAt:    time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second),
@@ -258,6 +272,7 @@ func (c *client) buildAuthURL(state, challenge string) string {
 		"client_id":             {c.cfg.ClientID},
 		"redirect_uri":          {redirectURI},
 		"scope":                 {strings.Join(c.cfg.Scopes, " ")},
+		"resource":              {c.cfg.Resource},
 		"state":                 {state},
 		"code_challenge":        {challenge},
 		"code_challenge_method": {"S256"},
@@ -332,6 +347,7 @@ func (c *client) exchangeCode(ctx context.Context, code, verifier string) (*Toke
 		"redirect_uri":  {redirectURI},
 		"client_id":     {c.cfg.ClientID},
 		"code_verifier": {verifier},
+		"resource":      {c.cfg.Resource},
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.oidc.TokenEndpoint, strings.NewReader(data.Encode()))

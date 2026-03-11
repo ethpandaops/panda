@@ -94,7 +94,7 @@ Before collecting data, determine which datasources have the target network. Thi
 
 ## Phase 1: Data Collection with Dora
 
-**Skip this phase if Phase 0 determined `has_dora = false`.** If `has_ethnode = true`, use the ethnode extension (`search(type="examples", query="ethnode")` for patterns) to build a partial baseline: query head slots/roots, finality checkpoints, and sync status across the discovered instances. This helps answer the baseline questions in step 2 (single fork vs split, finalizing, which nodes are behind) without Dora. Append results to the debug report, then proceed to Phase 2.
+**Skip this phase if Phase 0 determined `has_dora = false`.** If `has_ethnode = true`, use the ethnode module (`search(type="examples", query="ethnode")` for patterns) to build a partial baseline: query head slots/roots, finality checkpoints, and sync status across the discovered instances. This helps answer the baseline questions in step 2 (single fork vs split, finalizing, which nodes are behind) without Dora. Append results to the debug report, then proceed to Phase 2.
 
 1. **Collect all Dora data** - In a single step, gather all network data and append raw responses to the debug report. You MAY combine these into one `execute_python` call:
 
@@ -209,7 +209,7 @@ This concludes the **data collection phase**. If Dora was available, you should 
 
 ### RPC Validation (requires `has_ethnode = true`)
 
-**If the ethnode extension is available**, use direct node RPC queries via `from ethpandaops import ethnode` to validate hypotheses and gather concrete proof. Use `search(type="examples", query="ethnode")` for API patterns. Target the instances discovered in Phase 0 or identified as problematic in Phases 1–2.
+**If the ethnode module is available**, use direct node RPC queries via `from ethpandaops import ethnode` to validate hypotheses and gather concrete proof. Use `search(type="examples", query="ethnode")` for API patterns. Target the instances discovered in Phase 0 or identified as problematic in Phases 1–2.
 
 **When to use RPC:**
 - **Network split suspected** → compare head slots/roots and finality checkpoints across nodes on different forks; fetch the divergence block from each side

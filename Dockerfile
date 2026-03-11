@@ -44,7 +44,7 @@ RUN go mod download
 # Copy source code
 COPY cmd/ cmd/
 COPY pkg/ pkg/
-COPY extensions/ extensions/
+COPY modules/ modules/
 COPY internal/ internal/
 COPY runbooks/ runbooks/
 

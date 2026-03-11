@@ -69,44 +69,85 @@ jobs:
       - name: Build MCP server
         run: go build -o mcp ./cmd/mcp
 
-      - name: Create CI config
+      - name: Build proxy
+        run: go build -o proxy ./cmd/proxy
+
+      - name: Download semantic search assets
+        run: make download-models
+
+      - name: Create CI configs
         run: |
+          cat > proxy-config.ci.yaml << 'EOF'
+          server:
+            listen_addr: ":18081"
+
+          auth:
+            mode: none
+
+          clickhouse:
+            - name: xatu
+              description: "Main Xatu ClickHouse cluster"
+              host: "${{ secrets.CLICKHOUSE_XATU_HOST }}"
+              port: 8443
+              database: default
+              username: "${{ secrets.CLICKHOUSE_XATU_USERNAME }}"
+              password: "${{ secrets.CLICKHOUSE_XATU_PASSWORD }}"
+              secure: true
+            - name: xatu-cbt
+              description: "Pre-aggregated CBT ClickHouse cluster"
+              host: "${{ secrets.CLICKHOUSE_CBT_HOST }}"
+              port: 8443
+              database: default
+              username: "${{ secrets.CLICKHOUSE_CBT_USERNAME }}"
+              password: "${{ secrets.CLICKHOUSE_CBT_PASSWORD }}"
+              secure: true
+
+          s3:
+            endpoint: "${{ secrets.S3_ENDPOINT }}"
+            access_key: "${{ secrets.S3_ACCESS_KEY_ID }}"
+            secret_key: "${{ secrets.S3_SECRET_ACCESS_KEY }}"
+            bucket: "${{ secrets.S3_BUCKET }}"
+            region: "${{ secrets.S3_REGION }}"
+          EOF
+
           cat > config.ci.yaml << 'EOF'
           server:
             host: "0.0.0.0"
             port: 2480
+            base_url: "http://127.0.0.1:2480"
+            sandbox_url: "http://127.0.0.1:2480"
+            transport: streamable-http
 
-          auth:
-            enabled: false
-
-          plugins:
+          modules:
             clickhouse:
-              clusters:
-                - name: xatu
-                  host: "${{ secrets.CLICKHOUSE_XATU_HOST }}"
-                  database: default
-                  username: "${{ secrets.CLICKHOUSE_XATU_USERNAME }}"
-                  password: "${{ secrets.CLICKHOUSE_XATU_PASSWORD }}"
-                  secure: true
-                - name: xatu-cbt
-                  host: "${{ secrets.CLICKHOUSE_CBT_HOST }}"
-                  database: default
-                  username: "${{ secrets.CLICKHOUSE_CBT_USERNAME }}"
-                  password: "${{ secrets.CLICKHOUSE_CBT_PASSWORD }}"
-                  secure: true
+              schema_discovery:
+                datasources:
+                  - name: "xatu"
+                  - name: "xatu-cbt"
 
           sandbox:
+            backend: docker
             image: "ghcr.io/ethpandaops/mcp-sandbox:latest"
+            network: "host"
 
-          storage:
-            type: "s3"
-            s3:
-              bucket: "${{ secrets.S3_BUCKET }}"
-              region: "${{ secrets.S3_REGION }}"
-              endpoint: "${{ secrets.S3_ENDPOINT }}"
-              access_key_id: "${{ secrets.S3_ACCESS_KEY_ID }}"
-              secret_access_key: "${{ secrets.S3_SECRET_ACCESS_KEY }}"
+          proxy:
+            url: "http://127.0.0.1:18081"
+
+          semantic_search:
+            model_path: "models/MiniLM-L6-v2.Q8_0.gguf"
           EOF
+
+      - name: Start proxy
+        run: |
+          ./proxy --config proxy-config.ci.yaml &
+          for i in {1..30}; do
+            if curl -s http://localhost:18081/health > /dev/null 2>&1; then
+              echo "Proxy is ready"
+              break
+            fi
+            echo "Waiting for proxy... ($i/30)"
+            sleep 2
+          done
 
       - name: Start MCP server
         run: |

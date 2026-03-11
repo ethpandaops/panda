@@ -13,8 +13,6 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
-
-	"github.com/ethpandaops/mcp/pkg/config"
 )
 
 // Error sentinels for GitHub OAuth operations.
@@ -45,11 +43,11 @@ type Client struct {
 }
 
 // NewClient creates a new GitHub OAuth client.
-func NewClient(log logrus.FieldLogger, cfg *config.GitHubConfig) *Client {
+func NewClient(log logrus.FieldLogger, clientID, clientSecret string) *Client {
 	return &Client{
 		log:          log.WithField("component", "github_client"),
-		clientID:     cfg.ClientID,
-		clientSecret: cfg.ClientSecret,
+		clientID:     clientID,
+		clientSecret: clientSecret,
 		httpClient: &http.Client{
 			Timeout: defaultTimeout,
 		},

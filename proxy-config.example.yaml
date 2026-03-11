@@ -19,32 +19,22 @@ server:
 auth:
   # Authentication mode:
   # - "none": No authentication (for local development only - DEFAULT)
-  # - "token": Local per-execution tokens
-  # - "jwt": JWT validation against JWKS endpoint (for production K8s deployments)
-  mode: none  # Use 'jwt' for production
+  # - "oauth": Hosted proxy auth flow backed by GitHub OAuth
+  mode: none  # Use 'oauth' for hosted remote access
 
-  # Token TTL (only used when mode is "token")
-  # token_ttl: 1h
+  # GitHub OAuth app config (required when mode is "oauth")
+  # github:
+  #   client_id: "${GITHUB_CLIENT_ID}"
+  #   client_secret: "${GITHUB_CLIENT_SECRET}"
 
-  # JWT configuration (only used when mode is "jwt")
-  # jwt:
-  #   # JWKS URL for JWT validation (e.g., from Dex)
-  #   jwks_url: "${DEX_JWKS_URL}"
-  #
-  #   # Expected token issuer
-  #   issuer: "${DEX_ISSUER_URL}"
-  #
-  #   # Expected token audience (optional)
-  #   audience: "ethpandaops-proxy"
-  #
-  #   # Allowed GitHub organizations
-  #   # Users must be members of at least one of these orgs
-  #   allowed_orgs:
-  #     - ethpandaops
-  #     - sigp
-  #
-  #   # How often to refresh the JWKS cache
-  #   refresh_interval: 1h
+  # Limit remote access to selected GitHub orgs
+  # allowed_orgs:
+  #   - ethpandaops
+  #   - sigp
+
+  # Proxy-issued bearer token signing key
+  # tokens:
+  #   secret_key: "${PROXY_TOKEN_SECRET}"
 
 # ClickHouse clusters
 clickhouse:

@@ -1,17 +1,36 @@
-# CLAUDE.md
+# Repository Guide
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to coding agents working in this repository.
 
 ## Project Overview
 
-ethpandaops/mcp is a server + proxy system for Ethereum analytics. The server exposes MCP tools plus a product HTTP API, runs sandboxed Python locally or in deployment, and delegates datasource access to a separate credential proxy.
+ethpandaops/mcp is a server + proxy system for Ethereum analytics. The server is the only product API boundary, runs sandboxed Python locally, and delegates credentialed upstream access to a separate proxy.
 
 The architecture is:
 - `ep` talks to `server`
 - `server` talks to `proxy`
 - `proxy` talks to datasources
 
-Extensions provide integration-specific metadata and behavior for ClickHouse, Prometheus, Loki, Dora, and Ethnode.
+Modules provide integration-specific metadata and behavior for ClickHouse, Prometheus, Loki, Dora, and Ethnode.
+
+See `docs/architecture.md` for the canonical boundary definition.
+
+## Architectural Guardrails
+
+- `server` is the only public/runtime API boundary for `ep`, MCP clients, and sandbox code
+- sandboxed Python calls back into `server`, never directly into `proxy`
+- `proxy` is a thin credentialed upstream gateway, not a product operations API
+- module behavior is exposed through `execute_python`, resources, docs, and search; do not add per-module MCP tools
+- use the top-level config key `modules:` for integrations
+
+## Supported Deployment Modes
+
+Only two deployment modes are supported:
+
+1. all local: `ep -> local server -> local proxy`
+2. local server + hosted proxy: `ep -> local server -> hosted proxy`
+
+In both modes, sandbox code still executes locally and calls back into local `server`.
 
 ## Commands
 
@@ -22,7 +41,7 @@ make build-proxy             # Build standalone proxy binary
 make docker                   # Build Docker image
 make docker-sandbox           # Build sandbox container image
 make download-models          # Download embedding model + libllama for local search
-make install                  # Install mcp + ep and search assets into GOBIN
+make install                  # Install mcp + ep binaries into GOBIN
 
 # Test
 make test                     # Run tests with race detector
@@ -60,53 +79,56 @@ uv run python -m scripts.repl
 
 ### Key Components
 
-- **App kernel** (`pkg/app/`): Shared server-side initialization for the extension registry, proxy client, sandbox, cartographoor, and search indices
-- **Server** (`pkg/server/`, `cmd/mcp/`): Control plane for MCP transports, product HTTP API, auth, resource/tool registration, and sandbox orchestration
+- **App kernel** (`pkg/app/`): Shared server-side initialization for the module registry, proxy client, sandbox, cartographoor, and search indices
+- **Server** (`pkg/server/`, `cmd/mcp/`): Control plane for MCP transports, product HTTP API, resource/tool registration, and sandbox orchestration
 - **CLI** (`pkg/cli/`, `cmd/cli/`): HTTP client for the server API with human-friendly output
-- **Credential proxy** (`pkg/proxy/`, `cmd/proxy/`): Trust boundary that holds datasource and S3 credentials and executes extension operations against upstream systems
+- **Credential proxy** (`pkg/proxy/`, `cmd/proxy/`): Trust boundary that holds datasource and S3 credentials and executes raw upstream requests on behalf of the server
 - **Sandbox** (`pkg/sandbox/`): Data plane that executes Python in isolated containers (Docker for dev, gVisor for production)
-- **Extensions** (`extensions/`): Per-integration packages that provide config, examples, docs, resources, and operation behavior
+- **Modules** (`modules/`): Per-integration packages that provide config, examples, docs, resources, and server-side operation behavior
 
 ### Data Flow
 
 1. `ep` or an MCP client connects to `server`
-2. `server` builds a credential-free sandbox environment with proxy URL, auth token, and datasource metadata
-3. Sandbox code and server-side operations access data through `proxy`
-4. `proxy` validates auth and forwards requests to ClickHouse, Prometheus, Loki, S3, Dora, or Ethnode upstreams
+2. `server` builds a credential-free sandbox environment with server runtime tokens and datasource metadata
+3. sandbox code calls back into `server` for operations and storage
+4. `server` calls `proxy` for credentialed upstream access
+5. `proxy` validates proxy-scoped auth and forwards requests to ClickHouse, Prometheus, Loki, S3, or Ethnode upstreams
 
-### Extension System
+### Module System
 
-Five compiled-in extensions are registered in `pkg/app/app.go`:
+Five compiled-in modules are registered in `pkg/app/app.go`:
 - `clickhouse`
 - `prometheus`
 - `loki`
 - `dora`
 - `ethnode`
 
-Each extension implements `extension.Extension` in [pkg/extension/extension.go](/Users/samcm/go/src/github.com/ethpandaops/mcp/pkg/extension/extension.go). Optional interfaces:
+Each module implements `module.Module` in `pkg/module/module.go`. Optional capability interfaces live alongside it in `pkg/module/module.go`.
 - `ProxyAware` — receives proxy client for proxy-backed operations
 - `CartographoorAware` — receives network discovery client
 - `DefaultEnabled` — activates without explicit config
+- provider interfaces such as sandbox env, datasource info, examples, Python docs, getting-started snippets, and resources are optional and capability-based
 
 ### Server Startup Order
 
-1. Extension registry (register + init all configured/default-enabled extensions)
+1. Module registry (register + init all configured/default-enabled modules)
 2. Sandbox service
 3. Proxy client
-4. Inject proxy into `ProxyAware` extensions and start extensions
+4. Inject proxy into `ProxyAware` modules and start modules
 5. Cartographoor client
-6. Auth service
-7. Semantic search runtime
-8. MCP tool registry: `execute_python`, `manage_session`, `search`
-9. MCP resource registry
-10. Product HTTP API
+6. Semantic search runtime
+7. MCP tool registry: `execute_python`, `manage_session`, `search`
+8. MCP resource registry
+9. Product HTTP API
 
 ### Public Surfaces
 
-MCP tools:
+MCP tools (exactly 3 — this is intentional and must not be expanded; do not add new MCP tools):
 - `execute_python`
 - `manage_session`
 - `search`
+
+All module functionality is exposed to MCP clients through `execute_python`. Modules that want to be usable in an MCP context must provide Python libraries, examples, and documentation so that the LLM can generate Python code that queries the module's datasources via the sandbox. There are no per-module MCP tools — the Python sandbox is the universal interface.
 
 CLI commands:
 - `datasources`
@@ -115,7 +137,7 @@ CLI commands:
 - `execute`
 - `session`
 - `search`
-- extension command groups such as `clickhouse`, `prometheus`, `loki`, `dora`, and `ethnode`
+- module command groups such as `clickhouse`, `prometheus`, `loki`, `dora`, and `ethnode`
 
 The proxy is a separate binary, built with `make build-proxy`.
 
@@ -146,7 +168,7 @@ proxy:
     issuer_url: "..."
     client_id: "..."
 
-extensions:
+modules:
   clickhouse:
     schema_discovery:
       datasources: [...]
@@ -174,7 +196,7 @@ cmd/proxy/         # Credential proxy binary entry point
 pkg/
   app/             # Shared server-side application kernel
   cli/             # CLI command definitions
-  extension/       # Extension interface and registry
+  module/          # Module interface and registry
   server/          # Server builder, HTTP API, MCP transport
   proxy/           # Proxy client/server, auth, handlers
   sandbox/         # Sandboxed execution backends and sessions
@@ -185,12 +207,12 @@ pkg/
   config/          # Configuration loading and validation
   observability/   # Prometheus metrics
   types/           # Shared data types
-extensions/
-  clickhouse/      # ClickHouse extension
-  prometheus/      # Prometheus extension
-  loki/            # Loki extension
-  dora/            # Dora extension
-  ethnode/         # Ethnode extension
+modules/
+  clickhouse/      # ClickHouse module
+  prometheus/      # Prometheus module
+  loki/            # Loki module
+  dora/            # Dora module
+  ethnode/         # Ethnode module
 runbooks/          # Embedded markdown runbooks
 sandbox/           # Sandbox Docker image
 tests/eval/        # LLM evaluation harness

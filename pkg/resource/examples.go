@@ -8,12 +8,12 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/sirupsen/logrus"
 
-	"github.com/ethpandaops/mcp/pkg/extension"
+	"github.com/ethpandaops/mcp/pkg/module"
 	"github.com/ethpandaops/mcp/pkg/types"
 )
 
 // RegisterExamplesResources registers the examples://queries resource.
-func RegisterExamplesResources(log logrus.FieldLogger, reg Registry, extensionReg *extension.Registry) {
+func RegisterExamplesResources(log logrus.FieldLogger, reg Registry, moduleReg *module.Registry) {
 	log = log.WithField("resource", "examples")
 
 	reg.RegisterStatic(StaticResource{
@@ -24,17 +24,15 @@ func RegisterExamplesResources(log logrus.FieldLogger, reg Registry, extensionRe
 			mcp.WithMIMEType("application/json"),
 			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.6),
 		),
-		Handler: createExamplesHandler(extensionReg),
+		Handler: createExamplesHandler(moduleReg),
 	})
 
 	log.Debug("Registered examples resources")
 }
 
-func createExamplesHandler(extensionReg *extension.Registry) ReadHandler {
+func createExamplesHandler(moduleReg *module.Registry) ReadHandler {
 	return func(_ context.Context, _ string) (string, error) {
-		// Use AllExamples to include examples from all extensions,
-		// not just initialized ones (examples don't need credentials).
-		examples := extensionReg.AllExamples()
+		examples := moduleReg.Examples()
 
 		data, err := json.MarshalIndent(examples, "", "  ")
 		if err != nil {
@@ -45,8 +43,7 @@ func createExamplesHandler(extensionReg *extension.Registry) ReadHandler {
 	}
 }
 
-// GetQueryExamples returns all query examples from ALL registered extensions,
-// regardless of initialization status. Examples are static embedded data.
-func GetQueryExamples(extensionReg *extension.Registry) map[string]types.ExampleCategory {
-	return extensionReg.AllExamples()
+// GetQueryExamples returns query examples from initialized modules only.
+func GetQueryExamples(moduleReg *module.Registry) map[string]types.ExampleCategory {
+	return moduleReg.Examples()
 }

@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/sirupsen/logrus"
 
+	simpleauth "github.com/ethpandaops/mcp/pkg/auth"
 	"github.com/ethpandaops/mcp/pkg/proxy/handlers"
 	"github.com/ethpandaops/mcp/pkg/types"
 )
@@ -45,16 +48,15 @@ type server struct {
 	log     logrus.FieldLogger
 	cfg     ServerConfig
 	httpSrv *http.Server
-	mux     *http.ServeMux
+	mux     *chi.Mux
 	url     string
 
 	authenticator Authenticator
+	authService   simpleauth.SimpleService
 	rateLimiter   *RateLimiter
 	auditor       *Auditor
-	tokens        *TokenStore
 
 	clickhouseHandler *handlers.ClickHouseHandler
-	operationsHandler *handlers.OperationsHandler
 	prometheusHandler *handlers.PrometheusHandler
 	lokiHandler       *handlers.LokiHandler
 	s3Handler         *handlers.S3Handler
@@ -81,7 +83,7 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 	s := &server{
 		log: log.WithField("component", "proxy"),
 		cfg: cfg,
-		mux: http.NewServeMux(),
+		mux: chi.NewRouter(),
 		url: hostURL,
 	}
 
@@ -89,16 +91,21 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 	switch cfg.Auth.Mode {
 	case AuthModeNone:
 		s.authenticator = NewNoneAuthenticator(log)
-	case AuthModeToken:
-		s.tokens = NewTokenStore(cfg.Auth.TokenTTL)
-		s.authenticator = NewTokenAuthenticator(log, s.tokens)
-	case AuthModeJWT:
-		if cfg.Auth.JWT == nil {
-			return nil, fmt.Errorf("JWT config is required for JWT auth mode")
+	case AuthModeOAuth:
+		authCfg := simpleauth.Config{
+			Enabled:     true,
+			GitHub:      cfg.Auth.GitHub,
+			AllowedOrgs: append([]string(nil), cfg.Auth.AllowedOrgs...),
+			Tokens:      cfg.Auth.Tokens,
 		}
 
-		validator := NewJWTValidator(log, *cfg.Auth.JWT)
-		s.authenticator = NewJWTAuthenticator(log, validator)
+		authSvc, err := simpleauth.NewSimpleService(log, authCfg, s.url)
+		if err != nil {
+			return nil, fmt.Errorf("creating proxy auth service: %w", err)
+		}
+
+		s.authService = authSvc
+		s.authenticator = NewSimpleServiceAuthenticator(authSvc)
 	default:
 		return nil, fmt.Errorf("unsupported auth mode: %s", cfg.Auth.Mode)
 	}
@@ -142,8 +149,6 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 		s.ethNodeHandler = handlers.NewEthNodeHandler(log, *ethNodeConfig)
 	}
 
-	s.operationsHandler = handlers.NewOperationsHandler(log, chConfigs, promConfigs, lokiConfigs, ethNodeConfig)
-
 	if s.url == "" {
 		s.url = fmt.Sprintf("http://localhost:%s", port)
 	}
@@ -178,36 +183,44 @@ func (s *server) registerRoutes() {
 	})
 
 	// Datasources info endpoint (for discovery by MCP server and Python modules).
-	s.mux.HandleFunc("/datasources", s.handleDatasources)
-
 	// Build middleware chain.
 	chain := s.buildMiddlewareChain()
 
-	// Authenticated routes.
-	if s.clickhouseHandler != nil {
-		s.mux.Handle("/clickhouse/", chain(s.clickhouseHandler))
+	if s.authService != nil {
+		s.authService.MountRoutes(s.mux)
 	}
 
-	if s.operationsHandler != nil {
-		s.mux.Handle("/api/v1/operations/", chain(s.operationsHandler))
+	s.mux.Handle("/datasources", chain(http.HandlerFunc(s.handleDatasources)))
+
+	// Authenticated routes.
+	if s.clickhouseHandler != nil {
+		s.handleSubtreeRoute("/clickhouse", chain(s.clickhouseHandler))
 	}
 
 	if s.prometheusHandler != nil {
-		s.mux.Handle("/prometheus/", chain(s.prometheusHandler))
+		s.handleSubtreeRoute("/prometheus", chain(s.prometheusHandler))
 	}
 
 	if s.lokiHandler != nil {
-		s.mux.Handle("/loki/", chain(s.lokiHandler))
+		s.handleSubtreeRoute("/loki", chain(s.lokiHandler))
 	}
 
 	if s.s3Handler != nil {
-		s.mux.Handle("/s3/", chain(s.s3Handler))
+		s.handleSubtreeRoute("/s3", chain(s.s3Handler))
 	}
 
 	if s.ethNodeHandler != nil {
-		s.mux.Handle("/beacon/", chain(s.ethNodeHandler))
-		s.mux.Handle("/execution/", chain(s.ethNodeHandler))
+		s.handleSubtreeRoute("/beacon", chain(s.ethNodeHandler))
+		s.handleSubtreeRoute("/execution", chain(s.ethNodeHandler))
 	}
+}
+
+func (s *server) handleSubtreeRoute(pattern string, handler http.Handler) {
+	base := strings.TrimSuffix(pattern, "/")
+
+	s.mux.Handle(base, handler)
+	s.mux.Handle(base+"/", handler)
+	s.mux.Handle(base+"/*", handler)
 }
 
 // buildMiddlewareChain builds the middleware chain for authenticated routes.
@@ -330,10 +343,6 @@ func (s *server) Stop(ctx context.Context) error {
 		s.rateLimiter.Stop()
 	}
 
-	if s.tokens != nil {
-		s.tokens.Stop()
-	}
-
 	// Shutdown HTTP server.
 	if s.httpSrv != nil {
 		if err := s.httpSrv.Shutdown(ctx); err != nil {
@@ -352,22 +361,11 @@ func (s *server) URL() string {
 	return s.url
 }
 
-// RegisterToken creates a token for the given execution ID.
 func (s *server) RegisterToken(executionID string) string {
-	if s.tokens == nil {
-		return "none"
-	}
-
-	return s.tokens.Register(executionID)
+	return "none"
 }
 
-// RevokeToken revokes a token for the given execution ID.
 func (s *server) RevokeToken(executionID string) {
-	if s.tokens == nil {
-		return
-	}
-
-	s.tokens.Revoke(executionID)
 }
 
 // ClickHouseDatasources returns the list of ClickHouse datasource names.

@@ -1,4 +1,4 @@
-"""Shared runtime for thin ethpandaops extension wrappers."""
+"""Shared runtime for thin ethpandaops module wrappers."""
 
 from __future__ import annotations
 
@@ -11,22 +11,22 @@ from typing import Any
 import httpx
 import pandas as pd
 
-_PROXY_URL = os.environ.get("ETHPANDAOPS_PROXY_URL", "")
-_PROXY_TOKEN = os.environ.get("ETHPANDAOPS_PROXY_TOKEN", "")
+_API_URL = os.environ.get("ETHPANDAOPS_API_URL", "")
+_API_TOKEN = os.environ.get("ETHPANDAOPS_API_TOKEN", "")
 
 
-def _check_proxy_config() -> None:
-    if not _PROXY_URL or not _PROXY_TOKEN:
+def _check_api_config() -> None:
+    if not _API_URL or not _API_TOKEN:
         raise ValueError(
-            "Proxy not configured. ETHPANDAOPS_PROXY_URL and ETHPANDAOPS_PROXY_TOKEN are required."
+            "Server API not configured. ETHPANDAOPS_API_URL and ETHPANDAOPS_API_TOKEN are required."
         )
 
 
 def _get_client() -> httpx.Client:
-    _check_proxy_config()
+    _check_api_config()
     return httpx.Client(
-        base_url=_PROXY_URL,
-        headers={"Authorization": f"Bearer {_PROXY_TOKEN}"},
+        base_url=_API_URL,
+        headers={"Authorization": f"Bearer {_API_TOKEN}"},
         timeout=httpx.Timeout(connect=5.0, read=300.0, write=60.0, pool=5.0),
     )
 
@@ -36,7 +36,7 @@ def _invoke_bytes(
 ) -> tuple[bytes, str]:
     payload = {"args": args or {}}
     with _get_client() as client:
-        response = client.post(f"/api/v1/operations/{operation}", json=payload)
+        response = client.post(f"/api/v1/runtime/operations/{operation}", json=payload)
         body = response.read()
         if not response.is_success:
             raise ValueError(
@@ -57,8 +57,8 @@ def _decode_json(body: bytes, operation: str) -> Any:
         return json.loads(body)
     except json.JSONDecodeError as exc:
         raise ValueError(
-            "Unsupported proxy response shape. "
-            "The proxy must implement /api/v1/operations/*."
+            "Unsupported server response shape. "
+            "The server must implement /api/v1/runtime/operations/*."
         ) from exc
 
 
@@ -68,8 +68,8 @@ def invoke(operation: str, args: dict[str, Any] | None = None) -> dict[str, Any]
 
     if not isinstance(data, dict) or "kind" not in data:
         raise ValueError(
-            "Unsupported proxy response shape. "
-            "The proxy must implement /api/v1/operations/*."
+            "Unsupported server response shape. "
+            "The server must implement /api/v1/runtime/operations/*."
         )
 
     return data

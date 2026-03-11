@@ -487,7 +487,7 @@ func filterSessionEnv(env map[string]string) map[string]string {
 
 	filtered := make(map[string]string, len(env))
 	for k, v := range env {
-		if k == "ETHPANDAOPS_PROXY_TOKEN" {
+		if k == "ETHPANDAOPS_API_TOKEN" {
 			continue
 		}
 		filtered[k] = v

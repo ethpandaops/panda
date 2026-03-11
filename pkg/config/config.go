@@ -2,6 +2,7 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -17,43 +18,23 @@ import (
 // Config is the main configuration structure.
 type Config struct {
 	Server         ServerConfig         `yaml:"server"`
-	Extensions     map[string]yaml.Node `yaml:"extensions"`
-	Auth           AuthConfig           `yaml:"auth"`
+	Modules        map[string]yaml.Node `yaml:"modules,omitempty"`
 	Sandbox        SandboxConfig        `yaml:"sandbox"`
 	Proxy          ProxyConfig          `yaml:"proxy"`
-	Storage        *StorageConfig       `yaml:"storage,omitempty"`
 	Observability  ObservabilityConfig  `yaml:"observability"`
 	SemanticSearch SemanticSearchConfig `yaml:"semantic_search"`
 
 	path string `yaml:"-"`
 }
 
-// AuthConfig holds authentication configuration.
-type AuthConfig struct {
-	Enabled     bool          `yaml:"enabled"`
-	GitHub      *GitHubConfig `yaml:"github,omitempty"`
-	AllowedOrgs []string      `yaml:"allowed_orgs,omitempty"`
-	Tokens      TokensConfig  `yaml:"tokens"`
-}
-
-// GitHubConfig holds GitHub OAuth configuration.
-type GitHubConfig struct {
-	ClientID     string `yaml:"client_id"`
-	ClientSecret string `yaml:"client_secret"`
-}
-
-// TokensConfig holds JWT token configuration.
-type TokensConfig struct {
-	SecretKey string `yaml:"secret_key"`
-}
-
 // ServerConfig holds server-specific configuration.
 type ServerConfig struct {
-	Host      string `yaml:"host"`
-	Port      int    `yaml:"port"`
-	BaseURL   string `yaml:"base_url"`
-	URL       string `yaml:"url,omitempty"`
-	Transport string `yaml:"transport"`
+	Host       string `yaml:"host"`
+	Port       int    `yaml:"port"`
+	BaseURL    string `yaml:"base_url"`
+	SandboxURL string `yaml:"sandbox_url,omitempty"`
+	URL        string `yaml:"url,omitempty"`
+	Transport  string `yaml:"transport"`
 }
 
 // SemanticSearchConfig holds configuration for semantic example search.
@@ -114,16 +95,6 @@ func (c *SessionConfig) IsEnabled() bool {
 	return *c.Enabled
 }
 
-// StorageConfig holds S3 storage configuration.
-type StorageConfig struct {
-	Endpoint        string `yaml:"endpoint"`
-	AccessKey       string `yaml:"access_key"`
-	SecretKey       string `yaml:"secret_key"`
-	Bucket          string `yaml:"bucket"`
-	Region          string `yaml:"region"`
-	PublicURLPrefix string `yaml:"public_url_prefix,omitempty"`
-}
-
 // ObservabilityConfig holds observability configuration.
 type ObservabilityConfig struct {
 	MetricsEnabled bool `yaml:"metrics_enabled"`
@@ -143,7 +114,7 @@ type ProxyConfig struct {
 
 // ProxyAuthConfig configures authentication for the proxy.
 type ProxyAuthConfig struct {
-	// IssuerURL is the OIDC issuer URL for JWT authentication.
+	// IssuerURL is the OAuth issuer URL for proxy authentication.
 	IssuerURL string `yaml:"issuer_url"`
 
 	// ClientID is the OAuth client ID for authentication.
@@ -169,7 +140,10 @@ func Load(path string) (*Config, error) {
 	}
 
 	var cfg Config
-	if err := yaml.Unmarshal([]byte(substituted), &cfg); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader([]byte(substituted)))
+	decoder.KnownFields(true)
+
+	if err := decoder.Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("parsing config: %w", err)
 	}
 
@@ -190,17 +164,17 @@ func (c *Config) Path() string {
 	return c.path
 }
 
-// ExtensionConfigYAML returns the raw YAML bytes for a given extension name.
-// Returns nil if the extension is not configured.
-func (c *Config) ExtensionConfigYAML(name string) ([]byte, error) {
-	node, ok := c.Extensions[name]
+// ModuleConfigYAML returns the raw YAML bytes for a given module name.
+// Returns nil if the module is not configured.
+func (c *Config) ModuleConfigYAML(name string) ([]byte, error) {
+	node, ok := c.Modules[name]
 	if !ok {
 		return nil, nil
 	}
 
 	data, err := yaml.Marshal(&node)
 	if err != nil {
-		return nil, fmt.Errorf("marshaling extension %q config: %w", name, err)
+		return nil, fmt.Errorf("marshaling module %q config: %w", name, err)
 	}
 
 	return data, nil

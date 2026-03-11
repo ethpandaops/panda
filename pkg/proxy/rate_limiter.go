@@ -154,7 +154,6 @@ func (rl *RateLimiter) cleanup() {
 // AuditEntry represents a single audit log entry.
 type AuditEntry struct {
 	UserID     string `json:"user_id"`
-	Email      string `json:"email,omitempty"`
 	Method     string `json:"method"`
 	Path       string `json:"path"`
 	Datasource string `json:"datasource"`
@@ -216,11 +215,6 @@ func (a *Auditor) Middleware() func(http.Handler) http.Handler {
 				Duration:   time.Since(start).String(),
 			}
 
-			// Add email if available from JWT claims.
-			if claims := GetJWTClaims(r.Context()); claims != nil {
-				entry.Email = claims.Email
-			}
-
 			// Add query if configured.
 			if a.cfg.LogQueries {
 				query := extractQuery(r, bodySnapshot)
@@ -234,7 +228,6 @@ func (a *Auditor) Middleware() func(http.Handler) http.Handler {
 			// Log the audit entry.
 			a.log.WithFields(logrus.Fields{
 				"user_id":    entry.UserID,
-				"email":      entry.Email,
 				"method":     entry.Method,
 				"path":       entry.Path,
 				"datasource": entry.Datasource,

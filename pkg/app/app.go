@@ -1,10 +1,9 @@
 // Package app provides the shared application core used by both the MCP server and the CLI.
-// It handles extension initialization, proxy connection, sandbox setup, and semantic search indices.
+// It handles module initialization, proxy connection, sandbox setup, and semantic search indices.
 package app
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -12,15 +11,15 @@ import (
 
 	"github.com/ethpandaops/mcp/pkg/cartographoor"
 	"github.com/ethpandaops/mcp/pkg/config"
-	"github.com/ethpandaops/mcp/pkg/extension"
+	"github.com/ethpandaops/mcp/pkg/module"
 	"github.com/ethpandaops/mcp/pkg/proxy"
 	"github.com/ethpandaops/mcp/pkg/sandbox"
 
-	clickhouseextension "github.com/ethpandaops/mcp/extensions/clickhouse"
-	doraextension "github.com/ethpandaops/mcp/extensions/dora"
-	ethnodeextension "github.com/ethpandaops/mcp/extensions/ethnode"
-	lokiextension "github.com/ethpandaops/mcp/extensions/loki"
-	prometheusextension "github.com/ethpandaops/mcp/extensions/prometheus"
+	clickhousemodule "github.com/ethpandaops/mcp/modules/clickhouse"
+	doramodule "github.com/ethpandaops/mcp/modules/dora"
+	ethnodemodule "github.com/ethpandaops/mcp/modules/ethnode"
+	lokimodule "github.com/ethpandaops/mcp/modules/loki"
+	prometheusmodule "github.com/ethpandaops/mcp/modules/prometheus"
 )
 
 // App contains the shared core components used by both the MCP server and CLI.
@@ -28,10 +27,10 @@ type App struct {
 	log logrus.FieldLogger
 	cfg *config.Config
 
-	ExtensionRegistry *extension.Registry
-	Sandbox           sandbox.Service
-	ProxyClient       proxy.Client
-	Cartographoor     cartographoor.CartographoorClient
+	ModuleRegistry *module.Registry
+	Sandbox        sandbox.Service
+	ProxyClient    proxy.Client
+	Cartographoor  cartographoor.CartographoorClient
 }
 
 // New creates a new App.
@@ -48,17 +47,17 @@ func (a *App) Config() *config.Config {
 }
 
 // Build initializes all shared components in dependency order:
-// extension registry -> sandbox -> proxy -> extensions start -> cartographoor -> search indices.
+// module registry -> sandbox -> proxy -> module startup -> cartographoor -> search indices.
 func (a *App) Build(ctx context.Context) error {
 	a.log.Info("Building application dependencies")
 
-	// 1. Build and initialize extension registry.
-	extensionReg, err := a.buildExtensionRegistry()
+	// 1. Build and initialize module registry.
+	moduleReg, err := a.buildModuleRegistry()
 	if err != nil {
-		return fmt.Errorf("building extension registry: %w", err)
+		return fmt.Errorf("building module registry: %w", err)
 	}
 
-	a.ExtensionRegistry = extensionReg
+	a.ModuleRegistry = moduleReg
 
 	// 2. Create and start sandbox service.
 	sandboxSvc, err := sandbox.New(a.cfg.Sandbox, a.log)
@@ -84,16 +83,16 @@ func (a *App) Build(ctx context.Context) error {
 	a.ProxyClient = proxyClient
 	a.log.WithField("url", proxyClient.URL()).Info("Proxy client connected")
 
-	// 4. Inject proxy client into extensions and start all extensions.
+	// 4. Inject proxy client into modules and start all modules.
 	a.injectProxyClient()
 
-	if err := a.ExtensionRegistry.StartAll(ctx); err != nil {
+	if err := a.ModuleRegistry.StartAll(ctx); err != nil {
 		a.stop(ctx)
 
-		return fmt.Errorf("starting extensions: %w", err)
+		return fmt.Errorf("starting modules: %w", err)
 	}
 
-	a.log.Info("All extensions started")
+	a.log.Info("All modules started")
 
 	// 5. Create and start cartographoor client.
 	cartographoorClient := cartographoor.NewCartographoorClient(a.log, cartographoor.CartographoorConfig{
@@ -111,89 +110,8 @@ func (a *App) Build(ctx context.Context) error {
 	a.Cartographoor = cartographoorClient
 	a.log.Info("Cartographoor client started")
 
-	// 6. Inject cartographoor client into extensions.
+	// 6. Inject cartographoor client into modules.
 	a.injectCartographoorClient()
-
-	return nil
-}
-
-// BuildLight initializes only the extension registry and proxy client.
-// Extensions are started (e.g., schema discovery) but sandbox, cartographoor,
-// and semantic search indices are not created.
-func (a *App) BuildLight(ctx context.Context) error {
-	a.log.Info("Building lightweight application dependencies")
-
-	extensionReg, err := a.buildExtensionRegistry()
-	if err != nil {
-		return fmt.Errorf("building extension registry: %w", err)
-	}
-
-	a.ExtensionRegistry = extensionReg
-
-	proxyClient := a.buildProxyClient()
-	if err := proxyClient.Start(ctx); err != nil {
-		return fmt.Errorf("starting proxy client: %w", err)
-	}
-
-	a.ProxyClient = proxyClient
-	a.log.WithField("url", proxyClient.URL()).Info("Proxy client connected")
-
-	a.injectProxyClient()
-
-	if err := a.ExtensionRegistry.StartAll(ctx); err != nil {
-		a.stop(ctx)
-
-		return fmt.Errorf("starting extensions: %w", err)
-	}
-
-	a.log.Info("All extensions started")
-
-	return nil
-}
-
-// BuildWithSandbox initializes extensions, proxy, and sandbox — but skips
-// cartographoor and semantic search indices. Used by the CLI execute command.
-func (a *App) BuildWithSandbox(ctx context.Context) error {
-	a.log.Info("Building application dependencies (with sandbox)")
-
-	extensionReg, err := a.buildExtensionRegistry()
-	if err != nil {
-		return fmt.Errorf("building extension registry: %w", err)
-	}
-
-	a.ExtensionRegistry = extensionReg
-
-	sandboxSvc, err := sandbox.New(a.cfg.Sandbox, a.log)
-	if err != nil {
-		return fmt.Errorf("building sandbox: %w", err)
-	}
-
-	if err := sandboxSvc.Start(ctx); err != nil {
-		return fmt.Errorf("starting sandbox: %w", err)
-	}
-
-	a.Sandbox = sandboxSvc
-	a.log.WithField("backend", sandboxSvc.Name()).Info("Sandbox service started")
-
-	proxyClient := a.buildProxyClient()
-	if err := proxyClient.Start(ctx); err != nil {
-		a.stop(ctx)
-
-		return fmt.Errorf("starting proxy client: %w", err)
-	}
-
-	a.ProxyClient = proxyClient
-	a.log.WithField("url", proxyClient.URL()).Info("Proxy client connected")
-
-	a.injectProxyClient()
-
-	if err := a.ExtensionRegistry.StartAll(ctx); err != nil {
-		a.stop(ctx)
-
-		return fmt.Errorf("starting extensions: %w", err)
-	}
-
-	a.log.Info("All extensions started")
 
 	return nil
 }
@@ -210,8 +128,8 @@ func (a *App) stop(ctx context.Context) {
 		_ = a.Cartographoor.Stop()
 	}
 
-	if a.ExtensionRegistry != nil {
-		a.ExtensionRegistry.StopAll(ctx)
+	if a.ModuleRegistry != nil {
+		a.ModuleRegistry.StopAll(ctx)
 	}
 
 	if a.ProxyClient != nil {
@@ -223,58 +141,58 @@ func (a *App) stop(ctx context.Context) {
 	}
 }
 
-func (a *App) buildExtensionRegistry() (*extension.Registry, error) {
-	reg := extension.NewRegistry(a.log)
+func (a *App) buildModuleRegistry() (*module.Registry, error) {
+	reg := module.NewRegistry(a.log)
 
-	// Register all compiled-in extensions.
-	reg.Add(clickhouseextension.New())
-	reg.Add(doraextension.New())
-	reg.Add(ethnodeextension.New())
-	reg.Add(lokiextension.New())
-	reg.Add(prometheusextension.New())
+	// Register all compiled-in modules.
+	reg.Add(clickhousemodule.New())
+	reg.Add(doramodule.New())
+	reg.Add(ethnodemodule.New())
+	reg.Add(lokimodule.New())
+	reg.Add(prometheusmodule.New())
 
-	// Initialize extensions that have config or are default-enabled.
+	// Initialize modules that have config or are default-enabled.
 	for _, name := range reg.All() {
-		rawYAML, err := a.cfg.ExtensionConfigYAML(name)
+		rawYAML, err := a.cfg.ModuleConfigYAML(name)
 		if err != nil {
-			return nil, fmt.Errorf("getting config for extension %q: %w", name, err)
+			return nil, fmt.Errorf("getting config for module %q: %w", name, err)
 		}
 
 		if rawYAML == nil {
-			// Check if the extension is default-enabled.
+			// Check if the module is default-enabled.
 			ext := reg.Get(name)
-			if de, ok := ext.(extension.DefaultEnabled); ok && de.DefaultEnabled() {
-				if err := reg.InitExtension(name, nil); err != nil {
-					if errors.Is(err, extension.ErrNoValidConfig) {
-						a.log.WithField("extension", name).Debug("Default-enabled extension has no valid config, skipping")
+			if de, ok := ext.(module.DefaultEnabled); ok && de.DefaultEnabled() {
+				if err := reg.InitModule(name, nil); err != nil {
+					if errors.Is(err, module.ErrNoValidConfig) {
+						a.log.WithField("module", name).Debug("Default-enabled module has no valid config, skipping")
 
 						continue
 					}
 
-					return nil, fmt.Errorf("initializing default-enabled extension %q: %w", name, err)
+					return nil, fmt.Errorf("initializing default-enabled module %q: %w", name, err)
 				}
 
 				continue
 			}
 
-			a.log.WithField("extension", name).Debug("Extension not configured, skipping")
+			a.log.WithField("module", name).Debug("Module not configured, skipping")
 
 			continue
 		}
 
-		if err := reg.InitExtension(name, rawYAML); err != nil {
+		if err := reg.InitModule(name, rawYAML); err != nil {
 			// Skip if no valid config (e.g., env vars not set).
-			if errors.Is(err, extension.ErrNoValidConfig) {
-				a.log.WithField("extension", name).Debug("Extension has no valid config entries, skipping")
+			if errors.Is(err, module.ErrNoValidConfig) {
+				a.log.WithField("module", name).Debug("Module has no valid config entries, skipping")
 
 				continue
 			}
 
-			return nil, fmt.Errorf("initializing extension %q: %w", name, err)
+			return nil, fmt.Errorf("initializing module %q: %w", name, err)
 		}
 	}
 
-	a.log.WithField("initialized_count", len(reg.Initialized())).Info("Extension registry built")
+	a.log.WithField("initialized_count", len(reg.Initialized())).Info("Module registry built")
 
 	return reg, nil
 }
@@ -287,66 +205,26 @@ func (a *App) buildProxyClient() proxy.Client {
 	if a.cfg.Proxy.Auth != nil {
 		cfg.IssuerURL = a.cfg.Proxy.Auth.IssuerURL
 		cfg.ClientID = a.cfg.Proxy.Auth.ClientID
+		cfg.Resource = a.cfg.Proxy.URL
 	}
 
 	return proxy.NewClient(a.log, cfg)
 }
 
 func (a *App) injectProxyClient() {
-	for _, ext := range a.ExtensionRegistry.Initialized() {
-		if aware, ok := ext.(extension.ProxyAware); ok {
+	for _, ext := range a.ModuleRegistry.Initialized() {
+		if aware, ok := ext.(module.ProxyAware); ok {
 			aware.SetProxyClient(a.ProxyClient)
-			a.log.WithField("extension", ext.Name()).Debug("Injected proxy client into extension")
+			a.log.WithField("module", ext.Name()).Debug("Injected proxy client into module")
 		}
 	}
 }
 
 func (a *App) injectCartographoorClient() {
-	for _, ext := range a.ExtensionRegistry.Initialized() {
-		if aware, ok := ext.(extension.CartographoorAware); ok {
+	for _, ext := range a.ModuleRegistry.Initialized() {
+		if aware, ok := ext.(module.CartographoorAware); ok {
 			aware.SetCartographoorClient(a.Cartographoor)
-			a.log.WithField("extension", ext.Name()).Debug("Injected cartographoor client into extension")
+			a.log.WithField("module", ext.Name()).Debug("Injected cartographoor client into module")
 		}
 	}
-}
-
-// SandboxEnv builds credential-free environment variables for sandbox execution.
-// Includes proxy URL, datasource info, and S3 bucket — but no credentials.
-func (a *App) SandboxEnv() (map[string]string, error) {
-	env, err := a.ExtensionRegistry.SandboxEnv()
-	if err != nil {
-		return nil, fmt.Errorf("collecting sandbox env: %w", err)
-	}
-
-	env["ETHPANDAOPS_PROXY_URL"] = a.ProxyClient.URL()
-
-	if bucket := a.ProxyClient.S3Bucket(); bucket != "" {
-		env["ETHPANDAOPS_S3_BUCKET"] = bucket
-	}
-
-	if prefix := a.ProxyClient.S3PublicURLPrefix(); prefix != "" {
-		env["ETHPANDAOPS_S3_PUBLIC_URL_PREFIX"] = prefix
-	}
-
-	// Datasources are proxy-authoritative; override extension-provided lists.
-	delete(env, "ETHPANDAOPS_CLICKHOUSE_DATASOURCES")
-	delete(env, "ETHPANDAOPS_PROMETHEUS_DATASOURCES")
-	delete(env, "ETHPANDAOPS_LOKI_DATASOURCES")
-
-	if ds := a.ProxyClient.ClickHouseDatasourceInfo(); len(ds) > 0 {
-		data, _ := json.Marshal(ds)
-		env["ETHPANDAOPS_CLICKHOUSE_DATASOURCES"] = string(data)
-	}
-
-	if ds := a.ProxyClient.PrometheusDatasourceInfo(); len(ds) > 0 {
-		data, _ := json.Marshal(ds)
-		env["ETHPANDAOPS_PROMETHEUS_DATASOURCES"] = string(data)
-	}
-
-	if ds := a.ProxyClient.LokiDatasourceInfo(); len(ds) > 0 {
-		data, _ := json.Marshal(ds)
-		env["ETHPANDAOPS_LOKI_DATASOURCES"] = string(data)
-	}
-
-	return env, nil
 }

@@ -1,5 +1,7 @@
 # Deployments
 
+See [architecture.md](architecture.md) for the source-of-truth responsibility split.
+
 This repo has one intended product topology:
 
 ```text
@@ -9,14 +11,14 @@ ep -> server -> proxy -> datasources
 - `ep` is a client.
 - `server` owns MCP, HTTP API, sandbox execution, sessions, and search.
 - `proxy` owns datasource and storage credentials.
-- sandboxed Python talks to the proxy using server-issued auth.
+- sandboxed Python talks to the local server using server-issued runtime tokens.
 
 ## Components
 
 - `ep`: local CLI that talks to `server` over HTTP.
 - `server`: runs MCP transports, the CLI-facing HTTP API, sandboxes, sessions, and search.
-- `proxy`: credential boundary for ClickHouse, Prometheus, Loki, ethnode, Dora, and S3.
-- `extensions`: datasource integrations, docs, resources, examples, and schema discovery.
+- `proxy`: credential boundary for ClickHouse, Prometheus, Loki, ethnode, and S3.
+- `modules`: datasource integrations, docs, resources, examples, and schema discovery.
 
 ## Local Docker Compose
 
@@ -32,7 +34,7 @@ proxy -> datasources
 - `config.yaml` configures the server.
 - `proxy-config.yaml` configures datasource credentials.
 - `ep init` writes the client config with `server.url`.
-- if server auth is enabled, authenticate the CLI with `mcp auth login --issuer <server-url> --client-id ep`
+- if the proxy is hosted and auth is enabled, run `ep auth login`
 
 ## Local Server + Hosted Proxy
 
@@ -51,28 +53,18 @@ hosted proxy -> datasources
 
 This is the recommended external-user shape when you do not want to execute code on your own servers.
 
-## Hosted Server + Hosted Proxy
-
-Use this only when you intentionally want a managed deployment.
-
-```text
-ep / MCP client -> hosted server -> hosted proxy -> datasources
-```
-
-- `server` and `proxy` run on your infra
-- HTTP auth on the server can be enabled for external clients
-- stronger sandboxing like `gvisor` belongs here
-
 ## Configuration Split
 
 - `ep` config:
   - `server.url` or `server.base_url`
 - `server` config:
+  - `server.sandbox_url`
   - sandbox settings
-  - extension config
+  - module config
   - `proxy.url`
   - optional `proxy.auth`
 - `proxy` config:
+  - optional hosted GitHub auth config
   - datasource credentials
   - storage credentials
   - proxy auth/rate-limit/audit settings
