@@ -6,8 +6,9 @@ import (
 	"testing"
 	"time"
 
-	authclient "github.com/ethpandaops/mcp/pkg/auth/client"
 	"github.com/sirupsen/logrus"
+
+	authclient "github.com/ethpandaops/mcp/pkg/auth/client"
 )
 
 func TestGetAccessTokenKeepsValidTokenWithoutRefreshToken(t *testing.T) {
