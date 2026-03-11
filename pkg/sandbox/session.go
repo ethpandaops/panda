@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 
-	"github.com/ethpandaops/mcp/pkg/config"
+	"github.com/ethpandaops/panda/pkg/config"
 )
 
 // Session represents a persistent sandbox execution environment.

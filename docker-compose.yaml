@@ -1,12 +1,12 @@
-# ethpandaops MCP Server - Docker Compose Configuration
+# ethpandaops Panda Server - Docker Compose Configuration
 #
 # Architecture:
 #   1. Proxy service - holds credentials, proxies requests from sandbox containers
-#   2. MCP server - connects to proxy, runs sandbox containers
+#   2. Panda server - connects to proxy, runs sandbox containers
 #
 # Usage:
 #   docker compose up -d                        # Start all services
-#   docker compose logs -f ethpandaops-mcp-server # View server logs
+#   docker compose logs -f ethpandaops-panda-server # View server logs
 #
 # Optional environment variables (with defaults):
 #   MINIO_ACCESS_KEY    - MinIO access key (default: minioadmin)
@@ -26,12 +26,12 @@ services:
     build:
       context: .
       dockerfile: sandbox/Dockerfile
-    image: ethpandaops-mcp-sandbox:latest
+    image: ethpandaops-panda-sandbox:latest
     command: "true"
     restart: "no"
 
   # Credential proxy - holds datasource credentials
-  ethpandaops-mcp-proxy:
+  ethpandaops-panda-proxy:
     build:
       context: .
       dockerfile: Dockerfile
@@ -39,7 +39,7 @@ services:
         - VERSION=${VERSION:-dev}
         - GIT_COMMIT=${GIT_COMMIT:-unknown}
         - BUILD_TIME=${BUILD_TIME:-unknown}
-    entrypoint: ["/app/proxy"]
+    entrypoint: ["/app/panda-proxy"]
     command: ["--config", "/config/proxy-config.yaml"]
     ports:
       - "${MCP_PROXY_HOST:-127.0.0.1}:18081:18081"  # Proxy for local clients
@@ -80,12 +80,12 @@ services:
       - S3_ENDPOINT=http://minio:9000
       - S3_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
       - S3_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin}
-      - S3_PUBLIC_URL=http://localhost:${MINIO_API_PORT:-31400}/ethpandaops-mcp-outputs
+      - S3_PUBLIC_URL=http://localhost:${MINIO_API_PORT:-31400}/ethpandaops-panda-outputs
     volumes:
       - ./proxy-config.yaml:/config/proxy-config.yaml:ro
     networks:
-      - ethpandaops-mcp-external
-      - ethpandaops-mcp-internal
+      - ethpandaops-panda-external
+      - ethpandaops-panda-internal
     depends_on:
       minio:
         condition: service_healthy
@@ -96,8 +96,8 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # MCP server - connects to proxy
-  ethpandaops-mcp-server:
+  # Panda server - connects to proxy
+  ethpandaops-panda-server:
     build:
       context: .
       dockerfile: Dockerfile
@@ -113,14 +113,14 @@ services:
     volumes:
       - ./config.yaml:/config/config.yaml:ro
       - /var/run/docker.sock:/var/run/docker.sock
-      - /tmp/ethpandaops-mcp-sandbox:/tmp/ethpandaops-mcp-sandbox  # Shared with sandbox containers
+      - /tmp/ethpandaops-panda-sandbox:/tmp/ethpandaops-panda-sandbox  # Shared with sandbox containers
     networks:
-      - ethpandaops-mcp-external
-      - ethpandaops-mcp-internal
+      - ethpandaops-panda-external
+      - ethpandaops-panda-internal
     depends_on:
       sandbox-builder:
         condition: service_completed_successfully
-      ethpandaops-mcp-proxy:
+      ethpandaops-panda-proxy:
         condition: service_healthy
       minio:
         condition: service_healthy
@@ -139,8 +139,8 @@ services:
     volumes:
       - minio-data:/data
     networks:
-      - ethpandaops-mcp-internal
-      - ethpandaops-mcp-external
+      - ethpandaops-panda-internal
+      - ethpandaops-panda-external
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 10s
@@ -155,26 +155,26 @@ services:
       minio:
         condition: service_healthy
     networks:
-      - ethpandaops-mcp-internal
+      - ethpandaops-panda-internal
     entrypoint: >
       /bin/sh -c "
       mc alias set local http://minio:9000 ${MINIO_ACCESS_KEY:-minioadmin} ${MINIO_SECRET_KEY:-minioadmin};
-      mc mb local/ethpandaops-mcp-outputs --ignore-existing;
-      mc anonymous set download local/ethpandaops-mcp-outputs;
+      mc mb local/ethpandaops-panda-outputs --ignore-existing;
+      mc anonymous set download local/ethpandaops-panda-outputs;
       echo 'Bucket created and configured';
       "
 
 networks:
   # External network - accessible from outside
-  ethpandaops-mcp-external:
-    name: ethpandaops-mcp-external    # Prevent project-name prefix
+  ethpandaops-panda-external:
+    name: ethpandaops-panda-external    # Prevent project-name prefix
     driver: bridge
 
   # Network for sandbox containers to reach datasources and MinIO.
   # Not marked internal so containers can resolve external DNS for
   # ClickHouse, Prometheus, and Loki connections.
-  ethpandaops-mcp-internal:
-    name: ethpandaops-mcp-internal    # Prevent project-name prefix
+  ethpandaops-panda-internal:
+    name: ethpandaops-panda-internal    # Prevent project-name prefix
     driver: bridge
 
 volumes:

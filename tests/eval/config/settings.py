@@ -1,4 +1,4 @@
-"""Pydantic settings for ethpandaops-mcp evaluation harness."""
+"""Pydantic settings for ethpandaops-panda evaluation harness."""
 
 from pathlib import Path
 from typing import Literal
@@ -12,7 +12,7 @@ DEFAULT_EVALUATOR_MODEL = "google/gemini-3-flash-preview"
 
 
 class EvalSettings(BaseSettings):
-    """Configuration for the ethpandaops-mcp evaluation harness."""
+    """Configuration for the ethpandaops-panda evaluation harness."""
 
     model_config = SettingsConfigDict(
         env_prefix="MCP_EVAL_",
@@ -27,10 +27,10 @@ class EvalSettings(BaseSettings):
         description="Claude model to use for evaluation",
     )
 
-    # ethpandaops-mcp connection (external server, auth disabled)
+    # ethpandaops-panda connection (external server, auth disabled)
     mcp_url: str = Field(
         default="http://localhost:2480",
-        description="URL of the ethpandaops-mcp server",
+        description="URL of the ethpandaops-panda server",
     )
 
     # Evaluation settings

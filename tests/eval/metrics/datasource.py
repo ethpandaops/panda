@@ -1,4 +1,4 @@
-"""Data source validation metrics for ethpandaops-mcp evaluation."""
+"""Data source validation metrics for ethpandaops-panda evaluation."""
 
 from __future__ import annotations
 

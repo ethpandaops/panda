@@ -17,35 +17,35 @@ Query Ethereum network data through the ethpandaops tools. Execute Python code i
 
 ## Access Methods
 
-This skill works with **either** the CLI (`ep`) or the MCP server. Use whichever is available.
+This skill works with **either** the CLI (`panda`) or the MCP server. Use whichever is available.
 
-### CLI (`ep` binary)
+### CLI (`panda` binary)
 
 ```bash
 # Discovery
-ep datasources                          # List all datasources
-ep datasources --type clickhouse        # Filter by type
-ep schema                               # List ClickHouse tables
-ep schema beacon_api_eth_v1_events_block  # Show table schema
-ep docs                                 # List Python API modules
-ep docs clickhouse                      # Show module docs
+panda datasources                          # List all datasources
+panda datasources --type clickhouse        # Filter by type
+panda schema                               # List ClickHouse tables
+panda schema beacon_api_eth_v1_events_block  # Show table schema
+panda docs                                 # List Python API modules
+panda docs clickhouse                      # Show module docs
 
 # Search
-ep search examples "block arrival time"
-ep search examples "attestation" --category attestations --limit 5
-ep search runbooks "finality delay"
-ep search runbooks "validator" --tag performance
+panda search examples "block arrival time"
+panda search examples "attestation" --category attestations --limit 5
+panda search runbooks "finality delay"
+panda search runbooks "validator" --tag performance
 
 # Execute
-ep execute --code 'from ethpandaops import clickhouse; print(clickhouse.list_datasources())'
-ep execute --file script.py
-ep execute --code '...' --session <id>  # Reuse session
-echo 'print("hello")' | ep execute
+panda execute --code 'from ethpandaops import clickhouse; print(clickhouse.list_datasources())'
+panda execute --file script.py
+panda execute --code '...' --session <id>  # Reuse session
+echo 'print("hello")' | panda execute
 
 # Sessions
-ep session list
-ep session create
-ep session destroy <session-id>
+panda session list
+panda session create
+panda session destroy <session-id>
 ```
 
 All commands support `--json` for structured output.
@@ -281,7 +281,7 @@ ClickHouse errors include actionable suggestions:
 - Query timeout → Break into smaller time windows
 
 Default execution timeout is 60s, max 600s. For large analyses:
-- Search for optimized patterns first (`ep search examples "..."`)
+- Search for optimized patterns first (`panda search examples "..."`)
 - Break work into smaller time windows
 - Save intermediate results to `/workspace/`
 
@@ -289,7 +289,7 @@ Default execution timeout is 60s, max 600s. For large analyses:
 
 - Always filter ClickHouse queries on partition keys (`slot_start_date_time`)
 - Use `xatu-cbt` for pre-aggregated metrics, `xatu` for raw event data
-- Use `ep docs` or `python://ethpandaops` resource for complete API documentation
+- Use `panda docs` or `python://ethpandaops` resource for complete API documentation
 - Search for examples before writing complex queries from scratch
 - Search for runbooks to find common investigation workflows
 - Upload visualizations with `storage.upload()` for shareable URLs

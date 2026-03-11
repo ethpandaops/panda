@@ -1,4 +1,4 @@
-"""Resource discovery metric for ethpandaops-mcp evaluation."""
+"""Resource discovery metric for ethpandaops-panda evaluation."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ class ResourceDiscoveryMetric(BaseMetric):
         Args:
             threshold: Minimum score to pass (0.0 to 1.0).
             required_resource_prefixes: URI prefixes that should be accessed.
-                Defaults to common ethpandaops-mcp resource types.
+                Defaults to common ethpandaops-panda resource types.
         """
         self.threshold = threshold
         self.required_resource_prefixes = required_resource_prefixes or [

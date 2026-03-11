@@ -8,11 +8,11 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/ethpandaops/mcp/pkg/config"
-	"github.com/ethpandaops/mcp/pkg/embedding"
-	"github.com/ethpandaops/mcp/pkg/module"
-	"github.com/ethpandaops/mcp/pkg/resource"
-	"github.com/ethpandaops/mcp/runbooks"
+	"github.com/ethpandaops/panda/pkg/config"
+	"github.com/ethpandaops/panda/pkg/embedding"
+	"github.com/ethpandaops/panda/pkg/module"
+	"github.com/ethpandaops/panda/pkg/resource"
+	"github.com/ethpandaops/panda/runbooks"
 )
 
 type Runtime struct {

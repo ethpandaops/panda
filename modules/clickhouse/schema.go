@@ -14,8 +14,8 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/ethpandaops/mcp/pkg/proxy"
-	"github.com/ethpandaops/mcp/pkg/proxy/handlers"
+	"github.com/ethpandaops/panda/pkg/proxy"
+	"github.com/ethpandaops/panda/pkg/proxy/handlers"
 )
 
 // Pre-compiled regexes for schema parsing.

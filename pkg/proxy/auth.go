@@ -7,7 +7,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	simpleauth "github.com/ethpandaops/mcp/pkg/auth"
+	simpleauth "github.com/ethpandaops/panda/pkg/auth"
 )
 
 // AuthMode determines how the proxy authenticates requests.

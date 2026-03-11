@@ -1,12 +1,12 @@
-// Package observability provides metrics capabilities for ethpandaops-mcp.
+// Package observability provides metrics capabilities for ethpandaops-panda.
 package observability
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// Metrics namespace for all ethpandaops-mcp metrics.
-const metricsNamespace = "ethpandaops_mcp"
+// Metrics namespace for all ethpandaops-panda metrics.
+const metricsNamespace = "panda"
 
 // Tool call metrics.
 var (

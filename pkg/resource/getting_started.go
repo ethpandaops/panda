@@ -9,7 +9,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/sirupsen/logrus"
 
-	"github.com/ethpandaops/mcp/pkg/module"
+	"github.com/ethpandaops/panda/pkg/module"
 )
 
 // ToolLister provides access to registered tools.

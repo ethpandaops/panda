@@ -9,10 +9,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 
-	"github.com/ethpandaops/mcp/pkg/config"
-	"github.com/ethpandaops/mcp/pkg/module"
-	"github.com/ethpandaops/mcp/pkg/sandbox"
-	"github.com/ethpandaops/mcp/pkg/tokenstore"
+	"github.com/ethpandaops/panda/pkg/config"
+	"github.com/ethpandaops/panda/pkg/module"
+	"github.com/ethpandaops/panda/pkg/sandbox"
+	"github.com/ethpandaops/panda/pkg/tokenstore"
 )
 
 const (

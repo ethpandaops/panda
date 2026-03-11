@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/ethpandaops/mcp/pkg/operations"
+	"github.com/ethpandaops/panda/pkg/operations"
 )
 
 var ethnodeSegmentPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$`)

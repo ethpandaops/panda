@@ -13,9 +13,9 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/ethpandaops/mcp/pkg/auth/client"
-	"github.com/ethpandaops/mcp/pkg/auth/store"
-	"github.com/ethpandaops/mcp/pkg/types"
+	"github.com/ethpandaops/panda/pkg/auth/client"
+	"github.com/ethpandaops/panda/pkg/auth/store"
+	"github.com/ethpandaops/panda/pkg/types"
 )
 
 // Client connects to a proxy server and provides datasource discovery plus
@@ -464,7 +464,7 @@ func (c *proxyClient) EnsureAuthenticated(_ context.Context) error {
 	_, err := c.loadAccessToken()
 	if err != nil {
 		return fmt.Errorf(
-			"not authenticated to proxy. Run `ep auth login` first: %w",
+			"not authenticated to proxy. Run `panda auth login` first: %w",
 			err,
 		)
 	}

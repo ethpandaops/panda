@@ -10,18 +10,18 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/ethpandaops/mcp/pkg/cartographoor"
-	"github.com/ethpandaops/mcp/pkg/config"
-	"github.com/ethpandaops/mcp/pkg/module"
-	"github.com/ethpandaops/mcp/pkg/proxy"
-	"github.com/ethpandaops/mcp/pkg/sandbox"
-	"github.com/ethpandaops/mcp/pkg/types"
+	"github.com/ethpandaops/panda/pkg/cartographoor"
+	"github.com/ethpandaops/panda/pkg/config"
+	"github.com/ethpandaops/panda/pkg/module"
+	"github.com/ethpandaops/panda/pkg/proxy"
+	"github.com/ethpandaops/panda/pkg/sandbox"
+	"github.com/ethpandaops/panda/pkg/types"
 
-	clickhousemodule "github.com/ethpandaops/mcp/modules/clickhouse"
-	doramodule "github.com/ethpandaops/mcp/modules/dora"
-	ethnodemodule "github.com/ethpandaops/mcp/modules/ethnode"
-	lokimodule "github.com/ethpandaops/mcp/modules/loki"
-	prometheusmodule "github.com/ethpandaops/mcp/modules/prometheus"
+	clickhousemodule "github.com/ethpandaops/panda/modules/clickhouse"
+	doramodule "github.com/ethpandaops/panda/modules/dora"
+	ethnodemodule "github.com/ethpandaops/panda/modules/ethnode"
+	lokimodule "github.com/ethpandaops/panda/modules/loki"
+	prometheusmodule "github.com/ethpandaops/panda/modules/prometheus"
 )
 
 // App contains the shared core components used by both the MCP server and CLI.

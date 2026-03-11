@@ -20,9 +20,9 @@ lists all tables. With a table name, shows the full schema including
 columns, types, and available networks.
 
 Examples:
-  ep schema
-  ep schema beacon_api_eth_v1_events_block
-  ep schema --json`,
+  panda schema
+  panda schema beacon_api_eth_v1_events_block
+  panda schema --json`,
 	RunE: runSchema,
 }
 

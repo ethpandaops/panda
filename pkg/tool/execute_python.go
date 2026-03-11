@@ -11,10 +11,10 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/ethpandaops/mcp/pkg/auth"
-	"github.com/ethpandaops/mcp/pkg/config"
-	"github.com/ethpandaops/mcp/pkg/execsvc"
-	"github.com/ethpandaops/mcp/pkg/sandbox"
+	"github.com/ethpandaops/panda/pkg/auth"
+	"github.com/ethpandaops/panda/pkg/config"
+	"github.com/ethpandaops/panda/pkg/execsvc"
+	"github.com/ethpandaops/panda/pkg/sandbox"
 )
 
 const (

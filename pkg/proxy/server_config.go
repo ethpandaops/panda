@@ -9,9 +9,9 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	simpleauth "github.com/ethpandaops/mcp/pkg/auth"
-	"github.com/ethpandaops/mcp/pkg/configpath"
-	"github.com/ethpandaops/mcp/pkg/proxy/handlers"
+	simpleauth "github.com/ethpandaops/panda/pkg/auth"
+	"github.com/ethpandaops/panda/pkg/configpath"
+	"github.com/ethpandaops/panda/pkg/proxy/handlers"
 )
 
 // ServerConfig is the configuration for the proxy server.

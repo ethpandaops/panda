@@ -1,4 +1,4 @@
-# Langfuse v3 self-hosted for ethpandaops-mcp eval trace viewing
+# Langfuse v3 self-hosted for ethpandaops-panda eval trace viewing
 # Start with: docker compose -f docker-compose.langfuse.yaml up -d
 # Access UI at: http://localhost:31700
 
@@ -62,7 +62,7 @@ services:
       NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-mcp-eval-secret-change-me}
       # Auto-provision org, project, and API keys (no manual setup needed)
       LANGFUSE_INIT_ORG_ID: ethpandaops-org
-      LANGFUSE_INIT_ORG_NAME: ethpandaops-mcp
+      LANGFUSE_INIT_ORG_NAME: ethpandaops-panda
       LANGFUSE_INIT_PROJECT_ID: mcp-eval
       LANGFUSE_INIT_PROJECT_NAME: mcp-eval
       LANGFUSE_INIT_PROJECT_PUBLIC_KEY: pk-lf-mcp-eval-local

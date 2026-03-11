@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ethpandaops/mcp/internal/version"
+	"github.com/ethpandaops/panda/internal/version"
 )
 
 var versionJSON bool
@@ -25,7 +25,7 @@ var versionCmd = &cobra.Command{
 			data, _ := json.MarshalIndent(info, "", "  ")
 			fmt.Println(string(data))
 		} else {
-			fmt.Printf("ep version %s (commit: %s, built: %s)\n",
+			fmt.Printf("panda version %s (commit: %s, built: %s)\n",
 				version.Version, version.GitCommit, version.BuildTime)
 		}
 	},

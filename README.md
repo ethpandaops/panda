@@ -1,4 +1,4 @@
-# ethpandaops-mcp
+# ethpandaops-panda
 
 An MCP server that provides AI assistants with Ethereum network analytics capabilities via [Xatu](https://github.com/ethpandaops/xatu) data.
 
@@ -11,14 +11,14 @@ Read more: https://www.anthropic.com/engineering/code-execution-with-mcp
 Three components with a strict trust boundary:
 
 ```
-ep (CLI) ──→ server ──→ proxy ──→ datasources
-              │
-              └──→ sandbox containers (credential-free)
+panda (CLI) ──→ server ──→ proxy ──→ datasources
+                 │
+                 └──→ sandbox containers (credential-free)
 ```
 
-- **Server** (`mcp`) — MCP server + HTTP API. Runs sandboxed Python, registers tools/resources, and manages sessions.
-- **Proxy** (`proxy`) — Credential boundary. Holds all datasource and S3 credentials. The only component that talks directly to credentialed upstream systems (ClickHouse, Prometheus, Loki, S3, Ethereum nodes).
-- **CLI** (`ep`) — HTTP client for the server API. Does not embed the proxy or run sandboxes.
+- **Server** (`panda-server`) — MCP server + HTTP API. Runs sandboxed Python, registers tools/resources, and manages sessions.
+- **Proxy** (`panda-proxy`) — Credential boundary. Holds all datasource and S3 credentials. The only component that talks directly to credentialed upstream systems (ClickHouse, Prometheus, Loki, S3, Ethereum nodes).
+- **CLI** (`panda`) — HTTP client for the server API. Does not embed the proxy or run sandboxes.
 
 Sandbox containers receive a local server API URL and short-lived runtime tokens — credentials never reach the sandbox.
 
@@ -40,7 +40,7 @@ make docker-sandbox
 docker compose up -d
 
 # Configure the CLI client
-ep init
+panda init
 # Edit ~/.config/ethpandaops/config.yaml if your server is not at localhost:2480
 ```
 
@@ -49,7 +49,7 @@ The local stack runs:
 - `proxy` on port `18081`
 - `minio` on ports `31400` / `31401`
 
-By default `docker compose` publishes those ports on `127.0.0.1` only. Override `MCP_SERVER_HOST`, `MCP_PROXY_HOST`, or `MINIO_HOST` to expose on another interface.
+By default `docker compose` publishes those ports on `127.0.0.1` only. Override `PANDA_SERVER_HOST`, `PANDA_PROXY_HOST`, or `MINIO_HOST` to expose on another interface.
 
 ## Deployment Modes
 
@@ -65,7 +65,7 @@ Add to `~/.claude.json` under `mcpServers`:
 
 ```json
 {
-  "ethpandaops-mcp": {
+  "ethpandaops-panda": {
     "type": "http",
     "url": "http://localhost:2480/mcp"
   }
@@ -77,7 +77,7 @@ Add to `~/.claude.json` under `mcpServers`:
 Install skills to give Claude knowledge about querying Ethereum data:
 
 ```bash
-npx skills add ethpandaops/mcp
+npx skills add ethpandaops/panda
 ```
 
 ### Claude Desktop
@@ -87,7 +87,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "ethpandaops-mcp": {
+    "ethpandaops-panda": {
       "type": "http",
       "url": "http://localhost:2480/mcp"
     }
@@ -100,7 +100,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 If your configured proxy is hosted and requires auth, authenticate first:
 
 ```bash
-ep auth login
+panda auth login
 ```
 
 ## MCP Tools
@@ -116,9 +116,9 @@ Resources are available for getting started (`ethpandaops://getting-started`), d
 ## Development
 
 ```bash
-make build              # Build mcp and ep
+make build              # Build panda-server and panda
 make build-proxy        # Build standalone proxy binary
-make install            # Install mcp and ep binaries to GOBIN
+make install            # Install panda-server and panda binaries to GOBIN
 make test               # Run tests with race detector
 make lint               # Run golangci-lint (v2)
 make docker             # Build server Docker image
@@ -128,7 +128,7 @@ make run                # Build + download models + run server (stdio)
 make run-sse            # Build + run server with SSE on port 2480
 ```
 
-Config lookup order for `ep`: `--config` → `$ETHPANDAOPS_CONFIG` / `$EP_CONFIG` → `~/.config/ethpandaops/config.yaml` → `./config.yaml`
+Config lookup order for `panda`: `--config` → `$ETHPANDAOPS_CONFIG` / `$EP_CONFIG` → `~/.config/ethpandaops/config.yaml` → `./config.yaml`
 
 ## License
 

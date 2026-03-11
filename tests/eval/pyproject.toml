@@ -1,7 +1,7 @@
 [project]
-name = "mcp-eval"
+name = "panda-eval"
 version = "0.1.0"
-description = "LLM evaluation harness for ethpandaops-mcp server"
+description = "LLM evaluation harness for ethpandaops-panda server"
 requires-python = ">=3.11"
 dependencies = [
     "claude-agent-sdk>=0.1.0",
@@ -24,9 +24,9 @@ dev = [
 ]
 
 [project.scripts]
-mcp-eval = "scripts.run_eval:main"
-mcp-repl = "scripts.repl:main"
-mcp-langfuse = "scripts.langfuse:main"
+panda-eval = "scripts.run_eval:main"
+panda-repl = "scripts.repl:main"
+panda-langfuse = "scripts.langfuse:main"
 
 [build-system]
 requires = ["hatchling"]

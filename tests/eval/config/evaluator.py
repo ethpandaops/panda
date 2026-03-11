@@ -77,8 +77,8 @@ class OpenRouterModel(DeepEvalBaseLLM):
             model=self._model_name,
             messages=[{"role": "user", "content": prompt}],
             extra_headers={
-                "HTTP-Referer": "https://github.com/ethpandaops/mcp",
-                "X-Title": "mcp-eval",
+                "HTTP-Referer": "https://github.com/ethpandaops/panda",
+                "X-Title": "panda-eval",
             },
         )
         return response.choices[0].message.content or ""
@@ -97,8 +97,8 @@ class OpenRouterModel(DeepEvalBaseLLM):
             model=self._model_name,
             messages=[{"role": "user", "content": prompt}],
             extra_headers={
-                "HTTP-Referer": "https://github.com/ethpandaops/mcp",
-                "X-Title": "mcp-eval",
+                "HTTP-Referer": "https://github.com/ethpandaops/panda",
+                "X-Title": "panda-eval",
             },
         )
         return response.choices[0].message.content or ""

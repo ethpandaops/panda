@@ -5,7 +5,7 @@ package proxy
 import (
 	"context"
 
-	"github.com/ethpandaops/mcp/pkg/types"
+	"github.com/ethpandaops/panda/pkg/types"
 )
 
 // Service is the credential proxy service interface.

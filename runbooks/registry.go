@@ -6,7 +6,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/ethpandaops/mcp/pkg/types"
+	"github.com/ethpandaops/panda/pkg/types"
 )
 
 // Registry holds loaded runbooks and provides access for indexing and search.

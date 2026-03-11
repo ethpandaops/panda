@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ethpandaops/mcp/pkg/serverapi"
+	"github.com/ethpandaops/panda/pkg/serverapi"
 )
 
 var (
@@ -30,11 +30,11 @@ flows through the credential proxy.
 Code can be provided via --code, --file, or stdin.
 
 Examples:
-  ep execute --code 'print("hello")'
-  ep execute --file script.py
-  ep execute --file script.py --session abc123
-  echo 'print("hello")' | ep execute
-  ep execute --json --code 'import pandas; print(pandas.__version__)'`,
+  panda execute --code 'print("hello")'
+  panda execute --file script.py
+  panda execute --file script.py --session abc123
+  echo 'print("hello")' | panda execute
+  panda execute --json --code 'import pandas; print(pandas.__version__)'`,
 	RunE: runExecute,
 }
 

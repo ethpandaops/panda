@@ -17,10 +17,10 @@ var ethnodeCmd = &cobra.Command{
 Nodes are identified by network and instance name (e.g., "lighthouse-geth-1").
 
 Examples:
-  ep ethnode syncing dencun-devnet-12 lighthouse-geth-1
-  ep ethnode peers dencun-devnet-12 lighthouse-geth-1
-  ep ethnode finality dencun-devnet-12 lighthouse-geth-1
-  ep ethnode beacon-get dencun-devnet-12 lighthouse-geth-1 /eth/v1/node/identity`,
+  panda ethnode syncing dencun-devnet-12 lighthouse-geth-1
+  panda ethnode peers dencun-devnet-12 lighthouse-geth-1
+  panda ethnode finality dencun-devnet-12 lighthouse-geth-1
+  panda ethnode beacon-get dencun-devnet-12 lighthouse-geth-1 /eth/v1/node/identity`,
 }
 
 func init() {
@@ -281,8 +281,8 @@ var ethNodeBeaconGetCmd = &cobra.Command{
 The path should start with / (e.g., /eth/v1/node/identity).
 
 Examples:
-  ep ethnode beacon-get my-devnet lighthouse-geth-1 /eth/v1/node/identity
-  ep ethnode beacon-get my-devnet lighthouse-geth-1 /eth/v1/config/deposit_contract`,
+  panda ethnode beacon-get my-devnet lighthouse-geth-1 /eth/v1/node/identity
+  panda ethnode beacon-get my-devnet lighthouse-geth-1 /eth/v1/config/deposit_contract`,
 	Args: cobra.ExactArgs(3),
 	RunE: func(_ *cobra.Command, args []string) error {
 		path := args[2]
@@ -310,9 +310,9 @@ var ethNodeExecRPCCmd = &cobra.Command{
 Params should be a JSON array string.
 
 Examples:
-  ep ethnode exec-rpc my-devnet lighthouse-geth-1 eth_blockNumber
-  ep ethnode exec-rpc my-devnet lighthouse-geth-1 eth_getBlockByNumber '["latest", false]'
-  ep ethnode exec-rpc my-devnet lighthouse-geth-1 eth_chainId`,
+  panda ethnode exec-rpc my-devnet lighthouse-geth-1 eth_blockNumber
+  panda ethnode exec-rpc my-devnet lighthouse-geth-1 eth_getBlockByNumber '["latest", false]'
+  panda ethnode exec-rpc my-devnet lighthouse-geth-1 eth_chainId`,
 	Args: cobra.RangeArgs(3, 4),
 	RunE: func(_ *cobra.Command, args []string) error {
 		var params []any

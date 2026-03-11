@@ -17,4 +17,4 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - github.com/ethpandaops/mcp
+        - github.com/ethpandaops/panda

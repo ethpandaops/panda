@@ -9,7 +9,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/sirupsen/logrus"
 
-	"github.com/ethpandaops/mcp/pkg/types"
+	"github.com/ethpandaops/panda/pkg/types"
 )
 
 // ReadHandler is a function that reads a resource and returns its content.

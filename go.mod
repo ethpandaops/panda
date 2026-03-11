@@ -1,4 +1,4 @@
-module github.com/ethpandaops/mcp
+module github.com/ethpandaops/panda
 
 go 1.24.1
 

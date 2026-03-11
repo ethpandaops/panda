@@ -66,11 +66,11 @@ jobs:
         working-directory: tests/eval
         run: uv sync
 
-      - name: Build MCP server
-        run: go build -o mcp ./cmd/mcp
+      - name: Build server
+        run: go build -o panda-server ./cmd/server
 
       - name: Build proxy
-        run: go build -o proxy ./cmd/proxy
+        run: go build -o panda-proxy ./cmd/proxy
 
       - name: Download semantic search assets
         run: make download-models
@@ -127,7 +127,7 @@ jobs:
 
           sandbox:
             backend: docker
-            image: "ghcr.io/ethpandaops/mcp-sandbox:latest"
+            image: "ghcr.io/ethpandaops/panda-sandbox:latest"
             network: "host"
 
           proxy:
@@ -139,7 +139,7 @@ jobs:
 
       - name: Start proxy
         run: |
-          ./proxy --config proxy-config.ci.yaml &
+          ./panda-proxy --config proxy-config.ci.yaml &
           for i in {1..30}; do
             if curl -s http://localhost:18081/health > /dev/null 2>&1; then
               echo "Proxy is ready"
@@ -149,9 +149,9 @@ jobs:
             sleep 2
           done
 
-      - name: Start MCP server
+      - name: Start server
         run: |
-          ./mcp serve --config config.ci.yaml &
+          ./panda-server serve --config config.ci.yaml &
           # Wait for server to be ready
           for i in {1..30}; do
             if curl -s http://localhost:2480/health > /dev/null 2>&1; then

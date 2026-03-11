@@ -1,4 +1,4 @@
-"""Tests for visualization generation against ethpandaops-mcp."""
+"""Tests for visualization generation against ethpandaops-panda."""
 
 from __future__ import annotations
 

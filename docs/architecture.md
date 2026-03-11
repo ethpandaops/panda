@@ -5,12 +5,12 @@ This document defines the supported architecture and responsibility boundaries f
 ## Product Boundary
 
 ```text
-ep / MCP client -> server -> proxy -> upstream datasources
+panda / MCP client -> server -> proxy -> upstream datasources
                      |
                      -> sandbox -> server
 ```
 
-- `ep` and MCP clients are the only user or agent entry points.
+- `panda` and MCP clients are the only user or agent entry points.
 - `server` is the only product API boundary.
 - `proxy` is not a product API. It is an internal credentialed gateway.
 - sandboxed Python never talks to `proxy` directly.
@@ -45,12 +45,12 @@ If a change affects product semantics, defaults, validation, output shape, or th
 
 `proxy` must not own user-facing operation semantics.
 
-### `ep`
+### `panda`
 
-`ep` is a thin client over the server API:
+`panda` is a thin client over the server API:
 
 - config lookup
-- local auth bootstrap UX (`ep auth ...`)
+- local auth bootstrap UX (`panda auth ...`)
 - output formatting
 - no local module bootstrapping
 - no sandbox ownership
@@ -73,7 +73,7 @@ Only two deployment modes are supported.
 ### 1. All local
 
 ```text
-ep -> local server -> local proxy -> upstreams
+panda -> local server -> local proxy -> upstreams
               |
               -> local sandbox -> local server
 ```
@@ -84,14 +84,14 @@ ep -> local server -> local proxy -> upstreams
 ### 2. Local server + hosted proxy
 
 ```text
-ep -> local server -> hosted proxy -> upstreams
+panda -> local server -> hosted proxy -> upstreams
               |
               -> local sandbox -> local server
 ```
 
 - code still executes on the user's machine
 - hosted proxy keeps credentials remote
-- `ep auth login` bootstraps access to the hosted proxy
+- `panda auth login` bootstraps access to the hosted proxy
 
 There is no supported hosted-server product topology in this repo.
 
@@ -133,5 +133,5 @@ The proxy client refreshes datasource info every 5 minutes.
 - do not add new MCP tools for modules
 - do not make sandbox code talk to `proxy`
 - do not move product semantics back into `proxy`
-- do not make `ep` reconstruct server state locally
+- do not make `panda` reconstruct server state locally
 - the proxy owns datasource identity; modules must not define their own datasource config

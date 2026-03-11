@@ -6,8 +6,8 @@ import (
 	"github.com/kelindar/search"
 	"github.com/sirupsen/logrus"
 
-	"github.com/ethpandaops/mcp/pkg/embedding"
-	"github.com/ethpandaops/mcp/pkg/types"
+	"github.com/ethpandaops/panda/pkg/embedding"
+	"github.com/ethpandaops/panda/pkg/types"
 )
 
 // SearchResult includes the example and its similarity score.

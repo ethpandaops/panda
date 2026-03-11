@@ -28,15 +28,15 @@ func (e *NotFoundError) Error() string {
 
 func DefaultConfigDir() string {
 	if xdg := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME")); xdg != "" {
-		return filepath.Join(xdg, "ethpandaops")
+		return filepath.Join(xdg, "panda")
 	}
 
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
-		return filepath.Join(".config", "ethpandaops")
+		return filepath.Join(".config", "panda")
 	}
 
-	return filepath.Join(home, ".config", "ethpandaops")
+	return filepath.Join(home, ".config", "panda")
 }
 
 func DefaultAppConfigPath() string {
@@ -52,7 +52,7 @@ func ResolveAppConfigPath(explicit string) (string, error) {
 		return filepath.Clean(explicit), nil
 	}
 
-	for _, envVar := range []string{"ETHPANDAOPS_CONFIG", "EP_CONFIG", "CONFIG_PATH"} {
+	for _, envVar := range []string{"PANDA_CONFIG", "ETHPANDAOPS_CONFIG", "CONFIG_PATH"} {
 		if value := strings.TrimSpace(os.Getenv(envVar)); value != "" {
 			return filepath.Clean(value), nil
 		}
@@ -68,9 +68,9 @@ func ResolveAppConfigPath(explicit string) (string, error) {
 	}
 
 	return "", &NotFoundError{
-		Kind:       "ethpandaops config",
+		Kind:       "panda config",
 		Searched:   dedupe(candidates),
-		Suggestion: fmt.Sprintf("Run `ep init` to create %s, or pass --config.", DefaultAppConfigPath()),
+		Suggestion: fmt.Sprintf("Run `panda init` to create %s, or pass --config.", DefaultAppConfigPath()),
 	}
 }
 
@@ -79,7 +79,7 @@ func ResolveProxyConfigPath(explicit, baseDir string) (string, error) {
 		return cleanRelative(baseDir, explicit), nil
 	}
 
-	for _, envVar := range []string{"ETHPANDAOPS_PROXY_CONFIG", "EP_PROXY_CONFIG", "CONFIG_PATH"} {
+	for _, envVar := range []string{"PANDA_PROXY_CONFIG", "ETHPANDAOPS_PROXY_CONFIG", "CONFIG_PATH"} {
 		if value := strings.TrimSpace(os.Getenv(envVar)); value != "" {
 			return filepath.Clean(value), nil
 		}
@@ -100,7 +100,7 @@ func ResolveProxyConfigPath(explicit, baseDir string) (string, error) {
 	}
 
 	return "", &NotFoundError{
-		Kind:       "ethpandaops proxy config",
+		Kind:       "panda proxy config",
 		Searched:   dedupe(candidates),
 		Suggestion: fmt.Sprintf("Create %s, or pass --config.", DefaultProxyConfigPath()),
 	}

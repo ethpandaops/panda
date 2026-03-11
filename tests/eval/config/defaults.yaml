@@ -1,9 +1,9 @@
-# Default configuration for ethpandaops-mcp evaluation harness
+# Default configuration for ethpandaops-panda evaluation harness
 
 # Model selection
 model: claude-sonnet-4-5
 
-# ethpandaops-mcp connection
+# ethpandaops-panda connection
 mcp_url: http://localhost:2480
 
 # Evaluation settings

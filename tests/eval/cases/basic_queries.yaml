@@ -1,4 +1,4 @@
-# Basic query test cases for ethpandaops-mcp evaluation
+# Basic query test cases for ethpandaops-panda evaluation
 # These test single-turn queries against Ethereum network data
 
 - id: block_count_24h

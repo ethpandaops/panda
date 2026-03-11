@@ -9,10 +9,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ethpandaops/mcp/internal/version"
-	"github.com/ethpandaops/mcp/pkg/config"
-	"github.com/ethpandaops/mcp/pkg/observability"
-	"github.com/ethpandaops/mcp/pkg/server"
+	"github.com/ethpandaops/panda/internal/version"
+	"github.com/ethpandaops/panda/pkg/config"
+	"github.com/ethpandaops/panda/pkg/observability"
+	"github.com/ethpandaops/panda/pkg/server"
 )
 
 var (
@@ -38,7 +38,7 @@ func runServe(_ *cobra.Command, _ []string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	log.WithField("version", version.Version).Info("Starting ethpandaops MCP server")
+	log.WithField("version", version.Version).Info("Starting panda server")
 
 	// Load configuration.
 	cfg, err := config.Load(cfgFile)

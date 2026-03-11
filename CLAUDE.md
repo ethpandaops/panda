@@ -4,10 +4,10 @@ This file provides guidance to coding agents working in this repository.
 
 ## Project Overview
 
-ethpandaops/mcp is a server + proxy system for Ethereum analytics. The server is the only product API boundary, runs sandboxed Python locally, and delegates credentialed upstream access to a separate proxy.
+ethpandaops/panda is a server + proxy system for Ethereum analytics. The server is the only product API boundary, runs sandboxed Python locally, and delegates credentialed upstream access to a separate proxy.
 
 The architecture is:
-- `ep` talks to `server`
+- `panda` talks to `server`
 - `server` talks to `proxy`
 - `proxy` talks to datasources
 
@@ -17,7 +17,7 @@ See `docs/architecture.md` for the canonical boundary definition.
 
 ## Architectural Guardrails
 
-- `server` is the only public/runtime API boundary for `ep`, MCP clients, and sandbox code
+- `server` is the only public/runtime API boundary for `panda`, MCP clients, and sandbox code
 - sandboxed Python calls back into `server`, never directly into `proxy`
 - `proxy` is a thin credentialed upstream gateway, not a product operations API
 - module behavior is exposed through `execute_python`, resources, docs, and search; do not add per-module MCP tools
@@ -27,8 +27,8 @@ See `docs/architecture.md` for the canonical boundary definition.
 
 Only two deployment modes are supported:
 
-1. all local: `ep -> local server -> local proxy`
-2. local server + hosted proxy: `ep -> local server -> hosted proxy`
+1. all local: `panda -> local server -> local proxy`
+2. local server + hosted proxy: `panda -> local server -> hosted proxy`
 
 In both modes, sandbox code still executes locally and calls back into local `server`.
 
@@ -36,12 +36,12 @@ In both modes, sandbox code still executes locally and calls back into local `se
 
 ```bash
 # Build
-make build                    # Build mcp + ep
+make build                    # Build panda-server + panda
 make build-proxy             # Build standalone proxy binary
 make docker                   # Build Docker image
 make docker-sandbox           # Build sandbox container image
 make download-models          # Download embedding model + libllama for local search
-make install                  # Install mcp + ep binaries into GOBIN
+make install                  # Install panda-server + panda binaries into GOBIN
 
 # Test
 make test                     # Run tests with race detector
@@ -60,13 +60,13 @@ make run-sse                  # Build + run server with SSE transport on port 24
 docker compose up -d          # Full local stack: server + proxy + MinIO
 
 # CLI (requires a running server)
-./ep datasources                          # List available datasources
-./ep schema                               # Show ClickHouse table schemas
-./ep docs                                 # Show Python API docs
-./ep execute --code 'print("hello")'      # Execute Python in sandbox
-./ep session list                         # Manage sandbox sessions
-./ep search examples "block count"        # Semantic search examples
-./ep search runbooks "finality delay"     # Semantic search runbooks
+./panda datasources                          # List available datasources
+./panda schema                               # Show ClickHouse table schemas
+./panda docs                                 # Show Python API docs
+./panda execute --code 'print("hello")'      # Execute Python in sandbox
+./panda session list                         # Manage sandbox sessions
+./panda search examples "block count"        # Semantic search examples
+./panda search runbooks "finality delay"     # Semantic search runbooks
 
 # Evaluation tests (in tests/eval/)
 cd tests/eval && uv sync
@@ -80,15 +80,15 @@ uv run python -m scripts.repl
 ### Key Components
 
 - **App kernel** (`pkg/app/`): Shared server-side initialization for the module registry, proxy client, sandbox, cartographoor, and search indices
-- **Server** (`pkg/server/`, `cmd/mcp/`): Control plane for MCP transports, product HTTP API, resource/tool registration, and sandbox orchestration
-- **CLI** (`pkg/cli/`, `cmd/cli/`): HTTP client for the server API with human-friendly output
+- **Server** (`pkg/server/`, `cmd/server/`): Control plane for MCP transports, product HTTP API, resource/tool registration, and sandbox orchestration
+- **CLI** (`pkg/cli/`, `cmd/panda/`): HTTP client for the server API with human-friendly output
 - **Credential proxy** (`pkg/proxy/`, `cmd/proxy/`): Trust boundary that holds datasource and S3 credentials and executes raw upstream requests on behalf of the server
 - **Sandbox** (`pkg/sandbox/`): Data plane that executes Python in isolated containers (Docker for dev, gVisor for production)
 - **Modules** (`modules/`): Per-integration packages that provide config, examples, docs, resources, and server-side operation behavior
 
 ### Data Flow
 
-1. `ep` or an MCP client connects to `server`
+1. `panda` or an MCP client connects to `server`
 2. `server` builds a credential-free sandbox environment with server runtime tokens and datasource metadata
 3. sandbox code calls back into `server` for operations and storage
 4. `server` calls `proxy` for credentialed upstream access
@@ -153,11 +153,11 @@ Runtime config files:
 
 Installed CLI config lookup order:
 - `--config`
-- `$ETHPANDAOPS_CONFIG` or `$EP_CONFIG`
-- `~/.config/ethpandaops/config.yaml`
+- `$PANDA_CONFIG` or `$ETHPANDAOPS_CONFIG`
+- `~/.config/panda/config.yaml`
 - `./config.yaml`
 
-`ep init` creates `~/.config/ethpandaops/config.yaml` with `server.url`.
+`panda init` creates `~/.config/panda/config.yaml` with `server.url`.
 
 Key config sections:
 
@@ -174,7 +174,7 @@ proxy:
 
 sandbox:
   backend: docker|gvisor
-  image: "ethpandaops-mcp-sandbox:latest"
+  image: "ethpandaops-panda-sandbox:latest"
   sessions:
     enabled: true
     ttl: 30m
@@ -189,8 +189,8 @@ Environment variables are substituted using `${VAR_NAME}` or `${VAR_NAME:-defaul
 ## Project Layout
 
 ```text
-cmd/mcp/           # Server binary entry point
-cmd/cli/           # CLI binary entry point (ep)
+cmd/server/        # Server binary entry point (panda-server)
+cmd/panda/         # CLI binary entry point (panda)
 cmd/proxy/         # Credential proxy binary entry point
 pkg/
   app/             # Shared server-side application kernel

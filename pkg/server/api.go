@@ -13,11 +13,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/ethpandaops/mcp/pkg/auth"
-	"github.com/ethpandaops/mcp/pkg/execsvc"
-	"github.com/ethpandaops/mcp/pkg/module"
-	"github.com/ethpandaops/mcp/pkg/serverapi"
-	"github.com/ethpandaops/mcp/pkg/types"
+	"github.com/ethpandaops/panda/pkg/auth"
+	"github.com/ethpandaops/panda/pkg/execsvc"
+	"github.com/ethpandaops/panda/pkg/module"
+	"github.com/ethpandaops/panda/pkg/serverapi"
+	"github.com/ethpandaops/panda/pkg/types"
 )
 
 func (s *service) mountAPIRoutes(r chi.Router) {

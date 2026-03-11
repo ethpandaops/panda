@@ -8,7 +8,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/ethpandaops/mcp/pkg/config"
+	"github.com/ethpandaops/panda/pkg/config"
 )
 
 // Service defines the interface for sandbox code execution backends.

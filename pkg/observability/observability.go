@@ -1,4 +1,4 @@
-// Package observability provides metrics capabilities for ethpandaops-mcp.
+// Package observability provides metrics capabilities for ethpandaops-panda.
 package observability
 
 import (
@@ -13,7 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
 
-	"github.com/ethpandaops/mcp/pkg/config"
+	"github.com/ethpandaops/panda/pkg/config"
 )
 
 // Service defines the interface for observability services.

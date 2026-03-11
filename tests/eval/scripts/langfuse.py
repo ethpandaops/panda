@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Langfuse management script for ethpandaops-mcp evaluation."""
+"""Langfuse management script for ethpandaops-panda evaluation."""
 
 from __future__ import annotations
 
@@ -92,7 +92,7 @@ def cmd_reset(args: argparse.Namespace) -> int:
 def main() -> int:
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="Manage Langfuse for ethpandaops-mcp evaluation",
+        description="Manage Langfuse for ethpandaops-panda evaluation",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

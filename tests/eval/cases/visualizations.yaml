@@ -1,4 +1,4 @@
-# Visualization test cases for ethpandaops-mcp evaluation
+# Visualization test cases for ethpandaops-panda evaluation
 # These test chart generation and visualization output
 
 - id: block_time_histogram

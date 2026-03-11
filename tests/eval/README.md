@@ -1,10 +1,10 @@
-# ethpandaops-mcp Evaluation Harness
+# ethpandaops-panda Evaluation Harness
 
-LLM evaluation framework for testing the ethpandaops-mcp server using **Claude Agent SDK (Python)** and **DeepEval**.
+LLM evaluation framework for testing the ethpandaops-panda server using **Claude Agent SDK (Python)** and **DeepEval**.
 
 ## Overview
 
-This evaluation harness tests end-to-end task completion against the ethpandaops-mcp server with live ClickHouse data. It uses:
+This evaluation harness tests end-to-end task completion against the ethpandaops-panda server with live ClickHouse data. It uses:
 
 - **[Claude Agent SDK (Python)](https://platform.claude.com/docs/en/agent-sdk/python)** - Same agent loop that powers Claude Code, native MCP support
 - **[DeepEval](https://github.com/confident-ai/deepeval)** - Rich agent-specific metrics, pytest integration
@@ -16,7 +16,7 @@ This evaluation harness tests end-to-end task completion against the ethpandaops
 
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) installed
-- Running ethpandaops-mcp server (with auth disabled for testing)
+- Running ethpandaops-panda server (with auth disabled for testing)
 - `ANTHROPIC_API_KEY` environment variable set
 - `OPENAI_API_KEY` environment variable set (for DeepEval LLM-based metrics)
 
@@ -50,7 +50,7 @@ uv run python -m scripts.run_eval -m "not slow"
 uv run python -m scripts.run_eval --list
 
 # Or use the installed script directly
-uv run mcp-eval --model claude-sonnet-4-5
+uv run panda-eval --model claude-sonnet-4-5
 ```
 
 ### Interactive REPL
@@ -66,7 +66,7 @@ uv run python -m scripts.repl --model claude-haiku-4-5
 uv run python -m scripts.repl --verbose
 
 # Or use the installed script
-uv run mcp-repl --verbose
+uv run panda-repl --verbose
 ```
 
 REPL Commands:
@@ -127,7 +127,7 @@ Validates visualization output:
 ANTHROPIC_API_KEY=sk-ant-...       # For Claude models
 OPENAI_API_KEY=sk-...              # For DeepEval metrics
 
-# ethpandaops-mcp connection
+# ethpandaops-panda connection
 MCP_EVAL_MCP_URL=http://localhost:2480  # Default
 
 # Model selection
@@ -307,9 +307,9 @@ Langfuse v3 runs with these services:
 
 ### Server Connection Issues
 
-Ensure ethpandaops-mcp server is running with auth disabled:
+Ensure ethpandaops-panda server is running with auth disabled:
 ```bash
-./mcp serve --config config.yaml
+./panda-server serve --config config.yaml
 # config.yaml should have: auth.enabled: false
 ```
 

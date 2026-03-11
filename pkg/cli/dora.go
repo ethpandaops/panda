@@ -14,11 +14,11 @@ var doraCmd = &cobra.Command{
 	Long: `Query the Dora beacon chain explorer for network status, validators, and slots.
 
 Examples:
-  ep dora networks
-  ep dora overview hoodi
-  ep dora validator hoodi 12345
-  ep dora slot hoodi 1000000
-  ep dora epoch hoodi 100`,
+  panda dora networks
+  panda dora overview hoodi
+  panda dora validator hoodi 12345
+  panda dora slot hoodi 1000000
+  panda dora epoch hoodi 100`,
 }
 
 func init() {

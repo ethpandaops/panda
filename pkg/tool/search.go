@@ -8,10 +8,10 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/sirupsen/logrus"
 
-	"github.com/ethpandaops/mcp/pkg/module"
-	"github.com/ethpandaops/mcp/pkg/resource"
-	"github.com/ethpandaops/mcp/pkg/searchsvc"
-	"github.com/ethpandaops/mcp/runbooks"
+	"github.com/ethpandaops/panda/pkg/module"
+	"github.com/ethpandaops/panda/pkg/resource"
+	"github.com/ethpandaops/panda/pkg/searchsvc"
+	"github.com/ethpandaops/panda/runbooks"
 )
 
 const SearchToolName = "search"

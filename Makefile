@@ -1,4 +1,4 @@
-.PHONY: build build-mcp build-cli build-proxy install install-mcp install-cli install-proxy test lint clean docker docker-push docker-sandbox test-sandbox run help download-models clean-models setup-hooks
+.PHONY: build build-server build-panda build-proxy install install-server install-panda install-proxy test lint clean docker docker-push docker-sandbox test-sandbox run help download-models clean-models setup-hooks
 
 # Embedding model and shared library configuration
 # Downloaded from HuggingFace and kelindar/search GitHub repo
@@ -25,12 +25,12 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev
 GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME ?= $(shell date -u '+%Y-%m-%d_%H:%M:%S')
 LDFLAGS := -s -w \
-	-X github.com/ethpandaops/mcp/internal/version.Version=$(VERSION) \
-	-X github.com/ethpandaops/mcp/internal/version.GitCommit=$(GIT_COMMIT) \
-	-X github.com/ethpandaops/mcp/internal/version.BuildTime=$(BUILD_TIME)
+	-X github.com/ethpandaops/panda/internal/version.Version=$(VERSION) \
+	-X github.com/ethpandaops/panda/internal/version.GitCommit=$(GIT_COMMIT) \
+	-X github.com/ethpandaops/panda/internal/version.BuildTime=$(BUILD_TIME)
 
 # Docker variables
-DOCKER_IMAGE ?= ethpandaops/mcp
+DOCKER_IMAGE ?= ethpandaops/panda
 DOCKER_TAG ?= $(VERSION)
 
 # Go variables
@@ -39,19 +39,19 @@ GOBIN ?= $(shell go env GOPATH)/bin
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-build: build-mcp build-cli ## Build primary binaries (mcp + ep)
+build: build-server build-panda ## Build primary binaries (panda-server + panda)
 
-build-mcp: ## Build the MCP server binary
-	go build -ldflags "$(LDFLAGS)" -o mcp ./cmd/mcp
+build-server: ## Build the server binary
+	go build -ldflags "$(LDFLAGS)" -o panda-server ./cmd/server
 
-build-cli: ## Build the CLI binary
-	go build -ldflags "$(LDFLAGS)" -o ep ./cmd/cli
+build-panda: ## Build the CLI binary
+	go build -ldflags "$(LDFLAGS)" -o panda ./cmd/panda
 
 build-proxy: ## Build the standalone proxy binary
-	go build -ldflags "$(LDFLAGS)" -o proxy ./cmd/proxy
+	go build -ldflags "$(LDFLAGS)" -o panda-proxy ./cmd/proxy
 
 build-linux: ## Build for Linux (amd64)
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o mcp-linux-amd64 ./cmd/mcp
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o panda-server-linux-amd64 ./cmd/server
 
 test: ## Run tests
 	go test -race -v ./...
@@ -78,7 +78,7 @@ tidy: ## Run go mod tidy
 	go mod tidy
 
 clean: ## Clean build artifacts
-	rm -f mcp .mcp-bin ep proxy mcp-linux-amd64
+	rm -f panda-server .panda-server-bin panda panda-proxy panda-server-linux-amd64
 	rm -f libllama_go.so libllama_go.dylib
 	rm -f coverage.out coverage.html
 
@@ -96,16 +96,16 @@ docker-push: docker ## Push Docker image
 	docker push $(DOCKER_IMAGE):latest
 
 docker-sandbox: ## Build sandbox Docker image
-	docker build -t ethpandaops-mcp-sandbox:latest -f sandbox/Dockerfile .
+	docker build -t ethpandaops-panda-sandbox:latest -f sandbox/Dockerfile .
 
 test-sandbox: ## Run sandbox package tests
 	go test -race -v ./pkg/sandbox/...
 
-run: build-mcp download-models ## Run the server with stdio transport
-	./mcp serve
+run: build-server download-models ## Run the server with stdio transport
+	./panda-server serve
 
-run-sse: build-mcp ## Run the server with SSE transport
-	./mcp serve --transport sse --port 2480
+run-sse: build-server ## Run the server with SSE transport
+	./panda-server serve --transport sse --port 2480
 
 run-docker: docker ## Run with docker compose
 	docker compose up -d
@@ -114,29 +114,29 @@ stop-docker: ## Stop docker compose services
 	docker compose down
 
 logs: ## View docker compose logs
-	docker compose logs -f mcp-server
+	docker compose logs -f panda-server
 
-install: install-mcp install-cli ## Install primary binaries to GOBIN
+install: install-server install-panda ## Install primary binaries to GOBIN
 
-install-mcp: ## Install the MCP server binary to GOBIN
+install-server: ## Install the server binary to GOBIN
 	@mkdir -p $(GOBIN)
-	go build -ldflags "$(LDFLAGS)" -o $(GOBIN)/.mcp-bin ./cmd/mcp
+	go build -ldflags "$(LDFLAGS)" -o $(GOBIN)/.panda-server-bin ./cmd/server
 	@printf '%s\n' \
 		'#!/bin/sh' \
 		'SCRIPT_DIR=$$(CDPATH= cd -- "$$(dirname -- "$$0")" && pwd)' \
 		'export LD_LIBRARY_PATH="$$SCRIPT_DIR$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}"' \
 		'export DYLD_LIBRARY_PATH="$$SCRIPT_DIR$${DYLD_LIBRARY_PATH:+:$$DYLD_LIBRARY_PATH}"' \
-		'exec "$$SCRIPT_DIR/.mcp-bin" "$$@"' \
-		> $(GOBIN)/mcp
-	@chmod +x $(GOBIN)/mcp
+		'exec "$$SCRIPT_DIR/.panda-server-bin" "$$@"' \
+		> $(GOBIN)/panda-server
+	@chmod +x $(GOBIN)/panda-server
 
-install-cli: ## Install the CLI binary to GOBIN
+install-panda: ## Install the CLI binary to GOBIN
 	@mkdir -p $(GOBIN)
-	go build -ldflags "$(LDFLAGS)" -o $(GOBIN)/ep ./cmd/cli
+	go build -ldflags "$(LDFLAGS)" -o $(GOBIN)/panda ./cmd/panda
 
 install-proxy: ## Install the standalone proxy binary to GOBIN
 	@mkdir -p $(GOBIN)
-	go build -ldflags "$(LDFLAGS)" -o $(GOBIN)/proxy ./cmd/proxy
+	go build -ldflags "$(LDFLAGS)" -o $(GOBIN)/panda-proxy ./cmd/proxy
 
 setup-hooks: ## Install git pre-commit hooks
 	git config core.hooksPath .githooks

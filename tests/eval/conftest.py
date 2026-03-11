@@ -1,4 +1,4 @@
-"""pytest configuration and fixtures for ethpandaops-mcp evaluation."""
+"""pytest configuration and fixtures for ethpandaops-panda evaluation."""
 
 from __future__ import annotations
 

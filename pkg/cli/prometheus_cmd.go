@@ -22,11 +22,11 @@ var prometheusCmd = &cobra.Command{
 	Long: `Query Prometheus for infrastructure metrics.
 
 Examples:
-  ep prometheus list-datasources
-  ep prometheus query ethpandaops "up"
-  ep prometheus query-range ethpandaops "rate(http_requests_total[5m])" --start now-1h --end now --step 1m
-  ep prometheus labels ethpandaops
-  ep prometheus label-values ethpandaops job`,
+  panda prometheus list-datasources
+  panda prometheus query ethpandaops "up"
+  panda prometheus query-range ethpandaops "rate(http_requests_total[5m])" --start now-1h --end now --step 1m
+  panda prometheus labels ethpandaops
+  panda prometheus label-values ethpandaops job`,
 }
 
 func init() {

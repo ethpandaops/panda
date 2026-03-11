@@ -12,7 +12,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/ethpandaops/mcp/pkg/configpath"
+	"github.com/ethpandaops/panda/pkg/configpath"
 )
 
 // Config is the main configuration structure.

@@ -1,4 +1,4 @@
-"""Agent module for ethpandaops-mcp evaluation."""
+"""Agent module for ethpandaops-panda evaluation."""
 
 from agent.wrapper import ExecutionResult, MCPAgent
 

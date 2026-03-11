@@ -15,7 +15,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/ethpandaops/mcp/pkg/auth/client"
+	"github.com/ethpandaops/panda/pkg/auth/client"
 )
 
 // Store manages local credential storage.
@@ -42,7 +42,7 @@ type Store interface {
 // Config configures the credential store.
 type Config struct {
 	// Path is the path to the credentials file.
-	// Defaults to a namespaced file in ~/.config/ethpandaops-mcp/credentials/
+	// Defaults to a namespaced file in ~/.config/panda/credentials/
 	Path string
 
 	// IssuerURL namespaces stored credentials by auth issuer.
@@ -254,14 +254,33 @@ func (s *store) refresh(refreshToken string) (*client.Tokens, error) {
 
 func defaultCredentialPath(cfg Config) string {
 	home, _ := os.UserHomeDir()
-	baseDir := filepath.Join(home, ".config", "ethpandaops-mcp")
+	newBaseDir := filepath.Join(home, ".config", "panda")
+	oldBaseDir := filepath.Join(home, ".config", "ethpandaops-mcp")
 
 	key := credentialNamespaceKey(cfg.IssuerURL, cfg.ClientID, cfg.Resource)
+
+	var newPath, oldPath string
 	if key == "" {
-		return filepath.Join(baseDir, "credentials.json")
+		newPath = filepath.Join(newBaseDir, "credentials.json")
+		oldPath = filepath.Join(oldBaseDir, "credentials.json")
+	} else {
+		newPath = filepath.Join(newBaseDir, "credentials", key+".json")
+		oldPath = filepath.Join(oldBaseDir, "credentials", key+".json")
 	}
 
-	return filepath.Join(baseDir, "credentials", key+".json")
+	// Migrate: if old credentials exist but new ones don't, fall back to old path.
+	if _, err := os.Stat(newPath); os.IsNotExist(err) {
+		if _, err := os.Stat(oldPath); err == nil {
+			logrus.Warnf(
+				"Using legacy credential path %s; move it to %s",
+				oldPath, newPath,
+			)
+
+			return oldPath
+		}
+	}
+
+	return newPath
 }
 
 func credentialNamespaceKey(issuerURL, clientID, resource string) string {

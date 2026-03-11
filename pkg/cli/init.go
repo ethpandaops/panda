@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ethpandaops/mcp/pkg/configpath"
+	"github.com/ethpandaops/panda/pkg/configpath"
 )
 
 const defaultAppConfigTemplate = `# ethpandaops CLI configuration
@@ -23,10 +23,10 @@ var (
 var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Create a default CLI config in your home config directory",
-	Long: `Create starter config for ep in your home config directory.
+	Long: `Create starter config for panda in your home config directory.
 
 By default this writes:
-  ~/.config/ethpandaops/config.yaml`,
+  ~/.config/panda/config.yaml`,
 	RunE: runInit,
 }
 
@@ -57,8 +57,8 @@ func runInit(_ *cobra.Command, _ []string) error {
 		}
 	}
 
-	fmt.Println("Point server.url at a running local server, then run `ep datasources`.")
-	fmt.Println("If the configured proxy requires auth, run `ep auth login` before querying remote data.")
+	fmt.Println("Point server.url at a running local server, then run `panda datasources`.")
+	fmt.Println("If the configured proxy requires auth, run `panda auth login` before querying remote data.")
 
 	return nil
 }

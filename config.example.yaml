@@ -1,4 +1,4 @@
-# ethpandaops MCP Server Configuration
+# ethpandaops Panda Server Configuration
 # Copy this file to config.yaml and customize for your environment.
 # Environment variables can be substituted using ${VAR_NAME} syntax.
 
@@ -6,19 +6,19 @@ server:
   host: "0.0.0.0"
   port: 2480
   base_url: "http://localhost:2480"  # ep clients should point at this URL
-  sandbox_url: "http://ethpandaops-mcp-server:2480"  # URL sandbox containers use to call the local server
+  sandbox_url: "http://ethpandaops-panda-server:2480"  # URL sandbox containers use to call the local server
 
 # Sandbox configuration
 sandbox:
   # Backend: docker (local dev) | gvisor (production)
   backend: docker
-  image: "ethpandaops-mcp-sandbox:latest"
+  image: "ethpandaops-panda-sandbox:latest"
   timeout: 60  # seconds
   memory_limit: "2g"
   cpu_limit: 1.0
   # Network for sandbox containers. In stdio mode (outside docker compose),
   # the server auto-creates this network if it doesn't exist.
-  network: "ethpandaops-mcp-internal"
+  network: "ethpandaops-panda-internal"
   # host_shared_path: "/tmp/mcp-sandbox"  # Docker-in-Docker: host-visible path for bind mounts
 
   # Sessions configuration (optional)
@@ -34,13 +34,13 @@ sandbox:
 # In local dev this is typically the docker compose proxy service.
 # For external users this can point at a hosted credential proxy.
 proxy:
-  url: "http://ethpandaops-mcp-proxy:18081"
+  url: "http://ethpandaops-panda-proxy:18081"
 
   # Auth configuration (optional, for remote hosted proxies).
   # Users run `ep auth login` and the local server reuses those credentials.
   # auth:
   #   issuer_url: "https://proxy.ethpandaops.io"
-  #   client_id: "ep"
+  #   client_id: "panda"
 
 # Observability configuration
 observability:

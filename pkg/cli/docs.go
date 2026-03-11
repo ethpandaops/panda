@@ -9,8 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ethpandaops/mcp/pkg/resource"
-	"github.com/ethpandaops/mcp/pkg/types"
+	"github.com/ethpandaops/panda/pkg/resource"
+	"github.com/ethpandaops/panda/pkg/types"
 )
 
 var docsJSON bool
@@ -23,9 +23,9 @@ in the sandbox. Without arguments, lists all modules. With a module name,
 shows detailed function signatures and descriptions.
 
 Examples:
-  ep docs                  # List all modules
-  ep docs clickhouse       # Show clickhouse module docs
-  ep docs --json           # Output as JSON`,
+  panda docs                  # List all modules
+  panda docs clickhouse       # Show clickhouse module docs
+  panda docs --json           # Output as JSON`,
 	RunE:      runDocs,
 	ValidArgs: []string{"clickhouse", "prometheus", "loki", "dora", "storage", "ethnode"},
 }
@@ -76,7 +76,7 @@ func listModules(docs map[string]types.ModuleDoc) error {
 		fmt.Printf("  %-16s  %s\n", name, doc.Description)
 	}
 
-	fmt.Println("\nUse 'ep docs <module>' for detailed function documentation.")
+	fmt.Println("\nUse 'panda docs <module>' for detailed function documentation.")
 
 	return nil
 }

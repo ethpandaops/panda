@@ -23,8 +23,8 @@ var searchCmd = &cobra.Command{
 	Long: `Semantic search over query examples and investigation runbooks.
 
 Examples:
-  ep search examples "attestation participation"
-  ep search runbooks "finality delay"`,
+  panda search examples "attestation participation"
+  panda search runbooks "finality delay"`,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		return cmd.Help()
 	},

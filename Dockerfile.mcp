@@ -1,5 +1,5 @@
-# Dockerfile for the MCP server
-# Build: docker build -f Dockerfile.mcp -t ethpandaops-mcp .
+# Dockerfile for the Panda server
+# Build: docker build -f Dockerfile.mcp -t ethpandaops-panda-server .
 
 # Build stage
 FROM golang:1.24-alpine AS builder
@@ -22,17 +22,17 @@ RUN mkdir -p /app/models /app/models-output && \
         cp /app/models/*.gguf /app/models-output/; \
     fi
 
-# Build the MCP binary
+# Build the server binary
 ARG VERSION=dev
 ARG GIT_COMMIT=unknown
 ARG BUILD_TIME=unknown
 
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -ldflags "-s -w \
-        -X github.com/ethpandaops/mcp/internal/version.Version=${VERSION} \
-        -X github.com/ethpandaops/mcp/internal/version.GitCommit=${GIT_COMMIT} \
-        -X github.com/ethpandaops/mcp/internal/version.BuildTime=${BUILD_TIME}" \
-    -o /ethpandaops-mcp ./cmd/mcp
+        -X github.com/ethpandaops/panda/internal/version.Version=${VERSION} \
+        -X github.com/ethpandaops/panda/internal/version.GitCommit=${GIT_COMMIT} \
+        -X github.com/ethpandaops/panda/internal/version.BuildTime=${BUILD_TIME}" \
+    -o /ethpandaops-panda-server ./cmd/server
 
 # Runtime stage
 FROM alpine:3.20
@@ -43,23 +43,23 @@ WORKDIR /app
 RUN apk add --no-cache ca-certificates tzdata
 
 # Copy binary from builder
-COPY --from=builder /ethpandaops-mcp /usr/local/bin/ethpandaops-mcp
+COPY --from=builder /ethpandaops-panda-server /usr/local/bin/ethpandaops-panda-server
 
 # Copy embedding model (if available)
-COPY --from=builder /app/models-output/ /usr/share/mcp/
+COPY --from=builder /app/models-output/ /usr/share/panda/
 
 # Create non-root user
-RUN addgroup -g 1000 mcp && \
-    adduser -u 1000 -G mcp -D mcp
+RUN addgroup -g 1000 panda && \
+    adduser -u 1000 -G panda -D panda
 
-USER mcp
+USER panda
 
-# Expose MCP port
+# Expose server port
 EXPOSE 2480
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:2480/health || exit 1
 
-ENTRYPOINT ["ethpandaops-mcp"]
+ENTRYPOINT ["ethpandaops-panda-server"]
 CMD ["serve"]

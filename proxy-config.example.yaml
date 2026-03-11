@@ -2,7 +2,7 @@
 # The proxy holds datasource credentials and proxies requests from sandbox containers.
 #
 # Usage:
-#   Local dev:  mcp proxy -c proxy-config.yaml
+#   Local dev:  panda proxy -c proxy-config.yaml
 #   Production: Deploy as a K8s service
 #
 # The MCP server connects to this proxy via its 'proxy.url' config.
@@ -76,7 +76,7 @@ s3:
   endpoint: "${S3_ENDPOINT}"
   access_key: "${S3_ACCESS_KEY}"
   secret_key: "${S3_SECRET_KEY}"
-  bucket: "ethpandaops-mcp-outputs"
+  bucket: "ethpandaops-panda-outputs"
   region: "us-east-1"
   public_url_prefix: "${S3_PUBLIC_URL_PREFIX}"
 

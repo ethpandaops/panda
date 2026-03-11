@@ -1,4 +1,4 @@
-# Multi-step test cases for ethpandaops-mcp evaluation
+# Multi-step test cases for ethpandaops-panda evaluation
 # These test multi-turn conversations with session persistence
 
 - id: session_data_analysis

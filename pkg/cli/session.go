@@ -17,9 +17,9 @@ var sessionCmd = &cobra.Command{
 between executions, preserving files in /workspace.
 
 Examples:
-  ep session list
-  ep session create
-  ep session destroy <session-id>`,
+  panda session list
+  panda session create
+  panda session destroy <session-id>`,
 }
 
 var sessionListCmd = &cobra.Command{

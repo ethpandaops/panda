@@ -8,7 +8,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/ethpandaops/mcp/pkg/configpath"
+	"github.com/ethpandaops/panda/pkg/configpath"
 )
 
 // ClientConfig is the subset of configuration needed by ep when operating as a server client.

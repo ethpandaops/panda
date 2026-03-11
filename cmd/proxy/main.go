@@ -12,8 +12,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/ethpandaops/mcp/internal/version"
-	"github.com/ethpandaops/mcp/pkg/proxy"
+	"github.com/ethpandaops/panda/internal/version"
+	"github.com/ethpandaops/panda/pkg/proxy"
 )
 
 var (
@@ -29,8 +29,8 @@ func main() {
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "ethpandaops-proxy",
-	Short: "ethpandaops credential proxy for Ethereum network analytics",
+	Use:   "panda-proxy",
+	Short: "panda credential proxy for Ethereum network analytics",
 	Long: `A standalone credential proxy that securely proxies requests to ClickHouse,
 Prometheus, and Loki backends. This is designed for centralized deployment where
 the proxy holds upstream credentials and can optionally issue proxy-scoped tokens
@@ -50,7 +50,7 @@ after GitHub authentication.`,
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: $ETHPANDAOPS_PROXY_CONFIG, ~/.config/ethpandaops/proxy-config.yaml, or ./proxy-config.yaml)")
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: $PANDA_PROXY_CONFIG, ~/.config/panda/proxy-config.yaml, or ./proxy-config.yaml)")
 	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "log level (debug, info, warn, error)")
 }
 
@@ -58,7 +58,7 @@ func runServe(_ *cobra.Command, _ []string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	log.WithField("version", version.Version).Info("Starting ethpandaops credential proxy")
+	log.WithField("version", version.Version).Info("Starting panda credential proxy")
 
 	// Load configuration.
 	cfg, err := proxy.LoadServerConfig(cfgFile)

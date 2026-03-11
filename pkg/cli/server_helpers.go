@@ -10,10 +10,10 @@ import (
 	"net/url"
 	"strings"
 
-	clickhousemodule "github.com/ethpandaops/mcp/modules/clickhouse"
-	"github.com/ethpandaops/mcp/pkg/config"
-	"github.com/ethpandaops/mcp/pkg/operations"
-	"github.com/ethpandaops/mcp/pkg/serverapi"
+	clickhousemodule "github.com/ethpandaops/panda/modules/clickhouse"
+	"github.com/ethpandaops/panda/pkg/config"
+	"github.com/ethpandaops/panda/pkg/operations"
+	"github.com/ethpandaops/panda/pkg/serverapi"
 )
 
 var serverHTTP = &http.Client{Timeout: 0}

@@ -1,20 +1,20 @@
 ---
 name: investigate
-description: Debug Ethereum devnet or network issues. Use when diagnosing finality delays, network splits, offline nodes, client bugs, or general network health problems. Drives a multi-phase investigation using Dora, Loki, ClickHouse, and Prometheus via the ep CLI.
+description: Debug Ethereum devnet or network issues. Use when diagnosing finality delays, network splits, offline nodes, client bugs, or general network health problems. Drives a multi-phase investigation using Dora, Loki, ClickHouse, and Prometheus via the panda CLI.
 argument-hint: <network-name and/or issue description>
 user-invocable: false
 ---
 
 # Investigate Ethereum Network Issues
 
-Systematic debugging of Ethereum devnets and testnets using the `ep` CLI. Covers finality delays, network splits, offline nodes, and client bugs.
+Systematic debugging of Ethereum devnets and testnets using the `panda` CLI. Covers finality delays, network splits, offline nodes, and client bugs.
 
 ## Prerequisites
 
-The `ep` CLI must be built and configured:
+The `panda` CLI must be built and configured:
 ```bash
 make build-cli && make download-models
-LD_LIBRARY_PATH=./models ./ep datasources  # verify connectivity
+LD_LIBRARY_PATH=./models ./panda datasources  # verify connectivity
 ```
 
 ## Phase 0: Discovery
@@ -23,14 +23,14 @@ LD_LIBRARY_PATH=./models ./ep datasources  # verify connectivity
 
 ```bash
 # Find available networks
-ep execute --code 'from ethpandaops import dora; print(dora.list_networks())'
-ep execute --code 'from ethpandaops import loki; print(loki.get_label_values("ethpandaops", "testnet"))'
+panda execute --code 'from ethpandaops import dora; print(dora.list_networks())'
+panda execute --code 'from ethpandaops import loki; print(loki.get_label_values("ethpandaops", "testnet"))'
 ```
 
 Determine the **data profile** — which datasources have the target network:
 
 ```bash
-ep execute --code '
+panda execute --code '
 from ethpandaops import dora, loki
 
 network = "<NETWORK>"
@@ -61,16 +61,16 @@ print(f"has_dora={has_dora}, has_loki={has_loki}")
 
 ## Phase 1: Dora Data Collection
 
-Skip if `has_dora=false`. Use `ep search runbooks "debug devnet"` for the full procedure.
+Skip if `has_dora=false`. Use `panda search runbooks "debug devnet"` for the full procedure.
 
 Collect in a single execution (use `--session` to reuse the container):
 
 ```bash
 # Create a session for the investigation
-ep session create
+panda session create
 # Use returned session ID for all subsequent calls
 
-ep execute --session <id> --code '
+panda execute --session <id> --code '
 from ethpandaops import dora
 import json
 
@@ -108,7 +108,7 @@ Target specific nodes from Phase 1 findings, or scan broadly if Loki-only.
 
 ```bash
 # Discover available labels for the network
-ep execute --session <id> --code '
+panda execute --session <id> --code '
 from ethpandaops import loki
 
 network = "<NETWORK>"
@@ -119,7 +119,7 @@ print(f"CL clients: {cl_clients}")
 '
 
 # Fetch CL error logs for a specific node
-ep execute --session <id> --code '
+panda execute --session <id> --code '
 from ethpandaops import loki
 
 logs = loki.query(
@@ -164,21 +164,21 @@ Present findings:
 
 ```bash
 # Find relevant query examples
-ep search examples "attestation participation"
-ep search examples "missed slots"
-ep search examples "client distribution"
-ep search examples "network overview"
+panda search examples "attestation participation"
+panda search examples "missed slots"
+panda search examples "client distribution"
+panda search examples "network overview"
 
 # Find relevant runbooks
-ep search runbooks "finality delay"
-ep search runbooks "debug devnet"
-ep search runbooks "slow query"
+panda search runbooks "finality delay"
+panda search runbooks "debug devnet"
+panda search runbooks "slow query"
 ```
 
 ## Notes
 
 - Save intermediate data to `/workspace/` for multi-step analysis
 - Use `--session` consistently to avoid container startup overhead
-- Use `ep search examples` before writing complex queries from scratch
+- Use `panda search examples` before writing complex queries from scratch
 - Upload charts with `storage.upload()` for shareable URLs
 - Generate Dora links with `dora.link_slot()`, `dora.link_epoch()`, `dora.link_validator()`

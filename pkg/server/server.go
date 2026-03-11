@@ -1,4 +1,4 @@
-// Package server provides the MCP server implementation for ethpandaops-mcp.
+// Package server provides the MCP server implementation for ethpandaops-panda.
 package server
 
 import (
@@ -14,18 +14,18 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 	"github.com/sirupsen/logrus"
 
-	"github.com/ethpandaops/mcp/internal/version"
-	"github.com/ethpandaops/mcp/pkg/cartographoor"
-	"github.com/ethpandaops/mcp/pkg/config"
-	"github.com/ethpandaops/mcp/pkg/execsvc"
-	"github.com/ethpandaops/mcp/pkg/module"
-	"github.com/ethpandaops/mcp/pkg/observability"
-	"github.com/ethpandaops/mcp/pkg/proxy"
-	"github.com/ethpandaops/mcp/pkg/resource"
-	"github.com/ethpandaops/mcp/pkg/searchsvc"
-	"github.com/ethpandaops/mcp/pkg/serverapi"
-	"github.com/ethpandaops/mcp/pkg/tokenstore"
-	"github.com/ethpandaops/mcp/pkg/tool"
+	"github.com/ethpandaops/panda/internal/version"
+	"github.com/ethpandaops/panda/pkg/cartographoor"
+	"github.com/ethpandaops/panda/pkg/config"
+	"github.com/ethpandaops/panda/pkg/execsvc"
+	"github.com/ethpandaops/panda/pkg/module"
+	"github.com/ethpandaops/panda/pkg/observability"
+	"github.com/ethpandaops/panda/pkg/proxy"
+	"github.com/ethpandaops/panda/pkg/resource"
+	"github.com/ethpandaops/panda/pkg/searchsvc"
+	"github.com/ethpandaops/panda/pkg/serverapi"
+	"github.com/ethpandaops/panda/pkg/tokenstore"
+	"github.com/ethpandaops/panda/pkg/tool"
 )
 
 // Transport constants.
@@ -119,7 +119,7 @@ func (s *service) Start(ctx context.Context) error {
 
 	// Create the MCP server
 	s.mcpServer = mcpserver.NewMCPServer(
-		"ethpandaops-mcp",
+		"ethpandaops-panda",
 		version.Version,
 		mcpserver.WithToolCapabilities(true),
 		mcpserver.WithResourceCapabilities(true, true),

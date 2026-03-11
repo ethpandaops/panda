@@ -1,10 +1,10 @@
-# ethpandaops MCP Server Dockerfile
+# ethpandaops Panda Server Dockerfile
 #
 # Build:
-#   docker build -t mcp:latest .
+#   docker build -t panda:latest .
 #
 # Run:
-#   docker run -p 2480:2480 -v /var/run/docker.sock:/var/run/docker.sock mcp:latest
+#   docker run -p 2480:2480 -v /var/run/docker.sock:/var/run/docker.sock panda:latest
 
 # =============================================================================
 # Stage 1: Build libllama_go.so from source
@@ -54,17 +54,17 @@ ARG GIT_COMMIT=unknown
 ARG BUILD_TIME=unknown
 
 RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-s -w -X github.com/ethpandaops/mcp/internal/version.Version=${VERSION} \
-    -X github.com/ethpandaops/mcp/internal/version.GitCommit=${GIT_COMMIT} \
-    -X github.com/ethpandaops/mcp/internal/version.BuildTime=${BUILD_TIME}" \
-    -o mcp ./cmd/mcp
+    -ldflags="-s -w -X github.com/ethpandaops/panda/internal/version.Version=${VERSION} \
+    -X github.com/ethpandaops/panda/internal/version.GitCommit=${GIT_COMMIT} \
+    -X github.com/ethpandaops/panda/internal/version.BuildTime=${BUILD_TIME}" \
+    -o panda-server ./cmd/server
 
 # Build proxy binary
 RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-s -w -X github.com/ethpandaops/mcp/internal/version.Version=${VERSION} \
-    -X github.com/ethpandaops/mcp/internal/version.GitCommit=${GIT_COMMIT} \
-    -X github.com/ethpandaops/mcp/internal/version.BuildTime=${BUILD_TIME}" \
-    -o proxy ./cmd/proxy
+    -ldflags="-s -w -X github.com/ethpandaops/panda/internal/version.Version=${VERSION} \
+    -X github.com/ethpandaops/panda/internal/version.GitCommit=${GIT_COMMIT} \
+    -X github.com/ethpandaops/panda/internal/version.BuildTime=${BUILD_TIME}" \
+    -o panda-proxy ./cmd/proxy
 
 # Download embedding model (same for all architectures)
 RUN mkdir -p /assets && \
@@ -85,22 +85,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
-RUN useradd -m -s /bin/bash mcp && \
-    usermod -aG docker mcp 2>/dev/null || true
+RUN useradd -m -s /bin/bash panda && \
+    usermod -aG docker panda 2>/dev/null || true
 
 WORKDIR /app
 
 # Copy binaries from builder
-COPY --from=builder /app/mcp /app/mcp
-COPY --from=builder /app/proxy /app/proxy
+COPY --from=builder /app/panda-server /app/panda-server
+COPY --from=builder /app/panda-proxy /app/panda-proxy
 
 # Copy embedding model and llama.cpp shared library
-COPY --from=builder /assets/MiniLM-L6-v2.Q8_0.gguf /usr/share/mcp/
+COPY --from=builder /assets/MiniLM-L6-v2.Q8_0.gguf /usr/share/panda/
 COPY --from=builder /assets/libllama_go.so /lib/
 
 # Create directories
 RUN mkdir -p /config /shared /output && \
-    chown -R mcp:mcp /app /config /shared /output
+    chown -R panda:panda /app /config /shared /output
 
 # Expose ports
 EXPOSE 2480 2490
@@ -109,6 +109,6 @@ EXPOSE 2480 2490
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD nc -z localhost 2480 || exit 1
 
-# Default command - start MCP server with streamable-http transport
-ENTRYPOINT ["/app/mcp"]
+# Default command - start server with streamable-http transport
+ENTRYPOINT ["/app/panda-server"]
 CMD ["serve", "--transport", "streamable-http"]

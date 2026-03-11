@@ -1,1 +1,1 @@
-"""Scripts module for ethpandaops-mcp evaluation."""
+"""Scripts module for ethpandaops-panda evaluation."""

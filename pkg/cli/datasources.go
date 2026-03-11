@@ -20,9 +20,9 @@ var datasourcesCmd = &cobra.Command{
 ClickHouse clusters, Prometheus instances, and Loki instances.
 
 Examples:
-  ep datasources                     # List all datasources
-  ep datasources --type clickhouse   # List only ClickHouse clusters
-  ep datasources --json              # Output as JSON`,
+  panda datasources                     # List all datasources
+  panda datasources --type clickhouse   # List only ClickHouse clusters
+  panda datasources --json              # Output as JSON`,
 	RunE: runDatasources,
 }
 

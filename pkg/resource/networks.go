@@ -11,7 +11,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/sirupsen/logrus"
 
-	"github.com/ethpandaops/mcp/pkg/cartographoor"
+	"github.com/ethpandaops/panda/pkg/cartographoor"
 )
 
 // networkURIPattern matches networks://{name} URIs.

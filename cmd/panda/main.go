@@ -1,6 +1,6 @@
 package main
 
-import "github.com/ethpandaops/mcp/pkg/cli"
+import "github.com/ethpandaops/panda/pkg/cli"
 
 func main() {
 	cli.Execute()

@@ -1,1 +1,1 @@
-"""Test modules for ethpandaops-mcp evaluation."""
+"""Test modules for ethpandaops-panda evaluation."""

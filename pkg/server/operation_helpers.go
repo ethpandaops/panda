@@ -10,7 +10,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/ethpandaops/mcp/pkg/operations"
+	"github.com/ethpandaops/panda/pkg/operations"
 )
 
 func decodeOperationRequest(r *http.Request) (operations.Request, error) {

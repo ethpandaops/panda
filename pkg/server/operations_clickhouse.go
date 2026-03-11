@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/ethpandaops/mcp/pkg/operations"
+	"github.com/ethpandaops/panda/pkg/operations"
 )
 
 func (s *service) handleClickHouseOperation(operationID string, w http.ResponseWriter, r *http.Request) bool {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CLI runner for ethpandaops-mcp evaluation."""
+"""CLI runner for ethpandaops-panda evaluation."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def print_header(
     console.print()
     console.print(
         Panel(
-            f"[bold]ethpandaops-mcp Evaluation[/bold]\n\n"
+            f"[bold]ethpandaops-panda Evaluation[/bold]\n\n"
             f"Agent Model: [cyan]{model}[/cyan]\n"
             f"Evaluator Model: [cyan]{evaluator_model}[/cyan]\n"
             f"Category: [cyan]{category or 'all'}[/cyan]\n"
@@ -234,7 +234,7 @@ def list_test_cases() -> None:
 def main() -> None:
     """Main entry point for CLI runner."""
     parser = argparse.ArgumentParser(
-        description="Run ethpandaops-mcp LLM evaluation",
+        description="Run ethpandaops-panda LLM evaluation",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -266,7 +266,7 @@ Examples:
   uv run python -m scripts.run_eval --evaluator-model anthropic/claude-3.5-sonnet
 
   # Or use the installed script
-  uv run mcp-eval --model claude-sonnet-4-5
+  uv run panda-eval --model claude-sonnet-4-5
         """,
     )
 

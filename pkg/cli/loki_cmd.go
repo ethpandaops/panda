@@ -22,11 +22,11 @@ var lokiCmd = &cobra.Command{
 	Long: `Query Loki for log data.
 
 Examples:
-  ep loki list-datasources
-  ep loki query ethpandaops '{app="beacon-node"}'
-  ep loki query ethpandaops '{app="beacon-node"} |= "error"' --limit 50 --start now-1h
-  ep loki labels ethpandaops
-  ep loki label-values ethpandaops app`,
+  panda loki list-datasources
+  panda loki query ethpandaops '{app="beacon-node"}'
+  panda loki query ethpandaops '{app="beacon-node"} |= "error"' --limit 50 --start now-1h
+  panda loki labels ethpandaops
+  panda loki label-values ethpandaops app`,
 }
 
 func init() {

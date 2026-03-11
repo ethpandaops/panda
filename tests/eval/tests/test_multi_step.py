@@ -1,4 +1,4 @@
-"""Tests for multi-step sessions against ethpandaops-mcp."""
+"""Tests for multi-step sessions against ethpandaops-panda."""
 
 from __future__ import annotations
 

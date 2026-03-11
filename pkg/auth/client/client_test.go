@@ -32,7 +32,7 @@ func TestDiscoverFallsBackToOAuthAuthorizationServer(t *testing.T) {
 
 	c := New(logrus.New(), Config{
 		IssuerURL: server.URL,
-		ClientID:  "ep",
+		ClientID:  "panda",
 	}).(*client)
 
 	if err := c.discover(context.Background()); err != nil {

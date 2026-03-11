@@ -1,4 +1,4 @@
-"""Claude Agent SDK wrapper for ethpandaops-mcp evaluation with Langfuse tracing."""
+"""Claude Agent SDK wrapper for ethpandaops-panda evaluation with Langfuse tracing."""
 
 from __future__ import annotations
 
@@ -71,7 +71,7 @@ class ExecutionResult:
 
 
 class MCPAgent:
-    """Wrapper around Claude Agent SDK for ethpandaops-mcp evaluation."""
+    """Wrapper around Claude Agent SDK for ethpandaops-panda evaluation."""
 
     def __init__(self, settings: EvalSettings) -> None:
         self.settings = settings

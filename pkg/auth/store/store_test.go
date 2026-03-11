@@ -8,7 +8,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	authclient "github.com/ethpandaops/mcp/pkg/auth/client"
+	authclient "github.com/ethpandaops/panda/pkg/auth/client"
 )
 
 func TestGetAccessTokenKeepsValidTokenWithoutRefreshToken(t *testing.T) {

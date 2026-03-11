@@ -8,11 +8,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	authclient "github.com/ethpandaops/mcp/pkg/auth/client"
-	authstore "github.com/ethpandaops/mcp/pkg/auth/store"
+	authclient "github.com/ethpandaops/panda/pkg/auth/client"
+	authstore "github.com/ethpandaops/panda/pkg/auth/store"
 )
 
-const defaultProxyAuthClientID = "ep"
+const defaultProxyAuthClientID = "panda"
 
 type authTarget struct {
 	issuerURL string
@@ -59,7 +59,7 @@ func init() {
 
 	for _, cmd := range []*cobra.Command{authLoginCmd, authLogoutCmd, authStatusCmd} {
 		cmd.Flags().StringVar(&authIssuerURL, "issuer", "", "proxy auth issuer URL (defaults to the configured server's proxy auth issuer)")
-		cmd.Flags().StringVar(&authClientID, "client-id", "", "OAuth client ID (defaults to configured value or 'ep')")
+		cmd.Flags().StringVar(&authClientID, "client-id", "", "OAuth client ID (defaults to configured value or 'panda')")
 		cmd.Flags().StringVar(&authResource, "resource", "", "OAuth protected resource (defaults to the proxy URL)")
 	}
 }

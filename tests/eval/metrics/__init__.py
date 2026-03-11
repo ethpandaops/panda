@@ -1,4 +1,4 @@
-"""Custom DeepEval metrics for ethpandaops-mcp evaluation."""
+"""Custom DeepEval metrics for ethpandaops-panda evaluation."""
 
 from metrics.data_quality import create_data_plausibility_metric, create_sql_correctness_metric
 from metrics.datasource import DataSourceMetric, TableUsageMetric

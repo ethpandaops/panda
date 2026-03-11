@@ -23,19 +23,19 @@ import (
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 
-	"github.com/ethpandaops/mcp/pkg/config"
+	"github.com/ethpandaops/panda/pkg/config"
 )
 
-// Container label keys for identifying and managing ethpandaops-mcp containers.
+// Container label keys for identifying and managing ethpandaops-panda containers.
 const (
-	// LabelManaged identifies containers created by ethpandaops-mcp.
-	LabelManaged = "io.ethpandaops-mcp.managed"
+	// LabelManaged identifies containers created by ethpandaops-panda.
+	LabelManaged = "io.ethpandaops-panda.managed"
 	// LabelCreatedAt stores the Unix timestamp when the container was created.
-	LabelCreatedAt = "io.ethpandaops-mcp.created-at"
+	LabelCreatedAt = "io.ethpandaops-panda.created-at"
 	// LabelSessionID stores the session ID for session containers.
-	LabelSessionID = "io.ethpandaops-mcp.session-id"
+	LabelSessionID = "io.ethpandaops-panda.session-id"
 	// LabelOwnerID stores the owner ID (GitHub user ID) if auth is enabled.
-	LabelOwnerID = "io.ethpandaops-mcp.owner-id"
+	LabelOwnerID = "io.ethpandaops-panda.owner-id"
 )
 
 // parseContainerCreatedAt extracts the creation time from container labels.
@@ -739,7 +739,7 @@ func (b *DockerBackend) createExecutionDirs(executionID string) (string, error) 
 		baseDir = filepath.Join(b.cfg.HostSharedPath, executionID)
 	} else {
 		// Direct mode: use temp directory.
-		baseDir = filepath.Join(os.TempDir(), "ethpandaops-mcp-sandbox-"+executionID)
+		baseDir = filepath.Join(os.TempDir(), "ethpandaops-panda-sandbox-"+executionID)
 	}
 
 	if err := os.MkdirAll(baseDir, 0755); err != nil {
@@ -1144,7 +1144,7 @@ func (b *DockerBackend) SessionsEnabled() bool {
 	return b.sessionManager.Enabled()
 }
 
-// cleanupExpiredContainers removes ethpandaops-mcp containers that have exceeded max session duration.
+// cleanupExpiredContainers removes ethpandaops-panda containers that have exceeded max session duration.
 // This handles orphaned containers from previous server instances that were killed abruptly.
 func (b *DockerBackend) cleanupExpiredContainers(ctx context.Context) error {
 	// Find all containers with our managed label.

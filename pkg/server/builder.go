@@ -9,19 +9,19 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/ethpandaops/mcp/pkg/app"
-	"github.com/ethpandaops/mcp/pkg/cartographoor"
-	"github.com/ethpandaops/mcp/pkg/config"
-	"github.com/ethpandaops/mcp/pkg/execsvc"
-	"github.com/ethpandaops/mcp/pkg/module"
-	"github.com/ethpandaops/mcp/pkg/resource"
-	"github.com/ethpandaops/mcp/pkg/sandbox"
-	"github.com/ethpandaops/mcp/pkg/searchruntime"
-	"github.com/ethpandaops/mcp/pkg/searchsvc"
-	"github.com/ethpandaops/mcp/pkg/serverapi"
-	"github.com/ethpandaops/mcp/pkg/tokenstore"
-	"github.com/ethpandaops/mcp/pkg/tool"
-	"github.com/ethpandaops/mcp/runbooks"
+	"github.com/ethpandaops/panda/pkg/app"
+	"github.com/ethpandaops/panda/pkg/cartographoor"
+	"github.com/ethpandaops/panda/pkg/config"
+	"github.com/ethpandaops/panda/pkg/execsvc"
+	"github.com/ethpandaops/panda/pkg/module"
+	"github.com/ethpandaops/panda/pkg/resource"
+	"github.com/ethpandaops/panda/pkg/sandbox"
+	"github.com/ethpandaops/panda/pkg/searchruntime"
+	"github.com/ethpandaops/panda/pkg/searchsvc"
+	"github.com/ethpandaops/panda/pkg/serverapi"
+	"github.com/ethpandaops/panda/pkg/tokenstore"
+	"github.com/ethpandaops/panda/pkg/tool"
+	"github.com/ethpandaops/panda/runbooks"
 )
 
 // Dependencies contains all the services required to run the MCP server.

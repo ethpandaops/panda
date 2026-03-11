@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/ethpandaops/mcp/pkg/operations"
+	"github.com/ethpandaops/panda/pkg/operations"
 )
 
 func (s *service) handleLokiOperation(operationID string, w http.ResponseWriter, r *http.Request) bool {

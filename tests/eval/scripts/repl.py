@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Interactive REPL for ad-hoc testing of ethpandaops-mcp."""
+"""Interactive REPL for ad-hoc testing of ethpandaops-panda."""
 
 from __future__ import annotations
 
@@ -54,7 +54,7 @@ def print_welcome(model: str, mcp_url: str) -> None:
     console.print()
     console.print(
         Panel(
-            f"[bold]ethpandaops-mcp REPL[/bold]\n\n"
+            f"[bold]ethpandaops-panda REPL[/bold]\n\n"
             f"Model: [cyan]{model}[/cyan]\n"
             f"Server: [cyan]{mcp_url}[/cyan]\n\n"
             f"Commands:\n"
@@ -102,7 +102,7 @@ async def repl_loop(
     Args:
         model: Claude model to use.
         verbose: Whether to show verbose output.
-        mcp_url: URL of the ethpandaops-mcp server.
+        mcp_url: URL of the ethpandaops-panda server.
     """
     # Import here to avoid circular imports and allow settings override
     from agent.wrapper import ExecutionResult, MCPAgent
@@ -252,14 +252,14 @@ async def repl_loop(
 def main() -> None:
     """Main entry point for REPL."""
     parser = argparse.ArgumentParser(
-        description="Interactive REPL for ethpandaops-mcp evaluation",
+        description="Interactive REPL for ethpandaops-panda evaluation",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   uv run python -m scripts.repl
   uv run python -m scripts.repl --model claude-haiku-4-5
   uv run python -m scripts.repl --verbose --url http://localhost:2480
-  uv run mcp-repl --verbose
+  uv run panda-repl --verbose
         """,
     )
     parser.add_argument(
@@ -277,7 +277,7 @@ Examples:
     parser.add_argument(
         "--url",
         default="http://localhost:2480",
-        help="ethpandaops-mcp server URL (default: http://localhost:2480)",
+        help="ethpandaops-panda server URL (default: http://localhost:2480)",
     )
     args = parser.parse_args()
 

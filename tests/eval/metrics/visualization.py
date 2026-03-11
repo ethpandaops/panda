@@ -1,4 +1,4 @@
-"""Visualization metrics for ethpandaops-mcp evaluation."""
+"""Visualization metrics for ethpandaops-panda evaluation."""
 
 from __future__ import annotations
 

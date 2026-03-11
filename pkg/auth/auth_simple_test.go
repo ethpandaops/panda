@@ -34,7 +34,7 @@ func TestHandleTokenIssuesRefreshTokenAndSupportsRefreshGrant(t *testing.T) {
 	challenge := sha256.Sum256([]byte(verifier))
 	svc.codes["auth-code"] = &issuedCode{
 		Code:          "auth-code",
-		ClientID:      "ep",
+		ClientID:      "panda",
 		RedirectURI:   "http://localhost:8085/callback",
 		Resource:      "http://proxy.test",
 		CodeChallenge: base64.RawURLEncoding.EncodeToString(challenge[:]),
@@ -47,7 +47,7 @@ func TestHandleTokenIssuesRefreshTokenAndSupportsRefreshGrant(t *testing.T) {
 		"grant_type":    {"authorization_code"},
 		"code":          {"auth-code"},
 		"redirect_uri":  {"http://localhost:8085/callback"},
-		"client_id":     {"ep"},
+		"client_id":     {"panda"},
 		"code_verifier": {verifier},
 		"resource":      {"http://proxy.test"},
 	})
@@ -63,7 +63,7 @@ func TestHandleTokenIssuesRefreshTokenAndSupportsRefreshGrant(t *testing.T) {
 	refreshResponse := exchangeToken(t, svc, url.Values{
 		"grant_type":    {"refresh_token"},
 		"refresh_token": {authorizationResponse.RefreshToken},
-		"client_id":     {"ep"},
+		"client_id":     {"panda"},
 		"resource":      {"http://proxy.test"},
 	})
 

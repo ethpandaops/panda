@@ -32,7 +32,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/sirupsen/logrus"
 
-	"github.com/ethpandaops/mcp/pkg/auth/github"
+	"github.com/ethpandaops/panda/pkg/auth/github"
 )
 
 const (

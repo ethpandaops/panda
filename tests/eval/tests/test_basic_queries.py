@@ -1,4 +1,4 @@
-"""Tests for basic single-turn queries against ethpandaops-mcp."""
+"""Tests for basic single-turn queries against ethpandaops-panda."""
 
 from __future__ import annotations
 

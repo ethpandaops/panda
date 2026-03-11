@@ -9,8 +9,8 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/sirupsen/logrus"
 
-	"github.com/ethpandaops/mcp/pkg/auth"
-	"github.com/ethpandaops/mcp/pkg/execsvc"
+	"github.com/ethpandaops/panda/pkg/auth"
+	"github.com/ethpandaops/panda/pkg/execsvc"
 )
 
 const (

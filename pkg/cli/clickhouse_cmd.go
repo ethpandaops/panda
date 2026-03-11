@@ -17,9 +17,9 @@ var clickhouseCmd = &cobra.Command{
 	Long: `Execute SQL queries against ClickHouse clusters.
 
 Examples:
-  ep clickhouse list-datasources
-  ep clickhouse query xatu "SELECT count() FROM beacon_api_eth_v1_events_block WHERE slot_start_date_time > now() - INTERVAL 1 HOUR"
-  ep clickhouse query xatu "SELECT * FROM beacon_api_eth_v1_events_block LIMIT 5" --json`,
+  panda clickhouse list-datasources
+  panda clickhouse query xatu "SELECT count() FROM beacon_api_eth_v1_events_block WHERE slot_start_date_time > now() - INTERVAL 1 HOUR"
+  panda clickhouse query xatu "SELECT * FROM beacon_api_eth_v1_events_block LIMIT 5" --json`,
 }
 
 func init() {
@@ -81,12 +81,12 @@ var clickhouseQueryCmd = &cobra.Command{
 	Short: "Execute a SQL query",
 	Long: `Execute a SQL query against a ClickHouse cluster.
 
-The cluster name is typically "xatu" or "xatu-cbt". Use 'ep clickhouse list-datasources'
+The cluster name is typically "xatu" or "xatu-cbt". Use 'panda clickhouse list-datasources'
 to see available clusters.
 
 Examples:
-  ep clickhouse query xatu "SELECT count() FROM beacon_api_eth_v1_events_block LIMIT 1"
-  ep clickhouse query xatu-cbt "SELECT count() FROM mainnet.beacon_api_eth_v1_events_block LIMIT 1"`,
+  panda clickhouse query xatu "SELECT count() FROM beacon_api_eth_v1_events_block LIMIT 1"
+  panda clickhouse query xatu-cbt "SELECT count() FROM mainnet.beacon_api_eth_v1_events_block LIMIT 1"`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
 		return runClickHouseOperation("clickhouse.query", args[0], args[1], false)
