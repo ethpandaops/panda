@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ethpandaops/panda/pkg/operations"
 	"github.com/spf13/cobra"
 )
 
@@ -57,12 +58,34 @@ var promListDatasourcesCmd = &cobra.Command{
 	Use:   "list-datasources",
 	Short: "List available Prometheus datasources",
 	RunE: func(_ *cobra.Command, _ []string) error {
-		response, err := runServerOperation("prometheus.list_datasources", map[string]any{})
+		items, err := listPrometheusDatasources()
 		if err != nil {
 			return err
 		}
 
-		return printDatasourceList(response)
+		if isJSON() {
+			return printJSON(operations.DatasourcesPayload{Datasources: items})
+		}
+
+		if len(items) == 0 {
+			fmt.Println("No Prometheus datasources found.")
+			return nil
+		}
+
+		for _, item := range items {
+			name := item.Name
+			desc := item.Description
+			targetURL := item.URL
+
+			if targetURL != "" {
+				fmt.Printf("  %-16s  %-24s  %s\n", name, desc, targetURL)
+				continue
+			}
+
+			fmt.Printf("  %-16s  %s\n", name, desc)
+		}
+
+		return nil
 	},
 }
 
@@ -71,10 +94,10 @@ var promQueryCmd = &cobra.Command{
 	Short: "Execute an instant PromQL query",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		response, err := runServerOperationRaw("prometheus.query", map[string]any{
-			"datasource": args[0],
-			"query":      args[1],
-			"time":       promQueryTime,
+		response, err := prometheusQuery(operations.PrometheusQueryArgs{
+			Datasource: args[0],
+			Query:      args[1],
+			Time:       promQueryTime,
 		})
 		if err != nil {
 			return err
@@ -93,12 +116,12 @@ var promQueryRangeCmd = &cobra.Command{
 	Short: "Execute a range PromQL query",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		response, err := runServerOperationRaw("prometheus.query_range", map[string]any{
-			"datasource": args[0],
-			"query":      args[1],
-			"start":      promRangeStart,
-			"end":        promRangeEnd,
-			"step":       promRangeStep,
+		response, err := prometheusQueryRange(operations.PrometheusRangeQueryArgs{
+			Datasource: args[0],
+			Query:      args[1],
+			Start:      promRangeStart,
+			End:        promRangeEnd,
+			Step:       promRangeStep,
 		})
 		if err != nil {
 			return err
@@ -117,9 +140,7 @@ var promLabelsCmd = &cobra.Command{
 	Short: "List all label names",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
-		response, err := runServerOperationRaw("prometheus.get_labels", map[string]any{
-			"datasource": args[0],
-		})
+		response, err := prometheusLabels(operations.DatasourceArgs{Datasource: args[0]})
 		if err != nil {
 			return err
 		}
@@ -137,9 +158,9 @@ var promLabelValuesCmd = &cobra.Command{
 	Short: "Get all values for a label",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		response, err := runServerOperationRaw("prometheus.get_label_values", map[string]any{
-			"datasource": args[0],
-			"label":      args[1],
+		response, err := prometheusLabelValues(operations.DatasourceLabelArgs{
+			Datasource: args[0],
+			Label:      args[1],
 		})
 		if err != nil {
 			return err

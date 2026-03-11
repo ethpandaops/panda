@@ -144,19 +144,20 @@ func serverDelete(ctx context.Context, path string) error {
 	return nil
 }
 
-func serverOperation(ctx context.Context, operationID string, args map[string]any) (*operations.Response, error) {
+func serverOperationJSON[Args any, Data any](ctx context.Context, operationID string, args Args) (Data, error) {
+	var zero Data
 	var response operations.Response
 
-	err := serverPostJSON(ctx, "/api/v1/operations/"+operationID, operations.Request{Args: args}, &response)
+	err := serverPostJSON(ctx, "/api/v1/operations/"+operationID, operations.TypedRequest[Args]{Args: args}, &response)
 	if err != nil {
-		return nil, err
+		return zero, err
 	}
 
-	return &response, nil
+	return operations.DecodeResponseData[Data](&response)
 }
 
-func serverOperationRaw(ctx context.Context, operationID string, args map[string]any) (*rawServerResponse, error) {
-	body, err := json.Marshal(operations.Request{Args: args})
+func serverOperationRaw[Args any](ctx context.Context, operationID string, args Args) (*rawServerResponse, error) {
+	body, err := json.Marshal(operations.TypedRequest[Args]{Args: args})
 	if err != nil {
 		return nil, fmt.Errorf("marshaling request: %w", err)
 	}
@@ -183,12 +184,188 @@ func serverOperationRaw(ctx context.Context, operationID string, args map[string
 	}, nil
 }
 
-func runServerOperation(operationID string, args map[string]any) (*operations.Response, error) {
-	return serverOperation(context.Background(), operationID, args)
+func listClickHouseDatasources() ([]operations.Datasource, error) {
+	response, err := serverOperationJSON[operations.NoArgs, operations.DatasourcesPayload](
+		context.Background(),
+		"clickhouse.list_datasources",
+		operations.NoArgs{},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return response.Datasources, nil
 }
 
-func runServerOperationRaw(operationID string, args map[string]any) (*rawServerResponse, error) {
-	return serverOperationRaw(context.Background(), operationID, args)
+func clickHouseQuery(ctx context.Context, args operations.ClickHouseQueryArgs) (*rawServerResponse, error) {
+	return serverOperationRaw(ctx, "clickhouse.query", args)
+}
+
+func clickHouseQueryRaw(ctx context.Context, args operations.ClickHouseQueryArgs) (*rawServerResponse, error) {
+	return serverOperationRaw(ctx, "clickhouse.query_raw", args)
+}
+
+func listPrometheusDatasources() ([]operations.Datasource, error) {
+	response, err := serverOperationJSON[operations.NoArgs, operations.DatasourcesPayload](
+		context.Background(),
+		"prometheus.list_datasources",
+		operations.NoArgs{},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return response.Datasources, nil
+}
+
+func prometheusQuery(args operations.PrometheusQueryArgs) (*rawServerResponse, error) {
+	return serverOperationRaw(context.Background(), "prometheus.query", args)
+}
+
+func prometheusQueryRange(args operations.PrometheusRangeQueryArgs) (*rawServerResponse, error) {
+	return serverOperationRaw(context.Background(), "prometheus.query_range", args)
+}
+
+func prometheusLabels(args operations.DatasourceArgs) (*rawServerResponse, error) {
+	return serverOperationRaw(context.Background(), "prometheus.get_labels", args)
+}
+
+func prometheusLabelValues(args operations.DatasourceLabelArgs) (*rawServerResponse, error) {
+	return serverOperationRaw(context.Background(), "prometheus.get_label_values", args)
+}
+
+func listLokiDatasources() ([]operations.Datasource, error) {
+	response, err := serverOperationJSON[operations.NoArgs, operations.DatasourcesPayload](
+		context.Background(),
+		"loki.list_datasources",
+		operations.NoArgs{},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return response.Datasources, nil
+}
+
+func lokiQuery(args operations.LokiQueryArgs) (*rawServerResponse, error) {
+	return serverOperationRaw(context.Background(), "loki.query", args)
+}
+
+func lokiInstantQuery(args operations.LokiInstantQueryArgs) (*rawServerResponse, error) {
+	return serverOperationRaw(context.Background(), "loki.query_instant", args)
+}
+
+func lokiLabels(args operations.LokiLabelsArgs) (*rawServerResponse, error) {
+	return serverOperationRaw(context.Background(), "loki.get_labels", args)
+}
+
+func lokiLabelValues(args operations.LokiLabelValuesArgs) (*rawServerResponse, error) {
+	return serverOperationRaw(context.Background(), "loki.get_label_values", args)
+}
+
+func listDoraNetworks() ([]operations.DoraNetwork, error) {
+	response, err := serverOperationJSON[operations.NoArgs, operations.DoraNetworksPayload](
+		context.Background(),
+		"dora.list_networks",
+		operations.NoArgs{},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return response.Networks, nil
+}
+
+func doraOverview(args operations.DoraNetworkArgs) (operations.DoraOverviewPayload, error) {
+	return serverOperationJSON[operations.DoraNetworkArgs, operations.DoraOverviewPayload](
+		context.Background(),
+		"dora.get_network_overview",
+		args,
+	)
+}
+
+func doraValidator(args operations.DoraIndexOrPubkeyArgs) (*rawServerResponse, error) {
+	return serverOperationRaw(context.Background(), "dora.get_validator", args)
+}
+
+func doraSlot(args operations.DoraSlotOrHashArgs) (*rawServerResponse, error) {
+	return serverOperationRaw(context.Background(), "dora.get_slot", args)
+}
+
+func doraEpoch(args operations.DoraEpochArgs) (*rawServerResponse, error) {
+	return serverOperationRaw(context.Background(), "dora.get_epoch", args)
+}
+
+func ethNodeSyncing(args operations.EthNodeNodeArgs) (operations.EthNodeSyncingPayload, error) {
+	return serverOperationJSON[operations.EthNodeNodeArgs, operations.EthNodeSyncingPayload](
+		context.Background(),
+		"ethnode.get_node_syncing",
+		args,
+	)
+}
+
+func ethNodeVersion(args operations.EthNodeNodeArgs) (operations.EthNodeVersionPayload, error) {
+	return serverOperationJSON[operations.EthNodeNodeArgs, operations.EthNodeVersionPayload](
+		context.Background(),
+		"ethnode.get_node_version",
+		args,
+	)
+}
+
+func ethNodeExecutionClientVersion(args operations.EthNodeNodeArgs) (string, error) {
+	return serverOperationJSON[operations.EthNodeNodeArgs, string](
+		context.Background(),
+		"ethnode.web3_client_version",
+		args,
+	)
+}
+
+func ethNodeHealth(args operations.EthNodeNodeArgs) (operations.StatusCodePayload, error) {
+	return serverOperationJSON[operations.EthNodeNodeArgs, operations.StatusCodePayload](
+		context.Background(),
+		"ethnode.get_node_health",
+		args,
+	)
+}
+
+func ethNodePeerCount(args operations.EthNodeNodeArgs) (operations.EthNodePeerCountPayload, error) {
+	return serverOperationJSON[operations.EthNodeNodeArgs, operations.EthNodePeerCountPayload](
+		context.Background(),
+		"ethnode.get_peer_count",
+		args,
+	)
+}
+
+func ethNodeFinality(args operations.EthNodeFinalityArgs) (operations.EthNodeFinalityPayload, error) {
+	return serverOperationJSON[operations.EthNodeFinalityArgs, operations.EthNodeFinalityPayload](
+		context.Background(),
+		"ethnode.get_finality_checkpoints",
+		args,
+	)
+}
+
+func ethNodeHeaders(args operations.EthNodeBeaconHeadersArgs) (operations.EthNodeHeaderPayload, error) {
+	return serverOperationJSON[operations.EthNodeBeaconHeadersArgs, operations.EthNodeHeaderPayload](
+		context.Background(),
+		"ethnode.get_beacon_headers",
+		args,
+	)
+}
+
+func ethNodeBlockNumber(args operations.EthNodeNodeArgs) (operations.EthNodeBlockNumberPayload, error) {
+	return serverOperationJSON[operations.EthNodeNodeArgs, operations.EthNodeBlockNumberPayload](
+		context.Background(),
+		"ethnode.eth_block_number",
+		args,
+	)
+}
+
+func ethNodeBeaconGet(args operations.EthNodeBeaconGetArgs) (*rawServerResponse, error) {
+	return serverOperationRaw(context.Background(), "ethnode.beacon_get", args)
+}
+
+func ethNodeExecutionRPC(args operations.EthNodeExecutionRPCArgs) (*rawServerResponse, error) {
+	return serverOperationRaw(context.Background(), "ethnode.execution_rpc", args)
 }
 
 func listDatasources(ctx context.Context, filterType string) (*serverapi.DatasourcesResponse, error) {

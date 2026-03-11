@@ -26,8 +26,8 @@ type Service interface {
 
 	// ListSessions returns all active sessions. If ownerID is non-empty, filters by owner.
 	ListSessions(ctx context.Context, ownerID string) ([]SessionInfo, error)
-	// CreateSession creates a new empty session and returns its ID.
-	CreateSession(ctx context.Context, ownerID string, env map[string]string) (string, error)
+	// CreateSession creates a new empty session and returns its initial state.
+	CreateSession(ctx context.Context, ownerID string, env map[string]string) (*CreatedSession, error)
 	// DestroySession destroys a session by ID.
 	// If ownerID is non-empty, verifies ownership before destroying.
 	DestroySession(ctx context.Context, sessionID, ownerID string) error
@@ -94,6 +94,12 @@ type SessionInfo struct {
 	LastUsed       time.Time     `json:"last_used"`
 	TTLRemaining   time.Duration `json:"ttl_remaining"`
 	WorkspaceFiles []SessionFile `json:"workspace_files"`
+}
+
+// CreatedSession is the authoritative response for successful session creation.
+type CreatedSession struct {
+	ID           string        `json:"session_id"`
+	TTLRemaining time.Duration `json:"ttl_remaining"`
 }
 
 // BackendType represents the available sandbox backend types.

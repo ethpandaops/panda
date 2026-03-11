@@ -44,6 +44,7 @@ type ContainerListAll func(ctx context.Context) ([]*SessionContainer, error)
 type SessionManager struct {
 	cfg config.SessionConfig
 	log logrus.FieldLogger
+	now func() time.Time
 
 	// lastUsed tracks access times for TTL enforcement (best-effort, lost on restart).
 	lastUsed map[string]time.Time
@@ -58,6 +59,8 @@ type SessionManager struct {
 	containerListAll ContainerListAll
 	// cleanupCallback is called when a session is destroyed.
 	cleanupCallback func(ctx context.Context, containerID string) error
+	// cleanupExecutor runs async cleanup work. Tests can override this to make cleanup deterministic.
+	cleanupExecutor func(func())
 }
 
 // NewSessionManager creates a new session manager.
@@ -71,11 +74,15 @@ func NewSessionManager(
 	return &SessionManager{
 		cfg:              cfg,
 		log:              log.WithField("component", "session-manager"),
+		now:              time.Now,
 		lastUsed:         make(map[string]time.Time, cfg.MaxSessions),
 		done:             make(chan struct{}),
 		containerLister:  containerLister,
 		containerListAll: containerListAll,
 		cleanupCallback:  cleanupCallback,
+		cleanupExecutor: func(fn func()) {
+			go fn()
+		},
 	}
 }
 
@@ -147,7 +154,7 @@ func (m *SessionManager) RecordAccess(sessionID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.lastUsed[sessionID] = time.Now()
+	m.lastUsed[sessionID] = m.now()
 }
 
 // ActiveSessionCount returns the count of active sessions by querying Docker.
@@ -160,7 +167,7 @@ func (m *SessionManager) ActiveSessionCount(ctx context.Context) int {
 	return len(containers)
 }
 
-// Get retrieves a session by ID and updates its last used timestamp.
+// Get retrieves a session by ID without mutating TTL/access state.
 // ownerID is optional - when provided, ownership is verified.
 // Session state is queried from Docker; only lastUsed is tracked in memory.
 func (m *SessionManager) Get(ctx context.Context, sessionID string, ownerID string) (*Session, error) {
@@ -168,7 +175,53 @@ func (m *SessionManager) Get(ctx context.Context, sessionID string, ownerID stri
 		return nil, fmt.Errorf("sessions are disabled")
 	}
 
-	// Query Docker for the session container.
+	container, err := m.lookupContainer(ctx, sessionID, ownerID)
+	if err != nil {
+		return nil, err
+	}
+
+	return m.sessionFromContainer(container), nil
+}
+
+// Acquire retrieves a session, enforces expiry, and records access for active use.
+func (m *SessionManager) Acquire(ctx context.Context, sessionID string, ownerID string) (*Session, error) {
+	session, err := m.Get(ctx, sessionID, ownerID)
+	if err != nil {
+		return nil, err
+	}
+
+	now := m.now()
+	if now.Sub(session.CreatedAt) > m.cfg.MaxDuration {
+		return nil, m.expireSession(session.ID, session.ContainerID, "max duration exceeded")
+	}
+
+	lastUsed, hasLastUsed := m.lastAccess(session.ID)
+	if hasLastUsed && now.Sub(lastUsed) > m.cfg.TTL {
+		return nil, m.expireSession(session.ID, session.ContainerID, "idle timeout exceeded")
+	}
+
+	m.RecordAccess(session.ID)
+	session.LastUsed = now
+
+	return session, nil
+}
+
+// TTLRemaining returns the time remaining until the session expires from inactivity.
+// Returns the full TTL if session hasn't been accessed yet (e.g., after server restart).
+func (m *SessionManager) TTLRemaining(sessionID string) time.Duration {
+	lastUsed, ok := m.lastAccess(sessionID)
+
+	if !ok {
+		// Session hasn't been accessed since server start, return full TTL.
+		return m.cfg.TTL
+	}
+
+	remaining := m.cfg.TTL - m.now().Sub(lastUsed)
+
+	return max(0, remaining)
+}
+
+func (m *SessionManager) lookupContainer(ctx context.Context, sessionID, ownerID string) (*SessionContainer, error) {
 	container, err := m.containerLister(ctx, sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("session %s not found: %w", sessionID, err)
@@ -178,66 +231,40 @@ func (m *SessionManager) Get(ctx context.Context, sessionID string, ownerID stri
 		return nil, fmt.Errorf("session %s not found", sessionID)
 	}
 
-	// Verify ownership if ownerID is provided.
 	if ownerID != "" && container.OwnerID != "" && container.OwnerID != ownerID {
 		return nil, fmt.Errorf("session %s not owned by caller", sessionID)
 	}
 
-	// Check if session has exceeded max duration.
-	if time.Since(container.CreatedAt) > m.cfg.MaxDuration {
-		return nil, m.expireSession(sessionID, container.ContainerID, "max duration exceeded")
+	return container, nil
+}
+
+func (m *SessionManager) sessionFromContainer(container *SessionContainer) *Session {
+	lastUsed, ok := m.lastAccess(container.SessionID)
+	if !ok {
+		lastUsed = container.CreatedAt
 	}
 
-	// Check if session has exceeded TTL (idle timeout).
-	// Note: On server restart, lastUsed is empty, so sessions get a fresh TTL timer.
-	m.mu.RLock()
-	lastUsed, hasLastUsed := m.lastUsed[sessionID]
-	m.mu.RUnlock()
-
-	if hasLastUsed && time.Since(lastUsed) > m.cfg.TTL {
-		return nil, m.expireSession(sessionID, container.ContainerID, "idle timeout exceeded")
-	}
-
-	// Update last used timestamp.
-	now := time.Now()
-
-	m.mu.Lock()
-	m.lastUsed[sessionID] = now
-	m.mu.Unlock()
-
-	// Construct session from container metadata.
-	session := &Session{
+	return &Session{
 		ID:          container.SessionID,
 		OwnerID:     container.OwnerID,
 		ContainerID: container.ContainerID,
 		CreatedAt:   container.CreatedAt,
-		LastUsed:    now,
+		LastUsed:    lastUsed,
 	}
-
-	return session, nil
 }
 
-// TTLRemaining returns the time remaining until the session expires from inactivity.
-// Returns the full TTL if session hasn't been accessed yet (e.g., after server restart).
-func (m *SessionManager) TTLRemaining(sessionID string) time.Duration {
+func (m *SessionManager) lastAccess(sessionID string) (time.Time, bool) {
 	m.mu.RLock()
+	defer m.mu.RUnlock()
+
 	lastUsed, ok := m.lastUsed[sessionID]
-	m.mu.RUnlock()
-
-	if !ok {
-		// Session hasn't been accessed since server start, return full TTL.
-		return m.cfg.TTL
-	}
-
-	remaining := m.cfg.TTL - time.Since(lastUsed)
-
-	return max(0, remaining)
+	return lastUsed, ok
 }
 
 // expireSession triggers async cleanup of an expired session and returns an error.
 // This consolidates the common pattern of async cleanup + lastUsed removal + error return.
 func (m *SessionManager) expireSession(sessionID, containerID, reason string) error {
-	go func() {
+	m.cleanupExecutor(func() {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
@@ -248,7 +275,7 @@ func (m *SessionManager) expireSession(sessionID, containerID, reason string) er
 				"error":        err,
 			}).Warn("Failed to cleanup expired session container")
 		}
-	}()
+	})
 
 	m.mu.Lock()
 	delete(m.lastUsed, sessionID)
@@ -371,7 +398,7 @@ func (m *SessionManager) cleanupExpired(ctx context.Context) {
 		return
 	}
 
-	now := time.Now()
+	now := m.now()
 	expiredContainers := make([]*SessionContainer, 0)
 
 	// Get a snapshot of lastUsed times.

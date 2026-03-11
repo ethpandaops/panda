@@ -134,3 +134,10 @@ func extractOverview(content string, maxLen int) string {
 
 	return strings.TrimSpace(overview.String())
 }
+
+// Close releases resources held by the index.
+func (idx *RunbookIndex) Close() error {
+	idx.index = nil
+	idx.runbooks = nil
+	return nil
+}

@@ -28,12 +28,32 @@ func decodeOperationRequest(r *http.Request) (operations.Request, error) {
 	return req, nil
 }
 
+func decodeTypedOperationArgs[T any](r *http.Request) (T, error) {
+	req, err := decodeOperationRequest(r)
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+
+	return operations.DecodeArgs[T](req.Args)
+}
+
 func writeOperationResponse(log logrus.FieldLogger, w http.ResponseWriter, status int, response operations.Response) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		log.WithError(err).Error("Failed to encode operation response")
 	}
+}
+
+func writeObjectOperationResponse[T any](
+	log logrus.FieldLogger,
+	w http.ResponseWriter,
+	status int,
+	data T,
+	meta map[string]any,
+) {
+	writeOperationResponse(log, w, status, operations.NewObjectResponse(data, meta))
 }
 
 func writePassthroughResponse(w http.ResponseWriter, status int, contentType string, body []byte) {

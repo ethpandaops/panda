@@ -11,6 +11,7 @@ import (
 
 	"github.com/ethpandaops/panda/pkg/auth"
 	"github.com/ethpandaops/panda/pkg/execsvc"
+	"github.com/ethpandaops/panda/pkg/sandbox"
 )
 
 const (
@@ -25,11 +26,14 @@ Operations:
 - create: Create a new empty session for use with execute_python
 - destroy: Remove a session (requires session_id)`
 
-// ListSessionsResponse is the response for the list operation.
-type ListSessionsResponse struct {
-	Sessions    []SessionDetail `json:"sessions"`
-	Total       int             `json:"total"`
-	MaxSessions int             `json:"max_sessions"`
+// ManageSessionResponse is the structured response envelope for every manage_session operation.
+type ManageSessionResponse struct {
+	Operation   string                 `json:"operation"`
+	Sessions    []SessionDetail        `json:"sessions"`
+	Session     *ManagedSessionSummary `json:"session,omitempty"`
+	Total       int                    `json:"total"`
+	MaxSessions int                    `json:"max_sessions"`
+	Message     string                 `json:"message,omitempty"`
 }
 
 // SessionDetail represents a session in the list response.
@@ -47,16 +51,22 @@ type WorkspaceFileInfo struct {
 	Size string `json:"size"`
 }
 
-// CreateSessionResponse is the response for the create operation.
-type CreateSessionResponse struct {
+// ManagedSessionSummary is the session payload used across create and destroy responses.
+type ManagedSessionSummary struct {
 	SessionID    string `json:"session_id"`
-	TTLRemaining string `json:"ttl_remaining"`
-	Message      string `json:"message"`
+	TTLRemaining string `json:"ttl_remaining,omitempty"`
+}
+
+type manageSessionService interface {
+	SessionsEnabled() bool
+	ListSessions(ctx context.Context, ownerID string) ([]sandbox.SessionInfo, int, error)
+	CreateSession(ctx context.Context, ownerID string) (*sandbox.CreatedSession, error)
+	DestroySession(ctx context.Context, sessionID, ownerID string) error
 }
 
 type manageSessionHandler struct {
 	log     logrus.FieldLogger
-	service *execsvc.Service
+	service manageSessionService
 }
 
 // NewManageSessionTool creates the manage_session tool definition.
@@ -154,69 +164,41 @@ func (h *manageSessionHandler) handleList(ctx context.Context, ownerID string) (
 		})
 	}
 
-	response := &ListSessionsResponse{
+	response := &ManageSessionResponse{
+		Operation:   "list",
 		Sessions:    details,
 		Total:       len(details),
 		MaxSessions: maxSessions,
 	}
 
-	data, err := json.MarshalIndent(response, "", "  ")
-	if err != nil {
-		return CallToolError(fmt.Errorf("marshaling response: %w", err)), nil
-	}
-
 	h.log.WithField("count", len(sessions)).Debug("Listed sessions")
 
-	return CallToolSuccess(string(data)), nil
+	return marshalManageSessionResponse(response)
 }
 
 func (h *manageSessionHandler) handleCreate(ctx context.Context, ownerID string) (*mcp.CallToolResult, error) {
 	h.log.WithField("owner_id", ownerID).Debug("Creating session")
 
-	sessionID, err := h.service.CreateSession(ctx, ownerID)
+	created, err := h.service.CreateSession(ctx, ownerID)
 	if err != nil {
 		return CallToolError(err), nil
 	}
 
-	// Get TTL from listing the newly created session.
-	sessions, _, err := h.service.ListSessions(ctx, ownerID)
-	if err != nil {
-		// Session was created but we couldn't get TTL - return with generic TTL.
-		response := &CreateSessionResponse{
-			SessionID:    sessionID,
-			TTLRemaining: "unknown",
-			Message:      "Session created. Pass this session_id to execute_python.",
-		}
-
-		data, _ := json.MarshalIndent(response, "", "  ")
-
-		return CallToolSuccess(string(data)), nil
+	response := &ManageSessionResponse{
+		Operation: "create",
+		Session: &ManagedSessionSummary{
+			SessionID: created.ID,
+		},
+		Message: "Session created. Pass this session_id to execute_python.",
 	}
 
-	// Find the session we just created.
-	var ttlRemaining time.Duration
-	for _, s := range sessions {
-		if s.ID == sessionID {
-			ttlRemaining = s.TTLRemaining
-
-			break
-		}
+	if created.TTLRemaining > 0 {
+		response.Session.TTLRemaining = created.TTLRemaining.Round(time.Second).String()
 	}
 
-	response := &CreateSessionResponse{
-		SessionID:    sessionID,
-		TTLRemaining: ttlRemaining.Round(time.Second).String(),
-		Message:      "Session created. Pass this session_id to execute_python.",
-	}
+	h.log.WithField("session_id", created.ID).Info("Created session")
 
-	data, err := json.MarshalIndent(response, "", "  ")
-	if err != nil {
-		return CallToolError(fmt.Errorf("marshaling response: %w", err)), nil
-	}
-
-	h.log.WithField("session_id", sessionID).Info("Created session")
-
-	return CallToolSuccess(string(data)), nil
+	return marshalManageSessionResponse(response)
 }
 
 func (h *manageSessionHandler) handleDestroy(
@@ -234,5 +216,22 @@ func (h *manageSessionHandler) handleDestroy(
 
 	h.log.WithField("session_id", sessionID).Info("Destroyed session")
 
-	return CallToolSuccess(fmt.Sprintf("Session %s has been destroyed.", sessionID)), nil
+	return marshalManageSessionResponse(&ManageSessionResponse{
+		Operation: "destroy",
+		Session: &ManagedSessionSummary{
+			SessionID: sessionID,
+		},
+		Message: fmt.Sprintf("Session %s has been destroyed.", sessionID),
+	})
 }
+
+func marshalManageSessionResponse(response *ManageSessionResponse) (*mcp.CallToolResult, error) {
+	data, err := json.MarshalIndent(response, "", "  ")
+	if err != nil {
+		return CallToolError(fmt.Errorf("marshaling response: %w", err)), nil
+	}
+
+	return CallToolSuccess(string(data)), nil
+}
+
+var _ manageSessionService = (*execsvc.Service)(nil)

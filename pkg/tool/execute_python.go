@@ -24,10 +24,12 @@ const (
 
 type resourceTipCache struct {
 	mu      sync.Mutex
+	now     func() time.Time
 	entries map[string]time.Time
 }
 
 var sessionsWithResourceTip = &resourceTipCache{
+	now:     time.Now,
 	entries: make(map[string]time.Time, 64),
 }
 
@@ -43,13 +45,13 @@ func (c *resourceTipCache) markShown(sessionKey string) bool {
 		c.cleanupLocked()
 	}
 
-	c.entries[sessionKey] = time.Now()
+	c.entries[sessionKey] = c.now()
 
 	return true
 }
 
 func (c *resourceTipCache) cleanupLocked() {
-	cutoff := time.Now().Add(-resourceTipCacheMaxAge)
+	cutoff := c.now().Add(-resourceTipCacheMaxAge)
 
 	for key, ts := range c.entries {
 		if ts.Before(cutoff) {

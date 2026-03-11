@@ -33,19 +33,15 @@ func completeNetworkNames(_ *cobra.Command, args []string, _ string) ([]string, 
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
-	response, err := runServerOperation("dora.list_networks", map[string]any{})
+	networks, err := listDoraNetworks()
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
-	data, _ := response.Data.(map[string]any)
-	items, _ := data["networks"].([]any)
-
-	names := make([]string, 0, len(items))
-	for _, item := range items {
-		network, _ := item.(map[string]any)
-		if name, _ := network["name"].(string); name != "" {
-			names = append(names, name)
+	names := make([]string, 0, len(networks))
+	for _, network := range networks {
+		if network.Name != "" {
+			names = append(names, network.Name)
 		}
 	}
 

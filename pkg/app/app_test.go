@@ -269,8 +269,8 @@ func (f *fakeSandboxService) ListSessions(context.Context, string) ([]sandbox.Se
 	return nil, nil
 }
 
-func (f *fakeSandboxService) CreateSession(context.Context, string, map[string]string) (string, error) {
-	return "", nil
+func (f *fakeSandboxService) CreateSession(context.Context, string, map[string]string) (*sandbox.CreatedSession, error) {
+	return &sandbox.CreatedSession{}, nil
 }
 
 func (f *fakeSandboxService) DestroySession(context.Context, string, string) error { return nil }

@@ -110,7 +110,9 @@ func (idx *ExampleIndex) Search(query string, limit int) ([]SearchResult, error)
 
 // Close releases resources held by the index.
 func (idx *ExampleIndex) Close() error {
-	return idx.embedder.Close()
+	idx.index = nil
+	idx.examples = nil
+	return nil
 }
 
 // dotProduct computes the dot product of two vectors.

@@ -6,13 +6,14 @@ import (
 	"encoding/csv"
 	"fmt"
 
+	"github.com/ethpandaops/panda/pkg/operations"
 	"github.com/spf13/cobra"
 )
 
 var clickhouseCmd = &cobra.Command{
 	GroupID: groupDirect,
-	Use:   "clickhouse",
-	Short: "Query ClickHouse databases",
+	Use:     "clickhouse",
+	Short:   "Query ClickHouse databases",
 	Long: `Execute SQL queries against ClickHouse datasources.
 
 Examples:
@@ -36,12 +37,38 @@ var clickhouseListDatasourcesCmd = &cobra.Command{
 	Use:   "list-datasources",
 	Short: "List available ClickHouse datasources",
 	RunE: func(_ *cobra.Command, _ []string) error {
-		response, err := runServerOperation("clickhouse.list_datasources", map[string]any{})
+		items, err := listClickHouseDatasources()
 		if err != nil {
 			return err
 		}
 
-		return printDatasourceList(response)
+		if isJSON() {
+			return printJSON(operations.DatasourcesPayload{Datasources: items})
+		}
+
+		if len(items) == 0 {
+			fmt.Println("No ClickHouse datasources found.")
+			return nil
+		}
+
+		for _, item := range items {
+			name := item.Name
+			desc := item.Description
+			database := item.Database
+
+			if desc == "" {
+				desc = name
+			}
+
+			if database != "" {
+				fmt.Printf("  %-16s  %-20s  database=%s\n", name, desc, database)
+				continue
+			}
+
+			fmt.Printf("  %-16s  %s\n", name, desc)
+		}
+
+		return nil
 	},
 }
 
@@ -58,7 +85,7 @@ Examples:
   panda clickhouse query xatu-cbt "SELECT count() FROM mainnet.beacon_api_eth_v1_events_block LIMIT 1"`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		return runClickHouseOperation("clickhouse.query", args[0], args[1], false)
+		return runClickHouseQuery(args[0], args[1])
 	},
 }
 
@@ -67,23 +94,19 @@ var clickhouseQueryRawCmd = &cobra.Command{
 	Short: "Execute a SQL query and return raw rows",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		return runClickHouseOperation("clickhouse.query_raw", args[0], args[1], true)
+		return runClickHouseRawQuery(args[0], args[1])
 	},
 }
 
-func runClickHouseOperation(operationID, datasource, sql string, raw bool) error {
+func runClickHouseQuery(datasource, sql string) error {
 	ctx := context.Background()
 
-	response, err := serverOperationRaw(ctx, operationID, map[string]any{
-		"datasource": datasource,
-		"sql":        sql,
+	response, err := clickHouseQuery(ctx, operations.ClickHouseQueryArgs{
+		Datasource: datasource,
+		SQL:        sql,
 	})
 	if err != nil {
 		return err
-	}
-
-	if raw {
-		return printClickHouseJSON(response.Body, true)
 	}
 
 	if isJSON() {
@@ -92,6 +115,20 @@ func runClickHouseOperation(operationID, datasource, sql string, raw bool) error
 
 	fmt.Print(string(response.Body))
 	return nil
+}
+
+func runClickHouseRawQuery(datasource, sql string) error {
+	ctx := context.Background()
+
+	response, err := clickHouseQueryRaw(ctx, operations.ClickHouseQueryArgs{
+		Datasource: datasource,
+		SQL:        sql,
+	})
+	if err != nil {
+		return err
+	}
+
+	return printClickHouseJSON(response.Body, true)
 }
 
 func printClickHouseJSON(data []byte, raw bool) error {

@@ -250,20 +250,15 @@ func (s *service) handleAPICreateSession(w http.ResponseWriter, r *http.Request)
 	}
 
 	ownerID := authOwnerID(r)
-	sessionID, err := s.execService.CreateSession(r.Context(), ownerID)
+	created, err := s.execService.CreateSession(r.Context(), ownerID)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	resp := serverapi.CreateSessionResponse{SessionID: sessionID}
-	if sessions, _, err := s.execService.ListSessions(r.Context(), ownerID); err == nil {
-		for _, session := range sessions {
-			if session.ID == sessionID {
-				resp.TTLRemaining = session.TTLRemaining.Round(time.Second).String()
-				break
-			}
-		}
+	resp := serverapi.CreateSessionResponse{SessionID: created.ID}
+	if created.TTLRemaining > 0 {
+		resp.TTLRemaining = created.TTLRemaining.Round(time.Second).String()
 	}
 
 	writeJSON(w, http.StatusCreated, resp)

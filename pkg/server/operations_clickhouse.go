@@ -15,46 +15,59 @@ func (s *service) registerClickHouseOperations() {
 		s.handleClickHouseListDatasources(w)
 	})
 	s.registerOperation("clickhouse.query", s.handleClickHouseQuery)
-	s.registerOperation("clickhouse.query_raw", s.handleClickHouseQuery)
+	s.registerOperation("clickhouse.query_raw", s.handleClickHouseQueryRaw)
 }
 
 func (s *service) handleClickHouseListDatasources(w http.ResponseWriter) {
-	items := make([]map[string]any, 0)
+	items := make([]operations.Datasource, 0)
 	for _, info := range s.proxyService.ClickHouseDatasourceInfo() {
-		items = append(items, map[string]any{
-			"name":        info.Name,
-			"description": info.Description,
-			"database":    info.Metadata["database"],
+		items = append(items, operations.Datasource{
+			Name:        info.Name,
+			Description: info.Description,
+			Database:    info.Metadata["database"],
 		})
 	}
 
-	writeOperationResponse(s.log, w, http.StatusOK, operations.Response{
-		Kind: operations.ResultKindObject,
-		Data: map[string]any{"datasources": items},
-	})
+	writeObjectOperationResponse(
+		s.log,
+		w,
+		http.StatusOK,
+		operations.DatasourcesPayload{Datasources: items},
+		nil,
+	)
 }
 
 func (s *service) handleClickHouseQuery(w http.ResponseWriter, r *http.Request) {
-	req, err := decodeOperationRequest(r)
+	s.handleClickHouseQueryOperation(w, r, "clickhouse.query")
+}
+
+func (s *service) handleClickHouseQueryRaw(w http.ResponseWriter, r *http.Request) {
+	s.handleClickHouseQueryOperation(w, r, "clickhouse.query_raw")
+}
+
+func (s *service) handleClickHouseQueryOperation(w http.ResponseWriter, r *http.Request, operationID string) {
+	request, err := decodeTypedOperationArgs[operations.ClickHouseQueryArgs](r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	datasourceName, err := requiredOneOfStringArg(req.Args, "datasource", "cluster")
+	datasource, err := requiredOneOfStringArg(map[string]any{
+		"datasource": request.Datasource,
+		"cluster":    request.Cluster,
+	}, "datasource", "cluster")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	sql, err := requiredStringArg(req.Args, "sql")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	if strings.TrimSpace(request.SQL) == "" {
+		http.Error(w, "sql is required", http.StatusBadRequest)
 		return
 	}
 
 	params := url.Values{"default_format": {"TabSeparatedWithNames"}}
-	for key, value := range optionalMapArg(req.Args, "parameters") {
+	for key, value := range request.Parameters {
 		params.Set("param_"+key, formatClickHouseParamValue(value))
 	}
 
@@ -62,9 +75,9 @@ func (s *service) handleClickHouseQuery(w http.ResponseWriter, r *http.Request) 
 		r.Context(),
 		http.MethodPost,
 		"/clickhouse/?"+params.Encode(),
-		strings.NewReader(sql),
+		strings.NewReader(request.SQL),
 		http.Header{
-			handlers.DatasourceHeader: []string{datasourceName},
+			handlers.DatasourceHeader: []string{datasource},
 			"Content-Type":            []string{"text/plain"},
 		},
 	)
@@ -74,7 +87,7 @@ func (s *service) handleClickHouseQuery(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if status < 200 || status >= 300 {
-		http.Error(w, upstreamFailureMessage("clickhouse.query", status, body, "datasource="+datasourceName), status)
+		http.Error(w, upstreamFailureMessage(operationID, status, body, "datasource="+datasource), status)
 		return
 	}
 

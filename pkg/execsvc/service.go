@@ -118,10 +118,10 @@ func (s *Service) ListSessions(ctx context.Context, ownerID string) ([]sandbox.S
 }
 
 // CreateSession creates a new persistent sandbox session.
-func (s *Service) CreateSession(ctx context.Context, ownerID string) (string, error) {
+func (s *Service) CreateSession(ctx context.Context, ownerID string) (*sandbox.CreatedSession, error) {
 	env, err := s.BuildSandboxEnv()
 	if err != nil {
-		return "", fmt.Errorf("building sandbox env: %w", err)
+		return nil, fmt.Errorf("building sandbox env: %w", err)
 	}
 
 	return s.sandboxSvc.CreateSession(ctx, ownerID, env)
