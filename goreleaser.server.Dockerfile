@@ -1,3 +1,25 @@
+# =============================================================================
+# Stage 1: Download embedding model
+# =============================================================================
+FROM alpine:3.21 AS model-downloader
+
+RUN apk add --no-cache curl
+
+RUN mkdir -p /model/all-MiniLM-L6-v2 && \
+    curl -sL -o /model/all-MiniLM-L6-v2/model.onnx \
+        https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx && \
+    curl -sL -o /model/all-MiniLM-L6-v2/tokenizer.json \
+        https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer.json && \
+    curl -sL -o /model/all-MiniLM-L6-v2/config.json \
+        https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/config.json && \
+    curl -sL -o /model/all-MiniLM-L6-v2/special_tokens_map.json \
+        https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/special_tokens_map.json && \
+    curl -sL -o /model/all-MiniLM-L6-v2/tokenizer_config.json \
+        https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer_config.json
+
+# =============================================================================
+# Stage 2: Runtime
+# =============================================================================
 FROM alpine:3.21
 
 RUN apk add --no-cache ca-certificates tzdata
@@ -7,6 +29,8 @@ RUN addgroup -g 1000 panda && \
 
 ARG TARGETPLATFORM
 COPY ${TARGETPLATFORM}/panda-server /usr/local/bin/panda-server
+
+COPY --from=model-downloader /model/all-MiniLM-L6-v2 /usr/share/panda/all-MiniLM-L6-v2
 
 USER panda
 

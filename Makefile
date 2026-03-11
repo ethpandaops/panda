@@ -1,24 +1,9 @@
 .PHONY: build build-server build-panda build-proxy install install-server install-panda install-proxy test lint clean docker docker-push docker-sandbox test-sandbox run help download-models clean-models setup-hooks
 
-# Embedding model and shared library configuration
-# Downloaded from HuggingFace and kelindar/search GitHub repo
+# Embedding model configuration
 MODELS_DIR := ./models
-EMBEDDING_MODEL_PATH := $(MODELS_DIR)/MiniLM-L6-v2.Q8_0.gguf
-UNAME_S := $(shell uname -s)
-ifeq ($(UNAME_S),Darwin)
-LLAMA_LIB_FILENAME := libllama_go.dylib
-LLAMA_LIB_GLOB := libllama_go*.dylib
-else
-LLAMA_LIB_FILENAME := libllama_go.so
-LLAMA_LIB_GLOB := libllama_go.so*
-endif
-LLAMA_LIB_PATH := $(MODELS_DIR)/$(LLAMA_LIB_FILENAME)
-
-# Download URLs
-EMBEDDING_MODEL_URL := https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-Q8_0.gguf
-
-# Source build directory for libllama_go.so
-LLAMA_BUILD_DIR := $(MODELS_DIR)/llama-build
+MODEL_DIR := $(MODELS_DIR)/all-MiniLM-L6-v2
+HF_BASE := https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main
 
 # Build variables
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -79,7 +64,6 @@ tidy: ## Run go mod tidy
 
 clean: ## Clean build artifacts
 	rm -f panda-server .panda-server-bin panda panda-proxy panda-server-linux-amd64
-	rm -f libllama_go.so libllama_go.dylib
 	rm -f coverage.out coverage.html
 
 docker: ## Build Docker image
@@ -120,15 +104,7 @@ install: install-server install-panda ## Install primary binaries to GOBIN
 
 install-server: ## Install the server binary to GOBIN
 	@mkdir -p $(GOBIN)
-	go build -ldflags "$(LDFLAGS)" -o $(GOBIN)/.panda-server-bin ./cmd/server
-	@printf '%s\n' \
-		'#!/bin/sh' \
-		'SCRIPT_DIR=$$(CDPATH= cd -- "$$(dirname -- "$$0")" && pwd)' \
-		'export LD_LIBRARY_PATH="$$SCRIPT_DIR$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}"' \
-		'export DYLD_LIBRARY_PATH="$$SCRIPT_DIR$${DYLD_LIBRARY_PATH:+:$$DYLD_LIBRARY_PATH}"' \
-		'exec "$$SCRIPT_DIR/.panda-server-bin" "$$@"' \
-		> $(GOBIN)/panda-server
-	@chmod +x $(GOBIN)/panda-server
+	go build -ldflags "$(LDFLAGS)" -o $(GOBIN)/panda-server ./cmd/server
 
 install-panda: ## Install the CLI binary to GOBIN
 	@mkdir -p $(GOBIN)
@@ -147,35 +123,18 @@ version: ## Show version info
 	@echo "Git Commit: $(GIT_COMMIT)"
 	@echo "Build Time: $(BUILD_TIME)"
 
-download-models: $(EMBEDDING_MODEL_PATH) $(LLAMA_LIB_PATH) ## Download embedding model and shared library
-	@cp $(LLAMA_LIB_PATH) $(LLAMA_LIB_FILENAME)
-	@echo "All models downloaded to $(MODELS_DIR)"
+download-models: $(MODEL_DIR)/model.onnx ## Download embedding model from HuggingFace
+	@echo "Model downloaded to $(MODEL_DIR)"
 
-$(EMBEDDING_MODEL_PATH):
-	@mkdir -p $(MODELS_DIR)
-	@echo "Downloading embedding model from HuggingFace..."
-	@curl -L -o $(EMBEDDING_MODEL_PATH) $(EMBEDDING_MODEL_URL)
-	@echo "Model downloaded to $(EMBEDDING_MODEL_PATH)"
+$(MODEL_DIR)/model.onnx:
+	@mkdir -p $(MODEL_DIR)
+	@echo "Downloading all-MiniLM-L6-v2 ONNX model from HuggingFace..."
+	@curl -sL -o $(MODEL_DIR)/model.onnx $(HF_BASE)/onnx/model.onnx
+	@curl -sL -o $(MODEL_DIR)/tokenizer.json $(HF_BASE)/tokenizer.json
+	@curl -sL -o $(MODEL_DIR)/config.json $(HF_BASE)/config.json
+	@curl -sL -o $(MODEL_DIR)/special_tokens_map.json $(HF_BASE)/special_tokens_map.json
+	@curl -sL -o $(MODEL_DIR)/tokenizer_config.json $(HF_BASE)/tokenizer_config.json
+	@echo "Model files downloaded to $(MODEL_DIR)"
 
-$(LLAMA_LIB_PATH):
-	@mkdir -p $(LLAMA_BUILD_DIR)
-	@echo "Building libllama_go.so from source (requires cmake, g++)..."
-	@cd $(LLAMA_BUILD_DIR) && \
-		if [ ! -d search ]; then \
-			git clone --depth 1 --recurse-submodules https://github.com/kelindar/search.git; \
-		fi && \
-		cd search && mkdir -p build && cd build && \
-			cmake -DBUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release \
-			-DGGML_NATIVE=OFF \
-			-DCMAKE_CXX_COMPILER=g++ -DCMAKE_C_COMPILER=gcc .. && \
-		cmake --build . --config Release
-	@lib=$$(find $(LLAMA_BUILD_DIR)/search/build -type f -name '$(LLAMA_LIB_GLOB)' | head -n 1); \
-		if [ -z "$$lib" ]; then \
-			echo "Failed to locate built shared library matching $(LLAMA_LIB_GLOB)"; \
-			exit 1; \
-		fi; \
-		cp "$$lib" $(LLAMA_LIB_PATH)
-	@echo "Shared library built at $(LLAMA_LIB_PATH)"
-
-clean-models: ## Clean downloaded models and build artifacts
-	rm -rf $(MODELS_DIR) libllama_go.so libllama_go.dylib
+clean-models: ## Clean downloaded models
+	rm -rf $(MODELS_DIR)

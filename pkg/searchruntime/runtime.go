@@ -15,6 +15,7 @@ import (
 	"github.com/ethpandaops/panda/runbooks"
 )
 
+// Runtime holds the semantic search indices and embedder.
 type Runtime struct {
 	ExampleIndex    *resource.ExampleIndex
 	RunbookRegistry *runbooks.Registry
@@ -22,6 +23,7 @@ type Runtime struct {
 	embedder        *embedding.Embedder
 }
 
+// Build creates a new search runtime with example and runbook indices.
 func Build(
 	log logrus.FieldLogger,
 	cfg config.SemanticSearchConfig,
@@ -35,7 +37,7 @@ func Build(
 		return nil, nil
 	}
 
-	embedder, err := embedding.New(modelPath, cfg.GPULayers)
+	embedder, err := embedding.New(modelPath)
 	if err != nil {
 		log.WithError(err).Warn("Failed to initialize embedder — semantic search disabled")
 
@@ -77,6 +79,7 @@ func Build(
 	return runtime, nil
 }
 
+// Close releases resources held by the runtime.
 func (r *Runtime) Close() error {
 	if r == nil {
 		return nil
@@ -97,9 +100,11 @@ func resolveModelPath(configuredPath string) (string, []string) {
 	return resolveModelPathWithExecutable(configuredPath, executableDir())
 }
 
+// resolveModelPathWithExecutable searches for the ONNX model directory.
+// The model directory must contain model.onnx and tokenizer.json.
 func resolveModelPathWithExecutable(configuredPath, execDir string) (string, []string) {
-	defaultModel := "models/MiniLM-L6-v2.Q8_0.gguf"
-	containerModel := "/usr/share/mcp/MiniLM-L6-v2.Q8_0.gguf"
+	defaultModel := "models/all-MiniLM-L6-v2"
+	containerModel := "/usr/share/panda/all-MiniLM-L6-v2"
 
 	candidates := make([]string, 0, 6)
 	add := func(path string) {
@@ -136,12 +141,28 @@ func resolveModelPathWithExecutable(configuredPath, execDir string) (string, []s
 	}
 
 	for _, candidate := range candidates {
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+		if isModelDir(candidate) {
 			return candidate, candidates
 		}
 	}
 
 	return "", candidates
+}
+
+// isModelDir checks if a directory contains the required ONNX model files.
+func isModelDir(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil || !info.IsDir() {
+		return false
+	}
+
+	for _, required := range []string{"model.onnx", "tokenizer.json"} {
+		if _, err := os.Stat(filepath.Join(path, required)); err != nil {
+			return false
+		}
+	}
+
+	return true
 }
 
 func executableDir() string {

@@ -134,7 +134,7 @@ jobs:
             url: "http://127.0.0.1:18081"
 
           semantic_search:
-            model_path: "models/MiniLM-L6-v2.Q8_0.gguf"
+            model_path: "models/all-MiniLM-L6-v2"
           EOF
 
       - name: Start proxy

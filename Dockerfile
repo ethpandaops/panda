@@ -7,29 +7,9 @@
 #   docker run -p 2480:2480 -v /var/run/docker.sock:/var/run/docker.sock panda:latest
 
 # =============================================================================
-# Stage 1: Build libllama_go.so from source
+# Stage 1: Go builder
 # =============================================================================
-FROM debian:bookworm-slim AS llama-builder
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git cmake g++ make ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
-
-WORKDIR /build
-
-RUN git clone --depth 1 --recurse-submodules https://github.com/kelindar/search.git && \
-    cd search && \
-    mkdir build && cd build && \
-    cmake -DBUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release \
-        -DGGML_NATIVE=OFF \
-        -DCMAKE_CXX_COMPILER=g++ -DCMAKE_C_COMPILER=gcc .. && \
-    cmake --build . --config Release && \
-    cp /build/search/build/lib/libllama_go.so.1.0 /build/libllama_go.so
-
-# =============================================================================
-# Stage 2: Go builder
-# =============================================================================
-FROM golang:1.24-bookworm AS builder
+FROM golang:1.25-bookworm AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git ca-certificates curl && \
@@ -48,7 +28,7 @@ COPY modules/ modules/
 COPY internal/ internal/
 COPY runbooks/ runbooks/
 
-# Build with version info (CGO_ENABLED=0 works because kelindar/search uses purego)
+# Build with version info
 ARG VERSION=dev
 ARG GIT_COMMIT=unknown
 ARG BUILD_TIME=unknown
@@ -66,22 +46,27 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -X github.com/ethpandaops/panda/internal/version.BuildTime=${BUILD_TIME}" \
     -o panda-proxy ./cmd/proxy
 
-# Download embedding model (same for all architectures)
-RUN mkdir -p /assets && \
-    curl -L -o /assets/MiniLM-L6-v2.Q8_0.gguf \
-        https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-Q8_0.gguf
-
-# Copy libllama_go.so built from source
-COPY --from=llama-builder /build/libllama_go.so /assets/libllama_go.so
+# Download embedding model (architecture-independent)
+RUN mkdir -p /assets/all-MiniLM-L6-v2 && \
+    curl -sL -o /assets/all-MiniLM-L6-v2/model.onnx \
+        https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx && \
+    curl -sL -o /assets/all-MiniLM-L6-v2/tokenizer.json \
+        https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer.json && \
+    curl -sL -o /assets/all-MiniLM-L6-v2/config.json \
+        https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/config.json && \
+    curl -sL -o /assets/all-MiniLM-L6-v2/special_tokens_map.json \
+        https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/special_tokens_map.json && \
+    curl -sL -o /assets/all-MiniLM-L6-v2/tokenizer_config.json \
+        https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer_config.json
 
 # =============================================================================
-# Stage 3: Runtime
+# Stage 2: Runtime
 # =============================================================================
 FROM debian:bookworm-slim
 
-# Install runtime dependencies for Docker access, health checks, and llama.cpp
+# Install runtime dependencies for Docker access and health checks
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates docker.io netcat-openbsd libgomp1 && \
+    ca-certificates docker.io netcat-openbsd && \
     rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
@@ -94,9 +79,8 @@ WORKDIR /app
 COPY --from=builder /app/panda-server /app/panda-server
 COPY --from=builder /app/panda-proxy /app/panda-proxy
 
-# Copy embedding model and llama.cpp shared library
-COPY --from=builder /assets/MiniLM-L6-v2.Q8_0.gguf /usr/share/panda/
-COPY --from=builder /assets/libllama_go.so /lib/
+# Copy embedding model
+COPY --from=builder /assets/all-MiniLM-L6-v2 /usr/share/panda/all-MiniLM-L6-v2
 
 # Create directories
 RUN mkdir -p /config /shared /output && \

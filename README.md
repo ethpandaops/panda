@@ -209,6 +209,7 @@ make test               # Run tests with race detector
 make lint               # Run golangci-lint
 make docker             # Build server Docker image
 make docker-sandbox     # Build sandbox image
+make download-models    # Download embedding model for semantic search
 ```
 
 See [docs/architecture.md](docs/architecture.md) for the full boundary definition and [docs/deployments.md](docs/deployments.md) for deployment modes.

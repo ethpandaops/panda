@@ -52,8 +52,7 @@ observability:
   metrics_enabled: true
   metrics_port: 31490
 
-# Semantic search configuration (required).
-# Ensure the model file exists at the configured path.
+# Semantic search configuration.
+# The model directory must contain model.onnx and tokenizer.json.
 # semantic_search:
-#   model_path: "models/MiniLM-L6-v2.Q8_0.gguf"  # Local dev default; in Docker image it's /usr/share/mcp/...
-#   gpu_layers: 0                               # Layers to offload to GPU (0 = CPU only)
+#   model_path: "models/all-MiniLM-L6-v2"  # Local dev default; in Docker image it's /usr/share/panda/all-MiniLM-L6-v2

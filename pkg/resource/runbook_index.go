@@ -2,9 +2,9 @@ package resource
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
-	"github.com/kelindar/search"
 	"github.com/sirupsen/logrus"
 
 	"github.com/ethpandaops/panda/pkg/embedding"
@@ -17,15 +17,15 @@ type RunbookSearchResult struct {
 	Score   float64       `json:"similarity_score"`
 }
 
-// indexedRunbook holds metadata for a searchable runbook.
+// indexedRunbook holds metadata and embedding for a searchable runbook.
 type indexedRunbook struct {
 	Runbook types.Runbook
+	Vector  []float32
 }
 
 // RunbookIndex provides semantic search over runbooks.
 type RunbookIndex struct {
 	embedder *embedding.Embedder
-	index    *search.Index[int]
 	runbooks []indexedRunbook
 }
 
@@ -37,10 +37,9 @@ func NewRunbookIndex(
 ) (*RunbookIndex, error) {
 	log = log.WithField("component", "runbook_index")
 
-	index := search.NewIndex[int]()
 	indexed := make([]indexedRunbook, 0, len(runbooks))
 
-	for i, rb := range runbooks {
+	for _, rb := range runbooks {
 		text := buildRunbookSearchText(rb)
 
 		vec, err := embedder.Embed(text)
@@ -48,10 +47,9 @@ func NewRunbookIndex(
 			return nil, fmt.Errorf("embedding runbook %q: %w", rb.Name, err)
 		}
 
-		index.Add(vec, i)
-
 		indexed = append(indexed, indexedRunbook{
 			Runbook: rb,
+			Vector:  vec,
 		})
 	}
 
@@ -59,7 +57,6 @@ func NewRunbookIndex(
 
 	return &RunbookIndex{
 		embedder: embedder,
-		index:    index,
 		runbooks: indexed,
 	}, nil
 }
@@ -71,14 +68,30 @@ func (idx *RunbookIndex) Search(query string, limit int) ([]RunbookSearchResult,
 		return nil, fmt.Errorf("embedding query: %w", err)
 	}
 
-	matches := idx.index.Search(queryVec, limit)
+	type scored struct {
+		index int
+		score float64
+	}
 
-	results := make([]RunbookSearchResult, 0, len(matches))
-	for _, match := range matches {
-		rb := idx.runbooks[match.Value]
+	scores := make([]scored, 0, len(idx.runbooks))
+	for i, rb := range idx.runbooks {
+		scores = append(scores, scored{index: i, score: dotProduct(queryVec, rb.Vector)})
+	}
+
+	sort.Slice(scores, func(i, j int) bool {
+		return scores[i].score > scores[j].score
+	})
+
+	if limit > len(scores) {
+		limit = len(scores)
+	}
+
+	results := make([]RunbookSearchResult, 0, limit)
+	for _, s := range scores[:limit] {
+		rb := idx.runbooks[s.index]
 		results = append(results, RunbookSearchResult{
 			Runbook: rb.Runbook,
-			Score:   match.Relevance,
+			Score:   s.score,
 		})
 	}
 

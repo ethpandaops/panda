@@ -47,11 +47,9 @@ type ServerConfig struct {
 
 // SemanticSearchConfig holds configuration for semantic example search.
 type SemanticSearchConfig struct {
-	// ModelPath is the path to the GGUF embedding model file (required).
+	// ModelPath is the path to the ONNX embedding model directory.
+	// The directory must contain model.onnx and tokenizer.json.
 	ModelPath string `yaml:"model_path,omitempty"`
-
-	// GPULayers is the number of layers to offload to GPU (0 = CPU only).
-	GPULayers int `yaml:"gpu_layers,omitempty"`
 }
 
 // SandboxConfig holds sandbox execution configuration.
@@ -270,26 +268,8 @@ func applyDefaults(cfg *Config) {
 		}
 	}
 
-	// Semantic search defaults.
-	if cfg.SemanticSearch.ModelPath == "" {
-		// Prefer local dev path if present, otherwise fall back to container path.
-		localPath := "models/MiniLM-L6-v2.Q8_0.gguf"
-		containerPath := "/usr/share/mcp/MiniLM-L6-v2.Q8_0.gguf"
-
-		switch {
-		case fileExists(localPath):
-			cfg.SemanticSearch.ModelPath = localPath
-		case fileExists(containerPath):
-			cfg.SemanticSearch.ModelPath = containerPath
-		default:
-			cfg.SemanticSearch.ModelPath = localPath
-		}
-	}
-}
-
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
+	// Semantic search defaults — model path is resolved at runtime by searchruntime.
+	// Leave empty to use the default search paths.
 }
 
 // MaxSandboxTimeout is the maximum allowed sandbox timeout in seconds.

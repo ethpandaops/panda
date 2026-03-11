@@ -40,7 +40,7 @@ make build                    # Build panda-server + panda
 make build-proxy             # Build standalone proxy binary
 make docker                   # Build Docker image
 make docker-sandbox           # Build sandbox container image
-make download-models          # Download embedding model + libllama for local search
+make download-models          # Download embedding model for semantic search
 make install                  # Install panda-server + panda binaries into GOBIN
 
 # Test
@@ -185,7 +185,7 @@ sandbox:
     max_sessions: 10
 
 semantic_search:
-  model_path: "models/MiniLM-L6-v2.Q8_0.gguf"
+  model_path: "models/all-MiniLM-L6-v2"
 ```
 
 Environment variables are substituted using `${VAR_NAME}` or `${VAR_NAME:-default}` syntax.
