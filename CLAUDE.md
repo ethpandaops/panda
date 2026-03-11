@@ -57,7 +57,7 @@ make vet                      # Run go vet
 # Run
 make run                      # Build + download models + run server with stdio transport
 make run-sse                  # Build + run server with SSE transport on port 2480
-docker compose up -d          # Full local stack: server + proxy + MinIO
+docker compose up -d          # Full local stack: server + proxy
 
 # CLI (requires a running server)
 ./panda datasources                          # List available datasources
@@ -82,7 +82,8 @@ uv run python -m scripts.repl
 - **App kernel** (`pkg/app/`): Shared server-side initialization for the module registry, proxy client, sandbox, cartographoor, and search indices
 - **Server** (`pkg/server/`, `cmd/server/`): Control plane for MCP transports, product HTTP API, resource/tool registration, and sandbox orchestration
 - **CLI** (`pkg/cli/`, `cmd/panda/`): HTTP client for the server API with human-friendly output
-- **Credential proxy** (`pkg/proxy/`, `cmd/proxy/`): Trust boundary that holds datasource and S3 credentials and executes raw upstream requests on behalf of the server
+- **Credential proxy** (`pkg/proxy/`, `cmd/proxy/`): Trust boundary that holds datasource credentials and executes raw upstream requests on behalf of the server
+- **Storage** (`pkg/storage/`): Local file storage for sandbox outputs, backed by afero filesystem
 - **Sandbox** (`pkg/sandbox/`): Data plane that executes Python in isolated containers (Docker for dev, gVisor for production)
 - **Modules** (`modules/`): Per-integration packages that provide config, examples, docs, resources, and server-side operation behavior
 
@@ -91,8 +92,8 @@ uv run python -m scripts.repl
 1. `panda` or an MCP client connects to `server`
 2. `server` builds a credential-free sandbox environment with server runtime tokens and datasource metadata
 3. sandbox code calls back into `server` for operations and storage
-4. `server` calls `proxy` for credentialed upstream access
-5. `proxy` validates proxy-scoped auth and forwards requests to ClickHouse, Prometheus, Loki, S3, or Ethnode upstreams
+4. `server` stores uploaded files locally via the storage service (`~/.panda/data/storage/`)
+5. `server` calls `proxy` for credentialed upstream access to ClickHouse, Prometheus, Loki, and Ethnode
 
 ### Module System
 
@@ -172,6 +173,9 @@ proxy:
     issuer_url: "..."
     client_id: "..."
 
+storage:
+  base_dir: "~/.panda/data/storage"
+
 sandbox:
   backend: docker|gvisor
   image: "ethpandaops-panda-sandbox:latest"
@@ -198,6 +202,7 @@ pkg/
   module/          # Module interface and registry
   server/          # Server builder, HTTP API, MCP transport
   proxy/           # Proxy client/server, auth, handlers
+  storage/         # Local file storage (afero-backed)
   sandbox/         # Sandboxed execution backends and sessions
   tool/            # MCP tool definitions and handlers
   resource/        # MCP resource definitions
@@ -229,9 +234,9 @@ docs/              # Deployment architecture docs
 Main local stack (`docker-compose.yaml`):
 - `server` on port `2480`
 - `proxy` on port `18081`
-- `minio` on ports `31400` / `31401`
 
 By default docker compose publishes those ports on `127.0.0.1`.
+File storage is local to the server process (`~/.panda/data/storage/` by default).
 
 ## Deployment
 

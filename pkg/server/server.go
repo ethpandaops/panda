@@ -24,6 +24,7 @@ import (
 	"github.com/ethpandaops/panda/pkg/resource"
 	"github.com/ethpandaops/panda/pkg/searchsvc"
 	"github.com/ethpandaops/panda/pkg/serverapi"
+	"github.com/ethpandaops/panda/pkg/storage"
 	"github.com/ethpandaops/panda/pkg/tokenstore"
 	"github.com/ethpandaops/panda/pkg/tool"
 )
@@ -52,6 +53,7 @@ type service struct {
 	searchService        *searchsvc.Service
 	execService          *execsvc.Service
 	proxyService         proxy.Service
+	storageService       storage.Service
 	moduleRegistry       *module.Registry
 	cartographoorClient  cartographoor.CartographoorClient
 	proxyAuthMetadata    *serverapi.ProxyAuthMetadataResponse
@@ -76,6 +78,7 @@ func NewService(
 	searchSvc *searchsvc.Service,
 	execSvc *execsvc.Service,
 	proxySvc proxy.Service,
+	storageSvc storage.Service,
 	moduleReg *module.Registry,
 	cartographoorClient cartographoor.CartographoorClient,
 	proxyAuthMetadata *serverapi.ProxyAuthMetadataResponse,
@@ -90,6 +93,7 @@ func NewService(
 		searchService:       searchSvc,
 		execService:         execSvc,
 		proxyService:        proxySvc,
+		storageService:      storageSvc,
 		moduleRegistry:      moduleReg,
 		cartographoorClient: cartographoorClient,
 		proxyAuthMetadata:   proxyAuthMetadata,

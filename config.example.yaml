@@ -29,6 +29,11 @@ sandbox:
   #   max_duration: 4h  # absolute max session lifetime (default: 4h)
   #   max_sessions: 10  # max concurrent sessions (default: 10)
 
+# Local file storage for sandbox outputs (charts, CSVs, etc.).
+# Files persist on disk and are served by the server's HTTP API.
+# storage:
+#   base_dir: "~/.panda/data/storage"  # Default location
+
 # Proxy connection configuration.
 # The server always connects to a running proxy over HTTP.
 # In local dev this is typically the docker compose proxy service.

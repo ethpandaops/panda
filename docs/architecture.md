@@ -40,7 +40,7 @@ If a change affects product semantics, defaults, validation, output shape, or th
 - datasource discovery via `GET /datasources` (authenticated, returns metadata without credentials)
 - hosted auth control plane for remote users
 - proxy-scoped bearer token validation
-- raw upstream relay to ClickHouse, Prometheus, Loki, S3, and Ethereum nodes
+- raw upstream relay to ClickHouse, Prometheus, Loki, and Ethereum nodes
 - rate limiting and audit logging
 
 `proxy` must not own user-facing operation semantics.

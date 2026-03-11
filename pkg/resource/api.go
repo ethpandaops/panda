@@ -44,25 +44,25 @@ func createAPIHandler(moduleReg *module.Registry) ReadHandler {
 
 		// Add platform-owned storage module.
 		modules["storage"] = types.ModuleDoc{
-			Description: "Upload files to S3-compatible storage for sharing",
+			Description: "Upload files to storage for sharing",
 			Functions: map[string]types.FunctionDoc{
 				"upload": {
 					Signature:   "storage.upload(local_path: str, remote_name: str = None) -> str",
-					Description: "Upload a local file to S3 and return the public URL",
+					Description: "Upload a local file to storage and return the public URL",
 					Parameters: map[string]string{
 						"local_path":  "Path to file (e.g., '/workspace/chart.png')",
-						"remote_name": "Optional: custom name in S3",
+						"remote_name": "Optional: custom name for the stored file",
 					},
 					Returns: "Public URL string",
 				},
 				"list_files": {
 					Signature:   "storage.list_files(prefix: str = '') -> list[dict]",
-					Description: "List files in S3 bucket",
+					Description: "List uploaded files",
 					Returns:     "List of dicts with 'key', 'size', 'last_modified'",
 				},
 				"get_url": {
 					Signature:   "storage.get_url(key: str) -> str",
-					Description: "Get public URL for an S3 key",
+					Description: "Get public URL for a stored file",
 					Returns:     "Public URL string",
 				},
 			},

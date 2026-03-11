@@ -9,6 +9,8 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/spf13/afero"
+
 	"github.com/ethpandaops/panda/pkg/app"
 	"github.com/ethpandaops/panda/pkg/cartographoor"
 	"github.com/ethpandaops/panda/pkg/config"
@@ -19,6 +21,7 @@ import (
 	"github.com/ethpandaops/panda/pkg/searchruntime"
 	"github.com/ethpandaops/panda/pkg/searchsvc"
 	"github.com/ethpandaops/panda/pkg/serverapi"
+	"github.com/ethpandaops/panda/pkg/storage"
 	"github.com/ethpandaops/panda/pkg/tokenstore"
 	"github.com/ethpandaops/panda/pkg/tool"
 	"github.com/ethpandaops/panda/runbooks"
@@ -112,6 +115,20 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 		return errors.Join(errs...)
 	}
 
+	// Resolve server base URL for storage URL construction.
+	serverBaseURL := strings.TrimSpace(b.cfg.Server.BaseURL)
+	if serverBaseURL == "" {
+		serverBaseURL = fmt.Sprintf("http://localhost:%d", b.cfg.Server.Port)
+	}
+
+	// Create local file storage service.
+	storageSvc := storage.New(
+		b.log,
+		afero.NewOsFs(),
+		b.cfg.Storage.BaseDir,
+		serverBaseURL,
+	)
+
 	// Create and return the server service.
 	return NewService(
 		b.log,
@@ -121,6 +138,7 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 		searchSvc,
 		execSvc,
 		application.ProxyClient,
+		storageSvc,
 		application.ModuleRegistry,
 		application.Cartographoor,
 		buildProxyAuthMetadata(b.cfg),

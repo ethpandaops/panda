@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -32,6 +31,9 @@ func (s *service) mountAPIRoutes(r chi.Router) {
 		r.Delete("/sessions/{sessionID}", s.handleAPIDestroySession)
 		r.Get("/resources/read", s.handleAPIReadResource)
 		r.HandleFunc("/operations/{operationID}", s.handleAPIOperation)
+
+		// Public file serving (no auth — same as MinIO anonymous download).
+		r.Get("/storage/files/*", s.handleStorageServeFile)
 
 		r.Route("/runtime", func(r chi.Router) {
 			r.Use(s.runtimeAuthMiddleware)
@@ -341,8 +343,7 @@ func (s *service) handleAPIOperation(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *service) handleRuntimeStorageUpload(w http.ResponseWriter, r *http.Request) {
-	bucket := strings.TrimSpace(s.proxyService.S3Bucket())
-	if bucket == "" {
+	if s.storageService == nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "storage is unavailable")
 		return
 	}
@@ -360,39 +361,22 @@ func (s *service) handleRuntimeStorageUpload(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	key, relativeKey, err := serverapi.RuntimeStorageScopedKey(executionID, name)
+	contentType := strings.TrimSpace(r.Header.Get("Content-Type"))
+
+	relativeKey, url, err := s.storageService.Upload(executionID, name, r.Body, contentType)
 	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	proxyPath := "/s3/" + bucket + "/" + key
-
-	headers := make(http.Header)
-	if contentType := strings.TrimSpace(r.Header.Get("Content-Type")); contentType != "" {
-		headers.Set("Content-Type", contentType)
-	}
-
-	data, status, _, err := s.proxyRequest(r.Context(), http.MethodPut, proxyPath, r.Body, headers)
-	if err != nil {
-		writeAPIError(w, http.StatusBadGateway, fmt.Sprintf("upload failed: %v", err))
-		return
-	}
-
-	if status < 200 || status >= 300 {
-		writeAPIError(w, status, strings.TrimSpace(string(data)))
+		writeAPIError(w, http.StatusInternalServerError, fmt.Sprintf("upload failed: %v", err))
 		return
 	}
 
 	writeJSON(w, http.StatusOK, serverapi.RuntimeStorageUploadResponse{
 		Key: relativeKey,
-		URL: s.runtimeStoragePublicURL(key),
+		URL: url,
 	})
 }
 
 func (s *service) handleRuntimeStorageList(w http.ResponseWriter, r *http.Request) {
-	bucket := strings.TrimSpace(s.proxyService.S3Bucket())
-	if bucket == "" {
+	if s.storageService == nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "storage is unavailable")
 		return
 	}
@@ -404,46 +388,32 @@ func (s *service) handleRuntimeStorageList(w http.ResponseWriter, r *http.Reques
 	}
 
 	prefix := strings.TrimSpace(r.URL.Query().Get("prefix"))
-	scopedPrefix := serverapi.RuntimeStorageScopedPrefix(executionID, prefix)
-	files := make([]serverapi.RuntimeStorageFile, 0, 16)
-	continuationToken := ""
 
-	for {
-		query := url.Values{"list-type": {"2"}}
-		query.Set("prefix", scopedPrefix)
-		if continuationToken != "" {
-			query.Set("continuation-token", continuationToken)
-		}
+	storageFiles, err := s.storageService.List(executionID, prefix)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, fmt.Sprintf("listing files failed: %v", err))
+		return
+	}
 
-		data, status, _, err := s.proxyRequest(r.Context(), http.MethodGet, "/s3/"+bucket+"?"+query.Encode(), nil, nil)
-		if err != nil {
-			writeAPIError(w, http.StatusBadGateway, fmt.Sprintf("listing files failed: %v", err))
-			return
-		}
-
-		if status < 200 || status >= 300 {
-			writeAPIError(w, status, strings.TrimSpace(string(data)))
-			return
-		}
-
-		pageFiles, nextToken, err := serverapi.ParseRuntimeStorageList(data, executionID, s.runtimeStoragePublicURL)
-		if err != nil {
-			writeAPIError(w, http.StatusBadGateway, fmt.Sprintf("decoding storage listing failed: %v", err))
-			return
-		}
-
-		files = append(files, pageFiles...)
-		if nextToken == "" {
-			break
-		}
-
-		continuationToken = nextToken
+	files := make([]serverapi.RuntimeStorageFile, 0, len(storageFiles))
+	for _, f := range storageFiles {
+		files = append(files, serverapi.RuntimeStorageFile{
+			Key:          f.Key,
+			Size:         f.Size,
+			LastModified: f.LastModified,
+			URL:          f.URL,
+		})
 	}
 
 	writeJSON(w, http.StatusOK, serverapi.RuntimeStorageListResponse{Files: files})
 }
 
 func (s *service) handleRuntimeStorageURL(w http.ResponseWriter, r *http.Request) {
+	if s.storageService == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "storage is unavailable")
+		return
+	}
+
 	executionID := runtimeExecutionID(r.Context())
 	if executionID == "" {
 		writeAPIError(w, http.StatusUnauthorized, "runtime execution ID is missing")
@@ -456,16 +426,25 @@ func (s *service) handleRuntimeStorageURL(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	scopedKey, relativeKey, err := serverapi.RuntimeStorageScopedKey(executionID, key)
-	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, err.Error())
+	writeJSON(w, http.StatusOK, serverapi.RuntimeStorageURLResponse{
+		Key: key,
+		URL: s.storageService.GetURL(executionID, key),
+	})
+}
+
+func (s *service) handleStorageServeFile(w http.ResponseWriter, r *http.Request) {
+	if s.storageService == nil {
+		http.NotFound(w, r)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, serverapi.RuntimeStorageURLResponse{
-		Key: relativeKey,
-		URL: s.runtimeStoragePublicURL(scopedKey),
-	})
+	filePath := strings.TrimPrefix(r.URL.Path, "/api/v1/storage/files/")
+	if filePath == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	s.storageService.ServeFile(w, r, filePath)
 }
 
 func (s *service) proxyRequest(
@@ -512,15 +491,6 @@ func (s *service) proxyRequest(
 	}
 
 	return data, resp.StatusCode, resp.Header.Clone(), nil
-}
-
-func (s *service) runtimeStoragePublicURL(key string) string {
-	if prefix := strings.TrimSpace(s.proxyService.S3PublicURLPrefix()); prefix != "" {
-		return strings.TrimRight(prefix, "/") + "/" + key
-	}
-
-	bucket := strings.TrimSpace(s.proxyService.S3Bucket())
-	return strings.TrimRight(s.proxyService.URL(), "/") + "/s3/" + bucket + "/" + key
 }
 
 func runtimeExecutionID(ctx context.Context) string {

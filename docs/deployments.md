@@ -10,14 +10,14 @@ panda -> server -> proxy -> datasources
 
 - `panda` is a client.
 - `server` owns MCP, HTTP API, sandbox execution, sessions, and search.
-- `proxy` owns datasource and storage credentials.
+- `proxy` owns datasource credentials.
 - sandboxed Python talks to the local server using server-issued runtime tokens.
 
 ## Components
 
 - `panda`: local CLI that talks to `server` over HTTP.
 - `server`: runs MCP transports, the CLI-facing HTTP API, sandboxes, sessions, and search.
-- `proxy`: credential boundary for ClickHouse, Prometheus, Loki, ethnode, and S3.
+- `proxy`: credential boundary for ClickHouse, Prometheus, Loki, and ethnode.
 - `modules`: datasource integrations, docs, resources, examples, and schema discovery.
 
 ## Local Docker Compose
@@ -30,7 +30,7 @@ server -> http://ethpandaops-panda-proxy:18081
 proxy -> datasources
 ```
 
-- `docker compose up -d` runs `server`, `proxy`, and `minio`.
+- `docker compose up -d` runs `server` and `proxy`.
 - `config.yaml` configures the server.
 - `proxy-config.yaml` configures datasource credentials.
 - `panda init` writes the client config with `server.url`.
@@ -66,7 +66,6 @@ This is the recommended external-user shape when you do not want to execute code
 - `proxy` config:
   - optional hosted GitHub auth config
   - datasource credentials
-  - storage credentials
   - proxy auth/rate-limit/audit settings
 
 ## Notes

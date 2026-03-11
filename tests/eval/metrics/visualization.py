@@ -16,7 +16,7 @@ class VisualizationURLMetric(BaseMetric):
 
     This metric evaluates whether the agent's output includes URLs
     pointing to generated visualizations (charts, graphs, etc.) that
-    were uploaded to storage (S3/R2).
+    were uploaded to storage.
     """
 
     def __init__(
@@ -45,6 +45,7 @@ class VisualizationURLMetric(BaseMetric):
         ]
         self.url_patterns = url_patterns or [
             r"https?://[^\s]+\.(" + "|".join(self.allowed_suffixes) + r")",
+            r"https?://[^\s]*/api/v1/storage/files/[^\s]*",
             r"https?://[^\s]*r2\.cloudflarestorage\.com[^\s]*",
             r"https?://[^\s]*s3\.[^\s]*amazonaws\.com[^\s]*",
             r"https?://[^\s]*storage\.googleapis\.com[^\s]*",

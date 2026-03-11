@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -20,10 +21,18 @@ type Config struct {
 	Server         ServerConfig         `yaml:"server"`
 	Sandbox        SandboxConfig        `yaml:"sandbox"`
 	Proxy          ProxyConfig          `yaml:"proxy"`
+	Storage        StorageConfig        `yaml:"storage"`
 	Observability  ObservabilityConfig  `yaml:"observability"`
 	SemanticSearch SemanticSearchConfig `yaml:"semantic_search"`
 
 	path string `yaml:"-"`
+}
+
+// StorageConfig holds configuration for local file storage.
+type StorageConfig struct {
+	// BaseDir is the directory where uploaded files are stored.
+	// Defaults to ~/.panda/data/storage.
+	BaseDir string `yaml:"base_dir,omitempty"`
 }
 
 // ServerConfig holds server-specific configuration.
@@ -249,6 +258,16 @@ func applyDefaults(cfg *Config) {
 	// Proxy defaults.
 	if cfg.Proxy.URL == "" {
 		cfg.Proxy.URL = "http://localhost:18081"
+	}
+
+	// Storage defaults.
+	if cfg.Storage.BaseDir == "" {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			cfg.Storage.BaseDir = filepath.Join(home, ".panda", "data", "storage")
+		} else {
+			cfg.Storage.BaseDir = filepath.Join(".", ".panda", "data", "storage")
+		}
 	}
 
 	// Semantic search defaults.
