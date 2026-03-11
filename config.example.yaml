@@ -8,41 +8,37 @@ server:
   base_url: "http://localhost:2480"  # ep clients should point at this URL
   sandbox_url: "http://ethpandaops-mcp-server:2480"  # URL sandbox containers use to call the local server
 
-# Module configuration
-# Each key maps to a compiled-in module. Modules without config are skipped.
-# Datasource availability is discovered from the credential proxy; module config is for
-# schema discovery, documentation, and optional overrides.
-modules:
-  # ClickHouse configuration
-  # Schema discovery runs THROUGH the credential proxy (no direct DB creds here).
-  # Datasource names must match proxy-config.yaml.
-  clickhouse:
-    # ClickHouse schema discovery configuration
-    # Discovers table schemas from proxy-exposed datasources.
-    schema_discovery:
-      # enabled: true  # Optional; defaults to enabled when proxy has datasources
-      refresh_interval: 15m  # How often to refresh schema cache
-
-      # Datasources to discover schemas from.
-      # If empty or omitted, ALL proxy ClickHouse datasources are used.
-      datasources:
-        - name: "xatu"      # Proxy datasource name
-          cluster: "xatu"   # Logical cluster name for resources (defaults to name)
-        - name: "xatu-cbt"
-        - name: "xatu-experimental"
-          cluster: "xatu-experimental"
-
-  # Dora configuration
-  # Dora beacon chain explorer is enabled by default with no configuration needed.
-  # Network URLs are discovered automatically from cartographoor.
-  # dora:
-  #   enabled: true  # Set to false to disable Dora integration
-
-  # Ethereum node API (direct beacon/execution node access)
-  # Requires ethnode credentials in proxy-config.yaml.
-  # ethnode:
-  #   enabled: true
-
+# Module configuration (optional)
+#
+# Modules auto-initialize from proxy-discovered datasources when no explicit
+# config is provided. The proxy is the single source of truth for datasource
+# identity (name, description, metadata). Module config here is only needed
+# to customize server-side behavior like schema discovery intervals.
+#
+# modules:
+#   clickhouse:
+#     schema_discovery:
+#       # enabled: true  # Optional; defaults to enabled when proxy has datasources
+#       refresh_interval: 15m  # How often to refresh schema cache
+#
+#       # Datasources to discover schemas from.
+#       # If empty or omitted, ALL proxy ClickHouse datasources are used.
+#       datasources:
+#         - name: "xatu"      # Proxy datasource name
+#           cluster: "xatu"   # Logical cluster name for resources (defaults to name)
+#         - name: "xatu-cbt"
+#         - name: "xatu-experimental"
+#           cluster: "xatu-experimental"
+#
+#   # Dora beacon chain explorer is enabled by default with no configuration needed.
+#   # Network URLs are discovered automatically from cartographoor.
+#   # dora:
+#   #   enabled: true  # Set to false to disable Dora integration
+#
+#   # Ethereum node API (direct beacon/execution node access)
+#   # Auto-enabled when the proxy has ethnode credentials configured.
+#   # ethnode:
+#   #   enabled: true
 
 # Sandbox configuration
 sandbox:

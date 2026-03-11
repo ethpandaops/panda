@@ -14,7 +14,6 @@ import (
 	"github.com/ethpandaops/mcp/pkg/config"
 	"github.com/ethpandaops/mcp/pkg/execsvc"
 	"github.com/ethpandaops/mcp/pkg/module"
-	"github.com/ethpandaops/mcp/pkg/proxy"
 	"github.com/ethpandaops/mcp/pkg/resource"
 	"github.com/ethpandaops/mcp/pkg/sandbox"
 	"github.com/ethpandaops/mcp/pkg/searchruntime"
@@ -79,7 +78,6 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 		application.Sandbox,
 		b.cfg,
 		application.ModuleRegistry,
-		application.ProxyClient,
 		runtimeTokens,
 	)
 
@@ -98,7 +96,6 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 		application.Cartographoor,
 		application.ModuleRegistry,
 		toolReg,
-		application.ProxyClient,
 	)
 
 	cleanup := func(stopCtx context.Context) error {
@@ -184,12 +181,11 @@ func (b *Builder) buildResourceRegistry(
 	cartographoorClient cartographoor.CartographoorClient,
 	moduleReg *module.Registry,
 	toolReg tool.Registry,
-	proxyClient proxy.Service,
 ) resource.Registry {
 	reg := resource.NewRegistry(b.log)
 
-	// Register datasources resources (from module registry and proxy client).
-	resource.RegisterDatasourcesResources(b.log, reg, moduleReg, proxyClient)
+	// Register datasources resources (from module registry).
+	resource.RegisterDatasourcesResources(b.log, reg, moduleReg)
 
 	// Register examples resources (from module registry).
 	resource.RegisterExamplesResources(b.log, reg, moduleReg)

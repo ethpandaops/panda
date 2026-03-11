@@ -105,21 +105,25 @@ Five compiled-in modules are registered in `pkg/app/app.go`:
 
 Each module implements `module.Module` in `pkg/module/module.go`. Optional capability interfaces live alongside it in `pkg/module/module.go`.
 - `ProxyAware` — receives proxy client for proxy-backed operations
+- `ProxyDiscoverable` — auto-initializes from proxy-discovered datasources when no YAML config exists
 - `CartographoorAware` — receives network discovery client
 - `DefaultEnabled` — activates without explicit config
 - provider interfaces such as sandbox env, datasource info, examples, Python docs, getting-started snippets, and resources are optional and capability-based
 
+The proxy is the single source of truth for datasource identity (name, description, metadata). Modules that implement `ProxyDiscoverable` (clickhouse, prometheus, loki, ethnode) auto-initialize from proxy discovery when no explicit `modules:` YAML config is provided. The server config only needs to specify server-side behavior like schema discovery intervals.
+
 ### Server Startup Order
 
-1. Module registry (register + init all configured/default-enabled modules)
+1. Module registry (register all compiled-in modules, no init yet)
 2. Sandbox service
-3. Proxy client
-4. Inject proxy into `ProxyAware` modules and start modules
-5. Cartographoor client
-6. Semantic search runtime
-7. MCP tool registry: `execute_python`, `manage_session`, `search`
-8. MCP resource registry
-9. Product HTTP API
+3. Proxy client (performs initial datasource discovery)
+4. Module initialization (YAML config > proxy discovery > DefaultEnabled)
+5. Inject proxy into `ProxyAware` modules and start modules
+6. Cartographoor client
+7. Semantic search runtime
+8. MCP tool registry: `execute_python`, `manage_session`, `search`
+9. MCP resource registry
+10. Product HTTP API
 
 ### Public Surfaces
 
@@ -168,10 +172,13 @@ proxy:
     issuer_url: "..."
     client_id: "..."
 
+# modules: section is optional — datasources auto-discovered from proxy.
+# Only needed to customize server-side behavior like schema discovery.
 modules:
   clickhouse:
     schema_discovery:
-      datasources: [...]
+      refresh_interval: 15m
+      datasources: [...]  # Optional; defaults to all proxy ClickHouse datasources
 
 sandbox:
   backend: docker|gvisor

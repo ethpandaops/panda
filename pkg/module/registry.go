@@ -69,6 +69,40 @@ func (r *Registry) InitModule(name string, rawConfig []byte) error {
 	return nil
 }
 
+// InitModuleFromDiscovery initializes a module using proxy-discovered datasources.
+// The module must implement ProxyDiscoverable. It calls InitFromDiscovery,
+// ApplyDefaults, and Validate in sequence.
+func (r *Registry) InitModuleFromDiscovery(name string, datasources []types.DatasourceInfo) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	ext, ok := r.all[name]
+	if !ok {
+		return fmt.Errorf("unknown module %q", name)
+	}
+
+	discoverable, ok := ext.(ProxyDiscoverable)
+	if !ok {
+		return fmt.Errorf("module %q does not implement ProxyDiscoverable", name)
+	}
+
+	if err := discoverable.InitFromDiscovery(datasources); err != nil {
+		return fmt.Errorf("initializing module %q from discovery: %w", name, err)
+	}
+
+	ext.ApplyDefaults()
+
+	if err := ext.Validate(); err != nil {
+		return fmt.Errorf("validating module %q: %w", name, err)
+	}
+
+	r.initialized = append(r.initialized, ext)
+
+	r.log.WithField("module", name).Info("Module initialized from proxy discovery")
+
+	return nil
+}
+
 // Initialized returns all modules that passed Init/Validate.
 func (r *Registry) Initialized() []Module {
 	r.mu.RLock()

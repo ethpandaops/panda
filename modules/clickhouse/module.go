@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -14,16 +15,22 @@ import (
 	"github.com/ethpandaops/mcp/pkg/types"
 )
 
-// Compile-time interface check
-var _ module.Module = (*Module)(nil)
+// Compile-time interface checks.
+var (
+	_ module.Module            = (*Module)(nil)
+	_ module.ProxyDiscoverable = (*Module)(nil)
+)
 
+// Module implements the module.Module interface for ClickHouse.
 type Module struct {
 	cfg          Config
+	datasources  []types.DatasourceInfo
 	log          logrus.FieldLogger
 	schemaClient ClickHouseSchemaClient
 	proxySvc     proxy.Service
 }
 
+// New creates a new ClickHouse module.
 func New() *Module {
 	return &Module{}
 }
@@ -38,19 +45,33 @@ func (p *Module) SetProxyClient(client proxy.Service) {
 	p.proxySvc = client
 }
 
+// InitFromDiscovery initializes the module from proxy-discovered datasources.
+// Only datasources with type "clickhouse" are used.
+func (p *Module) InitFromDiscovery(datasources []types.DatasourceInfo) error {
+	var filtered []types.DatasourceInfo
+
+	for _, ds := range datasources {
+		if ds.Type != "clickhouse" {
+			continue
+		}
+
+		filtered = append(filtered, ds)
+	}
+
+	if len(filtered) == 0 {
+		return module.ErrNoValidConfig
+	}
+
+	p.datasources = filtered
+
+	return nil
+}
+
+// Init parses the raw YAML config for this module.
 func (p *Module) Init(rawConfig []byte) error {
 	if err := yaml.Unmarshal(rawConfig, &p.cfg); err != nil {
 		return err
 	}
-
-	// Drop unnamed clusters; remaining fields are optional when proxy is authoritative.
-	validClusters := make([]ClusterConfig, 0, len(p.cfg.Clusters))
-	for _, c := range p.cfg.Clusters {
-		if c.Name != "" {
-			validClusters = append(validClusters, c)
-		}
-	}
-	p.cfg.Clusters = validClusters
 
 	// Drop schema discovery entries without a datasource name.
 	validDatasources := make([]SchemaDiscoveryDatasource, 0, len(p.cfg.SchemaDiscovery.Datasources))
@@ -59,63 +80,58 @@ func (p *Module) Init(rawConfig []byte) error {
 			validDatasources = append(validDatasources, ds)
 		}
 	}
+
 	p.cfg.SchemaDiscovery.Datasources = validDatasources
 
 	return nil
 }
 
+// ApplyDefaults sets default values before validation.
 func (p *Module) ApplyDefaults() {
-	for i := range p.cfg.Clusters {
-		if p.cfg.Clusters[i].Timeout == 0 {
-			p.cfg.Clusters[i].Timeout = 120
-		}
-	}
 	if p.cfg.SchemaDiscovery.RefreshInterval == 0 {
 		p.cfg.SchemaDiscovery.RefreshInterval = 15 * time.Minute
 	}
 }
 
+// Validate checks that the parsed config is valid.
 func (p *Module) Validate() error {
-	names := make(map[string]struct{}, len(p.cfg.Clusters))
-	for i, ch := range p.cfg.Clusters {
-		if ch.Name == "" {
-			return fmt.Errorf("clusters[%d].name is required", i)
-		}
-		if _, exists := names[ch.Name]; exists {
-			return fmt.Errorf("clusters[%d].name %q is duplicated", i, ch.Name)
-		}
-		names[ch.Name] = struct{}{}
-	}
-	// Validate schema discovery entries.
 	for i, ds := range p.cfg.SchemaDiscovery.Datasources {
 		if ds.Name == "" {
 			return fmt.Errorf("schema_discovery.datasources[%d].name is required", i)
 		}
 	}
+
+	// Validate datasources have unique names.
+	names := make(map[string]struct{}, len(p.datasources))
+	for i, ds := range p.datasources {
+		if _, exists := names[ds.Name]; exists {
+			return fmt.Errorf("datasource[%d].name %q is duplicated", i, ds.Name)
+		}
+
+		names[ds.Name] = struct{}{}
+	}
+
 	return nil
 }
 
 // SandboxEnv returns credential-free environment variables for the sandbox.
-// Credentials are never passed to sandbox containers - they connect via
-// the credential proxy instead.
 func (p *Module) SandboxEnv() (map[string]string, error) {
-	if len(p.cfg.Clusters) == 0 {
+	if len(p.datasources) == 0 {
 		return nil, nil
 	}
 
-	// Return datasource info without credentials.
 	type datasourceInfo struct {
 		Name        string `json:"name"`
 		Description string `json:"description"`
 		Database    string `json:"database"`
 	}
 
-	infos := make([]datasourceInfo, 0, len(p.cfg.Clusters))
-	for _, cluster := range p.cfg.Clusters {
+	infos := make([]datasourceInfo, 0, len(p.datasources))
+	for _, ds := range p.datasources {
 		infos = append(infos, datasourceInfo{
-			Name:        cluster.Name,
-			Description: cluster.Description,
-			Database:    cluster.Database,
+			Name:        ds.Name,
+			Description: ds.Description,
+			Database:    ds.Metadata["database"],
 		})
 	}
 
@@ -129,26 +145,19 @@ func (p *Module) SandboxEnv() (map[string]string, error) {
 	}, nil
 }
 
+// DatasourceInfo returns datasource metadata for datasources:// resources.
 func (p *Module) DatasourceInfo() []types.DatasourceInfo {
-	infos := make([]types.DatasourceInfo, 0, len(p.cfg.Clusters))
-	for _, ch := range p.cfg.Clusters {
-		infos = append(infos, types.DatasourceInfo{
-			Type:        "clickhouse",
-			Name:        ch.Name,
-			Description: ch.Description,
-			Metadata: map[string]string{
-				"database": ch.Database,
-			},
-		})
-	}
-	return infos
+	result := make([]types.DatasourceInfo, len(p.datasources))
+	copy(result, p.datasources)
+
+	return result
 }
 
+// Examples returns query examples for the ClickHouse module.
 func (p *Module) Examples() map[string]types.ExampleCategory {
 	result := make(map[string]types.ExampleCategory, len(queryExamples))
-	for k, v := range queryExamples {
-		result[k] = v
-	}
+	maps.Copy(result, queryExamples)
+
 	return result
 }
 
@@ -206,22 +215,25 @@ Xatu data is split across **TWO clusters** with **DIFFERENT syntax**:
 - Tables have variants: ` + "`fct_block_canonical`" + ` vs ` + "`fct_block_head`"
 }
 
+// RegisterResources registers ClickHouse schema resources.
 func (p *Module) RegisterResources(log logrus.FieldLogger, reg module.ResourceRegistry) error {
 	p.log = log.WithField("module", "clickhouse")
 	if p.schemaClient != nil {
 		RegisterSchemaResources(p.log, reg, p.schemaClient)
 	}
+
 	return nil
 }
 
+// Start performs async initialization (schema discovery).
 func (p *Module) Start(ctx context.Context) error {
-	// Create the schema client
 	if p.log == nil {
 		p.log = logrus.WithField("module", "clickhouse")
 	}
 
 	if p.cfg.SchemaDiscovery.Enabled != nil && !*p.cfg.SchemaDiscovery.Enabled {
 		p.log.Debug("Schema discovery disabled, skipping")
+
 		return nil
 	}
 
@@ -234,9 +246,11 @@ func (p *Module) Start(ctx context.Context) error {
 		if ds.Name == "" {
 			continue
 		}
+
 		if ds.Cluster == "" {
 			ds.Cluster = ds.Name
 		}
+
 		datasources = append(datasources, ds)
 	}
 
@@ -245,6 +259,7 @@ func (p *Module) Start(ctx context.Context) error {
 			if name == "" {
 				continue
 			}
+
 			datasources = append(datasources, SchemaDiscoveryDatasource{
 				Name:    name,
 				Cluster: name,
@@ -254,6 +269,7 @@ func (p *Module) Start(ctx context.Context) error {
 
 	if len(datasources) == 0 {
 		p.log.Debug("No ClickHouse datasources available for schema discovery, skipping")
+
 		return nil
 	}
 
@@ -270,9 +286,11 @@ func (p *Module) Start(ctx context.Context) error {
 	return p.schemaClient.Start(ctx)
 }
 
+// Stop cleans up resources.
 func (p *Module) Stop(_ context.Context) error {
 	if p.schemaClient != nil {
 		return p.schemaClient.Stop()
 	}
+
 	return nil
 }

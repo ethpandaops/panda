@@ -5,6 +5,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/ethpandaops/mcp/pkg/module"
 	"github.com/ethpandaops/mcp/pkg/types"
 )
 
@@ -19,6 +20,18 @@ func New() *Module {
 }
 
 func (p *Module) Name() string { return "ethnode" }
+
+// InitFromDiscovery initializes the module from proxy-discovered datasources.
+// Ethnode checks for any datasource with type "ethnode" as an availability signal.
+func (p *Module) InitFromDiscovery(datasources []types.DatasourceInfo) error {
+	for _, ds := range datasources {
+		if ds.Type == "ethnode" {
+			return nil // module defaults to enabled
+		}
+	}
+
+	return module.ErrNoValidConfig
+}
 
 // Enabled reports whether ethnode operations should be exposed.
 func (p *Module) Enabled() bool { return p.cfg.IsEnabled() }

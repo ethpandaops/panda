@@ -9,7 +9,6 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/ethpandaops/mcp/pkg/module"
-	"github.com/ethpandaops/mcp/pkg/proxy"
 	"github.com/ethpandaops/mcp/pkg/types"
 )
 
@@ -18,33 +17,20 @@ type DatasourcesJSONResponse struct {
 	Datasources []types.DatasourceInfo `json:"datasources"`
 }
 
-// DatasourceProvider provides datasource information from either modules or proxy.
+// DatasourceProvider provides datasource information from the module registry.
 type DatasourceProvider struct {
-	moduleReg   *module.Registry
-	proxyClient proxy.Service
+	moduleReg *module.Registry
 }
 
 // NewDatasourceProvider creates a new datasource provider.
-func NewDatasourceProvider(moduleReg *module.Registry, proxyClient proxy.Service) *DatasourceProvider {
+func NewDatasourceProvider(moduleReg *module.Registry) *DatasourceProvider {
 	return &DatasourceProvider{
-		moduleReg:   moduleReg,
-		proxyClient: proxyClient,
+		moduleReg: moduleReg,
 	}
 }
 
-// DatasourceInfo returns datasource info from the proxy.
-// If the proxy is unavailable, it falls back to module-derived info.
+// DatasourceInfo returns aggregated datasource info from all initialized modules.
 func (p *DatasourceProvider) DatasourceInfo() []types.DatasourceInfo {
-	if p.proxyClient != nil {
-		var result []types.DatasourceInfo
-
-		result = append(result, p.proxyClient.ClickHouseDatasourceInfo()...)
-		result = append(result, p.proxyClient.PrometheusDatasourceInfo()...)
-		result = append(result, p.proxyClient.LokiDatasourceInfo()...)
-
-		return result
-	}
-
 	if p.moduleReg == nil {
 		return nil
 	}
@@ -58,10 +44,9 @@ func RegisterDatasourcesResources(
 	log logrus.FieldLogger,
 	reg Registry,
 	moduleReg *module.Registry,
-	proxyClient proxy.Service,
 ) {
 	log = log.WithField("resource", "datasources")
-	provider := NewDatasourceProvider(moduleReg, proxyClient)
+	provider := NewDatasourceProvider(moduleReg)
 
 	// datasources://list - all datasources
 	reg.RegisterStatic(StaticResource{

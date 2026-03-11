@@ -30,6 +30,16 @@ type ProxyAware interface {
 	SetProxyClient(client proxy.Service)
 }
 
+// ProxyDiscoverable is an optional interface for modules that can
+// auto-initialize from proxy-discovered datasources when no explicit
+// YAML config is provided. This enables zero-config module initialization
+// where the proxy is the single source of truth for datasource identity.
+type ProxyDiscoverable interface {
+	// InitFromDiscovery initializes the module using proxy-discovered datasources.
+	// Returns ErrNoValidConfig if no relevant datasources exist.
+	InitFromDiscovery(datasources []types.DatasourceInfo) error
+}
+
 // DefaultEnabled is an optional interface that modules can implement
 // to indicate they should be initialized even without explicit config.
 // This is useful for modules like dora that work with discovered data
