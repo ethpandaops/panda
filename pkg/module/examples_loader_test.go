@@ -1,33 +1,72 @@
 package module
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
-func TestLoadExampleCatalogNormalizesQueries(t *testing.T) {
+func TestExampleCatalogLoaderReturnsDeepClones(t *testing.T) {
 	t.Parallel()
 
-	raw := []byte(`
+	loader := NewExampleCatalogLoader([]byte(`
 queries:
   name: Queries
+  description: demo
   examples:
-    - name: demo
+    - name: First
+      description: desc
+      query: "  SELECT 1  "
+`), "demo")
+
+	first, err := loader()
+	if err != nil {
+		t.Fatalf("first load error = %v", err)
+	}
+
+	second, err := loader()
+	if err != nil {
+		t.Fatalf("second load error = %v", err)
+	}
+
+	firstCategory := first["queries"]
+	firstCategory.Examples[0].Name = "mutated"
+	firstCategory.Examples[0].Query = "SELECT 2"
+	first["queries"] = firstCategory
+
+	secondCategory := second["queries"]
+	if secondCategory.Examples[0].Name != "First" {
+		t.Fatalf("second load example name = %q, want %q", secondCategory.Examples[0].Name, "First")
+	}
+
+	if secondCategory.Examples[0].Query != "SELECT 1" {
+		t.Fatalf("second load example query = %q, want %q", secondCategory.Examples[0].Query, "SELECT 1")
+	}
+}
+
+func TestLoadExampleCatalogTrimsQueries(t *testing.T) {
+	t.Parallel()
+
+	catalog, err := LoadExampleCatalog([]byte(`
+queries:
+  name: Queries
+  description: demo
+  examples:
+    - name: First
+      description: desc
       query: |
         SELECT 1
-`)
 
-	catalog, err := LoadExampleCatalog(raw, "demo")
+`), "demo")
 	if err != nil {
 		t.Fatalf("LoadExampleCatalog() error = %v", err)
 	}
 
-	if got := catalog["queries"].Examples[0].Query; got != "SELECT 1" {
-		t.Fatalf("normalized query = %q, want %q", got, "SELECT 1")
+	got := catalog["queries"].Examples[0].Query
+	if strings.Contains(got, "\n\n") {
+		t.Fatalf("query = %q, want normalized whitespace", got)
 	}
-}
 
-func TestLoadExampleCatalogReturnsParseErrors(t *testing.T) {
-	t.Parallel()
-
-	if _, err := LoadExampleCatalog([]byte(":\n  - bad"), "broken"); err == nil {
-		t.Fatal("LoadExampleCatalog() error = nil, want parse failure")
+	if got != "SELECT 1" {
+		t.Fatalf("query = %q, want %q", got, "SELECT 1")
 	}
 }

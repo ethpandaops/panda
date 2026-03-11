@@ -94,12 +94,7 @@ func (ext *Module) Examples() map[string]types.ExampleCategory {
 		return nil
 	}
 
-	result := make(map[string]types.ExampleCategory, len(ext.examples))
-	for k, v := range ext.examples {
-		result[k] = v
-	}
-
-	return result
+	return module.CloneExampleCatalog(ext.examples)
 }
 
 func (ext *Module) PythonAPIDocs() map[string]types.ModuleDoc {

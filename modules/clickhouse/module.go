@@ -3,7 +3,6 @@ package clickhouse
 import (
 	"context"
 	"fmt"
-	"maps"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -120,10 +119,7 @@ func (ext *Module) Validate() error {
 
 // Examples returns query examples for the ClickHouse module.
 func (ext *Module) Examples() map[string]types.ExampleCategory {
-	result := make(map[string]types.ExampleCategory, len(ext.examples))
-	maps.Copy(result, ext.examples)
-
-	return result
+	return module.CloneExampleCatalog(ext.examples)
 }
 
 func (ext *Module) ensureExamplesLoaded() error {

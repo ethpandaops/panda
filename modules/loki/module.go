@@ -2,7 +2,6 @@ package loki
 
 import (
 	"fmt"
-	"maps"
 
 	"gopkg.in/yaml.v3"
 
@@ -110,10 +109,7 @@ func (ext *Module) Validate() error {
 
 // Examples returns query examples for the Loki module.
 func (ext *Module) Examples() map[string]types.ExampleCategory {
-	result := make(map[string]types.ExampleCategory, len(ext.examples))
-	maps.Copy(result, ext.examples)
-
-	return result
+	return module.CloneExampleCatalog(ext.examples)
 }
 
 func (ext *Module) ensureExamplesLoaded() error {

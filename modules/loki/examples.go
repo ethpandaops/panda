@@ -10,6 +10,8 @@ import (
 //go:embed examples.yaml
 var examplesYAML []byte
 
+var loadExampleCatalog = module.NewExampleCatalogLoader(examplesYAML, "loki")
+
 func loadExamples() (map[string]types.ExampleCategory, error) {
-	return module.LoadExampleCatalog(examplesYAML, "loki")
+	return loadExampleCatalog()
 }
