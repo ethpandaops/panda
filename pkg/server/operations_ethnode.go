@@ -16,51 +16,50 @@ import (
 
 var ethnodeSegmentPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$`)
 
-func (s *service) handleEthNodeOperation(operationID string, w http.ResponseWriter, r *http.Request) bool {
-	switch operationID {
-	case "ethnode.beacon_get":
-		s.handleEthNodeBeaconGet(w, r)
-	case "ethnode.beacon_post":
-		s.handleEthNodeBeaconPost(w, r)
-	case "ethnode.execution_rpc":
-		s.handleEthNodeExecutionRPC(w, r)
-	case "ethnode.get_node_version":
+func (s *service) registerEthNodeOperations() {
+	s.registerOperation("ethnode.beacon_get", s.handleEthNodeBeaconGet)
+	s.registerOperation("ethnode.beacon_post", s.handleEthNodeBeaconPost)
+	s.registerOperation("ethnode.execution_rpc", s.handleEthNodeExecutionRPC)
+	s.registerOperation("ethnode.get_node_version", func(w http.ResponseWriter, r *http.Request) {
 		s.handleEthNodeCuratedBeaconGet(w, r, "/eth/v1/node/version")
-	case "ethnode.get_node_syncing":
+	})
+	s.registerOperation("ethnode.get_node_syncing", func(w http.ResponseWriter, r *http.Request) {
 		s.handleEthNodeCuratedBeaconGet(w, r, "/eth/v1/node/syncing")
-	case "ethnode.get_peers":
+	})
+	s.registerOperation("ethnode.get_peers", func(w http.ResponseWriter, r *http.Request) {
 		s.handleEthNodeCuratedBeaconGet(w, r, "/eth/v1/node/peers")
-	case "ethnode.get_peer_count":
+	})
+	s.registerOperation("ethnode.get_peer_count", func(w http.ResponseWriter, r *http.Request) {
 		s.handleEthNodeCuratedBeaconGet(w, r, "/eth/v1/node/peer_count")
-	case "ethnode.get_beacon_headers":
-		s.handleEthNodeBeaconHeaders(w, r)
-	case "ethnode.get_finality_checkpoints":
-		s.handleEthNodeFinalityCheckpoints(w, r)
-	case "ethnode.get_config_spec":
+	})
+	s.registerOperation("ethnode.get_beacon_headers", s.handleEthNodeBeaconHeaders)
+	s.registerOperation("ethnode.get_finality_checkpoints", s.handleEthNodeFinalityCheckpoints)
+	s.registerOperation("ethnode.get_config_spec", func(w http.ResponseWriter, r *http.Request) {
 		s.handleEthNodeCuratedBeaconGet(w, r, "/eth/v1/config/spec")
-	case "ethnode.get_fork_schedule":
+	})
+	s.registerOperation("ethnode.get_fork_schedule", func(w http.ResponseWriter, r *http.Request) {
 		s.handleEthNodeCuratedBeaconGet(w, r, "/eth/v1/config/fork_schedule")
-	case "ethnode.get_deposit_contract":
+	})
+	s.registerOperation("ethnode.get_deposit_contract", func(w http.ResponseWriter, r *http.Request) {
 		s.handleEthNodeCuratedBeaconGet(w, r, "/eth/v1/config/deposit_contract")
-	case "ethnode.get_node_health":
-		s.handleEthNodeHealth(w, r)
-	case "ethnode.eth_block_number":
+	})
+	s.registerOperation("ethnode.get_node_health", s.handleEthNodeHealth)
+	s.registerOperation("ethnode.eth_block_number", func(w http.ResponseWriter, r *http.Request) {
 		s.handleEthNodeHexRPC(w, r, "eth_blockNumber", "block_number")
-	case "ethnode.eth_syncing":
+	})
+	s.registerOperation("ethnode.eth_syncing", func(w http.ResponseWriter, r *http.Request) {
 		s.handleEthNodeExecutionRPCMethod(w, r, "eth_syncing")
-	case "ethnode.eth_chain_id":
+	})
+	s.registerOperation("ethnode.eth_chain_id", func(w http.ResponseWriter, r *http.Request) {
 		s.handleEthNodeHexRPC(w, r, "eth_chainId", "chain_id")
-	case "ethnode.eth_get_block_by_number":
-		s.handleEthNodeGetBlockByNumber(w, r)
-	case "ethnode.net_peer_count":
+	})
+	s.registerOperation("ethnode.eth_get_block_by_number", s.handleEthNodeGetBlockByNumber)
+	s.registerOperation("ethnode.net_peer_count", func(w http.ResponseWriter, r *http.Request) {
 		s.handleEthNodeHexRPC(w, r, "net_peerCount", "peer_count")
-	case "ethnode.web3_client_version":
+	})
+	s.registerOperation("ethnode.web3_client_version", func(w http.ResponseWriter, r *http.Request) {
 		s.handleEthNodeExecutionRPCMethod(w, r, "web3_clientVersion")
-	default:
-		return false
-	}
-
-	return true
+	})
 }
 
 func (s *service) handleEthNodeBeaconGet(w http.ResponseWriter, r *http.Request) {
@@ -475,7 +474,17 @@ func (s *service) ethNodeBeaconRequestRaw(
 	}
 
 	if status < 200 || status >= 300 {
-		return nil, "", status, fmt.Errorf("%s", strings.TrimSpace(string(data)))
+		return nil, "", status, fmt.Errorf(
+			"%s",
+			upstreamFailureMessage(
+				"ethnode.beacon",
+				status,
+				data,
+				"network="+network,
+				"instance="+instance,
+				"path="+path,
+			),
+		)
 	}
 
 	contentType := responseHeaders.Get("Content-Type")
@@ -542,7 +551,17 @@ func (s *service) ethNodeExecutionRPCRaw(
 	}
 
 	if status < 200 || status >= 300 {
-		return nil, "", status, fmt.Errorf("%s", strings.TrimSpace(string(data)))
+		return nil, "", status, fmt.Errorf(
+			"%s",
+			upstreamFailureMessage(
+				"ethnode.execution_rpc",
+				status,
+				data,
+				"network="+network,
+				"instance="+instance,
+				"method="+method,
+			),
+		)
 	}
 
 	var rpcResp struct {

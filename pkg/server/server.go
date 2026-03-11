@@ -54,6 +54,7 @@ type service struct {
 	runtimeTokens        *tokenstore.Store
 	cleanup              func(context.Context) error
 	httpClient           *http.Client
+	operationHandlers    map[string]operationHandler
 	mcpServer            *mcpserver.MCPServer
 	sseServer            *mcpserver.SSEServer
 	streamableHTTPServer *mcpserver.StreamableHTTPServer
@@ -79,7 +80,7 @@ func NewService(
 	runtimeTokens *tokenstore.Store,
 	cleanup func(context.Context) error,
 ) Service {
-	return &service{
+	srv := &service{
 		log:                 log.WithField("component", "server"),
 		cfg:                 cfg,
 		toolRegistry:        toolRegistry,
@@ -94,8 +95,13 @@ func NewService(
 		runtimeTokens:       runtimeTokens,
 		cleanup:             cleanup,
 		httpClient:          &http.Client{Transport: &version.Transport{}, Timeout: 0},
+		operationHandlers:   make(map[string]operationHandler, 32),
 		done:                make(chan struct{}),
 	}
+
+	srv.registerOperations()
+
+	return srv
 }
 
 // Start initializes and starts the MCP server.

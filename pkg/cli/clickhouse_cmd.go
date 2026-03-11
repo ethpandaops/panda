@@ -11,9 +11,9 @@ import (
 
 var clickhouseCmd = &cobra.Command{
 	GroupID: groupDirect,
-	Use:     "clickhouse",
-	Short:   "Query ClickHouse databases",
-	Long: `Execute SQL queries against ClickHouse clusters.
+	Use:   "clickhouse",
+	Short: "Query ClickHouse databases",
+	Long: `Execute SQL queries against ClickHouse datasources.
 
 Examples:
   panda clickhouse list-datasources
@@ -34,7 +34,7 @@ func init() {
 
 var clickhouseListDatasourcesCmd = &cobra.Command{
 	Use:   "list-datasources",
-	Short: "List available ClickHouse clusters",
+	Short: "List available ClickHouse datasources",
 	RunE: func(_ *cobra.Command, _ []string) error {
 		response, err := runServerOperation("clickhouse.list_datasources", map[string]any{})
 		if err != nil {
@@ -46,12 +46,12 @@ var clickhouseListDatasourcesCmd = &cobra.Command{
 }
 
 var clickhouseQueryCmd = &cobra.Command{
-	Use:   "query <cluster> <sql>",
+	Use:   "query <datasource> <sql>",
 	Short: "Execute a SQL query",
-	Long: `Execute a SQL query against a ClickHouse cluster.
+	Long: `Execute a SQL query against a ClickHouse datasource.
 
-The cluster name is typically "xatu" or "xatu-cbt". Use 'panda clickhouse list-datasources'
-to see available clusters.
+The datasource name is typically "xatu" or "xatu-cbt". Use 'panda clickhouse list-datasources'
+to see available datasources.
 
 Examples:
   panda clickhouse query xatu "SELECT count() FROM beacon_api_eth_v1_events_block LIMIT 1"
@@ -63,7 +63,7 @@ Examples:
 }
 
 var clickhouseQueryRawCmd = &cobra.Command{
-	Use:   "query-raw <cluster> <sql>",
+	Use:   "query-raw <datasource> <sql>",
 	Short: "Execute a SQL query and return raw rows",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
@@ -71,12 +71,12 @@ var clickhouseQueryRawCmd = &cobra.Command{
 	},
 }
 
-func runClickHouseOperation(operationID, cluster, sql string, raw bool) error {
+func runClickHouseOperation(operationID, datasource, sql string, raw bool) error {
 	ctx := context.Background()
 
 	response, err := serverOperationRaw(ctx, operationID, map[string]any{
-		"cluster": cluster,
-		"sql":     sql,
+		"datasource": datasource,
+		"sql":        sql,
 	})
 	if err != nil {
 		return err

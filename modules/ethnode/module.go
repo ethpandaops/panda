@@ -1,8 +1,6 @@
 package ethnode
 
 import (
-	"context"
-
 	"gopkg.in/yaml.v3"
 
 	"github.com/ethpandaops/panda/pkg/module"
@@ -11,7 +9,8 @@ import (
 
 // Module implements the module.Module interface for direct Ethereum node API access.
 type Module struct {
-	cfg Config
+	cfg      Config
+	examples map[string]types.ExampleCategory
 }
 
 // New creates a new ethnode module.
@@ -45,7 +44,9 @@ func (p *Module) Init(rawConfig []byte) error {
 
 func (p *Module) ApplyDefaults() {}
 
-func (p *Module) Validate() error { return nil }
+func (p *Module) Validate() error {
+	return p.ensureExamplesLoaded()
+}
 
 // SandboxEnv returns environment variables for the sandbox.
 func (p *Module) SandboxEnv() (map[string]string, error) {
@@ -58,19 +59,14 @@ func (p *Module) SandboxEnv() (map[string]string, error) {
 	}, nil
 }
 
-// DatasourceInfo returns empty since ethnode is a pass-through proxy, not a named datasource.
-func (p *Module) DatasourceInfo() []types.DatasourceInfo {
-	return nil
-}
-
 // Examples returns query examples for ethnode.
 func (p *Module) Examples() map[string]types.ExampleCategory {
 	if !p.cfg.IsEnabled() {
 		return nil
 	}
 
-	result := make(map[string]types.ExampleCategory, len(queryExamples))
-	for k, v := range queryExamples {
+	result := make(map[string]types.ExampleCategory, len(p.examples))
+	for k, v := range p.examples {
 		result[k] = v
 	}
 
@@ -148,6 +144,17 @@ identity = ethnode.beacon_get("my-devnet", "lighthouse-geth-1", "/eth/v1/node/id
 `
 }
 
-func (p *Module) Start(_ context.Context) error { return nil }
+func (p *Module) ensureExamplesLoaded() error {
+	if p.examples != nil {
+		return nil
+	}
 
-func (p *Module) Stop(_ context.Context) error { return nil }
+	examples, err := loadExamples()
+	if err != nil {
+		return err
+	}
+
+	p.examples = examples
+
+	return nil
+}

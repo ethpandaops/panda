@@ -16,6 +16,7 @@ import (
 	"github.com/ethpandaops/panda/internal/version"
 	"github.com/ethpandaops/panda/pkg/auth/client"
 	"github.com/ethpandaops/panda/pkg/auth/store"
+	"github.com/ethpandaops/panda/pkg/serverapi"
 	"github.com/ethpandaops/panda/pkg/types"
 )
 
@@ -30,6 +31,8 @@ type Client interface {
 
 	// URL returns the proxy URL.
 	URL() string
+
+	OutboundAuthorizer
 
 	// RegisterToken returns the current proxy access token for server-to-proxy calls.
 	RegisterToken(executionID string) string
@@ -60,6 +63,9 @@ type Client interface {
 
 	// EthNodeAvailable returns true if the proxy has ethnode credentials configured.
 	EthNodeAvailable() bool
+
+	// DatasourceInfo returns all discovered datasource metadata.
+	DatasourceInfo() []types.DatasourceInfo
 
 	// Discover fetches datasource information from the proxy.
 	Discover(ctx context.Context) error
@@ -112,7 +118,7 @@ type proxyClient struct {
 	credStore  store.Store
 
 	mu          sync.RWMutex
-	datasources *DatasourcesResponse
+	datasources *serverapi.DatasourcesResponse
 	stopCh      chan struct{}
 	stopped     bool
 }
@@ -136,7 +142,7 @@ func NewClient(log logrus.FieldLogger, cfg ClientConfig) Client {
 			Transport: &version.Transport{},
 			Timeout:   cfg.HTTPTimeout,
 		},
-		datasources: &DatasourcesResponse{},
+		datasources: &serverapi.DatasourcesResponse{},
 		stopCh:      make(chan struct{}),
 	}
 
@@ -235,6 +241,29 @@ func (c *proxyClient) RevokeToken(_ string) {
 	// No-op: tokens are managed by the proxy control plane.
 }
 
+// AuthorizeRequest attaches the current proxy bearer token to req.
+// Existing Authorization headers are preserved so caller-provided auth wins.
+func (c *proxyClient) AuthorizeRequest(req *http.Request) error {
+	if req == nil {
+		return fmt.Errorf("request is required")
+	}
+
+	if req.Header.Get("Authorization") != "" {
+		return nil
+	}
+
+	token, err := c.loadAccessToken()
+	if err != nil {
+		return fmt.Errorf("authorizing proxy request: %w", err)
+	}
+
+	if token != "" && token != "none" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	return nil
+}
+
 func namesFromInfo(infos []types.DatasourceInfo) []string {
 	if len(infos) == 0 {
 		return nil
@@ -250,42 +279,25 @@ func namesFromInfo(infos []types.DatasourceInfo) []string {
 	return names
 }
 
-func namesToInfo(kind string, names []string) []types.DatasourceInfo {
-	if len(names) == 0 {
-		return nil
-	}
-
-	infos := make([]types.DatasourceInfo, 0, len(names))
-	for _, name := range names {
-		if name == "" {
-			continue
-		}
-		infos = append(infos, types.DatasourceInfo{
-			Type: kind,
-			Name: name,
-		})
-	}
-
-	return infos
-}
-
-func normalizeInfo(kind string, infos []types.DatasourceInfo) []types.DatasourceInfo {
+func datasourceInfoByType(infos []types.DatasourceInfo, kind string) []types.DatasourceInfo {
 	if len(infos) == 0 {
 		return nil
 	}
 
-	result := make([]types.DatasourceInfo, 0, len(infos))
+	filtered := make([]types.DatasourceInfo, 0, len(infos))
 	for _, info := range infos {
-		if info.Name == "" {
+		if info.Type != kind || info.Name == "" {
 			continue
 		}
-		if info.Type == "" {
-			info.Type = kind
-		}
-		result = append(result, info)
+
+		filtered = append(filtered, info)
 	}
 
-	return result
+	return filtered
+}
+
+func datasourceCountByType(infos []types.DatasourceInfo, kind string) int {
+	return len(datasourceInfoByType(infos, kind))
 }
 
 // ClickHouseDatasources returns the discovered ClickHouse datasource names.
@@ -293,11 +305,7 @@ func (c *proxyClient) ClickHouseDatasources() []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	if len(c.datasources.ClickHouse) > 0 {
-		return append([]string(nil), c.datasources.ClickHouse...)
-	}
-
-	return namesFromInfo(c.datasources.ClickHouseInfo)
+	return namesFromInfo(datasourceInfoByType(c.datasources.Datasources, "clickhouse"))
 }
 
 // ClickHouseDatasourceInfo returns detailed ClickHouse datasource info.
@@ -305,11 +313,7 @@ func (c *proxyClient) ClickHouseDatasourceInfo() []types.DatasourceInfo {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	if len(c.datasources.ClickHouseInfo) > 0 {
-		return normalizeInfo("clickhouse", c.datasources.ClickHouseInfo)
-	}
-
-	return namesToInfo("clickhouse", c.datasources.ClickHouse)
+	return datasourceInfoByType(c.datasources.Datasources, "clickhouse")
 }
 
 // PrometheusDatasources returns the discovered Prometheus datasource names.
@@ -317,11 +321,7 @@ func (c *proxyClient) PrometheusDatasources() []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	if len(c.datasources.Prometheus) > 0 {
-		return append([]string(nil), c.datasources.Prometheus...)
-	}
-
-	return namesFromInfo(c.datasources.PrometheusInfo)
+	return namesFromInfo(datasourceInfoByType(c.datasources.Datasources, "prometheus"))
 }
 
 // PrometheusDatasourceInfo returns detailed Prometheus datasource info.
@@ -329,11 +329,7 @@ func (c *proxyClient) PrometheusDatasourceInfo() []types.DatasourceInfo {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	if len(c.datasources.PrometheusInfo) > 0 {
-		return normalizeInfo("prometheus", c.datasources.PrometheusInfo)
-	}
-
-	return namesToInfo("prometheus", c.datasources.Prometheus)
+	return datasourceInfoByType(c.datasources.Datasources, "prometheus")
 }
 
 // LokiDatasources returns the discovered Loki datasource names.
@@ -341,11 +337,7 @@ func (c *proxyClient) LokiDatasources() []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	if len(c.datasources.Loki) > 0 {
-		return append([]string(nil), c.datasources.Loki...)
-	}
-
-	return namesFromInfo(c.datasources.LokiInfo)
+	return namesFromInfo(datasourceInfoByType(c.datasources.Datasources, "loki"))
 }
 
 // LokiDatasourceInfo returns detailed Loki datasource info.
@@ -353,11 +345,7 @@ func (c *proxyClient) LokiDatasourceInfo() []types.DatasourceInfo {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	if len(c.datasources.LokiInfo) > 0 {
-		return normalizeInfo("loki", c.datasources.LokiInfo)
-	}
-
-	return namesToInfo("loki", c.datasources.Loki)
+	return datasourceInfoByType(c.datasources.Datasources, "loki")
 }
 
 // S3Bucket returns the discovered S3 bucket name.
@@ -382,6 +370,14 @@ func (c *proxyClient) EthNodeAvailable() bool {
 	defer c.mu.RUnlock()
 
 	return c.datasources.EthNodeAvailable
+}
+
+// DatasourceInfo returns all discovered datasource metadata.
+func (c *proxyClient) DatasourceInfo() []types.DatasourceInfo {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return cloneDatasourceInfo(c.datasources.Datasources)
 }
 
 // Discover fetches datasource information from the proxy's /datasources endpoint.
@@ -422,7 +418,7 @@ func (c *proxyClient) Discover(ctx context.Context) error {
 		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var datasources DatasourcesResponse
+	var datasources serverapi.DatasourcesResponse
 	if err := json.NewDecoder(resp.Body).Decode(&datasources); err != nil {
 		return fmt.Errorf("decoding response: %w", err)
 	}
@@ -431,25 +427,10 @@ func (c *proxyClient) Discover(ctx context.Context) error {
 	c.datasources = &datasources
 	c.mu.Unlock()
 
-	clickhouseCount := len(datasources.ClickHouse)
-	if clickhouseCount == 0 {
-		clickhouseCount = len(datasources.ClickHouseInfo)
-	}
-
-	prometheusCount := len(datasources.Prometheus)
-	if prometheusCount == 0 {
-		prometheusCount = len(datasources.PrometheusInfo)
-	}
-
-	lokiCount := len(datasources.Loki)
-	if lokiCount == 0 {
-		lokiCount = len(datasources.LokiInfo)
-	}
-
 	c.log.WithFields(logrus.Fields{
-		"clickhouse": clickhouseCount,
-		"prometheus": prometheusCount,
-		"loki":       lokiCount,
+		"clickhouse": datasourceCountByType(datasources.Datasources, "clickhouse"),
+		"prometheus": datasourceCountByType(datasources.Datasources, "prometheus"),
+		"loki":       datasourceCountByType(datasources.Datasources, "loki"),
 		"s3_bucket":  datasources.S3Bucket,
 	}).Debug("Discovered datasources from proxy")
 

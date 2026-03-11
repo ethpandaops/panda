@@ -1,7 +1,6 @@
 package dora
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 
@@ -15,6 +14,7 @@ import (
 type Module struct {
 	cfg                 Config
 	cartographoorClient cartographoor.CartographoorClient
+	examples            map[string]types.ExampleCategory
 }
 
 // New creates a new Dora module.
@@ -45,6 +45,10 @@ func (p *Module) ApplyDefaults() {
 }
 
 func (p *Module) Validate() error {
+	if err := p.ensureExamplesLoaded(); err != nil {
+		return err
+	}
+
 	// No validation needed - config is minimal.
 	return nil
 }
@@ -86,19 +90,13 @@ func (p *Module) SandboxEnv() (map[string]string, error) {
 	}, nil
 }
 
-// DatasourceInfo returns empty since networks are the datasources,
-// and those come from cartographoor.
-func (p *Module) DatasourceInfo() []types.DatasourceInfo {
-	return nil
-}
-
 func (p *Module) Examples() map[string]types.ExampleCategory {
 	if !p.cfg.IsEnabled() {
 		return nil
 	}
 
-	result := make(map[string]types.ExampleCategory, len(queryExamples))
-	for k, v := range queryExamples {
+	result := make(map[string]types.ExampleCategory, len(p.examples))
+	for k, v := range p.examples {
 		result[k] = v
 	}
 
@@ -165,6 +163,17 @@ func (p *Module) SetCartographoorClient(client cartographoor.CartographoorClient
 	p.cartographoorClient = client
 }
 
-func (p *Module) Start(_ context.Context) error { return nil }
+func (p *Module) ensureExamplesLoaded() error {
+	if p.examples != nil {
+		return nil
+	}
 
-func (p *Module) Stop(_ context.Context) error { return nil }
+	examples, err := loadExamples()
+	if err != nil {
+		return err
+	}
+
+	p.examples = examples
+
+	return nil
+}

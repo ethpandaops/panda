@@ -12,8 +12,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// Note: DatasourceHeader is defined in clickhouse.go
-
 // PrometheusConfig holds Prometheus proxy configuration for a single instance.
 type PrometheusConfig struct {
 	Name        string

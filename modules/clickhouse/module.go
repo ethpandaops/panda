@@ -2,7 +2,6 @@ package clickhouse
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"maps"
 	"time"
@@ -25,9 +24,10 @@ var (
 type Module struct {
 	cfg          Config
 	datasources  []types.DatasourceInfo
+	examples     map[string]types.ExampleCategory
 	log          logrus.FieldLogger
 	schemaClient ClickHouseSchemaClient
-	proxySvc     proxy.Service
+	proxySvc     proxy.ClickHouseSchemaAccess
 }
 
 // New creates a new ClickHouse module.
@@ -40,8 +40,8 @@ func (p *Module) Name() string { return "clickhouse" }
 // SchemaClient returns the schema discovery client, or nil if not initialized.
 func (p *Module) SchemaClient() ClickHouseSchemaClient { return p.schemaClient }
 
-// SetProxyClient injects the proxy service for schema discovery.
-func (p *Module) SetProxyClient(client proxy.Service) {
+// SetProxyClient injects the proxy collaborator used for schema discovery.
+func (p *Module) SetProxyClient(client proxy.ClickHouseSchemaAccess) {
 	p.proxySvc = client
 }
 
@@ -94,6 +94,10 @@ func (p *Module) ApplyDefaults() {
 
 // Validate checks that the parsed config is valid.
 func (p *Module) Validate() error {
+	if err := p.ensureExamplesLoaded(); err != nil {
+		return err
+	}
+
 	for i, ds := range p.cfg.SchemaDiscovery.Datasources {
 		if ds.Name == "" {
 			return fmt.Errorf("schema_discovery.datasources[%d].name is required", i)
@@ -113,51 +117,27 @@ func (p *Module) Validate() error {
 	return nil
 }
 
-// SandboxEnv returns environment variables for the sandbox.
-func (p *Module) SandboxEnv() (map[string]string, error) {
-	if len(p.datasources) == 0 {
-		return nil, nil
-	}
-
-	type datasourceInfo struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-		Database    string `json:"database"`
-	}
-
-	infos := make([]datasourceInfo, 0, len(p.datasources))
-	for _, ds := range p.datasources {
-		infos = append(infos, datasourceInfo{
-			Name:        ds.Name,
-			Description: ds.Description,
-			Database:    ds.Metadata["database"],
-		})
-	}
-
-	infosJSON, err := json.Marshal(infos)
-	if err != nil {
-		return nil, fmt.Errorf("marshaling ClickHouse datasource info: %w", err)
-	}
-
-	return map[string]string{
-		"ETHPANDAOPS_CLICKHOUSE_DATASOURCES": string(infosJSON),
-	}, nil
-}
-
-// DatasourceInfo returns datasource metadata for datasources:// resources.
-func (p *Module) DatasourceInfo() []types.DatasourceInfo {
-	result := make([]types.DatasourceInfo, len(p.datasources))
-	copy(result, p.datasources)
-
-	return result
-}
-
 // Examples returns query examples for the ClickHouse module.
 func (p *Module) Examples() map[string]types.ExampleCategory {
-	result := make(map[string]types.ExampleCategory, len(queryExamples))
-	maps.Copy(result, queryExamples)
+	result := make(map[string]types.ExampleCategory, len(p.examples))
+	maps.Copy(result, p.examples)
 
 	return result
+}
+
+func (p *Module) ensureExamplesLoaded() error {
+	if p.examples != nil {
+		return nil
+	}
+
+	examples, err := loadExamples()
+	if err != nil {
+		return err
+	}
+
+	p.examples = examples
+
+	return nil
 }
 
 // PythonAPIDocs returns the ClickHouse module documentation.
@@ -168,24 +148,24 @@ func (p *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 			Functions: map[string]types.FunctionDoc{
 				"list_datasources": {
 					Signature:   "clickhouse.list_datasources() -> list[dict]",
-					Description: "List available ClickHouse clusters. Prefer datasources://clickhouse resource instead.",
+					Description: "List available ClickHouse datasources. Prefer datasources://clickhouse resource instead.",
 					Returns:     "List of dicts with 'name', 'description', 'database' keys",
 				},
 				"query": {
-					Signature:   "clickhouse.query(cluster: str, sql: str) -> pandas.DataFrame",
+					Signature:   "clickhouse.query(datasource: str, sql: str) -> pandas.DataFrame",
 					Description: "Execute SQL query, return DataFrame",
 					Parameters: map[string]string{
-						"cluster": "'xatu' or 'xatu-cbt' - see panda://getting-started for syntax differences",
-						"sql":     "SQL query string",
+						"datasource": "'xatu' or 'xatu-cbt' - see panda://getting-started for syntax differences",
+						"sql":        "SQL query string",
 					},
 					Returns: "pandas.DataFrame",
 				},
 				"query_raw": {
-					Signature:   "clickhouse.query_raw(cluster: str, sql: str) -> tuple[list[tuple], list[str]]",
+					Signature:   "clickhouse.query_raw(datasource: str, sql: str) -> tuple[list[tuple], list[str]]",
 					Description: "Execute SQL query, return raw tuples",
 					Parameters: map[string]string{
-						"cluster": "'xatu' or 'xatu-cbt'",
-						"sql":     "SQL query string",
+						"datasource": "'xatu' or 'xatu-cbt'",
+						"sql":        "SQL query string",
 					},
 					Returns: "(rows, column_names)",
 				},

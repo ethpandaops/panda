@@ -9,23 +9,18 @@ import (
 	"github.com/ethpandaops/panda/pkg/operations"
 )
 
-func (s *service) handlePrometheusOperation(operationID string, w http.ResponseWriter, r *http.Request) bool {
-	switch operationID {
-	case "prometheus.list_datasources":
+func (s *service) registerPrometheusOperations() {
+	s.registerOperation("prometheus.list_datasources", func(w http.ResponseWriter, _ *http.Request) {
 		s.handlePrometheusListDatasources(w)
-	case "prometheus.query":
+	})
+	s.registerOperation("prometheus.query", func(w http.ResponseWriter, r *http.Request) {
 		s.handlePrometheusQuery(w, r, false)
-	case "prometheus.query_range":
+	})
+	s.registerOperation("prometheus.query_range", func(w http.ResponseWriter, r *http.Request) {
 		s.handlePrometheusQuery(w, r, true)
-	case "prometheus.get_labels":
-		s.handlePrometheusLabels(w, r)
-	case "prometheus.get_label_values":
-		s.handlePrometheusLabelValues(w, r)
-	default:
-		return false
-	}
-
-	return true
+	})
+	s.registerOperation("prometheus.get_labels", s.handlePrometheusLabels)
+	s.registerOperation("prometheus.get_label_values", s.handlePrometheusLabelValues)
 }
 
 func (s *service) handlePrometheusListDatasources(w http.ResponseWriter) {
@@ -106,7 +101,12 @@ func (s *service) handlePrometheusQuery(w http.ResponseWriter, r *http.Request, 
 		params.Set("time", parsedTime)
 	}
 
-	s.proxyPassthroughGet(w, r, path, params, datasource)
+	operationID := "prometheus.query"
+	if rangeQuery {
+		operationID = "prometheus.query_range"
+	}
+
+	s.proxyPassthroughGet(w, r, operationID, path, params, datasource)
 }
 
 func (s *service) handlePrometheusLabels(w http.ResponseWriter, r *http.Request) {
@@ -122,7 +122,7 @@ func (s *service) handlePrometheusLabels(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	s.proxyPassthroughGet(w, r, "/prometheus/api/v1/labels", nil, datasource)
+	s.proxyPassthroughGet(w, r, "prometheus.get_labels", "/prometheus/api/v1/labels", nil, datasource)
 }
 
 func (s *service) handlePrometheusLabelValues(w http.ResponseWriter, r *http.Request) {
@@ -144,5 +144,12 @@ func (s *service) handlePrometheusLabelValues(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	s.proxyPassthroughGet(w, r, "/prometheus/api/v1/label/"+url.PathEscape(label)+"/values", nil, datasource)
+	s.proxyPassthroughGet(
+		w,
+		r,
+		"prometheus.get_label_values",
+		"/prometheus/api/v1/label/"+url.PathEscape(label)+"/values",
+		nil,
+		datasource,
+	)
 }

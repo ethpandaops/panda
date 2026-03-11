@@ -57,6 +57,15 @@ func NewClient(log logrus.FieldLogger, clientID, clientSecret string) *Client {
 	}
 }
 
+// SetHTTPClient overrides the HTTP client used for GitHub OAuth requests.
+func (c *Client) SetHTTPClient(httpClient *http.Client) {
+	if httpClient == nil {
+		return
+	}
+
+	c.httpClient = httpClient
+}
+
 // GetAuthorizationURL generates the GitHub OAuth authorization URL.
 func (c *Client) GetAuthorizationURL(redirectURI, state, scope string) string {
 	if scope == "" {

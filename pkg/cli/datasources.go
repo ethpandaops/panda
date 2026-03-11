@@ -14,11 +14,11 @@ var datasourcesCmd = &cobra.Command{
 	Use:     "datasources",
 	Short:   "List available datasources from the server",
 	Long: `List all datasources exposed by the configured server, including
-ClickHouse clusters, Prometheus instances, and Loki instances.
+ClickHouse datasources, Prometheus instances, and Loki instances.
 
 Examples:
   panda datasources                     # List all datasources
-  panda datasources --type clickhouse   # List only ClickHouse clusters
+  panda datasources --type clickhouse   # List only ClickHouse datasources
   panda datasources --json              # Output as JSON`,
 	RunE: runDatasources,
 }

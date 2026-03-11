@@ -12,8 +12,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// Note: DatasourceHeader is defined in clickhouse.go
-
 // LokiConfig holds Loki proxy configuration for a single instance.
 type LokiConfig struct {
 	Name        string

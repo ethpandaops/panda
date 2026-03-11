@@ -8,7 +8,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/sirupsen/logrus"
 
-	"github.com/ethpandaops/panda/pkg/module"
+	"github.com/ethpandaops/panda/pkg/proxy"
 	"github.com/ethpandaops/panda/pkg/types"
 )
 
@@ -17,25 +17,25 @@ type DatasourcesJSONResponse struct {
 	Datasources []types.DatasourceInfo `json:"datasources"`
 }
 
-// DatasourceProvider provides datasource information from the module registry.
+// DatasourceProvider provides datasource information from the proxy service.
 type DatasourceProvider struct {
-	moduleReg *module.Registry
+	proxySvc proxy.Service
 }
 
 // NewDatasourceProvider creates a new datasource provider.
-func NewDatasourceProvider(moduleReg *module.Registry) *DatasourceProvider {
+func NewDatasourceProvider(proxySvc proxy.Service) *DatasourceProvider {
 	return &DatasourceProvider{
-		moduleReg: moduleReg,
+		proxySvc: proxySvc,
 	}
 }
 
-// DatasourceInfo returns aggregated datasource info from all initialized modules.
+// DatasourceInfo returns datasource info from the proxy authority.
 func (p *DatasourceProvider) DatasourceInfo() []types.DatasourceInfo {
-	if p.moduleReg == nil {
+	if p.proxySvc == nil {
 		return nil
 	}
 
-	return p.moduleReg.DatasourceInfo()
+	return p.proxySvc.DatasourceInfo()
 }
 
 // RegisterDatasourcesResources registers the datasources:// resources
@@ -43,10 +43,10 @@ func (p *DatasourceProvider) DatasourceInfo() []types.DatasourceInfo {
 func RegisterDatasourcesResources(
 	log logrus.FieldLogger,
 	reg Registry,
-	moduleReg *module.Registry,
+	proxySvc proxy.Service,
 ) {
 	log = log.WithField("resource", "datasources")
-	provider := NewDatasourceProvider(moduleReg)
+	provider := NewDatasourceProvider(proxySvc)
 
 	// datasources://list - all datasources
 	reg.RegisterStatic(StaticResource{
@@ -65,7 +65,7 @@ func RegisterDatasourcesResources(
 		Resource: mcp.NewResource(
 			"datasources://clickhouse",
 			"ClickHouse Datasources",
-			mcp.WithResourceDescription("Configured ClickHouse clusters for blockchain data queries"),
+			mcp.WithResourceDescription("Configured ClickHouse datasources for blockchain data queries"),
 			mcp.WithMIMEType("application/json"),
 			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.7),
 		),

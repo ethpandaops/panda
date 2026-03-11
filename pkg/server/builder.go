@@ -16,6 +16,7 @@ import (
 	"github.com/ethpandaops/panda/pkg/config"
 	"github.com/ethpandaops/panda/pkg/execsvc"
 	"github.com/ethpandaops/panda/pkg/module"
+	"github.com/ethpandaops/panda/pkg/proxy"
 	"github.com/ethpandaops/panda/pkg/resource"
 	"github.com/ethpandaops/panda/pkg/sandbox"
 	"github.com/ethpandaops/panda/pkg/searchruntime"
@@ -109,6 +110,7 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 	// Create resource registry and register resources (MCP-server-specific).
 	resourceReg := b.buildResourceRegistry(
 		application.Cartographoor,
+		application.ProxyClient,
 		application.ModuleRegistry,
 		toolReg,
 	)
@@ -208,13 +210,14 @@ func buildProxyAuthMetadata(cfg *config.Config) *serverapi.ProxyAuthMetadataResp
 // buildResourceRegistry creates and populates the resource registry.
 func (b *Builder) buildResourceRegistry(
 	cartographoorClient cartographoor.CartographoorClient,
+	proxySvc proxy.Service,
 	moduleReg *module.Registry,
 	toolReg tool.Registry,
 ) resource.Registry {
 	reg := resource.NewRegistry(b.log)
 
-	// Register datasources resources (from module registry).
-	resource.RegisterDatasourcesResources(b.log, reg, moduleReg)
+	// Register datasource resources from the proxy authority.
+	resource.RegisterDatasourcesResources(b.log, reg, proxySvc)
 
 	// Register examples resources (from module registry).
 	resource.RegisterExamplesResources(b.log, reg, moduleReg)
@@ -229,16 +232,7 @@ func (b *Builder) buildResourceRegistry(
 	resource.RegisterGettingStartedResources(b.log, reg, toolReg, moduleReg)
 
 	// Register module-specific resources (e.g., clickhouse://tables).
-	for _, ext := range moduleReg.Initialized() {
-		provider, ok := ext.(module.ResourceProvider)
-		if !ok {
-			continue
-		}
-
-		if err := provider.RegisterResources(b.log, reg); err != nil {
-			b.log.WithError(err).WithField("module", ext.Name()).Warn("Failed to register module resources")
-		}
-	}
+	moduleReg.RegisterResources(b.log, reg)
 
 	staticCount := len(reg.ListStatic())
 	templateCount := len(reg.ListTemplates())

@@ -9,23 +9,18 @@ import (
 	"github.com/ethpandaops/panda/pkg/operations"
 )
 
-func (s *service) handleLokiOperation(operationID string, w http.ResponseWriter, r *http.Request) bool {
-	switch operationID {
-	case "loki.list_datasources":
+func (s *service) registerLokiOperations() {
+	s.registerOperation("loki.list_datasources", func(w http.ResponseWriter, _ *http.Request) {
 		s.handleLokiListDatasources(w)
-	case "loki.query":
+	})
+	s.registerOperation("loki.query", func(w http.ResponseWriter, r *http.Request) {
 		s.handleLokiQuery(w, r, true)
-	case "loki.query_instant":
+	})
+	s.registerOperation("loki.query_instant", func(w http.ResponseWriter, r *http.Request) {
 		s.handleLokiQuery(w, r, false)
-	case "loki.get_labels":
-		s.handleLokiLabels(w, r)
-	case "loki.get_label_values":
-		s.handleLokiLabelValues(w, r)
-	default:
-		return false
-	}
-
-	return true
+	})
+	s.registerOperation("loki.get_labels", s.handleLokiLabels)
+	s.registerOperation("loki.get_label_values", s.handleLokiLabelValues)
 }
 
 func (s *service) handleLokiListDatasources(w http.ResponseWriter) {
@@ -116,7 +111,12 @@ func (s *service) handleLokiQuery(w http.ResponseWriter, r *http.Request, rangeQ
 		params.Set("time", parsedTime)
 	}
 
-	s.proxyPassthroughGet(w, r, path, params, datasource)
+	operationID := "loki.query"
+	if !rangeQuery {
+		operationID = "loki.query_instant"
+	}
+
+	s.proxyPassthroughGet(w, r, operationID, path, params, datasource)
 }
 
 func (s *service) handleLokiLabels(w http.ResponseWriter, r *http.Request) {
@@ -138,7 +138,7 @@ func (s *service) handleLokiLabels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.proxyPassthroughGet(w, r, "/loki/loki/api/v1/labels", params, datasource)
+	s.proxyPassthroughGet(w, r, "loki.get_labels", "/loki/loki/api/v1/labels", params, datasource)
 }
 
 func (s *service) handleLokiLabelValues(w http.ResponseWriter, r *http.Request) {
@@ -166,7 +166,14 @@ func (s *service) handleLokiLabelValues(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	s.proxyPassthroughGet(w, r, "/loki/loki/api/v1/label/"+url.PathEscape(label)+"/values", params, datasource)
+	s.proxyPassthroughGet(
+		w,
+		r,
+		"loki.get_label_values",
+		"/loki/loki/api/v1/label/"+url.PathEscape(label)+"/values",
+		params,
+		datasource,
+	)
 }
 
 func buildLokiLabelParams(args map[string]any) (url.Values, error) {

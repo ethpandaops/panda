@@ -15,7 +15,10 @@ type APIDocResponse struct {
 }
 
 type DatasourcesResponse struct {
-	Datasources []types.DatasourceInfo `json:"datasources"`
+	Datasources        []types.DatasourceInfo `json:"datasources"`
+	S3Bucket           string                 `json:"s3_bucket,omitempty"`
+	S3PublicURLPrefix  string                 `json:"s3_public_url_prefix,omitempty"`
+	EthNodeAvailable   bool                   `json:"ethnode_available,omitempty"`
 }
 
 type ProxyAuthMetadataResponse struct {

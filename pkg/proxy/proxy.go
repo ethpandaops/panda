@@ -4,9 +4,28 @@ package proxy
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/ethpandaops/panda/pkg/types"
 )
+
+// OutboundAuthorizer attaches proxy authentication to outbound HTTP requests.
+type OutboundAuthorizer interface {
+	// AuthorizeRequest mutates req so it can be sent to the proxy.
+	AuthorizeRequest(req *http.Request) error
+}
+
+// ClickHouseSchemaAccess is the narrow proxy contract used for ClickHouse
+// schema discovery.
+type ClickHouseSchemaAccess interface {
+	// URL returns the proxy URL.
+	URL() string
+
+	OutboundAuthorizer
+
+	// ClickHouseDatasources returns the available datasource names.
+	ClickHouseDatasources() []string
+}
 
 // Service is the credential proxy service interface.
 // This is implemented by both Client (for connecting to a proxy)
@@ -20,6 +39,8 @@ type Service interface {
 
 	// URL returns the proxy URL.
 	URL() string
+
+	OutboundAuthorizer
 
 	// RegisterToken returns the current access token for server-to-proxy requests.
 	RegisterToken(executionID string) string
@@ -50,4 +71,7 @@ type Service interface {
 
 	// EthNodeAvailable returns true if ethnode proxy access is configured.
 	EthNodeAvailable() bool
+
+	// DatasourceInfo returns all datasource metadata exposed by the proxy.
+	DatasourceInfo() []types.DatasourceInfo
 }

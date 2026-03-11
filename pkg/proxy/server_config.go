@@ -11,7 +11,6 @@ import (
 
 	simpleauth "github.com/ethpandaops/panda/pkg/auth"
 	"github.com/ethpandaops/panda/pkg/configpath"
-	"github.com/ethpandaops/panda/pkg/proxy/handlers"
 )
 
 // ServerConfig is the configuration for the proxy server.
@@ -23,8 +22,8 @@ type ServerConfig struct {
 	// Auth holds authentication configuration.
 	Auth AuthConfig `yaml:"auth"`
 
-	// ClickHouse holds ClickHouse cluster configurations.
-	ClickHouse []ClickHouseClusterConfig `yaml:"clickhouse,omitempty"`
+	// ClickHouse holds ClickHouse datasource configurations.
+	ClickHouse []ClickHouseDatasourceConfig `yaml:"clickhouse,omitempty"`
 
 	// Prometheus holds Prometheus instance configurations.
 	Prometheus []PrometheusInstanceConfig `yaml:"prometheus,omitempty"`
@@ -84,8 +83,8 @@ type AuthConfig struct {
 	SuccessPage *simpleauth.SuccessPageConfig `yaml:"success_page,omitempty"`
 }
 
-// ClickHouseClusterConfig holds ClickHouse cluster configuration.
-type ClickHouseClusterConfig struct {
+// ClickHouseDatasourceConfig holds ClickHouse datasource configuration.
+type ClickHouseDatasourceConfig struct {
 	Name        string `yaml:"name"`
 	Description string `yaml:"description,omitempty"`
 	Host        string `yaml:"host"`
@@ -97,6 +96,10 @@ type ClickHouseClusterConfig struct {
 	SkipVerify  bool   `yaml:"skip_verify,omitempty"`
 	Timeout     int    `yaml:"timeout,omitempty"`
 }
+
+// ClickHouseClusterConfig is kept as an alias while downstream code migrates
+// to the datasource terminology.
+type ClickHouseClusterConfig = ClickHouseDatasourceConfig
 
 // PrometheusInstanceConfig holds Prometheus instance configuration.
 type PrometheusInstanceConfig struct {
@@ -285,74 +288,6 @@ func (c *ServerConfig) Validate() error {
 	}
 
 	return nil
-}
-
-// ToHandlerConfigs converts the server config to handler configs.
-func (c *ServerConfig) ToHandlerConfigs() ([]handlers.ClickHouseConfig, []handlers.PrometheusConfig, []handlers.LokiConfig, *handlers.S3Config, *handlers.EthNodeConfig) {
-	// Convert ClickHouse configs.
-	chConfigs := make([]handlers.ClickHouseConfig, len(c.ClickHouse))
-	for i, ch := range c.ClickHouse {
-		chConfigs[i] = handlers.ClickHouseConfig{
-			Name:        ch.Name,
-			Description: ch.Description,
-			Host:        ch.Host,
-			Port:        ch.Port,
-			Database:    ch.Database,
-			Username:    ch.Username,
-			Password:    ch.Password,
-			Secure:      ch.Secure,
-			SkipVerify:  ch.SkipVerify,
-			Timeout:     ch.Timeout,
-		}
-	}
-
-	// Convert Prometheus configs.
-	promConfigs := make([]handlers.PrometheusConfig, len(c.Prometheus))
-	for i, prom := range c.Prometheus {
-		promConfigs[i] = handlers.PrometheusConfig{
-			Name:        prom.Name,
-			Description: prom.Description,
-			URL:         prom.URL,
-			Username:    prom.Username,
-			Password:    prom.Password,
-		}
-	}
-
-	// Convert Loki configs.
-	lokiConfigs := make([]handlers.LokiConfig, len(c.Loki))
-	for i, loki := range c.Loki {
-		lokiConfigs[i] = handlers.LokiConfig{
-			Name:        loki.Name,
-			Description: loki.Description,
-			URL:         loki.URL,
-			Username:    loki.Username,
-			Password:    loki.Password,
-		}
-	}
-
-	// Convert S3 config.
-	var s3Config *handlers.S3Config
-	if c.S3 != nil && c.S3.Endpoint != "" {
-		s3Config = &handlers.S3Config{
-			Endpoint:        c.S3.Endpoint,
-			AccessKey:       c.S3.AccessKey,
-			SecretKey:       c.S3.SecretKey,
-			Bucket:          c.S3.Bucket,
-			Region:          c.S3.Region,
-			PublicURLPrefix: c.S3.PublicURLPrefix,
-		}
-	}
-
-	// Convert EthNode config.
-	var ethNodeConfig *handlers.EthNodeConfig
-	if c.EthNode != nil && c.EthNode.Username != "" {
-		ethNodeConfig = &handlers.EthNodeConfig{
-			Username: c.EthNode.Username,
-			Password: c.EthNode.Password,
-		}
-	}
-
-	return chConfigs, promConfigs, lokiConfigs, s3Config, ethNodeConfig
 }
 
 // envVarWithDefaultPattern matches ${VAR_NAME:-default} patterns.

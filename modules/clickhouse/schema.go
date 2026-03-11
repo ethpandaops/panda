@@ -104,7 +104,7 @@ var _ ClickHouseSchemaClient = (*clickhouseSchemaClient)(nil)
 type clickhouseSchemaClient struct {
 	log      logrus.FieldLogger
 	cfg      ClickHouseSchemaConfig
-	proxySvc proxy.Service
+	proxySvc proxy.ClickHouseSchemaAccess
 
 	mu          sync.RWMutex
 	clusters    map[string]*ClusterTables
@@ -121,7 +121,7 @@ type clickhouseSchemaClient struct {
 func NewClickHouseSchemaClient(
 	log logrus.FieldLogger,
 	cfg ClickHouseSchemaConfig,
-	proxySvc proxy.Service,
+	proxySvc proxy.ClickHouseSchemaAccess,
 ) ClickHouseSchemaClient {
 	if cfg.RefreshInterval == 0 {
 		cfg.RefreshInterval = DefaultSchemaRefreshInterval
@@ -333,17 +333,10 @@ func (c *clickhouseSchemaClient) refresh(ctx context.Context) error {
 		return nil
 	}
 
-	token := c.proxySvc.RegisterToken("clickhouse-schema")
-	defer c.proxySvc.RevokeToken("clickhouse-schema")
-
-	if token == "" {
-		c.log.Warn("Proxy token is empty; schema discovery requests may fail if auth is required")
-	}
-
 	newClusters := make(map[string]*ClusterTables, len(c.datasources))
 
 	for clusterName, datasourceName := range c.datasources {
-		tables, err := c.discoverClusterSchema(ctx, clusterName, datasourceName, token)
+		tables, err := c.discoverClusterSchema(ctx, clusterName, datasourceName)
 		if err != nil {
 			c.log.WithError(err).WithField("cluster", clusterName).Warn("Failed to discover cluster schema")
 
@@ -366,10 +359,9 @@ func (c *clickhouseSchemaClient) discoverClusterSchema(
 	ctx context.Context,
 	clusterName string,
 	datasourceName string,
-	token string,
 ) (*ClusterTables, error) {
 	// Get table list.
-	tables, err := c.fetchTableList(ctx, datasourceName, token)
+	tables, err := c.fetchTableList(ctx, datasourceName)
 	if err != nil {
 		return nil, fmt.Errorf("fetching table list: %w", err)
 	}
@@ -400,7 +392,7 @@ func (c *clickhouseSchemaClient) discoverClusterSchema(
 				return
 			}
 
-			schema, err := c.fetchTableSchema(ctx, datasourceName, token, name)
+			schema, err := c.fetchTableSchema(ctx, datasourceName, name)
 			if err != nil {
 				c.log.WithError(err).WithField("table", name).Debug("Failed to fetch table schema")
 
@@ -409,7 +401,7 @@ func (c *clickhouseSchemaClient) discoverClusterSchema(
 
 			// Get networks if table has meta_network_name column.
 			if schema.HasNetworkCol {
-				networks, err := c.fetchTableNetworks(ctx, datasourceName, token, name)
+				networks, err := c.fetchTableNetworks(ctx, datasourceName, name)
 				if err != nil {
 					c.log.WithError(err).WithField("table", name).Debug("Failed to fetch table networks")
 				} else {
@@ -469,7 +461,7 @@ func asString(value any) string {
 	}
 }
 
-func (c *clickhouseSchemaClient) queryJSON(ctx context.Context, datasourceName, token, sql string) (*clickhouseJSONResponse, error) {
+func (c *clickhouseSchemaClient) queryJSON(ctx context.Context, datasourceName, sql string) (*clickhouseJSONResponse, error) {
 	if datasourceName == "" {
 		return nil, fmt.Errorf("datasource name is required")
 	}
@@ -488,8 +480,8 @@ func (c *clickhouseSchemaClient) queryJSON(ctx context.Context, datasourceName, 
 	}
 
 	req.Header.Set(handlers.DatasourceHeader, datasourceName)
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
+	if err := c.proxySvc.AuthorizeRequest(req); err != nil {
+		return nil, fmt.Errorf("authorizing request: %w", err)
 	}
 	req.Header.Set("Content-Type", "text/plain")
 
@@ -521,8 +513,8 @@ func (c *clickhouseSchemaClient) queryJSON(ctx context.Context, datasourceName, 
 }
 
 // fetchTableList fetches the list of tables from a ClickHouse datasource.
-func (c *clickhouseSchemaClient) fetchTableList(ctx context.Context, datasourceName, token string) ([]string, error) {
-	result, err := c.queryJSON(ctx, datasourceName, token, "SHOW TABLES")
+func (c *clickhouseSchemaClient) fetchTableList(ctx context.Context, datasourceName string) ([]string, error) {
+	result, err := c.queryJSON(ctx, datasourceName, "SHOW TABLES")
 	if err != nil {
 		return nil, fmt.Errorf("executing SHOW TABLES: %w", err)
 	}
@@ -563,7 +555,6 @@ func validateIdentifier(name string) error {
 func (c *clickhouseSchemaClient) fetchTableSchema(
 	ctx context.Context,
 	datasourceName string,
-	token string,
 	tableName string,
 ) (*TableSchema, error) {
 	if err := validateIdentifier(tableName); err != nil {
@@ -572,7 +563,7 @@ func (c *clickhouseSchemaClient) fetchTableSchema(
 
 	query := fmt.Sprintf("SHOW CREATE TABLE `%s`", tableName)
 
-	result, err := c.queryJSON(ctx, datasourceName, token, query)
+	result, err := c.queryJSON(ctx, datasourceName, query)
 	if err != nil {
 		return nil, fmt.Errorf("executing SHOW CREATE TABLE: %w", err)
 	}
@@ -599,7 +590,6 @@ func (c *clickhouseSchemaClient) fetchTableSchema(
 func (c *clickhouseSchemaClient) fetchTableNetworks(
 	ctx context.Context,
 	datasourceName string,
-	token string,
 	tableName string,
 ) ([]string, error) {
 	if err := validateIdentifier(tableName); err != nil {
@@ -611,7 +601,7 @@ func (c *clickhouseSchemaClient) fetchTableNetworks(
 		tableName,
 	)
 
-	result, err := c.queryJSON(ctx, datasourceName, token, query)
+	result, err := c.queryJSON(ctx, datasourceName, query)
 	if err != nil {
 		return nil, fmt.Errorf("executing network query: %w", err)
 	}

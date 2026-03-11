@@ -15,6 +15,7 @@ import (
 
 	simpleauth "github.com/ethpandaops/panda/pkg/auth"
 	"github.com/ethpandaops/panda/pkg/proxy/handlers"
+	"github.com/ethpandaops/panda/pkg/serverapi"
 	"github.com/ethpandaops/panda/pkg/types"
 )
 
@@ -128,27 +129,11 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 	}
 
 	// Create handlers from config.
-	chConfigs, promConfigs, lokiConfigs, s3Config, ethNodeConfig := cfg.ToHandlerConfigs()
-
-	if len(chConfigs) > 0 {
-		s.clickhouseHandler = handlers.NewClickHouseHandler(log, chConfigs)
-	}
-
-	if len(promConfigs) > 0 {
-		s.prometheusHandler = handlers.NewPrometheusHandler(log, promConfigs)
-	}
-
-	if len(lokiConfigs) > 0 {
-		s.lokiHandler = handlers.NewLokiHandler(log, lokiConfigs)
-	}
-
-	if s3Config != nil && s3Config.Endpoint != "" {
-		s.s3Handler = handlers.NewS3Handler(log, s3Config)
-	}
-
-	if ethNodeConfig != nil {
-		s.ethNodeHandler = handlers.NewEthNodeHandler(log, *ethNodeConfig)
-	}
+	s.clickhouseHandler = newClickHouseHandler(log, cfg.ClickHouse)
+	s.prometheusHandler = newPrometheusHandler(log, cfg.Prometheus)
+	s.lokiHandler = newLokiHandler(log, cfg.Loki)
+	s.s3Handler = newS3Handler(log, cfg.S3)
+	s.ethNodeHandler = newEthNodeHandler(log, cfg.EthNode)
 
 	if s.url == "" {
 		s.url = fmt.Sprintf("http://localhost:%s", port)
@@ -249,29 +234,10 @@ func (s *server) buildMiddlewareChain() func(http.Handler) http.Handler {
 	}
 }
 
-// DatasourcesResponse is the response from the /datasources endpoint.
-// This is used by the MCP server client to discover available datasources.
-type DatasourcesResponse struct {
-	ClickHouse        []string               `json:"clickhouse,omitempty"`
-	Prometheus        []string               `json:"prometheus,omitempty"`
-	Loki              []string               `json:"loki,omitempty"`
-	ClickHouseInfo    []types.DatasourceInfo `json:"clickhouse_info,omitempty"`
-	PrometheusInfo    []types.DatasourceInfo `json:"prometheus_info,omitempty"`
-	LokiInfo          []types.DatasourceInfo `json:"loki_info,omitempty"`
-	S3Bucket          string                 `json:"s3_bucket,omitempty"`
-	S3PublicURLPrefix string                 `json:"s3_public_url_prefix,omitempty"`
-	EthNodeAvailable  bool                   `json:"ethnode_available,omitempty"`
-}
-
 // handleDatasources returns the list of available datasources.
 func (s *server) handleDatasources(w http.ResponseWriter, _ *http.Request) {
-	info := DatasourcesResponse{
-		ClickHouse:        s.ClickHouseDatasources(),
-		Prometheus:        s.PrometheusDatasources(),
-		Loki:              s.LokiDatasources(),
-		ClickHouseInfo:    s.ClickHouseDatasourceInfo(),
-		PrometheusInfo:    s.PrometheusDatasourceInfo(),
-		LokiInfo:          s.LokiDatasourceInfo(),
+	info := serverapi.DatasourcesResponse{
+		Datasources:       s.DatasourceInfo(),
 		S3Bucket:          s.S3Bucket(),
 		S3PublicURLPrefix: s.S3PublicURLPrefix(),
 		EthNodeAvailable:  s.EthNodeAvailable(),
@@ -365,6 +331,10 @@ func (s *server) URL() string {
 	return s.url
 }
 
+func (s *server) AuthorizeRequest(_ *http.Request) error {
+	return nil
+}
+
 func (s *server) RegisterToken(executionID string) string {
 	return "none"
 }
@@ -378,7 +348,7 @@ func (s *server) ClickHouseDatasources() []string {
 		return nil
 	}
 
-	return s.clickhouseHandler.Clusters()
+	return s.clickhouseHandler.Datasources()
 }
 
 // ClickHouseDatasourceInfo returns detailed ClickHouse datasource info.
@@ -492,6 +462,22 @@ func (s *server) S3PublicURLPrefix() string {
 // EthNodeAvailable returns true if the ethnode handler is configured.
 func (s *server) EthNodeAvailable() bool {
 	return s.ethNodeHandler != nil
+}
+
+// DatasourceInfo returns all configured datasource metadata.
+func (s *server) DatasourceInfo() []types.DatasourceInfo {
+	infos := append([]types.DatasourceInfo{}, s.ClickHouseDatasourceInfo()...)
+	infos = append(infos, s.PrometheusDatasourceInfo()...)
+	infos = append(infos, s.LokiDatasourceInfo()...)
+
+	if s.EthNodeAvailable() {
+		infos = append(infos, types.DatasourceInfo{
+			Type: "ethnode",
+			Name: "ethnode",
+		})
+	}
+
+	return cloneDatasourceInfo(infos)
 }
 
 func advertisedURLs(listenAddr string) (string, string) {

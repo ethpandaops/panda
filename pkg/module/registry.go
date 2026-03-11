@@ -8,6 +8,8 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/ethpandaops/panda/pkg/cartographoor"
+	"github.com/ethpandaops/panda/pkg/proxy"
 	"github.com/ethpandaops/panda/pkg/types"
 )
 
@@ -156,7 +158,12 @@ func (r *Registry) StartAll(ctx context.Context) error {
 	r.mu.RUnlock()
 
 	for _, ext := range modules {
-		if err := ext.Start(ctx); err != nil {
+		starter, ok := ext.(Starter)
+		if !ok {
+			continue
+		}
+
+		if err := starter.Start(ctx); err != nil {
 			return fmt.Errorf("starting module %q: %w", ext.Name(), err)
 		}
 
@@ -174,8 +181,71 @@ func (r *Registry) StopAll(ctx context.Context) {
 	r.mu.RUnlock()
 
 	for _, ext := range modules {
-		if err := ext.Stop(ctx); err != nil {
+		stopper, ok := ext.(Stopper)
+		if !ok {
+			continue
+		}
+
+		if err := stopper.Stop(ctx); err != nil {
 			r.log.WithError(err).WithField("module", ext.Name()).Warn("Failed to stop module")
+		}
+	}
+}
+
+// InjectProxyAccess wires proxy-backed collaborators into initialized modules
+// that declare the typed capability.
+func (r *Registry) InjectProxyAccess(client proxy.ClickHouseSchemaAccess) {
+	r.mu.RLock()
+	modules := make([]Module, len(r.initialized))
+	copy(modules, r.initialized)
+	r.mu.RUnlock()
+
+	for _, ext := range modules {
+		aware, ok := ext.(ProxyAware)
+		if !ok {
+			continue
+		}
+
+		aware.SetProxyClient(client)
+		r.log.WithField("module", ext.Name()).Debug("Injected proxy client into module")
+	}
+}
+
+// InjectCartographoorClient wires cartographoor-backed collaborators into
+// initialized modules that declare the typed capability.
+func (r *Registry) InjectCartographoorClient(client cartographoor.CartographoorClient) {
+	r.mu.RLock()
+	modules := make([]Module, len(r.initialized))
+	copy(modules, r.initialized)
+	r.mu.RUnlock()
+
+	for _, ext := range modules {
+		aware, ok := ext.(CartographoorAware)
+		if !ok {
+			continue
+		}
+
+		aware.SetCartographoorClient(client)
+		r.log.WithField("module", ext.Name()).Debug("Injected cartographoor client into module")
+	}
+}
+
+// RegisterResources calls optional resource registration hooks on initialized
+// modules so modules that expose no custom resources do not need no-op methods.
+func (r *Registry) RegisterResources(log logrus.FieldLogger, reg ResourceRegistry) {
+	r.mu.RLock()
+	modules := make([]Module, len(r.initialized))
+	copy(modules, r.initialized)
+	r.mu.RUnlock()
+
+	for _, ext := range modules {
+		provider, ok := ext.(ResourceProvider)
+		if !ok {
+			continue
+		}
+
+		if err := provider.RegisterResources(log, reg); err != nil {
+			log.WithError(err).WithField("module", ext.Name()).Warn("Failed to register module resources")
 		}
 	}
 }
@@ -204,26 +274,6 @@ func (r *Registry) SandboxEnv() (map[string]string, error) {
 	}
 
 	return env, nil
-}
-
-// DatasourceInfo aggregates datasource info from all initialized modules.
-func (r *Registry) DatasourceInfo() []types.DatasourceInfo {
-	r.mu.RLock()
-	modules := make([]Module, len(r.initialized))
-	copy(modules, r.initialized)
-	r.mu.RUnlock()
-
-	var infos []types.DatasourceInfo
-	for _, ext := range modules {
-		provider, ok := ext.(DatasourceInfoProvider)
-		if !ok {
-			continue
-		}
-
-		infos = append(infos, provider.DatasourceInfo()...)
-	}
-
-	return infos
 }
 
 // Examples aggregates query examples from all initialized modules.

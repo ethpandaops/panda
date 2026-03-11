@@ -1,8 +1,6 @@
 package prometheus
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"maps"
 
@@ -22,6 +20,7 @@ var (
 type Module struct {
 	cfg         Config
 	datasources []types.DatasourceInfo
+	examples    map[string]types.ExampleCategory
 }
 
 // New creates a new Prometheus module.
@@ -91,6 +90,10 @@ func (p *Module) ApplyDefaults() {}
 
 // Validate checks that the parsed config is valid.
 func (p *Module) Validate() error {
+	if err := p.ensureExamplesLoaded(); err != nil {
+		return err
+	}
+
 	names := make(map[string]struct{}, len(p.datasources))
 	for i, ds := range p.datasources {
 		if ds.Name == "" {
@@ -107,49 +110,27 @@ func (p *Module) Validate() error {
 	return nil
 }
 
-// SandboxEnv returns environment variables for the sandbox.
-func (p *Module) SandboxEnv() (map[string]string, error) {
-	if len(p.datasources) == 0 {
-		return nil, nil
-	}
-
-	type datasourceInfo struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-	}
-
-	infos := make([]datasourceInfo, 0, len(p.datasources))
-	for _, ds := range p.datasources {
-		infos = append(infos, datasourceInfo{
-			Name:        ds.Name,
-			Description: ds.Description,
-		})
-	}
-
-	infosJSON, err := json.Marshal(infos)
-	if err != nil {
-		return nil, fmt.Errorf("marshaling Prometheus datasource info: %w", err)
-	}
-
-	return map[string]string{
-		"ETHPANDAOPS_PROMETHEUS_DATASOURCES": string(infosJSON),
-	}, nil
-}
-
-// DatasourceInfo returns datasource metadata for datasources:// resources.
-func (p *Module) DatasourceInfo() []types.DatasourceInfo {
-	result := make([]types.DatasourceInfo, len(p.datasources))
-	copy(result, p.datasources)
-
-	return result
-}
-
 // Examples returns query examples for the Prometheus module.
 func (p *Module) Examples() map[string]types.ExampleCategory {
-	result := make(map[string]types.ExampleCategory, len(queryExamples))
-	maps.Copy(result, queryExamples)
+	result := make(map[string]types.ExampleCategory, len(p.examples))
+	maps.Copy(result, p.examples)
 
 	return result
+}
+
+func (p *Module) ensureExamplesLoaded() error {
+	if p.examples != nil {
+		return nil
+	}
+
+	examples, err := loadExamples()
+	if err != nil {
+		return err
+	}
+
+	p.examples = examples
+
+	return nil
 }
 
 // PythonAPIDocs returns the Prometheus module documentation.
@@ -206,9 +187,3 @@ func (p *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 		},
 	}
 }
-
-// Start performs async initialization.
-func (p *Module) Start(_ context.Context) error { return nil }
-
-// Stop cleans up resources.
-func (p *Module) Stop(_ context.Context) error { return nil }

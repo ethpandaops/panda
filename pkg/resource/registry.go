@@ -24,10 +24,10 @@ type TemplateResource = types.TemplateResource
 // Registry manages MCP resources and their handlers.
 type Registry interface {
 	// RegisterStatic registers a static resource with a fixed URI.
-	RegisterStatic(res StaticResource)
+	RegisterStatic(res types.StaticResource)
 
 	// RegisterTemplate registers a template resource with URI parameters.
-	RegisterTemplate(res TemplateResource)
+	RegisterTemplate(res types.TemplateResource)
 
 	// ListStatic returns all registered static resources.
 	ListStatic() []mcp.Resource
@@ -43,21 +43,21 @@ type Registry interface {
 type registry struct {
 	log       logrus.FieldLogger
 	mu        sync.RWMutex
-	static    []StaticResource
-	templates []TemplateResource
+	static    []types.StaticResource
+	templates []types.TemplateResource
 }
 
 // NewRegistry creates a new resource registry.
 func NewRegistry(log logrus.FieldLogger) Registry {
 	return &registry{
 		log:       log.WithField("component", "resource_registry"),
-		static:    make([]StaticResource, 0, 8),
-		templates: make([]TemplateResource, 0, 4),
+		static:    make([]types.StaticResource, 0, 8),
+		templates: make([]types.TemplateResource, 0, 4),
 	}
 }
 
 // RegisterStatic registers a static resource with a fixed URI.
-func (r *registry) RegisterStatic(res StaticResource) {
+func (r *registry) RegisterStatic(res types.StaticResource) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -66,7 +66,7 @@ func (r *registry) RegisterStatic(res StaticResource) {
 }
 
 // RegisterTemplate registers a template resource with URI parameters.
-func (r *registry) RegisterTemplate(res TemplateResource) {
+func (r *registry) RegisterTemplate(res types.TemplateResource) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 

@@ -15,37 +15,39 @@ import (
 	"github.com/ethpandaops/panda/pkg/operations"
 )
 
-func (s *service) handleDoraOperation(operationID string, w http.ResponseWriter, r *http.Request) bool {
-	switch operationID {
-	case "dora.list_networks":
-		s.handleDoraListNetworks(w)
-	case "dora.get_base_url":
-		s.handleDoraBaseURL(w, r)
-	case "dora.get_network_overview":
-		s.handleDoraNetworkOverview(w, r)
-	case "dora.get_validator":
-		s.handleDoraDataGetPassthrough(w, r, "index_or_pubkey", "/api/v1/validator/%s")
-	case "dora.get_validators":
-		s.handleDoraValidators(w, r)
-	case "dora.get_slot":
-		s.handleDoraDataGetPassthrough(w, r, "slot_or_hash", "/api/v1/slot/%s")
-	case "dora.get_epoch":
-		s.handleDoraDataGetPassthrough(w, r, "epoch", "/api/v1/epoch/%s")
-	case "dora.link_validator":
-		s.handleDoraLink(w, r, "/validator/%s")
-	case "dora.link_slot":
-		s.handleDoraLink(w, r, "/slot/%s")
-	case "dora.link_epoch":
-		s.handleDoraLink(w, r, "/epoch/%s")
-	case "dora.link_address":
-		s.handleDoraLink(w, r, "/address/%s")
-	case "dora.link_block":
-		s.handleDoraLink(w, r, "/block/%s")
-	default:
-		return false
-	}
+var doraLinkIdentifierKeys = []string{"index_or_pubkey", "slot_or_hash", "epoch", "address", "number_or_hash"}
 
-	return true
+func (s *service) registerDoraOperations() {
+	s.registerOperation("dora.list_networks", func(w http.ResponseWriter, _ *http.Request) {
+		s.handleDoraListNetworks(w)
+	})
+	s.registerOperation("dora.get_base_url", s.handleDoraBaseURL)
+	s.registerOperation("dora.get_network_overview", s.handleDoraNetworkOverview)
+	s.registerOperation("dora.get_validator", func(w http.ResponseWriter, r *http.Request) {
+		s.handleDoraDataGetPassthrough(w, r, "index_or_pubkey", "/api/v1/validator/%s")
+	})
+	s.registerOperation("dora.get_validators", s.handleDoraValidators)
+	s.registerOperation("dora.get_slot", func(w http.ResponseWriter, r *http.Request) {
+		s.handleDoraDataGetPassthrough(w, r, "slot_or_hash", "/api/v1/slot/%s")
+	})
+	s.registerOperation("dora.get_epoch", func(w http.ResponseWriter, r *http.Request) {
+		s.handleDoraDataGetPassthrough(w, r, "epoch", "/api/v1/epoch/%s")
+	})
+	s.registerOperation("dora.link_validator", func(w http.ResponseWriter, r *http.Request) {
+		s.handleDoraLink(w, r, "index_or_pubkey", "/validator/%s")
+	})
+	s.registerOperation("dora.link_slot", func(w http.ResponseWriter, r *http.Request) {
+		s.handleDoraLink(w, r, "slot_or_hash", "/slot/%s")
+	})
+	s.registerOperation("dora.link_epoch", func(w http.ResponseWriter, r *http.Request) {
+		s.handleDoraLink(w, r, "epoch", "/epoch/%s")
+	})
+	s.registerOperation("dora.link_address", func(w http.ResponseWriter, r *http.Request) {
+		s.handleDoraLink(w, r, "address", "/address/%s")
+	})
+	s.registerOperation("dora.link_block", func(w http.ResponseWriter, r *http.Request) {
+		s.handleDoraLink(w, r, "number_or_hash", "/block/%s")
+	})
 }
 
 func (s *service) handleDoraListNetworks(w http.ResponseWriter) {
@@ -194,7 +196,7 @@ func (s *service) handleDoraDataGetPassthrough(
 	writePassthroughResponse(w, http.StatusOK, contentType, body)
 }
 
-func (s *service) handleDoraLink(w http.ResponseWriter, r *http.Request, pathTemplate string) {
+func (s *service) handleDoraLink(w http.ResponseWriter, r *http.Request, argName, pathTemplate string) {
 	req, err := decodeOperationRequest(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -207,15 +209,25 @@ func (s *service) handleDoraLink(w http.ResponseWriter, r *http.Request, pathTem
 		return
 	}
 
-	identifier := ""
-	for _, key := range []string{"index_or_pubkey", "slot_or_hash", "epoch", "address", "number_or_hash"} {
-		if value := optionalStringArg(req.Args, key); value != "" {
-			identifier = value
-			break
+	identifier, err := requiredStringArg(req.Args, argName)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	for _, key := range doraLinkIdentifierKeys {
+		if key == argName {
+			continue
+		}
+
+		if optionalStringArg(req.Args, key) != "" {
+			http.Error(w, fmt.Sprintf("unexpected %s for this operation", key), http.StatusBadRequest)
+			return
 		}
 	}
+
 	if identifier == "" {
-		http.Error(w, "identifier is required", http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("%s is required", argName), http.StatusBadRequest)
 		return
 	}
 
@@ -313,7 +325,15 @@ func (s *service) doraAPIGetRaw(
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, "", resp.StatusCode, fmt.Errorf("%s", strings.TrimSpace(string(body)))
+		return nil, "", resp.StatusCode, fmt.Errorf(
+			"%s",
+			upstreamFailureMessage(
+				"dora.http",
+				resp.StatusCode,
+				body,
+				"url="+requestURL,
+			),
+		)
 	}
 
 	contentType := resp.Header.Get("Content-Type")

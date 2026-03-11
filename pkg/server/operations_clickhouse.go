@@ -7,19 +7,15 @@ import (
 	"strings"
 
 	"github.com/ethpandaops/panda/pkg/operations"
+	"github.com/ethpandaops/panda/pkg/proxy/handlers"
 )
 
-func (s *service) handleClickHouseOperation(operationID string, w http.ResponseWriter, r *http.Request) bool {
-	switch operationID {
-	case "clickhouse.list_datasources":
+func (s *service) registerClickHouseOperations() {
+	s.registerOperation("clickhouse.list_datasources", func(w http.ResponseWriter, _ *http.Request) {
 		s.handleClickHouseListDatasources(w)
-	case "clickhouse.query", "clickhouse.query_raw":
-		s.handleClickHouseQuery(w, r)
-	default:
-		return false
-	}
-
-	return true
+	})
+	s.registerOperation("clickhouse.query", s.handleClickHouseQuery)
+	s.registerOperation("clickhouse.query_raw", s.handleClickHouseQuery)
 }
 
 func (s *service) handleClickHouseListDatasources(w http.ResponseWriter) {
@@ -45,7 +41,7 @@ func (s *service) handleClickHouseQuery(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	clusterName, err := requiredStringArg(req.Args, "cluster")
+	datasourceName, err := requiredOneOfStringArg(req.Args, "datasource", "cluster")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -68,8 +64,8 @@ func (s *service) handleClickHouseQuery(w http.ResponseWriter, r *http.Request) 
 		"/clickhouse/?"+params.Encode(),
 		strings.NewReader(sql),
 		http.Header{
-			proxyDatasourceHeader: []string{clusterName},
-			"Content-Type":        []string{"text/plain"},
+			handlers.DatasourceHeader: []string{datasourceName},
+			"Content-Type":            []string{"text/plain"},
 		},
 	)
 	if err != nil {
@@ -78,7 +74,7 @@ func (s *service) handleClickHouseQuery(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if status < 200 || status >= 300 {
-		http.Error(w, strings.TrimSpace(string(body)), status)
+		http.Error(w, upstreamFailureMessage("clickhouse.query", status, body, "datasource="+datasourceName), status)
 		return
 	}
 

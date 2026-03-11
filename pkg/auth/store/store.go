@@ -35,7 +35,8 @@ type Store interface {
 	// GetAccessToken returns a valid access token, refreshing if needed.
 	GetAccessToken() (string, error)
 
-	// IsAuthenticated returns true if valid tokens are stored.
+	// IsAuthenticated returns true if stored credentials are still valid or can
+	// be refreshed into a valid access token.
 	IsAuthenticated() bool
 }
 
@@ -191,7 +192,7 @@ func (s *store) GetAccessToken() (string, error) {
 	return tokens.AccessToken, nil
 }
 
-// IsAuthenticated returns true if valid tokens are stored.
+// IsAuthenticated returns true if stored credentials are still valid or can be refreshed.
 func (s *store) IsAuthenticated() bool {
 	tokens, err := s.getTokens()
 	if err != nil {
@@ -201,8 +202,11 @@ func (s *store) IsAuthenticated() bool {
 		return false
 	}
 
-	// Check if token is expired.
-	return time.Now().Before(tokens.ExpiresAt)
+	if time.Now().Before(tokens.ExpiresAt) {
+		return true
+	}
+
+	return tokens.RefreshToken != "" && s.cfg.AuthClient != nil
 }
 
 // getTokens returns cached tokens or loads them from disk.

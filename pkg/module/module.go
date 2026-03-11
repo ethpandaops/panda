@@ -25,9 +25,20 @@ type CartographoorAware interface {
 	SetCartographoorClient(client cartographoor.CartographoorClient)
 }
 
-// ProxyAware is an optional interface for modules that need raw proxy access.
+// ProxyAware is an optional interface for modules that need proxy-backed
+// ClickHouse schema discovery.
 type ProxyAware interface {
-	SetProxyClient(client proxy.Service)
+	SetProxyClient(client proxy.ClickHouseSchemaAccess)
+}
+
+// Starter is an optional interface for modules that need async startup.
+type Starter interface {
+	Start(ctx context.Context) error
+}
+
+// Stopper is an optional interface for modules that need shutdown hooks.
+type Stopper interface {
+	Stop(ctx context.Context) error
 }
 
 // ProxyDiscoverable modules initialize from datasources discovered via the proxy.
@@ -66,11 +77,6 @@ type SandboxEnvProvider interface {
 	SandboxEnv() (map[string]string, error)
 }
 
-// DatasourceInfoProvider contributes datasource metadata for datasources:// resources.
-type DatasourceInfoProvider interface {
-	DatasourceInfo() []types.DatasourceInfo
-}
-
 // ExamplesProvider contributes search examples and examples:// resources.
 type ExamplesProvider interface {
 	Examples() map[string]types.ExampleCategory
@@ -91,8 +97,9 @@ type ResourceProvider interface {
 	RegisterResources(log logrus.FieldLogger, reg ResourceRegistry) error
 }
 
-// Module is the minimal lifecycle/config contract for built-in integrations.
-// Optional capabilities are expressed through the provider interfaces above.
+// Module is the minimal config contract for built-in integrations.
+// Optional lifecycle and capabilities are expressed through the provider
+// interfaces above.
 type Module interface {
 	// Name returns the module identifier (e.g. "clickhouse").
 	Name() string
@@ -105,10 +112,4 @@ type Module interface {
 
 	// Validate checks that the parsed config is valid.
 	Validate() error
-
-	// Start performs async initialization (e.g. schema discovery).
-	Start(ctx context.Context) error
-
-	// Stop cleans up resources.
-	Stop(ctx context.Context) error
 }
