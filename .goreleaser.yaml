@@ -76,7 +76,7 @@ dockers_v2:
       - "ethpandaops/panda"
     tags:
       - "server-{{ .Version }}"
-      - "server-latest"
+      - "server-{{ .Env.LATEST_TAG }}"
     platforms:
       - linux/amd64
       - linux/arm64
@@ -90,7 +90,7 @@ dockers_v2:
       - "ethpandaops/panda"
     tags:
       - "{{ .Version }}"
-      - "latest"
+      - "{{ .Env.LATEST_TAG }}"
     platforms:
       - linux/amd64
       - linux/arm64
@@ -104,10 +104,13 @@ dockers_v2:
       - "ethpandaops/panda"
     tags:
       - "proxy-{{ .Version }}"
-      - "proxy-latest"
+      - "proxy-{{ .Env.LATEST_TAG }}"
     platforms:
       - linux/amd64
       - linux/arm64
+
+release:
+  prerelease: auto
 
 checksum:
   name_template: "checksums.txt"

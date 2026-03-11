@@ -48,6 +48,8 @@ jobs:
         with:
           version: latest
           args: release --snapshot --skip=publish --clean
+        env:
+          LATEST_TAG: latest
 
   build-sandbox:
     runs-on: ubuntu-latest

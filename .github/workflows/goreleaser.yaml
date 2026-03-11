@@ -18,14 +18,15 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Derive release suffix
-        id: suffix
+      - name: Derive latest tag
+        id: meta
         run: |
           TAG=${GITHUB_REF#refs/tags/}
           if [[ "$TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-(.+))$ ]]; then
-            echo "suffix=${BASH_REMATCH[2]}" >> "$GITHUB_OUTPUT"
+            SUFFIX="${BASH_REMATCH[2]}"
+            echo "latest_tag=${SUFFIX}-latest" >> "$GITHUB_OUTPUT"
           else
-            echo "suffix=" >> "$GITHUB_OUTPUT"
+            echo "latest_tag=latest" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: actions/setup-go@v5
@@ -42,15 +43,6 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Patch goreleaser config for pre-release suffix
-        if: steps.suffix.outputs.suffix != ''
-        run: |
-          SUFFIX="${{ steps.suffix.outputs.suffix }}"
-          # Order matters: patch prefixed tags first, then standalone "latest"
-          sed -i 's/"server-latest"/"server-'"${SUFFIX}"'-latest"/g' .goreleaser.yaml
-          sed -i 's/"proxy-latest"/"proxy-'"${SUFFIX}"'-latest"/g' .goreleaser.yaml
-          sed -i 's/"latest"/"'"${SUFFIX}"'-latest"/g' .goreleaser.yaml
-
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
@@ -58,3 +50,4 @@ jobs:
           args: release --clean --parallelism 0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LATEST_TAG: ${{ steps.meta.outputs.latest_tag }}
