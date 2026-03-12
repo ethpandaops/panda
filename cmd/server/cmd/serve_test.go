@@ -10,12 +10,7 @@ import (
 )
 
 func TestServeCmdHasExpectedFlags(t *testing.T) {
-	flag := serveCmd.Flags().Lookup("transport")
-	require.NotNil(t, flag)
-	assert.Equal(t, "t", flag.Shorthand)
-	assert.Equal(t, "", flag.DefValue)
-
-	flag = serveCmd.Flags().Lookup("port")
+	flag := serveCmd.Flags().Lookup("port")
 	require.NotNil(t, flag)
 	assert.Equal(t, "p", flag.Shorthand)
 	assert.Equal(t, "0", flag.DefValue)
@@ -23,12 +18,10 @@ func TestServeCmdHasExpectedFlags(t *testing.T) {
 
 func TestRunServeReturnsObservabilityStartupError(t *testing.T) {
 	originalCfgFile := cfgFile
-	originalTransport := transport
 	originalPort := port
 
 	t.Cleanup(func() {
 		cfgFile = originalCfgFile
-		transport = originalTransport
 		port = originalPort
 	})
 
@@ -40,7 +33,6 @@ func TestRunServeReturnsObservabilityStartupError(t *testing.T) {
 	), 0o600))
 
 	cfgFile = configPath
-	transport = ""
 	port = 0
 
 	err := runServe(nil, nil)

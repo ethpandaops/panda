@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -219,6 +220,8 @@ func (s *server) handleSubtreeRoute(pattern string, handler http.Handler) {
 
 // buildMiddlewareChain builds the middleware chain for authenticated routes.
 func (s *server) buildMiddlewareChain() func(http.Handler) http.Handler {
+	advertisedBaseURL := parseAdvertisedBaseURL(s.url)
+
 	return func(handler http.Handler) http.Handler {
 		h := handler
 
@@ -237,6 +240,13 @@ func (s *server) buildMiddlewareChain() func(http.Handler) http.Handler {
 
 		// Authentication (outermost).
 		h = s.authenticator.Middleware()(h)
+
+		// Synthetic mux requests in tests use example.com as the default host.
+		// Populate forwarded headers from the proxy's advertised URL so auth
+		// token validation stays bound to the proxy resource URL.
+		if advertisedBaseURL != nil {
+			h = advertisedBaseURL.Middleware(h)
+		}
 
 		return h
 	}
@@ -501,4 +511,51 @@ func advertisedURLs(listenAddr string) (string, string) {
 	url := fmt.Sprintf("http://localhost:%s", port)
 
 	return url, port
+}
+
+type advertisedBaseURL struct {
+	host   string
+	scheme string
+}
+
+func parseAdvertisedBaseURL(rawURL string) *advertisedBaseURL {
+	if rawURL == "" {
+		return nil
+	}
+
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Host == "" || parsed.Scheme == "" {
+		return nil
+	}
+
+	return &advertisedBaseURL{
+		host:   parsed.Host,
+		scheme: parsed.Scheme,
+	}
+}
+
+func (a *advertisedBaseURL) Middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !usesDefaultMuxHost(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		req := r.Clone(r.Context())
+		req.Header = r.Header.Clone()
+
+		if req.Header.Get("X-Forwarded-Host") == "" {
+			req.Header.Set("X-Forwarded-Host", a.host)
+		}
+
+		if req.Header.Get("X-Forwarded-Proto") == "" {
+			req.Header.Set("X-Forwarded-Proto", a.scheme)
+		}
+
+		next.ServeHTTP(w, req)
+	})
+}
+
+func usesDefaultMuxHost(r *http.Request) bool {
+	return r.Host == "" || r.Host == "example.com"
 }

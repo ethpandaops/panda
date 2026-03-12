@@ -76,7 +76,7 @@ var lokiListDatasourcesCmd = &cobra.Command{
 			return err
 		}
 
-		if isJSON() {
+		if lokiJSON || isJSON() {
 			return printJSON(operations.DatasourcesPayload{Datasources: items})
 		}
 
@@ -119,7 +119,7 @@ var lokiQueryCmd = &cobra.Command{
 			return err
 		}
 
-		if isJSON() {
+		if lokiJSON || isJSON() {
 			return printJSONBytes(response.Body)
 		}
 
@@ -143,7 +143,7 @@ var lokiQueryInstantCmd = &cobra.Command{
 			return err
 		}
 
-		if isJSON() {
+		if lokiJSON || isJSON() {
 			return printJSONBytes(response.Body)
 		}
 
@@ -165,7 +165,7 @@ var lokiLabelsCmd = &cobra.Command{
 			return err
 		}
 
-		if isJSON() {
+		if lokiJSON || isJSON() {
 			return printJSONBytes(response.Body)
 		}
 
@@ -188,7 +188,7 @@ var lokiLabelValuesCmd = &cobra.Command{
 			return err
 		}
 
-		if isJSON() {
+		if lokiJSON || isJSON() {
 			return printJSONBytes(response.Body)
 		}
 

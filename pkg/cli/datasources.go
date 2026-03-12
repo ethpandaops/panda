@@ -39,7 +39,7 @@ func runDatasources(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("listing datasources: %w", err)
 	}
 
-	if isJSON() {
+	if datasourcesJSON || isJSON() {
 		return printJSON(response)
 	}
 

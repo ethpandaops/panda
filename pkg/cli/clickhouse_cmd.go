@@ -42,7 +42,7 @@ var clickhouseListDatasourcesCmd = &cobra.Command{
 			return err
 		}
 
-		if isJSON() {
+		if clickhouseJSON || isJSON() {
 			return printJSON(operations.DatasourcesPayload{Datasources: items})
 		}
 
@@ -109,7 +109,7 @@ func runClickHouseQuery(datasource, sql string) error {
 		return err
 	}
 
-	if isJSON() {
+	if clickhouseJSON || isJSON() {
 		return printClickHouseJSON(response.Body, false)
 	}
 

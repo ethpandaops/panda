@@ -67,5 +67,6 @@ func TestShowTablePrintsCommentNetworksAndColumns(t *testing.T) {
 	assert.Contains(t, stdout, "Table: blocks  (cluster: xatu)")
 	assert.Contains(t, stdout, "Comment: Beacon blocks")
 	assert.Contains(t, stdout, "Networks: hoodi, mainnet")
-	assert.Contains(t, stdout, `"slot"`)
+	assert.Contains(t, stdout, "slot")
+	assert.Contains(t, stdout, "UInt64")
 }

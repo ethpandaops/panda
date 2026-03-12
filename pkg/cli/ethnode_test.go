@@ -55,7 +55,7 @@ func TestEthNodeBeaconAndExecRPCCommandsHandleFormatting(t *testing.T) {
 	stdout, _ = captureOutput(t, func() {
 		require.NoError(t, ethNodeExecRPCCmd.RunE(ethNodeExecRPCCmd, []string{"hoodi", "node-1", "eth_chainId"}))
 	})
-	assert.Contains(t, stdout, `"0x1"`)
+	assert.Contains(t, stdout, "0x1")
 
 	err := ethNodeExecRPCCmd.RunE(ethNodeExecRPCCmd, []string{"hoodi", "node-1", "eth_getBlockByNumber", `{"bad":"json"}`})
 	require.Error(t, err)

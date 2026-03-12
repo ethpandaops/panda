@@ -15,13 +15,13 @@ func TestVersionCommandOutputsTextAndJSON(t *testing.T) {
 
 	stdout, _ := captureOutput(t, func() {
 		versionJSON = false
-		versionCmd.Run(versionCmd, nil)
+		require.NoError(t, versionCmd.RunE(versionCmd, nil))
 	})
 	assert.Contains(t, stdout, "panda version "+version.Version)
 
 	stdout, _ = captureOutput(t, func() {
 		versionJSON = true
-		versionCmd.Run(versionCmd, nil)
+		require.NoError(t, versionCmd.RunE(versionCmd, nil))
 	})
 
 	var payload map[string]string

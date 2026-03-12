@@ -63,7 +63,7 @@ var promListDatasourcesCmd = &cobra.Command{
 			return err
 		}
 
-		if isJSON() {
+		if prometheusJSON || isJSON() {
 			return printJSON(operations.DatasourcesPayload{Datasources: items})
 		}
 
@@ -103,7 +103,7 @@ var promQueryCmd = &cobra.Command{
 			return err
 		}
 
-		if isJSON() {
+		if prometheusJSON || isJSON() {
 			return printJSONBytes(response.Body)
 		}
 
@@ -127,7 +127,7 @@ var promQueryRangeCmd = &cobra.Command{
 			return err
 		}
 
-		if isJSON() {
+		if prometheusJSON || isJSON() {
 			return printJSONBytes(response.Body)
 		}
 
@@ -145,7 +145,7 @@ var promLabelsCmd = &cobra.Command{
 			return err
 		}
 
-		if isJSON() {
+		if prometheusJSON || isJSON() {
 			return printJSONBytes(response.Body)
 		}
 
@@ -166,7 +166,7 @@ var promLabelValuesCmd = &cobra.Command{
 			return err
 		}
 
-		if isJSON() {
+		if prometheusJSON || isJSON() {
 			return printJSONBytes(response.Body)
 		}
 

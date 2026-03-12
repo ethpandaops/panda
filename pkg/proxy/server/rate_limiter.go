@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -252,10 +253,15 @@ func (a *Auditor) Middleware() func(http.Handler) http.Handler {
 				"github_id":       entry.GitHubID,
 				"method":          entry.Method,
 				"path":            entry.Path,
+				"datasource":      entry.DatasourceType,
 				"datasource_type": entry.DatasourceType,
 				"status":          entry.StatusCode,
 				"response_bytes":  entry.ResponseBytes,
 				"duration":        entry.Duration,
+			}
+
+			if entry.GitHubID != 0 {
+				fields["user_id"] = strconv.FormatInt(entry.GitHubID, 10)
 			}
 
 			if len(entry.Orgs) > 0 {

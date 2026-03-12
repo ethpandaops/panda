@@ -238,6 +238,12 @@ func applyDefaults(cfg *Config) {
 		cfg.Server.Port = 2480
 	}
 
+	if cfg.Server.Transport == "" {
+		// Keep the deprecated field populated for backwards-compatible config
+		// handling and tests, even though the runtime no longer branches on it.
+		cfg.Server.Transport = "stdio"
+	}
+
 	if cfg.Sandbox.Backend == "" {
 		cfg.Sandbox.Backend = "docker"
 	}

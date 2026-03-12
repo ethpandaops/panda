@@ -77,6 +77,8 @@ var _ ClickHouseSchemaClient = (*clickhouseSchemaClient)(nil)
 type clickhouseSchemaClient struct {
 	log         logrus.FieldLogger
 	cfg         ClickHouseSchemaConfig
+	proxySvc    proxy.ClickHouseSchemaAccess
+	httpClient  *http.Client
 	queryClient clickhouseSchemaQueryClient
 
 	mu          sync.RWMutex
@@ -105,6 +107,8 @@ func NewClickHouseSchemaClient(
 	return &clickhouseSchemaClient{
 		log:         log.WithField("component", "clickhouse_schema"),
 		cfg:         cfg,
+		proxySvc:    proxySvc,
+		httpClient:  &http.Client{},
 		queryClient: newClickhouseSchemaQueryClient(proxySvc, &http.Client{}, cfg.QueryTimeout),
 		clusters:    make(map[string]*ClusterTables, 2),
 		datasources: make(map[string]string, 2),

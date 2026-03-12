@@ -39,17 +39,14 @@ func TestRootCmdPersistentPreRunE(t *testing.T) {
 
 func TestRunServeReturnsLoadErrorForMissingConfig(t *testing.T) {
 	originalCfgFile := cfgFile
-	originalTransport := transport
 	originalPort := port
 
 	t.Cleanup(func() {
 		cfgFile = originalCfgFile
-		transport = originalTransport
 		port = originalPort
 	})
 
 	cfgFile = filepath.Join(t.TempDir(), "missing.yaml")
-	transport = ""
 	port = 0
 
 	err := runServe(nil, nil)
@@ -59,12 +56,10 @@ func TestRunServeReturnsLoadErrorForMissingConfig(t *testing.T) {
 
 func TestRunServeBuildsConfigAndAppliesOverridesBeforeSandboxFailure(t *testing.T) {
 	originalCfgFile := cfgFile
-	originalTransport := transport
 	originalPort := port
 
 	t.Cleanup(func() {
 		cfgFile = originalCfgFile
-		transport = originalTransport
 		port = originalPort
 	})
 
@@ -82,7 +77,6 @@ proxy:
 	require.NoError(t, os.WriteFile(configPath, []byte(configYAML), 0o600))
 
 	cfgFile = configPath
-	transport = "streamable-http"
 	port = 4319
 
 	err := runServe(nil, nil)
@@ -91,17 +85,17 @@ proxy:
 	assert.Contains(t, err.Error(), "unsupported sandbox backend: bogus")
 }
 
-func TestRunVersionOutputsTextAndJSON(t *testing.T) {
+func TestRunVersionOutputsTextAndJSONRoot(t *testing.T) {
 	originalVersionJSON := versionJSON
 	t.Cleanup(func() { versionJSON = originalVersionJSON })
 
-	textOutput := captureStdout(t, func() {
+	textOutput := captureRootStdout(t, func() {
 		versionJSON = false
 		runVersion(nil, nil)
 	})
 	assert.Contains(t, textOutput, "panda-server version "+version.Version)
 
-	jsonOutput := captureStdout(t, func() {
+	jsonOutput := captureRootStdout(t, func() {
 		versionJSON = true
 		runVersion(nil, nil)
 	})
@@ -109,7 +103,7 @@ func TestRunVersionOutputsTextAndJSON(t *testing.T) {
 	assert.Contains(t, jsonOutput, version.Version)
 }
 
-func captureStdout(t *testing.T, fn func()) string {
+func captureRootStdout(t *testing.T, fn func()) string {
 	t.Helper()
 
 	originalStdout := os.Stdout

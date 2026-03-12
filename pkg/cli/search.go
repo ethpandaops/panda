@@ -65,7 +65,7 @@ func runSearchExamples(_ *cobra.Command, args []string) error {
 		return err
 	}
 
-	if isJSON() {
+	if searchExampleJSON || isJSON() {
 		return printJSON(response)
 	}
 
@@ -98,7 +98,7 @@ func runSearchRunbooks(_ *cobra.Command, args []string) error {
 		return err
 	}
 
-	if isJSON() {
+	if searchRunbookJSON || isJSON() {
 		return printJSON(response)
 	}
 

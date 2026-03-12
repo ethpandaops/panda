@@ -19,7 +19,7 @@ var versionCmd = &cobra.Command{
 			"build_time": version.BuildTime,
 		}
 
-		if isJSON() {
+		if versionJSON || isJSON() {
 			return printJSON(info)
 		}
 

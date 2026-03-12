@@ -39,6 +39,7 @@ func newCLIHarness(t *testing.T, handler http.Handler) *cliHarness {
 	originalServerHTTP := serverHTTP
 	originalLog := log
 	originalLogLevel := logLevel
+	originalOutputFormat := outputFormat
 	originalDatasourcesType := datasourcesType
 	originalDatasourcesJSON := datasourcesJSON
 	originalDocsJSON := docsJSON
@@ -90,6 +91,7 @@ func newCLIHarness(t *testing.T, handler http.Handler) *cliHarness {
 	serverHTTP = server.Client()
 	log = logrus.New()
 	logLevel = "info"
+	outputFormat = "text"
 	datasourcesType = ""
 	datasourcesJSON = false
 	docsJSON = false
@@ -130,6 +132,7 @@ func newCLIHarness(t *testing.T, handler http.Handler) *cliHarness {
 		serverHTTP = originalServerHTTP
 		log = originalLog
 		logLevel = originalLogLevel
+		outputFormat = originalOutputFormat
 		datasourcesType = originalDatasourcesType
 		datasourcesJSON = originalDatasourcesJSON
 		docsJSON = originalDocsJSON
@@ -430,6 +433,7 @@ func TestDocsAndDoraCommands(t *testing.T) {
 	assert.Contains(t, stdout, `"clickhouse"`)
 	assert.Contains(t, stdout, `"signature": "query(sql: str) -\u003e DataFrame"`)
 
+	docsJSON = false
 	networkNames, directive := completeNetworkNames(docsCmd, nil, "")
 	assert.Equal(t, []string{"hoodi", "mainnet"}, networkNames)
 	assert.Equal(t, cobra.ShellCompDirectiveNoFileComp, directive)
@@ -444,8 +448,8 @@ func TestDocsAndDoraCommands(t *testing.T) {
 	stdout, _ = captureOutput(t, func() {
 		require.NoError(t, doraOverviewCmd.RunE(doraOverviewCmd, []string{"hoodi"}))
 	})
-	assert.Contains(t, stdout, "Current epoch:      123")
-	assert.Contains(t, stdout, "Active validators:  10")
+	assert.Regexp(t, `Current epoch:\s+123`, stdout)
+	assert.Regexp(t, `Active validators:\s+10`, stdout)
 
 	stdout, _ = captureOutput(t, func() {
 		require.NoError(t, doraValidatorCmd.RunE(doraValidatorCmd, []string{"hoodi", "123"}))
@@ -1257,12 +1261,12 @@ func TestSchemaSearchSessionAndVersionCommands(t *testing.T) {
 
 		if response.Query != "none" {
 			response.Results = []*serverapi.SearchExampleResult{{
-				CategoryName:     "validators",
-				ExampleName:      "validator count",
-				Description:      "Find validators",
-				SimilarityScore:  0.98,
-				TargetCluster:    "xatu",
-				Query:            "SELECT count(*) FROM validators",
+				CategoryName:    "validators",
+				ExampleName:     "validator count",
+				Description:     "Find validators",
+				SimilarityScore: 0.98,
+				TargetCluster:   "xatu",
+				Query:           "SELECT count(*) FROM validators",
 			}}
 			response.TotalMatches = 1
 		}
@@ -1397,13 +1401,13 @@ func TestSchemaSearchSessionAndVersionCommands(t *testing.T) {
 	assert.Contains(t, stdout, "Session sess-1 destroyed.")
 
 	stdout, _ = captureOutput(t, func() {
-		versionCmd.Run(versionCmd, nil)
+		require.NoError(t, versionCmd.RunE(versionCmd, nil))
 	})
 	assert.Contains(t, stdout, "panda version ")
 
 	versionJSON = true
 	stdout, _ = captureOutput(t, func() {
-		versionCmd.Run(versionCmd, nil)
+		require.NoError(t, versionCmd.RunE(versionCmd, nil))
 	})
 	assert.Contains(t, stdout, `"version": "`)
 
@@ -1509,8 +1513,8 @@ func TestLokiAndPrometheusCommandsAndPrinters(t *testing.T) {
 		require.NoError(t, promQueryRangeCmd.RunE(promQueryRangeCmd, []string{"prom", "up"}))
 	})
 	assert.Contains(t, stdout, `{job="panda"}:`)
-	assert.Contains(t, stdout, `1 => 1`)
-	assert.Contains(t, stdout, `2 => 2`)
+	assert.Contains(t, stdout, `1970-01-01T00:00:01Z => 1`)
+	assert.Contains(t, stdout, `1970-01-01T00:00:02Z => 2`)
 
 	prometheusJSON = true
 	stdout, _ = captureOutput(t, func() {

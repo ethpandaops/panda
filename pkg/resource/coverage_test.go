@@ -285,9 +285,9 @@ func TestRegisterGettingStartedResources(t *testing.T) {
 		},
 	}, moduleReg)
 
-	content, mimeType, err := reg.Read(context.Background(), "ethpandaops://getting-started")
+	content, mimeType, err := reg.Read(context.Background(), "panda://getting-started")
 	if err != nil {
-		t.Fatalf("Read(ethpandaops://getting-started) error = %v", err)
+		t.Fatalf("Read(panda://getting-started) error = %v", err)
 	}
 
 	if mimeType != "text/markdown" {
@@ -314,7 +314,7 @@ func TestRegisterGettingStartedResources(t *testing.T) {
 		}
 	}
 
-	if strings.Contains(content, "ethpandaops://getting-started` - Getting Started Guide") {
+	if strings.Contains(content, "panda://getting-started` - Getting Started Guide") {
 		t.Fatalf("getting-started content should skip self-reference\n%s", content)
 	}
 

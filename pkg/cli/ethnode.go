@@ -63,7 +63,7 @@ var ethNodeSyncingCmd = &cobra.Command{
 			return err
 		}
 
-		if isJSON() {
+		if ethnodeJSON || isJSON() {
 			return printJSON(response)
 		}
 
@@ -92,7 +92,7 @@ var ethNodeVersionCmd = &cobra.Command{
 			return err
 		}
 
-		if isJSON() {
+		if ethnodeJSON || isJSON() {
 			executionResp, execErr := ethNodeExecutionClientVersion(request)
 			if execErr != nil {
 				return printJSON(map[string]any{
@@ -135,7 +135,7 @@ var ethNodeHealthCmd = &cobra.Command{
 
 		statusValue := response.StatusCode
 
-		if isJSON() {
+		if ethnodeJSON || isJSON() {
 			return printJSON(response)
 		}
 
@@ -167,7 +167,7 @@ var ethNodePeersCmd = &cobra.Command{
 			return err
 		}
 
-		if isJSON() {
+		if ethnodeJSON || isJSON() {
 			return printJSON(response)
 		}
 
@@ -193,7 +193,7 @@ var ethNodeFinalityCmd = &cobra.Command{
 			return err
 		}
 
-		if isJSON() {
+		if ethnodeJSON || isJSON() {
 			return printJSON(response)
 		}
 
@@ -224,7 +224,7 @@ var ethNodeHeaderCmd = &cobra.Command{
 			return err
 		}
 
-		if isJSON() {
+		if ethnodeJSON || isJSON() {
 			return printJSON(response)
 		}
 
@@ -252,7 +252,7 @@ var ethNodeBlockNumberCmd = &cobra.Command{
 			return err
 		}
 
-		if isJSON() {
+		if ethnodeJSON || isJSON() {
 			return printJSON(response)
 		}
 

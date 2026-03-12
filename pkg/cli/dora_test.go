@@ -38,8 +38,8 @@ func TestDoraNetworksAndOverviewPrintFriendlyOutput(t *testing.T) {
 	stdout, _ = captureOutput(t, func() {
 		require.NoError(t, doraOverviewCmd.RunE(doraOverviewCmd, []string{"hoodi"}))
 	})
-	assert.Contains(t, stdout, "Network:            hoodi")
-	assert.Contains(t, stdout, "Current epoch:      123")
+	assert.Regexp(t, `Network:\s+hoodi`, stdout)
+	assert.Regexp(t, `Current epoch:\s+123`, stdout)
 	assert.NotContains(t, stdout, "Active validators:")
 }
 

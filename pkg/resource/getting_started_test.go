@@ -28,7 +28,7 @@ func TestCreateGettingStartedHandlerOmitsTemplatesSectionWhenEmpty(t *testing.T)
 			mcp.NewTool("execute_python", mcp.WithDescription("Run Python snippets\nwith more detail")),
 			mcp.NewTool("search", mcp.WithDescription(" Search docs ")),
 		},
-	}, moduleReg)(context.Background(), "ethpandaops://getting-started")
+	}, moduleReg)(context.Background(), "panda://getting-started")
 	if err != nil {
 		t.Fatalf("createGettingStartedHandler() error = %v", err)
 	}
@@ -63,8 +63,8 @@ func TestRegisterGettingStartedResourcesAddsGuideResource(t *testing.T) {
 	}
 
 	resource := static[0]
-	if resource.URI != "ethpandaops://getting-started" {
-		t.Fatalf("resource URI = %q, want ethpandaops://getting-started", resource.URI)
+	if resource.URI != "panda://getting-started" {
+		t.Fatalf("resource URI = %q, want panda://getting-started", resource.URI)
 	}
 
 	if resource.Name != "Getting Started Guide" {

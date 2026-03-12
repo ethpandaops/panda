@@ -33,6 +33,6 @@ func TestPrintPromResultHandlesNonSuccessAndMatrixValues(t *testing.T) {
 		require.NoError(t, printPromResult([]byte(`{"status":"success","data":{"result":[{"metric":{"job":"panda"},"values":[[1,"1"],[2,"2"]]}]}}`)))
 	})
 	assert.Contains(t, stdout, `{job="panda"}:`)
-	assert.Contains(t, stdout, `1 => 1`)
-	assert.Contains(t, stdout, `2 => 2`)
+	assert.Contains(t, stdout, `1970-01-01T00:00:01Z => 1`)
+	assert.Contains(t, stdout, `1970-01-01T00:00:02Z => 2`)
 }

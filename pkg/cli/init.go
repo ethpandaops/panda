@@ -147,12 +147,7 @@ func runInit(_ *cobra.Command, _ []string) error {
 		fmt.Println()
 		fmt.Println("Starting server...")
 
-		compose, err := resolveComposeFile()
-		if err != nil {
-			return err
-		}
-
-		if err := runDockerCompose(compose, "up", "-d"); err != nil {
+		if err := runDockerCompose(resolveComposeFile(), "up", "-d"); err != nil {
 			return fmt.Errorf("starting server: %w", err)
 		}
 

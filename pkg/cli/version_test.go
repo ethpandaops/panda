@@ -11,7 +11,7 @@ import (
 )
 
 func TestVersionCommandHasJSONFlag(t *testing.T) {
-	flag := versionCmd.Flags().Lookup("json")
+	flag := versionCmd.InheritedFlags().Lookup("json")
 	require.NotNil(t, flag)
 	assert.Equal(t, "false", flag.DefValue)
 }
@@ -22,7 +22,7 @@ func TestVersionCommandRunOutputsJSONWhenRequested(t *testing.T) {
 
 	stdout, _ := captureOutput(t, func() {
 		versionJSON = true
-		versionCmd.Run(versionCmd, nil)
+		require.NoError(t, versionCmd.RunE(versionCmd, nil))
 	})
 
 	var payload map[string]string

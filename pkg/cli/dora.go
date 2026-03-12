@@ -48,7 +48,7 @@ var doraNetworksCmd = &cobra.Command{
 			return err
 		}
 
-		if isJSON() {
+		if doraJSON || isJSON() {
 			return printJSON(operations.DoraNetworksPayload{Networks: networks})
 		}
 
@@ -75,7 +75,7 @@ var doraOverviewCmd = &cobra.Command{
 			return err
 		}
 
-		if isJSON() {
+		if doraJSON || isJSON() {
 			return printJSON(response)
 		}
 
