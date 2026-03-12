@@ -213,6 +213,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - /tmp/ethpandaops-panda-sandbox:/tmp/ethpandaops-panda-sandbox
       - %s/config.yaml:/app/config.yaml:ro
+      - %s/credentials:/home/panda/.config/panda/credentials
       - panda-storage:/data/storage
     command: ["serve", "--config", "/app/config.yaml"]
     networks:
@@ -225,7 +226,7 @@ networks:
 
 volumes:
   panda-storage:
-`, serverImage, dockerGID, configDir)
+`, serverImage, dockerGID, configDir, configDir)
 }
 
 func checkDockerAndPullImages() error {
