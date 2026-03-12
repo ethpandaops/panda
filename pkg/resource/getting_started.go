@@ -59,7 +59,7 @@ url = storage.upload("/workspace/chart.png")
 Use ` + "`storage.upload()`" + ` for permanent public URLs (see ` + "`python://ethpandaops`" + ` for API details).
 `
 
-// RegisterGettingStartedResources registers the ethpandaops://getting-started
+// RegisterGettingStartedResources registers the panda://getting-started
 // resource.
 func RegisterGettingStartedResources(
 	log logrus.FieldLogger,
@@ -71,7 +71,7 @@ func RegisterGettingStartedResources(
 
 	reg.RegisterStatic(StaticResource{
 		Resource: mcp.NewResource(
-			"ethpandaops://getting-started",
+			"panda://getting-started",
 			"Getting Started Guide",
 			mcp.WithResourceDescription("Essential guide for querying data - read this first!"),
 			mcp.WithMIMEType("text/markdown"),
@@ -133,7 +133,7 @@ func createGettingStartedHandler(
 
 		for _, res := range staticResources {
 			// Skip self-reference.
-			if res.URI == "ethpandaops://getting-started" {
+			if res.URI == "panda://getting-started" {
 				continue
 			}
 
