@@ -34,9 +34,9 @@ setup_colors() {
 # Logging helpers
 # --------------------------------------------------------------------------- #
 
-info()    { printf "${GREEN}[INFO]${RESET}  %s\n" "$*"; }
-warn()    { printf "${YELLOW}[WARN]${RESET}  %s\n" "$*"; }
-error()   { printf "${RED}[ERROR]${RESET} %s\n" "$*" >&2; }
+info()    { printf "${GREEN}[INFO]${RESET}  %b\n" "$*"; }
+warn()    { printf "${YELLOW}[WARN]${RESET}  %b\n" "$*"; }
+error()   { printf "${RED}[ERROR]${RESET} %b\n" "$*" >&2; }
 fatal()   { error "$@"; exit 1; }
 
 # --------------------------------------------------------------------------- #
@@ -189,20 +189,64 @@ install_binary() {
 }
 
 # --------------------------------------------------------------------------- #
-# PATH check
+# PATH check and shell profile update
 # --------------------------------------------------------------------------- #
+
+# detect_profile returns the path to the user's shell profile file.
+detect_profile() {
+    shell_name="$(basename "${SHELL:-/bin/sh}")"
+
+    case "$shell_name" in
+        zsh)
+            printf '%s' "${HOME}/.zshrc"
+            ;;
+        bash)
+            # Prefer .bashrc for interactive shells; fall back to .bash_profile.
+            if [ -f "${HOME}/.bashrc" ]; then
+                printf '%s' "${HOME}/.bashrc"
+            else
+                printf '%s' "${HOME}/.bash_profile"
+            fi
+            ;;
+        fish)
+            printf '%s' "${HOME}/.config/fish/config.fish"
+            ;;
+        *)
+            printf '%s' "${HOME}/.profile"
+            ;;
+    esac
+}
 
 check_path() {
     case ":${PATH}:" in
         *":${INSTALL_DIR}:"*)
             # Already in PATH, nothing to do.
-            ;;
-        *)
-            warn "${INSTALL_DIR} is not in your PATH."
-            warn "Add it by appending the following to your shell profile:"
-            warn "  export PATH=\"${INSTALL_DIR}:\$PATH\""
+            return
             ;;
     esac
+
+    profile="$(detect_profile)"
+
+    # For fish shell, use a different syntax.
+    shell_name="$(basename "${SHELL:-/bin/sh}")"
+    if [ "$shell_name" = "fish" ]; then
+        path_line="fish_add_path ${INSTALL_DIR}"
+    else
+        path_line="export PATH=\"\$PATH:${INSTALL_DIR}\""
+    fi
+
+    # Check if the line is already in the profile (e.g. from a previous install).
+    if [ -f "$profile" ] && grep -qF "$INSTALL_DIR" "$profile" 2>/dev/null; then
+        return
+    fi
+
+    # Ensure parent directory exists (e.g. ~/.config/fish/).
+    profile_dir="$(dirname "$profile")"
+    mkdir -p "$profile_dir" 2>/dev/null || true
+
+    printf '\n# Added by panda installer\n%s\n' "$path_line" >> "$profile"
+    info "Added ${BOLD}${INSTALL_DIR}${RESET} to ${BOLD}${profile}${RESET}"
+    PATH_UPDATED=1
 }
 
 # --------------------------------------------------------------------------- #
@@ -212,6 +256,8 @@ check_path() {
 main() {
     setup_colors
     parse_args "$@"
+
+    PATH_UPDATED=0
 
     info "Installing ${BOLD}panda${RESET} CLI..."
 
@@ -232,7 +278,11 @@ main() {
             info "Run ${BOLD}panda init${RESET} to get started."
             ;;
         *)
-            info "Restart your shell (or run ${BOLD}export PATH=\"${INSTALL_DIR}:\$PATH\"${RESET}), then run ${BOLD}panda init${RESET} to get started."
+            if [ "$PATH_UPDATED" = "1" ]; then
+                info "Restart your shell, then run ${BOLD}panda init${RESET} to get started."
+            else
+                info "Run ${BOLD}panda init${RESET} to get started."
+            fi
             ;;
     esac
 }
