@@ -83,8 +83,8 @@ COPY --from=builder /app/panda-proxy /app/panda-proxy
 COPY --from=builder /assets/all-MiniLM-L6-v2 /usr/share/panda/all-MiniLM-L6-v2
 
 # Create directories
-RUN mkdir -p /config /shared /output && \
-    chown -R panda:panda /app /config /shared /output
+RUN mkdir -p /config /shared /output /data/storage && \
+    chown -R panda:panda /app /config /shared /output /data/storage
 
 # Expose ports
 EXPOSE 2480 2490
