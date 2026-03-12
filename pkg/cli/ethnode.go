@@ -3,12 +3,11 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 )
-
-var ethnodeJSON bool
 
 var ethnodeCmd = &cobra.Command{
 	Use:   "ethnode",
@@ -25,7 +24,6 @@ Examples:
 
 func init() {
 	rootCmd.AddCommand(ethnodeCmd)
-	ethnodeCmd.PersistentFlags().BoolVar(&ethnodeJSON, "json", false, "Output in JSON format")
 
 	ethnodeCmd.AddCommand(
 		ethNodeSyncingCmd,
@@ -63,16 +61,18 @@ var ethNodeSyncingCmd = &cobra.Command{
 			return err
 		}
 
-		if ethnodeJSON {
+		if isJSON() {
 			return printJSON(response.Data)
 		}
 
 		data := nestedMap(response.Data, "data")
-		fmt.Printf("Head slot:     %v\n", data["head_slot"])
-		fmt.Printf("Sync distance: %v\n", data["sync_distance"])
-		fmt.Printf("Is syncing:    %v\n", data["is_syncing"])
-		fmt.Printf("Is optimistic: %v\n", data["is_optimistic"])
-		fmt.Printf("EL offline:    %v\n", data["el_offline"])
+		printKeyValue([][2]string{
+			{"Head slot", fmt.Sprintf("%v", data["head_slot"])},
+			{"Sync distance", fmt.Sprintf("%v", data["sync_distance"])},
+			{"Is syncing", fmt.Sprintf("%v", data["is_syncing"])},
+			{"Is optimistic", fmt.Sprintf("%v", data["is_optimistic"])},
+			{"EL offline", fmt.Sprintf("%v", data["el_offline"])},
+		})
 
 		return nil
 	},
@@ -91,7 +91,7 @@ var ethNodeVersionCmd = &cobra.Command{
 			return err
 		}
 
-		if ethnodeJSON {
+		if isJSON() {
 			executionResp, execErr := runServerOperation("ethnode.web3_client_version", map[string]any{
 				"network":  args[0],
 				"instance": args[1],
@@ -116,7 +116,7 @@ var ethNodeVersionCmd = &cobra.Command{
 			"instance": args[1],
 		})
 		if execErr != nil {
-			_, _ = fmt.Fprintf(log.Writer(), "EL: (error: %v)\n", execErr)
+			_, _ = fmt.Fprintf(os.Stderr, "EL: (error: %v)\n", execErr)
 			return nil
 		}
 
@@ -141,7 +141,7 @@ var ethNodeHealthCmd = &cobra.Command{
 		data, _ := response.Data.(map[string]any)
 		statusValue := intFromAny(data["status_code"])
 
-		if ethnodeJSON {
+		if isJSON() {
 			return printJSON(response.Data)
 		}
 
@@ -173,15 +173,24 @@ var ethNodePeersCmd = &cobra.Command{
 			return err
 		}
 
-		if ethnodeJSON {
+		if isJSON() {
 			return printJSON(response.Data)
 		}
 
 		data := nestedMap(response.Data, "data")
-		fmt.Printf("Connected:     %v\n", data["connected"])
-		fmt.Printf("Disconnected:  %v\n", data["disconnected"])
-		fmt.Printf("Connecting:    %v\n", data["connecting"])
-		fmt.Printf("Disconnecting: %v\n", data["disconnecting"])
+		connected := intFromAny(data["connected"])
+		disconnected := intFromAny(data["disconnected"])
+		connecting := intFromAny(data["connecting"])
+		disconnecting := intFromAny(data["disconnecting"])
+		total := connected + disconnected + connecting + disconnecting
+
+		printKeyValue([][2]string{
+			{"Connected", fmt.Sprintf("%d", connected)},
+			{"Disconnected", fmt.Sprintf("%d", disconnected)},
+			{"Connecting", fmt.Sprintf("%d", connecting)},
+			{"Disconnecting", fmt.Sprintf("%d", disconnecting)},
+			{"Total", fmt.Sprintf("%d", total)},
+		})
 
 		return nil
 	},
@@ -200,14 +209,20 @@ var ethNodeFinalityCmd = &cobra.Command{
 			return err
 		}
 
-		if ethnodeJSON {
+		if isJSON() {
 			return printJSON(response.Data)
 		}
 
 		data := nestedMap(response.Data, "data")
-		fmt.Printf("Finalized:          epoch %v\n", nestedMap(data["finalized"], "")["epoch"])
-		fmt.Printf("Current justified:  epoch %v\n", nestedMap(data["current_justified"], "")["epoch"])
-		fmt.Printf("Previous justified: epoch %v\n", nestedMap(data["previous_justified"], "")["epoch"])
+		finalized := nestedMap(data["finalized"], "")
+		justified := nestedMap(data["current_justified"], "")
+		prevJustified := nestedMap(data["previous_justified"], "")
+
+		printKeyValue([][2]string{
+			{"Finalized", fmt.Sprintf("epoch %v (root: %v)", finalized["epoch"], finalized["root"])},
+			{"Current justified", fmt.Sprintf("epoch %v (root: %v)", justified["epoch"], justified["root"])},
+			{"Previous justified", fmt.Sprintf("epoch %v (root: %v)", prevJustified["epoch"], prevJustified["root"])},
+		})
 
 		return nil
 	},
@@ -232,7 +247,7 @@ var ethNodeHeaderCmd = &cobra.Command{
 			return err
 		}
 
-		if ethnodeJSON {
+		if isJSON() {
 			return printJSON(response.Data)
 		}
 
@@ -240,12 +255,12 @@ var ethNodeHeaderCmd = &cobra.Command{
 		header := nestedMap(data["header"], "")
 		message := nestedMap(header["message"], "")
 
-		fmt.Printf("Slot:           %v\n", message["slot"])
-		fmt.Printf("Proposer index: %v\n", message["proposer_index"])
-		fmt.Printf("Root:           %v\n", data["root"])
-		fmt.Printf("Parent root:    %v\n", message["parent_root"])
-		fmt.Printf("State root:     %v\n", message["state_root"])
-		fmt.Printf("Body root:      %v\n", message["body_root"])
+		printKeyValue([][2]string{
+			{"Slot", fmt.Sprintf("%v", message["slot"])},
+			{"Proposer index", fmt.Sprintf("%v", message["proposer_index"])},
+			{"Root", fmt.Sprintf("%v", data["root"])},
+			{"Parent root", fmt.Sprintf("%v", message["parent_root"])},
+		})
 
 		return nil
 	},
@@ -265,7 +280,7 @@ var ethNodeBlockNumberCmd = &cobra.Command{
 		}
 
 		data, _ := response.Data.(map[string]any)
-		if ethnodeJSON {
+		if isJSON() {
 			return printJSON(data)
 		}
 
@@ -332,13 +347,18 @@ Examples:
 			return err
 		}
 
-		if ethnodeJSON {
+		if isJSON() {
 			return printJSONBytes(response.Body)
 		}
 
 		var payload map[string]any
 		if err := json.Unmarshal(response.Body, &payload); err != nil {
 			return printJSONBytes(response.Body)
+		}
+
+		if str, ok := payload["result"].(string); ok {
+			fmt.Println(str)
+			return nil
 		}
 
 		return printJSON(payload["result"])

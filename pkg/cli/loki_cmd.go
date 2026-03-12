@@ -3,12 +3,15 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
 
 var (
-	lokiJSON      bool
 	lokiLimit     int
 	lokiStart     string
 	lokiEnd       string
@@ -31,7 +34,6 @@ Examples:
 
 func init() {
 	rootCmd.AddCommand(lokiCmd)
-	lokiCmd.PersistentFlags().BoolVar(&lokiJSON, "json", false, "Output in JSON format")
 
 	lokiCmd.AddCommand(lokiListDatasourcesCmd)
 	lokiCmd.AddCommand(lokiQueryCmd)
@@ -74,32 +76,7 @@ var lokiListDatasourcesCmd = &cobra.Command{
 			return err
 		}
 
-		if lokiJSON {
-			return printJSON(response)
-		}
-
-		data, _ := response.Data.(map[string]any)
-		items, _ := data["datasources"].([]any)
-		if len(items) == 0 {
-			fmt.Println("No Loki datasources found.")
-			return nil
-		}
-
-		for _, item := range items {
-			ds, _ := item.(map[string]any)
-			name, _ := ds["name"].(string)
-			desc, _ := ds["description"].(string)
-			targetURL, _ := ds["url"].(string)
-
-			if targetURL != "" {
-				fmt.Printf("  %-16s  %-24s  %s\n", name, desc, targetURL)
-				continue
-			}
-
-			fmt.Printf("  %-16s  %s\n", name, desc)
-		}
-
-		return nil
+		return printDatasourceList(response)
 	},
 }
 
@@ -120,7 +97,7 @@ var lokiQueryCmd = &cobra.Command{
 			return err
 		}
 
-		if lokiJSON {
+		if isJSON() {
 			return printJSONBytes(response.Body)
 		}
 
@@ -144,7 +121,7 @@ var lokiQueryInstantCmd = &cobra.Command{
 			return err
 		}
 
-		if lokiJSON {
+		if isJSON() {
 			return printJSONBytes(response.Body)
 		}
 
@@ -166,7 +143,7 @@ var lokiLabelsCmd = &cobra.Command{
 			return err
 		}
 
-		if lokiJSON {
+		if isJSON() {
 			return printJSONBytes(response.Body)
 		}
 
@@ -189,7 +166,7 @@ var lokiLabelValuesCmd = &cobra.Command{
 			return err
 		}
 
-		if lokiJSON {
+		if isJSON() {
 			return printJSONBytes(response.Body)
 		}
 
@@ -212,12 +189,34 @@ func printLokiResult(data []byte) error {
 	}
 
 	for _, stream := range resp.Data.Result {
+		// Sort stream label keys for deterministic output.
+		keys := make([]string, 0, len(stream.Stream))
+		for k := range stream.Stream {
+			keys = append(keys, k)
+		}
+
+		sort.Strings(keys)
+
+		labels := make([]string, 0, len(keys))
+		for _, k := range keys {
+			labels = append(labels, fmt.Sprintf("%s=%s", k, stream.Stream[k]))
+		}
+
+		labelStr := "{" + strings.Join(labels, ", ") + "}"
+
 		for _, entry := range stream.Values {
 			if len(entry) < 2 {
 				continue
 			}
 
-			fmt.Println(entry[1])
+			ts := entry[0]
+
+			nsec, err := strconv.ParseInt(ts, 10, 64)
+			if err == nil {
+				ts = time.Unix(0, nsec).UTC().Format("2006-01-02T15:04:05.000Z")
+			}
+
+			fmt.Printf("%s %s %s\n", ts, labelStr, entry[1])
 		}
 	}
 

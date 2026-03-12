@@ -6,8 +6,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var doraJSON bool
-
 var doraCmd = &cobra.Command{
 	Use:   "dora",
 	Short: "Query Dora beacon chain explorer",
@@ -23,7 +21,6 @@ Examples:
 
 func init() {
 	rootCmd.AddCommand(doraCmd)
-	doraCmd.PersistentFlags().BoolVar(&doraJSON, "json", false, "Output in JSON format")
 
 	doraCmd.AddCommand(
 		doraNetworksCmd,
@@ -49,7 +46,7 @@ var doraNetworksCmd = &cobra.Command{
 			return err
 		}
 
-		if doraJSON {
+		if isJSON() {
 			return printJSON(response)
 		}
 
@@ -83,29 +80,39 @@ var doraOverviewCmd = &cobra.Command{
 			return err
 		}
 
-		if doraJSON {
+		if isJSON() {
 			return printJSON(response)
 		}
 
 		data, _ := response.Data.(map[string]any)
-		fmt.Printf("Network:            %s\n", args[0])
-		fmt.Printf("Current epoch:      %v\n", data["current_epoch"])
-		fmt.Printf("Current slot:       %v\n", data["current_slot"])
-		fmt.Printf("Finalized:          %v\n", data["finalized"])
-		fmt.Printf("Participation rate: %v\n", data["participation_rate"])
+
+		// Format participation rate as a percentage.
+		participationStr := fmt.Sprintf("%v", data["participation_rate"])
+		if rate, ok := data["participation_rate"].(float64); ok {
+			participationStr = fmt.Sprintf("%.2f%%", rate*100)
+		}
+
+		pairs := [][2]string{
+			{"Network", args[0]},
+			{"Current epoch", fmt.Sprintf("%v", data["current_epoch"])},
+			{"Epoch finalized", fmt.Sprintf("%v", data["finalized"])},
+			{"Participation rate", participationStr},
+		}
 
 		if value, ok := data["active_validator_count"]; ok {
-			fmt.Printf("Active validators:  %v\n", value)
+			pairs = append(pairs, [2]string{"Active validators", fmt.Sprintf("%v", value)})
 		}
 		if value, ok := data["total_validator_count"]; ok {
-			fmt.Printf("Total validators:   %v\n", value)
+			pairs = append(pairs, [2]string{"Total validators", fmt.Sprintf("%v", value)})
 		}
 		if value, ok := data["pending_validator_count"]; ok {
-			fmt.Printf("Pending validators: %v\n", value)
+			pairs = append(pairs, [2]string{"Pending validators", fmt.Sprintf("%v", value)})
 		}
 		if value, ok := data["exited_validator_count"]; ok {
-			fmt.Printf("Exited validators:  %v\n", value)
+			pairs = append(pairs, [2]string{"Exited validators", fmt.Sprintf("%v", value)})
 		}
+
+		printKeyValue(pairs)
 
 		return nil
 	},

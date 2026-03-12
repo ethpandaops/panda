@@ -9,8 +9,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var clickhouseJSON bool
-
 var clickhouseCmd = &cobra.Command{
 	Use:   "clickhouse",
 	Short: "Query ClickHouse databases",
@@ -24,7 +22,6 @@ Examples:
 
 func init() {
 	rootCmd.AddCommand(clickhouseCmd)
-	clickhouseCmd.PersistentFlags().BoolVar(&clickhouseJSON, "json", false, "Output in JSON format")
 
 	clickhouseCmd.AddCommand(clickhouseListDatasourcesCmd)
 	clickhouseCmd.AddCommand(clickhouseQueryCmd)
@@ -43,36 +40,7 @@ var clickhouseListDatasourcesCmd = &cobra.Command{
 			return err
 		}
 
-		if clickhouseJSON {
-			return printJSON(response)
-		}
-
-		data, _ := response.Data.(map[string]any)
-		items, _ := data["datasources"].([]any)
-		if len(items) == 0 {
-			fmt.Println("No ClickHouse datasources found.")
-			return nil
-		}
-
-		for _, item := range items {
-			ds, _ := item.(map[string]any)
-			name, _ := ds["name"].(string)
-			desc, _ := ds["description"].(string)
-			database, _ := ds["database"].(string)
-
-			if desc == "" {
-				desc = name
-			}
-
-			if database != "" {
-				fmt.Printf("  %-16s  %-20s  database=%s\n", name, desc, database)
-				continue
-			}
-
-			fmt.Printf("  %-16s  %s\n", name, desc)
-		}
-
-		return nil
+		return printDatasourceList(response)
 	},
 }
 
@@ -117,7 +85,7 @@ func runClickHouseOperation(operationID, cluster, sql string, raw bool) error {
 		return printClickHouseJSON(response.Body, true)
 	}
 
-	if clickhouseJSON {
+	if isJSON() {
 		return printClickHouseJSON(response.Body, false)
 	}
 

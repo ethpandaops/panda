@@ -2,16 +2,12 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/spf13/cobra"
 )
 
-var (
-	datasourcesType string
-	datasourcesJSON bool
-)
+var datasourcesType string
 
 var datasourcesCmd = &cobra.Command{
 	Use:   "datasources",
@@ -29,7 +25,6 @@ Examples:
 func init() {
 	rootCmd.AddCommand(datasourcesCmd)
 	datasourcesCmd.Flags().StringVar(&datasourcesType, "type", "", "Filter by type (clickhouse, prometheus, loki)")
-	datasourcesCmd.Flags().BoolVar(&datasourcesJSON, "json", false, "Output in JSON format")
 
 	_ = datasourcesCmd.RegisterFlagCompletionFunc("type", cobra.FixedCompletions(
 		[]string{"clickhouse", "prometheus", "loki"}, cobra.ShellCompDirectiveNoFileComp,
@@ -43,7 +38,7 @@ func runDatasources(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("listing datasources: %w", err)
 	}
 
-	if datasourcesJSON {
+	if isJSON() {
 		return printJSON(response)
 	}
 
@@ -61,18 +56,6 @@ func runDatasources(_ *cobra.Command, _ []string) error {
 
 		fmt.Printf("  %-12s  %-20s  %s\n", info.Type, info.Name, desc)
 	}
-
-	return nil
-}
-
-// printJSON marshals v as indented JSON and prints it.
-func printJSON(v any) error {
-	data, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshaling JSON: %w", err)
-	}
-
-	fmt.Println(string(data))
 
 	return nil
 }

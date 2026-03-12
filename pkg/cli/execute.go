@@ -17,7 +17,6 @@ var (
 	executeFile    string
 	executeTimeout int
 	executeSession string
-	executeJSON    bool
 )
 
 var executeCmd = &cobra.Command{
@@ -44,7 +43,6 @@ func init() {
 	executeCmd.Flags().StringVar(&executeFile, "file", "", "Path to Python file to execute")
 	executeCmd.Flags().IntVar(&executeTimeout, "timeout", 0, "Execution timeout in seconds (default: from config)")
 	executeCmd.Flags().StringVar(&executeSession, "session", "", "Session ID to reuse")
-	executeCmd.Flags().BoolVar(&executeJSON, "json", false, "Output result as JSON")
 
 	_ = executeCmd.RegisterFlagCompletionFunc("file", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		return []string{"py"}, cobra.ShellCompDirectiveFilterFileExt
@@ -68,7 +66,7 @@ func runExecute(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("execution failed: %w", err)
 	}
 
-	if executeJSON {
+	if isJSON() {
 		return printJSON(result)
 	}
 

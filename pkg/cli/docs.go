@@ -13,8 +13,6 @@ import (
 	"github.com/ethpandaops/panda/pkg/types"
 )
 
-var docsJSON bool
-
 var docsCmd = &cobra.Command{
 	Use:   "docs [module-name]",
 	Short: "Show Python API documentation",
@@ -32,7 +30,6 @@ Examples:
 
 func init() {
 	rootCmd.AddCommand(docsCmd)
-	docsCmd.Flags().BoolVar(&docsJSON, "json", false, "Output in JSON format")
 }
 
 func runDocs(_ *cobra.Command, args []string) error {
@@ -41,7 +38,7 @@ func runDocs(_ *cobra.Command, args []string) error {
 		return err
 	}
 
-	if docsJSON {
+	if isJSON() {
 		if len(args) > 0 {
 			doc, ok := allDocs[args[0]]
 			if !ok {

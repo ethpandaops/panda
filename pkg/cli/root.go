@@ -52,6 +52,10 @@ Run 'panda <command> --help' for details on any command.`,
 			FullTimestamp: true,
 		})
 
+		if outputJSON {
+			outputFormat = "json"
+		}
+
 		if !skipUpdateCheckCommands[cmd.Name()] {
 			go backgroundUpdateCheck()
 		}
@@ -82,9 +86,17 @@ func init() {
 		"config file (default: $PANDA_CONFIG, ~/.config/panda/config.yaml, or ./config.yaml)")
 	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info",
 		"log level (debug, info, warn, error)")
+	rootCmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "text",
+		"output format (text, json)")
+	rootCmd.PersistentFlags().BoolVar(&outputJSON, "json", false,
+		"output in JSON format (shorthand for --output json)")
+	_ = rootCmd.PersistentFlags().MarkHidden("json")
 
 	_ = rootCmd.RegisterFlagCompletionFunc("log-level", cobra.FixedCompletions(
 		[]string{"debug", "info", "warn", "error"}, cobra.ShellCompDirectiveNoFileComp,
+	))
+	_ = rootCmd.RegisterFlagCompletionFunc("output", cobra.FixedCompletions(
+		[]string{"text", "json"}, cobra.ShellCompDirectiveNoFileComp,
 	))
 	_ = rootCmd.RegisterFlagCompletionFunc("config",
 		func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {

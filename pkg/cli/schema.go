@@ -2,15 +2,12 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
 )
-
-var schemaJSON bool
 
 var schemaCmd = &cobra.Command{
 	Use:   "schema [table-name]",
@@ -28,7 +25,6 @@ Examples:
 
 func init() {
 	rootCmd.AddCommand(schemaCmd)
-	schemaCmd.Flags().BoolVar(&schemaJSON, "json", false, "Output in JSON format")
 	schemaCmd.ValidArgsFunction = completeTableNames
 }
 
@@ -48,7 +44,7 @@ func listTables(ctx context.Context) error {
 		return err
 	}
 
-	if schemaJSON {
+	if isJSON() {
 		return printJSON(response)
 	}
 
@@ -83,7 +79,7 @@ func showTable(ctx context.Context, tableName string) error {
 		return err
 	}
 
-	if schemaJSON {
+	if isJSON() {
 		return printJSON(response)
 	}
 
@@ -100,12 +96,12 @@ func showTable(ctx context.Context, tableName string) error {
 
 	fmt.Println()
 
-	data, err := json.MarshalIndent(schema.Columns, "", "  ")
-	if err != nil {
-		return fmt.Errorf("encoding columns: %w", err)
+	rows := make([][]string, 0, len(schema.Columns))
+	for _, col := range schema.Columns {
+		rows = append(rows, []string{col.Name, col.Type, col.Comment})
 	}
 
-	fmt.Println(string(data))
+	printTable([]string{"NAME", "TYPE", "COMMENT"}, rows)
 
 	return nil
 }

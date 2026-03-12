@@ -11,10 +11,8 @@ import (
 var (
 	searchExampleCategory string
 	searchExampleLimit    int
-	searchExampleJSON     bool
 	searchRunbookTag      string
 	searchRunbookLimit    int
-	searchRunbookJSON     bool
 )
 
 var searchCmd = &cobra.Command{
@@ -51,12 +49,10 @@ func init() {
 
 	searchExamplesCmd.Flags().StringVar(&searchExampleCategory, "category", "", "Filter by category")
 	searchExamplesCmd.Flags().IntVar(&searchExampleLimit, "limit", 3, "Max results (default: 3, max: 10)")
-	searchExamplesCmd.Flags().BoolVar(&searchExampleJSON, "json", false, "Output in JSON format")
 	searchExamplesCmd.ValidArgsFunction = noCompletions
 
 	searchRunbooksCmd.Flags().StringVar(&searchRunbookTag, "tag", "", "Filter by tag")
 	searchRunbooksCmd.Flags().IntVar(&searchRunbookLimit, "limit", 3, "Max results (default: 3, max: 5)")
-	searchRunbooksCmd.Flags().BoolVar(&searchRunbookJSON, "json", false, "Output in JSON format")
 	searchRunbooksCmd.ValidArgsFunction = noCompletions
 }
 
@@ -68,7 +64,7 @@ func runSearchExamples(_ *cobra.Command, args []string) error {
 		return err
 	}
 
-	if searchExampleJSON {
+	if isJSON() {
 		return printJSON(response)
 	}
 
@@ -101,7 +97,7 @@ func runSearchRunbooks(_ *cobra.Command, args []string) error {
 		return err
 	}
 
-	if searchRunbookJSON {
+	if isJSON() {
 		return printJSON(response)
 	}
 

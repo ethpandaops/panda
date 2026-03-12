@@ -3,13 +3,14 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
 
 var (
-	prometheusJSON bool
 	promQueryTime  string
 	promRangeStart string
 	promRangeEnd   string
@@ -31,7 +32,6 @@ Examples:
 
 func init() {
 	rootCmd.AddCommand(prometheusCmd)
-	prometheusCmd.PersistentFlags().BoolVar(&prometheusJSON, "json", false, "Output in JSON format")
 
 	prometheusCmd.AddCommand(promListDatasourcesCmd)
 	prometheusCmd.AddCommand(promQueryCmd)
@@ -63,32 +63,7 @@ var promListDatasourcesCmd = &cobra.Command{
 			return err
 		}
 
-		if prometheusJSON {
-			return printJSON(response)
-		}
-
-		data, _ := response.Data.(map[string]any)
-		items, _ := data["datasources"].([]any)
-		if len(items) == 0 {
-			fmt.Println("No Prometheus datasources found.")
-			return nil
-		}
-
-		for _, item := range items {
-			ds, _ := item.(map[string]any)
-			name, _ := ds["name"].(string)
-			desc, _ := ds["description"].(string)
-			targetURL, _ := ds["url"].(string)
-
-			if targetURL != "" {
-				fmt.Printf("  %-16s  %-24s  %s\n", name, desc, targetURL)
-				continue
-			}
-
-			fmt.Printf("  %-16s  %s\n", name, desc)
-		}
-
-		return nil
+		return printDatasourceList(response)
 	},
 }
 
@@ -106,7 +81,7 @@ var promQueryCmd = &cobra.Command{
 			return err
 		}
 
-		if prometheusJSON {
+		if isJSON() {
 			return printJSONBytes(response.Body)
 		}
 
@@ -130,7 +105,7 @@ var promQueryRangeCmd = &cobra.Command{
 			return err
 		}
 
-		if prometheusJSON {
+		if isJSON() {
 			return printJSONBytes(response.Body)
 		}
 
@@ -150,7 +125,7 @@ var promLabelsCmd = &cobra.Command{
 			return err
 		}
 
-		if prometheusJSON {
+		if isJSON() {
 			return printJSONBytes(response.Body)
 		}
 
@@ -171,7 +146,7 @@ var promLabelValuesCmd = &cobra.Command{
 			return err
 		}
 
-		if prometheusJSON {
+		if isJSON() {
 			return printJSONBytes(response.Body)
 		}
 
@@ -210,9 +185,16 @@ func printPromResult(data []byte) error {
 			continue
 		}
 
-		var labels []string
-		for k, v := range entry.Metric {
-			labels = append(labels, fmt.Sprintf("%s=%q", k, v))
+		keys := make([]string, 0, len(entry.Metric))
+		for k := range entry.Metric {
+			keys = append(keys, k)
+		}
+
+		sort.Strings(keys)
+
+		labels := make([]string, 0, len(keys))
+		for _, k := range keys {
+			labels = append(labels, fmt.Sprintf("%s=%q", k, entry.Metric[k]))
 		}
 
 		metric := "{" + strings.Join(labels, ", ") + "}"
@@ -223,7 +205,13 @@ func printPromResult(data []byte) error {
 			fmt.Printf("%s:\n", metric)
 			for _, v := range entry.Values {
 				if len(v) == 2 {
-					fmt.Printf("  %v => %v\n", v[0], v[1])
+					ts, ok := v[0].(float64)
+					if ok {
+						fmt.Printf("  %s => %v\n",
+							time.Unix(int64(ts), 0).UTC().Format(time.RFC3339), v[1])
+					} else {
+						fmt.Printf("  %v => %v\n", v[0], v[1])
+					}
 				}
 			}
 		}

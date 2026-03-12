@@ -8,8 +8,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var sessionJSON bool
-
 var sessionCmd = &cobra.Command{
 	Use:   "session",
 	Short: "Manage sandbox sessions",
@@ -47,7 +45,6 @@ func init() {
 	sessionCmd.AddCommand(sessionCreateCmd)
 	sessionCmd.AddCommand(sessionDestroyCmd)
 
-	sessionCmd.PersistentFlags().BoolVar(&sessionJSON, "json", false, "Output in JSON format")
 	sessionDestroyCmd.ValidArgsFunction = completeSessionIDs
 }
 
@@ -58,7 +55,7 @@ func runSessionList(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("listing sessions: %w", err)
 	}
 
-	if sessionJSON {
+	if isJSON() {
 		return printJSON(response)
 	}
 
@@ -87,7 +84,7 @@ func runSessionCreate(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("creating session: %w", err)
 	}
 
-	if sessionJSON {
+	if isJSON() {
 		return printJSON(response)
 	}
 
@@ -102,7 +99,7 @@ func runSessionDestroy(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("destroying session: %w", err)
 	}
 
-	if !sessionJSON {
+	if !isJSON() {
 		fmt.Printf("Session %s destroyed.\n", args[0])
 	}
 

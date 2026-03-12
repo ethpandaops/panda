@@ -327,13 +327,3 @@ func decodeAPIError(status int, data []byte) error {
 
 	return fmt.Errorf("HTTP %d: %s", status, strings.TrimSpace(string(data)))
 }
-
-func printJSONBytes(data []byte) error {
-	var payload any
-	if err := json.Unmarshal(data, &payload); err != nil {
-		fmt.Println(string(data))
-		return nil
-	}
-
-	return printJSON(payload)
-}
