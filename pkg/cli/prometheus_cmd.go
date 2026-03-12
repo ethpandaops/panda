@@ -3,8 +3,6 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"sort"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -185,19 +183,7 @@ func printPromResult(data []byte) error {
 			continue
 		}
 
-		keys := make([]string, 0, len(entry.Metric))
-		for k := range entry.Metric {
-			keys = append(keys, k)
-		}
-
-		sort.Strings(keys)
-
-		labels := make([]string, 0, len(keys))
-		for _, k := range keys {
-			labels = append(labels, fmt.Sprintf("%s=%q", k, entry.Metric[k]))
-		}
-
-		metric := "{" + strings.Join(labels, ", ") + "}"
+		metric := formatLabelSet(entry.Metric, true)
 
 		if len(entry.Value) == 2 {
 			fmt.Printf("%s => %v\n", metric, entry.Value[1])
@@ -215,22 +201,6 @@ func printPromResult(data []byte) error {
 				}
 			}
 		}
-	}
-
-	return nil
-}
-
-func printAPIStringValues(data []byte) error {
-	var resp struct {
-		Data []any `json:"data"`
-	}
-
-	if err := json.Unmarshal(data, &resp); err != nil {
-		return printJSONBytes(data)
-	}
-
-	for _, value := range resp.Data {
-		fmt.Println(value)
 	}
 
 	return nil

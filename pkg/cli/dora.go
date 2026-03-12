@@ -99,17 +99,15 @@ var doraOverviewCmd = &cobra.Command{
 			{"Participation rate", participationStr},
 		}
 
-		if value, ok := data["active_validator_count"]; ok {
-			pairs = append(pairs, [2]string{"Active validators", fmt.Sprintf("%v", value)})
-		}
-		if value, ok := data["total_validator_count"]; ok {
-			pairs = append(pairs, [2]string{"Total validators", fmt.Sprintf("%v", value)})
-		}
-		if value, ok := data["pending_validator_count"]; ok {
-			pairs = append(pairs, [2]string{"Pending validators", fmt.Sprintf("%v", value)})
-		}
-		if value, ok := data["exited_validator_count"]; ok {
-			pairs = append(pairs, [2]string{"Exited validators", fmt.Sprintf("%v", value)})
+		for _, kv := range [][2]string{
+			{"Active validators", "active_validator_count"},
+			{"Total validators", "total_validator_count"},
+			{"Pending validators", "pending_validator_count"},
+			{"Exited validators", "exited_validator_count"},
+		} {
+			if value, ok := data[kv[1]]; ok {
+				pairs = append(pairs, [2]string{kv[0], fmt.Sprintf("%v", value)})
+			}
 		}
 
 		printKeyValue(pairs)
