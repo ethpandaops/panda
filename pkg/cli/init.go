@@ -65,6 +65,8 @@ func init() {
 	initCmd.Flags().BoolVar(&initSkipDocker, "skip-docker", false, "skip Docker check and image pull")
 	initCmd.Flags().BoolVar(&initSkipAuth, "skip-auth", false, "skip authentication step")
 	initCmd.Flags().BoolVar(&initSkipStart, "skip-start", false, "skip starting the server")
+	initCmd.Flags().BoolVar(&noBrowser, "no-browser", false,
+		"manual auth flow for SSH/headless environments (auto-detected over SSH)")
 }
 
 func runInit(_ *cobra.Command, _ []string) error {
