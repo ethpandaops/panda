@@ -77,8 +77,6 @@ var _ ClickHouseSchemaClient = (*clickhouseSchemaClient)(nil)
 type clickhouseSchemaClient struct {
 	log         logrus.FieldLogger
 	cfg         ClickHouseSchemaConfig
-	proxySvc    proxy.ClickHouseSchemaAccess
-	httpClient  *http.Client
 	queryClient clickhouseSchemaQueryClient
 
 	mu          sync.RWMutex
@@ -107,8 +105,6 @@ func NewClickHouseSchemaClient(
 	return &clickhouseSchemaClient{
 		log:         log.WithField("component", "clickhouse_schema"),
 		cfg:         cfg,
-		proxySvc:    proxySvc,
-		httpClient:  &http.Client{},
 		queryClient: newClickhouseSchemaQueryClient(proxySvc, &http.Client{}, cfg.QueryTimeout),
 		clusters:    make(map[string]*ClusterTables, 2),
 		datasources: make(map[string]string, 2),
@@ -169,7 +165,7 @@ func (c *clickhouseSchemaClient) Start(ctx context.Context) error {
 
 // initDatasources initializes proxy-backed datasource mappings.
 func (c *clickhouseSchemaClient) initDatasources() error {
-	if c.schemaQueries().proxySvc == nil {
+	if c.queryClient.proxySvc == nil {
 		return fmt.Errorf("proxy service is required for schema discovery")
 	}
 
@@ -334,7 +330,7 @@ func (c *clickhouseSchemaClient) discoverClusterSchema(
 	clusterName string,
 	datasourceName string,
 ) (*ClusterTables, error) {
-	queries := c.schemaQueries()
+	queries := c.queryClient
 
 	tables, err := queries.fetchTableList(ctx, datasourceName)
 	if err != nil {
