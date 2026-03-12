@@ -10,7 +10,6 @@ import (
 	"github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/sirupsen/logrus"
 )
@@ -39,7 +38,7 @@ func (b *DockerBackend) cleanupExpiredContainers(ctx context.Context) error {
 	filterArgs := filters.NewArgs()
 	filterArgs.Add("label", LabelManaged+"=true")
 
-	containers, err := b.client.ContainerList(ctx, container.ListOptions{
+	containers, err := b.listContainers(ctx, container.ListOptions{
 		All:     true,
 		Filters: filterArgs,
 	})
@@ -96,7 +95,7 @@ func (b *DockerBackend) cleanupExpiredContainers(ctx context.Context) error {
 
 // ensureImage ensures the sandbox image is available locally.
 func (b *DockerBackend) ensureImage(ctx context.Context) error {
-	_, err := b.client.ImageInspect(ctx, b.cfg.Image)
+	err := b.inspectImage(ctx, b.cfg.Image)
 	if err == nil {
 		return nil
 	}
@@ -108,7 +107,7 @@ func (b *DockerBackend) ensureImage(ctx context.Context) error {
 	// Image not found, try to pull it.
 	b.log.WithField("image", b.cfg.Image).Info("Pulling sandbox image")
 
-	reader, err := b.client.ImagePull(ctx, b.cfg.Image, image.PullOptions{})
+	reader, err := b.pullImage(ctx, b.cfg.Image)
 	if err != nil {
 		return fmt.Errorf("pulling image: %w", err)
 	}
@@ -139,7 +138,7 @@ func (b *DockerBackend) ensureNetwork(ctx context.Context) error {
 	log := b.log.WithField("network", networkName)
 
 	// Check if the network already exists.
-	_, err := b.client.NetworkInspect(ctx, networkName, network.InspectOptions{})
+	err := b.inspectNetwork(ctx, networkName)
 	if err == nil {
 		log.Debug("Sandbox network exists")
 		return nil
@@ -152,7 +151,7 @@ func (b *DockerBackend) ensureNetwork(ctx context.Context) error {
 	// Network not found, create it.
 	log.Info("Creating sandbox network")
 
-	_, err = b.client.NetworkCreate(ctx, networkName, network.CreateOptions{
+	err = b.createNetwork(ctx, networkName, network.CreateOptions{
 		Driver: "bridge",
 		Labels: map[string]string{
 			LabelManaged: "true",

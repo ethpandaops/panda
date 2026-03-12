@@ -30,12 +30,12 @@ type App struct {
 
 	ModuleRegistry *module.Registry
 	Sandbox        sandbox.Service
-	ProxyClient    proxy.Client
+	ProxyService   proxy.Service
 	Cartographoor  cartographoor.CartographoorClient
 
 	moduleRegistryBuilder func() (*module.Registry, error)
 	sandboxBuilder        func() (sandbox.Service, error)
-	proxyClientBuilder    func() proxy.Client
+	proxyServiceBuilder   func() proxy.Service
 	cartographoorBuilder  func() cartographoor.CartographoorClient
 }
 
@@ -50,7 +50,7 @@ func New(log logrus.FieldLogger, cfg *config.Config) *App {
 	app.sandboxBuilder = func() (sandbox.Service, error) {
 		return sandbox.New(app.cfg.Sandbox, app.log)
 	}
-	app.proxyClientBuilder = app.buildProxyClient
+	app.proxyServiceBuilder = app.buildProxyService
 	app.cartographoorBuilder = app.newCartographoorClient
 
 	return app
@@ -77,8 +77,8 @@ func (a *App) stop(ctx context.Context) {
 		a.ModuleRegistry.StopAll(ctx)
 	}
 
-	if a.ProxyClient != nil {
-		_ = a.ProxyClient.Stop(ctx)
+	if a.ProxyService != nil {
+		_ = a.ProxyService.Stop(ctx)
 	}
 
 	if a.Sandbox != nil {
@@ -101,16 +101,18 @@ func (a *App) buildModuleRegistry() (*module.Registry, error) {
 }
 
 // initModules initializes all registered modules.
-func (a *App) initModules(proxyClient proxy.Client) error {
+func (a *App) initModules(proxySvc proxy.Service) error {
 	reg := a.ModuleRegistry
+
+	snapshot := proxySvc.Datasources()
 
 	// Collect discovered datasources.
 	var discovered []types.DatasourceInfo
-	discovered = append(discovered, proxyClient.ClickHouseDatasourceInfo()...)
-	discovered = append(discovered, proxyClient.PrometheusDatasourceInfo()...)
-	discovered = append(discovered, proxyClient.LokiDatasourceInfo()...)
+	discovered = append(discovered, proxy.FilterDatasourceInfoByType(snapshot.Datasources, "clickhouse")...)
+	discovered = append(discovered, proxy.FilterDatasourceInfoByType(snapshot.Datasources, "prometheus")...)
+	discovered = append(discovered, proxy.FilterDatasourceInfoByType(snapshot.Datasources, "loki")...)
 
-	if proxyClient.EthNodeAvailable() {
+	if snapshot.EthNodeAvailable {
 		discovered = append(discovered, types.DatasourceInfo{
 			Type: "ethnode",
 			Name: "ethnode",
@@ -152,7 +154,7 @@ func (a *App) initModules(proxyClient proxy.Client) error {
 	return nil
 }
 
-func (a *App) buildProxyClient() proxy.Client {
+func (a *App) buildProxyService() proxy.Service {
 	cfg := proxy.ClientConfig{
 		URL: a.cfg.Proxy.URL,
 	}

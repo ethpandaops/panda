@@ -320,6 +320,9 @@ func (s *apiStubProxyService) S3Bucket() string                       { return "
 func (s *apiStubProxyService) S3PublicURLPrefix() string              { return "" }
 func (s *apiStubProxyService) EthNodeAvailable() bool                 { return false }
 func (s *apiStubProxyService) DatasourceInfo() []types.DatasourceInfo { return s.datasourceInfo }
+func (s *apiStubProxyService) Datasources() serverapi.DatasourcesResponse {
+	return serverapi.DatasourcesResponse{Datasources: s.datasourceInfo}
+}
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
 

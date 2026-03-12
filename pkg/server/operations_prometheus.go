@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ethpandaops/panda/pkg/operations"
+	"github.com/ethpandaops/panda/pkg/proxy"
 )
 
 func (s *service) registerPrometheusOperations() {
@@ -26,7 +27,7 @@ func (s *service) registerPrometheusOperations() {
 
 func (s *service) handlePrometheusListDatasources(w http.ResponseWriter) {
 	items := make([]operations.Datasource, 0)
-	for _, info := range s.proxyService.PrometheusDatasourceInfo() {
+	for _, info := range proxy.FilterDatasourceInfoByType(s.proxyService.Datasources().Datasources, "prometheus") {
 		items = append(items, operations.Datasource{
 			Name:        info.Name,
 			Description: info.Description,

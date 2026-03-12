@@ -20,6 +20,7 @@ import (
 	"github.com/ethpandaops/panda/pkg/cartographoor"
 	"github.com/ethpandaops/panda/pkg/operations"
 	"github.com/ethpandaops/panda/pkg/proxy"
+	"github.com/ethpandaops/panda/pkg/serverapi"
 	"github.com/ethpandaops/panda/pkg/types"
 )
 
@@ -515,7 +516,7 @@ func TestEthNodeHelperFlows(t *testing.T) {
 }
 
 func newOperationTestService(
-	proxyService *stubProxyService,
+	proxyService proxy.Service,
 	carto cartographoor.CartographoorClient,
 	httpClient *http.Client,
 ) *service {
@@ -586,10 +587,18 @@ func (s *stubProxyService) LokiDatasources() []string { return nil }
 func (s *stubProxyService) LokiDatasourceInfo() []types.DatasourceInfo {
 	return nil
 }
-func (s *stubProxyService) S3Bucket() string                       { return "" }
-func (s *stubProxyService) S3PublicURLPrefix() string              { return "" }
-func (s *stubProxyService) EthNodeAvailable() bool                 { return true }
-func (s *stubProxyService) DatasourceInfo() []types.DatasourceInfo { return nil }
+func (s *stubProxyService) S3Bucket() string          { return "" }
+func (s *stubProxyService) S3PublicURLPrefix() string { return "" }
+func (s *stubProxyService) EthNodeAvailable() bool    { return true }
+func (s *stubProxyService) DatasourceInfo() []types.DatasourceInfo {
+	return []types.DatasourceInfo{{Type: "ethnode", Name: "ethnode"}}
+}
+func (s *stubProxyService) Datasources() serverapi.DatasourcesResponse {
+	return serverapi.DatasourcesResponse{
+		Datasources:      s.DatasourceInfo(),
+		EthNodeAvailable: true,
+	}
+}
 
 type stubCartographoorClient struct {
 	activeNetworks map[string]discovery.Network

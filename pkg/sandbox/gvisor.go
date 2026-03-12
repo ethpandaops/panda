@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/docker/docker/api/types/system"
-	"github.com/docker/docker/client"
 	"github.com/sirupsen/logrus"
 
 	"github.com/ethpandaops/panda/pkg/config"
@@ -48,13 +47,13 @@ func (b *GVisorBackend) Name() string {
 func (b *GVisorBackend) Start(ctx context.Context) error {
 	b.log.Info("Starting gVisor sandbox backend")
 
-	dockerClient, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	dockerClient, err := b.newDockerClient()
 	if err != nil {
 		return fmt.Errorf("creating docker client: %w", err)
 	}
 
 	// Verify Docker is accessible.
-	if _, err := dockerClient.Ping(ctx); err != nil {
+	if err := b.pingDockerClient(ctx, dockerClient); err != nil {
 		return fmt.Errorf("connecting to docker daemon: %w", err)
 	}
 
@@ -66,17 +65,17 @@ func (b *GVisorBackend) Start(ctx context.Context) error {
 	}
 
 	// Ensure the sandbox image is available.
-	if err := b.ensureImage(ctx); err != nil {
+	if err := b.ensureSandboxImage(ctx); err != nil {
 		return fmt.Errorf("ensuring sandbox image: %w", err)
 	}
 
-	// Ensure the configured network exists (auto-creates if missing).
-	if err := b.ensureNetwork(ctx); err != nil {
+	// Ensure the configured network exists (auto-creates for stdio mode).
+	if err := b.ensureSandboxNetwork(ctx); err != nil {
 		return fmt.Errorf("ensuring sandbox network: %w", err)
 	}
 
 	// Start session manager if enabled.
-	if err := b.sessionManager.Start(ctx); err != nil {
+	if err := b.startSessionManager(ctx); err != nil {
 		return fmt.Errorf("starting session manager: %w", err)
 	}
 
@@ -87,7 +86,7 @@ func (b *GVisorBackend) Start(ctx context.Context) error {
 
 // verifyGVisorRuntime checks that the gVisor (runsc) runtime is available.
 func (b *GVisorBackend) verifyGVisorRuntime(ctx context.Context) error {
-	info, err := b.client.Info(ctx)
+	info, err := b.dockerInfo(ctx)
 	if err != nil {
 		return fmt.Errorf("getting docker info: %w", err)
 	}

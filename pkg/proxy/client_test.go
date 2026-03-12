@@ -38,11 +38,11 @@ func (s *stubCredentialStore) Load() (*authclient.Tokens, error) {
 
 func (s *stubCredentialStore) Clear() error { return nil }
 
-func (s *stubCredentialStore) GetAccessToken() (string, error) {
+func (s *stubCredentialStore) EnsureAccessToken() (string, error) {
 	return s.accessToken, s.accessTokenErr
 }
 
-func (s *stubCredentialStore) IsAuthenticated() bool {
+func (s *stubCredentialStore) HasUsableCredentialsHint() bool {
 	return s.isAuthenticated
 }
 
@@ -96,73 +96,58 @@ func TestProxyClientDiscover(t *testing.T) {
 			checkState: func(t *testing.T, client *proxyClient) {
 				t.Helper()
 
-				if got, want := client.ClickHouseDatasources(), []string{"ch-primary"}; !reflect.DeepEqual(got, want) {
-					t.Fatalf("ClickHouseDatasources() = %v, want %v", got, want)
-				}
-
-				if got, want := client.PrometheusDatasources(), []string{"prom-main"}; !reflect.DeepEqual(got, want) {
-					t.Fatalf("PrometheusDatasources() = %v, want %v", got, want)
-				}
-
-				if got, want := client.LokiDatasources(), []string{"logs-main"}; !reflect.DeepEqual(got, want) {
-					t.Fatalf("LokiDatasources() = %v, want %v", got, want)
-				}
-
-				if got := client.S3Bucket(); got != "artifacts" {
-					t.Fatalf("S3Bucket() = %q, want %q", got, "artifacts")
-				}
-
-				if got := client.S3PublicURLPrefix(); got != "https://cdn.example.com" {
-					t.Fatalf("S3PublicURLPrefix() = %q, want %q", got, "https://cdn.example.com")
-				}
-
-				if !client.EthNodeAvailable() {
-					t.Fatal("EthNodeAvailable() = false, want true")
-				}
-
-				gotInfo := client.DatasourceInfo()
-				wantInfo := []types.DatasourceInfo{
-					{
-						Type:        "clickhouse",
-						Name:        "ch-primary",
-						Description: "Main CH",
-						Metadata:    map[string]string{"region": "us-east-1"},
+				got := client.Datasources()
+				want := serverapi.DatasourcesResponse{
+					Datasources: []types.DatasourceInfo{
+						{
+							Type:        "clickhouse",
+							Name:        "ch-primary",
+							Description: "Main CH",
+							Metadata:    map[string]string{"region": "us-east-1"},
+						},
+						{
+							Type:        "prometheus",
+							Name:        "prom-main",
+							Description: "Prom",
+						},
+						{
+							Type:        "loki",
+							Name:        "logs-main",
+							Description: "Logs",
+						},
+						{
+							Type:        "other",
+							Name:        "ignored-other",
+							Description: "Ignored",
+						},
 					},
-					{
-						Type:        "prometheus",
-						Name:        "prom-main",
-						Description: "Prom",
-					},
-					{
-						Type:        "loki",
-						Name:        "logs-main",
-						Description: "Logs",
-					},
-					{
-						Type:        "other",
-						Name:        "ignored-other",
-						Description: "Ignored",
-					},
+					S3Bucket:          "artifacts",
+					S3PublicURLPrefix: "https://cdn.example.com",
+					EthNodeAvailable:  true,
 				}
-				if !reflect.DeepEqual(gotInfo, wantInfo) {
-					t.Fatalf("DatasourceInfo() = %#v, want %#v", gotInfo, wantInfo)
+				if !reflect.DeepEqual(got, want) {
+					t.Fatalf("Datasources() = %#v, want %#v", got, want)
 				}
 
-				gotInfo[0].Metadata["region"] = "mutated"
-				refetched := client.DatasourceInfo()
-				if refetched[0].Metadata["region"] != "us-east-1" {
-					t.Fatalf("DatasourceInfo() metadata was not cloned, got %q", refetched[0].Metadata["region"])
+				if gotNames, wantNames := client.ClickHouseDatasources(), []string{"ch-primary"}; !reflect.DeepEqual(gotNames, wantNames) {
+					t.Fatalf("ClickHouseDatasources() = %v, want %v", gotNames, wantNames)
+				}
+
+				got.Datasources[0].Metadata["region"] = "mutated"
+				refetched := client.Datasources()
+				if refetched.Datasources[0].Metadata["region"] != "us-east-1" {
+					t.Fatalf("Datasources() metadata was not cloned, got %q", refetched.Datasources[0].Metadata["region"])
 				}
 			},
 		},
 		{
-			name:         "unauthorized response returns auth required sentinel",
-			store:        &stubCredentialStore{loadTokens: &authclient.Tokens{AccessToken: "proxy-token"}, accessToken: "proxy-token"},
-			status:       http.StatusUnauthorized,
-			responseBody: "login required\n",
+			name:           "unauthorized response returns auth required sentinel",
+			store:          &stubCredentialStore{loadTokens: &authclient.Tokens{AccessToken: "proxy-token"}, accessToken: "proxy-token"},
+			status:         http.StatusUnauthorized,
+			responseBody:   "login required\n",
 			wantAuthHeader: "Bearer proxy-token",
-			wantErrIs:    ErrAuthenticationRequired,
-			wantErrText:  "login required",
+			wantErrIs:      ErrAuthenticationRequired,
+			wantErrText:    "login required",
 		},
 		{
 			name:         "unexpected status includes response body",
@@ -225,12 +210,12 @@ func TestProxyClientAuthorizeRequest(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name          string
-		initialAuth   string
-		store         *stubCredentialStore
-		wantAuth      string
-		wantErrIs     error
-		wantErrText   string
+		name        string
+		initialAuth string
+		store       *stubCredentialStore
+		wantAuth    string
+		wantErrIs   error
+		wantErrText string
 	}{
 		{
 			name:        "preserves existing authorization header",
@@ -312,8 +297,8 @@ func TestProxyClientStartAllowsAuthenticationRequired(t *testing.T) {
 		t.Fatalf("Start() unexpected error: %v", err)
 	}
 
-	if got := client.DatasourceInfo(); got != nil {
-		t.Fatalf("DatasourceInfo() after auth-required startup = %#v, want nil", got)
+	if got := client.Datasources().Datasources; got != nil {
+		t.Fatalf("Datasources().Datasources after auth-required startup = %#v, want nil", got)
 	}
 
 	if err := client.Stop(context.Background()); err != nil {
@@ -391,8 +376,8 @@ func TestProxyClientStartLoadsDatasourcesFromProxy(t *testing.T) {
 			{Type: "clickhouse", Name: "ch-primary", Description: "Main CH"},
 			{Type: "prometheus", Name: "prom-main", Description: "Main Prom"},
 		},
-		S3Bucket:          "artifacts",
-		EthNodeAvailable:  true,
+		S3Bucket:         "artifacts",
+		EthNodeAvailable: true,
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -417,11 +402,7 @@ func TestProxyClientStartLoadsDatasourcesFromProxy(t *testing.T) {
 		}
 	}()
 
-	if got, want := client.ClickHouseDatasources(), []string{"ch-primary"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("ClickHouseDatasources() = %v, want %v", got, want)
-	}
-
-	if got, want := client.PrometheusDatasources(), []string{"prom-main"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("PrometheusDatasources() = %v, want %v", got, want)
+	if got := client.Datasources(); !reflect.DeepEqual(got, response) {
+		t.Fatalf("Datasources() = %#v, want %#v", got, response)
 	}
 }

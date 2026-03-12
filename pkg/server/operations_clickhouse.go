@@ -20,7 +20,7 @@ func (s *service) registerClickHouseOperations() {
 
 func (s *service) handleClickHouseListDatasources(w http.ResponseWriter) {
 	items := make([]operations.Datasource, 0)
-	for _, info := range s.proxyService.ClickHouseDatasourceInfo() {
+	for _, info := range proxy.FilterDatasourceInfoByType(s.proxyService.Datasources().Datasources, "clickhouse") {
 		items = append(items, operations.Datasource{
 			Name:        info.Name,
 			Description: info.Description,

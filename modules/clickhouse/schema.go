@@ -2,40 +2,14 @@ package clickhouse
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
-	"regexp"
-	"sort"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
 
 	"github.com/ethpandaops/panda/pkg/proxy"
-)
-
-// Pre-compiled regexes for schema parsing.
-var (
-	// validIdentifier matches valid ClickHouse table/column identifiers.
-	validIdentifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-
-	// enginePattern extracts the engine name from a CREATE TABLE statement.
-	enginePattern = regexp.MustCompile(`ENGINE\s*=\s*(\w+)`)
-
-	// tableCommentPattern extracts the table comment from a CREATE TABLE statement.
-	tableCommentPattern = regexp.MustCompile(`COMMENT\s+'([^']*)'`)
-
-	// columnPattern extracts column name and type from a column definition line.
-	columnPattern = regexp.MustCompile("(?m)^\\s*`([^`]+)`\\s+([^,\\n]+)")
-
-	// columnCommentPattern extracts the comment from a column definition.
-	columnCommentPattern = regexp.MustCompile(`COMMENT\s+'([^']*)'`)
-
-	// defaultPattern extracts the default expression from a column definition.
-	defaultPattern = regexp.MustCompile(`(DEFAULT|MATERIALIZED|ALIAS)\s+([^,\n]+?)(?:\s+(?:CODEC|COMMENT|$))`)
 )
 
 const (
@@ -85,11 +59,11 @@ type ClusterTables struct {
 
 // ClickHouseSchemaClient fetches and caches ClickHouse schema information.
 type ClickHouseSchemaClient interface {
-	// Start initializes the client and fetches initial schema data.
+	// Start initializes the client and kicks off the initial schema refresh asynchronously.
 	Start(ctx context.Context) error
 	// Stop stops background refresh.
 	Stop() error
-	// WaitForReady blocks until the initial schema fetch completes or ctx is cancelled.
+	// WaitForReady blocks until the first asynchronous schema refresh attempt completes or ctx is cancelled.
 	WaitForReady(ctx context.Context) error
 	// GetAllTables returns all tables across all clusters.
 	GetAllTables() map[string]*ClusterTables
@@ -101,9 +75,9 @@ type ClickHouseSchemaClient interface {
 var _ ClickHouseSchemaClient = (*clickhouseSchemaClient)(nil)
 
 type clickhouseSchemaClient struct {
-	log      logrus.FieldLogger
-	cfg      ClickHouseSchemaConfig
-	proxySvc proxy.ClickHouseSchemaAccess
+	log         logrus.FieldLogger
+	cfg         ClickHouseSchemaConfig
+	queryClient clickhouseSchemaQueryClient
 
 	mu          sync.RWMutex
 	clusters    map[string]*ClusterTables
@@ -112,8 +86,6 @@ type clickhouseSchemaClient struct {
 	done  chan struct{}
 	ready chan struct{} // closed when initial fetch completes
 	wg    sync.WaitGroup
-
-	httpClient *http.Client
 }
 
 // NewClickHouseSchemaClient creates a new schema discovery client.
@@ -133,12 +105,11 @@ func NewClickHouseSchemaClient(
 	return &clickhouseSchemaClient{
 		log:         log.WithField("component", "clickhouse_schema"),
 		cfg:         cfg,
-		proxySvc:    proxySvc,
+		queryClient: newClickhouseSchemaQueryClient(proxySvc, &http.Client{}, cfg.QueryTimeout),
 		clusters:    make(map[string]*ClusterTables, 2),
 		datasources: make(map[string]string, 2),
 		done:        make(chan struct{}),
 		ready:       make(chan struct{}),
-		httpClient:  &http.Client{},
 	}
 }
 
@@ -194,7 +165,7 @@ func (c *clickhouseSchemaClient) Start(ctx context.Context) error {
 
 // initDatasources initializes proxy-backed datasource mappings.
 func (c *clickhouseSchemaClient) initDatasources() error {
-	if c.proxySvc == nil {
+	if c.queryClient.proxySvc == nil {
 		return fmt.Errorf("proxy service is required for schema discovery")
 	}
 
@@ -237,7 +208,7 @@ func (c *clickhouseSchemaClient) Stop() error {
 	return nil
 }
 
-// WaitForReady blocks until the initial schema fetch completes or ctx is cancelled.
+// WaitForReady blocks until the first asynchronous schema refresh attempt completes or ctx is cancelled.
 func (c *clickhouseSchemaClient) WaitForReady(ctx context.Context) error {
 	select {
 	case <-c.ready:
@@ -359,8 +330,9 @@ func (c *clickhouseSchemaClient) discoverClusterSchema(
 	clusterName string,
 	datasourceName string,
 ) (*ClusterTables, error) {
-	// Get table list.
-	tables, err := c.fetchTableList(ctx, datasourceName)
+	queries := c.queryClient
+
+	tables, err := queries.fetchTableList(ctx, datasourceName)
 	if err != nil {
 		return nil, fmt.Errorf("fetching table list: %w", err)
 	}
@@ -391,7 +363,7 @@ func (c *clickhouseSchemaClient) discoverClusterSchema(
 				return
 			}
 
-			schema, err := c.fetchTableSchema(ctx, datasourceName, name)
+			schema, err := queries.fetchTableSchema(ctx, datasourceName, name)
 			if err != nil {
 				c.log.WithError(err).WithField("table", name).Debug("Failed to fetch table schema")
 
@@ -400,7 +372,7 @@ func (c *clickhouseSchemaClient) discoverClusterSchema(
 
 			// Get networks if table has meta_network_name column.
 			if schema.HasNetworkCol {
-				networks, err := c.fetchTableNetworks(ctx, datasourceName, name)
+				networks, err := queries.fetchTableNetworks(ctx, datasourceName, name)
 				if err != nil {
 					c.log.WithError(err).WithField("table", name).Debug("Failed to fetch table networks")
 				} else {
@@ -417,320 +389,4 @@ func (c *clickhouseSchemaClient) discoverClusterSchema(
 	wg.Wait()
 
 	return clusterTables, nil
-}
-
-type clickhouseJSONMeta struct {
-	Name string `json:"name"`
-}
-
-type clickhouseJSONResponse struct {
-	Meta []clickhouseJSONMeta `json:"meta"`
-	Data []map[string]any     `json:"data"`
-	Rows int                  `json:"rows"`
-	Err  *clickhouseJSONError `json:"error,omitempty"`
-}
-
-type clickhouseJSONError struct {
-	Message string `json:"message"`
-	Code    int    `json:"code"`
-}
-
-func pickColumn(meta []clickhouseJSONMeta, preferred string) string {
-	if preferred != "" {
-		for _, m := range meta {
-			if m.Name == preferred {
-				return m.Name
-			}
-		}
-	}
-
-	if len(meta) > 0 {
-		return meta[0].Name
-	}
-
-	return ""
-}
-
-func asString(value any) string {
-	switch v := value.(type) {
-	case string:
-		return v
-	default:
-		return fmt.Sprint(v)
-	}
-}
-
-func (c *clickhouseSchemaClient) queryJSON(ctx context.Context, datasourceName, sql string) (*clickhouseJSONResponse, error) {
-	if datasourceName == "" {
-		return nil, fmt.Errorf("datasource name is required")
-	}
-
-	baseURL := strings.TrimRight(c.proxySvc.URL(), "/")
-	if baseURL == "" {
-		return nil, fmt.Errorf("proxy URL is empty")
-	}
-
-	reqCtx, cancel := context.WithTimeout(ctx, c.cfg.QueryTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, baseURL+"/clickhouse/", strings.NewReader(sql))
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
-	}
-
-	req.Header.Set(proxy.DatasourceHeader, datasourceName)
-	if err := c.proxySvc.AuthorizeRequest(req); err != nil {
-		return nil, fmt.Errorf("authorizing request: %w", err)
-	}
-	req.Header.Set("Content-Type", "text/plain")
-
-	q := req.URL.Query()
-	q.Set("default_format", "JSON")
-	req.URL.RawQuery = q.Encode()
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("executing query: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("query failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-
-	var result clickhouseJSONResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decoding response: %w", err)
-	}
-
-	if result.Err != nil {
-		return nil, fmt.Errorf("query error (%d): %s", result.Err.Code, result.Err.Message)
-	}
-
-	return &result, nil
-}
-
-// fetchTableList fetches the list of tables from a ClickHouse datasource.
-func (c *clickhouseSchemaClient) fetchTableList(ctx context.Context, datasourceName string) ([]string, error) {
-	result, err := c.queryJSON(ctx, datasourceName, "SHOW TABLES")
-	if err != nil {
-		return nil, fmt.Errorf("executing SHOW TABLES: %w", err)
-	}
-
-	column := pickColumn(result.Meta, "name")
-	if column == "" {
-		return nil, fmt.Errorf("SHOW TABLES response missing columns")
-	}
-
-	tables := make([]string, 0, len(result.Data))
-	for _, row := range result.Data {
-		tableName := strings.TrimSpace(asString(row[column]))
-		if tableName == "" {
-			continue
-		}
-
-		// Skip tables with _local suffix (internal ClickHouse distributed table shards).
-		if strings.HasSuffix(tableName, "_local") {
-			continue
-		}
-
-		tables = append(tables, tableName)
-	}
-
-	return tables, nil
-}
-
-// validateIdentifier validates a ClickHouse table/column identifier to prevent SQL injection.
-func validateIdentifier(name string) error {
-	if !validIdentifier.MatchString(name) {
-		return fmt.Errorf("invalid identifier %q: must match [A-Za-z_][A-Za-z0-9_]*", name)
-	}
-
-	return nil
-}
-
-// fetchTableSchema fetches the schema for a specific table.
-func (c *clickhouseSchemaClient) fetchTableSchema(
-	ctx context.Context,
-	datasourceName string,
-	tableName string,
-) (*TableSchema, error) {
-	if err := validateIdentifier(tableName); err != nil {
-		return nil, fmt.Errorf("validating table name: %w", err)
-	}
-
-	query := fmt.Sprintf("SHOW CREATE TABLE `%s`", tableName)
-
-	result, err := c.queryJSON(ctx, datasourceName, query)
-	if err != nil {
-		return nil, fmt.Errorf("executing SHOW CREATE TABLE: %w", err)
-	}
-
-	if len(result.Data) == 0 {
-		return nil, fmt.Errorf("empty CREATE TABLE statement for table %s", tableName)
-	}
-
-	column := pickColumn(result.Meta, "")
-	if column == "" {
-		return nil, fmt.Errorf("SHOW CREATE TABLE response missing columns")
-	}
-
-	createStmt := strings.TrimSpace(asString(result.Data[0][column]))
-
-	if createStmt == "" {
-		return nil, fmt.Errorf("empty CREATE TABLE statement for table %s", tableName)
-	}
-
-	return parseCreateTable(tableName, createStmt)
-}
-
-// fetchTableNetworks fetches distinct networks available in a table.
-func (c *clickhouseSchemaClient) fetchTableNetworks(
-	ctx context.Context,
-	datasourceName string,
-	tableName string,
-) ([]string, error) {
-	if err := validateIdentifier(tableName); err != nil {
-		return nil, fmt.Errorf("validating table name: %w", err)
-	}
-
-	query := fmt.Sprintf(
-		"SELECT DISTINCT meta_network_name FROM `%s` WHERE meta_network_name IS NOT NULL AND meta_network_name != '' LIMIT 1000",
-		tableName,
-	)
-
-	result, err := c.queryJSON(ctx, datasourceName, query)
-	if err != nil {
-		return nil, fmt.Errorf("executing network query: %w", err)
-	}
-
-	column := pickColumn(result.Meta, "meta_network_name")
-	if column == "" {
-		return nil, fmt.Errorf("network query response missing columns")
-	}
-
-	networks := make([]string, 0, len(result.Data))
-	for _, row := range result.Data {
-		network := strings.TrimSpace(asString(row[column]))
-		if network != "" {
-			networks = append(networks, network)
-		}
-	}
-
-	sort.Strings(networks)
-
-	return networks, nil
-}
-
-// parseCreateTable parses SHOW CREATE TABLE output to extract schema info.
-func parseCreateTable(tableName, createStmt string) (*TableSchema, error) {
-	schema := &TableSchema{
-		Name:            tableName,
-		CreateStatement: createStmt,
-		Columns:         make([]TableColumn, 0, 32),
-	}
-
-	// Extract engine.
-	if matches := enginePattern.FindStringSubmatch(createStmt); len(matches) > 1 {
-		schema.Engine = matches[1]
-	}
-
-	// Extract table comment.
-	if matches := tableCommentPattern.FindStringSubmatch(createStmt); len(matches) > 1 {
-		schema.Comment = matches[1]
-	}
-
-	// Extract columns from the CREATE TABLE statement.
-	// Find the content between the first ( and the matching ).
-	startIdx := strings.Index(createStmt, "(")
-	if startIdx == -1 {
-		return schema, nil
-	}
-
-	// Find matching closing parenthesis.
-	depth := 0
-	endIdx := -1
-
-outerLoop:
-	for i := startIdx; i < len(createStmt); i++ {
-		switch createStmt[i] {
-		case '(':
-			depth++
-		case ')':
-			depth--
-
-			if depth == 0 {
-				endIdx = i
-
-				break outerLoop
-			}
-		}
-	}
-
-	if endIdx == -1 {
-		return schema, nil
-	}
-
-	columnsSection := createStmt[startIdx+1 : endIdx]
-
-	// Parse each column definition.
-	// Column format: `name` Type [DEFAULT expr] [CODEC(...)] [COMMENT 'comment'].
-
-	lines := strings.Split(columnsSection, "\n")
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "INDEX") || strings.HasPrefix(line, "PROJECTION") {
-			continue
-		}
-
-		colMatches := columnPattern.FindStringSubmatch(line)
-		if len(colMatches) < 3 {
-			continue
-		}
-
-		col := TableColumn{
-			Name: colMatches[1],
-			Type: strings.TrimSpace(colMatches[2]),
-		}
-
-		// Clean up the type - remove trailing commas and other clauses.
-		col.Type = cleanColumnType(col.Type)
-
-		// Extract comment.
-		if commentMatches := columnCommentPattern.FindStringSubmatch(line); len(commentMatches) > 1 {
-			col.Comment = commentMatches[1]
-		}
-
-		// Extract default.
-		if defaultMatches := defaultPattern.FindStringSubmatch(line); len(defaultMatches) > 2 {
-			col.DefaultType = defaultMatches[1]
-			col.DefaultValue = strings.TrimSpace(defaultMatches[2])
-		}
-
-		// Check for meta_network_name column.
-		if col.Name == "meta_network_name" {
-			schema.HasNetworkCol = true
-		}
-
-		schema.Columns = append(schema.Columns, col)
-	}
-
-	return schema, nil
-}
-
-// cleanColumnType removes trailing clauses from the column type.
-func cleanColumnType(colType string) string {
-	// Remove everything after DEFAULT, CODEC, COMMENT.
-	for _, keyword := range []string{" DEFAULT", " CODEC", " COMMENT", " MATERIALIZED", " ALIAS"} {
-		if idx := strings.Index(strings.ToUpper(colType), keyword); idx != -1 {
-			colType = colType[:idx]
-		}
-	}
-
-	// Remove trailing comma.
-	colType = strings.TrimSuffix(strings.TrimSpace(colType), ",")
-
-	return colType
 }

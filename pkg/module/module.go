@@ -19,54 +19,40 @@ import (
 // This is not an error - the module should be skipped gracefully.
 var ErrNoValidConfig = errors.New("no valid configuration entries")
 
-// RuntimeDependencies are the optional collaborators made available after
-// the application has started its shared runtime services.
+// RuntimeDependencies are the shared runtime collaborators made available
+// after bootstrap.
 type RuntimeDependencies struct {
 	ProxySchemaAccess proxy.ClickHouseSchemaAccess
 	Cartographoor     cartographoor.CartographoorClient
 }
 
-// RuntimeDependencyBinder is an optional interface for modules that need
-// shared runtime collaborators after initialization.
+// RuntimeDependencyBinder is for modules that need shared runtime collaborators.
 type RuntimeDependencyBinder interface {
 	BindRuntimeDependencies(deps RuntimeDependencies)
 }
 
-// Starter is an optional interface for modules that need async startup.
 type Starter interface {
 	Start(ctx context.Context) error
 }
 
-// Stopper is an optional interface for modules that need shutdown hooks.
 type Stopper interface {
 	Stop(ctx context.Context) error
 }
 
-// DefaultsApplier is an optional interface for modules that need a post-init
-// defaults pass before validation.
 type DefaultsApplier interface {
 	ApplyDefaults()
 }
 
 // ProxyDiscoverable modules initialize from datasources discovered via the proxy.
 type ProxyDiscoverable interface {
-	// InitFromDiscovery initializes the module from discovered datasources.
-	// Returns ErrNoValidConfig if no relevant datasources exist.
 	InitFromDiscovery(datasources []types.DatasourceInfo) error
 }
 
-// DefaultEnabled is an optional interface that modules can implement
-// to indicate they should be initialized even without explicit config.
-// This is useful for modules like dora that work with discovered data
-// and require no user configuration.
+// DefaultEnabled marks modules that should be initialized even without explicit config.
 type DefaultEnabled interface {
-	// DefaultEnabled returns true if the module should be initialized
-	// without explicit config in the config file.
 	DefaultEnabled() bool
 }
 
-// EnabledAware is an optional interface for modules that can be
-// initialized but still disabled via config.
 type EnabledAware interface {
 	Enabled() bool
 }
@@ -79,27 +65,22 @@ type ResourceRegistry interface {
 	RegisterTemplate(res types.TemplateResource)
 }
 
-// SandboxEnvProvider contributes sandbox environment variables.
 type SandboxEnvProvider interface {
 	SandboxEnv() (map[string]string, error)
 }
 
-// ExamplesProvider contributes search examples and examples:// resources.
 type ExamplesProvider interface {
 	Examples() map[string]types.ExampleCategory
 }
 
-// PythonAPIDocsProvider contributes Python module docs.
 type PythonAPIDocsProvider interface {
 	PythonAPIDocs() map[string]types.ModuleDoc
 }
 
-// GettingStartedSnippetProvider contributes snippets to the getting-started resource.
 type GettingStartedSnippetProvider interface {
 	GettingStartedSnippet() string
 }
 
-// ResourceProvider contributes custom MCP resources.
 type ResourceProvider interface {
 	RegisterResources(log logrus.FieldLogger, reg ResourceRegistry) error
 }
@@ -108,12 +89,7 @@ type ResourceProvider interface {
 // Optional lifecycle and capabilities are expressed through the provider
 // interfaces above.
 type Module interface {
-	// Name returns the module identifier (e.g. "clickhouse").
 	Name() string
-
-	// Init parses the raw YAML config section for this module.
 	Init(rawConfig []byte) error
-
-	// Validate checks that the parsed config is valid.
 	Validate() error
 }

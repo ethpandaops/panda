@@ -138,21 +138,15 @@ func (h *manageSessionHandler) handle(ctx context.Context, request mcp.CallToolR
 }
 
 func (h *manageSessionHandler) handleList(ctx context.Context, ownerID string) (*mcp.CallToolResult, error) {
-	h.log.WithField("owner_id", ownerID).Debug("Listing sessions")
-
 	sessions, maxSessions, err := h.service.ListSessions(ctx, ownerID)
 	if err != nil {
 		return CallToolError(fmt.Errorf("listing sessions: %w", err)), nil
 	}
 
-	h.log.WithField("count", len(sessions)).Debug("Listed sessions")
-
 	return marshalManageSessionResponse(buildListSessionsResponse(sessions, maxSessions))
 }
 
 func (h *manageSessionHandler) handleCreate(ctx context.Context, ownerID string) (*mcp.CallToolResult, error) {
-	h.log.WithField("owner_id", ownerID).Debug("Creating session")
-
 	created, err := h.service.CreateSession(ctx, ownerID)
 	if err != nil {
 		return CallToolError(err), nil
@@ -167,11 +161,6 @@ func (h *manageSessionHandler) handleDestroy(
 	ctx context.Context,
 	sessionID, ownerID string,
 ) (*mcp.CallToolResult, error) {
-	h.log.WithFields(logrus.Fields{
-		"session_id": sessionID,
-		"owner_id":   ownerID,
-	}).Debug("Destroying session")
-
 	if err := h.service.DestroySession(ctx, sessionID, ownerID); err != nil {
 		return CallToolError(err), nil
 	}

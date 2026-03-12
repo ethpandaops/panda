@@ -15,6 +15,7 @@ import (
 	"github.com/ethpandaops/panda/pkg/module"
 	"github.com/ethpandaops/panda/pkg/proxy"
 	"github.com/ethpandaops/panda/pkg/sandbox"
+	"github.com/ethpandaops/panda/pkg/serverapi"
 	"github.com/ethpandaops/panda/pkg/types"
 )
 
@@ -141,8 +142,8 @@ func TestBootstrapStopsStartedServicesWhenModuleStartFails(t *testing.T) {
 		t.Fatalf("sandbox stop calls = %d, want 1", sandboxStub.stopCalls)
 	}
 
-	if app.ProxyClient.(*fakeProxyClient).stopCalls != 1 {
-		t.Fatalf("proxy stop calls = %d, want 1", app.ProxyClient.(*fakeProxyClient).stopCalls)
+	if app.ProxyService.(*fakeProxyClient).stopCalls != 1 {
+		t.Fatalf("proxy stop calls = %d, want 1", app.ProxyService.(*fakeProxyClient).stopCalls)
 	}
 
 	if moduleStub.stopCalls != 1 {
@@ -176,8 +177,8 @@ func TestBootstrapStopsStartedServicesWhenCartographoorStartFails(t *testing.T) 
 		t.Fatalf("sandbox stop calls = %d, want 1", sandboxStub.stopCalls)
 	}
 
-	if app.ProxyClient.(*fakeProxyClient).stopCalls != 1 {
-		t.Fatalf("proxy stop calls = %d, want 1", app.ProxyClient.(*fakeProxyClient).stopCalls)
+	if app.ProxyService.(*fakeProxyClient).stopCalls != 1 {
+		t.Fatalf("proxy stop calls = %d, want 1", app.ProxyService.(*fakeProxyClient).stopCalls)
 	}
 
 	if moduleStub.stopCalls != 1 {
@@ -286,7 +287,7 @@ func TestBootstrapStopsStartedServicesWhenProxyStartFails(t *testing.T) {
 		startErr: errors.New("proxy failed"),
 		calls:    calls,
 	}
-	app.proxyClientBuilder = func() proxy.Client {
+	app.proxyServiceBuilder = func() proxy.Service {
 		*calls = append(*calls, "proxy-build")
 		return proxyStub
 	}
@@ -360,8 +361,8 @@ func TestAppConfigStopAndBuildModuleRegistry(t *testing.T) {
 		t.Fatalf("module stop calls = %d, want 1", moduleStub.stopCalls)
 	}
 
-	if app.ProxyClient.(*fakeProxyClient).stopCalls != 1 {
-		t.Fatalf("proxy stop calls = %d, want 1", app.ProxyClient.(*fakeProxyClient).stopCalls)
+	if app.ProxyService.(*fakeProxyClient).stopCalls != 1 {
+		t.Fatalf("proxy stop calls = %d, want 1", app.ProxyService.(*fakeProxyClient).stopCalls)
 	}
 
 	if sandboxStub.stopCalls != 1 {
@@ -523,7 +524,7 @@ func newTestApp(t *testing.T) (*App, *fakeModule, *fakeSandboxService, *fakeCart
 		*calls = append(*calls, "sandbox-build")
 		return sandboxStub, nil
 	}
-	app.proxyClientBuilder = func() proxy.Client {
+	app.proxyServiceBuilder = func() proxy.Service {
 		*calls = append(*calls, "proxy-build")
 		return proxyStub
 	}
@@ -689,6 +690,10 @@ func (f *fakeProxyClient) EthNodeAvailable() bool { return false }
 
 func (f *fakeProxyClient) DatasourceInfo() []types.DatasourceInfo { return nil }
 
+func (f *fakeProxyClient) Datasources() serverapi.DatasourcesResponse {
+	return serverapi.DatasourcesResponse{}
+}
+
 func (f *fakeProxyClient) Discover(context.Context) error { return nil }
 
 func (f *fakeProxyClient) EnsureAuthenticated(context.Context) error { return nil }
@@ -735,6 +740,6 @@ var (
 	_ module.RuntimeDependencyBinder    = (*fakeModule)(nil)
 	_ module.SandboxEnvProvider         = (*fakeModule)(nil)
 	_ sandbox.Service                   = (*fakeSandboxService)(nil)
-	_ proxy.Client                      = (*fakeProxyClient)(nil)
+	_ proxy.Service                     = (*fakeProxyClient)(nil)
 	_ cartographoor.CartographoorClient = (*fakeCartographoorClient)(nil)
 )

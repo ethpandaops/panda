@@ -68,12 +68,11 @@ func (b *DockerBackend) executeEphemeral(ctx context.Context, req ExecuteRequest
 	defer cancel()
 
 	// Create container.
-	resp, err := b.client.ContainerCreate(execCtx, containerConfig, hostConfig, nil, nil, "")
+	containerID, err := b.createContainer(execCtx, containerConfig, hostConfig)
 	if err != nil {
 		return nil, fmt.Errorf("creating container: %w", err)
 	}
 
-	containerID := resp.ID
 	b.trackContainer(executionID, containerID)
 
 	defer func() {
@@ -87,7 +86,7 @@ func (b *DockerBackend) executeEphemeral(ctx context.Context, req ExecuteRequest
 	// Start container.
 	startTime := time.Now()
 
-	if err := b.client.ContainerStart(execCtx, containerID, container.StartOptions{}); err != nil {
+	if err := b.startContainer(execCtx, containerID); err != nil {
 		return nil, fmt.Errorf("starting container: %w", err)
 	}
 
@@ -241,7 +240,7 @@ func (b *DockerBackend) waitForContainer(
 	defer cancel()
 
 	// Wait for container to exit.
-	statusCh, errCh := b.client.ContainerWait(waitCtx, containerID, container.WaitConditionNotRunning)
+	statusCh, errCh := b.waitContainer(waitCtx, containerID, container.WaitConditionNotRunning)
 
 	select {
 	case err := <-errCh:
@@ -269,7 +268,7 @@ func (b *DockerBackend) waitForContainer(
 
 // getContainerLogs retrieves stdout and stderr from a container.
 func (b *DockerBackend) getContainerLogs(ctx context.Context, containerID string) (string, string, error) {
-	logReader, err := b.client.ContainerLogs(ctx, containerID, container.LogsOptions{
+	logReader, err := b.readContainerLogs(ctx, containerID, container.LogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 	})
@@ -341,7 +340,7 @@ func (b *DockerBackend) untrackContainer(executionID string) {
 
 // forceKillContainer forcefully kills a running container.
 func (b *DockerBackend) forceKillContainer(ctx context.Context, containerID string) error {
-	if err := b.client.ContainerKill(ctx, containerID, "SIGKILL"); err != nil {
+	if err := b.killContainer(ctx, containerID, "SIGKILL"); err != nil {
 		// Ignore "not found" errors.
 		if !errdefs.IsNotFound(err) {
 			return fmt.Errorf("killing container: %w", err)
@@ -353,7 +352,7 @@ func (b *DockerBackend) forceKillContainer(ctx context.Context, containerID stri
 
 // forceRemoveContainer forcefully removes a container.
 func (b *DockerBackend) forceRemoveContainer(ctx context.Context, containerID string) error {
-	if err := b.client.ContainerRemove(ctx, containerID, container.RemoveOptions{Force: true}); err != nil {
+	if err := b.removeContainerAPI(ctx, containerID, container.RemoveOptions{Force: true}); err != nil {
 		if !errdefs.IsNotFound(err) {
 			return fmt.Errorf("removing container: %w", err)
 		}

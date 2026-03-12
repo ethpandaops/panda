@@ -69,7 +69,7 @@ func (s *service) Start(ctx context.Context) error {
 	mux.HandleFunc("/health", s.healthHandler)
 	mux.HandleFunc("/ready", s.readyHandler)
 
-	s.server = &http.Server{
+	server := &http.Server{
 		Addr:              addr,
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
@@ -77,17 +77,19 @@ func (s *service) Start(ctx context.Context) error {
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
-	s.reg = reg
 
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("failed to listen on %s: %w", addr, err)
 	}
 
+	s.server = server
+	s.reg = reg
+
 	go func() {
 		s.log.WithField("address", addr).Info("Starting metrics server")
 
-		if err := s.server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			s.log.WithError(err).Error("Metrics server error")
 		}
 	}()

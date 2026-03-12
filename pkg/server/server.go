@@ -30,6 +30,13 @@ import (
 	"github.com/ethpandaops/panda/pkg/types"
 )
 
+// Transport constants.
+const (
+	TransportStdio          = "stdio"
+	TransportSSE            = "sse"
+	TransportStreamableHTTP = "streamable-http"
+)
+
 // Service is the main MCP server service.
 type Service interface {
 	// Start initializes and starts the MCP server.
@@ -59,6 +66,7 @@ type service struct {
 	sseServer            *mcpserver.SSEServer
 	streamableHTTPServer *mcpserver.StreamableHTTPServer
 	httpServer           *http.Server
+	serveStdioFunc       func(*mcpserver.MCPServer) error
 	mu                   sync.Mutex
 	done                 chan struct{}
 	running              bool
@@ -98,6 +106,9 @@ func NewService(
 		operationHandlers:   make(map[string]operationHandler, 32),
 		done:                make(chan struct{}),
 	}
+	srv.serveStdioFunc = func(server *mcpserver.MCPServer) error {
+		return mcpserver.ServeStdio(server)
+	}
 
 	srv.registerOperations()
 
@@ -116,7 +127,15 @@ func (s *service) Start(ctx context.Context) error {
 	s.running = true
 	s.mu.Unlock()
 
-	s.log.WithField("version", version.Version).Info("Starting MCP server")
+	transport := s.cfg.Transport
+	if transport == "" {
+		transport = "http"
+	}
+
+	s.log.WithFields(logrus.Fields{
+		"transport": transport,
+		"version":   version.Version,
+	}).Info("Starting MCP server")
 
 	// Create the MCP server
 	s.mcpServer = mcpserver.NewMCPServer(
@@ -133,7 +152,16 @@ func (s *service) Start(ctx context.Context) error {
 	// Register resources
 	s.registerResources()
 
-	return s.runHTTP(ctx)
+	switch s.cfg.Transport {
+	case TransportStdio:
+		return s.runStdio(ctx)
+	case "", TransportSSE:
+		return s.runHTTP(ctx)
+	case TransportStreamableHTTP:
+		return s.runStreamableHTTP(ctx)
+	default:
+		return fmt.Errorf("unknown transport: %s", s.cfg.Transport)
+	}
 }
 
 // Stop gracefully shuts down the server.
@@ -309,6 +337,136 @@ func (s *service) runHTTP(ctx context.Context) error {
 		"/message/*": s.sseServer,
 		"/mcp":       s.streamableHTTPServer,
 		"/mcp/*":     s.streamableHTTPServer,
+	})
+
+	s.httpServer = &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+
+	errCh := make(chan error, 1)
+
+	go func() {
+		errCh <- s.httpServer.ListenAndServe()
+	}()
+
+	observability.ActiveConnections.Inc()
+	defer observability.ActiveConnections.Dec()
+
+	select {
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		return s.httpServer.Shutdown(shutdownCtx)
+	case <-s.done:
+		return nil
+	case err := <-errCh:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+
+		return nil
+	}
+}
+
+// runStdio runs the server using stdio transport.
+func (s *service) runStdio(ctx context.Context) error {
+	s.log.Info("Running MCP server with stdio transport")
+
+	errCh := make(chan error, 1)
+
+	go func() {
+		errCh <- s.serveStdio(s.mcpServer)
+	}()
+
+	select {
+	case <-ctx.Done():
+		return nil
+	case <-s.done:
+		return nil
+	case err := <-errCh:
+		return err
+	}
+}
+
+func (s *service) serveStdio(server *mcpserver.MCPServer) error {
+	if s.serveStdioFunc != nil {
+		return s.serveStdioFunc(server)
+	}
+
+	return mcpserver.ServeStdio(server)
+}
+
+// runSSE runs the server using SSE transport.
+func (s *service) runSSE(ctx context.Context) error {
+	addr := fmt.Sprintf("%s:%d", s.cfg.Host, s.cfg.Port)
+
+	s.log.WithField("address", addr).Info("Running MCP server with SSE transport")
+
+	opts := []mcpserver.SSEOption{
+		mcpserver.WithKeepAlive(true),
+	}
+
+	if s.cfg.BaseURL != "" {
+		opts = append(opts, mcpserver.WithBaseURL(s.cfg.BaseURL))
+	}
+
+	s.sseServer = mcpserver.NewSSEServer(s.mcpServer, opts...)
+
+	handler := s.buildHTTPHandler(map[string]http.Handler{
+		"/sse":       s.sseServer,
+		"/sse/*":     s.sseServer,
+		"/message":   s.sseServer,
+		"/message/*": s.sseServer,
+	})
+
+	s.httpServer = &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+
+	errCh := make(chan error, 1)
+
+	go func() {
+		errCh <- s.httpServer.ListenAndServe()
+	}()
+
+	observability.ActiveConnections.Inc()
+	defer observability.ActiveConnections.Dec()
+
+	select {
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		return s.httpServer.Shutdown(shutdownCtx)
+	case <-s.done:
+		return nil
+	case err := <-errCh:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+
+		return nil
+	}
+}
+
+// runStreamableHTTP runs the server using streamable HTTP transport.
+func (s *service) runStreamableHTTP(ctx context.Context) error {
+	addr := fmt.Sprintf("%s:%d", s.cfg.Host, s.cfg.Port)
+
+	s.log.WithField("address", addr).Info("Running MCP server with streamable-http transport")
+
+	s.streamableHTTPServer = mcpserver.NewStreamableHTTPServer(s.mcpServer)
+
+	handler := s.buildHTTPHandler(map[string]http.Handler{
+		"/mcp":   s.streamableHTTPServer,
+		"/mcp/*": s.streamableHTTPServer,
 	})
 
 	s.httpServer = &http.Server{

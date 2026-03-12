@@ -6,72 +6,53 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/ethpandaops/panda/pkg/types"
+	"github.com/ethpandaops/panda/pkg/serverapi"
 )
 
 // OutboundAuthorizer attaches proxy authentication to outbound HTTP requests.
 type OutboundAuthorizer interface {
-	// AuthorizeRequest mutates req so it can be sent to the proxy.
 	AuthorizeRequest(req *http.Request) error
 }
 
 // ClickHouseSchemaAccess is the narrow proxy contract used for ClickHouse
 // schema discovery.
 type ClickHouseSchemaAccess interface {
-	// URL returns the proxy URL.
 	URL() string
 
 	OutboundAuthorizer
 
-	// ClickHouseDatasources returns the available datasource names.
 	ClickHouseDatasources() []string
 }
 
-// Service is the credential proxy service interface.
-// This is implemented by both Client (for connecting to a proxy)
-// and directly by the proxy Server.
-type Service interface {
-	// Start starts the service.
-	Start(ctx context.Context) error
+// DatasourceDiscoverer refreshes datasource metadata from a remote proxy.
+type DatasourceDiscoverer interface {
+	Discover(ctx context.Context) error
+}
 
-	// Stop stops the service.
-	Stop(ctx context.Context) error
+// AuthenticationChecker verifies local credentials for the proxy control plane.
+type AuthenticationChecker interface {
+	EnsureAuthenticated(ctx context.Context) error
+}
 
-	// URL returns the proxy URL.
-	URL() string
+// DatasourceCatalog exposes the last known proxy datasource snapshot.
+type DatasourceCatalog interface {
+	Datasources() serverapi.DatasourcesResponse
+}
 
-	OutboundAuthorizer
-
-	// RegisterToken returns the current access token for server-to-proxy requests.
+// RuntimeTokens exposes execution-token wiring for runtime-authenticated server routes.
+type RuntimeTokens interface {
 	RegisterToken(executionID string) string
-
-	// RevokeToken is a no-op for client-managed bearer tokens.
 	RevokeToken(executionID string)
+}
 
-	// ClickHouseDatasources returns the list of ClickHouse datasource names.
-	ClickHouseDatasources() []string
-	// ClickHouseDatasourceInfo returns detailed ClickHouse datasource info.
-	ClickHouseDatasourceInfo() []types.DatasourceInfo
-
-	// PrometheusDatasources returns the list of Prometheus datasource names.
-	PrometheusDatasources() []string
-	// PrometheusDatasourceInfo returns detailed Prometheus datasource info.
-	PrometheusDatasourceInfo() []types.DatasourceInfo
-
-	// LokiDatasources returns the list of Loki datasource names.
-	LokiDatasources() []string
-	// LokiDatasourceInfo returns detailed Loki datasource info.
-	LokiDatasourceInfo() []types.DatasourceInfo
-
-	// S3Bucket returns the configured S3 bucket name.
-	S3Bucket() string
-
-	// S3PublicURLPrefix returns the public URL prefix for S3 objects.
-	S3PublicURLPrefix() string
-
-	// EthNodeAvailable returns true if ethnode proxy access is configured.
-	EthNodeAvailable() bool
-
-	// DatasourceInfo returns all datasource metadata exposed by the proxy.
-	DatasourceInfo() []types.DatasourceInfo
+// Service is the shared proxy boundary used by the app and MCP server.
+// Client-only behaviors such as discovery and credential checks live on
+// narrower optional interfaces.
+type Service interface {
+	Start(ctx context.Context) error
+	Stop(ctx context.Context) error
+	URL() string
+	OutboundAuthorizer
+	RuntimeTokens
+	DatasourceCatalog
 }

@@ -62,6 +62,9 @@ func (s *testProxyService) S3Bucket() string                           { return 
 func (s *testProxyService) S3PublicURLPrefix() string                  { return "" }
 func (s *testProxyService) EthNodeAvailable() bool                     { return false }
 func (s *testProxyService) DatasourceInfo() []types.DatasourceInfo     { return s.infos }
+func (s *testProxyService) Datasources() serverapi.DatasourcesResponse {
+	return serverapi.DatasourcesResponse{Datasources: s.infos}
+}
 
 type testToolLister struct {
 	tools []mcp.Tool
@@ -186,10 +189,6 @@ func TestRegisterDatasourcesResources(t *testing.T) {
 			{Type: "clickhouse", Name: "archive"},
 		},
 	})
-
-	if provider := NewDatasourceProvider(nil); provider.DatasourceInfo() != nil {
-		t.Fatalf("DatasourceInfo() with nil proxy = %#v, want nil", provider.DatasourceInfo())
-	}
 
 	var all DatasourcesJSONResponse
 	readJSONResource(t, reg, "datasources://list", &all)

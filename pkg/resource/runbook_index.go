@@ -1,14 +1,12 @@
 package resource
 
 import (
+	"errors"
 	"fmt"
+	"github.com/ethpandaops/panda/pkg/types"
+	"github.com/sirupsen/logrus"
 	"sort"
 	"strings"
-
-	"github.com/sirupsen/logrus"
-
-	"github.com/ethpandaops/panda/pkg/embedding"
-	"github.com/ethpandaops/panda/pkg/types"
 )
 
 // RunbookSearchResult includes the runbook and its similarity score.
@@ -25,16 +23,20 @@ type indexedRunbook struct {
 
 // RunbookIndex provides semantic search over runbooks.
 type RunbookIndex struct {
-	embedder *embedding.Embedder
+	embedder textEmbedder
 	runbooks []indexedRunbook
 }
 
 // NewRunbookIndex creates and populates a semantic search index from runbooks.
 func NewRunbookIndex(
 	log logrus.FieldLogger,
-	embedder *embedding.Embedder,
+	embedder textEmbedder,
 	runbooks []types.Runbook,
 ) (*RunbookIndex, error) {
+	if embedder == nil {
+		return nil, errors.New("embedder is required")
+	}
+
 	log = log.WithField("component", "runbook_index")
 
 	indexed := make([]indexedRunbook, 0, len(runbooks))
@@ -63,6 +65,14 @@ func NewRunbookIndex(
 
 // Search returns the top-k semantically similar runbooks for a query.
 func (idx *RunbookIndex) Search(query string, limit int) ([]RunbookSearchResult, error) {
+	if idx == nil || idx.embedder == nil {
+		return nil, errors.New("runbook index is not initialized")
+	}
+
+	if limit <= 0 {
+		return []RunbookSearchResult{}, nil
+	}
+
 	queryVec, err := idx.embedder.Embed(query)
 	if err != nil {
 		return nil, fmt.Errorf("embedding query: %w", err)
@@ -137,7 +147,7 @@ func extractOverview(content string, maxLen int) string {
 
 // Close releases resources held by the index.
 func (idx *RunbookIndex) Close() error {
-	idx.index = nil
+	idx.embedder = nil
 	idx.runbooks = nil
 	return nil
 }

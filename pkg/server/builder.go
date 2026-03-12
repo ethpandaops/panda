@@ -42,6 +42,11 @@ type Dependencies struct {
 type Builder struct {
 	log logrus.FieldLogger
 	cfg *config.Config
+
+	newApplication       func(logrus.FieldLogger, *config.Config) *app.App
+	bootstrapApplication func(context.Context, *app.App) error
+	stopApplication      func(context.Context, *app.App) error
+	buildSearchRuntime   func(logrus.FieldLogger, config.SemanticSearchConfig, *module.Registry) (*searchruntime.Runtime, error)
 }
 
 // NewBuilder creates a new server builder.
@@ -49,6 +54,19 @@ func NewBuilder(log logrus.FieldLogger, cfg *config.Config) *Builder {
 	return &Builder{
 		log: log.WithField("component", "builder"),
 		cfg: cfg,
+		newApplication: func(log logrus.FieldLogger, cfg *config.Config) *app.App {
+			return app.New(log, cfg)
+		},
+		bootstrapApplication: func(ctx context.Context, application *app.App) error {
+			return application.Bootstrap(ctx, app.BootstrapOptions{
+				StartSandbox:       true,
+				StartCartographoor: true,
+			})
+		},
+		stopApplication: func(ctx context.Context, application *app.App) error {
+			return application.Stop(ctx)
+		},
+		buildSearchRuntime: searchruntime.Build,
 	}
 }
 
@@ -57,17 +75,14 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 	b.log.Info("Building MCP server dependencies")
 
 	// Build shared application components (modules, sandbox, proxy, search indices).
-	application := app.New(b.log, b.cfg)
-	if err := application.Bootstrap(ctx, app.BootstrapOptions{
-		StartSandbox:       true,
-		StartCartographoor: true,
-	}); err != nil {
+	application := b.newApplication(b.log, b.cfg)
+	if err := b.bootstrapApplication(ctx, application); err != nil {
 		return nil, err
 	}
 
-	searchRuntime, err := searchruntime.Build(b.log, b.cfg.SemanticSearch, application.ModuleRegistry)
+	searchRuntime, err := b.buildSearchRuntime(b.log, b.cfg.SemanticSearch, application.ModuleRegistry)
 	if err != nil {
-		_ = application.Stop(ctx)
+		_ = b.stopApplication(ctx, application)
 		return nil, fmt.Errorf("building search runtime: %w", err)
 	}
 
@@ -113,7 +128,7 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 	// Create resource registry and register resources (MCP-server-specific).
 	resourceReg := b.buildResourceRegistry(
 		application.Cartographoor,
-		application.ProxyClient,
+		application.ProxyService,
 		application.ModuleRegistry,
 		toolReg,
 	)
@@ -121,11 +136,13 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 	cleanup := func(stopCtx context.Context) error {
 		var errs []error
 
-		if err := searchRuntime.Close(); err != nil {
-			errs = append(errs, err)
+		if searchRuntime != nil {
+			if err := searchRuntime.Close(); err != nil {
+				errs = append(errs, err)
+			}
 		}
 
-		if err := application.Stop(stopCtx); err != nil {
+		if err := b.stopApplication(stopCtx, application); err != nil {
 			errs = append(errs, err)
 		}
 
@@ -153,7 +170,7 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 		resourceReg,
 		searchSvc,
 		execSvc,
-		application.ProxyClient,
+		application.ProxyService,
 		storageSvc,
 		application.ModuleRegistry,
 		application.Cartographoor,
@@ -213,7 +230,7 @@ func buildProxyAuthMetadata(cfg *config.Config) *serverapi.ProxyAuthMetadataResp
 // buildResourceRegistry creates and populates the resource registry.
 func (b *Builder) buildResourceRegistry(
 	cartographoorClient cartographoor.CartographoorClient,
-	proxySvc proxy.Service,
+	proxySvc proxy.DatasourceCatalog,
 	moduleReg *module.Registry,
 	toolReg tool.Registry,
 ) resource.Registry {

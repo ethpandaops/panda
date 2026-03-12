@@ -82,8 +82,7 @@ func (ext *Module) Init(rawConfig []byte) error {
 	return nil
 }
 
-// ApplyDefaults sets default values before validation.
-// Validate checks that the parsed config is valid.
+// Validate checks that the configured datasources are unique and example data is available.
 func (ext *Module) Validate() error {
 	if err := module.EnsureExampleCatalogLoaded(&ext.examples, loadExamples); err != nil {
 		return err

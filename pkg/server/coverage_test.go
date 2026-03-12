@@ -73,10 +73,30 @@ func (s *coverageProxyService) LokiDatasources() []string { return nil }
 func (s *coverageProxyService) LokiDatasourceInfo() []types.DatasourceInfo {
 	return s.lokiInfo
 }
-func (s *coverageProxyService) S3Bucket() string                       { return "" }
-func (s *coverageProxyService) S3PublicURLPrefix() string              { return "" }
-func (s *coverageProxyService) EthNodeAvailable() bool                 { return false }
-func (s *coverageProxyService) DatasourceInfo() []types.DatasourceInfo { return nil }
+func (s *coverageProxyService) S3Bucket() string          { return "" }
+func (s *coverageProxyService) S3PublicURLPrefix() string { return "" }
+func (s *coverageProxyService) EthNodeAvailable() bool    { return false }
+func (s *coverageProxyService) DatasourceInfo() []types.DatasourceInfo {
+	infos := appendTypedDatasourceInfo(nil, "clickhouse", s.clickhouseInfo)
+	infos = appendTypedDatasourceInfo(infos, "prometheus", s.prometheusInfo)
+	infos = appendTypedDatasourceInfo(infos, "loki", s.lokiInfo)
+	return infos
+}
+func (s *coverageProxyService) Datasources() serverapi.DatasourcesResponse {
+	return serverapi.DatasourcesResponse{Datasources: s.DatasourceInfo()}
+}
+
+func appendTypedDatasourceInfo(dst []types.DatasourceInfo, kind string, infos []types.DatasourceInfo) []types.DatasourceInfo {
+	for _, info := range infos {
+		if info.Type == "" {
+			info.Type = kind
+		}
+
+		dst = append(dst, info)
+	}
+
+	return dst
+}
 
 func TestBuilderHelpersAndBuildFailure(t *testing.T) {
 	t.Parallel()

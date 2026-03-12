@@ -244,12 +244,7 @@ func (s *server) buildMiddlewareChain() func(http.Handler) http.Handler {
 
 // handleDatasources returns the list of available datasources.
 func (s *server) handleDatasources(w http.ResponseWriter, _ *http.Request) {
-	info := serverapi.DatasourcesResponse{
-		Datasources:       s.DatasourceInfo(),
-		S3Bucket:          s.S3Bucket(),
-		S3PublicURLPrefix: s.S3PublicURLPrefix(),
-		EthNodeAvailable:  s.EthNodeAvailable(),
-	}
+	info := s.Datasources()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -348,6 +343,15 @@ func (s *server) RegisterToken(executionID string) string {
 }
 
 func (s *server) RevokeToken(executionID string) {
+}
+
+func (s *server) Datasources() serverapi.DatasourcesResponse {
+	return serverapi.DatasourcesResponse{
+		Datasources:       s.DatasourceInfo(),
+		S3Bucket:          s.S3Bucket(),
+		S3PublicURLPrefix: s.S3PublicURLPrefix(),
+		EthNodeAvailable:  s.EthNodeAvailable(),
+	}
 }
 
 // ClickHouseDatasources returns the list of ClickHouse datasource names.

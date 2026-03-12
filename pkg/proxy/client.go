@@ -20,60 +20,6 @@ import (
 	"github.com/ethpandaops/panda/pkg/types"
 )
 
-// Client connects to a proxy server and provides datasource discovery plus
-// proxy-scoped bearer tokens for server-to-proxy calls.
-type Client interface {
-	// Start starts the client and performs initial discovery.
-	Start(ctx context.Context) error
-
-	// Stop stops the client.
-	Stop(ctx context.Context) error
-
-	// URL returns the proxy URL.
-	URL() string
-
-	OutboundAuthorizer
-
-	// RegisterToken returns the current proxy access token for server-to-proxy calls.
-	RegisterToken(executionID string) string
-
-	// RevokeToken is a no-op for client-managed bearer tokens.
-	RevokeToken(executionID string)
-
-	// ClickHouseDatasources returns the discovered ClickHouse datasource names.
-	ClickHouseDatasources() []string
-	// ClickHouseDatasourceInfo returns detailed ClickHouse datasource info.
-	ClickHouseDatasourceInfo() []types.DatasourceInfo
-
-	// PrometheusDatasources returns the discovered Prometheus datasource names.
-	PrometheusDatasources() []string
-	// PrometheusDatasourceInfo returns detailed Prometheus datasource info.
-	PrometheusDatasourceInfo() []types.DatasourceInfo
-
-	// LokiDatasources returns the discovered Loki datasource names.
-	LokiDatasources() []string
-	// LokiDatasourceInfo returns detailed Loki datasource info.
-	LokiDatasourceInfo() []types.DatasourceInfo
-
-	// S3Bucket returns the discovered S3 bucket name.
-	S3Bucket() string
-
-	// S3PublicURLPrefix returns the discovered S3 public URL prefix.
-	S3PublicURLPrefix() string
-
-	// EthNodeAvailable returns true if the proxy has ethnode credentials configured.
-	EthNodeAvailable() bool
-
-	// DatasourceInfo returns all discovered datasource metadata.
-	DatasourceInfo() []types.DatasourceInfo
-
-	// Discover fetches datasource information from the proxy.
-	Discover(ctx context.Context) error
-
-	// EnsureAuthenticated checks if the user has valid credentials.
-	EnsureAuthenticated(ctx context.Context) error
-}
-
 // ClientConfig configures the proxy client.
 type ClientConfig struct {
 	// URL is the base URL of the proxy server (e.g., http://localhost:18081).
@@ -109,7 +55,8 @@ func (c *ClientConfig) ApplyDefaults() {
 	}
 }
 
-// proxyClient implements Client for connecting to a proxy server.
+// proxyClient implements the shared proxy service plus client-only discovery
+// and authentication helpers for connecting to a remote proxy server.
 type proxyClient struct {
 	log        logrus.FieldLogger
 	cfg        ClientConfig
@@ -127,12 +74,13 @@ var ErrAuthenticationRequired = errors.New("proxy authentication required")
 
 // Compile-time interface checks.
 var (
-	_ Client  = (*proxyClient)(nil)
-	_ Service = (*proxyClient)(nil)
+	_ Service               = (*proxyClient)(nil)
+	_ DatasourceDiscoverer  = (*proxyClient)(nil)
+	_ AuthenticationChecker = (*proxyClient)(nil)
 )
 
 // NewClient creates a new proxy client.
-func NewClient(log logrus.FieldLogger, cfg ClientConfig) Client {
+func NewClient(log logrus.FieldLogger, cfg ClientConfig) Service {
 	cfg.ApplyDefaults()
 
 	c := &proxyClient{
@@ -175,7 +123,7 @@ func NewClient(log logrus.FieldLogger, cfg ClientConfig) Client {
 	return c
 }
 
-// Start starts the client and performs initial discovery.
+// Start starts the client and attempts initial discovery before background refresh begins.
 func (c *proxyClient) Start(ctx context.Context) error {
 	c.log.WithField("url", c.cfg.URL).Info("Starting proxy client")
 
@@ -264,40 +212,8 @@ func (c *proxyClient) AuthorizeRequest(req *http.Request) error {
 	return nil
 }
 
-func namesFromInfo(infos []types.DatasourceInfo) []string {
-	if len(infos) == 0 {
-		return nil
-	}
-
-	names := make([]string, 0, len(infos))
-	for _, info := range infos {
-		if info.Name != "" {
-			names = append(names, info.Name)
-		}
-	}
-
-	return names
-}
-
-func datasourceInfoByType(infos []types.DatasourceInfo, kind string) []types.DatasourceInfo {
-	if len(infos) == 0 {
-		return nil
-	}
-
-	filtered := make([]types.DatasourceInfo, 0, len(infos))
-	for _, info := range infos {
-		if info.Type != kind || info.Name == "" {
-			continue
-		}
-
-		filtered = append(filtered, info)
-	}
-
-	return filtered
-}
-
 func datasourceCountByType(infos []types.DatasourceInfo, kind string) int {
-	return len(datasourceInfoByType(infos, kind))
+	return len(FilterDatasourceInfoByType(infos, kind))
 }
 
 // ClickHouseDatasources returns the discovered ClickHouse datasource names.
@@ -305,79 +221,15 @@ func (c *proxyClient) ClickHouseDatasources() []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	return namesFromInfo(datasourceInfoByType(c.datasources.Datasources, "clickhouse"))
+	return DatasourceNames(FilterDatasourceInfoByType(c.datasources.Datasources, "clickhouse"))
 }
 
-// ClickHouseDatasourceInfo returns detailed ClickHouse datasource info.
-func (c *proxyClient) ClickHouseDatasourceInfo() []types.DatasourceInfo {
+// Datasources returns the last discovered proxy datasource snapshot.
+func (c *proxyClient) Datasources() serverapi.DatasourcesResponse {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	return datasourceInfoByType(c.datasources.Datasources, "clickhouse")
-}
-
-// PrometheusDatasources returns the discovered Prometheus datasource names.
-func (c *proxyClient) PrometheusDatasources() []string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	return namesFromInfo(datasourceInfoByType(c.datasources.Datasources, "prometheus"))
-}
-
-// PrometheusDatasourceInfo returns detailed Prometheus datasource info.
-func (c *proxyClient) PrometheusDatasourceInfo() []types.DatasourceInfo {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	return datasourceInfoByType(c.datasources.Datasources, "prometheus")
-}
-
-// LokiDatasources returns the discovered Loki datasource names.
-func (c *proxyClient) LokiDatasources() []string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	return namesFromInfo(datasourceInfoByType(c.datasources.Datasources, "loki"))
-}
-
-// LokiDatasourceInfo returns detailed Loki datasource info.
-func (c *proxyClient) LokiDatasourceInfo() []types.DatasourceInfo {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	return datasourceInfoByType(c.datasources.Datasources, "loki")
-}
-
-// S3Bucket returns the discovered S3 bucket name.
-func (c *proxyClient) S3Bucket() string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	return c.datasources.S3Bucket
-}
-
-// S3PublicURLPrefix returns the discovered S3 public URL prefix.
-func (c *proxyClient) S3PublicURLPrefix() string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	return c.datasources.S3PublicURLPrefix
-}
-
-// EthNodeAvailable returns true if the proxy has ethnode credentials configured.
-func (c *proxyClient) EthNodeAvailable() bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	return c.datasources.EthNodeAvailable
-}
-
-// DatasourceInfo returns all discovered datasource metadata.
-func (c *proxyClient) DatasourceInfo() []types.DatasourceInfo {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	return CloneDatasourceInfo(c.datasources.Datasources)
+	return CloneDatasourcesResponse(*c.datasources)
 }
 
 // Discover fetches datasource information from the proxy's /datasources endpoint.
@@ -469,7 +321,7 @@ func (c *proxyClient) loadAccessToken() (string, error) {
 		return "", ErrAuthenticationRequired
 	}
 
-	token, err := c.credStore.GetAccessToken()
+	token, err := c.credStore.EnsureAccessToken()
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", ErrAuthenticationRequired, err)
 	}

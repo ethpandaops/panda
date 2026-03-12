@@ -8,15 +8,13 @@ import (
 )
 
 func TestValidateReturnsExampleLoaderError(t *testing.T) {
-	t.Parallel()
-
 	previousLoader := loadExampleCatalog
 	loadExampleCatalog = func() (map[string]types.ExampleCategory, error) {
 		return nil, errors.New("catalog failed")
 	}
-	defer func() {
+	t.Cleanup(func() {
 		loadExampleCatalog = previousLoader
-	}()
+	})
 
 	module := New()
 	if err := module.Validate(); err == nil || err.Error() != "catalog failed" {

@@ -15,6 +15,9 @@ func (a *App) BuildSandboxEnv() (map[string]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("collecting sandbox env: %w", err)
 	}
+	if env == nil {
+		env = make(map[string]string, 1)
+	}
 
 	apiURL := a.sandboxAPIURL()
 	if apiURL == "" {

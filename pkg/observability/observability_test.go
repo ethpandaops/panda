@@ -73,6 +73,18 @@ func TestServiceStartServesHealthReadyAndMetrics(t *testing.T) {
 	require.NoError(t, svc.Stop())
 }
 
+func TestServiceStopImmediatelyAfterStartDoesNotPanic(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService(logrus.New(), config.ObservabilityConfig{
+		MetricsEnabled: true,
+		MetricsPort:    0,
+	}).(*service)
+
+	require.NoError(t, svc.Start(context.Background()))
+	require.NoError(t, svc.Stop())
+}
+
 func freePort(t *testing.T) int {
 	t.Helper()
 

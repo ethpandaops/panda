@@ -91,7 +91,7 @@ func (s *service) handleAPIDatasources(w http.ResponseWriter, r *http.Request) {
 	}
 
 	filterType := strings.TrimSpace(r.URL.Query().Get("type"))
-	all := s.proxyService.DatasourceInfo()
+	all := s.proxyService.Datasources().Datasources
 
 	if filterType != "" {
 		filtered := make([]types.DatasourceInfo, 0, len(all))

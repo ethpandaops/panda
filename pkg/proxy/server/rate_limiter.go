@@ -12,7 +12,7 @@ import (
 	"golang.org/x/time/rate"
 
 	simpleauth "github.com/ethpandaops/panda/pkg/auth"
-	"github.com/ethpandaops/panda/pkg/proxy/handlers"
+	"github.com/ethpandaops/panda/pkg/proxy"
 )
 
 // RateLimiter provides per-user rate limiting for the proxy.
@@ -223,7 +223,7 @@ func (a *Auditor) Middleware() func(http.Handler) http.Handler {
 				Method:         r.Method,
 				Path:           r.URL.Path,
 				DatasourceType: extractDatasourceType(r.URL.Path),
-				DatasourceName: r.Header.Get(handlers.DatasourceHeader),
+				DatasourceName: r.Header.Get(proxy.DatasourceHeader),
 				StatusCode:     wrapped.statusCode,
 				ResponseBytes:  wrapped.bytesWritten,
 				Duration:       time.Since(start).String(),

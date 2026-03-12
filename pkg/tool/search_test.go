@@ -68,7 +68,6 @@ func TestSearchHandlerHandle(t *testing.T) {
 	t.Parallel()
 
 	handler := &searchHandler{
-		log: logrus.New(),
 		service: searchsvc.New(
 			fakeExampleSearcher{results: []resource.SearchResult{{
 				CategoryKey:  "validators",

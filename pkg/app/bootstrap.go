@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/ethpandaops/panda/pkg/module"
+	"github.com/ethpandaops/panda/pkg/proxy"
 )
 
 // BootstrapOptions controls which optional runtime services are started.
@@ -37,7 +38,7 @@ func (a *App) Bootstrap(ctx context.Context, opts BootstrapOptions) error {
 		return err
 	}
 
-	if err := a.initModules(a.ProxyClient); err != nil {
+	if err := a.initModules(a.ProxyService); err != nil {
 		a.stop(ctx)
 
 		return fmt.Errorf("initializing modules: %w", err)
@@ -85,13 +86,13 @@ func (a *App) startSandbox(ctx context.Context) error {
 }
 
 func (a *App) startProxy(ctx context.Context) error {
-	proxyClient := a.proxyClientBuilder()
-	if err := proxyClient.Start(ctx); err != nil {
+	proxySvc := a.proxyServiceBuilder()
+	if err := proxySvc.Start(ctx); err != nil {
 		return fmt.Errorf("starting proxy client: %w", err)
 	}
 
-	a.ProxyClient = proxyClient
-	a.log.WithField("url", proxyClient.URL()).Info("Proxy client connected")
+	a.ProxyService = proxySvc
+	a.log.WithField("url", proxySvc.URL()).Info("Proxy client connected")
 
 	return nil
 }
@@ -113,8 +114,13 @@ func (a *App) bindRuntimeDependencies() {
 		return
 	}
 
+	var proxySchemaAccess proxy.ClickHouseSchemaAccess
+	if schemaAccess, ok := a.ProxyService.(proxy.ClickHouseSchemaAccess); ok {
+		proxySchemaAccess = schemaAccess
+	}
+
 	a.ModuleRegistry.BindRuntimeDependencies(module.RuntimeDependencies{
-		ProxySchemaAccess: a.ProxyClient,
+		ProxySchemaAccess: proxySchemaAccess,
 		Cartographoor:     a.Cartographoor,
 	})
 }

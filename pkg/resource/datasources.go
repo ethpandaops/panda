@@ -17,36 +17,14 @@ type DatasourcesJSONResponse struct {
 	Datasources []types.DatasourceInfo `json:"datasources"`
 }
 
-// DatasourceProvider provides datasource information from the proxy service.
-type DatasourceProvider struct {
-	proxySvc proxy.Service
-}
-
-// NewDatasourceProvider creates a new datasource provider.
-func NewDatasourceProvider(proxySvc proxy.Service) *DatasourceProvider {
-	return &DatasourceProvider{
-		proxySvc: proxySvc,
-	}
-}
-
-// DatasourceInfo returns datasource info from the proxy authority.
-func (p *DatasourceProvider) DatasourceInfo() []types.DatasourceInfo {
-	if p.proxySvc == nil {
-		return nil
-	}
-
-	return p.proxySvc.DatasourceInfo()
-}
-
 // RegisterDatasourcesResources registers the datasources:// resources
 // with the registry.
 func RegisterDatasourcesResources(
 	log logrus.FieldLogger,
 	reg Registry,
-	proxySvc proxy.Service,
+	proxySvc proxy.DatasourceCatalog,
 ) {
 	log = log.WithField("resource", "datasources")
-	provider := NewDatasourceProvider(proxySvc)
 
 	// datasources://list - all datasources
 	reg.RegisterStatic(StaticResource{
@@ -57,7 +35,7 @@ func RegisterDatasourcesResources(
 			mcp.WithMIMEType("application/json"),
 			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.8),
 		),
-		Handler: createDatasourcesHandler(provider, ""),
+		Handler: createDatasourcesHandler(proxySvc, ""),
 	})
 
 	// datasources://clickhouse
@@ -69,7 +47,7 @@ func RegisterDatasourcesResources(
 			mcp.WithMIMEType("application/json"),
 			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.7),
 		),
-		Handler: createDatasourcesHandler(provider, "clickhouse"),
+		Handler: createDatasourcesHandler(proxySvc, "clickhouse"),
 	})
 
 	// datasources://prometheus
@@ -81,7 +59,7 @@ func RegisterDatasourcesResources(
 			mcp.WithMIMEType("application/json"),
 			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.7),
 		),
-		Handler: createDatasourcesHandler(provider, "prometheus"),
+		Handler: createDatasourcesHandler(proxySvc, "prometheus"),
 	})
 
 	// datasources://loki
@@ -93,15 +71,18 @@ func RegisterDatasourcesResources(
 			mcp.WithMIMEType("application/json"),
 			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.7),
 		),
-		Handler: createDatasourcesHandler(provider, "loki"),
+		Handler: createDatasourcesHandler(proxySvc, "loki"),
 	})
 
 	log.Debug("Registered datasources resources")
 }
 
-func createDatasourcesHandler(provider *DatasourceProvider, filterType string) ReadHandler {
+func createDatasourcesHandler(proxySvc proxy.DatasourceCatalog, filterType string) ReadHandler {
 	return func(_ context.Context, _ string) (string, error) {
-		allInfos := provider.DatasourceInfo()
+		var allInfos []types.DatasourceInfo
+		if proxySvc != nil {
+			allInfos = proxySvc.Datasources().Datasources
+		}
 
 		var filtered []types.DatasourceInfo
 		if filterType == "" {

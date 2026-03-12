@@ -1,4 +1,4 @@
-package proxy
+package proxyserver
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	simpleauth "github.com/ethpandaops/panda/pkg/auth"
-	"github.com/ethpandaops/panda/pkg/proxy/handlers"
+	proxyapi "github.com/ethpandaops/panda/pkg/proxy"
 )
 
 const (
@@ -97,7 +97,7 @@ func metricsMiddleware(next http.Handler) http.Handler {
 		user, org := resolveUserLabels(r.Context())
 		dsType := extractDatasourceType(r.URL.Path)
 
-		ds := r.Header.Get(handlers.DatasourceHeader)
+		ds := r.Header.Get(proxyapi.DatasourceHeader)
 		if ds == "" {
 			ds = "default"
 		}
