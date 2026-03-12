@@ -54,6 +54,10 @@ type Config struct {
 
 	// Scopes are the OAuth scopes to request.
 	Scopes []string
+
+	// Headless uses the device authorization flow (RFC 8628) instead of
+	// the local callback server. Use for SSH or headless environments.
+	Headless bool
 }
 
 // client implements the Client interface.
@@ -67,11 +71,21 @@ type client struct {
 
 // OIDCConfig contains OIDC discovery configuration.
 type OIDCConfig struct {
-	Issuer                string   `json:"issuer"`
-	AuthorizationEndpoint string   `json:"authorization_endpoint"`
-	TokenEndpoint         string   `json:"token_endpoint"`
-	JwksURI               string   `json:"jwks_uri"`
-	ScopesSupported       []string `json:"scopes_supported"`
+	Issuer                      string   `json:"issuer"`
+	AuthorizationEndpoint       string   `json:"authorization_endpoint"`
+	TokenEndpoint               string   `json:"token_endpoint"`
+	DeviceAuthorizationEndpoint string   `json:"device_authorization_endpoint"`
+	JwksURI                     string   `json:"jwks_uri"`
+	ScopesSupported             []string `json:"scopes_supported"`
+}
+
+// deviceAuthResponse is the RFC 8628 device authorization response.
+type deviceAuthResponse struct {
+	DeviceCode      string `json:"device_code"`
+	UserCode        string `json:"user_code"`
+	VerificationURI string `json:"verification_uri"`
+	ExpiresIn       int    `json:"expires_in"`
+	Interval        int    `json:"interval"`
 }
 
 // New creates a new OAuth client.
@@ -97,6 +111,10 @@ func New(log logrus.FieldLogger, cfg Config) Client {
 
 // Login performs the OAuth PKCE flow.
 func (c *client) Login(ctx context.Context) (*Tokens, error) {
+	if c.cfg.Headless {
+		return c.loginDevice(ctx)
+	}
+
 	// Discover OIDC configuration.
 	if err := c.discover(ctx); err != nil {
 		return nil, fmt.Errorf("discovering OIDC config: %w", err)
@@ -153,6 +171,39 @@ func (c *client) Login(ctx context.Context) (*Tokens, error) {
 	tokens, err := c.exchangeCode(ctx, code, verifier)
 	if err != nil {
 		return nil, fmt.Errorf("exchanging code: %w", err)
+	}
+
+	return tokens, nil
+}
+
+// loginDevice performs the RFC 8628 device authorization flow.
+// It requests a device code, displays the user code, and polls until authorized.
+func (c *client) loginDevice(ctx context.Context) (*Tokens, error) {
+	if err := c.discover(ctx); err != nil {
+		return nil, fmt.Errorf("discovering auth config: %w", err)
+	}
+
+	if c.oidc.DeviceAuthorizationEndpoint == "" {
+		return nil, fmt.Errorf("server does not support device authorization flow")
+	}
+
+	// Request device code.
+	deviceResp, err := c.requestDeviceCode(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("requesting device code: %w", err)
+	}
+
+	// Display instructions.
+	fmt.Printf("\nOpen %s in your browser\nand enter the code:\n\n  %s\n\n",
+		deviceResp.VerificationURI, deviceResp.UserCode)
+	fmt.Println("Waiting for authorization... (press Ctrl+C to cancel)")
+
+	// Poll for token.
+	interval := max(time.Duration(deviceResp.Interval)*time.Second, 5*time.Second)
+
+	tokens, err := c.pollDeviceToken(ctx, deviceResp.DeviceCode, interval)
+	if err != nil {
+		return nil, err
 	}
 
 	return tokens, nil
@@ -387,6 +438,133 @@ func (c *client) exchangeCode(ctx context.Context, code, verifier string) (*Toke
 		ExpiresIn:    tokenResp.ExpiresIn,
 		ExpiresAt:    time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second),
 	}, nil
+}
+
+// requestDeviceCode requests a device authorization from the server.
+func (c *client) requestDeviceCode(ctx context.Context) (*deviceAuthResponse, error) {
+	data := url.Values{
+		"client_id": {c.cfg.ClientID},
+		"resource":  {c.cfg.Resource},
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		c.oidc.DeviceAuthorizationEndpoint, strings.NewReader(data.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("making request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+
+		return nil, fmt.Errorf("device code endpoint returned status %d: %s",
+			resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var deviceResp deviceAuthResponse
+	if err := json.NewDecoder(resp.Body).Decode(&deviceResp); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	return &deviceResp, nil
+}
+
+// pollDeviceToken polls the token endpoint until the device is authorized.
+func (c *client) pollDeviceToken(ctx context.Context, deviceCode string, interval time.Duration) (*Tokens, error) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-ticker.C:
+			tokens, pending, err := c.exchangeDeviceCode(ctx, deviceCode)
+			if err != nil {
+				return nil, err
+			}
+
+			if pending {
+				continue
+			}
+
+			return tokens, nil
+		}
+	}
+}
+
+// exchangeDeviceCode attempts to exchange a device code for tokens.
+// Returns pending=true if the user hasn't authorized yet.
+func (c *client) exchangeDeviceCode(ctx context.Context, deviceCode string) (tokens *Tokens, pending bool, err error) {
+	data := url.Values{
+		"grant_type":  {"urn:ietf:params:oauth:grant-type:device_code"},
+		"device_code": {deviceCode},
+		"client_id":   {c.cfg.ClientID},
+		"resource":    {c.cfg.Resource},
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		c.oidc.TokenEndpoint, strings.NewReader(data.Encode()))
+	if err != nil {
+		return nil, false, fmt.Errorf("creating request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, false, fmt.Errorf("making request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if err != nil {
+		return nil, false, fmt.Errorf("reading response: %w", err)
+	}
+
+	if resp.StatusCode == http.StatusOK {
+		var tokenResp tokenResponse
+		if err := json.Unmarshal(body, &tokenResp); err != nil {
+			return nil, false, fmt.Errorf("decoding token response: %w", err)
+		}
+
+		return &Tokens{
+			AccessToken:  tokenResp.AccessToken,
+			RefreshToken: tokenResp.RefreshToken,
+			TokenType:    tokenResp.TokenType,
+			ExpiresIn:    tokenResp.ExpiresIn,
+			ExpiresAt:    time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second),
+		}, false, nil
+	}
+
+	// Parse error response.
+	var errResp struct {
+		Error            string `json:"error"`
+		ErrorDescription string `json:"error_description"`
+	}
+
+	if err := json.Unmarshal(body, &errResp); err != nil {
+		return nil, false, fmt.Errorf("token endpoint returned status %d: %s",
+			resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	switch errResp.Error {
+	case "authorization_pending", "slow_down":
+		return nil, true, nil
+	case "expired_token":
+		return nil, false, fmt.Errorf("device code expired, please restart authentication")
+	case "access_denied":
+		return nil, false, fmt.Errorf("authorization was denied")
+	default:
+		return nil, false, fmt.Errorf("token error: %s: %s", errResp.Error, errResp.ErrorDescription)
+	}
 }
 
 // tokenResponse is the OAuth token endpoint response.

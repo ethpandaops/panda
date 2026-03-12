@@ -5,13 +5,9 @@
 // - Issues signed bearer tokens with proper resource (audience) binding per RFC 8707
 // - Validates bearer tokens on protected endpoints
 //
-// The flow is:
-// 1. Client calls /auth/authorize with resource + PKCE
-// 2. Server redirects to GitHub for authentication
-// 3. GitHub redirects back to /auth/callback
-// 4. Server verifies org membership, issues authorization code
-// 5. Client exchanges code for bearer tokens at /auth/token
-// 6. Client uses bearer tokens to access product endpoints
+// Two client flows are supported:
+// 1. PKCE authorization code flow (local browser callback)
+// 2. Device authorization grant (RFC 8628, for SSH/headless environments)
 package auth
 
 import (
@@ -47,6 +43,18 @@ const (
 
 	// refreshTokenType distinguishes refresh tokens from access tokens.
 	refreshTokenType = "refresh"
+
+	// deviceCodeTTL is how long a user has to complete the device flow.
+	deviceCodeTTL = 15 * time.Minute
+
+	// devicePollInterval is the minimum polling interval in seconds per RFC 8628.
+	devicePollInterval = 5
+
+	// userCodeAlphabet is uppercase consonants only (no vowels to avoid offensive words).
+	userCodeAlphabet = "BCDFGHJKLMNPQRSTVWXZ"
+
+	// userCodeHalfLen is the number of characters per half of the XXXX-XXXX user code.
+	userCodeHalfLen = 4
 )
 
 // SimpleService is the simplified auth service interface.
@@ -74,6 +82,11 @@ type simpleService struct {
 	codes   map[string]*issuedCode
 	codesMu sync.RWMutex
 
+	// Device authorizations (RFC 8628).
+	devices   map[string]*deviceAuth // device_code -> deviceAuth
+	userCodes map[string]string      // normalized user_code -> device_code
+	devicesMu sync.RWMutex
+
 	// Lifecycle.
 	stopCh chan struct{}
 }
@@ -86,6 +99,7 @@ type pendingAuth struct {
 	Resource      string
 	State         string
 	CreatedAt     time.Time
+	DeviceCode    string // non-empty for device flow callbacks
 }
 
 // issuedCode is an issued authorization code.
@@ -100,6 +114,20 @@ type issuedCode struct {
 	Orgs          []string
 	CreatedAt     time.Time
 	Used          bool
+}
+
+// deviceAuth stores a pending device authorization request (RFC 8628).
+type deviceAuth struct {
+	DeviceCode  string
+	UserCode    string
+	ClientID    string
+	Resource    string
+	CreatedAt   time.Time
+	ExpiresAt   time.Time
+	Authorized  bool
+	GitHubLogin string
+	GitHubID    int64
+	Orgs        []string
 }
 
 // refreshTokenClaims are the JWT claims for stateless refresh tokens.
@@ -148,6 +176,8 @@ func NewSimpleService(log logrus.FieldLogger, cfg Config) (SimpleService, error)
 		allowedOrgs: cfg.AllowedOrgs,
 		pending:     make(map[string]*pendingAuth, 32),
 		codes:       make(map[string]*issuedCode, 32),
+		devices:     make(map[string]*deviceAuth, 16),
+		userCodes:   make(map[string]string, 16),
 		stopCh:      make(chan struct{}),
 	}
 
@@ -198,6 +228,11 @@ func (s *simpleService) MountRoutes(r chi.Router) {
 	r.Get("/auth/authorize", s.handleAuthorize)
 	r.Get("/auth/callback", s.handleCallback)
 	r.Post("/auth/token", s.handleToken)
+
+	// Device authorization endpoints (RFC 8628).
+	r.Post("/auth/device/code", s.handleDeviceCode)
+	r.Get("/auth/device", s.handleDevicePage)
+	r.Post("/auth/device/verify", s.handleDeviceVerify)
 }
 
 // Middleware returns bearer-token validation middleware.
@@ -330,6 +365,15 @@ func (s *simpleService) cleanup() {
 		}
 	}
 	s.codesMu.Unlock()
+
+	s.devicesMu.Lock()
+	for key, d := range s.devices {
+		if now.After(d.ExpiresAt) {
+			delete(s.userCodes, normalizeUserCode(d.UserCode))
+			delete(s.devices, key)
+		}
+	}
+	s.devicesMu.Unlock()
 }
 
 // handleResourceMetadata returns RFC 9728 protected resource metadata.
@@ -356,8 +400,9 @@ func (s *simpleService) handleServerMetadata(w http.ResponseWriter, r *http.Requ
 		"issuer":                                baseURL,
 		"authorization_endpoint":                baseURL + "/auth/authorize",
 		"token_endpoint":                        baseURL + "/auth/token",
+		"device_authorization_endpoint":         baseURL + "/auth/device/code",
 		"response_types_supported":              []string{"code"},
-		"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
+		"grant_types_supported":                 []string{"authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code"},
 		"code_challenge_methods_supported":      []string{"S256"},
 		"token_endpoint_auth_methods_supported": []string{"none"},
 		"scopes_supported":                      []string{"mcp", "offline_access"},
@@ -435,7 +480,8 @@ func (s *simpleService) handleAuthorize(w http.ResponseWriter, r *http.Request) 
 }
 
 // handleCallback handles the GitHub OAuth callback.
-func (s *simpleService) handleCallback(w http.ResponseWriter, r *http.Request) {
+// Supports both PKCE flow (redirect to client) and device flow (mark device as approved).
+func (s *simpleService) handleCallback(w http.ResponseWriter, r *http.Request) { //nolint:funlen,cyclop // auth callback with two flow branches
 	ctx := r.Context()
 	q := r.URL.Query()
 
@@ -495,7 +541,36 @@ func (s *simpleService) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate authorization code.
+	// Device flow: mark device auth as approved instead of issuing an authorization code.
+	if pending.DeviceCode != "" {
+		s.devicesMu.Lock()
+		dev, ok := s.devices[pending.DeviceCode]
+
+		if !ok {
+			s.devicesMu.Unlock()
+			s.writeHTMLError(w, http.StatusBadRequest, "Error", "device authorization has expired, please try again")
+
+			return
+		}
+
+		dev.Authorized = true
+		dev.GitHubLogin = githubUser.Login
+		dev.GitHubID = githubUser.ID
+		dev.Orgs = githubUser.Organizations
+		s.devicesMu.Unlock()
+
+		s.log.WithFields(logrus.Fields{
+			"login":       githubUser.Login,
+			"device_code": pending.DeviceCode,
+		}).Info("Device authorization approved")
+
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(buildDeviceSuccessPage(githubUser.Login)))
+
+		return
+	}
+
+	// PKCE flow: generate authorization code and redirect back to client.
 	codeStr, err := s.generateState()
 	if err != nil {
 		s.writeHTMLError(w, http.StatusInternalServerError, "Error", "failed to generate code")
@@ -572,9 +647,11 @@ func (s *simpleService) handleToken(w http.ResponseWriter, r *http.Request) {
 		s.handleAuthorizationCodeGrant(w, r)
 	case "refresh_token":
 		s.handleRefreshTokenGrant(w, r)
+	case "urn:ietf:params:oauth:grant-type:device_code":
+		s.handleDeviceTokenGrant(w, r)
 	default:
 		s.writeError(w, http.StatusBadRequest, "unsupported_grant_type",
-			"supported grant types are authorization_code and refresh_token")
+			"supported grant types are authorization_code, refresh_token, and device_code")
 	}
 }
 
@@ -718,6 +795,235 @@ func (s *simpleService) handleRefreshTokenGrant(w http.ResponseWriter, r *http.R
 	s.writeTokenResponse(w, accessToken, refreshToken)
 }
 
+// handleDeviceCode handles POST /auth/device/code (RFC 8628 device authorization request).
+func (s *simpleService) handleDeviceCode(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		s.writeError(w, http.StatusBadRequest, "invalid_request", "invalid form data")
+		return
+	}
+
+	clientID := r.FormValue("client_id")
+	resource := r.FormValue("resource")
+
+	if clientID == "" {
+		s.writeError(w, http.StatusBadRequest, "invalid_request", "client_id is required")
+		return
+	}
+
+	if resource == "" {
+		s.writeError(w, http.StatusBadRequest, "invalid_request", "resource is required")
+		return
+	}
+
+	deviceCode, err := s.generateRandomToken(32)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, "server_error", "failed to generate device code")
+		return
+	}
+
+	userCode, err := s.generateUniqueUserCode()
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, "server_error", "failed to generate user code")
+		return
+	}
+
+	now := time.Now()
+	dev := &deviceAuth{
+		DeviceCode: deviceCode,
+		UserCode:   userCode,
+		ClientID:   clientID,
+		Resource:   resource,
+		CreatedAt:  now,
+		ExpiresAt:  now.Add(deviceCodeTTL),
+	}
+
+	s.devicesMu.Lock()
+	s.devices[deviceCode] = dev
+	s.userCodes[normalizeUserCode(userCode)] = deviceCode
+	s.devicesMu.Unlock()
+
+	baseURL := baseURLFromRequest(r)
+
+	s.log.WithFields(logrus.Fields{
+		"client_id": clientID,
+		"user_code": userCode,
+	}).Info("Device authorization started")
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"device_code":      deviceCode,
+		"user_code":        userCode,
+		"verification_uri": baseURL + "/auth/device",
+		"expires_in":       int(deviceCodeTTL.Seconds()),
+		"interval":         devicePollInterval,
+	})
+}
+
+// handleDevicePage handles GET /auth/device (browser page to enter user code).
+func (s *simpleService) handleDevicePage(w http.ResponseWriter, r *http.Request) {
+	userCode := r.URL.Query().Get("code")
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write([]byte(buildDevicePage(userCode, "")))
+}
+
+// handleDeviceVerify handles POST /auth/device/verify (user code form submission).
+func (s *simpleService) handleDeviceVerify(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(buildDevicePage("", "Invalid request.")))
+
+		return
+	}
+
+	userCode := r.FormValue("user_code")
+	normalized := normalizeUserCode(userCode)
+
+	if normalized == "" {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(buildDevicePage("", "Please enter a code.")))
+
+		return
+	}
+
+	// Look up device auth by user code and copy needed fields while holding the lock.
+	s.devicesMu.RLock()
+	deviceCode, ok := s.userCodes[normalized]
+
+	var (
+		valid       bool
+		devClient   string
+		devResource string
+	)
+
+	if ok {
+		if dev := s.devices[deviceCode]; dev != nil && !dev.Authorized && time.Now().Before(dev.ExpiresAt) {
+			valid = true
+			devClient = dev.ClientID
+			devResource = dev.Resource
+		}
+	}
+
+	s.devicesMu.RUnlock()
+
+	if !valid {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(buildDevicePage(userCode, "Invalid or expired code. Check the code in your terminal and try again.")))
+
+		return
+	}
+
+	// Create a pending auth that links to this device code.
+	githubState, err := s.generateState()
+	if err != nil {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(buildDevicePage(userCode, "Something went wrong. Please try again.")))
+
+		return
+	}
+
+	s.pendingMu.Lock()
+	s.pending[githubState] = &pendingAuth{
+		ClientID:   devClient,
+		Resource:   devResource,
+		CreatedAt:  time.Now(),
+		DeviceCode: deviceCode,
+	}
+	s.pendingMu.Unlock()
+
+	// Redirect to GitHub for authentication.
+	baseURL := baseURLFromRequest(r)
+	callbackURL := baseURL + "/auth/callback"
+	githubURL := s.github.GetAuthorizationURL(callbackURL, githubState, "read:user read:org")
+
+	s.log.WithFields(logrus.Fields{
+		"user_code":   userCode,
+		"device_code": deviceCode,
+	}).Info("Device verification started, redirecting to GitHub")
+
+	http.Redirect(w, r, githubURL, http.StatusFound)
+}
+
+// handleDeviceTokenGrant handles the device_code grant type in POST /auth/token.
+func (s *simpleService) handleDeviceTokenGrant(w http.ResponseWriter, r *http.Request) {
+	deviceCode := r.FormValue("device_code")
+	clientID := r.FormValue("client_id")
+
+	if deviceCode == "" || clientID == "" {
+		s.writeError(w, http.StatusBadRequest, "invalid_request", "missing required parameters")
+		return
+	}
+
+	s.devicesMu.Lock()
+	dev, ok := s.devices[deviceCode]
+
+	if !ok {
+		s.devicesMu.Unlock()
+		s.writeError(w, http.StatusBadRequest, "invalid_grant", "invalid device code")
+
+		return
+	}
+
+	if time.Now().After(dev.ExpiresAt) {
+		delete(s.userCodes, normalizeUserCode(dev.UserCode))
+		delete(s.devices, deviceCode)
+		s.devicesMu.Unlock()
+		s.writeError(w, http.StatusBadRequest, "expired_token", "device code has expired")
+
+		return
+	}
+
+	if dev.ClientID != clientID {
+		s.devicesMu.Unlock()
+		s.writeError(w, http.StatusBadRequest, "invalid_grant", "client_id mismatch")
+
+		return
+	}
+
+	if !dev.Authorized {
+		s.devicesMu.Unlock()
+		s.writeError(w, http.StatusBadRequest, "authorization_pending", "waiting for user to authorize")
+
+		return
+	}
+
+	// Consume the device auth — tokens are issued once.
+	login := dev.GitHubLogin
+	ghID := dev.GitHubID
+	orgs := dev.Orgs
+	resource := dev.Resource
+
+	delete(s.userCodes, normalizeUserCode(dev.UserCode))
+	delete(s.devices, deviceCode)
+	s.devicesMu.Unlock()
+
+	baseURL := baseURLFromRequest(r)
+
+	accessToken, err := s.issueAccessToken(baseURL, resource, login, ghID, orgs)
+	if err != nil {
+		s.log.WithError(err).Error("Failed to sign device token")
+		s.writeError(w, http.StatusInternalServerError, "server_error", "failed to create token")
+
+		return
+	}
+
+	refreshToken, err := s.issueRefreshToken(baseURL, clientID, resource, login, ghID, orgs)
+	if err != nil {
+		s.log.WithError(err).Error("Failed to create device refresh token")
+		s.writeError(w, http.StatusInternalServerError, "server_error", "failed to create refresh token")
+
+		return
+	}
+
+	s.log.WithFields(logrus.Fields{
+		"login":     login,
+		"client_id": clientID,
+	}).Info("Device token issued")
+
+	s.writeTokenResponse(w, accessToken, refreshToken)
+}
+
 func (s *simpleService) issueAccessToken(
 	issuerURL, resource, githubLogin string, githubID int64, orgs []string,
 ) (string, error) {
@@ -794,6 +1100,52 @@ func (s *simpleService) generateRandomToken(size int) (string, error) {
 	}
 
 	return base64.RawURLEncoding.EncodeToString(bytes), nil
+}
+
+// generateUserCode creates a random user code in XXXX-XXXX format using consonants only.
+func (s *simpleService) generateUserCode() (string, error) {
+	b := make([]byte, userCodeHalfLen*2)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generating random bytes: %w", err)
+	}
+
+	code := make([]byte, userCodeHalfLen*2)
+	for i := range code {
+		code[i] = userCodeAlphabet[int(b[i])%len(userCodeAlphabet)]
+	}
+
+	return string(code[:userCodeHalfLen]) + "-" + string(code[userCodeHalfLen:]), nil
+}
+
+// generateUniqueUserCode generates a user code that doesn't collide with existing codes.
+func (s *simpleService) generateUniqueUserCode() (string, error) {
+	const maxRetries = 5
+
+	for range maxRetries {
+		code, err := s.generateUserCode()
+		if err != nil {
+			return "", err
+		}
+
+		s.devicesMu.RLock()
+		_, exists := s.userCodes[normalizeUserCode(code)]
+		s.devicesMu.RUnlock()
+
+		if !exists {
+			return code, nil
+		}
+	}
+
+	return "", fmt.Errorf("failed to generate unique user code after %d attempts", maxRetries)
+}
+
+// normalizeUserCode strips hyphens/spaces and uppercases a user code for comparison.
+func normalizeUserCode(code string) string {
+	code = strings.ToUpper(code)
+	code = strings.ReplaceAll(code, "-", "")
+	code = strings.ReplaceAll(code, " ", "")
+
+	return code
 }
 
 func (s *simpleService) verifyPKCE(verifier, challenge string) bool {

@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -26,6 +27,7 @@ var (
 	authIssuerURL string
 	authClientID  string
 	authResource  string
+	noBrowser     bool
 )
 
 var authCmd = &cobra.Command{
@@ -58,6 +60,9 @@ func init() {
 	authCmd.AddCommand(authLogoutCmd)
 	authCmd.AddCommand(authStatusCmd)
 
+	authLoginCmd.Flags().BoolVar(&noBrowser, "no-browser", false,
+		"manual auth flow for SSH/headless environments (auto-detected over SSH)")
+
 	for _, cmd := range []*cobra.Command{authLoginCmd, authLogoutCmd, authStatusCmd} {
 		cmd.Flags().StringVar(&authIssuerURL, "issuer", "", "proxy auth issuer URL (defaults to the configured server's proxy auth issuer)")
 		cmd.Flags().StringVar(&authClientID, "client-id", "", "OAuth client ID (defaults to configured value or 'panda')")
@@ -76,6 +81,11 @@ func runAuthLogin(_ *cobra.Command, _ []string) error {
 		return nil
 	}
 
+	headless := isHeadlessAuth()
+	if headless && !noBrowser {
+		fmt.Println("SSH session detected, using device authorization flow.")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -83,6 +93,7 @@ func runAuthLogin(_ *cobra.Command, _ []string) error {
 		IssuerURL: target.issuerURL,
 		ClientID:  target.clientID,
 		Resource:  target.resource,
+		Headless:  headless,
 	})
 
 	tokens, err := client.Login(ctx)
@@ -273,4 +284,22 @@ func resolveAuthTargetFromConfig() *authTarget {
 		resource:  resource,
 		enabled:   true,
 	}
+}
+
+// isHeadlessAuth returns true when the auth flow should skip the local
+// callback server — either because --no-browser was passed or because
+// an SSH session was detected.
+func isHeadlessAuth() bool {
+	return noBrowser || isSSHSession()
+}
+
+// isSSHSession returns true when the process is running inside an SSH session.
+func isSSHSession() bool {
+	for _, key := range []string{"SSH_CLIENT", "SSH_CONNECTION", "SSH_TTY"} {
+		if os.Getenv(key) != "" {
+			return true
+		}
+	}
+
+	return false
 }
