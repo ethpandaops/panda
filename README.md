@@ -1,6 +1,12 @@
-# panda
+<p align="center">
+  <img src="logo.png" alt="panda" width="128" />
+</p>
 
-An MCP server for Ethereum network analytics. Agents execute Python in sandboxed containers with access to ClickHouse, Prometheus, Loki, and Ethereum node data via [Xatu](https://github.com/ethpandaops/xatu).
+# Panda
+
+Your gateway to the [ethpandaops](https://github.com/ethpandaops) ecosystem. A CLI, server, and sandboxed Python environment that gives you (and your AI agents) unified access to Ethereum network data — ClickHouse, Prometheus, Loki, and more.
+
+You shouldn't need credentials, boilerplate, or deep knowledge of a dozen different APIs to query Ethereum network data. Just ask a question or write some Python — panda handles the rest.
 
 Read more: https://www.anthropic.com/engineering/code-execution-with-mcp
 
@@ -184,14 +190,6 @@ panda server status     # Show container status and health
 panda server logs       # Stream server logs
 panda server update     # Pull latest images and restart
 ```
-
-## MCP Tools
-
-| Tool | Description |
-|------|-------------|
-| `execute_python` | Run Python in a sandboxed container with the `ethpandaops` library |
-| `manage_session` | List, create, or destroy persistent sandbox sessions |
-| `search` | Semantic search over examples and runbooks |
 
 ## Development
 
