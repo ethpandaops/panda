@@ -175,7 +175,7 @@ func (p *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 					Signature:   "clickhouse.query(cluster: str, sql: str) -> pandas.DataFrame",
 					Description: "Execute SQL query, return DataFrame",
 					Parameters: map[string]string{
-						"cluster": "'xatu' or 'xatu-cbt' - see ethpandaops://getting-started for syntax differences",
+						"cluster": "'xatu' or 'xatu-cbt' - see panda://getting-started for syntax differences",
 						"sql":     "SQL query string",
 					},
 					Returns: "pandas.DataFrame",

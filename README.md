@@ -162,7 +162,15 @@ panda execute --code 'print("hello")'      # Run Python in the sandbox
 }
 ```
 
-Install [skills](https://github.com/anthropics/skills) for Claude Code: `npx skills add ethpandaops/panda`
+### Skills
+
+Install [agent skills](https://github.com/anthropics/skills) for AI coding assistants:
+
+```bash
+npx skills add ethpandaops/panda              # all skills
+npx skills add ethpandaops/panda --skill install-mcp    # register panda as an MCP server
+npx skills add ethpandaops/panda --skill install-panda  # installation guide
+```
 
 ### Auth
 
