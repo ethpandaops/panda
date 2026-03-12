@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -116,8 +117,19 @@ func runUpgrade(_ *cobra.Command, _ []string) error {
 	}
 
 	if doServer {
-		if err := upgradeServer(); err != nil {
-			return fmt.Errorf("upgrading server: %w", err)
+		// If we just replaced the CLI binary, shell out to the new
+		// binary for the server upgrade. The running process still has
+		// the old code in memory, so calling upgradeServer() in-process
+		// would use the old compose template — missing any fixes the
+		// new version added (e.g. group_add for Docker socket perms).
+		if doCLI {
+			if err := execNewBinary("server", "update"); err != nil {
+				return fmt.Errorf("upgrading server: %w", err)
+			}
+		} else {
+			if err := upgradeServer(); err != nil {
+				return fmt.Errorf("upgrading server: %w", err)
+			}
 		}
 	}
 
@@ -229,6 +241,29 @@ func regenerateComposeFile() error {
 	}
 
 	return nil
+}
+
+// execNewBinary runs the newly installed panda binary with the given
+// arguments. This is used after a CLI self-update so that server-side
+// operations (like compose regeneration) use the new binary's code
+// rather than the old process still in memory.
+func execNewBinary(args ...string) error {
+	binary, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("finding binary: %w", err)
+	}
+
+	binary, err = filepath.EvalSymlinks(binary)
+	if err != nil {
+		return fmt.Errorf("resolving binary path: %w", err)
+	}
+
+	cmd := exec.Command(binary, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+
+	return cmd.Run()
 }
 
 // pullSandboxImage pulls the default sandbox container image.

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -300,13 +301,24 @@ func pullImage(cli *dockerclient.Client, image string) error {
 	return nil
 }
 
-// detectDockerSocketGID returns the group ID that owns /var/run/docker.sock.
-// This is used to add the correct group to the server container so the
-// non-root panda user can access the Docker socket. Falls back to "0" (root)
-// if the socket cannot be stat'd.
+// detectDockerSocketGID returns the group ID that owns /var/run/docker.sock
+// as seen from inside a container. This is used to add the correct group to
+// the server container so the non-root panda user can access the Docker socket.
+//
+// On Linux the host GID is correct. On macOS (Docker Desktop, OrbStack, etc.)
+// the host GID is meaningless because Docker remaps ownership when mounting
+// into the Linux VM. We probe the actual GID by running a lightweight
+// container. Falls back to "0" (root) on any failure.
 func detectDockerSocketGID() string {
 	const dockerSocket = "/var/run/docker.sock"
 
+	// Try the fast path: probe GID inside a container. This gives
+	// the correct answer on both Linux and macOS.
+	if gid, err := probeSocketGIDInContainer(dockerSocket); err == nil {
+		return gid
+	}
+
+	// Fallback: stat the socket on the host.
 	info, err := os.Stat(dockerSocket)
 	if err != nil {
 		return "0"
@@ -318,4 +330,29 @@ func detectDockerSocketGID() string {
 	}
 
 	return strconv.FormatUint(uint64(stat.Gid), 10)
+}
+
+// probeSocketGIDInContainer runs a minimal Alpine container to stat the
+// Docker socket GID as the container runtime sees it.
+func probeSocketGIDInContainer(socketPath string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx,
+		"docker", "run", "--rm",
+		"-v", socketPath+":/var/run/docker.sock",
+		"alpine", "stat", "-c", "%g", "/var/run/docker.sock",
+	)
+
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("probing socket GID: %w", err)
+	}
+
+	gid := strings.TrimSpace(string(out))
+	if gid == "" {
+		return "", fmt.Errorf("empty GID from container probe")
+	}
+
+	return gid, nil
 }
