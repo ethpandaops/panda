@@ -20,8 +20,9 @@ var (
 )
 
 var executeCmd = &cobra.Command{
-	Use:   "execute",
-	Short: "Execute Python code in a sandbox",
+	GroupID: groupWorkflow,
+	Use:     "execute",
+	Short:   "Execute Python code in a sandbox",
 	Long: `Execute Python code in an isolated sandbox container with access to
 the ethpandaops library for Ethereum data analysis. All data access
 flows through the credential proxy.

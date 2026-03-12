@@ -14,6 +14,14 @@ import (
 	"github.com/ethpandaops/panda/internal/version"
 )
 
+// Command group IDs for cobra help grouping.
+const (
+	groupWorkflow  = "workflow"
+	groupDiscovery = "discovery"
+	groupDirect    = "direct"
+	groupSetup     = "setup"
+)
+
 var (
 	cfgFile  string
 	logLevel string
@@ -37,10 +45,9 @@ var skipUpdateCheckCommands = map[string]bool{
 var rootCmd = &cobra.Command{
 	Use:   "panda",
 	Short: "Ethereum network analytics CLI",
-	Long: `A CLI for Ethereum network analytics with access to ClickHouse blockchain data,
-Prometheus metrics, Loki logs, and sandboxed Python execution.
+	Long: `Ethereum network analytics CLI.
 
-Run 'panda <command> --help' for details on any command.`,
+New? Start here: panda getting-started`,
 	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 		level, err := logrus.ParseLevel(logLevel)
 		if err != nil {
@@ -82,6 +89,13 @@ func Execute() {
 }
 
 func init() {
+	rootCmd.AddGroup(
+		&cobra.Group{ID: groupWorkflow, Title: "Workflow:"},
+		&cobra.Group{ID: groupDiscovery, Title: "Discovery:"},
+		&cobra.Group{ID: groupDirect, Title: "Direct Access:"},
+		&cobra.Group{ID: groupSetup, Title: "Setup:"},
+	)
+
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "",
 		"config file (default: $PANDA_CONFIG, ~/.config/panda/config.yaml, or ./config.yaml)")
 	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info",

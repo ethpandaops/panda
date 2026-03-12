@@ -10,8 +10,9 @@ import (
 )
 
 var clickhouseCmd = &cobra.Command{
-	Use:   "clickhouse",
-	Short: "Query ClickHouse databases",
+	GroupID: groupDirect,
+	Use:     "clickhouse",
+	Short:   "Query ClickHouse databases",
 	Long: `Execute SQL queries against ClickHouse clusters.
 
 Examples:

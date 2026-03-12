@@ -16,8 +16,9 @@ var (
 )
 
 var searchCmd = &cobra.Command{
-	Use:   "search",
-	Short: "Search examples and runbooks",
+	GroupID: groupWorkflow,
+	Use:     "search",
+	Short:   "Search examples and runbooks",
 	Long: `Semantic search over query examples and investigation runbooks.
 
 Examples:

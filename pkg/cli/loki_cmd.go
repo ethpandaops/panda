@@ -18,8 +18,9 @@ var (
 )
 
 var lokiCmd = &cobra.Command{
-	Use:   "loki",
-	Short: "Query Loki logs",
+	GroupID: groupDirect,
+	Use:     "loki",
+	Short:   "Query Loki logs",
 	Long: `Query Loki for log data.
 
 Examples:

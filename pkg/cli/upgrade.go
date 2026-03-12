@@ -41,8 +41,9 @@ var (
 )
 
 var upgradeCmd = &cobra.Command{
-	Use:   "upgrade",
-	Short: "Upgrade panda CLI and server to the latest version",
+	GroupID: groupSetup,
+	Use:     "upgrade",
+	Short:   "Upgrade panda CLI and server to the latest version",
 	Long: `Upgrade the panda CLI binary, server container, sandbox container,
 and docker-compose configuration to the latest release.
 

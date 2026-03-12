@@ -16,8 +16,9 @@ var (
 )
 
 var prometheusCmd = &cobra.Command{
-	Use:   "prometheus",
-	Short: "Query Prometheus metrics",
+	GroupID: groupDirect,
+	Use:     "prometheus",
+	Short:   "Query Prometheus metrics",
 	Long: `Query Prometheus for infrastructure metrics.
 
 Examples:

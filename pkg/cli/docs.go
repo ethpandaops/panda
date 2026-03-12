@@ -14,8 +14,9 @@ import (
 )
 
 var docsCmd = &cobra.Command{
-	Use:   "docs [module-name]",
-	Short: "Show Python API documentation",
+	GroupID: groupDiscovery,
+	Use:     "docs [module-name]",
+	Short:   "Show Python API documentation",
 	Long: `Show documentation for the ethpandaops Python library modules available
 in the sandbox. Without arguments, lists all modules. With a module name,
 shows detailed function signatures and descriptions.

@@ -29,6 +29,7 @@ func (s *service) mountAPIRoutes(r chi.Router) {
 		r.Get("/sessions", s.handleAPIListSessions)
 		r.Post("/sessions", s.handleAPICreateSession)
 		r.Delete("/sessions/{sessionID}", s.handleAPIDestroySession)
+		r.Get("/resources", s.handleAPIListResources)
 		r.Get("/resources/read", s.handleAPIReadResource)
 		r.HandleFunc("/operations/{operationID}", s.handleAPIOperation)
 
@@ -286,6 +287,47 @@ func (s *service) handleAPIDestroySession(w http.ResponseWriter, r *http.Request
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *service) handleAPIListResources(w http.ResponseWriter, _ *http.Request) {
+	if s.resourceRegistry == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "resource registry is unavailable")
+		return
+	}
+
+	static := s.resourceRegistry.ListStatic()
+	resources := make([]serverapi.ResourceInfo, 0, len(static))
+
+	for _, res := range static {
+		resources = append(resources, serverapi.ResourceInfo{
+			URI:         res.URI,
+			Name:        res.Name,
+			Description: res.Description,
+			MIMEType:    res.MIMEType,
+		})
+	}
+
+	templates := s.resourceRegistry.ListTemplates()
+	templateInfos := make([]serverapi.ResourceTemplateInfo, 0, len(templates))
+
+	for _, tmpl := range templates {
+		uriTemplate := ""
+		if tmpl.URITemplate != nil {
+			uriTemplate = tmpl.URITemplate.Raw()
+		}
+
+		templateInfos = append(templateInfos, serverapi.ResourceTemplateInfo{
+			URITemplate: uriTemplate,
+			Name:        tmpl.Name,
+			Description: tmpl.Description,
+			MIMEType:    tmpl.MIMEType,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, serverapi.ListResourcesResponse{
+		Resources: resources,
+		Templates: templateInfos,
+	})
 }
 
 func (s *service) handleAPIReadResource(w http.ResponseWriter, r *http.Request) {

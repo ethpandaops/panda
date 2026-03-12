@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+	"syscall"
 
 	clickhousemodule "github.com/ethpandaops/panda/modules/clickhouse"
 	"github.com/ethpandaops/panda/pkg/config"
@@ -60,6 +62,13 @@ func serverDo(
 
 	resp, err := serverHTTP.Do(req)
 	if err != nil {
+		if isConnectionRefused(err) {
+			return nil, 0, nil, fmt.Errorf(
+				"server is not running at %s — run 'panda init' or 'panda server start' first",
+				baseURL,
+			)
+		}
+
 		return nil, 0, nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -270,6 +279,15 @@ func searchRunbooks(ctx context.Context, queryText, tag string, limit int) (*ser
 	return &response, nil
 }
 
+func listResources(ctx context.Context) (*serverapi.ListResourcesResponse, error) {
+	var response serverapi.ListResourcesResponse
+	if err := serverGetJSON(ctx, "/api/v1/resources", nil, &response); err != nil {
+		return nil, err
+	}
+
+	return &response, nil
+}
+
 func readResource(ctx context.Context, uri string) (*serverapi.ResourceResponse, error) {
 	query := url.Values{"uri": []string{uri}}
 
@@ -326,4 +344,13 @@ func decodeAPIError(status int, data []byte) error {
 	}
 
 	return fmt.Errorf("HTTP %d: %s", status, strings.TrimSpace(string(data)))
+}
+
+func isConnectionRefused(err error) bool {
+	if errors.Is(err, syscall.ECONNREFUSED) {
+		return true
+	}
+
+	// Fallback: some wrapped errors don't propagate the syscall errno.
+	return strings.Contains(err.Error(), "connection refused")
 }

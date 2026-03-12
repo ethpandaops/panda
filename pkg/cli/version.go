@@ -9,8 +9,9 @@ import (
 )
 
 var versionCmd = &cobra.Command{
-	Use:   "version",
-	Short: "Print version information",
+	GroupID: groupSetup,
+	Use:     "version",
+	Short:   "Print version information",
 	RunE: func(_ *cobra.Command, _ []string) error {
 		info := map[string]string{
 			"version":    version.Version,

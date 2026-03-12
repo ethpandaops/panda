@@ -10,8 +10,9 @@ import (
 )
 
 var schemaCmd = &cobra.Command{
-	Use:   "schema [table-name]",
-	Short: "Show ClickHouse table schemas",
+	GroupID: groupDiscovery,
+	Use:     "schema [table-name]",
+	Short:   "Show ClickHouse table schemas",
 	Long: `Show available ClickHouse tables and their schemas. Without arguments,
 lists all tables. With a table name, shows the full schema including
 columns, types, and available networks.

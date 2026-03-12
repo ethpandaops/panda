@@ -10,8 +10,9 @@ import (
 )
 
 var ethnodeCmd = &cobra.Command{
-	Use:   "ethnode",
-	Short: "Query Ethereum beacon and execution nodes",
+	GroupID: groupDirect,
+	Use:     "ethnode",
+	Short:   "Query Ethereum beacon and execution nodes",
 	Long: `Direct access to Ethereum beacon and execution node APIs.
 Nodes are identified by network and instance name (e.g., "lighthouse-geth-1").
 

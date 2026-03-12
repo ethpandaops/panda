@@ -20,8 +20,9 @@ import (
 var composeFile string
 
 var serverCmd = &cobra.Command{
-	Use:   "server",
-	Short: "Manage the local panda server",
+	GroupID: groupSetup,
+	Use:     "server",
+	Short:   "Manage the local panda server",
 	Long: `Manage the local panda server lifecycle via Docker Compose.
 
 Examples:

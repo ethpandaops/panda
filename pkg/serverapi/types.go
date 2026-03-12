@@ -31,6 +31,28 @@ type ResourceResponse struct {
 	Content  string `json:"content"`
 }
 
+// ResourceInfo describes a single static resource.
+type ResourceInfo struct {
+	URI         string `json:"uri"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	MIMEType    string `json:"mime_type,omitempty"`
+}
+
+// ResourceTemplateInfo describes a resource template with URI parameters.
+type ResourceTemplateInfo struct {
+	URITemplate string `json:"uri_template"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	MIMEType    string `json:"mime_type,omitempty"`
+}
+
+// ListResourcesResponse is the response for GET /api/v1/resources.
+type ListResourcesResponse struct {
+	Resources []ResourceInfo         `json:"resources"`
+	Templates []ResourceTemplateInfo `json:"templates,omitempty"`
+}
+
 type RuntimeStorageUploadResponse struct {
 	Key string `json:"key"`
 	URL string `json:"url"`

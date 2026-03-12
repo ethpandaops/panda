@@ -10,8 +10,9 @@ import (
 var datasourcesType string
 
 var datasourcesCmd = &cobra.Command{
-	Use:   "datasources",
-	Short: "List available datasources from the server",
+	GroupID: groupDiscovery,
+	Use:     "datasources",
+	Short:   "List available datasources from the server",
 	Long: `List all datasources exposed by the configured server, including
 ClickHouse clusters, Prometheus instances, and Loki instances.
 

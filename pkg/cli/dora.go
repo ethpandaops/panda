@@ -7,8 +7,9 @@ import (
 )
 
 var doraCmd = &cobra.Command{
-	Use:   "dora",
-	Short: "Query Dora beacon chain explorer",
+	GroupID: groupDirect,
+	Use:     "dora",
+	Short:   "Query Dora beacon chain explorer",
 	Long: `Query the Dora beacon chain explorer for network status, validators, and slots.
 
 Examples:

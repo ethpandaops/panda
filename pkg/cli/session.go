@@ -9,8 +9,9 @@ import (
 )
 
 var sessionCmd = &cobra.Command{
-	Use:   "session",
-	Short: "Manage sandbox sessions",
+	GroupID: groupWorkflow,
+	Use:     "session",
+	Short:   "Manage sandbox sessions",
 	Long: `Manage persistent sandbox sessions. Sessions keep containers alive
 between executions, preserving files in /workspace.
 

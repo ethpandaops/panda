@@ -38,8 +38,9 @@ var (
 )
 
 var initCmd = &cobra.Command{
-	Use:   "init",
-	Short: "Set up panda and get running in one command",
+	GroupID: groupSetup,
+	Use:     "init",
+	Short:   "Set up panda and get running in one command",
 	Long: `Initialize panda for first-time use.
 
 This command runs the full setup:

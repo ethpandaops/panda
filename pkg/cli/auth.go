@@ -31,9 +31,10 @@ var (
 )
 
 var authCmd = &cobra.Command{
-	Use:   "auth",
-	Short: "Manage proxy authentication",
-	Long:  `Authenticate the local server against a hosted credential proxy.`,
+	GroupID: groupSetup,
+	Use:     "auth",
+	Short:   "Manage proxy authentication",
+	Long:    `Authenticate the local server against a hosted credential proxy.`,
 }
 
 var authLoginCmd = &cobra.Command{
