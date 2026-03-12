@@ -47,13 +47,12 @@ func TestSchemaClientQueryJSONReturnsDecodeErrors(t *testing.T) {
 	client := &clickhouseSchemaClient{
 		log:         logrus.New(),
 		cfg:         ClickHouseSchemaConfig{QueryTimeout: time.Second},
-		proxySvc:    &stubProxySchemaAccess{baseURL: server.URL},
-		httpClient:  server.Client(),
+		queryClient: newClickhouseSchemaQueryClient(&stubProxySchemaAccess{baseURL: server.URL}, server.Client(), time.Second),
 		clusters:    make(map[string]*ClusterTables),
 		datasources: map[string]string{"xatu": "xatu"},
 	}
 
-	_, err := client.queryJSON(context.Background(), "xatu", "SHOW TABLES")
+	_, err := client.queryClient.queryJSON(context.Background(), "xatu", "SHOW TABLES")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "decoding response")
 }
@@ -64,7 +63,7 @@ func TestSchemaClientFetchTableNetworksRejectsInvalidIdentifiers(t *testing.T) {
 		cfg: ClickHouseSchemaConfig{QueryTimeout: time.Second},
 	}
 
-	_, err := client.fetchTableNetworks(context.Background(), "xatu", "invalid-name")
+	_, err := client.queryClient.fetchTableNetworks(context.Background(), "xatu", "invalid-name")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "validating table name")
 }
