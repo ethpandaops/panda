@@ -110,24 +110,47 @@ EOF
 # --------------------------------------------------------------------------- #
 
 get_latest_version() {
-    RELEASES_URL="https://api.github.com/repos/ethpandaops/panda/releases/latest"
+    RELEASES_URL="https://api.github.com/repos/ethpandaops/panda/releases"
     info "Querying latest release from GitHub..."
 
     response="$(curl -sSfL "$RELEASES_URL" 2>&1)" || \
-        fatal "Failed to fetch latest release from GitHub. Check your network connection."
+        fatal "Failed to fetch releases from GitHub. Check your network connection."
 
-    # Extract tag_name from JSON. Try jq first, fall back to grep+sed.
+    # Find the latest stable release that has an asset for our platform.
+    # This handles the window where a release tag exists but assets are still building.
+    ASSET_SUFFIX="_${OS}_${ARCH}.tar.gz"
+
     if command -v jq >/dev/null 2>&1; then
-        VERSION="$(printf '%s' "$response" | jq -r '.tag_name')"
+        LATEST_TAG="$(printf '%s' "$response" | jq -r \
+            '[.[] | select(.draft == false and .prerelease == false)] | .[0].tag_name // empty')"
+        VERSION="$(printf '%s' "$response" | jq -r --arg suffix "$ASSET_SUFFIX" \
+            '[.[] | select(.draft == false and .prerelease == false) | select(any(.assets[]; .name | endswith($suffix)))] | .[0].tag_name // empty')"
     else
-        VERSION="$(printf '%s' "$response" | grep '"tag_name"' | sed -E 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/')"
+        # Fall back to grep+sed for tag extraction, then HEAD-check each asset URL.
+        tags="$(printf '%s' "$response" | grep '"tag_name"' | sed -E 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/')"
+        LATEST_TAG="$(printf '%s\n' "$tags" | head -n1)"
+        VERSION=""
+        for tag in $tags; do
+            clean="${tag#v}"
+            asset="panda_${clean}${ASSET_SUFFIX}"
+            url="https://github.com/ethpandaops/panda/releases/download/${tag}/${asset}"
+            http_code="$(curl -sSL -o /dev/null -w '%{http_code}' --head "$url" 2>/dev/null)" || true
+            if [ "$http_code" = "200" ] || [ "$http_code" = "302" ]; then
+                VERSION="$tag"
+                break
+            fi
+        done
     fi
 
     if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
-        fatal "Could not determine latest release version"
+        fatal "Could not find a release with assets for ${OS}/${ARCH}. The latest release may still be building — try again shortly."
     fi
 
-    info "Latest version: ${BOLD}${VERSION}${RESET}"
+    if [ -n "$LATEST_TAG" ] && [ "$VERSION" != "$LATEST_TAG" ]; then
+        warn "Latest release ${BOLD}${LATEST_TAG}${RESET} is still building. Installing ${BOLD}${VERSION}${RESET} instead."
+    else
+        info "Latest version: ${BOLD}${VERSION}${RESET}"
+    fi
 }
 
 # --------------------------------------------------------------------------- #
