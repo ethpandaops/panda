@@ -65,11 +65,8 @@ print(df)
 
 ### Discovery
 
-- ` + "`panda datasources`" + ` — List available data sources and their types
-- ` + "`panda schema`" + ` — View ClickHouse table schemas
-- ` + "`panda docs`" + ` — Python API documentation for all modules
-- ` + "`panda search examples \"...\"`" + ` — Find query snippets (SQL, PromQL, LogQL)
-- ` + "`panda search runbooks \"...\"`" + ` — Find multi-step investigation procedures
+Run ` + "`panda --help`" + ` to see all available commands and ` + "`panda resources`" + ` to list
+available data resources. Use ` + "`panda <command> --help`" + ` for details on any command.
 
 `
 
@@ -187,7 +184,7 @@ func createGettingStartedHandler(
 		// Context-specific tools/commands section.
 		switch clientCtx {
 		case types.ClientContextCLI:
-			writeCLICommandsSection(&sb)
+			writeCLIDiscoverySection(&sb)
 		default:
 			writeToolsSection(&sb, toolReg)
 			writeResourcesSection(&sb, reg)
@@ -257,14 +254,10 @@ func writeResourcesSection(sb *strings.Builder, reg Registry) {
 	}
 }
 
-// writeCLICommandsSection writes the CLI commands listing.
-func writeCLICommandsSection(sb *strings.Builder) {
-	sb.WriteString("## Available Commands\n\n")
-	sb.WriteString("- **panda execute** — Execute Python code in a sandbox (preferred for all data work)\n")
-	sb.WriteString("- **panda datasources** — List available datasources and their types\n")
-	sb.WriteString("- **panda schema** — Show ClickHouse table schemas\n")
-	sb.WriteString("- **panda docs** — Show Python API documentation\n")
-	sb.WriteString("- **panda search examples** — Search query examples\n")
-	sb.WriteString("- **panda search runbooks** — Search investigation runbooks\n")
-	sb.WriteString("- **panda session list** — List active sandbox sessions\n")
+// writeCLIDiscoverySection writes CLI discovery instructions.
+func writeCLIDiscoverySection(sb *strings.Builder) {
+	sb.WriteString("## Discovering Commands and Resources\n\n")
+	sb.WriteString("Run `panda --help` to see all available commands.\n")
+	sb.WriteString("Run `panda resources` to list available data resources.\n")
+	sb.WriteString("Run `panda <command> --help` for details on any command.\n")
 }
