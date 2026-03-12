@@ -13,6 +13,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/ethpandaops/panda/internal/version"
 	"github.com/ethpandaops/panda/pkg/auth/client"
 	"github.com/ethpandaops/panda/pkg/auth/store"
 	"github.com/ethpandaops/panda/pkg/types"
@@ -132,7 +133,8 @@ func NewClient(log logrus.FieldLogger, cfg ClientConfig) Client {
 		log: log.WithField("component", "proxy-client"),
 		cfg: cfg,
 		httpClient: &http.Client{
-			Timeout: cfg.HTTPTimeout,
+			Transport: &version.Transport{},
+			Timeout:   cfg.HTTPTimeout,
 		},
 		datasources: &DatasourcesResponse{},
 		stopCh:      make(chan struct{}),

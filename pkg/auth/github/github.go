@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+
+	"github.com/ethpandaops/panda/internal/version"
 )
 
 // Error sentinels for GitHub OAuth operations.
@@ -49,7 +51,8 @@ func NewClient(log logrus.FieldLogger, clientID, clientSecret string) *Client {
 		clientID:     clientID,
 		clientSecret: clientSecret,
 		httpClient: &http.Client{
-			Timeout: defaultTimeout,
+			Transport: &version.Transport{},
+			Timeout:   defaultTimeout,
 		},
 	}
 }

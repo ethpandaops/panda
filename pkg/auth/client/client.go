@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+
+	"github.com/ethpandaops/panda/internal/version"
 )
 
 // Client handles OAuth PKCE authentication flow.
@@ -89,7 +91,7 @@ func New(log logrus.FieldLogger, cfg Config) Client {
 	return &client{
 		log:  log.WithField("component", "oauth-client"),
 		cfg:  cfg,
-		http: &http.Client{Timeout: 30 * time.Second},
+		http: &http.Client{Transport: &version.Transport{}, Timeout: 30 * time.Second},
 	}
 }
 

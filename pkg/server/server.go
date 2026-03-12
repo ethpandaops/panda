@@ -99,7 +99,7 @@ func NewService(
 		proxyAuthMetadata:   proxyAuthMetadata,
 		runtimeTokens:       runtimeTokens,
 		cleanup:             cleanup,
-		httpClient:          &http.Client{Timeout: 0},
+		httpClient:          &http.Client{Transport: &version.Transport{}, Timeout: 0},
 		done:                make(chan struct{}),
 	}
 }
