@@ -130,7 +130,7 @@ func (b *DockerBackend) Start(ctx context.Context) error {
 		return fmt.Errorf("ensuring sandbox image: %w", err)
 	}
 
-	// Ensure the configured network exists (auto-creates for stdio mode).
+	// Ensure the configured network exists (auto-creates if missing).
 	if err := b.ensureNetwork(ctx); err != nil {
 		return fmt.Errorf("ensuring sandbox network: %w", err)
 	}
@@ -1238,9 +1238,9 @@ func (b *DockerBackend) ensureImage(ctx context.Context) error {
 
 // ensureNetwork ensures the configured Docker network exists.
 // For user-defined networks, it checks if the network exists and creates it
-// if missing. This enables stdio mode (outside docker compose) to work without
-// requiring manual network creation. Built-in network modes (host, none,
-// bridge, default) are skipped.
+// if missing. This enables running outside docker compose without requiring
+// manual network creation. Built-in network modes (host, none, bridge,
+// default) are skipped.
 func (b *DockerBackend) ensureNetwork(ctx context.Context) error {
 	networkMode := container.NetworkMode(b.cfg.Network)
 

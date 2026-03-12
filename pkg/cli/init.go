@@ -178,7 +178,6 @@ server:
   port: 2480
   base_url: "http://localhost:2480"
   sandbox_url: "http://panda-server:2480"
-  transport: sse
 
 sandbox:
   image: %q

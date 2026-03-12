@@ -53,7 +53,6 @@ func TestBuildConfigTemplate(t *testing.T) {
 			assert.Equal(t, 2480, server["port"])
 			assert.Equal(t, "http://localhost:2480", server["base_url"])
 			assert.Equal(t, "http://panda-server:2480", server["sandbox_url"])
-			assert.Equal(t, "sse", server["transport"])
 
 			// Verify sandbox section.
 			sandbox, ok := parsed["sandbox"].(map[string]any)

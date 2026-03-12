@@ -93,6 +93,5 @@ EXPOSE 2480 2490
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD nc -z localhost 2480 || exit 1
 
-# Default command - start server with streamable-http transport
 ENTRYPOINT ["/app/panda-server"]
-CMD ["serve", "--transport", "streamable-http"]
+CMD ["serve"]

@@ -118,7 +118,6 @@ jobs:
             port: 2480
             base_url: "http://127.0.0.1:2480"
             sandbox_url: "http://127.0.0.1:2480"
-            transport: streamable-http
 
           modules:
             clickhouse:

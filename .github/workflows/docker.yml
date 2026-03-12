@@ -69,7 +69,6 @@ jobs:
           server:
             host: "0.0.0.0"
             port: 2480
-            transport: sse
           sandbox:
             image: "panda-sandbox-smoke:latest"
             network: "panda-smoke-test"

@@ -15,22 +15,18 @@ import (
 	"github.com/ethpandaops/panda/pkg/server"
 )
 
-var (
-	transport string
-	port      int
-)
+var port int
 
 var serveCmd = &cobra.Command{
 	Use:   "serve",
 	Short: "Start the MCP server",
-	Long:  `Start the MCP server with the configured transport (stdio, sse, or streamable-http).`,
+	Long:  `Start the MCP server.`,
 	RunE:  runServe,
 }
 
 func init() {
 	rootCmd.AddCommand(serveCmd)
 
-	serveCmd.Flags().StringVarP(&transport, "transport", "t", "", "Transport type (stdio, sse, streamable-http). Overrides config.")
 	serveCmd.Flags().IntVarP(&port, "port", "p", 0, "Port number. Overrides config.")
 }
 
@@ -47,10 +43,6 @@ func runServe(_ *cobra.Command, _ []string) error {
 	}
 
 	// Apply CLI overrides.
-	if transport != "" {
-		cfg.Server.Transport = transport
-	}
-
 	if port != 0 {
 		cfg.Server.Port = port
 	}

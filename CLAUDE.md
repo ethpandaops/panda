@@ -55,8 +55,7 @@ make fmt                      # Format code (gofmt -s)
 make vet                      # Run go vet
 
 # Run
-make run                      # Build + download models + run server with stdio transport
-make run-sse                  # Build + run server with SSE transport on port 2480
+make run                      # Build + download models + run server
 docker compose up -d          # Full local stack: server + proxy
 
 # CLI (requires a running server)
@@ -80,7 +79,7 @@ uv run python -m scripts.repl
 ### Key Components
 
 - **App kernel** (`pkg/app/`): Shared server-side initialization for the module registry, proxy client, sandbox, cartographoor, and search indices
-- **Server** (`pkg/server/`, `cmd/server/`): Control plane for MCP transports, product HTTP API, resource/tool registration, and sandbox orchestration
+- **Server** (`pkg/server/`, `cmd/server/`): Control plane for MCP (SSE + streamable-http), product HTTP API, resource/tool registration, and sandbox orchestration
 - **CLI** (`pkg/cli/`, `cmd/panda/`): HTTP client for the server API with human-friendly output
 - **Credential proxy** (`pkg/proxy/`, `cmd/proxy/`): Trust boundary that holds datasource credentials and executes raw upstream requests on behalf of the server
 - **Storage** (`pkg/storage/`): Local file storage for sandbox outputs, backed by afero filesystem
@@ -164,7 +163,6 @@ Key config sections:
 
 ```yaml
 server:
-  transport: stdio|sse|streamable-http
   base_url: "http://localhost:2480"
 
 proxy:

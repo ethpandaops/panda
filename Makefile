@@ -85,11 +85,8 @@ docker-sandbox: ## Build sandbox Docker image
 test-sandbox: ## Run sandbox package tests
 	go test -race -v ./pkg/sandbox/...
 
-run: build-server download-models ## Run the server with stdio transport
+run: build-server download-models ## Run the server
 	./panda-server serve
-
-run-sse: build-server ## Run the server with SSE transport
-	./panda-server serve --transport sse --port 2480
 
 run-docker: docker ## Run with docker compose
 	docker compose up -d

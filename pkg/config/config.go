@@ -42,7 +42,10 @@ type ServerConfig struct {
 	BaseURL    string `yaml:"base_url"`
 	SandboxURL string `yaml:"sandbox_url,omitempty"`
 	URL        string `yaml:"url,omitempty"`
-	Transport  string `yaml:"transport"`
+
+	// Deprecated: Transport is accepted for backwards compatibility but ignored.
+	// The server always runs HTTP with both SSE and streamable-http transports.
+	Transport string `yaml:"transport,omitempty"`
 }
 
 // SemanticSearchConfig holds configuration for semantic example search.
@@ -214,10 +217,6 @@ func applyDefaults(cfg *Config) {
 
 	if cfg.Server.Port == 0 {
 		cfg.Server.Port = 2480
-	}
-
-	if cfg.Server.Transport == "" {
-		cfg.Server.Transport = "stdio"
 	}
 
 	if cfg.Sandbox.Backend == "" {

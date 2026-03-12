@@ -29,13 +29,6 @@ import (
 	"github.com/ethpandaops/panda/pkg/tool"
 )
 
-// Transport constants.
-const (
-	TransportStdio          = "stdio"
-	TransportSSE            = "sse"
-	TransportStreamableHTTP = "streamable-http"
-)
-
 // Service is the main MCP server service.
 type Service interface {
 	// Start initializes and starts the MCP server.
@@ -116,10 +109,7 @@ func (s *service) Start(ctx context.Context) error {
 	s.running = true
 	s.mu.Unlock()
 
-	s.log.WithFields(logrus.Fields{
-		"transport": s.cfg.Transport,
-		"version":   version.Version,
-	}).Info("Starting MCP server")
+	s.log.WithField("version", version.Version).Info("Starting MCP server")
 
 	// Create the MCP server
 	s.mcpServer = mcpserver.NewMCPServer(
@@ -136,17 +126,7 @@ func (s *service) Start(ctx context.Context) error {
 	// Register resources
 	s.registerResources()
 
-	// Start the appropriate transport
-	switch s.cfg.Transport {
-	case TransportStdio:
-		return s.runStdio(ctx)
-	case TransportSSE:
-		return s.runSSE(ctx)
-	case TransportStreamableHTTP:
-		return s.runStreamableHTTP(ctx)
-	default:
-		return fmt.Errorf("unknown transport: %s", s.cfg.Transport)
-	}
+	return s.runHTTP(ctx)
 }
 
 // Stop gracefully shuts down the server.
@@ -292,98 +272,34 @@ func (s *service) createResourceTemplateHandler() mcpserver.ResourceTemplateHand
 	}
 }
 
-// runStdio runs the server using stdio transport.
-func (s *service) runStdio(ctx context.Context) error {
-	s.log.Info("Running MCP server with stdio transport")
-
-	// Run in a goroutine and wait for context cancellation
-	errCh := make(chan error, 1)
-
-	go func() {
-		errCh <- mcpserver.ServeStdio(s.mcpServer)
-	}()
-
-	select {
-	case <-ctx.Done():
-		return nil
-	case <-s.done:
-		return nil
-	case err := <-errCh:
-		return err
-	}
-}
-
-// runSSE runs the server using SSE transport.
-func (s *service) runSSE(ctx context.Context) error {
+// runHTTP runs the server with both SSE and streamable-http MCP transports.
+func (s *service) runHTTP(ctx context.Context) error {
 	addr := fmt.Sprintf("%s:%d", s.cfg.Host, s.cfg.Port)
 
-	s.log.WithField("address", addr).Info("Running MCP server with SSE transport")
+	s.log.WithField("address", addr).Info("Running MCP server with HTTP transport (SSE + streamable-http)")
 
-	opts := []mcpserver.SSEOption{
+	// Create SSE server.
+	sseOpts := []mcpserver.SSEOption{
 		mcpserver.WithKeepAlive(true),
 	}
 
 	if s.cfg.BaseURL != "" {
-		opts = append(opts, mcpserver.WithBaseURL(s.cfg.BaseURL))
+		sseOpts = append(sseOpts, mcpserver.WithBaseURL(s.cfg.BaseURL))
 	}
 
-	s.sseServer = mcpserver.NewSSEServer(s.mcpServer, opts...)
+	s.sseServer = mcpserver.NewSSEServer(s.mcpServer, sseOpts...)
 
-	// Build HTTP handler with auth.
+	// Create streamable-http server.
+	s.streamableHTTPServer = mcpserver.NewStreamableHTTPServer(s.mcpServer)
+
+	// Mount both transports on the same handler.
 	handler := s.buildHTTPHandler(map[string]http.Handler{
 		"/sse":       s.sseServer,
 		"/sse/*":     s.sseServer,
 		"/message":   s.sseServer,
 		"/message/*": s.sseServer,
-	})
-
-	s.httpServer = &http.Server{
-		Addr:              addr,
-		Handler:           handler,
-		ReadHeaderTimeout: 10 * time.Second,
-		IdleTimeout:       120 * time.Second,
-	}
-
-	errCh := make(chan error, 1)
-
-	go func() {
-		errCh <- s.httpServer.ListenAndServe()
-	}()
-
-	observability.ActiveConnections.Inc()
-	defer observability.ActiveConnections.Dec()
-
-	select {
-	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		return s.httpServer.Shutdown(shutdownCtx)
-	case <-s.done:
-		return nil
-	case err := <-errCh:
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			return err
-		}
-
-		return nil
-	}
-}
-
-// runStreamableHTTP runs the server using streamable HTTP transport.
-func (s *service) runStreamableHTTP(ctx context.Context) error {
-	addr := fmt.Sprintf("%s:%d", s.cfg.Host, s.cfg.Port)
-
-	s.log.WithField("address", addr).Info("Running MCP server with streamable-http transport")
-
-	// Create StreamableHTTP server with proper implementation.
-	// Note: StreamableHTTP uses /mcp endpoint by default.
-	s.streamableHTTPServer = mcpserver.NewStreamableHTTPServer(s.mcpServer)
-
-	// Build HTTP handler with auth.
-	handler := s.buildHTTPHandler(map[string]http.Handler{
-		"/mcp":   s.streamableHTTPServer,
-		"/mcp/*": s.streamableHTTPServer,
+		"/mcp":       s.streamableHTTPServer,
+		"/mcp/*":     s.streamableHTTPServer,
 	})
 
 	s.httpServer = &http.Server{

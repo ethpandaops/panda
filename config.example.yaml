@@ -16,8 +16,8 @@ sandbox:
   timeout: 60  # seconds
   memory_limit: "2g"
   cpu_limit: 1.0
-  # Network for sandbox containers. In stdio mode (outside docker compose),
-  # the server auto-creates this network if it doesn't exist.
+  # Network for sandbox containers. The server auto-creates this network if
+  # it doesn't exist.
   network: "ethpandaops-panda-internal"
   # host_shared_path: "/tmp/mcp-sandbox"  # Docker-in-Docker: host-visible path for bind mounts
 

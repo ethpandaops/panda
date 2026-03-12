@@ -70,7 +70,7 @@ func (b *GVisorBackend) Start(ctx context.Context) error {
 		return fmt.Errorf("ensuring sandbox image: %w", err)
 	}
 
-	// Ensure the configured network exists (auto-creates for stdio mode).
+	// Ensure the configured network exists (auto-creates if missing).
 	if err := b.ensureNetwork(ctx); err != nil {
 		return fmt.Errorf("ensuring sandbox network: %w", err)
 	}
