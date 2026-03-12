@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/ethpandaops/panda/pkg/configpath"
 )
@@ -20,8 +19,7 @@ func TestResolveComposeFile(t *testing.T) {
 	t.Run("returns flag value when set", func(t *testing.T) {
 		composeFile = "/custom/path/docker-compose.yaml"
 
-		result, err := resolveComposeFile()
-		require.NoError(t, err)
+		result := resolveComposeFile()
 		assert.Equal(t, "/custom/path/docker-compose.yaml", result)
 	})
 
@@ -33,8 +31,7 @@ func TestResolveComposeFile(t *testing.T) {
 			"docker-compose.yaml",
 		)
 
-		result, err := resolveComposeFile()
-		require.NoError(t, err)
+		result := resolveComposeFile()
 		assert.Equal(t, expected, result)
 	})
 }

@@ -85,40 +85,20 @@ func init() {
 }
 
 func runServerStart(_ *cobra.Command, _ []string) error {
-	compose, err := resolveComposeFile()
-	if err != nil {
-		return err
-	}
-
-	return runDockerCompose(compose, "up", "-d")
+	return runDockerCompose(resolveComposeFile(), "up", "-d")
 }
 
 func runServerStop(_ *cobra.Command, _ []string) error {
-	compose, err := resolveComposeFile()
-	if err != nil {
-		return err
-	}
-
-	return runDockerCompose(compose, "down")
+	return runDockerCompose(resolveComposeFile(), "down")
 }
 
 func runServerRestart(_ *cobra.Command, _ []string) error {
-	compose, err := resolveComposeFile()
-	if err != nil {
-		return err
-	}
-
-	return runDockerCompose(compose, "restart")
+	return runDockerCompose(resolveComposeFile(), "restart")
 }
 
 func runServerStatus(_ *cobra.Command, _ []string) error {
-	compose, err := resolveComposeFile()
-	if err != nil {
-		return err
-	}
-
 	// Show container status.
-	if err := runDockerCompose(compose, "ps"); err != nil {
+	if err := runDockerCompose(resolveComposeFile(), "ps"); err != nil {
 		return err
 	}
 
@@ -137,40 +117,24 @@ func runServerStatus(_ *cobra.Command, _ []string) error {
 }
 
 func runServerLogs(_ *cobra.Command, _ []string) error {
-	compose, err := resolveComposeFile()
-	if err != nil {
-		return err
-	}
-
-	return runDockerCompose(compose, "logs", "-f")
+	return runDockerCompose(resolveComposeFile(), "logs", "-f")
 }
 
 func runServerUpdate(_ *cobra.Command, _ []string) error {
-	compose, err := resolveComposeFile()
-	if err != nil {
-		return err
-	}
-
-	if err := runDockerCompose(compose, "pull"); err != nil {
-		return err
-	}
-
-	return runDockerCompose(compose, "up", "-d")
+	return upgradeServer()
 }
 
 // resolveComposeFile returns the docker-compose file path from
 // the --compose-file flag or the default config directory.
-func resolveComposeFile() (string, error) {
+func resolveComposeFile() string {
 	if composeFile != "" {
-		return composeFile, nil
+		return composeFile
 	}
 
-	defaultPath := filepath.Join(
+	return filepath.Join(
 		configpath.DefaultConfigDir(),
 		"docker-compose.yaml",
 	)
-
-	return defaultPath, nil
 }
 
 // runDockerCompose executes a docker compose command with the given
