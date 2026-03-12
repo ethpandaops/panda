@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -454,7 +455,7 @@ func (s *service) ethNodeBeaconRequestRaw(
 		requestPath += "?" + values.Encode()
 	}
 
-	var reader *bytes.Reader
+	var reader io.Reader
 	if body != nil {
 		payload, err := json.Marshal(body)
 		if err != nil {
