@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,10 +12,7 @@ import (
 	"github.com/ethpandaops/panda/pkg/operations"
 )
 
-var (
-	outputFormat string
-	outputJSON   bool
-)
+var outputFormat string
 
 // isJSON returns true if the output format is JSON.
 func isJSON() bool {
@@ -33,16 +31,20 @@ func printJSON(v any) error {
 	return nil
 }
 
-// printJSONBytes parses raw JSON bytes and pretty-prints them.
+// printJSONBytes pretty-prints raw JSON bytes, preserving original number
+// precision (avoids float64 round-trip that loses large integers).
 func printJSONBytes(data []byte) error {
-	var payload any
-	if err := json.Unmarshal(data, &payload); err != nil {
+	var buf bytes.Buffer
+	if err := json.Indent(&buf, data, "", "  "); err != nil {
 		fmt.Println(string(data))
 
 		return nil
 	}
 
-	return printJSON(payload)
+	buf.WriteByte('\n')
+	_, err := buf.WriteTo(os.Stdout)
+
+	return err
 }
 
 // printTable renders rows as an aligned table with optional headers.
@@ -109,4 +111,73 @@ func printDatasourceList(response *operations.Response) error {
 	printTable([]string{"NAME", "DESCRIPTION"}, rows)
 
 	return nil
+}
+
+// printAPIStringValues parses a JSON response with a "data" array of strings
+// and prints each value on its own line.
+func printAPIStringValues(data []byte) error {
+	var resp struct {
+		Data []any `json:"data"`
+	}
+
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return printJSONBytes(data)
+	}
+
+	for _, value := range resp.Data {
+		fmt.Println(value)
+	}
+
+	return nil
+}
+
+// formatLabelSet sorts label keys and formats them as {key=value, ...}.
+// If quoteValues is true, values are quoted (Prometheus style); otherwise bare (Loki style).
+func formatLabelSet(labels map[string]string, quoteValues bool) string {
+	keys := make([]string, 0, len(labels))
+	for k := range labels {
+		keys = append(keys, k)
+	}
+
+	sort.Strings(keys)
+
+	parts := make([]string, 0, len(keys))
+
+	for _, k := range keys {
+		if quoteValues {
+			parts = append(parts, fmt.Sprintf("%s=%q", k, labels[k]))
+		} else {
+			parts = append(parts, fmt.Sprintf("%s=%s", k, labels[k]))
+		}
+	}
+
+	return "{" + strings.Join(parts, ", ") + "}"
+}
+
+// nestedMap extracts a nested map from an any value. If key is empty, it
+// type-asserts value directly; otherwise it traverses one level into the map.
+func nestedMap(value any, key string) map[string]any {
+	if key == "" {
+		data, _ := value.(map[string]any)
+		return data
+	}
+
+	data, _ := value.(map[string]any)
+	nested, _ := data[key].(map[string]any)
+
+	return nested
+}
+
+// intFromAny coerces a numeric any value to int64.
+func intFromAny(value any) int64 {
+	switch typed := value.(type) {
+	case float64:
+		return int64(typed)
+	case int:
+		return int64(typed)
+	case int64:
+		return typed
+	default:
+		return 0
+	}
 }

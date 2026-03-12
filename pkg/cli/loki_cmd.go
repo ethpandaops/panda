@@ -3,9 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -189,20 +187,7 @@ func printLokiResult(data []byte) error {
 	}
 
 	for _, stream := range resp.Data.Result {
-		// Sort stream label keys for deterministic output.
-		keys := make([]string, 0, len(stream.Stream))
-		for k := range stream.Stream {
-			keys = append(keys, k)
-		}
-
-		sort.Strings(keys)
-
-		labels := make([]string, 0, len(keys))
-		for _, k := range keys {
-			labels = append(labels, fmt.Sprintf("%s=%s", k, stream.Stream[k]))
-		}
-
-		labelStr := "{" + strings.Join(labels, ", ") + "}"
+		labelStr := formatLabelSet(stream.Stream, false)
 
 		for _, entry := range stream.Values {
 			if len(entry) < 2 {

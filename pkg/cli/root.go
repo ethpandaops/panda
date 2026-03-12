@@ -52,7 +52,7 @@ Run 'panda <command> --help' for details on any command.`,
 			FullTimestamp: true,
 		})
 
-		if outputJSON {
+		if jsonFlag, _ := cmd.Flags().GetBool("json"); jsonFlag {
 			outputFormat = "json"
 		}
 
@@ -88,7 +88,7 @@ func init() {
 		"log level (debug, info, warn, error)")
 	rootCmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "text",
 		"output format (text, json)")
-	rootCmd.PersistentFlags().BoolVar(&outputJSON, "json", false,
+	rootCmd.PersistentFlags().Bool("json", false,
 		"output in JSON format (shorthand for --output json)")
 	_ = rootCmd.PersistentFlags().MarkHidden("json")
 

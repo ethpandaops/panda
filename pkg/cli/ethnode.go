@@ -364,27 +364,3 @@ Examples:
 		return printJSON(payload["result"])
 	},
 }
-
-func nestedMap(value any, key string) map[string]any {
-	if key == "" {
-		data, _ := value.(map[string]any)
-		return data
-	}
-
-	data, _ := value.(map[string]any)
-	nested, _ := data[key].(map[string]any)
-	return nested
-}
-
-func intFromAny(value any) int64 {
-	switch typed := value.(type) {
-	case float64:
-		return int64(typed)
-	case int:
-		return int64(typed)
-	case int64:
-		return typed
-	default:
-		return 0
-	}
-}
