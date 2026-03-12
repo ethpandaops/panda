@@ -10,6 +10,9 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"golang.org/x/time/rate"
+
+	simpleauth "github.com/ethpandaops/panda/pkg/auth"
+	"github.com/ethpandaops/panda/pkg/proxy/handlers"
 )
 
 // RateLimiter provides per-user rate limiting for the proxy.
@@ -156,13 +159,18 @@ func (rl *RateLimiter) cleanup() {
 
 // AuditEntry represents a single audit log entry.
 type AuditEntry struct {
-	UserID     string `json:"user_id"`
-	Method     string `json:"method"`
-	Path       string `json:"path"`
-	Datasource string `json:"datasource"`
-	Query      string `json:"query,omitempty"`
-	StatusCode int    `json:"status_code"`
-	Duration   string `json:"duration"`
+	GitHubLogin    string   `json:"github_login"`
+	GitHubID       int64    `json:"github_id"`
+	Orgs           []string `json:"orgs,omitempty"`
+	Method         string   `json:"method"`
+	Path           string   `json:"path"`
+	DatasourceType string   `json:"datasource_type"`
+	DatasourceName string   `json:"datasource_name,omitempty"`
+	Query          string   `json:"query,omitempty"`
+	StatusCode     int      `json:"status_code"`
+	ResponseBytes  int      `json:"response_bytes"`
+	Duration       string   `json:"duration"`
+	UserAgent      string   `json:"user_agent,omitempty"`
 }
 
 // Auditor logs audit entries for proxy requests.
@@ -202,20 +210,30 @@ func (a *Auditor) Middleware() func(http.Handler) http.Handler {
 				bodySnapshot = captureBody(r, a.cfg.MaxQueryLength)
 			}
 
-			// Wrap response writer to capture status code.
+			// Wrap response writer to capture status code and bytes.
 			wrapped := &responseCapture{ResponseWriter: w, statusCode: http.StatusOK}
 
 			// Call next handler.
 			next.ServeHTTP(wrapped, r)
 
-			// Build audit entry.
+			// Resolve user identity from auth context.
+			authUser := simpleauth.GetAuthUser(r.Context())
+
 			entry := AuditEntry{
-				UserID:     GetUserID(r.Context()),
-				Method:     r.Method,
-				Path:       r.URL.Path,
-				Datasource: extractDatasourceType(r.URL.Path),
-				StatusCode: wrapped.statusCode,
-				Duration:   time.Since(start).String(),
+				Method:         r.Method,
+				Path:           r.URL.Path,
+				DatasourceType: extractDatasourceType(r.URL.Path),
+				DatasourceName: r.Header.Get(handlers.DatasourceHeader),
+				StatusCode:     wrapped.statusCode,
+				ResponseBytes:  wrapped.bytesWritten,
+				Duration:       time.Since(start).String(),
+				UserAgent:      r.UserAgent(),
+			}
+
+			if authUser != nil {
+				entry.GitHubLogin = authUser.GitHubLogin
+				entry.GitHubID = authUser.GitHubID
+				entry.Orgs = authUser.Orgs
 			}
 
 			// Add query if configured.
@@ -229,15 +247,34 @@ func (a *Auditor) Middleware() func(http.Handler) http.Handler {
 			}
 
 			// Log the audit entry.
-			a.log.WithFields(logrus.Fields{
-				"user_id":    entry.UserID,
-				"method":     entry.Method,
-				"path":       entry.Path,
-				"datasource": entry.Datasource,
-				"query":      entry.Query,
-				"status":     entry.StatusCode,
-				"duration":   entry.Duration,
-			}).Info("Audit")
+			fields := logrus.Fields{
+				"github_login":    entry.GitHubLogin,
+				"github_id":       entry.GitHubID,
+				"method":          entry.Method,
+				"path":            entry.Path,
+				"datasource_type": entry.DatasourceType,
+				"status":          entry.StatusCode,
+				"response_bytes":  entry.ResponseBytes,
+				"duration":        entry.Duration,
+			}
+
+			if len(entry.Orgs) > 0 {
+				fields["orgs"] = entry.Orgs
+			}
+
+			if entry.DatasourceName != "" {
+				fields["datasource_name"] = entry.DatasourceName
+			}
+
+			if entry.Query != "" {
+				fields["query"] = entry.Query
+			}
+
+			if entry.UserAgent != "" {
+				fields["user_agent"] = entry.UserAgent
+			}
+
+			a.log.WithFields(fields).Info("Audit")
 		})
 	}
 }
