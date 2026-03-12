@@ -40,7 +40,7 @@ FROM alpine:3.20
 WORKDIR /app
 
 # Install runtime dependencies
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata su-exec
 
 # Copy binary from builder
 COPY --from=builder /ethpandaops-panda-server /usr/local/bin/ethpandaops-panda-server
@@ -52,7 +52,12 @@ COPY --from=builder /app/models-output/ /usr/share/panda/
 RUN addgroup -g 1000 panda && \
     adduser -u 1000 -G panda -D panda
 
-USER panda
+# Pre-create storage directory with correct ownership.
+RUN mkdir -p /data/storage && chown panda:panda /data/storage
+
+# Entrypoint runs as root to fix volume ownership, then drops to panda.
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Expose server port
 EXPOSE 2480
@@ -61,5 +66,5 @@ EXPOSE 2480
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:2480/health || exit 1
 
-ENTRYPOINT ["ethpandaops-panda-server"]
-CMD ["serve"]
+ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["ethpandaops-panda-server", "serve"]

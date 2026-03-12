@@ -83,8 +83,14 @@ COPY --from=builder /app/panda-proxy /app/panda-proxy
 COPY --from=builder /assets/all-MiniLM-L6-v2 /usr/share/panda/all-MiniLM-L6-v2
 
 # Create directories
-RUN mkdir -p /config /shared /output && \
-    chown -R panda:panda /app /config /shared /output
+RUN mkdir -p /config /shared /output /data/storage && \
+    chown -R panda:panda /app /config /shared /output /data/storage
+
+# Entrypoint runs as root to fix volume ownership, then drops to panda.
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh && \
+    apt-get update && apt-get install -y --no-install-recommends gosu && \
+    rm -rf /var/lib/apt/lists/*
 
 # Expose ports
 EXPOSE 2480 2490
@@ -93,5 +99,5 @@ EXPOSE 2480 2490
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD nc -z localhost 2480 || exit 1
 
-ENTRYPOINT ["/app/panda-server"]
-CMD ["serve"]
+ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["/app/panda-server", "serve"]

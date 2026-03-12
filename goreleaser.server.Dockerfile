@@ -22,7 +22,7 @@ RUN mkdir -p /model/all-MiniLM-L6-v2 && \
 # =============================================================================
 FROM alpine:3.21
 
-RUN apk add --no-cache ca-certificates tzdata docker-cli
+RUN apk add --no-cache ca-certificates tzdata docker-cli su-exec
 
 RUN addgroup -g 1000 panda && \
     adduser -u 1000 -G panda -D panda
@@ -32,12 +32,17 @@ COPY ${TARGETPLATFORM}/panda-server /usr/local/bin/panda-server
 
 COPY --from=model-downloader /model/all-MiniLM-L6-v2 /usr/share/panda/all-MiniLM-L6-v2
 
-USER panda
+# Pre-create storage directory with correct ownership.
+# Docker copies this ownership into new named volumes.
+RUN mkdir -p /data/storage && chown panda:panda /data/storage
+
+# Entrypoint runs as root to fix volume ownership, then drops to panda.
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 EXPOSE 2480
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:2480/health || exit 1
 
-ENTRYPOINT ["panda-server"]
-CMD ["serve"]
+ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["panda-server", "serve"]
