@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -9,12 +10,16 @@ import (
 	"strings"
 	"time"
 
+	dockercontainer "github.com/docker/docker/api/types/container"
+	dockerfilters "github.com/docker/docker/api/types/filters"
+	dockerclient "github.com/docker/docker/client"
 	"github.com/spf13/cobra"
 
 	authclient "github.com/ethpandaops/panda/pkg/auth/client"
 	authstore "github.com/ethpandaops/panda/pkg/auth/store"
 	"github.com/ethpandaops/panda/pkg/config"
 	"github.com/ethpandaops/panda/pkg/configpath"
+	"github.com/ethpandaops/panda/pkg/sandbox"
 )
 
 var composeFile string
@@ -86,10 +91,14 @@ func init() {
 }
 
 func runServerStart(_ *cobra.Command, _ []string) error {
-	return runDockerCompose(resolveComposeFile(), "up", "-d")
+	return runDockerCompose(resolveComposeFile(), "up", "-d", "--force-recreate")
 }
 
 func runServerStop(_ *cobra.Command, _ []string) error {
+	// Clean up orphaned sandbox containers before compose down,
+	// so the shared network can be removed cleanly.
+	cleanupSandboxContainers()
+
 	return runDockerCompose(resolveComposeFile(), "down")
 }
 
@@ -231,5 +240,44 @@ func printProxyURL() {
 		fmt.Printf("Proxy: %s\n", cfg.Proxy.URL)
 	} else {
 		fmt.Println("Proxy: Not configured")
+	}
+}
+
+// cleanupSandboxContainers removes any sandbox containers managed by panda.
+// This is best-effort — failures are logged but do not block server stop.
+func cleanupSandboxContainers() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cli, err := dockerclient.NewClientWithOpts(
+		dockerclient.FromEnv,
+		dockerclient.WithAPIVersionNegotiation(),
+	)
+	if err != nil {
+		return
+	}
+	defer func() { _ = cli.Close() }()
+
+	filterArgs := dockerfilters.NewArgs()
+	filterArgs.Add("label", sandbox.LabelManaged+"=true")
+
+	containers, err := cli.ContainerList(ctx, dockercontainer.ListOptions{
+		All:     true,
+		Filters: filterArgs,
+	})
+	if err != nil {
+		return
+	}
+
+	if len(containers) == 0 {
+		return
+	}
+
+	fmt.Printf("Cleaning up %d sandbox container(s)...\n", len(containers))
+
+	for _, c := range containers {
+		if err := cli.ContainerRemove(ctx, c.ID, dockercontainer.RemoveOptions{Force: true}); err != nil {
+			log.WithField("container", c.ID[:12]).WithError(err).Warn("Failed to remove sandbox container")
+		}
 	}
 }

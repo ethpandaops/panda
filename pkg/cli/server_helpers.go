@@ -343,14 +343,36 @@ func readClickHouseTable(ctx context.Context, tableName string) (*clickhousemodu
 }
 
 func decodeAPIError(status int, data []byte) error {
+	var message string
+
 	var payload map[string]any
 	if err := json.Unmarshal(data, &payload); err == nil {
-		if message, ok := payload["error"].(string); ok && message != "" {
-			return fmt.Errorf("HTTP %d: %s", status, message)
+		if msg, ok := payload["error"].(string); ok && msg != "" {
+			message = msg
 		}
 	}
 
-	return fmt.Errorf("HTTP %d: %s", status, strings.TrimSpace(string(data)))
+	if message == "" {
+		message = strings.TrimSpace(string(data))
+	}
+
+	hint := serverErrorHint(status, message)
+	if hint != "" {
+		return fmt.Errorf("HTTP %d: %s\n\n  hint: %s", status, message, hint)
+	}
+
+	return fmt.Errorf("HTTP %d: %s", status, message)
+}
+
+func serverErrorHint(status int, _ string) string {
+	switch status {
+	case http.StatusNotFound:
+		return "the panda server does not appear to be running at this address — start it with 'panda server start'"
+	case http.StatusServiceUnavailable:
+		return "the server is running but a required service (e.g. sandbox) is not available — check server logs with 'docker compose logs server'"
+	default:
+		return ""
+	}
 }
 
 func isConnectionRefused(err error) bool {

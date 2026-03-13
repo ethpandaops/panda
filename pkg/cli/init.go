@@ -16,6 +16,8 @@ import (
 	dockerclient "github.com/docker/docker/client"
 	"github.com/spf13/cobra"
 
+	authclient "github.com/ethpandaops/panda/pkg/auth/client"
+	authstore "github.com/ethpandaops/panda/pkg/auth/store"
 	"github.com/ethpandaops/panda/pkg/configpath"
 )
 
@@ -124,10 +126,11 @@ func runInit(_ *cobra.Command, _ []string) error {
 	// 4. Authenticate against the proxy.
 	if !initSkipAuth {
 		fmt.Println()
-		fmt.Println("Authenticating...")
 
-		if err := runAuthLogin(nil, nil); err != nil {
+		if skipped, err := initEnsureAuth(); err != nil {
 			return fmt.Errorf("authentication failed: %w", err)
+		} else if skipped {
+			fmt.Println("Already authenticated (credentials still valid)")
 		}
 	} else {
 		fmt.Println("\nSkipping authentication (--skip-auth)")
@@ -145,7 +148,7 @@ func runInit(_ *cobra.Command, _ []string) error {
 		fmt.Println()
 		fmt.Println("Starting server...")
 
-		if err := runDockerCompose(resolveComposeFile(), "up", "-d"); err != nil {
+		if err := runDockerCompose(resolveComposeFile(), "up", "-d", "--force-recreate"); err != nil {
 			return fmt.Errorf("starting server: %w", err)
 		}
 
@@ -217,6 +220,9 @@ services:
       - %s/config.yaml:/app/config.yaml:ro
       - %s/credentials:/home/panda/.config/panda/credentials
       - panda-storage:/data/storage
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     command: ["panda-server", "serve", "--config", "/app/config.yaml"]
     networks:
       - panda-internal
@@ -358,4 +364,43 @@ func probeSocketGIDInContainer(socketPath string) (string, error) {
 	}
 
 	return gid, nil
+}
+
+// initEnsureAuth checks for existing valid credentials before starting the
+// full OAuth login flow. Returns (true, nil) if auth was skipped because
+// credentials are already valid, (false, nil) on successful fresh login,
+// or (false, err) on failure.
+func initEnsureAuth() (bool, error) {
+	target, err := resolveAuthTarget(context.Background())
+	if err != nil {
+		return false, err
+	}
+
+	if !target.enabled {
+		fmt.Println("Proxy authentication is not enabled for the configured server.")
+		return true, nil
+	}
+
+	client := authclient.New(log, authclient.Config{
+		IssuerURL: target.issuerURL,
+		ClientID:  target.clientID,
+		Resource:  target.resource,
+	})
+
+	store := authstore.New(log, authstore.Config{
+		AuthClient: client,
+		IssuerURL:  target.issuerURL,
+		ClientID:   target.clientID,
+		Resource:   target.resource,
+	})
+
+	// Try to get a valid access token (refreshes automatically if needed).
+	if _, err := store.GetAccessToken(); err == nil {
+		return true, nil
+	}
+
+	// No valid credentials — run the full login flow.
+	fmt.Println("Authenticating...")
+
+	return false, runAuthLogin(nil, nil)
 }
