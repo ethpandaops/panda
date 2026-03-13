@@ -40,7 +40,6 @@ func writePassthroughResponse(w http.ResponseWriter, status int, contentType str
 	if contentType != "" {
 		w.Header().Set("Content-Type", contentType)
 	}
-	w.Header().Set("X-Operation-Transport", "passthrough")
 	w.WriteHeader(status)
 	if len(body) == 0 {
 		return

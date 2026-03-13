@@ -1,11 +1,7 @@
 package operations
 
 const (
-	ResultKindTable  = "table"
 	ResultKindObject = "object"
-
-	RowEncodingObject = "object"
-	RowEncodingArray  = "array"
 )
 
 type Request struct {
