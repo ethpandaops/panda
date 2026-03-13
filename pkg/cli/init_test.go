@@ -140,6 +140,15 @@ func TestBuildComposeTemplate(t *testing.T) {
 				"volumes should contain config mount %q, got %v",
 				expectedMount, volumes)
 
+			// Verify command starts with the full binary name.
+			// Bare subcommands like ["serve", ...] break the docker-entrypoint.sh
+			// which needs ["panda-server", "serve", ...].
+			cmdList, ok := svc["command"].([]any)
+			require.True(t, ok, "service must have a command list")
+			require.NotEmpty(t, cmdList, "command list must not be empty")
+			assert.Equal(t, "panda-server", cmdList[0],
+				"command must start with 'panda-server', not a bare subcommand")
+
 			// Verify networks section.
 			networks, ok := parsed["networks"].(map[string]any)
 			require.True(t, ok, "compose file must have a networks section")

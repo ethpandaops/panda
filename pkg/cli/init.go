@@ -217,7 +217,7 @@ services:
       - %s/config.yaml:/app/config.yaml:ro
       - %s/credentials:/home/panda/.config/panda/credentials
       - panda-storage:/data/storage
-    command: ["serve", "--config", "/app/config.yaml"]
+    command: ["panda-server", "serve", "--config", "/app/config.yaml"]
     networks:
       - panda-internal
 
