@@ -27,7 +27,7 @@ const (
 )
 
 var (
-	initDir          = configpath.DefaultConfigDir()
+	initDir          string
 	initForce        bool
 	initProxyURL     string
 	initSandboxImage string
@@ -58,7 +58,7 @@ Use --skip-start to skip starting the server.`,
 
 func init() {
 	rootCmd.AddCommand(initCmd)
-	initCmd.Flags().StringVar(&initDir, "dir", initDir, "target config directory")
+	initCmd.Flags().StringVar(&initDir, "dir", "", "target config directory (defaults to the runtime config dir)")
 	initCmd.Flags().BoolVar(&initForce, "force", false, "overwrite existing config files")
 	initCmd.Flags().StringVar(&initProxyURL, "proxy-url", defaultProxyURL, "proxy URL for remote datasource access")
 	initCmd.Flags().StringVar(&initSandboxImage, "sandbox-image", defaultSandboxImage, "sandbox container image to pull")
@@ -71,6 +71,8 @@ func init() {
 }
 
 func runInit(_ *cobra.Command, _ []string) error {
+	configDir := resolveInitDir(initDir)
+
 	// 1. Docker check and image pulls.
 	if !initSkipDocker {
 		if err := checkDockerAndPullImages(); err != nil {
@@ -81,17 +83,17 @@ func runInit(_ *cobra.Command, _ []string) error {
 	}
 
 	// 2. Write config files.
-	if err := os.MkdirAll(initDir, 0o755); err != nil {
-		return fmt.Errorf("creating config directory %s: %w", initDir, err)
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		return fmt.Errorf("creating config directory %s: %w", configDir, err)
 	}
 
-	absConfigDir, err := filepath.Abs(initDir)
+	absConfigDir, err := filepath.Abs(configDir)
 	if err != nil {
-		return fmt.Errorf("resolving absolute path for %s: %w", initDir, err)
+		return fmt.Errorf("resolving absolute path for %s: %w", configDir, err)
 	}
 
 	configContent := buildConfigTemplate(initProxyURL, initSandboxImage)
-	configPath := filepath.Join(initDir, "config.yaml")
+	configPath := filepath.Join(configDir, "config.yaml")
 
 	configCreated, err := writeConfigFile(configPath, configContent, initForce)
 	if err != nil {
@@ -99,7 +101,7 @@ func runInit(_ *cobra.Command, _ []string) error {
 	}
 
 	composeContent := buildComposeTemplate(initServerImage, absConfigDir)
-	composePath := filepath.Join(initDir, "docker-compose.yaml")
+	composePath := filepath.Join(configDir, "docker-compose.yaml")
 
 	composeCreated, err := writeConfigFile(composePath, composeContent, initForce)
 	if err != nil {
@@ -158,6 +160,14 @@ func runInit(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
+func resolveInitDir(dir string) string {
+	if strings.TrimSpace(dir) != "" {
+		return filepath.Clean(dir)
+	}
+
+	return configpath.DefaultConfigDir()
+}
+
 func writeConfigFile(path, content string, force bool) (int, error) {
 	if _, err := os.Stat(path); err == nil && !force {
 		return 0, nil
@@ -179,6 +189,7 @@ server:
   port: 2480
   base_url: "http://localhost:2480"
   sandbox_url: "http://panda-server:2480"
+  transport: sse
 
 sandbox:
   image: %q

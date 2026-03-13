@@ -12,12 +12,12 @@ check the datasources://list MCP resource.
 Example usage:
     from ethpandaops import clickhouse, prometheus, loki, storage
 
-    # List available ClickHouse clusters
-    clusters = clickhouse.list_datasources()
-    cluster_name = clusters[0]['name']  # e.g., "xatu"
+    # List available ClickHouse datasources
+    datasources = clickhouse.list_datasources()
+    datasource_name = datasources[0]['name']  # e.g., "xatu"
 
-    # Query ClickHouse using cluster name
-    df = clickhouse.query(cluster_name, "SELECT * FROM beacon_api_eth_v1_events_block LIMIT 10")
+    # Query ClickHouse using datasource name
+    df = clickhouse.query(datasource_name, "SELECT * FROM beacon_api_eth_v1_events_block LIMIT 10")
 
     # Query Prometheus using instance name
     result = prometheus.query("ethpandaops", "up")

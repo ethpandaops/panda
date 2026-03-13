@@ -56,7 +56,7 @@ func runSessionList(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("listing sessions: %w", err)
 	}
 
-	if isJSON() {
+	if sessionJSON || isJSON() {
 		return printJSON(response)
 	}
 
@@ -85,7 +85,7 @@ func runSessionCreate(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("creating session: %w", err)
 	}
 
-	if isJSON() {
+	if sessionJSON || isJSON() {
 		return printJSON(response)
 	}
 
@@ -100,7 +100,7 @@ func runSessionDestroy(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("destroying session: %w", err)
 	}
 
-	if !isJSON() {
+	if !(sessionJSON || isJSON()) {
 		fmt.Printf("Session %s destroyed.\n", args[0])
 	}
 

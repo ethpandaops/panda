@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 
+	"github.com/ethpandaops/panda/pkg/operations"
 	"github.com/spf13/cobra"
 )
 
@@ -42,27 +43,22 @@ var doraNetworksCmd = &cobra.Command{
 	Short: "List networks with Dora explorers",
 	Args:  cobra.NoArgs,
 	RunE: func(_ *cobra.Command, _ []string) error {
-		response, err := runServerOperation("dora.list_networks", map[string]any{})
+		networks, err := listDoraNetworks()
 		if err != nil {
 			return err
 		}
 
-		if isJSON() {
-			return printJSON(response)
+		if doraJSON || isJSON() {
+			return printJSON(operations.DoraNetworksPayload{Networks: networks})
 		}
 
-		data, _ := response.Data.(map[string]any)
-		items, _ := data["networks"].([]any)
-		if len(items) == 0 {
+		if len(networks) == 0 {
 			fmt.Println("No networks with Dora explorers found.")
 			return nil
 		}
 
-		for _, item := range items {
-			network, _ := item.(map[string]any)
-			name, _ := network["name"].(string)
-			doraURL, _ := network["dora_url"].(string)
-			fmt.Printf("  %-30s  %s\n", name, doraURL)
+		for _, network := range networks {
+			fmt.Printf("  %-30s  %s\n", network.Name, network.DoraURL)
 		}
 
 		return nil
@@ -74,41 +70,39 @@ var doraOverviewCmd = &cobra.Command{
 	Short: "Get network overview",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
-		response, err := runServerOperation("dora.get_network_overview", map[string]any{
-			"network": args[0],
-		})
+		response, err := doraOverview(operations.DoraNetworkArgs{Network: args[0]})
 		if err != nil {
 			return err
 		}
 
-		if isJSON() {
+		if doraJSON || isJSON() {
 			return printJSON(response)
 		}
 
-		data, _ := response.Data.(map[string]any)
-
-		// Format participation rate as a percentage.
-		participationStr := fmt.Sprintf("%v", data["participation_rate"])
-		if rate, ok := data["participation_rate"].(float64); ok {
+		participationStr := fmt.Sprintf("%v", response.ParticipationRate)
+		if rate, ok := response.ParticipationRate.(float64); ok {
 			participationStr = fmt.Sprintf("%.2f%%", rate*100)
 		}
 
 		pairs := [][2]string{
 			{"Network", args[0]},
-			{"Current epoch", fmt.Sprintf("%v", data["current_epoch"])},
-			{"Epoch finalized", fmt.Sprintf("%v", data["finalized"])},
+			{"Current epoch", fmt.Sprintf("%v", response.CurrentEpoch)},
+			{"Current slot", fmt.Sprintf("%v", response.CurrentSlot)},
+			{"Epoch finalized", fmt.Sprintf("%v", response.Finalized)},
 			{"Participation rate", participationStr},
 		}
 
-		for _, kv := range [][2]string{
-			{"Active validators", "active_validator_count"},
-			{"Total validators", "total_validator_count"},
-			{"Pending validators", "pending_validator_count"},
-			{"Exited validators", "exited_validator_count"},
-		} {
-			if value, ok := data[kv[1]]; ok {
-				pairs = append(pairs, [2]string{kv[0], fmt.Sprintf("%v", value)})
-			}
+		if value := response.ActiveValidatorCount; value != nil {
+			pairs = append(pairs, [2]string{"Active validators", fmt.Sprintf("%v", value)})
+		}
+		if value := response.TotalValidatorCount; value != nil {
+			pairs = append(pairs, [2]string{"Total validators", fmt.Sprintf("%v", value)})
+		}
+		if value := response.PendingValidatorCount; value != nil {
+			pairs = append(pairs, [2]string{"Pending validators", fmt.Sprintf("%v", value)})
+		}
+		if value := response.ExitedValidatorCount; value != nil {
+			pairs = append(pairs, [2]string{"Exited validators", fmt.Sprintf("%v", value)})
 		}
 
 		printKeyValue(pairs)
@@ -122,9 +116,9 @@ var doraValidatorCmd = &cobra.Command{
 	Short: "Get validator details",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		response, err := runServerOperationRaw("dora.get_validator", map[string]any{
-			"network":         args[0],
-			"index_or_pubkey": args[1],
+		response, err := doraValidator(operations.DoraIndexOrPubkeyArgs{
+			Network:       args[0],
+			IndexOrPubkey: args[1],
 		})
 		if err != nil {
 			return err
@@ -139,9 +133,9 @@ var doraSlotCmd = &cobra.Command{
 	Short: "Get slot details",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		response, err := runServerOperationRaw("dora.get_slot", map[string]any{
-			"network":      args[0],
-			"slot_or_hash": args[1],
+		response, err := doraSlot(operations.DoraSlotOrHashArgs{
+			Network:    args[0],
+			SlotOrHash: args[1],
 		})
 		if err != nil {
 			return err
@@ -156,9 +150,9 @@ var doraEpochCmd = &cobra.Command{
 	Short: "Get epoch summary",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		response, err := runServerOperationRaw("dora.get_epoch", map[string]any{
-			"network": args[0],
-			"epoch":   args[1],
+		response, err := doraEpoch(operations.DoraEpochArgs{
+			Network: args[0],
+			Epoch:   args[1],
 		})
 		if err != nil {
 			return err

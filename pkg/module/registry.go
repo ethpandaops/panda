@@ -40,7 +40,7 @@ func (r *Registry) Add(ext Module) {
 }
 
 // InitModule initializes a module with the given raw YAML config.
-// It calls Init, ApplyDefaults, and Validate in sequence.
+// It calls Init, optional defaults application, and Validate in sequence.
 // Returns ErrNoValidConfig if the module has no valid configuration entries,
 // which should be handled by the caller as a graceful skip.
 func (r *Registry) InitModule(name string, rawConfig []byte) error {
@@ -56,7 +56,9 @@ func (r *Registry) InitModule(name string, rawConfig []byte) error {
 		return fmt.Errorf("initializing module %q: %w", name, err)
 	}
 
-	ext.ApplyDefaults()
+	if applier, ok := ext.(DefaultsApplier); ok {
+		applier.ApplyDefaults()
+	}
 
 	if err := ext.Validate(); err != nil {
 		return fmt.Errorf("validating module %q: %w", name, err)
@@ -89,7 +91,9 @@ func (r *Registry) InitModuleFromDiscovery(name string, datasources []types.Data
 		return fmt.Errorf("initializing module %q from discovery: %w", name, err)
 	}
 
-	ext.ApplyDefaults()
+	if applier, ok := ext.(DefaultsApplier); ok {
+		applier.ApplyDefaults()
+	}
 
 	if err := ext.Validate(); err != nil {
 		return fmt.Errorf("validating module %q: %w", name, err)
@@ -156,7 +160,12 @@ func (r *Registry) StartAll(ctx context.Context) error {
 	r.mu.RUnlock()
 
 	for _, ext := range modules {
-		if err := ext.Start(ctx); err != nil {
+		starter, ok := ext.(Starter)
+		if !ok {
+			continue
+		}
+
+		if err := starter.Start(ctx); err != nil {
 			return fmt.Errorf("starting module %q: %w", ext.Name(), err)
 		}
 
@@ -174,8 +183,52 @@ func (r *Registry) StopAll(ctx context.Context) {
 	r.mu.RUnlock()
 
 	for _, ext := range modules {
-		if err := ext.Stop(ctx); err != nil {
+		stopper, ok := ext.(Stopper)
+		if !ok {
+			continue
+		}
+
+		if err := stopper.Stop(ctx); err != nil {
 			r.log.WithError(err).WithField("module", ext.Name()).Warn("Failed to stop module")
+		}
+	}
+}
+
+// BindRuntimeDependencies wires shared runtime collaborators into initialized
+// modules that declare the optional capability.
+func (r *Registry) BindRuntimeDependencies(deps RuntimeDependencies) {
+	r.mu.RLock()
+	modules := make([]Module, len(r.initialized))
+	copy(modules, r.initialized)
+	r.mu.RUnlock()
+
+	for _, ext := range modules {
+		binder, ok := ext.(RuntimeDependencyBinder)
+		if !ok {
+			continue
+		}
+
+		binder.BindRuntimeDependencies(deps)
+		r.log.WithField("module", ext.Name()).Debug("Bound runtime dependencies")
+	}
+}
+
+// RegisterResources calls optional resource registration hooks on initialized
+// modules so modules that expose no custom resources do not need no-op methods.
+func (r *Registry) RegisterResources(log logrus.FieldLogger, reg ResourceRegistry) {
+	r.mu.RLock()
+	modules := make([]Module, len(r.initialized))
+	copy(modules, r.initialized)
+	r.mu.RUnlock()
+
+	for _, ext := range modules {
+		provider, ok := ext.(ResourceProvider)
+		if !ok {
+			continue
+		}
+
+		if err := provider.RegisterResources(log, reg); err != nil {
+			log.WithError(err).WithField("module", ext.Name()).Warn("Failed to register module resources")
 		}
 	}
 }
@@ -204,26 +257,6 @@ func (r *Registry) SandboxEnv() (map[string]string, error) {
 	}
 
 	return env, nil
-}
-
-// DatasourceInfo aggregates datasource info from all initialized modules.
-func (r *Registry) DatasourceInfo() []types.DatasourceInfo {
-	r.mu.RLock()
-	modules := make([]Module, len(r.initialized))
-	copy(modules, r.initialized)
-	r.mu.RUnlock()
-
-	var infos []types.DatasourceInfo
-	for _, ext := range modules {
-		provider, ok := ext.(DatasourceInfoProvider)
-		if !ok {
-			continue
-		}
-
-		infos = append(infos, provider.DatasourceInfo()...)
-	}
-
-	return infos
 }
 
 // Examples aggregates query examples from all initialized modules.

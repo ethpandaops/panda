@@ -213,8 +213,8 @@ func printAuthStatus() {
 		Resource:   target.resource,
 	})
 
-	if store.IsAuthenticated() {
-		fmt.Println("Auth: Authenticated")
+	if store.HasUsableCredentialsHint() {
+		fmt.Println("Auth: Stored credentials available")
 	} else {
 		fmt.Println("Auth: Not authenticated (run 'panda auth login')")
 	}

@@ -1,11 +1,6 @@
 package loki
 
 import (
-	"context"
-	"encoding/json"
-	"fmt"
-	"maps"
-
 	"gopkg.in/yaml.v3"
 
 	"github.com/ethpandaops/panda/pkg/module"
@@ -22,15 +17,16 @@ var (
 type Module struct {
 	cfg         Config
 	datasources []types.DatasourceInfo
+	examples    map[string]types.ExampleCategory
 }
 
 // New creates a new Loki module.
 func New() *Module { return &Module{} }
 
-func (p *Module) Name() string { return "loki" }
+func (ext *Module) Name() string { return "loki" }
 
 // InitFromDiscovery initializes the module from discovered datasources.
-func (p *Module) InitFromDiscovery(datasources []types.DatasourceInfo) error {
+func (ext *Module) InitFromDiscovery(datasources []types.DatasourceInfo) error {
 	var filtered []types.DatasourceInfo
 
 	for _, ds := range datasources {
@@ -45,35 +41,35 @@ func (p *Module) InitFromDiscovery(datasources []types.DatasourceInfo) error {
 		return module.ErrNoValidConfig
 	}
 
-	p.datasources = filtered
+	ext.datasources = filtered
 
 	return nil
 }
 
 // Init parses the raw YAML config for this module.
-func (p *Module) Init(rawConfig []byte) error {
-	if err := yaml.Unmarshal(rawConfig, &p.cfg); err != nil {
+func (ext *Module) Init(rawConfig []byte) error {
+	if err := yaml.Unmarshal(rawConfig, &ext.cfg); err != nil {
 		return err
 	}
 
 	// Drop unnamed instances.
-	validInstances := make([]InstanceConfig, 0, len(p.cfg.Instances))
-	for _, inst := range p.cfg.Instances {
+	validInstances := make([]InstanceConfig, 0, len(ext.cfg.Instances))
+	for _, inst := range ext.cfg.Instances {
 		if inst.Name != "" {
 			validInstances = append(validInstances, inst)
 		}
 	}
 
-	p.cfg.Instances = validInstances
+	ext.cfg.Instances = validInstances
 
-	if len(p.cfg.Instances) == 0 {
+	if len(ext.cfg.Instances) == 0 {
 		return module.ErrNoValidConfig
 	}
 
 	// Populate internal datasources from config.
-	p.datasources = make([]types.DatasourceInfo, 0, len(p.cfg.Instances))
-	for _, inst := range p.cfg.Instances {
-		p.datasources = append(p.datasources, types.DatasourceInfo{
+	ext.datasources = make([]types.DatasourceInfo, 0, len(ext.cfg.Instances))
+	for _, inst := range ext.cfg.Instances {
+		ext.datasources = append(ext.datasources, types.DatasourceInfo{
 			Type:        "loki",
 			Name:        inst.Name,
 			Description: inst.Description,
@@ -86,74 +82,22 @@ func (p *Module) Init(rawConfig []byte) error {
 	return nil
 }
 
-// ApplyDefaults sets default values before validation.
-func (p *Module) ApplyDefaults() {}
-
-// Validate checks that the parsed config is valid.
-func (p *Module) Validate() error {
-	names := make(map[string]struct{}, len(p.datasources))
-	for i, ds := range p.datasources {
-		if ds.Name == "" {
-			return fmt.Errorf("datasource[%d].name is required", i)
-		}
-
-		if _, exists := names[ds.Name]; exists {
-			return fmt.Errorf("datasource[%d].name %q is duplicated", i, ds.Name)
-		}
-
-		names[ds.Name] = struct{}{}
+// Validate checks that the configured datasources are unique and example data is available.
+func (ext *Module) Validate() error {
+	if err := module.EnsureExampleCatalogLoaded(&ext.examples, loadExamples); err != nil {
+		return err
 	}
 
-	return nil
-}
-
-// SandboxEnv returns environment variables for the sandbox.
-func (p *Module) SandboxEnv() (map[string]string, error) {
-	if len(p.datasources) == 0 {
-		return nil, nil
-	}
-
-	type datasourceInfo struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-	}
-
-	infos := make([]datasourceInfo, 0, len(p.datasources))
-	for _, ds := range p.datasources {
-		infos = append(infos, datasourceInfo{
-			Name:        ds.Name,
-			Description: ds.Description,
-		})
-	}
-
-	infosJSON, err := json.Marshal(infos)
-	if err != nil {
-		return nil, fmt.Errorf("marshaling Loki datasource info: %w", err)
-	}
-
-	return map[string]string{
-		"ETHPANDAOPS_LOKI_DATASOURCES": string(infosJSON),
-	}, nil
-}
-
-// DatasourceInfo returns datasource metadata for datasources:// resources.
-func (p *Module) DatasourceInfo() []types.DatasourceInfo {
-	result := make([]types.DatasourceInfo, len(p.datasources))
-	copy(result, p.datasources)
-
-	return result
+	return module.ValidateUniqueDatasources(ext.datasources)
 }
 
 // Examples returns query examples for the Loki module.
-func (p *Module) Examples() map[string]types.ExampleCategory {
-	result := make(map[string]types.ExampleCategory, len(queryExamples))
-	maps.Copy(result, queryExamples)
-
-	return result
+func (ext *Module) Examples() map[string]types.ExampleCategory {
+	return module.CloneExampleCatalog(ext.examples)
 }
 
 // PythonAPIDocs returns the Loki module documentation.
-func (p *Module) PythonAPIDocs() map[string]types.ModuleDoc {
+func (ext *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 	return map[string]types.ModuleDoc{
 		"loki": {
 			Description: "Query Loki for log data",
@@ -213,9 +157,3 @@ func (p *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 		},
 	}
 }
-
-// Start performs async initialization.
-func (p *Module) Start(_ context.Context) error { return nil }
-
-// Stop cleans up resources.
-func (p *Module) Stop(_ context.Context) error { return nil }

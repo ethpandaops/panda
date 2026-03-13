@@ -5,15 +5,16 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/ethpandaops/panda/pkg/configpath"
+	"github.com/ethpandaops/panda/pkg/configutil"
 )
 
 // Config is the main configuration structure.
@@ -132,6 +133,10 @@ type ProxyAuthConfig struct {
 
 // Load loads configuration from a YAML file with environment variable substitution.
 func Load(path string) (*Config, error) {
+	return load(path, true)
+}
+
+func load(path string, validate bool) (*Config, error) {
 	resolvedPath, err := configpath.ResolveAppConfigPath(path)
 	if err != nil {
 		return nil, err
@@ -143,7 +148,7 @@ func Load(path string) (*Config, error) {
 	}
 
 	// Substitute environment variables
-	substituted, err := substituteEnvVars(string(data))
+	substituted, err := configutil.SubstituteEnvVars(string(data))
 	if err != nil {
 		return nil, fmt.Errorf("substituting env vars: %w", err)
 	}
@@ -159,8 +164,10 @@ func Load(path string) (*Config, error) {
 	// Apply defaults
 	applyDefaults(&cfg)
 
-	if err := cfg.Validate(); err != nil {
-		return nil, fmt.Errorf("validating config: %w", err)
+	if validate {
+		if err := cfg.Validate(); err != nil {
+			return nil, fmt.Errorf("validating config: %w", err)
+		}
 	}
 
 	cfg.path = resolvedPath
@@ -173,40 +180,52 @@ func (c *Config) Path() string {
 	return c.path
 }
 
-// envVarWithDefaultPattern matches ${VAR_NAME:-default} patterns.
-var envVarWithDefaultPattern = regexp.MustCompile(`\$\{([^}:]+)(?::-([^}]*))?\}`)
-
-// substituteEnvVars replaces ${VAR_NAME} and ${VAR_NAME:-default} patterns with environment variable values.
-// Lines that are comments (starting with #) are skipped.
-// Missing environment variables without defaults are replaced with empty strings (lenient mode).
-func substituteEnvVars(content string) (string, error) {
-	lines := strings.Split(content, "\n")
-
-	for i, line := range lines {
-		// Skip lines that are YAML comments.
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-
-		lines[i] = envVarWithDefaultPattern.ReplaceAllStringFunc(line, func(match string) string {
-			parts := envVarWithDefaultPattern.FindStringSubmatch(match)
-			varName := parts[1]
-			defaultVal := ""
-			if len(parts) > 2 {
-				defaultVal = parts[2]
-			}
-
-			value := os.Getenv(varName)
-			if value == "" {
-				return defaultVal // Use default or empty string
-			}
-
-			return value
-		})
+// ServerURL returns the resolved server base URL for client use.
+func (c *Config) ServerURL() string {
+	if c == nil {
+		return ""
 	}
 
-	return strings.Join(lines, "\n"), nil
+	if c.Server.URL != "" {
+		return strings.TrimRight(c.Server.URL, "/")
+	}
+
+	if c.Server.BaseURL != "" {
+		return strings.TrimRight(c.Server.BaseURL, "/")
+	}
+
+	host := strings.TrimSpace(c.Server.Host)
+	if host == "" || host == "0.0.0.0" || host == "::" || host == "::0" {
+		host = "localhost"
+	}
+
+	port := c.Server.Port
+	if port == 0 {
+		port = 2480
+	}
+
+	return fmt.Sprintf("http://%s", net.JoinHostPort(host, fmt.Sprintf("%d", port)))
+}
+
+// MaxSandboxTimeout is the maximum allowed sandbox timeout in seconds.
+const MaxSandboxTimeout = 600
+
+// Validate validates the configuration.
+func (c *Config) Validate() error {
+	if c.Sandbox.Image == "" {
+		return errors.New("sandbox.image is required")
+	}
+
+	// Validate sandbox timeout is within bounds.
+	if c.Sandbox.Timeout > MaxSandboxTimeout {
+		return fmt.Errorf("sandbox.timeout cannot exceed %d seconds", MaxSandboxTimeout)
+	}
+
+	if c.Proxy.URL == "" {
+		return errors.New("proxy.url is required")
+	}
+
+	return nil
 }
 
 // applyDefaults sets default values for configuration fields.
@@ -217,6 +236,12 @@ func applyDefaults(cfg *Config) {
 
 	if cfg.Server.Port == 0 {
 		cfg.Server.Port = 2480
+	}
+
+	if cfg.Server.Transport == "" {
+		// Keep the deprecated field populated for backwards-compatible config
+		// handling and tests, even though the runtime no longer branches on it.
+		cfg.Server.Transport = "stdio"
 	}
 
 	if cfg.Sandbox.Backend == "" {
@@ -269,25 +294,4 @@ func applyDefaults(cfg *Config) {
 
 	// Semantic search defaults — model path is resolved at runtime by searchruntime.
 	// Leave empty to use the default search paths.
-}
-
-// MaxSandboxTimeout is the maximum allowed sandbox timeout in seconds.
-const MaxSandboxTimeout = 600
-
-// Validate validates the configuration.
-func (c *Config) Validate() error {
-	if c.Sandbox.Image == "" {
-		return errors.New("sandbox.image is required")
-	}
-
-	// Validate sandbox timeout is within bounds.
-	if c.Sandbox.Timeout > MaxSandboxTimeout {
-		return fmt.Errorf("sandbox.timeout cannot exceed %d seconds", MaxSandboxTimeout)
-	}
-
-	if c.Proxy.URL == "" {
-		return errors.New("proxy.url is required")
-	}
-
-	return nil
 }

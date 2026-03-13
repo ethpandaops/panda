@@ -85,13 +85,13 @@ func (s *service) handleAPIProxyAuthMetadata(w http.ResponseWriter, _ *http.Requ
 }
 
 func (s *service) handleAPIDatasources(w http.ResponseWriter, r *http.Request) {
-	if s.moduleRegistry == nil {
-		writeAPIError(w, http.StatusServiceUnavailable, "module registry is unavailable")
+	if s.proxyService == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "proxy service is unavailable")
 		return
 	}
 
 	filterType := strings.TrimSpace(r.URL.Query().Get("type"))
-	all := s.moduleRegistry.DatasourceInfo()
+	all := s.proxyService.Datasources().Datasources
 
 	if filterType != "" {
 		filtered := make([]types.DatasourceInfo, 0, len(all))
@@ -250,20 +250,15 @@ func (s *service) handleAPICreateSession(w http.ResponseWriter, r *http.Request)
 	}
 
 	ownerID := authOwnerID(r)
-	sessionID, err := s.execService.CreateSession(r.Context(), ownerID)
+	created, err := s.execService.CreateSession(r.Context(), ownerID)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	resp := serverapi.CreateSessionResponse{SessionID: sessionID}
-	if sessions, _, err := s.execService.ListSessions(r.Context(), ownerID); err == nil {
-		for _, session := range sessions {
-			if session.ID == sessionID {
-				resp.TTLRemaining = session.TTLRemaining.Round(time.Second).String()
-				break
-			}
-		}
+	resp := serverapi.CreateSessionResponse{SessionID: created.ID}
+	if created.TTLRemaining > 0 {
+		resp.TTLRemaining = created.TTLRemaining.Round(time.Second).String()
 	}
 
 	writeJSON(w, http.StatusCreated, resp)
@@ -514,14 +509,21 @@ func (s *service) proxyRequest(
 			req.Header.Add(key, value)
 		}
 	}
-	req.Header.Del("Authorization")
 
-	tokenID := fmt.Sprintf("server-api-%d", time.Now().UnixNano())
-	token := s.proxyService.RegisterToken(tokenID)
-	defer s.proxyService.RevokeToken(tokenID)
+	if req.Header.Get("Authorization") == "" {
+		if err := s.proxyService.AuthorizeRequest(req); err != nil {
+			return nil, http.StatusBadGateway, nil, fmt.Errorf("authorizing proxy request: %w", err)
+		}
+	}
 
-	if token != "" && token != "none" {
-		req.Header.Set("Authorization", "Bearer "+token)
+	if req.Header.Get("Authorization") == "" {
+		tokenID := fmt.Sprintf("server-api-%d", time.Now().UnixNano())
+		token := s.proxyService.RegisterToken(tokenID)
+		defer s.proxyService.RevokeToken(tokenID)
+
+		if token != "" && token != "none" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
 	}
 
 	resp, err := s.httpClient.Do(req)

@@ -28,9 +28,9 @@ var (
 
 const (
 	// GitHub OAuth endpoints.
-	githubAuthorizeURL = "https://github.com/login/oauth/authorize"
-	githubTokenURL     = "https://github.com/login/oauth/access_token"
-	githubAPIURL       = "https://api.github.com"
+	githubAuthorizeURL     = "https://github.com/login/oauth/authorize"
+	githubOAuthExchangeURL = "https://github.com/login/oauth/access_token"
+	githubAPIURL           = "https://api.github.com"
 
 	// Default HTTP timeout.
 	defaultTimeout = 30 * time.Second
@@ -55,6 +55,15 @@ func NewClient(log logrus.FieldLogger, clientID, clientSecret string) *Client {
 			Timeout:   defaultTimeout,
 		},
 	}
+}
+
+// SetHTTPClient overrides the HTTP client used for GitHub OAuth requests.
+func (c *Client) SetHTTPClient(httpClient *http.Client) {
+	if httpClient == nil {
+		return
+	}
+
+	c.httpClient = httpClient
 }
 
 // GetAuthorizationURL generates the GitHub OAuth authorization URL.
@@ -90,7 +99,7 @@ func (c *Client) ExchangeCode(ctx context.Context, code, redirectURI string) (*T
 		"redirect_uri":  {redirectURI},
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, githubTokenURL, strings.NewReader(data.Encode()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, githubOAuthExchangeURL, strings.NewReader(data.Encode()))
 	if err != nil {
 		return nil, fmt.Errorf("%w: creating request: %w", ErrGitHubOAuth, err)
 	}

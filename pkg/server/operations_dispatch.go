@@ -3,30 +3,39 @@ package server
 import (
 	"net/http"
 	"net/url"
-	"strings"
+
+	"github.com/ethpandaops/panda/pkg/proxy"
 )
 
-const proxyDatasourceHeader = "X-Datasource"
+type operationHandler func(http.ResponseWriter, *http.Request)
+
+func (s *service) registerOperation(operationID string, handler operationHandler) {
+	s.operationHandlers[operationID] = handler
+}
+
+func (s *service) registerOperations() {
+	s.registerClickHouseOperations()
+	s.registerPrometheusOperations()
+	s.registerLokiOperations()
+	s.registerDoraOperations()
+	s.registerEthNodeOperations()
+}
 
 func (s *service) dispatchOperation(operationID string, w http.ResponseWriter, r *http.Request) bool {
-	for _, handler := range []func(string, http.ResponseWriter, *http.Request) bool{
-		s.handleClickHouseOperation,
-		s.handlePrometheusOperation,
-		s.handleLokiOperation,
-		s.handleDoraOperation,
-		s.handleEthNodeOperation,
-	} {
-		if handler(operationID, w, r) {
-			return true
-		}
+	handler, ok := s.operationHandlers[operationID]
+	if !ok {
+		return false
 	}
 
-	return false
+	handler(w, r)
+
+	return true
 }
 
 func (s *service) proxyPassthroughGet(
 	w http.ResponseWriter,
 	r *http.Request,
+	operationID string,
 	path string,
 	params url.Values,
 	datasource string,
@@ -41,7 +50,7 @@ func (s *service) proxyPassthroughGet(
 		http.MethodGet,
 		requestPath,
 		nil,
-		http.Header{proxyDatasourceHeader: []string{datasource}},
+		http.Header{proxy.DatasourceHeader: []string{datasource}},
 	)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
@@ -49,7 +58,7 @@ func (s *service) proxyPassthroughGet(
 	}
 
 	if status < 200 || status >= 300 {
-		http.Error(w, strings.TrimSpace(string(body)), status)
+		http.Error(w, upstreamFailureMessage(operationID, status, body, "datasource="+datasource), status)
 		return
 	}
 

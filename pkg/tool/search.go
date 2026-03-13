@@ -29,19 +29,17 @@ Examples:
 - search(type="runbooks", query="slow clickhouse query", tag="performance")`
 
 type searchHandler struct {
-	log     logrus.FieldLogger
 	service *searchsvc.Service
 }
 
 func NewSearchTool(
-	log logrus.FieldLogger,
+	_ logrus.FieldLogger,
 	exampleIndex *resource.ExampleIndex,
 	moduleReg *module.Registry,
 	runbookIndex *resource.RunbookIndex,
 	runbookReg *runbooks.Registry,
 ) Definition {
 	h := &searchHandler{
-		log:     log.WithField("tool", SearchToolName),
 		service: searchsvc.New(exampleIndex, moduleReg, runbookIndex, runbookReg),
 	}
 
@@ -88,8 +86,6 @@ func NewSearchTool(
 }
 
 func (h *searchHandler) handle(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	h.log.Debug("Handling search request")
-
 	searchType, err := searchsvc.NormalizeSearchType(request.GetString("type", ""))
 	if err != nil {
 		return CallToolError(err), nil
@@ -132,12 +128,6 @@ func (h *searchHandler) searchExamples(
 		return CallToolError(fmt.Errorf("marshaling response: %w", err)), nil
 	}
 
-	h.log.WithFields(logrus.Fields{
-		"type":    searchsvc.SearchTypeExamples,
-		"query":   query,
-		"matches": response.TotalMatches,
-	}).Debug("Search completed")
-
 	return CallToolSuccess(string(data)), nil
 }
 
@@ -162,12 +152,6 @@ func (h *searchHandler) searchRunbooks(
 	if err != nil {
 		return CallToolError(fmt.Errorf("marshaling response: %w", err)), nil
 	}
-
-	h.log.WithFields(logrus.Fields{
-		"type":    searchsvc.SearchTypeRunbooks,
-		"query":   query,
-		"matches": response.TotalMatches,
-	}).Debug("Search completed")
 
 	return CallToolSuccess(string(data)), nil
 }

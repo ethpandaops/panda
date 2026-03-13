@@ -24,10 +24,12 @@ const (
 
 type resourceTipCache struct {
 	mu      sync.Mutex
+	now     func() time.Time
 	entries map[string]time.Time
 }
 
 var sessionsWithResourceTip = &resourceTipCache{
+	now:     time.Now,
 	entries: make(map[string]time.Time, 64),
 }
 
@@ -43,13 +45,13 @@ func (c *resourceTipCache) markShown(sessionKey string) bool {
 		c.cleanupLocked()
 	}
 
-	c.entries[sessionKey] = time.Now()
+	c.entries[sessionKey] = c.now()
 
 	return true
 }
 
 func (c *resourceTipCache) cleanupLocked() {
-	cutoff := time.Now().Add(-resourceTipCacheMaxAge)
+	cutoff := c.now().Add(-resourceTipCacheMaxAge)
 
 	for key, ts := range c.entries {
 		if ts.Before(cutoff) {
@@ -73,6 +75,18 @@ const executePythonDescription = `Execute Python code with the ethpandaops libra
 **BEFORE YOUR FIRST QUERY:** Read panda://getting-started for workflow guidance and critical syntax rules.
 
 Use the search tool with ` + "`type=\"examples\"`" + ` for query patterns. Reuse session_id from responses.`
+
+type executePythonService interface {
+	Execute(ctx context.Context, req execsvc.ExecuteRequest) (*sandbox.ExecutionResult, error)
+}
+
+type executePythonHandler struct {
+	log         logrus.FieldLogger
+	backendName string
+	cfg         *config.Config
+	service     executePythonService
+	tipCache    *resourceTipCache
+}
 
 func NewExecutePythonTool(
 	log logrus.FieldLogger,
@@ -105,89 +119,111 @@ func NewExecutePythonTool(
 				Required: []string{"code"},
 			},
 		},
-		Handler: newExecutePythonHandler(log, sandboxSvc, cfg, service),
+		Handler: newExecutePythonHandler(log, sandboxSvc.Name(), cfg, service, sessionsWithResourceTip),
 	}
 }
 
 func newExecutePythonHandler(
 	log logrus.FieldLogger,
-	sandboxSvc sandbox.Service,
+	backendName string,
 	cfg *config.Config,
-	service *execsvc.Service,
+	service executePythonService,
+	tipCache *resourceTipCache,
 ) Handler {
-	handlerLog := log.WithField("tool", ExecutePythonToolName)
-
-	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		code, err := request.RequireString("code")
-		if err != nil {
-			return CallToolError(fmt.Errorf("invalid arguments: %w", err)), nil
-		}
-
-		if code == "" {
-			return CallToolError(fmt.Errorf("code is required")), nil
-		}
-
-		timeout := request.GetInt("timeout", cfg.Sandbox.Timeout)
-		if timeout < MinTimeout || timeout > MaxTimeout {
-			return CallToolError(fmt.Errorf("timeout must be between %d and %d seconds", MinTimeout, MaxTimeout)), nil
-		}
-
-		sessionID := request.GetString("session_id", "")
-
-		var ownerID string
-		if user := auth.GetAuthUser(ctx); user != nil {
-			ownerID = fmt.Sprintf("%d", user.GitHubID)
-		}
-
-		requestFields := logrus.Fields{
-			"code_length": len(code),
-			"timeout":     timeout,
-			"backend":     sandboxSvc.Name(),
-			"session_id":  sessionID,
-			"owner_id":    ownerID,
-		}
-		if cfg.Sandbox.Logging.LogCode {
-			requestFields["code"] = code
-		}
-		handlerLog.WithFields(requestFields).Info("Executing Python code")
-
-		result, err := service.Execute(ctx, execsvc.ExecuteRequest{
-			Code:      code,
-			Timeout:   timeout,
-			SessionID: sessionID,
-			OwnerID:   ownerID,
-		})
-		if err != nil {
-			handlerLog.WithError(err).Error("Execution failed")
-			return CallToolError(fmt.Errorf("execution error: %w", err)), nil
-		}
-
-		response := formatExecutionResult(result, cfg)
-
-		sessionKey := result.SessionID
-		if sessionKey == "" {
-			sessionKey = result.ExecutionID
-		}
-
-		if sessionsWithResourceTip.markShown(sessionKey) {
-			response += resourceTipMessage
-		}
-
-		completionFields := logrus.Fields{
-			"execution_id": result.ExecutionID,
-			"exit_code":    result.ExitCode,
-			"duration":     result.DurationSeconds,
-			"output_files": result.OutputFiles,
-			"session_id":   result.SessionID,
-		}
-		if cfg.Sandbox.Logging.LogOutput {
-			completionFields["stdout"] = result.Stdout
-			completionFields["stderr"] = result.Stderr
-		}
-		handlerLog.WithFields(completionFields).Info("Execution completed")
-
-		return CallToolSuccess(response), nil
+	handler := &executePythonHandler{
+		log:         log.WithField("tool", ExecutePythonToolName),
+		backendName: backendName,
+		cfg:         cfg,
+		service:     service,
+		tipCache:    tipCache,
 	}
+
+	return handler.handle
+}
+
+func (h *executePythonHandler) handle(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	code, err := request.RequireString("code")
+	if err != nil {
+		return CallToolError(fmt.Errorf("invalid arguments: %w", err)), nil
+	}
+
+	if code == "" {
+		return CallToolError(fmt.Errorf("code is required")), nil
+	}
+
+	timeout := request.GetInt("timeout", h.cfg.Sandbox.Timeout)
+	if timeout < MinTimeout || timeout > MaxTimeout {
+		return CallToolError(fmt.Errorf("timeout must be between %d and %d seconds", MinTimeout, MaxTimeout)), nil
+	}
+
+	sessionID := request.GetString("session_id", "")
+
+	var ownerID string
+	if user := auth.GetAuthUser(ctx); user != nil {
+		ownerID = fmt.Sprintf("%d", user.GitHubID)
+	}
+
+	requestFields := logrus.Fields{
+		"code_length": len(code),
+		"timeout":     timeout,
+		"backend":     h.backendName,
+		"session_id":  sessionID,
+		"owner_id":    ownerID,
+	}
+	if h.cfg.Sandbox.Logging.LogCode {
+		requestFields["code"] = code
+	}
+	h.log.WithFields(requestFields).Info("Executing Python code")
+
+	result, err := h.service.Execute(ctx, execsvc.ExecuteRequest{
+		Code:      code,
+		Timeout:   timeout,
+		SessionID: sessionID,
+		OwnerID:   ownerID,
+	})
+	if err != nil {
+		h.log.WithError(err).Error("Execution failed")
+		return CallToolError(fmt.Errorf("execution error: %w", err)), nil
+	}
+
+	response := h.buildResponse(result)
+
+	completionFields := logrus.Fields{
+		"execution_id": result.ExecutionID,
+		"exit_code":    result.ExitCode,
+		"duration":     result.DurationSeconds,
+		"output_files": result.OutputFiles,
+		"session_id":   result.SessionID,
+	}
+	if h.cfg.Sandbox.Logging.LogOutput {
+		completionFields["stdout"] = result.Stdout
+		completionFields["stderr"] = result.Stderr
+	}
+	h.log.WithFields(completionFields).Info("Execution completed")
+
+	return CallToolSuccess(response), nil
+}
+
+func (h *executePythonHandler) buildResponse(result *sandbox.ExecutionResult) string {
+	response := formatExecutionResult(result, h.cfg)
+
+	if h.tipCache == nil {
+		return response
+	}
+
+	if h.tipCache.markShown(resultSessionKey(result)) {
+		return response + resourceTipMessage
+	}
+
+	return response
+}
+
+func resultSessionKey(result *sandbox.ExecutionResult) string {
+	if result.SessionID != "" {
+		return result.SessionID
+	}
+
+	return result.ExecutionID
 }
 
 func formatExecutionResult(result *sandbox.ExecutionResult, cfg *config.Config) string {

@@ -1,5 +1,4 @@
-// Package app provides the shared application core used by both the MCP server and the CLI.
-// It handles module initialization, proxy connection, sandbox setup, and semantic search indices.
+// Package app provides the shared application core used by the server runtime.
 package app
 
 import (
@@ -31,94 +30,35 @@ type App struct {
 
 	ModuleRegistry *module.Registry
 	Sandbox        sandbox.Service
-	ProxyClient    proxy.Client
+	ProxyService   proxy.Service
 	Cartographoor  cartographoor.CartographoorClient
+
+	moduleRegistryBuilder func() (*module.Registry, error)
+	sandboxBuilder        func() (sandbox.Service, error)
+	proxyServiceBuilder   func() proxy.Service
+	cartographoorBuilder  func() cartographoor.CartographoorClient
 }
 
 // New creates a new App.
 func New(log logrus.FieldLogger, cfg *config.Config) *App {
-	return &App{
+	app := &App{
 		log: log.WithField("component", "app"),
 		cfg: cfg,
 	}
+
+	app.moduleRegistryBuilder = app.buildModuleRegistry
+	app.sandboxBuilder = func() (sandbox.Service, error) {
+		return sandbox.New(app.cfg.Sandbox, app.log)
+	}
+	app.proxyServiceBuilder = app.buildProxyService
+	app.cartographoorBuilder = app.newCartographoorClient
+
+	return app
 }
 
 // Config returns the application configuration.
 func (a *App) Config() *config.Config {
 	return a.cfg
-}
-
-// Build initializes all shared components in dependency order:
-// register modules -> sandbox -> proxy -> init modules -> module startup -> cartographoor.
-func (a *App) Build(ctx context.Context) error {
-	a.log.Info("Building application dependencies")
-
-	// 1. Register all compiled-in modules (no initialization yet).
-	moduleReg := a.registerModules()
-	a.ModuleRegistry = moduleReg
-
-	// 2. Create and start sandbox service.
-	sandboxSvc, err := sandbox.New(a.cfg.Sandbox, a.log)
-	if err != nil {
-		return fmt.Errorf("building sandbox: %w", err)
-	}
-
-	if err := sandboxSvc.Start(ctx); err != nil {
-		return fmt.Errorf("starting sandbox: %w", err)
-	}
-
-	a.Sandbox = sandboxSvc
-	a.log.WithField("backend", sandboxSvc.Name()).Info("Sandbox service started")
-
-	// 3. Create and start proxy client (performs initial discovery).
-	proxyClient := a.buildProxyClient()
-	if err := proxyClient.Start(ctx); err != nil {
-		a.stop(ctx)
-
-		return fmt.Errorf("starting proxy client: %w", err)
-	}
-
-	a.ProxyClient = proxyClient
-	a.log.WithField("url", proxyClient.URL()).Info("Proxy client connected")
-
-	// 4. Initialize modules.
-	if err := a.initModules(proxyClient); err != nil {
-		a.stop(ctx)
-
-		return fmt.Errorf("initializing modules: %w", err)
-	}
-
-	// 5. Inject proxy client into modules and start all modules.
-	a.injectProxyClient()
-
-	if err := a.ModuleRegistry.StartAll(ctx); err != nil {
-		a.stop(ctx)
-
-		return fmt.Errorf("starting modules: %w", err)
-	}
-
-	a.log.Info("All modules started")
-
-	// 6. Create and start cartographoor client.
-	cartographoorClient := cartographoor.NewCartographoorClient(a.log, cartographoor.CartographoorConfig{
-		URL:      cartographoor.DefaultCartographoorURL,
-		CacheTTL: cartographoor.DefaultCacheTTL,
-		Timeout:  cartographoor.DefaultHTTPTimeout,
-	})
-
-	if err := cartographoorClient.Start(ctx); err != nil {
-		a.stop(ctx)
-
-		return fmt.Errorf("starting cartographoor client: %w", err)
-	}
-
-	a.Cartographoor = cartographoorClient
-	a.log.Info("Cartographoor client started")
-
-	// 7. Inject cartographoor client into modules.
-	a.injectCartographoorClient()
-
-	return nil
 }
 
 // Stop cleans up all started components in reverse order.
@@ -137,8 +77,8 @@ func (a *App) stop(ctx context.Context) {
 		a.ModuleRegistry.StopAll(ctx)
 	}
 
-	if a.ProxyClient != nil {
-		_ = a.ProxyClient.Stop(ctx)
+	if a.ProxyService != nil {
+		_ = a.ProxyService.Stop(ctx)
 	}
 
 	if a.Sandbox != nil {
@@ -146,9 +86,9 @@ func (a *App) stop(ctx context.Context) {
 	}
 }
 
-// registerModules creates a module registry and registers all compiled-in
+// buildModuleRegistry creates a module registry and registers all compiled-in
 // modules without initializing them.
-func (a *App) registerModules() *module.Registry {
+func (a *App) buildModuleRegistry() (*module.Registry, error) {
 	reg := module.NewRegistry(a.log)
 
 	reg.Add(clickhousemodule.New())
@@ -157,20 +97,22 @@ func (a *App) registerModules() *module.Registry {
 	reg.Add(lokimodule.New())
 	reg.Add(prometheusmodule.New())
 
-	return reg
+	return reg, nil
 }
 
 // initModules initializes all registered modules.
-func (a *App) initModules(proxyClient proxy.Client) error {
+func (a *App) initModules(proxySvc proxy.Service) error {
 	reg := a.ModuleRegistry
+
+	snapshot := proxySvc.Datasources()
 
 	// Collect discovered datasources.
 	var discovered []types.DatasourceInfo
-	discovered = append(discovered, proxyClient.ClickHouseDatasourceInfo()...)
-	discovered = append(discovered, proxyClient.PrometheusDatasourceInfo()...)
-	discovered = append(discovered, proxyClient.LokiDatasourceInfo()...)
+	discovered = append(discovered, proxy.FilterDatasourceInfoByType(snapshot.Datasources, "clickhouse")...)
+	discovered = append(discovered, proxy.FilterDatasourceInfoByType(snapshot.Datasources, "prometheus")...)
+	discovered = append(discovered, proxy.FilterDatasourceInfoByType(snapshot.Datasources, "loki")...)
 
-	if proxyClient.EthNodeAvailable() {
+	if snapshot.EthNodeAvailable {
 		discovered = append(discovered, types.DatasourceInfo{
 			Type: "ethnode",
 			Name: "ethnode",
@@ -212,7 +154,7 @@ func (a *App) initModules(proxyClient proxy.Client) error {
 	return nil
 }
 
-func (a *App) buildProxyClient() proxy.Client {
+func (a *App) buildProxyService() proxy.Service {
 	cfg := proxy.ClientConfig{
 		URL: a.cfg.Proxy.URL,
 	}
@@ -226,20 +168,10 @@ func (a *App) buildProxyClient() proxy.Client {
 	return proxy.NewClient(a.log, cfg)
 }
 
-func (a *App) injectProxyClient() {
-	for _, ext := range a.ModuleRegistry.Initialized() {
-		if aware, ok := ext.(module.ProxyAware); ok {
-			aware.SetProxyClient(a.ProxyClient)
-			a.log.WithField("module", ext.Name()).Debug("Injected proxy client into module")
-		}
-	}
-}
-
-func (a *App) injectCartographoorClient() {
-	for _, ext := range a.ModuleRegistry.Initialized() {
-		if aware, ok := ext.(module.CartographoorAware); ok {
-			aware.SetCartographoorClient(a.Cartographoor)
-			a.log.WithField("module", ext.Name()).Debug("Injected cartographoor client into module")
-		}
-	}
+func (a *App) newCartographoorClient() cartographoor.CartographoorClient {
+	return cartographoor.NewCartographoorClient(a.log, cartographoor.CartographoorConfig{
+		URL:      cartographoor.DefaultCartographoorURL,
+		CacheTTL: cartographoor.DefaultCacheTTL,
+		Timeout:  cartographoor.DefaultHTTPTimeout,
+	})
 }

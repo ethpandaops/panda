@@ -67,7 +67,7 @@ func runExecute(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("execution failed: %w", err)
 	}
 
-	if isJSON() {
+	if executeJSON || isJSON() {
 		return printJSON(result)
 	}
 

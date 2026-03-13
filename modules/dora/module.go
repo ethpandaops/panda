@@ -1,20 +1,23 @@
 package dora
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/ethpandaops/panda/pkg/cartographoor"
+	"github.com/ethpandaops/panda/pkg/module"
 	"github.com/ethpandaops/panda/pkg/types"
 )
+
+var _ module.RuntimeDependencyBinder = (*Module)(nil)
 
 // Module implements the module.Module interface for the Dora module.
 type Module struct {
 	cfg                 Config
 	cartographoorClient cartographoor.CartographoorClient
+	examples            map[string]types.ExampleCategory
 }
 
 // New creates a new Dora module.
@@ -22,48 +25,48 @@ func New() *Module {
 	return &Module{}
 }
 
-func (p *Module) Name() string { return "dora" }
+func (ext *Module) Name() string { return "dora" }
 
 // Enabled reports whether Dora operations should be exposed.
-func (p *Module) Enabled() bool { return p.cfg.IsEnabled() }
+func (ext *Module) Enabled() bool { return ext.cfg.IsEnabled() }
 
 // DefaultEnabled implements module.DefaultEnabled.
 // Dora is enabled by default since it requires no configuration.
-func (p *Module) DefaultEnabled() bool { return true }
+func (ext *Module) DefaultEnabled() bool { return true }
 
-func (p *Module) Init(rawConfig []byte) error {
+func (ext *Module) Init(rawConfig []byte) error {
 	if len(rawConfig) == 0 {
 		// No config provided, use defaults (enabled = true).
 		return nil
 	}
 
-	return yaml.Unmarshal(rawConfig, &p.cfg)
+	return yaml.Unmarshal(rawConfig, &ext.cfg)
 }
 
-func (p *Module) ApplyDefaults() {
-	// Defaults are handled by Config.IsEnabled().
-}
+func (ext *Module) Validate() error {
+	if err := module.EnsureExampleCatalogLoaded(&ext.examples, loadExamples); err != nil {
+		return err
+	}
 
-func (p *Module) Validate() error {
 	// No validation needed - config is minimal.
 	return nil
 }
 
 // SandboxEnv returns environment variables for the sandbox.
 // Returns ETHPANDAOPS_DORA_NETWORKS with network->URL mapping from cartographoor.
-func (p *Module) SandboxEnv() (map[string]string, error) {
-	if !p.cfg.IsEnabled() {
+func (ext *Module) SandboxEnv() (map[string]string, error) {
+	if !ext.cfg.IsEnabled() {
 		return nil, nil
 	}
 
-	if p.cartographoorClient == nil {
-		// Cartographoor client not yet set - return empty.
-		// This will be populated after SetCartographoorClient is called.
+	if ext.cartographoorClient == nil {
+		// Cartographoor data is optional during bootstrap and becomes available
+		// after runtime dependencies are bound.
 		return nil, nil
 	}
 
 	// Build network -> Dora URL mapping from cartographoor data.
-	networks := p.cartographoorClient.GetActiveNetworks()
+	networks := ext.cartographoorClient.GetActiveNetworks()
 	doraNetworks := make(map[string]string, len(networks))
 
 	for name, network := range networks {
@@ -86,27 +89,16 @@ func (p *Module) SandboxEnv() (map[string]string, error) {
 	}, nil
 }
 
-// DatasourceInfo returns empty since networks are the datasources,
-// and those come from cartographoor.
-func (p *Module) DatasourceInfo() []types.DatasourceInfo {
-	return nil
-}
-
-func (p *Module) Examples() map[string]types.ExampleCategory {
-	if !p.cfg.IsEnabled() {
+func (ext *Module) Examples() map[string]types.ExampleCategory {
+	if !ext.cfg.IsEnabled() {
 		return nil
 	}
 
-	result := make(map[string]types.ExampleCategory, len(queryExamples))
-	for k, v := range queryExamples {
-		result[k] = v
-	}
-
-	return result
+	return module.CloneExampleCatalog(ext.examples)
 }
 
-func (p *Module) PythonAPIDocs() map[string]types.ModuleDoc {
-	if !p.cfg.IsEnabled() {
+func (ext *Module) PythonAPIDocs() map[string]types.ModuleDoc {
+	if !ext.cfg.IsEnabled() {
 		return nil
 	}
 
@@ -131,8 +123,8 @@ func (p *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 	}
 }
 
-func (p *Module) GettingStartedSnippet() string {
-	if !p.cfg.IsEnabled() {
+func (ext *Module) GettingStartedSnippet() string {
+	if !ext.cfg.IsEnabled() {
 		return ""
 	}
 
@@ -159,12 +151,7 @@ print(f"View in Dora: {link}")
 `
 }
 
-// SetCartographoorClient implements module.CartographoorAware.
-// This is called by the builder to inject the cartographoor client.
-func (p *Module) SetCartographoorClient(client cartographoor.CartographoorClient) {
-	p.cartographoorClient = client
+// BindRuntimeDependencies implements module.RuntimeDependencyBinder.
+func (ext *Module) BindRuntimeDependencies(deps module.RuntimeDependencies) {
+	ext.cartographoorClient = deps.Cartographoor
 }
-
-func (p *Module) Start(_ context.Context) error { return nil }
-
-func (p *Module) Stop(_ context.Context) error { return nil }

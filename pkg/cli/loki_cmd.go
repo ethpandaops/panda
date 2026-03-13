@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/ethpandaops/panda/pkg/operations"
 	"github.com/spf13/cobra"
 )
 
@@ -70,12 +71,34 @@ var lokiListDatasourcesCmd = &cobra.Command{
 	Use:   "list-datasources",
 	Short: "List available Loki datasources",
 	RunE: func(_ *cobra.Command, _ []string) error {
-		response, err := runServerOperation("loki.list_datasources", map[string]any{})
+		items, err := listLokiDatasources()
 		if err != nil {
 			return err
 		}
 
-		return printDatasourceList(response)
+		if lokiJSON || isJSON() {
+			return printJSON(operations.DatasourcesPayload{Datasources: items})
+		}
+
+		if len(items) == 0 {
+			fmt.Println("No Loki datasources found.")
+			return nil
+		}
+
+		for _, item := range items {
+			name := item.Name
+			desc := item.Description
+			targetURL := item.URL
+
+			if targetURL != "" {
+				fmt.Printf("  %-16s  %-24s  %s\n", name, desc, targetURL)
+				continue
+			}
+
+			fmt.Printf("  %-16s  %s\n", name, desc)
+		}
+
+		return nil
 	},
 }
 
@@ -84,19 +107,19 @@ var lokiQueryCmd = &cobra.Command{
 	Short: "Execute a LogQL range query",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		response, err := runServerOperationRaw("loki.query", map[string]any{
-			"datasource": args[0],
-			"query":      args[1],
-			"limit":      lokiLimit,
-			"start":      lokiStart,
-			"end":        lokiEnd,
-			"direction":  lokiDirection,
+		response, err := lokiQuery(operations.LokiQueryArgs{
+			Datasource: args[0],
+			Query:      args[1],
+			Limit:      lokiLimit,
+			Start:      lokiStart,
+			End:        lokiEnd,
+			Direction:  lokiDirection,
 		})
 		if err != nil {
 			return err
 		}
 
-		if isJSON() {
+		if lokiJSON || isJSON() {
 			return printJSONBytes(response.Body)
 		}
 
@@ -109,18 +132,18 @@ var lokiQueryInstantCmd = &cobra.Command{
 	Short: "Execute an instant LogQL query",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		response, err := runServerOperationRaw("loki.query_instant", map[string]any{
-			"datasource": args[0],
-			"query":      args[1],
-			"limit":      lokiLimit,
-			"time":       lokiTime,
-			"direction":  lokiDirection,
+		response, err := lokiInstantQuery(operations.LokiInstantQueryArgs{
+			Datasource: args[0],
+			Query:      args[1],
+			Limit:      lokiLimit,
+			Time:       lokiTime,
+			Direction:  lokiDirection,
 		})
 		if err != nil {
 			return err
 		}
 
-		if isJSON() {
+		if lokiJSON || isJSON() {
 			return printJSONBytes(response.Body)
 		}
 
@@ -133,16 +156,16 @@ var lokiLabelsCmd = &cobra.Command{
 	Short: "List all label names",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
-		response, err := runServerOperationRaw("loki.get_labels", map[string]any{
-			"datasource": args[0],
-			"start":      lokiStart,
-			"end":        lokiEnd,
+		response, err := lokiLabels(operations.LokiLabelsArgs{
+			Datasource: args[0],
+			Start:      lokiStart,
+			End:        lokiEnd,
 		})
 		if err != nil {
 			return err
 		}
 
-		if isJSON() {
+		if lokiJSON || isJSON() {
 			return printJSONBytes(response.Body)
 		}
 
@@ -155,17 +178,17 @@ var lokiLabelValuesCmd = &cobra.Command{
 	Short: "Get all values for a label",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		response, err := runServerOperationRaw("loki.get_label_values", map[string]any{
-			"datasource": args[0],
-			"label":      args[1],
-			"start":      lokiStart,
-			"end":        lokiEnd,
+		response, err := lokiLabelValues(operations.LokiLabelValuesArgs{
+			Datasource: args[0],
+			Label:      args[1],
+			Start:      lokiStart,
+			End:        lokiEnd,
 		})
 		if err != nil {
 			return err
 		}
 
-		if isJSON() {
+		if lokiJSON || isJSON() {
 			return printJSONBytes(response.Body)
 		}
 

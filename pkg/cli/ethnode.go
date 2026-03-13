@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/ethpandaops/panda/pkg/operations"
 	"github.com/spf13/cobra"
 )
 
@@ -54,26 +55,23 @@ var ethNodeSyncingCmd = &cobra.Command{
 	Short: "Get beacon node sync status",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		response, err := runServerOperation("ethnode.get_node_syncing", map[string]any{
-			"network":  args[0],
-			"instance": args[1],
+		response, err := ethNodeSyncing(operations.EthNodeNodeArgs{
+			Network:  args[0],
+			Instance: args[1],
 		})
 		if err != nil {
 			return err
 		}
 
-		if isJSON() {
-			return printJSON(response.Data)
+		if ethnodeJSON || isJSON() {
+			return printJSON(response)
 		}
 
-		data := nestedMap(response.Data, "data")
-		printKeyValue([][2]string{
-			{"Head slot", fmt.Sprintf("%v", data["head_slot"])},
-			{"Sync distance", fmt.Sprintf("%v", data["sync_distance"])},
-			{"Is syncing", fmt.Sprintf("%v", data["is_syncing"])},
-			{"Is optimistic", fmt.Sprintf("%v", data["is_optimistic"])},
-			{"EL offline", fmt.Sprintf("%v", data["el_offline"])},
-		})
+		fmt.Printf("Head slot:     %s\n", response.Data.HeadSlot)
+		fmt.Printf("Sync distance: %s\n", response.Data.SyncDistance)
+		fmt.Printf("Is syncing:    %t\n", response.Data.IsSyncing)
+		fmt.Printf("Is optimistic: %t\n", response.Data.IsOptimistic)
+		fmt.Printf("EL offline:    %t\n", response.Data.ELOffline)
 
 		return nil
 	},
@@ -84,44 +82,40 @@ var ethNodeVersionCmd = &cobra.Command{
 	Short: "Get node software version",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		beaconResp, err := runServerOperation("ethnode.get_node_version", map[string]any{
-			"network":  args[0],
-			"instance": args[1],
-		})
+		request := operations.EthNodeNodeArgs{
+			Network:  args[0],
+			Instance: args[1],
+		}
+
+		beaconResp, err := ethNodeVersion(request)
 		if err != nil {
 			return err
 		}
 
-		if isJSON() {
-			executionResp, execErr := runServerOperation("ethnode.web3_client_version", map[string]any{
-				"network":  args[0],
-				"instance": args[1],
-			})
+		if ethnodeJSON || isJSON() {
+			executionResp, execErr := ethNodeExecutionClientVersion(request)
 			if execErr != nil {
 				return printJSON(map[string]any{
-					"beacon":          beaconResp.Data,
+					"beacon":          beaconResp,
 					"execution_error": execErr.Error(),
 				})
 			}
 
 			return printJSON(map[string]any{
-				"beacon":    beaconResp.Data,
-				"execution": executionResp.Data,
+				"beacon":    beaconResp,
+				"execution": executionResp,
 			})
 		}
 
-		fmt.Printf("CL: %v\n", nestedMap(beaconResp.Data, "data")["version"])
+		fmt.Printf("CL: %s\n", beaconResp.Data.Version)
 
-		executionResp, execErr := runServerOperation("ethnode.web3_client_version", map[string]any{
-			"network":  args[0],
-			"instance": args[1],
-		})
+		executionResp, execErr := ethNodeExecutionClientVersion(request)
 		if execErr != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "EL: (error: %v)\n", execErr)
 			return nil
 		}
 
-		fmt.Printf("EL: %v\n", executionResp.Data)
+		fmt.Printf("EL: %s\n", executionResp)
 		return nil
 	},
 }
@@ -131,19 +125,18 @@ var ethNodeHealthCmd = &cobra.Command{
 	Short: "Get beacon node health status",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		response, err := runServerOperation("ethnode.get_node_health", map[string]any{
-			"network":  args[0],
-			"instance": args[1],
+		response, err := ethNodeHealth(operations.EthNodeNodeArgs{
+			Network:  args[0],
+			Instance: args[1],
 		})
 		if err != nil {
 			return err
 		}
 
-		data, _ := response.Data.(map[string]any)
-		statusValue := intFromAny(data["status_code"])
+		statusValue := response.StatusCode
 
-		if isJSON() {
-			return printJSON(response.Data)
+		if ethnodeJSON || isJSON() {
+			return printJSON(response)
 		}
 
 		switch statusValue {
@@ -166,32 +159,22 @@ var ethNodePeersCmd = &cobra.Command{
 	Short: "Get peer count",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		response, err := runServerOperation("ethnode.get_peer_count", map[string]any{
-			"network":  args[0],
-			"instance": args[1],
+		response, err := ethNodePeerCount(operations.EthNodeNodeArgs{
+			Network:  args[0],
+			Instance: args[1],
 		})
 		if err != nil {
 			return err
 		}
 
-		if isJSON() {
-			return printJSON(response.Data)
+		if ethnodeJSON || isJSON() {
+			return printJSON(response)
 		}
 
-		data := nestedMap(response.Data, "data")
-		connected := intFromAny(data["connected"])
-		disconnected := intFromAny(data["disconnected"])
-		connecting := intFromAny(data["connecting"])
-		disconnecting := intFromAny(data["disconnecting"])
-		total := connected + disconnected + connecting + disconnecting
-
-		printKeyValue([][2]string{
-			{"Connected", fmt.Sprintf("%d", connected)},
-			{"Disconnected", fmt.Sprintf("%d", disconnected)},
-			{"Connecting", fmt.Sprintf("%d", connecting)},
-			{"Disconnecting", fmt.Sprintf("%d", disconnecting)},
-			{"Total", fmt.Sprintf("%d", total)},
-		})
+		fmt.Printf("Connected:     %s\n", response.Data.Connected)
+		fmt.Printf("Disconnected:  %s\n", response.Data.Disconnected)
+		fmt.Printf("Connecting:    %s\n", response.Data.Connecting)
+		fmt.Printf("Disconnecting: %s\n", response.Data.Disconnecting)
 
 		return nil
 	},
@@ -202,28 +185,21 @@ var ethNodeFinalityCmd = &cobra.Command{
 	Short: "Get finality checkpoints",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		response, err := runServerOperation("ethnode.get_finality_checkpoints", map[string]any{
-			"network":  args[0],
-			"instance": args[1],
+		response, err := ethNodeFinality(operations.EthNodeFinalityArgs{
+			Network:  args[0],
+			Instance: args[1],
 		})
 		if err != nil {
 			return err
 		}
 
-		if isJSON() {
-			return printJSON(response.Data)
+		if ethnodeJSON || isJSON() {
+			return printJSON(response)
 		}
 
-		data := nestedMap(response.Data, "data")
-		finalized := nestedMap(data["finalized"], "")
-		justified := nestedMap(data["current_justified"], "")
-		prevJustified := nestedMap(data["previous_justified"], "")
-
-		printKeyValue([][2]string{
-			{"Finalized", fmt.Sprintf("epoch %v (root: %v)", finalized["epoch"], finalized["root"])},
-			{"Current justified", fmt.Sprintf("epoch %v (root: %v)", justified["epoch"], justified["root"])},
-			{"Previous justified", fmt.Sprintf("epoch %v (root: %v)", prevJustified["epoch"], prevJustified["root"])},
-		})
+		fmt.Printf("Finalized:          epoch %s\n", response.Data.Finalized.Epoch)
+		fmt.Printf("Current justified:  epoch %s\n", response.Data.CurrentJustified.Epoch)
+		fmt.Printf("Previous justified: epoch %s\n", response.Data.PreviousJustified.Epoch)
 
 		return nil
 	},
@@ -239,29 +215,25 @@ var ethNodeHeaderCmd = &cobra.Command{
 			slot = args[2]
 		}
 
-		response, err := runServerOperation("ethnode.get_beacon_headers", map[string]any{
-			"network":  args[0],
-			"instance": args[1],
-			"slot":     slot,
+		response, err := ethNodeHeaders(operations.EthNodeBeaconHeadersArgs{
+			Network:  args[0],
+			Instance: args[1],
+			Slot:     slot,
 		})
 		if err != nil {
 			return err
 		}
 
-		if isJSON() {
-			return printJSON(response.Data)
+		if ethnodeJSON || isJSON() {
+			return printJSON(response)
 		}
 
-		data := nestedMap(response.Data, "data")
-		header := nestedMap(data["header"], "")
-		message := nestedMap(header["message"], "")
-
-		printKeyValue([][2]string{
-			{"Slot", fmt.Sprintf("%v", message["slot"])},
-			{"Proposer index", fmt.Sprintf("%v", message["proposer_index"])},
-			{"Root", fmt.Sprintf("%v", data["root"])},
-			{"Parent root", fmt.Sprintf("%v", message["parent_root"])},
-		})
+		fmt.Printf("Slot:           %s\n", response.Data.Header.Message.Slot)
+		fmt.Printf("Proposer index: %s\n", response.Data.Header.Message.ProposerIndex)
+		fmt.Printf("Root:           %s\n", response.Data.Root)
+		fmt.Printf("Parent root:    %s\n", response.Data.Header.Message.ParentRoot)
+		fmt.Printf("State root:     %s\n", response.Data.Header.Message.StateRoot)
+		fmt.Printf("Body root:      %s\n", response.Data.Header.Message.BodyRoot)
 
 		return nil
 	},
@@ -272,20 +244,19 @@ var ethNodeBlockNumberCmd = &cobra.Command{
 	Short: "Get latest execution layer block number",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		response, err := runServerOperation("ethnode.eth_block_number", map[string]any{
-			"network":  args[0],
-			"instance": args[1],
+		response, err := ethNodeBlockNumber(operations.EthNodeNodeArgs{
+			Network:  args[0],
+			Instance: args[1],
 		})
 		if err != nil {
 			return err
 		}
 
-		data, _ := response.Data.(map[string]any)
-		if isJSON() {
-			return printJSON(data)
+		if ethnodeJSON || isJSON() {
+			return printJSON(response)
 		}
 
-		fmt.Println(intFromAny(data["block_number"]))
+		fmt.Println(response.BlockNumber)
 		return nil
 	},
 }
@@ -306,10 +277,10 @@ Examples:
 			path = "/" + path
 		}
 
-		response, err := runServerOperationRaw("ethnode.beacon_get", map[string]any{
-			"network":  args[0],
-			"instance": args[1],
-			"path":     path,
+		response, err := ethNodeBeaconGet(operations.EthNodeBeaconGetArgs{
+			Network:  args[0],
+			Instance: args[1],
+			Path:     path,
 		})
 		if err != nil {
 			return err
@@ -338,11 +309,11 @@ Examples:
 			}
 		}
 
-		response, err := runServerOperationRaw("ethnode.execution_rpc", map[string]any{
-			"network":  args[0],
-			"instance": args[1],
-			"method":   args[2],
-			"params":   params,
+		response, err := ethNodeExecutionRPC(operations.EthNodeExecutionRPCArgs{
+			Network:  args[0],
+			Instance: args[1],
+			Method:   args[2],
+			Params:   params,
 		})
 		if err != nil {
 			return err

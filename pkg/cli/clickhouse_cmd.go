@@ -6,6 +6,7 @@ import (
 	"encoding/csv"
 	"fmt"
 
+	"github.com/ethpandaops/panda/pkg/operations"
 	"github.com/spf13/cobra"
 )
 
@@ -13,7 +14,7 @@ var clickhouseCmd = &cobra.Command{
 	GroupID: groupDirect,
 	Use:     "clickhouse",
 	Short:   "Query ClickHouse databases",
-	Long: `Execute SQL queries against ClickHouse clusters.
+	Long: `Execute SQL queries against ClickHouse datasources.
 
 Examples:
   panda clickhouse list-datasources
@@ -34,64 +35,100 @@ func init() {
 
 var clickhouseListDatasourcesCmd = &cobra.Command{
 	Use:   "list-datasources",
-	Short: "List available ClickHouse clusters",
+	Short: "List available ClickHouse datasources",
 	RunE: func(_ *cobra.Command, _ []string) error {
-		response, err := runServerOperation("clickhouse.list_datasources", map[string]any{})
+		items, err := listClickHouseDatasources()
 		if err != nil {
 			return err
 		}
 
-		return printDatasourceList(response)
+		if clickhouseJSON || isJSON() {
+			return printJSON(operations.DatasourcesPayload{Datasources: items})
+		}
+
+		if len(items) == 0 {
+			fmt.Println("No ClickHouse datasources found.")
+			return nil
+		}
+
+		for _, item := range items {
+			name := item.Name
+			desc := item.Description
+			database := item.Database
+
+			if desc == "" {
+				desc = name
+			}
+
+			if database != "" {
+				fmt.Printf("  %-16s  %-20s  database=%s\n", name, desc, database)
+				continue
+			}
+
+			fmt.Printf("  %-16s  %s\n", name, desc)
+		}
+
+		return nil
 	},
 }
 
 var clickhouseQueryCmd = &cobra.Command{
-	Use:   "query <cluster> <sql>",
+	Use:   "query <datasource> <sql>",
 	Short: "Execute a SQL query",
-	Long: `Execute a SQL query against a ClickHouse cluster.
+	Long: `Execute a SQL query against a ClickHouse datasource.
 
-The cluster name is typically "xatu" or "xatu-cbt". Use 'panda clickhouse list-datasources'
-to see available clusters.
+The datasource name is typically "xatu" or "xatu-cbt". Use 'panda clickhouse list-datasources'
+to see available datasources.
 
 Examples:
   panda clickhouse query xatu "SELECT count() FROM beacon_api_eth_v1_events_block LIMIT 1"
   panda clickhouse query xatu-cbt "SELECT count() FROM mainnet.beacon_api_eth_v1_events_block LIMIT 1"`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		return runClickHouseOperation("clickhouse.query", args[0], args[1], false)
+		return runClickHouseQuery(args[0], args[1])
 	},
 }
 
 var clickhouseQueryRawCmd = &cobra.Command{
-	Use:   "query-raw <cluster> <sql>",
+	Use:   "query-raw <datasource> <sql>",
 	Short: "Execute a SQL query and return raw rows",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
-		return runClickHouseOperation("clickhouse.query_raw", args[0], args[1], true)
+		return runClickHouseRawQuery(args[0], args[1])
 	},
 }
 
-func runClickHouseOperation(operationID, cluster, sql string, raw bool) error {
+func runClickHouseQuery(datasource, sql string) error {
 	ctx := context.Background()
 
-	response, err := serverOperationRaw(ctx, operationID, map[string]any{
-		"cluster": cluster,
-		"sql":     sql,
+	response, err := clickHouseQuery(ctx, operations.ClickHouseQueryArgs{
+		Datasource: datasource,
+		SQL:        sql,
 	})
 	if err != nil {
 		return err
 	}
 
-	if raw {
-		return printClickHouseJSON(response.Body, true)
-	}
-
-	if isJSON() {
+	if clickhouseJSON || isJSON() {
 		return printClickHouseJSON(response.Body, false)
 	}
 
 	fmt.Print(string(response.Body))
 	return nil
+}
+
+func runClickHouseRawQuery(datasource, sql string) error {
+	ctx := context.Background()
+
+	response, err := clickHouseQueryRaw(ctx, operations.ClickHouseQueryArgs{
+		Datasource: datasource,
+		SQL:        sql,
+	})
+	if err != nil {
+		return err
+	}
+
+	return printClickHouseJSON(response.Body, true)
 }
 
 func printClickHouseJSON(data []byte, raw bool) error {

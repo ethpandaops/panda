@@ -32,11 +32,13 @@ type Store interface {
 	// Clear removes stored tokens.
 	Clear() error
 
-	// GetAccessToken returns a valid access token, refreshing if needed.
-	GetAccessToken() (string, error)
+	// EnsureAccessToken returns a usable access token, refreshing and persisting
+	// credentials when required.
+	EnsureAccessToken() (string, error)
 
-	// IsAuthenticated returns true if valid tokens are stored.
-	IsAuthenticated() bool
+	// HasUsableCredentialsHint reports whether stored credentials are still valid
+	// or appear refreshable without performing network I/O.
+	HasUsableCredentialsHint() bool
 }
 
 // Config configures the credential store.
@@ -157,8 +159,9 @@ func (s *store) Clear() error {
 	return nil
 }
 
-// GetAccessToken returns a valid access token, refreshing if needed.
-func (s *store) GetAccessToken() (string, error) {
+// EnsureAccessToken returns a usable access token, refreshing and persisting
+// credentials when required.
+func (s *store) EnsureAccessToken() (string, error) {
 	tokens, err := s.getTokens()
 	if err != nil {
 		return "", fmt.Errorf("loading tokens: %w", err)
@@ -191,8 +194,9 @@ func (s *store) GetAccessToken() (string, error) {
 	return tokens.AccessToken, nil
 }
 
-// IsAuthenticated returns true if valid tokens are stored.
-func (s *store) IsAuthenticated() bool {
+// HasUsableCredentialsHint reports whether stored credentials are still valid
+// or appear refreshable without performing network I/O.
+func (s *store) HasUsableCredentialsHint() bool {
 	tokens, err := s.getTokens()
 	if err != nil {
 		return false
@@ -201,8 +205,11 @@ func (s *store) IsAuthenticated() bool {
 		return false
 	}
 
-	// Check if token is expired.
-	return time.Now().Before(tokens.ExpiresAt)
+	if time.Now().Before(tokens.ExpiresAt) {
+		return true
+	}
+
+	return tokens.RefreshToken != "" && s.cfg.AuthClient != nil
 }
 
 // getTokens returns cached tokens or loads them from disk.

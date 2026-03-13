@@ -1,13 +1,11 @@
 package resource
 
 import (
+	"errors"
 	"fmt"
-	"sort"
-
-	"github.com/sirupsen/logrus"
-
-	"github.com/ethpandaops/panda/pkg/embedding"
 	"github.com/ethpandaops/panda/pkg/types"
+	"github.com/sirupsen/logrus"
+	"sort"
 )
 
 // SearchResult includes the example and its similarity score.
@@ -26,9 +24,13 @@ type indexedExample struct {
 	Vector       []float32
 }
 
+type textEmbedder interface {
+	Embed(text string) ([]float32, error)
+}
+
 // ExampleIndex provides semantic search over query examples.
 type ExampleIndex struct {
-	embedder *embedding.Embedder
+	embedder textEmbedder
 	examples []indexedExample
 }
 
@@ -36,9 +38,13 @@ type ExampleIndex struct {
 // from query examples.
 func NewExampleIndex(
 	log logrus.FieldLogger,
-	embedder *embedding.Embedder,
+	embedder textEmbedder,
 	categories map[string]types.ExampleCategory,
 ) (*ExampleIndex, error) {
+	if embedder == nil {
+		return nil, errors.New("embedder is required")
+	}
+
 	log = log.WithField("component", "example_index")
 
 	var examples []indexedExample
@@ -71,6 +77,14 @@ func NewExampleIndex(
 
 // Search returns the top-k semantically similar examples for a query.
 func (idx *ExampleIndex) Search(query string, limit int) ([]SearchResult, error) {
+	if idx == nil || idx.embedder == nil {
+		return nil, errors.New("example index is not initialized")
+	}
+
+	if limit <= 0 {
+		return []SearchResult{}, nil
+	}
+
 	queryVec, err := idx.embedder.Embed(query)
 	if err != nil {
 		return nil, fmt.Errorf("embedding query: %w", err)
@@ -110,7 +124,9 @@ func (idx *ExampleIndex) Search(query string, limit int) ([]SearchResult, error)
 
 // Close releases resources held by the index.
 func (idx *ExampleIndex) Close() error {
-	return idx.embedder.Close()
+	idx.embedder = nil
+	idx.examples = nil
+	return nil
 }
 
 // dotProduct computes the dot product of two vectors.

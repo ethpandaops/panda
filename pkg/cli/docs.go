@@ -39,7 +39,7 @@ func runDocs(_ *cobra.Command, args []string) error {
 		return err
 	}
 
-	if isJSON() {
+	if docsJSON || isJSON() {
 		if len(args) > 0 {
 			doc, ok := allDocs[args[0]]
 			if !ok {

@@ -11,7 +11,7 @@ import (
 	authclient "github.com/ethpandaops/panda/pkg/auth/client"
 )
 
-func TestGetAccessTokenKeepsValidTokenWithoutRefreshToken(t *testing.T) {
+func TestEnsureAccessTokenKeepsValidTokenWithoutRefreshToken(t *testing.T) {
 	t.Parallel()
 
 	client := &stubAuthClient{}
@@ -24,9 +24,9 @@ func TestGetAccessTokenKeepsValidTokenWithoutRefreshToken(t *testing.T) {
 		ExpiresAt:   time.Now().Add(2 * time.Minute),
 	}
 
-	token, err := store.GetAccessToken()
+	token, err := store.EnsureAccessToken()
 	if err != nil {
-		t.Fatalf("GetAccessToken returned error: %v", err)
+		t.Fatalf("EnsureAccessToken returned error: %v", err)
 	}
 
 	if token != "still-valid" {
@@ -38,7 +38,7 @@ func TestGetAccessTokenKeepsValidTokenWithoutRefreshToken(t *testing.T) {
 	}
 }
 
-func TestGetAccessTokenFallsBackWhenRefreshFailsButTokenIsStillValid(t *testing.T) {
+func TestEnsureAccessTokenFallsBackWhenRefreshFailsButTokenIsStillValid(t *testing.T) {
 	t.Parallel()
 
 	client := &stubAuthClient{refreshErr: errors.New("temporary failure")}
@@ -52,9 +52,9 @@ func TestGetAccessTokenFallsBackWhenRefreshFailsButTokenIsStillValid(t *testing.
 		ExpiresAt:    time.Now().Add(2 * time.Minute),
 	}
 
-	token, err := store.GetAccessToken()
+	token, err := store.EnsureAccessToken()
 	if err != nil {
-		t.Fatalf("GetAccessToken returned error: %v", err)
+		t.Fatalf("EnsureAccessToken returned error: %v", err)
 	}
 
 	if token != "still-valid" {
@@ -88,4 +88,27 @@ func (s *stubAuthClient) Refresh(_ context.Context, _ string) (*authclient.Token
 		ExpiresAt:    time.Now().Add(time.Hour),
 		TokenType:    "Bearer",
 	}, nil
+}
+
+func TestHasUsableCredentialsHint(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+	store := New(logrus.New(), Config{}).(*store)
+
+	store.tokens = &authclient.Tokens{AccessToken: "valid", ExpiresAt: now.Add(time.Minute)}
+	if !store.HasUsableCredentialsHint() {
+		t.Fatal("expected valid access token to be reported as usable")
+	}
+
+	store.tokens = &authclient.Tokens{AccessToken: "expired", ExpiresAt: now.Add(-time.Minute)}
+	if store.HasUsableCredentialsHint() {
+		t.Fatal("expected expired token without refresh path to be unusable")
+	}
+
+	store.cfg.AuthClient = &stubAuthClient{}
+	store.tokens.RefreshToken = "refresh-token"
+	if !store.HasUsableCredentialsHint() {
+		t.Fatal("expected refreshable credentials to be reported as potentially usable")
+	}
 }

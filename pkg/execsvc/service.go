@@ -3,15 +3,11 @@ package execsvc
 import (
 	"context"
 	"fmt"
-	"runtime"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 
-	"github.com/ethpandaops/panda/pkg/config"
-	"github.com/ethpandaops/panda/pkg/module"
 	"github.com/ethpandaops/panda/pkg/sandbox"
 	"github.com/ethpandaops/panda/pkg/tokenstore"
 )
@@ -31,27 +27,32 @@ type ExecuteRequest struct {
 
 // Service orchestrates sandbox execution with module-provided env and runtime tokens.
 type Service struct {
-	log           logrus.FieldLogger
-	sandboxSvc    sandbox.Service
-	cfg           *config.Config
-	moduleReg     *module.Registry
-	runtimeTokens *tokenstore.Store
+	log            logrus.FieldLogger
+	sandboxSvc     sandbox.Service
+	envBuilder     SandboxEnvBuilder
+	defaultTimeout int
+	runtimeTokens  *tokenstore.Store
+}
+
+// SandboxEnvBuilder provides the shared sandbox execution environment.
+type SandboxEnvBuilder interface {
+	BuildSandboxEnv() (map[string]string, error)
 }
 
 // New creates a new execution service.
 func New(
 	log logrus.FieldLogger,
 	sandboxSvc sandbox.Service,
-	cfg *config.Config,
-	moduleReg *module.Registry,
+	envBuilder SandboxEnvBuilder,
+	defaultTimeout int,
 	runtimeTokens *tokenstore.Store,
 ) *Service {
 	return &Service{
-		log:           log.WithField("component", "exec-service"),
-		sandboxSvc:    sandboxSvc,
-		cfg:           cfg,
-		moduleReg:     moduleReg,
-		runtimeTokens: runtimeTokens,
+		log:            log.WithField("component", "exec-service"),
+		sandboxSvc:     sandboxSvc,
+		envBuilder:     envBuilder,
+		defaultTimeout: defaultTimeout,
+		runtimeTokens:  runtimeTokens,
 	}
 }
 
@@ -63,14 +64,14 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*sandbox.Exe
 
 	timeout := req.Timeout
 	if timeout == 0 {
-		timeout = s.cfg.Sandbox.Timeout
+		timeout = s.defaultTimeout
 	}
 
 	if timeout < MinTimeout || timeout > MaxTimeout {
 		return nil, fmt.Errorf("timeout must be between %d and %d seconds", MinTimeout, MaxTimeout)
 	}
 
-	env, err := s.BuildSandboxEnv()
+	env, err := s.buildSandboxEnv()
 	if err != nil {
 		return nil, fmt.Errorf("failed to configure sandbox: %w", err)
 	}
@@ -118,10 +119,10 @@ func (s *Service) ListSessions(ctx context.Context, ownerID string) ([]sandbox.S
 }
 
 // CreateSession creates a new persistent sandbox session.
-func (s *Service) CreateSession(ctx context.Context, ownerID string) (string, error) {
-	env, err := s.BuildSandboxEnv()
+func (s *Service) CreateSession(ctx context.Context, ownerID string) (*sandbox.CreatedSession, error) {
+	env, err := s.buildSandboxEnv()
 	if err != nil {
-		return "", fmt.Errorf("building sandbox env: %w", err)
+		return nil, fmt.Errorf("building sandbox env: %w", err)
 	}
 
 	return s.sandboxSvc.CreateSession(ctx, ownerID, env)
@@ -132,55 +133,10 @@ func (s *Service) DestroySession(ctx context.Context, sessionID, ownerID string)
 	return s.sandboxSvc.DestroySession(ctx, sessionID, ownerID)
 }
 
-// BuildSandboxEnv collects environment variables from all initialized modules
-// and adds the sandbox API URL.
-func (s *Service) BuildSandboxEnv() (map[string]string, error) {
-	env, err := s.moduleReg.SandboxEnv()
-	if err != nil {
-		return nil, fmt.Errorf("collecting sandbox env: %w", err)
+func (s *Service) buildSandboxEnv() (map[string]string, error) {
+	if s.envBuilder == nil {
+		return nil, fmt.Errorf("sandbox env builder is required")
 	}
 
-	apiURL := sandboxAPIURL(s.cfg)
-	if apiURL == "" {
-		return nil, fmt.Errorf("server.sandbox_url or server.base_url is required for sandbox API access")
-	}
-
-	env["ETHPANDAOPS_API_URL"] = apiURL
-
-	return env, nil
-}
-
-func sandboxAPIURL(cfg *config.Config) string {
-	if cfg == nil {
-		return ""
-	}
-
-	if value := strings.TrimSpace(cfg.Server.SandboxURL); value != "" {
-		return strings.TrimRight(value, "/")
-	}
-
-	if value := strings.TrimSpace(cfg.Server.BaseURL); value != "" {
-		return strings.TrimRight(value, "/")
-	}
-
-	if value := strings.TrimSpace(cfg.Server.URL); value != "" {
-		return strings.TrimRight(value, "/")
-	}
-
-	// Auto-detect a sandbox-reachable URL when nothing is configured.
-	// On macOS/Windows, Docker Desktop provides host.docker.internal.
-	// On Linux, containers on a user-defined bridge can reach the host
-	// via host.docker.internal (Docker 20.10+) as well.
-	port := cfg.Server.Port
-	if port == 0 {
-		port = 2480
-	}
-
-	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
-		return fmt.Sprintf("http://host.docker.internal:%d", port)
-	}
-
-	// Linux: host.docker.internal works with --add-host or Docker 20.10+
-	// user-defined bridge networks. Use it as a reasonable default.
-	return fmt.Sprintf("http://host.docker.internal:%d", port)
+	return s.envBuilder.BuildSandboxEnv()
 }

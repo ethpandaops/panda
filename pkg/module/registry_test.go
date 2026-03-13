@@ -47,15 +47,6 @@ func (e *docsTestExtension) PythonAPIDocs() map[string]types.ModuleDoc {
 	return e.docs
 }
 
-type datasourceTestExtension struct {
-	baseTestExtension
-	infos []types.DatasourceInfo
-}
-
-func (e *datasourceTestExtension) DatasourceInfo() []types.DatasourceInfo {
-	return e.infos
-}
-
 type gettingStartedTestExtension struct {
 	baseTestExtension
 	snippet string
@@ -87,10 +78,6 @@ func TestRegistryCapabilityAggregation(t *testing.T) {
 			"demo": {Description: "demo docs"},
 		},
 	})
-	reg.Add(&datasourceTestExtension{
-		baseTestExtension: baseTestExtension{name: "datasource"},
-		infos:             []types.DatasourceInfo{{Type: "custom", Name: "demo"}},
-	})
 	reg.Add(&gettingStartedTestExtension{
 		baseTestExtension: baseTestExtension{name: "snippet"},
 		snippet:           "hello world",
@@ -118,11 +105,6 @@ func TestRegistryCapabilityAggregation(t *testing.T) {
 	docs := reg.PythonAPIDocs()
 	if docs["demo"].Description != "demo docs" || len(docs) != 1 {
 		t.Fatalf("PythonAPIDocs() = %#v, want single capability contribution", docs)
-	}
-
-	infos := reg.DatasourceInfo()
-	if len(infos) != 1 || infos[0].Name != "demo" {
-		t.Fatalf("DatasourceInfo() = %#v, want single capability contribution", infos)
 	}
 
 	snippets := reg.GettingStartedSnippets()

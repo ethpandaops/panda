@@ -28,12 +28,32 @@ func decodeOperationRequest(r *http.Request) (operations.Request, error) {
 	return req, nil
 }
 
+func decodeTypedOperationArgs[T any](r *http.Request) (T, error) {
+	req, err := decodeOperationRequest(r)
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+
+	return operations.DecodeArgs[T](req.Args)
+}
+
 func writeOperationResponse(log logrus.FieldLogger, w http.ResponseWriter, status int, response operations.Response) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		log.WithError(err).Error("Failed to encode operation response")
 	}
+}
+
+func writeObjectOperationResponse[T any](
+	log logrus.FieldLogger,
+	w http.ResponseWriter,
+	status int,
+	data T,
+	meta map[string]any,
+) {
+	writeOperationResponse(log, w, status, operations.NewObjectResponse(data, meta))
 }
 
 func writePassthroughResponse(w http.ResponseWriter, status int, contentType string, body []byte) {
@@ -49,6 +69,33 @@ func writePassthroughResponse(w http.ResponseWriter, status int, contentType str
 	_, _ = w.Write(body)
 }
 
+func upstreamFailureMessage(operation string, status int, body []byte, contextParts ...string) string {
+	scopeParts := make([]string, 0, len(contextParts))
+	for _, part := range contextParts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			scopeParts = append(scopeParts, part)
+		}
+	}
+
+	scope := fmt.Sprintf("status %d", status)
+	if len(scopeParts) > 0 {
+		scope += ", " + strings.Join(scopeParts, ", ")
+	}
+
+	excerpt := strings.TrimSpace(string(body))
+	const maxExcerpt = 240
+	if len(excerpt) > maxExcerpt {
+		excerpt = excerpt[:maxExcerpt-3] + "..."
+	}
+
+	if excerpt == "" {
+		return fmt.Sprintf("%s upstream failure (%s)", operation, scope)
+	}
+
+	return fmt.Sprintf("%s upstream failure (%s): %s", operation, scope, excerpt)
+}
+
 func requiredStringArg(args map[string]any, key string) (string, error) {
 	value, _ := args[key].(string)
 	if value == "" {
@@ -56,6 +103,16 @@ func requiredStringArg(args map[string]any, key string) (string, error) {
 	}
 
 	return value, nil
+}
+
+func requiredOneOfStringArg(args map[string]any, keys ...string) (string, error) {
+	for _, key := range keys {
+		if value := optionalStringArg(args, key); value != "" {
+			return value, nil
+		}
+	}
+
+	return "", fmt.Errorf("%s is required", strings.Join(keys, " or "))
 }
 
 func optionalStringArg(args map[string]any, key string) string {

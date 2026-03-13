@@ -16,275 +16,231 @@ import (
 
 var ethnodeSegmentPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$`)
 
-func (s *service) handleEthNodeOperation(operationID string, w http.ResponseWriter, r *http.Request) bool {
-	switch operationID {
-	case "ethnode.beacon_get":
-		s.handleEthNodeBeaconGet(w, r)
-	case "ethnode.beacon_post":
-		s.handleEthNodeBeaconPost(w, r)
-	case "ethnode.execution_rpc":
-		s.handleEthNodeExecutionRPC(w, r)
-	case "ethnode.get_node_version":
-		s.handleEthNodeCuratedBeaconGet(w, r, "/eth/v1/node/version")
-	case "ethnode.get_node_syncing":
-		s.handleEthNodeCuratedBeaconGet(w, r, "/eth/v1/node/syncing")
-	case "ethnode.get_peers":
-		s.handleEthNodeCuratedBeaconGet(w, r, "/eth/v1/node/peers")
-	case "ethnode.get_peer_count":
-		s.handleEthNodeCuratedBeaconGet(w, r, "/eth/v1/node/peer_count")
-	case "ethnode.get_beacon_headers":
-		s.handleEthNodeBeaconHeaders(w, r)
-	case "ethnode.get_finality_checkpoints":
-		s.handleEthNodeFinalityCheckpoints(w, r)
-	case "ethnode.get_config_spec":
-		s.handleEthNodeCuratedBeaconGet(w, r, "/eth/v1/config/spec")
-	case "ethnode.get_fork_schedule":
-		s.handleEthNodeCuratedBeaconGet(w, r, "/eth/v1/config/fork_schedule")
-	case "ethnode.get_deposit_contract":
-		s.handleEthNodeCuratedBeaconGet(w, r, "/eth/v1/config/deposit_contract")
-	case "ethnode.get_node_health":
-		s.handleEthNodeHealth(w, r)
-	case "ethnode.eth_block_number":
-		s.handleEthNodeHexRPC(w, r, "eth_blockNumber", "block_number")
-	case "ethnode.eth_syncing":
-		s.handleEthNodeExecutionRPCMethod(w, r, "eth_syncing")
-	case "ethnode.eth_chain_id":
-		s.handleEthNodeHexRPC(w, r, "eth_chainId", "chain_id")
-	case "ethnode.eth_get_block_by_number":
-		s.handleEthNodeGetBlockByNumber(w, r)
-	case "ethnode.net_peer_count":
-		s.handleEthNodeHexRPC(w, r, "net_peerCount", "peer_count")
-	case "ethnode.web3_client_version":
-		s.handleEthNodeExecutionRPCMethod(w, r, "web3_clientVersion")
-	default:
-		return false
-	}
+type ethNodeOperationRequest struct {
+	Args     map[string]any
+	Network  string
+	Instance string
+}
 
-	return true
+func (s *service) registerEthNodeOperations() {
+	s.registerOperation("ethnode.beacon_get", s.handleEthNodeBeaconGet)
+	s.registerOperation("ethnode.beacon_post", s.handleEthNodeBeaconPost)
+	s.registerOperation("ethnode.execution_rpc", s.handleEthNodeExecutionRPC)
+	s.registerOperation("ethnode.get_node_version", func(w http.ResponseWriter, r *http.Request) {
+		handleTypedEthNodeBeaconResponse[operations.EthNodeVersionPayload](s, w, r, "/eth/v1/node/version")
+	})
+	s.registerOperation("ethnode.get_node_syncing", func(w http.ResponseWriter, r *http.Request) {
+		handleTypedEthNodeBeaconResponse[operations.EthNodeSyncingPayload](s, w, r, "/eth/v1/node/syncing")
+	})
+	s.registerOperation("ethnode.get_peers", func(w http.ResponseWriter, r *http.Request) {
+		s.handleEthNodeCuratedBeaconGet(w, r, "/eth/v1/node/peers")
+	})
+	s.registerOperation("ethnode.get_peer_count", func(w http.ResponseWriter, r *http.Request) {
+		handleTypedEthNodeBeaconResponse[operations.EthNodePeerCountPayload](s, w, r, "/eth/v1/node/peer_count")
+	})
+	s.registerOperation("ethnode.get_beacon_headers", s.handleEthNodeBeaconHeaders)
+	s.registerOperation("ethnode.get_finality_checkpoints", s.handleEthNodeFinalityCheckpoints)
+	s.registerOperation("ethnode.get_config_spec", func(w http.ResponseWriter, r *http.Request) {
+		s.handleEthNodeCuratedBeaconGet(w, r, "/eth/v1/config/spec")
+	})
+	s.registerOperation("ethnode.get_fork_schedule", func(w http.ResponseWriter, r *http.Request) {
+		s.handleEthNodeCuratedBeaconGet(w, r, "/eth/v1/config/fork_schedule")
+	})
+	s.registerOperation("ethnode.get_deposit_contract", func(w http.ResponseWriter, r *http.Request) {
+		s.handleEthNodeCuratedBeaconGet(w, r, "/eth/v1/config/deposit_contract")
+	})
+	s.registerOperation("ethnode.get_node_health", s.handleEthNodeHealth)
+	s.registerOperation("ethnode.eth_block_number", func(w http.ResponseWriter, r *http.Request) {
+		s.handleEthNodeHexRPC(w, r, "eth_blockNumber", "block_number")
+	})
+	s.registerOperation("ethnode.eth_syncing", func(w http.ResponseWriter, r *http.Request) {
+		s.handleEthNodeExecutionRPCMethod(w, r, "eth_syncing")
+	})
+	s.registerOperation("ethnode.eth_chain_id", func(w http.ResponseWriter, r *http.Request) {
+		s.handleEthNodeHexRPC(w, r, "eth_chainId", "chain_id")
+	})
+	s.registerOperation("ethnode.eth_get_block_by_number", s.handleEthNodeGetBlockByNumber)
+	s.registerOperation("ethnode.net_peer_count", func(w http.ResponseWriter, r *http.Request) {
+		s.handleEthNodeHexRPC(w, r, "net_peerCount", "peer_count")
+	})
+	s.registerOperation("ethnode.web3_client_version", func(w http.ResponseWriter, r *http.Request) {
+		s.handleEthNodeExecutionRPCStringMethod(w, r, "web3_clientVersion")
+	})
 }
 
 func (s *service) handleEthNodeBeaconGet(w http.ResponseWriter, r *http.Request) {
-	req, err := decodeOperationRequest(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
+	s.withEthNodeRequest(w, r, func(req ethNodeOperationRequest) {
+		path, err := parseEthNodePathArg(req.Args)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 
-	network, instance, path, err := parseEthNodeBeaconArgs(req.Args)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
+		body, contentType, status, err := s.ethNodeBeaconRequestRaw(
+			r.Context(),
+			http.MethodGet,
+			req.Network,
+			req.Instance,
+			path,
+			optionalMapArg(req.Args, "params"),
+			nil,
+		)
+		if err != nil {
+			http.Error(w, err.Error(), status)
+			return
+		}
 
-	body, contentType, status, err := s.ethNodeBeaconRequestRaw(
-		r.Context(),
-		http.MethodGet,
-		network,
-		instance,
-		path,
-		optionalMapArg(req.Args, "params"),
-		nil,
-	)
-	if err != nil {
-		http.Error(w, err.Error(), status)
-		return
-	}
-
-	writePassthroughResponse(w, http.StatusOK, contentType, body)
+		writePassthroughResponse(w, http.StatusOK, contentType, body)
+	})
 }
 
 func (s *service) handleEthNodeBeaconPost(w http.ResponseWriter, r *http.Request) {
-	req, err := decodeOperationRequest(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
+	s.withEthNodeRequest(w, r, func(req ethNodeOperationRequest) {
+		path, err := parseEthNodePathArg(req.Args)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 
-	network, instance, path, err := parseEthNodeBeaconArgs(req.Args)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
+		body, contentType, status, err := s.ethNodeBeaconRequestRaw(
+			r.Context(),
+			http.MethodPost,
+			req.Network,
+			req.Instance,
+			path,
+			nil,
+			req.Args["body"],
+		)
+		if err != nil {
+			http.Error(w, err.Error(), status)
+			return
+		}
 
-	body, contentType, status, err := s.ethNodeBeaconRequestRaw(
-		r.Context(),
-		http.MethodPost,
-		network,
-		instance,
-		path,
-		nil,
-		req.Args["body"],
-	)
-	if err != nil {
-		http.Error(w, err.Error(), status)
-		return
-	}
-
-	writePassthroughResponse(w, http.StatusOK, contentType, body)
+		writePassthroughResponse(w, http.StatusOK, contentType, body)
+	})
 }
 
 func (s *service) handleEthNodeExecutionRPC(w http.ResponseWriter, r *http.Request) {
-	req, err := decodeOperationRequest(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
+	s.withEthNodeRequest(w, r, func(req ethNodeOperationRequest) {
+		method, err := requiredStringArg(req.Args, "method")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 
-	network, instance, err := parseEthNodeNodeArgs(req.Args)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
+		body, contentType, status, err := s.ethNodeExecutionRPCRaw(
+			r.Context(),
+			req.Network,
+			req.Instance,
+			method,
+			optionalSliceArg(req.Args, "params"),
+		)
+		if err != nil {
+			http.Error(w, err.Error(), status)
+			return
+		}
 
-	method, err := requiredStringArg(req.Args, "method")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	body, contentType, status, err := s.ethNodeExecutionRPCRaw(r.Context(), network, instance, method, optionalSliceArg(req.Args, "params"))
-	if err != nil {
-		http.Error(w, err.Error(), status)
-		return
-	}
-
-	writePassthroughResponse(w, http.StatusOK, contentType, body)
+		writePassthroughResponse(w, http.StatusOK, contentType, body)
+	})
 }
 
 func (s *service) handleEthNodeCuratedBeaconGet(w http.ResponseWriter, r *http.Request, path string) {
-	req, err := decodeOperationRequest(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	network, instance, err := parseEthNodeNodeArgs(req.Args)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	data, status, err := s.ethNodeBeaconRequest(r.Context(), http.MethodGet, network, instance, path, nil, nil)
-	if err != nil {
-		http.Error(w, err.Error(), status)
-		return
-	}
-
-	writeOperationResponse(s.log, w, http.StatusOK, operations.Response{
-		Kind: operations.ResultKindObject,
-		Data: data,
-		Meta: map[string]any{
-			"network":  network,
-			"instance": instance,
-			"path":     path,
-		},
+	s.withEthNodeRequest(w, r, func(req ethNodeOperationRequest) {
+		s.writeEthNodeCuratedBeaconResponse(w, r, req, path)
 	})
 }
 
 func (s *service) handleEthNodeBeaconHeaders(w http.ResponseWriter, r *http.Request) {
-	req, err := decodeOperationRequest(r)
+	request, err := decodeTypedOperationArgs[operations.EthNodeBeaconHeadersArgs](r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	slot := optionalStringArg(req.Args, "slot")
+	nodeRequest, err := validateEthNodeNodeRequest(request.Network, request.Instance)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	slot := strings.TrimSpace(request.Slot)
 	if slot == "" {
 		slot = "head"
 	}
 
-	s.handleEthNodeCuratedBeaconPath(w, r, req, fmt.Sprintf("/eth/v1/beacon/headers/%s", slot))
+	writeTypedEthNodeBeaconResponse[operations.EthNodeHeaderPayload](
+		s,
+		w,
+		r,
+		nodeRequest,
+		fmt.Sprintf("/eth/v1/beacon/headers/%s", slot),
+	)
 }
 
 func (s *service) handleEthNodeFinalityCheckpoints(w http.ResponseWriter, r *http.Request) {
-	req, err := decodeOperationRequest(r)
+	request, err := decodeTypedOperationArgs[operations.EthNodeFinalityArgs](r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	stateID := optionalStringArg(req.Args, "state_id")
+	nodeRequest, err := validateEthNodeNodeRequest(request.Network, request.Instance)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	stateID := strings.TrimSpace(request.StateID)
 	if stateID == "" {
 		stateID = "head"
 	}
 
-	s.handleEthNodeCuratedBeaconPath(w, r, req, fmt.Sprintf("/eth/v1/beacon/states/%s/finality_checkpoints", stateID))
-}
-
-func (s *service) handleEthNodeCuratedBeaconPath(w http.ResponseWriter, r *http.Request, req operations.Request, path string) {
-	network, instance, err := parseEthNodeNodeArgs(req.Args)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	data, status, err := s.ethNodeBeaconRequest(r.Context(), http.MethodGet, network, instance, path, nil, nil)
-	if err != nil {
-		http.Error(w, err.Error(), status)
-		return
-	}
-
-	writeOperationResponse(s.log, w, http.StatusOK, operations.Response{
-		Kind: operations.ResultKindObject,
-		Data: data,
-		Meta: map[string]any{
-			"network":  network,
-			"instance": instance,
-			"path":     path,
-		},
-	})
+	writeTypedEthNodeBeaconResponse[operations.EthNodeFinalityPayload](
+		s,
+		w,
+		r,
+		nodeRequest,
+		fmt.Sprintf("/eth/v1/beacon/states/%s/finality_checkpoints", stateID),
+	)
 }
 
 func (s *service) handleEthNodeHealth(w http.ResponseWriter, r *http.Request) {
-	req, err := decodeOperationRequest(r)
+	request, err := decodeValidatedEthNodeNodeArgs(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	network, instance, err := parseEthNodeNodeArgs(req.Args)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	statusCode, status, err := s.ethNodeBeaconHealthRequest(r.Context(), network, instance)
+	statusCode, status, err := s.ethNodeBeaconHealthRequest(r.Context(), request.Network, request.Instance)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return
 	}
 
-	writeOperationResponse(s.log, w, http.StatusOK, operations.Response{
-		Kind: operations.ResultKindObject,
-		Data: map[string]any{"status_code": statusCode},
-		Meta: map[string]any{
-			"network":  network,
-			"instance": instance,
-		},
-	})
+	writeObjectOperationResponse(
+		s.log,
+		w,
+		http.StatusOK,
+		operations.StatusCodePayload{StatusCode: statusCode},
+		ethNodeMeta(request, ""),
+	)
 }
 
 func (s *service) handleEthNodeHexRPC(w http.ResponseWriter, r *http.Request, method, field string) {
-	req, err := decodeOperationRequest(r)
+	request, err := decodeValidatedEthNodeNodeArgs(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	network, instance, err := parseEthNodeNodeArgs(req.Args)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	result, status, err := s.ethNodeExecutionRPC(r.Context(), network, instance, method, nil)
+	result, status, err := s.ethNodeExecutionRPC(r.Context(), request.Network, request.Instance, method, nil)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return
 	}
 
-	hexValue, ok := result.(string)
-	if !ok {
+	hexValue, err := operations.DecodeValue[string](result)
+	if err != nil {
 		http.Error(w, "unexpected JSON-RPC result shape", http.StatusBadGateway)
 		return
 	}
@@ -295,103 +251,88 @@ func (s *service) handleEthNodeHexRPC(w http.ResponseWriter, r *http.Request, me
 		return
 	}
 
-	writeOperationResponse(s.log, w, http.StatusOK, operations.Response{
-		Kind: operations.ResultKindObject,
-		Data: map[string]any{
-			"hex": hexValue,
-			field: parsedValue,
-		},
-		Meta: map[string]any{
-			"network":  network,
-			"instance": instance,
-			"method":   method,
-		},
-	})
+	payload, err := ethNodeHexPayload(field, hexValue, parsedValue)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeObjectOperationResponse(s.log, w, http.StatusOK, payload, ethNodeMeta(request, method))
 }
 
 func (s *service) handleEthNodeExecutionRPCMethod(w http.ResponseWriter, r *http.Request, method string) {
-	req, err := decodeOperationRequest(r)
+	s.withEthNodeRequest(w, r, func(req ethNodeOperationRequest) {
+		result, status, err := s.ethNodeExecutionRPC(r.Context(), req.Network, req.Instance, method, nil)
+		if err != nil {
+			http.Error(w, err.Error(), status)
+			return
+		}
+
+		writeOperationResponse(s.log, w, http.StatusOK, operations.Response{
+			Kind: operations.ResultKindObject,
+			Data: result,
+			Meta: map[string]any{
+				"network":  req.Network,
+				"instance": req.Instance,
+				"method":   method,
+			},
+		})
+	})
+}
+
+func (s *service) handleEthNodeExecutionRPCStringMethod(w http.ResponseWriter, r *http.Request, method string) {
+	request, err := decodeValidatedEthNodeNodeArgs(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	network, instance, err := parseEthNodeNodeArgs(req.Args)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	result, status, err := s.ethNodeExecutionRPC(r.Context(), network, instance, method, nil)
+	result, status, err := s.ethNodeExecutionRPC(r.Context(), request.Network, request.Instance, method, nil)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return
 	}
 
-	writeOperationResponse(s.log, w, http.StatusOK, operations.Response{
-		Kind: operations.ResultKindObject,
-		Data: result,
-		Meta: map[string]any{
-			"network":  network,
-			"instance": instance,
-			"method":   method,
-		},
-	})
+	value, err := operations.DecodeValue[string](result)
+	if err != nil {
+		http.Error(w, "unexpected JSON-RPC result shape", http.StatusBadGateway)
+		return
+	}
+
+	writeObjectOperationResponse(s.log, w, http.StatusOK, value, ethNodeMeta(request, method))
 }
 
 func (s *service) handleEthNodeGetBlockByNumber(w http.ResponseWriter, r *http.Request) {
-	req, err := decodeOperationRequest(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
+	s.withEthNodeRequest(w, r, func(req ethNodeOperationRequest) {
+		block := optionalStringArg(req.Args, "block")
+		if block == "" {
+			block = "latest"
+		}
 
-	network, instance, err := parseEthNodeNodeArgs(req.Args)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
+		fullTx, _ := req.Args["full_tx"].(bool)
 
-	block := optionalStringArg(req.Args, "block")
-	if block == "" {
-		block = "latest"
-	}
+		result, status, err := s.ethNodeExecutionRPC(
+			r.Context(),
+			req.Network,
+			req.Instance,
+			"eth_getBlockByNumber",
+			[]any{block, fullTx},
+		)
+		if err != nil {
+			http.Error(w, err.Error(), status)
+			return
+		}
 
-	fullTx, _ := req.Args["full_tx"].(bool)
-
-	result, status, err := s.ethNodeExecutionRPC(r.Context(), network, instance, "eth_getBlockByNumber", []any{block, fullTx})
-	if err != nil {
-		http.Error(w, err.Error(), status)
-		return
-	}
-
-	writeOperationResponse(s.log, w, http.StatusOK, operations.Response{
-		Kind: operations.ResultKindObject,
-		Data: result,
-		Meta: map[string]any{
-			"network":  network,
-			"instance": instance,
-			"method":   "eth_getBlockByNumber",
-		},
+		writeOperationResponse(s.log, w, http.StatusOK, operations.Response{
+			Kind: operations.ResultKindObject,
+			Data: result,
+			Meta: map[string]any{
+				"network":  req.Network,
+				"instance": req.Instance,
+				"method":   "eth_getBlockByNumber",
+			},
+		})
 	})
-}
-
-func parseEthNodeBeaconArgs(args map[string]any) (string, string, string, error) {
-	network, instance, err := parseEthNodeNodeArgs(args)
-	if err != nil {
-		return "", "", "", err
-	}
-
-	path, err := requiredStringArg(args, "path")
-	if err != nil {
-		return "", "", "", err
-	}
-
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
-	}
-
-	return network, instance, path, nil
 }
 
 func parseEthNodeNodeArgs(args map[string]any) (string, string, error) {
@@ -414,6 +355,174 @@ func parseEthNodeNodeArgs(args map[string]any) (string, string, error) {
 	}
 
 	return network, instance, nil
+}
+
+func validateEthNodeNodeRequest(network, instance string) (operations.EthNodeNodeArgs, error) {
+	if strings.TrimSpace(network) == "" {
+		return operations.EthNodeNodeArgs{}, fmt.Errorf("network is required")
+	}
+
+	if strings.TrimSpace(instance) == "" {
+		return operations.EthNodeNodeArgs{}, fmt.Errorf("instance is required")
+	}
+
+	if !ethnodeSegmentPattern.MatchString(network) {
+		return operations.EthNodeNodeArgs{}, fmt.Errorf("invalid network name: must match [a-z0-9-]")
+	}
+
+	if !ethnodeSegmentPattern.MatchString(instance) {
+		return operations.EthNodeNodeArgs{}, fmt.Errorf("invalid instance name: must match [a-z0-9-]")
+	}
+
+	return operations.EthNodeNodeArgs{
+		Network:  network,
+		Instance: instance,
+	}, nil
+}
+
+func decodeValidatedEthNodeNodeArgs(r *http.Request) (operations.EthNodeNodeArgs, error) {
+	request, err := decodeTypedOperationArgs[operations.EthNodeNodeArgs](r)
+	if err != nil {
+		return operations.EthNodeNodeArgs{}, err
+	}
+
+	return validateEthNodeNodeRequest(request.Network, request.Instance)
+}
+
+func parseEthNodePathArg(args map[string]any) (string, error) {
+	path, err := requiredStringArg(args, "path")
+	if err != nil {
+		return "", err
+	}
+
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+
+	return path, nil
+}
+
+func (s *service) withEthNodeRequest(
+	w http.ResponseWriter,
+	r *http.Request,
+	fn func(ethNodeOperationRequest),
+) {
+	req, err := decodeOperationRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	network, instance, err := parseEthNodeNodeArgs(req.Args)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	fn(ethNodeOperationRequest{
+		Args:     req.Args,
+		Network:  network,
+		Instance: instance,
+	})
+}
+
+func writeTypedEthNodeBeaconResponse[T any](
+	s *service,
+	w http.ResponseWriter,
+	r *http.Request,
+	request operations.EthNodeNodeArgs,
+	path string,
+) {
+	data, status, err := s.ethNodeBeaconRequest(r.Context(), http.MethodGet, request.Network, request.Instance, path, nil, nil)
+	if err != nil {
+		http.Error(w, err.Error(), status)
+		return
+	}
+
+	payload, err := operations.DecodeValue[T](data)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	writeObjectOperationResponse(s.log, w, http.StatusOK, payload, ethNodeMeta(request, path))
+}
+
+func handleTypedEthNodeBeaconResponse[T any](
+	s *service,
+	w http.ResponseWriter,
+	r *http.Request,
+	path string,
+) {
+	request, err := decodeValidatedEthNodeNodeArgs(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	writeTypedEthNodeBeaconResponse[T](s, w, r, request, path)
+}
+
+func ethNodeMeta(request operations.EthNodeNodeArgs, detail string) map[string]any {
+	meta := map[string]any{
+		"network":  request.Network,
+		"instance": request.Instance,
+	}
+
+	if detail != "" {
+		if strings.HasPrefix(detail, "/") {
+			meta["path"] = detail
+		} else {
+			meta["method"] = detail
+		}
+	}
+
+	return meta
+}
+
+func ethNodeHexPayload(field, hexValue string, parsedValue uint64) (any, error) {
+	switch field {
+	case "block_number":
+		return operations.EthNodeBlockNumberPayload{
+			Hex:         hexValue,
+			BlockNumber: parsedValue,
+		}, nil
+	case "peer_count":
+		return operations.EthNodePeerCountRPCPayload{
+			Hex:       hexValue,
+			PeerCount: parsedValue,
+		}, nil
+	case "chain_id":
+		return operations.EthNodeChainIDPayload{
+			Hex:     hexValue,
+			ChainID: parsedValue,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported ethnode hex field %q", field)
+	}
+}
+
+func (s *service) writeEthNodeCuratedBeaconResponse(
+	w http.ResponseWriter,
+	r *http.Request,
+	req ethNodeOperationRequest,
+	path string,
+) {
+	data, status, err := s.ethNodeBeaconRequest(r.Context(), http.MethodGet, req.Network, req.Instance, path, nil, nil)
+	if err != nil {
+		http.Error(w, err.Error(), status)
+		return
+	}
+
+	writeOperationResponse(s.log, w, http.StatusOK, operations.Response{
+		Kind: operations.ResultKindObject,
+		Data: data,
+		Meta: map[string]any{
+			"network":  req.Network,
+			"instance": req.Instance,
+			"path":     path,
+		},
+	})
 }
 
 func (s *service) ethNodeBeaconRequest(
@@ -475,7 +584,17 @@ func (s *service) ethNodeBeaconRequestRaw(
 	}
 
 	if status < 200 || status >= 300 {
-		return nil, "", status, fmt.Errorf("%s", strings.TrimSpace(string(data)))
+		return nil, "", status, fmt.Errorf(
+			"%s",
+			upstreamFailureMessage(
+				"ethnode.beacon",
+				status,
+				data,
+				"network="+network,
+				"instance="+instance,
+				"path="+path,
+			),
+		)
 	}
 
 	contentType := responseHeaders.Get("Content-Type")
@@ -542,7 +661,17 @@ func (s *service) ethNodeExecutionRPCRaw(
 	}
 
 	if status < 200 || status >= 300 {
-		return nil, "", status, fmt.Errorf("%s", strings.TrimSpace(string(data)))
+		return nil, "", status, fmt.Errorf(
+			"%s",
+			upstreamFailureMessage(
+				"ethnode.execution_rpc",
+				status,
+				data,
+				"network="+network,
+				"instance="+instance,
+				"method="+method,
+			),
+		)
 	}
 
 	var rpcResp struct {

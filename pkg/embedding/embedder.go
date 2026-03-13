@@ -69,6 +69,10 @@ func (e *Embedder) EmbedBatch(texts []string) ([][]float32, error) {
 
 // Close releases resources held by the embedder.
 func (e *Embedder) Close() error {
+	if e == nil || e.session == nil {
+		return nil
+	}
+
 	if e.session != nil {
 		return e.session.Destroy()
 	}

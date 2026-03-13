@@ -2,6 +2,8 @@
 package observability
 
 import (
+	"fmt"
+
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -44,11 +46,16 @@ var (
 	)
 )
 
-func init() {
-	// Register all metrics with the default registry.
-	prometheus.MustRegister(
+func RegisterMetrics(reg prometheus.Registerer) error {
+	for _, collector := range []prometheus.Collector{
 		ToolCallsTotal,
 		ToolCallDuration,
 		ActiveConnections,
-	)
+	} {
+		if err := reg.Register(collector); err != nil {
+			return fmt.Errorf("registering metrics: %w", err)
+		}
+	}
+
+	return nil
 }

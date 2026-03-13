@@ -2,9 +2,7 @@ package clickhouse
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"maps"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -17,17 +15,19 @@ import (
 
 // Compile-time interface checks.
 var (
-	_ module.Module            = (*Module)(nil)
-	_ module.ProxyDiscoverable = (*Module)(nil)
+	_ module.Module                  = (*Module)(nil)
+	_ module.ProxyDiscoverable       = (*Module)(nil)
+	_ module.RuntimeDependencyBinder = (*Module)(nil)
 )
 
 // Module implements the module.Module interface for ClickHouse.
 type Module struct {
 	cfg          Config
 	datasources  []types.DatasourceInfo
+	examples     map[string]types.ExampleCategory
 	log          logrus.FieldLogger
 	schemaClient ClickHouseSchemaClient
-	proxySvc     proxy.Service
+	proxySvc     proxy.ClickHouseSchemaAccess
 }
 
 // New creates a new ClickHouse module.
@@ -35,18 +35,18 @@ func New() *Module {
 	return &Module{}
 }
 
-func (p *Module) Name() string { return "clickhouse" }
+func (ext *Module) Name() string { return "clickhouse" }
 
 // SchemaClient returns the schema discovery client, or nil if not initialized.
-func (p *Module) SchemaClient() ClickHouseSchemaClient { return p.schemaClient }
+func (ext *Module) SchemaClient() ClickHouseSchemaClient { return ext.schemaClient }
 
-// SetProxyClient injects the proxy service for schema discovery.
-func (p *Module) SetProxyClient(client proxy.Service) {
-	p.proxySvc = client
+// BindRuntimeDependencies injects runtime collaborators needed after init.
+func (ext *Module) BindRuntimeDependencies(deps module.RuntimeDependencies) {
+	ext.proxySvc = deps.ProxySchemaAccess
 }
 
 // InitFromDiscovery initializes the module from discovered datasources.
-func (p *Module) InitFromDiscovery(datasources []types.DatasourceInfo) error {
+func (ext *Module) InitFromDiscovery(datasources []types.DatasourceInfo) error {
 	var filtered []types.DatasourceInfo
 
 	for _, ds := range datasources {
@@ -61,131 +61,83 @@ func (p *Module) InitFromDiscovery(datasources []types.DatasourceInfo) error {
 		return module.ErrNoValidConfig
 	}
 
-	p.datasources = filtered
+	ext.datasources = filtered
 
 	return nil
 }
 
 // Init parses the raw YAML config for this module.
-func (p *Module) Init(rawConfig []byte) error {
-	if err := yaml.Unmarshal(rawConfig, &p.cfg); err != nil {
+func (ext *Module) Init(rawConfig []byte) error {
+	if err := yaml.Unmarshal(rawConfig, &ext.cfg); err != nil {
 		return err
 	}
 
 	// Drop schema discovery entries without a datasource name.
-	validDatasources := make([]SchemaDiscoveryDatasource, 0, len(p.cfg.SchemaDiscovery.Datasources))
-	for _, ds := range p.cfg.SchemaDiscovery.Datasources {
+	validDatasources := make([]SchemaDiscoveryDatasource, 0, len(ext.cfg.SchemaDiscovery.Datasources))
+	for _, ds := range ext.cfg.SchemaDiscovery.Datasources {
 		if ds.Name != "" {
 			validDatasources = append(validDatasources, ds)
 		}
 	}
 
-	p.cfg.SchemaDiscovery.Datasources = validDatasources
+	ext.cfg.SchemaDiscovery.Datasources = validDatasources
 
 	return nil
 }
 
 // ApplyDefaults sets default values before validation.
-func (p *Module) ApplyDefaults() {
-	if p.cfg.SchemaDiscovery.RefreshInterval == 0 {
-		p.cfg.SchemaDiscovery.RefreshInterval = 15 * time.Minute
+func (ext *Module) ApplyDefaults() {
+	if ext.cfg.SchemaDiscovery.RefreshInterval == 0 {
+		ext.cfg.SchemaDiscovery.RefreshInterval = 15 * time.Minute
 	}
 }
 
 // Validate checks that the parsed config is valid.
-func (p *Module) Validate() error {
-	for i, ds := range p.cfg.SchemaDiscovery.Datasources {
+func (ext *Module) Validate() error {
+	if err := module.EnsureExampleCatalogLoaded(&ext.examples, loadExamples); err != nil {
+		return err
+	}
+
+	for i, ds := range ext.cfg.SchemaDiscovery.Datasources {
 		if ds.Name == "" {
 			return fmt.Errorf("schema_discovery.datasources[%d].name is required", i)
 		}
 	}
 
-	// Validate datasources have unique names.
-	names := make(map[string]struct{}, len(p.datasources))
-	for i, ds := range p.datasources {
-		if _, exists := names[ds.Name]; exists {
-			return fmt.Errorf("datasource[%d].name %q is duplicated", i, ds.Name)
-		}
-
-		names[ds.Name] = struct{}{}
-	}
-
-	return nil
-}
-
-// SandboxEnv returns environment variables for the sandbox.
-func (p *Module) SandboxEnv() (map[string]string, error) {
-	if len(p.datasources) == 0 {
-		return nil, nil
-	}
-
-	type datasourceInfo struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-		Database    string `json:"database"`
-	}
-
-	infos := make([]datasourceInfo, 0, len(p.datasources))
-	for _, ds := range p.datasources {
-		infos = append(infos, datasourceInfo{
-			Name:        ds.Name,
-			Description: ds.Description,
-			Database:    ds.Metadata["database"],
-		})
-	}
-
-	infosJSON, err := json.Marshal(infos)
-	if err != nil {
-		return nil, fmt.Errorf("marshaling ClickHouse datasource info: %w", err)
-	}
-
-	return map[string]string{
-		"ETHPANDAOPS_CLICKHOUSE_DATASOURCES": string(infosJSON),
-	}, nil
-}
-
-// DatasourceInfo returns datasource metadata for datasources:// resources.
-func (p *Module) DatasourceInfo() []types.DatasourceInfo {
-	result := make([]types.DatasourceInfo, len(p.datasources))
-	copy(result, p.datasources)
-
-	return result
+	return module.ValidateUniqueDatasources(ext.datasources)
 }
 
 // Examples returns query examples for the ClickHouse module.
-func (p *Module) Examples() map[string]types.ExampleCategory {
-	result := make(map[string]types.ExampleCategory, len(queryExamples))
-	maps.Copy(result, queryExamples)
-
-	return result
+func (ext *Module) Examples() map[string]types.ExampleCategory {
+	return module.CloneExampleCatalog(ext.examples)
 }
 
 // PythonAPIDocs returns the ClickHouse module documentation.
-func (p *Module) PythonAPIDocs() map[string]types.ModuleDoc {
+func (ext *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 	return map[string]types.ModuleDoc{
 		"clickhouse": {
 			Description: "Query ClickHouse databases for Ethereum blockchain data. Use the search tool with type='examples' for query patterns.",
 			Functions: map[string]types.FunctionDoc{
 				"list_datasources": {
 					Signature:   "clickhouse.list_datasources() -> list[dict]",
-					Description: "List available ClickHouse clusters. Prefer datasources://clickhouse resource instead.",
+					Description: "List available ClickHouse datasources. Prefer datasources://clickhouse resource instead.",
 					Returns:     "List of dicts with 'name', 'description', 'database' keys",
 				},
 				"query": {
-					Signature:   "clickhouse.query(cluster: str, sql: str) -> pandas.DataFrame",
+					Signature:   "clickhouse.query(datasource: str, sql: str) -> pandas.DataFrame",
 					Description: "Execute SQL query, return DataFrame",
 					Parameters: map[string]string{
-						"cluster": "'xatu' or 'xatu-cbt' - see panda://getting-started for syntax differences",
-						"sql":     "SQL query string",
+						"datasource": "'xatu' or 'xatu-cbt' - see panda://getting-started for syntax differences",
+						"sql":        "SQL query string",
 					},
 					Returns: "pandas.DataFrame",
 				},
 				"query_raw": {
-					Signature:   "clickhouse.query_raw(cluster: str, sql: str) -> tuple[list[tuple], list[str]]",
+					Signature:   "clickhouse.query_raw(datasource: str, sql: str) -> tuple[list[tuple], list[str]]",
 					Description: "Execute SQL query, return raw tuples",
 					Parameters: map[string]string{
-						"cluster": "'xatu' or 'xatu-cbt'",
-						"sql":     "SQL query string",
+						"datasource": "'xatu' or 'xatu-cbt'",
+						"sql":        "SQL query string",
 					},
 					Returns: "(rows, column_names)",
 				},
@@ -195,7 +147,7 @@ func (p *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 }
 
 // GettingStartedSnippet returns ClickHouse-specific getting-started content.
-func (p *Module) GettingStartedSnippet() string {
+func (ext *Module) GettingStartedSnippet() string {
 	return `## ClickHouse Cluster Rules
 
 Xatu data is split across **TWO clusters** with **DIFFERENT syntax**:
@@ -215,33 +167,33 @@ Xatu data is split across **TWO clusters** with **DIFFERENT syntax**:
 }
 
 // RegisterResources registers ClickHouse schema resources.
-func (p *Module) RegisterResources(log logrus.FieldLogger, reg module.ResourceRegistry) error {
-	p.log = log.WithField("module", "clickhouse")
-	if p.schemaClient != nil {
-		RegisterSchemaResources(p.log, reg, p.schemaClient)
+func (ext *Module) RegisterResources(log logrus.FieldLogger, reg module.ResourceRegistry) error {
+	ext.log = log.WithField("module", "clickhouse")
+	if ext.schemaClient != nil {
+		RegisterSchemaResources(ext.log, reg, ext.schemaClient)
 	}
 
 	return nil
 }
 
 // Start performs async initialization (schema discovery).
-func (p *Module) Start(ctx context.Context) error {
-	if p.log == nil {
-		p.log = logrus.WithField("module", "clickhouse")
+func (ext *Module) Start(ctx context.Context) error {
+	if ext.log == nil {
+		ext.log = logrus.WithField("module", "clickhouse")
 	}
 
-	if p.cfg.SchemaDiscovery.Enabled != nil && !*p.cfg.SchemaDiscovery.Enabled {
-		p.log.Debug("Schema discovery disabled, skipping")
+	if ext.cfg.SchemaDiscovery.Enabled != nil && !*ext.cfg.SchemaDiscovery.Enabled {
+		ext.log.Debug("Schema discovery disabled, skipping")
 
 		return nil
 	}
 
-	if p.proxySvc == nil {
+	if ext.proxySvc == nil {
 		return fmt.Errorf("proxy service is required for ClickHouse schema discovery")
 	}
 
-	datasources := make([]SchemaDiscoveryDatasource, 0, len(p.cfg.SchemaDiscovery.Datasources))
-	for _, ds := range p.cfg.SchemaDiscovery.Datasources {
+	datasources := make([]SchemaDiscoveryDatasource, 0, len(ext.cfg.SchemaDiscovery.Datasources))
+	for _, ds := range ext.cfg.SchemaDiscovery.Datasources {
 		if ds.Name == "" {
 			continue
 		}
@@ -254,7 +206,7 @@ func (p *Module) Start(ctx context.Context) error {
 	}
 
 	if len(datasources) == 0 {
-		for _, name := range p.proxySvc.ClickHouseDatasources() {
+		for _, name := range ext.proxySvc.ClickHouseDatasources() {
 			if name == "" {
 				continue
 			}
@@ -267,28 +219,28 @@ func (p *Module) Start(ctx context.Context) error {
 	}
 
 	if len(datasources) == 0 {
-		p.log.Debug("No ClickHouse datasources available for schema discovery, skipping")
+		ext.log.Debug("No ClickHouse datasources available for schema discovery, skipping")
 
 		return nil
 	}
 
-	p.schemaClient = NewClickHouseSchemaClient(
-		p.log,
+	ext.schemaClient = NewClickHouseSchemaClient(
+		ext.log,
 		ClickHouseSchemaConfig{
-			RefreshInterval: p.cfg.SchemaDiscovery.RefreshInterval,
+			RefreshInterval: ext.cfg.SchemaDiscovery.RefreshInterval,
 			QueryTimeout:    DefaultSchemaQueryTimeout,
 			Datasources:     datasources,
 		},
-		p.proxySvc,
+		ext.proxySvc,
 	)
 
-	return p.schemaClient.Start(ctx)
+	return ext.schemaClient.Start(ctx)
 }
 
 // Stop cleans up resources.
-func (p *Module) Stop(_ context.Context) error {
-	if p.schemaClient != nil {
-		return p.schemaClient.Stop()
+func (ext *Module) Stop(_ context.Context) error {
+	if ext.schemaClient != nil {
+		return ext.schemaClient.Stop()
 	}
 
 	return nil

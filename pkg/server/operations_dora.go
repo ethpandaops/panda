@@ -15,37 +15,39 @@ import (
 	"github.com/ethpandaops/panda/pkg/operations"
 )
 
-func (s *service) handleDoraOperation(operationID string, w http.ResponseWriter, r *http.Request) bool {
-	switch operationID {
-	case "dora.list_networks":
-		s.handleDoraListNetworks(w)
-	case "dora.get_base_url":
-		s.handleDoraBaseURL(w, r)
-	case "dora.get_network_overview":
-		s.handleDoraNetworkOverview(w, r)
-	case "dora.get_validator":
-		s.handleDoraDataGetPassthrough(w, r, "index_or_pubkey", "/api/v1/validator/%s")
-	case "dora.get_validators":
-		s.handleDoraValidators(w, r)
-	case "dora.get_slot":
-		s.handleDoraDataGetPassthrough(w, r, "slot_or_hash", "/api/v1/slot/%s")
-	case "dora.get_epoch":
-		s.handleDoraDataGetPassthrough(w, r, "epoch", "/api/v1/epoch/%s")
-	case "dora.link_validator":
-		s.handleDoraLink(w, r, "/validator/%s")
-	case "dora.link_slot":
-		s.handleDoraLink(w, r, "/slot/%s")
-	case "dora.link_epoch":
-		s.handleDoraLink(w, r, "/epoch/%s")
-	case "dora.link_address":
-		s.handleDoraLink(w, r, "/address/%s")
-	case "dora.link_block":
-		s.handleDoraLink(w, r, "/block/%s")
-	default:
-		return false
-	}
+var doraLinkIdentifierKeys = []string{"index_or_pubkey", "slot_or_hash", "epoch", "address", "number_or_hash"}
 
-	return true
+func (s *service) registerDoraOperations() {
+	s.registerOperation("dora.list_networks", func(w http.ResponseWriter, _ *http.Request) {
+		s.handleDoraListNetworks(w)
+	})
+	s.registerOperation("dora.get_base_url", s.handleDoraBaseURL)
+	s.registerOperation("dora.get_network_overview", s.handleDoraNetworkOverview)
+	s.registerOperation("dora.get_validator", func(w http.ResponseWriter, r *http.Request) {
+		s.handleDoraDataGetPassthrough(w, r, "index_or_pubkey", "/api/v1/validator/%s")
+	})
+	s.registerOperation("dora.get_validators", s.handleDoraValidators)
+	s.registerOperation("dora.get_slot", func(w http.ResponseWriter, r *http.Request) {
+		s.handleDoraDataGetPassthrough(w, r, "slot_or_hash", "/api/v1/slot/%s")
+	})
+	s.registerOperation("dora.get_epoch", func(w http.ResponseWriter, r *http.Request) {
+		s.handleDoraDataGetPassthrough(w, r, "epoch", "/api/v1/epoch/%s")
+	})
+	s.registerOperation("dora.link_validator", func(w http.ResponseWriter, r *http.Request) {
+		s.handleDoraLink(w, r, "index_or_pubkey", "/validator/%s")
+	})
+	s.registerOperation("dora.link_slot", func(w http.ResponseWriter, r *http.Request) {
+		s.handleDoraLink(w, r, "slot_or_hash", "/slot/%s")
+	})
+	s.registerOperation("dora.link_epoch", func(w http.ResponseWriter, r *http.Request) {
+		s.handleDoraLink(w, r, "epoch", "/epoch/%s")
+	})
+	s.registerOperation("dora.link_address", func(w http.ResponseWriter, r *http.Request) {
+		s.handleDoraLink(w, r, "address", "/address/%s")
+	})
+	s.registerOperation("dora.link_block", func(w http.ResponseWriter, r *http.Request) {
+		s.handleDoraLink(w, r, "number_or_hash", "/block/%s")
+	})
 }
 
 func (s *service) handleDoraListNetworks(w http.ResponseWriter) {
@@ -55,51 +57,57 @@ func (s *service) handleDoraListNetworks(w http.ResponseWriter) {
 		return
 	}
 
-	items := make([]map[string]any, 0, len(networks))
+	items := make([]operations.DoraNetwork, 0, len(networks))
 	for name, baseURL := range networks {
-		items = append(items, map[string]any{
-			"name":     name,
-			"dora_url": baseURL,
+		items = append(items, operations.DoraNetwork{
+			Name:    name,
+			DoraURL: baseURL,
 		})
 	}
 
 	sort.Slice(items, func(i, j int) bool {
-		return items[i]["name"].(string) < items[j]["name"].(string)
+		return items[i].Name < items[j].Name
 	})
 
-	writeOperationResponse(s.log, w, http.StatusOK, operations.Response{
-		Kind: operations.ResultKindObject,
-		Data: map[string]any{"networks": items},
-	})
+	writeObjectOperationResponse(
+		s.log,
+		w,
+		http.StatusOK,
+		operations.DoraNetworksPayload{Networks: items},
+		nil,
+	)
 }
 
 func (s *service) handleDoraBaseURL(w http.ResponseWriter, r *http.Request) {
-	req, err := decodeOperationRequest(r)
+	request, err := decodeTypedOperationArgs[operations.DoraNetworkArgs](r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	baseURL, status, err := s.doraBaseURL(req.Args)
+	baseURL, status, err := s.doraBaseURL(request.Network)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return
 	}
 
-	writeOperationResponse(s.log, w, http.StatusOK, operations.Response{
-		Kind: operations.ResultKindObject,
-		Data: map[string]any{"base_url": baseURL},
-	})
+	writeObjectOperationResponse(
+		s.log,
+		w,
+		http.StatusOK,
+		operations.DoraBaseURLPayload{BaseURL: baseURL},
+		nil,
+	)
 }
 
 func (s *service) handleDoraNetworkOverview(w http.ResponseWriter, r *http.Request) {
-	req, err := decodeOperationRequest(r)
+	request, err := decodeTypedOperationArgs[operations.DoraNetworkArgs](r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	baseURL, status, err := s.doraBaseURL(req.Args)
+	baseURL, status, err := s.doraBaseURL(request.Network)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return
@@ -128,11 +136,22 @@ func (s *service) handleDoraNetworkOverview(w http.ResponseWriter, r *http.Reque
 		overview["exited_validator_count"] = validatorInfo["exited"]
 	}
 
-	writeOperationResponse(s.log, w, http.StatusOK, operations.Response{
-		Kind: operations.ResultKindObject,
-		Data: overview,
-		Meta: map[string]any{"network": optionalStringArg(req.Args, "network")},
-	})
+	writeObjectOperationResponse(
+		s.log,
+		w,
+		http.StatusOK,
+		operations.DoraOverviewPayload{
+			CurrentEpoch:          overview["current_epoch"],
+			CurrentSlot:           overview["current_slot"],
+			Finalized:             overview["finalized"],
+			ParticipationRate:     overview["participation_rate"],
+			ActiveValidatorCount:  overview["active_validator_count"],
+			TotalValidatorCount:   overview["total_validator_count"],
+			PendingValidatorCount: overview["pending_validator_count"],
+			ExitedValidatorCount:  overview["exited_validator_count"],
+		},
+		map[string]any{"network": request.Network},
+	)
 }
 
 func (s *service) handleDoraValidators(w http.ResponseWriter, r *http.Request) {
@@ -142,7 +161,7 @@ func (s *service) handleDoraValidators(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	baseURL, status, err := s.doraBaseURL(req.Args)
+	baseURL, status, err := s.doraBaseURL(optionalStringArg(req.Args, "network"))
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return
@@ -167,21 +186,15 @@ func (s *service) handleDoraDataGetPassthrough(
 	r *http.Request,
 	argName, pathTemplate string,
 ) {
-	req, err := decodeOperationRequest(r)
+	network, identifier, err := decodeDoraIdentifierArgs(r, argName)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	baseURL, status, err := s.doraBaseURL(req.Args)
+	baseURL, status, err := s.doraBaseURL(network)
 	if err != nil {
 		http.Error(w, err.Error(), status)
-		return
-	}
-
-	identifier, err := requiredStringArg(req.Args, argName)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -194,36 +207,26 @@ func (s *service) handleDoraDataGetPassthrough(
 	writePassthroughResponse(w, http.StatusOK, contentType, body)
 }
 
-func (s *service) handleDoraLink(w http.ResponseWriter, r *http.Request, pathTemplate string) {
-	req, err := decodeOperationRequest(r)
+func (s *service) handleDoraLink(w http.ResponseWriter, r *http.Request, argName, pathTemplate string) {
+	network, identifier, err := decodeDoraIdentifierArgs(r, argName)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	baseURL, status, err := s.doraBaseURL(req.Args)
+	baseURL, status, err := s.doraBaseURL(network)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return
 	}
 
-	identifier := ""
-	for _, key := range []string{"index_or_pubkey", "slot_or_hash", "epoch", "address", "number_or_hash"} {
-		if value := optionalStringArg(req.Args, key); value != "" {
-			identifier = value
-			break
-		}
-	}
-	if identifier == "" {
-		http.Error(w, "identifier is required", http.StatusBadRequest)
-		return
-	}
-
-	writeOperationResponse(s.log, w, http.StatusOK, operations.Response{
-		Kind: operations.ResultKindObject,
-		Data: map[string]any{"url": strings.TrimRight(baseURL, "/") + fmt.Sprintf(pathTemplate, identifier)},
-		Meta: map[string]any{"network": optionalStringArg(req.Args, "network")},
-	})
+	writeObjectOperationResponse(
+		s.log,
+		w,
+		http.StatusOK,
+		operations.URLPayload{URL: strings.TrimRight(baseURL, "/") + fmt.Sprintf(pathTemplate, identifier)},
+		map[string]any{"network": network},
+	)
 }
 
 func (s *service) doraNetworks() (map[string]string, error) {
@@ -241,10 +244,9 @@ func (s *service) doraNetworks() (map[string]string, error) {
 	return networks, nil
 }
 
-func (s *service) doraBaseURL(args map[string]any) (string, int, error) {
-	network, err := requiredStringArg(args, "network")
-	if err != nil {
-		return "", http.StatusBadRequest, err
+func (s *service) doraBaseURL(network string) (string, int, error) {
+	if strings.TrimSpace(network) == "" {
+		return "", http.StatusBadRequest, fmt.Errorf("network is required")
 	}
 
 	networks, err := s.doraNetworks()
@@ -263,6 +265,88 @@ func (s *service) doraBaseURL(args map[string]any) (string, int, error) {
 	}
 
 	return baseURL, http.StatusOK, nil
+}
+
+func decodeDoraIdentifierArgs(r *http.Request, argName string) (string, string, error) {
+	switch argName {
+	case "index_or_pubkey":
+		request, err := decodeTypedOperationArgs[operations.DoraIndexOrPubkeyArgs](r)
+		if err != nil {
+			return "", "", err
+		}
+
+		if strings.TrimSpace(request.Network) == "" {
+			return "", "", fmt.Errorf("network is required")
+		}
+
+		if strings.TrimSpace(request.IndexOrPubkey) == "" {
+			return "", "", fmt.Errorf("index_or_pubkey is required")
+		}
+
+		return request.Network, request.IndexOrPubkey, nil
+	case "slot_or_hash":
+		request, err := decodeTypedOperationArgs[operations.DoraSlotOrHashArgs](r)
+		if err != nil {
+			return "", "", err
+		}
+
+		if strings.TrimSpace(request.Network) == "" {
+			return "", "", fmt.Errorf("network is required")
+		}
+
+		if strings.TrimSpace(request.SlotOrHash) == "" {
+			return "", "", fmt.Errorf("slot_or_hash is required")
+		}
+
+		return request.Network, request.SlotOrHash, nil
+	case "epoch":
+		request, err := decodeTypedOperationArgs[operations.DoraEpochArgs](r)
+		if err != nil {
+			return "", "", err
+		}
+
+		if strings.TrimSpace(request.Network) == "" {
+			return "", "", fmt.Errorf("network is required")
+		}
+
+		if strings.TrimSpace(request.Epoch) == "" {
+			return "", "", fmt.Errorf("epoch is required")
+		}
+
+		return request.Network, request.Epoch, nil
+	case "address":
+		request, err := decodeTypedOperationArgs[operations.DoraAddressArgs](r)
+		if err != nil {
+			return "", "", err
+		}
+
+		if strings.TrimSpace(request.Network) == "" {
+			return "", "", fmt.Errorf("network is required")
+		}
+
+		if strings.TrimSpace(request.Address) == "" {
+			return "", "", fmt.Errorf("address is required")
+		}
+
+		return request.Network, request.Address, nil
+	case "number_or_hash":
+		request, err := decodeTypedOperationArgs[operations.DoraNumberOrHashArgs](r)
+		if err != nil {
+			return "", "", err
+		}
+
+		if strings.TrimSpace(request.Network) == "" {
+			return "", "", fmt.Errorf("network is required")
+		}
+
+		if strings.TrimSpace(request.NumberOrHash) == "" {
+			return "", "", fmt.Errorf("number_or_hash is required")
+		}
+
+		return request.Network, request.NumberOrHash, nil
+	default:
+		return "", "", fmt.Errorf("unsupported Dora identifier %q", argName)
+	}
 }
 
 func (s *service) doraAPIGet(
@@ -313,7 +397,15 @@ func (s *service) doraAPIGetRaw(
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, "", resp.StatusCode, fmt.Errorf("%s", strings.TrimSpace(string(body)))
+		return nil, "", resp.StatusCode, fmt.Errorf(
+			"%s",
+			upstreamFailureMessage(
+				"dora.http",
+				resp.StatusCode,
+				body,
+				"url="+requestURL,
+			),
+		)
 	}
 
 	contentType := resp.Header.Get("Content-Type")

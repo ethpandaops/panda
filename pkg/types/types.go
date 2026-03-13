@@ -5,14 +5,10 @@ package types
 // DatasourceInfo describes a configured datasource for the
 // datasources:// MCP resources.
 type DatasourceInfo struct {
-	// Type is the datasource type (e.g. "clickhouse", "prometheus", "loki").
-	Type string `json:"type"`
-	// Name is the logical name of the datasource.
-	Name string `json:"name"`
-	// Description is a human-readable description.
-	Description string `json:"description,omitempty"`
-	// Metadata contains type-specific metadata (e.g. database, url).
-	Metadata map[string]string `json:"metadata,omitempty"`
+	Type        string            `json:"type"`
+	Name        string            `json:"name"`
+	Description string            `json:"description,omitempty"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
 }
 
 // ExampleCategory represents a category of query examples.

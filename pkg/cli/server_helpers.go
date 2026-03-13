@@ -12,7 +12,6 @@ import (
 	"strings"
 	"syscall"
 
-	clickhousemodule "github.com/ethpandaops/panda/modules/clickhouse"
 	"github.com/ethpandaops/panda/pkg/config"
 	"github.com/ethpandaops/panda/pkg/operations"
 	"github.com/ethpandaops/panda/pkg/serverapi"
@@ -144,19 +143,20 @@ func serverDelete(ctx context.Context, path string) error {
 	return nil
 }
 
-func serverOperation(ctx context.Context, operationID string, args map[string]any) (*operations.Response, error) {
+func serverOperationJSON[Args any, Data any](ctx context.Context, operationID string, args Args) (Data, error) {
+	var zero Data
 	var response operations.Response
 
-	err := serverPostJSON(ctx, "/api/v1/operations/"+operationID, operations.Request{Args: args}, &response)
+	err := serverPostJSON(ctx, "/api/v1/operations/"+operationID, operations.TypedRequest[Args]{Args: args}, &response)
 	if err != nil {
-		return nil, err
+		return zero, err
 	}
 
-	return &response, nil
+	return operations.DecodeResponseData[Data](&response)
 }
 
-func serverOperationRaw(ctx context.Context, operationID string, args map[string]any) (*rawServerResponse, error) {
-	body, err := json.Marshal(operations.Request{Args: args})
+func serverOperationRaw[Args any](ctx context.Context, operationID string, args Args) (*rawServerResponse, error) {
+	body, err := json.Marshal(operations.TypedRequest[Args]{Args: args})
 	if err != nil {
 		return nil, fmt.Errorf("marshaling request: %w", err)
 	}
@@ -181,14 +181,6 @@ func serverOperationRaw(ctx context.Context, operationID string, args map[string
 		Body:        data,
 		ContentType: responseHeaders.Get("Content-Type"),
 	}, nil
-}
-
-func runServerOperation(operationID string, args map[string]any) (*operations.Response, error) {
-	return serverOperation(context.Background(), operationID, args)
-}
-
-func runServerOperationRaw(operationID string, args map[string]any) (*rawServerResponse, error) {
-	return serverOperationRaw(context.Background(), operationID, args)
 }
 
 func listDatasources(ctx context.Context, filterType string) (*serverapi.DatasourcesResponse, error) {
@@ -312,34 +304,6 @@ func readResourceWithClientContext(ctx context.Context, uri, clientContext strin
 		MIMEType: headers.Get("Content-Type"),
 		Content:  string(data),
 	}, nil
-}
-
-func readClickHouseTables(ctx context.Context) (*clickhousemodule.TablesListResponse, error) {
-	response, err := readResource(ctx, "clickhouse://tables")
-	if err != nil {
-		return nil, err
-	}
-
-	var payload clickhousemodule.TablesListResponse
-	if err := json.Unmarshal([]byte(response.Content), &payload); err != nil {
-		return nil, fmt.Errorf("decoding tables list: %w", err)
-	}
-
-	return &payload, nil
-}
-
-func readClickHouseTable(ctx context.Context, tableName string) (*clickhousemodule.TableDetailResponse, error) {
-	response, err := readResource(ctx, "clickhouse://tables/"+tableName)
-	if err != nil {
-		return nil, err
-	}
-
-	var payload clickhousemodule.TableDetailResponse
-	if err := json.Unmarshal([]byte(response.Content), &payload); err != nil {
-		return nil, fmt.Errorf("decoding table detail: %w", err)
-	}
-
-	return &payload, nil
 }
 
 func decodeAPIError(status int, data []byte) error {

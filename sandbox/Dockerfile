@@ -10,17 +10,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
+ARG ETHPANDAOPS_PY_EXTRAS=""
+
 # Create non-root user for security
 RUN useradd -m -s /bin/bash sandbox
 
 # Create directories
 RUN mkdir -p /shared /output && \
     chown sandbox:sandbox /shared /output
-
-# Install Python dependencies
-COPY sandbox/requirements.txt /tmp/requirements.txt
-RUN uv pip install --system --no-cache -r /tmp/requirements.txt && \
-    rm /tmp/requirements.txt
 
 # Install the ethpandaops platform library
 COPY sandbox/ethpandaops /opt/ethpandaops-pkg
@@ -32,7 +29,12 @@ COPY modules/loki/python/loki.py /opt/ethpandaops-pkg/ethpandaops/loki.py
 COPY modules/prometheus/python/prometheus.py /opt/ethpandaops-pkg/ethpandaops/prometheus.py
 COPY modules/ethnode/python/ethnode.py /opt/ethpandaops-pkg/ethpandaops/ethnode.py
 
-RUN uv pip install --system --no-cache /opt/ethpandaops-pkg && rm -rf /opt/ethpandaops-pkg
+RUN if [ -n "$ETHPANDAOPS_PY_EXTRAS" ]; then \
+        uv pip install --system --no-cache "/opt/ethpandaops-pkg[$ETHPANDAOPS_PY_EXTRAS]"; \
+    else \
+        uv pip install --system --no-cache /opt/ethpandaops-pkg; \
+    fi && \
+    rm -rf /opt/ethpandaops-pkg
 
 # Set working directory
 WORKDIR /home/sandbox

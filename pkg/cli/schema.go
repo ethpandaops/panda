@@ -45,7 +45,7 @@ func listTables(ctx context.Context) error {
 		return err
 	}
 
-	if isJSON() {
+	if schemaJSON || isJSON() {
 		return printJSON(response)
 	}
 
@@ -80,7 +80,7 @@ func showTable(ctx context.Context, tableName string) error {
 		return err
 	}
 
-	if isJSON() {
+	if schemaJSON || isJSON() {
 		return printJSON(response)
 	}
 

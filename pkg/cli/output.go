@@ -12,7 +12,22 @@ import (
 	"github.com/ethpandaops/panda/pkg/operations"
 )
 
-var outputFormat string
+var (
+	outputFormat      string
+	datasourcesJSON   bool
+	executeJSON       bool
+	clickhouseJSON    bool
+	doraJSON          bool
+	ethnodeJSON       bool
+	lokiJSON          bool
+	prometheusJSON    bool
+	schemaJSON        bool
+	searchExampleJSON bool
+	searchRunbookJSON bool
+	docsJSON          bool
+	sessionJSON       bool
+	versionJSON       bool
+)
 
 // isJSON returns true if the output format is JSON.
 func isJSON() bool {

@@ -1,6 +1,7 @@
 package searchruntime
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -85,15 +86,25 @@ func (r *Runtime) Close() error {
 		return nil
 	}
 
+	var closeErr error
 	if r.ExampleIndex != nil {
-		return r.ExampleIndex.Close()
+		closeErr = errors.Join(closeErr, r.ExampleIndex.Close())
+		r.ExampleIndex = nil
+	}
+
+	if r.RunbookIndex != nil {
+		closeErr = errors.Join(closeErr, r.RunbookIndex.Close())
+		r.RunbookIndex = nil
 	}
 
 	if r.embedder != nil {
-		return r.embedder.Close()
+		closeErr = errors.Join(closeErr, r.embedder.Close())
+		r.embedder = nil
 	}
 
-	return nil
+	r.RunbookRegistry = nil
+
+	return closeErr
 }
 
 func resolveModelPath(configuredPath string) (string, []string) {
