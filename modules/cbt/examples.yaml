@@ -1,0 +1,115 @@
+cbt_model_discovery:
+  name: Model Discovery
+  description: Discover ClickHouse data models and external tables managed by CBT
+  examples:
+    - name: List all models
+      description: List all CBT data models for a network
+      query: |
+        from ethpandaops import cbt
+
+        # List networks with CBT
+        networks = cbt.list_networks()
+        print(f"Networks with CBT: {[n['name'] for n in networks]}")
+
+        # List all models for a network
+        network = networks[0]["name"]
+        models = cbt.list_models(network)
+        print(f"\nModels for {network}:")
+        for m in models:
+            print(f"  - {m.get('id', 'unknown')}: {m.get('type', 'unknown')}")
+
+    - name: List external models
+      description: List external ClickHouse tables managed by CBT
+      query: |
+        from ethpandaops import cbt
+
+        network = "mainnet"
+        externals = cbt.list_external_models(network)
+        print(f"External models for {network}:")
+        for ext in externals:
+            print(f"  - {ext.get('id', 'unknown')}")
+
+    - name: Get external model details
+      description: Get details of a specific external model by ID (database.table)
+      query: |
+        from ethpandaops import cbt
+
+        network = "mainnet"
+        model = cbt.get_external_model(network, "default.beacon_api_eth_v1_events_block")
+        print(f"Model: {model.get('id')}")
+        print(f"Details: {model}")
+
+cbt_transformation_status:
+  name: Transformation Status
+  description: Check the status and coverage of data transformations
+  examples:
+    - name: List transformations
+      description: List all data transformations and their status
+      query: |
+        from ethpandaops import cbt
+
+        network = "mainnet"
+        transformations = cbt.list_transformations(network)
+        print(f"Transformations for {network}:")
+        for t in transformations:
+            print(f"  - {t.get('id', 'unknown')}: status={t.get('status', 'unknown')}")
+
+    - name: Check transformation coverage
+      description: Check how much data a transformation has processed
+      query: |
+        from ethpandaops import cbt
+
+        network = "mainnet"
+        coverage = cbt.get_transformation_coverage(network)
+        print(f"Transformation coverage for {network}:")
+        for c in coverage:
+            print(f"  - {c.get('id', 'unknown')}: {c}")
+
+    - name: Check external model bounds
+      description: Get the data bounds (time/slot ranges) for external models
+      query: |
+        from ethpandaops import cbt
+
+        network = "mainnet"
+        bounds = cbt.get_external_bounds(network)
+        print(f"External model bounds for {network}:")
+        for b in bounds:
+            print(f"  - {b.get('id', 'unknown')}: {b}")
+
+cbt_scheduled_runs:
+  name: Scheduled Runs
+  description: Monitor scheduled transformation runs
+  examples:
+    - name: Check scheduled runs
+      description: View scheduled transformation run information
+      query: |
+        from ethpandaops import cbt
+
+        network = "mainnet"
+        runs = cbt.get_scheduled_runs(network)
+        print(f"Scheduled runs for {network}:")
+        for r in runs:
+            print(f"  - {r}")
+
+    - name: Get interval types
+      description: Get the interval type configurations used by transformations
+      query: |
+        from ethpandaops import cbt
+
+        network = "mainnet"
+        intervals = cbt.get_interval_types(network)
+        print(f"Interval types for {network}:")
+        print(intervals)
+
+cbt_deep_links:
+  name: Deep Links
+  description: Generate CBT UI links for models
+  examples:
+    - name: Generate model links
+      description: Create deep links to the CBT web UI for models
+      query: |
+        from ethpandaops import cbt
+
+        network = "mainnet"
+        link = cbt.link_model(network, "default.beacon_api_eth_v1_events_block")
+        print(f"View in CBT: {link}")

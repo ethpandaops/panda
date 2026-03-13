@@ -1,5 +1,8 @@
 version: 2
 
+snapshot:
+  version_template: "{{ .Tag }}-SNAPSHOT-{{ .ShortCommit }}"
+
 builds:
   - id: panda-server
     main: ./cmd/server
