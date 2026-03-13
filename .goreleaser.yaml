@@ -72,6 +72,8 @@ dockers_v2:
     ids:
       - panda-server
     dockerfile: goreleaser.server.Dockerfile
+    extra_files:
+      - docker-entrypoint.sh
     images:
       - "ethpandaops/panda"
     tags:

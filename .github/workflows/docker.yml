@@ -83,7 +83,7 @@ jobs:
             -v /tmp/smoke-config.yaml:/app/config.yaml:ro \
             --group-add "$(stat -c '%g' /var/run/docker.sock)" \
             panda-server-smoke \
-            serve --config /app/config.yaml 2>&1 || true)
+            panda-server serve --config /app/config.yaml 2>&1 || true)
 
           echo "$LOGS"
 
