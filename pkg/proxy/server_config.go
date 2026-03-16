@@ -90,43 +90,76 @@ type AuthConfig struct {
 	SuccessPage *simpleauth.SuccessPageConfig `yaml:"success_page,omitempty"`
 }
 
+// DatasourceConfig is the interface every datasource config must satisfy.
+// The Authorizer uses this to build access rules generically, ensuring that
+// any new datasource type added to the proxy must include authorization support.
+type DatasourceConfig interface {
+	DatasourceName() string
+	DatasourceDescription() string
+	DatasourceAllowedOrgs() []string
+}
+
+// BaseDatasourceConfig holds fields common to all datasource configurations.
+// Embed this in every datasource config struct to get compile-time enforcement
+// of authorization support via the DatasourceConfig interface.
+type BaseDatasourceConfig struct {
+	Name        string   `yaml:"name"`
+	Description string   `yaml:"description,omitempty"`
+	AllowedOrgs []string `yaml:"allowed_orgs,omitempty"`
+}
+
+// DatasourceName returns the datasource name.
+func (b BaseDatasourceConfig) DatasourceName() string { return b.Name }
+
+// DatasourceDescription returns the datasource description.
+func (b BaseDatasourceConfig) DatasourceDescription() string { return b.Description }
+
+// DatasourceAllowedOrgs returns the list of GitHub orgs allowed to access this datasource.
+func (b BaseDatasourceConfig) DatasourceAllowedOrgs() []string { return b.AllowedOrgs }
+
+// Compile-time interface checks for datasource configs.
+var (
+	_ DatasourceConfig = ClickHouseClusterConfig{}
+	_ DatasourceConfig = PrometheusInstanceConfig{}
+	_ DatasourceConfig = LokiInstanceConfig{}
+	_ DatasourceConfig = EthNodeInstanceConfig{}
+)
+
 // ClickHouseClusterConfig holds ClickHouse cluster configuration.
 type ClickHouseClusterConfig struct {
-	Name        string `yaml:"name"`
-	Description string `yaml:"description,omitempty"`
-	Host        string `yaml:"host"`
-	Port        int    `yaml:"port"`
-	Database    string `yaml:"database,omitempty"`
-	Username    string `yaml:"username"`
-	Password    string `yaml:"password"`
-	Secure      bool   `yaml:"secure"`
-	SkipVerify  bool   `yaml:"skip_verify,omitempty"`
-	Timeout     int    `yaml:"timeout,omitempty"`
+	BaseDatasourceConfig `yaml:",inline"`
+	Host                 string `yaml:"host"`
+	Port                 int    `yaml:"port"`
+	Database             string `yaml:"database,omitempty"`
+	Username             string `yaml:"username"`
+	Password             string `yaml:"password"`
+	Secure               bool   `yaml:"secure"`
+	SkipVerify           bool   `yaml:"skip_verify,omitempty"`
+	Timeout              int    `yaml:"timeout,omitempty"`
 }
 
 // PrometheusInstanceConfig holds Prometheus instance configuration.
 type PrometheusInstanceConfig struct {
-	Name        string `yaml:"name"`
-	Description string `yaml:"description,omitempty"`
-	URL         string `yaml:"url"`
-	Username    string `yaml:"username,omitempty"`
-	Password    string `yaml:"password,omitempty"`
+	BaseDatasourceConfig `yaml:",inline"`
+	URL                  string `yaml:"url"`
+	Username             string `yaml:"username,omitempty"`
+	Password             string `yaml:"password,omitempty"`
 }
 
 // LokiInstanceConfig holds Loki instance configuration.
 type LokiInstanceConfig struct {
-	Name        string `yaml:"name"`
-	Description string `yaml:"description,omitempty"`
-	URL         string `yaml:"url"`
-	Username    string `yaml:"username,omitempty"`
-	Password    string `yaml:"password,omitempty"`
+	BaseDatasourceConfig `yaml:",inline"`
+	URL                  string `yaml:"url"`
+	Username             string `yaml:"username,omitempty"`
+	Password             string `yaml:"password,omitempty"`
 }
 
 // EthNodeInstanceConfig holds Ethereum node API access configuration.
 // A single credential pair is used for all beacon and execution node endpoints.
 type EthNodeInstanceConfig struct {
-	Username string `yaml:"username"`
-	Password string `yaml:"password"`
+	BaseDatasourceConfig `yaml:",inline"`
+	Username             string `yaml:"username"`
+	Password             string `yaml:"password"`
 }
 
 // RateLimitConfig holds rate limiting configuration.

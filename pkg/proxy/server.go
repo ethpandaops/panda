@@ -50,6 +50,7 @@ type server struct {
 
 	authenticator Authenticator
 	authService   simpleauth.SimpleService
+	authorizer    *Authorizer
 	rateLimiter   *RateLimiter
 	auditor       *Auditor
 
@@ -132,6 +133,9 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 	if cfg.Audit.Enabled {
 		s.auditor = NewAuditor(log, AuditorConfig{})
 	}
+
+	// Create authorizer for per-datasource access control.
+	s.authorizer = NewAuthorizer(log, cfg)
 
 	// Create handlers from config.
 	chConfigs, promConfigs, lokiConfigs, ethNodeConfig := cfg.ToHandlerConfigs()
@@ -243,6 +247,11 @@ func (s *server) buildMiddlewareChain() func(http.Handler) http.Handler {
 			h = s.rateLimiter.Middleware()(h)
 		}
 
+		// Authorization (per-datasource org check).
+		if s.authorizer != nil {
+			h = s.authorizer.Middleware()(h)
+		}
+
 		// Authentication (outermost).
 		h = s.authenticator.Middleware()(h)
 
@@ -262,8 +271,9 @@ type DatasourcesResponse struct {
 	EthNodeAvailable bool                   `json:"ethnode_available,omitempty"`
 }
 
-// handleDatasources returns the list of available datasources.
-func (s *server) handleDatasources(w http.ResponseWriter, _ *http.Request) {
+// handleDatasources returns the list of available datasources,
+// filtered by the authenticated user's org membership.
+func (s *server) handleDatasources(w http.ResponseWriter, r *http.Request) {
 	info := DatasourcesResponse{
 		ClickHouse:       s.ClickHouseDatasources(),
 		Prometheus:       s.PrometheusDatasources(),
@@ -272,6 +282,10 @@ func (s *server) handleDatasources(w http.ResponseWriter, _ *http.Request) {
 		PrometheusInfo:   s.PrometheusDatasourceInfo(),
 		LokiInfo:         s.LokiDatasourceInfo(),
 		EthNodeAvailable: s.EthNodeAvailable(),
+	}
+
+	if s.authorizer != nil {
+		info = s.authorizer.FilterDatasources(r.Context(), info)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

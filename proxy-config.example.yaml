@@ -81,6 +81,10 @@ clickhouse:
     secure: true
     skip_verify: false
     timeout: 300
+    # Restrict access to members of specific GitHub orgs.
+    # Omit or leave empty to allow all authenticated users.
+    # allowed_orgs:
+    #   - ethpandaops
 
 # Prometheus instances
 prometheus:
@@ -89,6 +93,8 @@ prometheus:
     url: "${PROMETHEUS_URL}"
     username: "${PROMETHEUS_USERNAME}"
     password: "${PROMETHEUS_PASSWORD}"
+    # allowed_orgs:
+    #   - ethpandaops
 
 # Loki instances
 loki:
@@ -97,12 +103,16 @@ loki:
     url: "${LOKI_URL}"
     username: "${LOKI_USERNAME}"
     password: "${LOKI_PASSWORD}"
+    # allowed_orgs:
+    #   - ethpandaops
 
 # Ethereum node API access (beacon and execution nodes)
 # Single credential pair for all bn-*.srv.*.ethpandaops.io and rpc-*.srv.*.ethpandaops.io endpoints
 # ethnode:
 #   username: "${ETHPANDAOPS_ETHNODE_USERNAME}"
 #   password: "${ETHPANDAOPS_ETHNODE_PASSWORD}"
+#   allowed_orgs:
+#     - ethpandaops
 
 # Rate limiting
 rate_limiting:
