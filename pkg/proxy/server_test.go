@@ -84,7 +84,7 @@ func TestAuthMetadataEndpointReturnsConfig(t *testing.T) {
 			ClientID:  "panda-proxy",
 		},
 		ClickHouse: []ClickHouseClusterConfig{
-			{Name: "xatu", Host: "example.com", Port: 8123, Username: "user", Password: "pass"},
+			{BaseDatasourceConfig: BaseDatasourceConfig{Name: "xatu"}, Host: "example.com", Port: 8123, Username: "user", Password: "pass"},
 		},
 	}
 	cfg.ApplyDefaults()
@@ -130,7 +130,7 @@ func TestAuthMetadataEndpointNoAuth(t *testing.T) {
 	cfg := ServerConfig{
 		Auth: AuthConfig{Mode: AuthModeNone},
 		ClickHouse: []ClickHouseClusterConfig{
-			{Name: "xatu", Host: "example.com", Port: 8123, Username: "user", Password: "pass"},
+			{BaseDatasourceConfig: BaseDatasourceConfig{Name: "xatu"}, Host: "example.com", Port: 8123, Username: "user", Password: "pass"},
 		},
 	}
 	cfg.ApplyDefaults()

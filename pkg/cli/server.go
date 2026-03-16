@@ -243,6 +243,38 @@ func printProxyURL() {
 	}
 }
 
+// restartServerIfRunning restarts the panda server container if the compose
+// file exists and the server is currently reachable. This is called after
+// auth login to ensure the running server picks up new credentials.
+func restartServerIfRunning() {
+	compose := resolveComposeFile()
+	if _, err := os.Stat(compose); os.IsNotExist(err) {
+		return
+	}
+
+	cfg, err := config.LoadClient(cfgFile)
+	if err != nil {
+		return
+	}
+
+	healthURL := strings.TrimRight(cfg.ServerURL(), "/") + "/health"
+
+	client := &http.Client{Timeout: 3 * time.Second}
+
+	resp, err := client.Get(healthURL) //nolint:noctx // quick reachability check
+	if err != nil {
+		return
+	}
+
+	_ = resp.Body.Close()
+
+	fmt.Println("Restarting server to pick up new credentials...")
+
+	if err := runDockerCompose(compose, "restart"); err != nil {
+		log.WithError(err).Warn("Failed to restart server")
+	}
+}
+
 // cleanupSandboxContainers removes any sandbox containers managed by panda.
 // This is best-effort — failures are logged but do not block server stop.
 func cleanupSandboxContainers() {
