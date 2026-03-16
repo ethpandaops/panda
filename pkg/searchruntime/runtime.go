@@ -1,6 +1,7 @@
 package searchruntime
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/ethpandaops/panda/pkg/config"
+	"github.com/ethpandaops/panda/pkg/eips"
 	"github.com/ethpandaops/panda/pkg/embedding"
 	"github.com/ethpandaops/panda/pkg/module"
 	"github.com/ethpandaops/panda/pkg/resource"
@@ -20,11 +22,14 @@ type Runtime struct {
 	ExampleIndex    *resource.ExampleIndex
 	RunbookRegistry *runbooks.Registry
 	RunbookIndex    *resource.RunbookIndex
+	EIPRegistry     *eips.Registry
+	EIPIndex        *resource.EIPIndex
 	embedder        *embedding.Embedder
 }
 
-// Build creates a new search runtime with example and runbook indices.
+// Build creates a new search runtime with example, runbook, and EIP indices.
 func Build(
+	ctx context.Context,
 	log logrus.FieldLogger,
 	cfg config.SemanticSearchConfig,
 	moduleRegistry *module.Registry,
@@ -75,6 +80,35 @@ func Build(
 
 	runtime.RunbookIndex = runbookIndex
 	log.Info("Semantic search runbook index built")
+
+	// Build EIP index (non-fatal — gracefully disabled if GitHub unreachable).
+	eipReg, err := eips.NewRegistry(ctx, log, "")
+	if err != nil {
+		log.WithError(err).Warn("Failed to initialize EIP registry — EIP search disabled")
+
+		return runtime, nil
+	}
+
+	if eipReg.Count() == 0 {
+		log.Warn("No EIPs found, EIP search will be disabled")
+
+		return runtime, nil
+	}
+
+	eipIndex, updatedVectors, err := resource.NewEIPIndex(log, embedder, eipReg.All(), eipReg.CachedVectors())
+	if err != nil {
+		log.WithError(err).Warn("Failed to build EIP index — EIP search disabled")
+
+		return runtime, nil
+	}
+
+	if err := eipReg.SaveVectors(updatedVectors); err != nil {
+		log.WithError(err).Warn("Failed to save EIP vectors to cache")
+	}
+
+	runtime.EIPRegistry = eipReg
+	runtime.EIPIndex = eipIndex
+	log.Info("Semantic search EIP index built")
 
 	return runtime, nil
 }

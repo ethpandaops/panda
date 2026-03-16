@@ -13,17 +13,22 @@ var (
 	searchExampleLimit    int
 	searchRunbookTag      string
 	searchRunbookLimit    int
+	searchEIPStatus       string
+	searchEIPCategory     string
+	searchEIPType         string
+	searchEIPLimit        int
 )
 
 var searchCmd = &cobra.Command{
 	GroupID: groupWorkflow,
 	Use:     "search",
-	Short:   "Search examples and runbooks",
-	Long: `Semantic search over query examples and investigation runbooks.
+	Short:   "Search examples, runbooks, and EIPs",
+	Long: `Semantic search over query examples, investigation runbooks, and EIPs.
 
 Examples:
   panda search examples "attestation participation"
-  panda search runbooks "finality delay"`,
+  panda search runbooks "finality delay"
+  panda search eips "account abstraction"`,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		return cmd.Help()
 	},
@@ -43,10 +48,18 @@ var searchRunbooksCmd = &cobra.Command{
 	RunE:  runSearchRunbooks,
 }
 
+var searchEIPsCmd = &cobra.Command{
+	Use:   "eips <query>",
+	Short: "Search Ethereum Improvement Proposals",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runSearchEIPs,
+}
+
 func init() {
 	rootCmd.AddCommand(searchCmd)
 	searchCmd.AddCommand(searchExamplesCmd)
 	searchCmd.AddCommand(searchRunbooksCmd)
+	searchCmd.AddCommand(searchEIPsCmd)
 
 	searchExamplesCmd.Flags().StringVar(&searchExampleCategory, "category", "", "Filter by category")
 	searchExamplesCmd.Flags().IntVar(&searchExampleLimit, "limit", 3, "Max results (default: 3, max: 10)")
@@ -55,6 +68,12 @@ func init() {
 	searchRunbooksCmd.Flags().StringVar(&searchRunbookTag, "tag", "", "Filter by tag")
 	searchRunbooksCmd.Flags().IntVar(&searchRunbookLimit, "limit", 3, "Max results (default: 3, max: 5)")
 	searchRunbooksCmd.ValidArgsFunction = noCompletions
+
+	searchEIPsCmd.Flags().StringVar(&searchEIPStatus, "status", "", "Filter by status (e.g., Final, Draft)")
+	searchEIPsCmd.Flags().StringVar(&searchEIPCategory, "category", "", "Filter by category (e.g., Core, ERC)")
+	searchEIPsCmd.Flags().StringVar(&searchEIPType, "type", "", "Filter by type (e.g., Standards Track)")
+	searchEIPsCmd.Flags().IntVar(&searchEIPLimit, "limit", 5, "Max results (default: 5, max: 10)")
+	searchEIPsCmd.ValidArgsFunction = noCompletions
 }
 
 func runSearchExamples(_ *cobra.Command, args []string) error {
@@ -119,6 +138,50 @@ func runSearchRunbooks(_ *cobra.Command, args []string) error {
 			fmt.Printf("  Prerequisites: %s\n", strings.Join(result.Prerequisites, ", "))
 		}
 		fmt.Printf("\n%s\n", result.Content)
+	}
+
+	return nil
+}
+
+func runSearchEIPs(_ *cobra.Command, args []string) error {
+	ctx := context.Background()
+
+	response, err := searchEIPs(
+		ctx, args[0],
+		searchEIPStatus, searchEIPCategory, searchEIPType,
+		searchEIPLimit,
+	)
+	if err != nil {
+		return err
+	}
+
+	if isJSON() {
+		return printJSON(response)
+	}
+
+	if len(response.Results) == 0 {
+		fmt.Println("No matching EIPs found.")
+		return nil
+	}
+
+	for i, result := range response.Results {
+		if i > 0 {
+			fmt.Println("---")
+		}
+
+		fmt.Printf("EIP-%d: %s (score: %.2f)\n", result.Number, result.Title, result.SimilarityScore)
+
+		if result.Description != "" {
+			fmt.Printf("  %s\n", result.Description)
+		}
+
+		fmt.Printf("  Status: %s | Type: %s", result.Status, result.Type)
+		if result.Category != "" {
+			fmt.Printf(" | Category: %s", result.Category)
+		}
+
+		fmt.Println()
+		fmt.Printf("  %s\n", result.URL)
 	}
 
 	return nil

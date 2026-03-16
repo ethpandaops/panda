@@ -25,6 +25,7 @@ func (s *service) mountAPIRoutes(r chi.Router) {
 		r.Get("/proxy/auth", s.handleAPIProxyAuthMetadata)
 		r.Get("/search/examples", s.handleAPISearchExamples)
 		r.Get("/search/runbooks", s.handleAPISearchRunbooks)
+		r.Get("/search/eips", s.handleAPISearchEIPs)
 		r.Post("/execute", s.handleAPIExecute)
 		r.Get("/sessions", s.handleAPIListSessions)
 		r.Post("/sessions", s.handleAPICreateSession)
@@ -153,6 +154,35 @@ func (s *service) handleAPISearchRunbooks(w http.ResponseWriter, r *http.Request
 	}
 
 	resp, err := s.searchService.SearchRunbooks(query, r.URL.Query().Get("tag"), limit)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *service) handleAPISearchEIPs(w http.ResponseWriter, r *http.Request) {
+	if s.searchService == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "search service is unavailable")
+		return
+	}
+
+	query := strings.TrimSpace(r.URL.Query().Get("query"))
+	if query == "" {
+		writeAPIError(w, http.StatusBadRequest, "query is required")
+		return
+	}
+
+	limit, err := parseOptionalInt(r, "limit")
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	q := r.URL.Query()
+
+	resp, err := s.searchService.SearchEIPs(query, q.Get("status"), q.Get("category"), q.Get("type"), limit)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return

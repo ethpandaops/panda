@@ -14,6 +14,7 @@ import (
 	"github.com/ethpandaops/panda/pkg/app"
 	"github.com/ethpandaops/panda/pkg/cartographoor"
 	"github.com/ethpandaops/panda/pkg/config"
+	"github.com/ethpandaops/panda/pkg/eips"
 	"github.com/ethpandaops/panda/pkg/execsvc"
 	"github.com/ethpandaops/panda/pkg/module"
 	"github.com/ethpandaops/panda/pkg/resource"
@@ -61,7 +62,7 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 		return nil, err
 	}
 
-	searchRuntime, err := searchruntime.Build(b.log, b.cfg.SemanticSearch, application.ModuleRegistry)
+	searchRuntime, err := searchruntime.Build(ctx, b.log, b.cfg.SemanticSearch, application.ModuleRegistry)
 	if err != nil {
 		_ = application.Stop(ctx)
 		return nil, fmt.Errorf("building search runtime: %w", err)
@@ -71,12 +72,16 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 		exampleIndex    *resource.ExampleIndex
 		runbookRegistry *runbooks.Registry
 		runbookIndex    *resource.RunbookIndex
+		eipRegistry     *eips.Registry
+		eipIndex        *resource.EIPIndex
 	)
 
 	if searchRuntime != nil {
 		exampleIndex = searchRuntime.ExampleIndex
 		runbookRegistry = searchRuntime.RunbookRegistry
 		runbookIndex = searchRuntime.RunbookIndex
+		eipRegistry = searchRuntime.EIPRegistry
+		eipIndex = searchRuntime.EIPIndex
 	}
 
 	searchSvc := searchsvc.New(
@@ -84,6 +89,8 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 		application.ModuleRegistry,
 		runbookIndex,
 		runbookRegistry,
+		eipIndex,
+		eipRegistry,
 	)
 
 	runtimeTokens := tokenstore.New(2 * time.Hour)
@@ -100,10 +107,11 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 	toolReg := b.buildToolRegistry(
 		application.Sandbox,
 		execSvc,
+		searchSvc,
 		exampleIndex,
-		application.ModuleRegistry,
-		runbookRegistry,
 		runbookIndex,
+		runbookRegistry,
+		eipIndex,
 	)
 
 	// Create resource registry and register resources (MCP-server-specific).
@@ -162,10 +170,11 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 func (b *Builder) buildToolRegistry(
 	sandboxSvc sandbox.Service,
 	execSvc *execsvc.Service,
+	searchSvc *searchsvc.Service,
 	exampleIndex *resource.ExampleIndex,
-	moduleReg *module.Registry,
-	runbookReg *runbooks.Registry,
 	runbookIndex *resource.RunbookIndex,
+	runbookReg *runbooks.Registry,
+	eipIndex *resource.EIPIndex,
 ) tool.Registry {
 	reg := tool.NewRegistry(b.log)
 
@@ -175,9 +184,9 @@ func (b *Builder) buildToolRegistry(
 	// Register manage_session tool.
 	reg.Register(tool.NewManageSessionTool(b.log, execSvc))
 
-	// Register unified search tool when either search index is available.
-	if exampleIndex != nil || (runbookIndex != nil && runbookReg != nil) {
-		reg.Register(tool.NewSearchTool(b.log, exampleIndex, moduleReg, runbookIndex, runbookReg))
+	// Register unified search tool when any search index is available.
+	if exampleIndex != nil || (runbookIndex != nil && runbookReg != nil) || eipIndex != nil {
+		reg.Register(tool.NewSearchTool(b.log, searchSvc))
 	}
 
 	b.log.WithField("tool_count", len(reg.List())).Info("Tool registry built")

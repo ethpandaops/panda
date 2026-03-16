@@ -279,6 +279,37 @@ func searchRunbooks(ctx context.Context, queryText, tag string, limit int) (*ser
 	return &response, nil
 }
 
+func searchEIPs(
+	ctx context.Context,
+	queryText, status, category, eipType string,
+	limit int,
+) (*serverapi.SearchEIPsResponse, error) {
+	query := url.Values{"query": []string{queryText}}
+
+	if status != "" {
+		query.Set("status", status)
+	}
+
+	if category != "" {
+		query.Set("category", category)
+	}
+
+	if eipType != "" {
+		query.Set("type", eipType)
+	}
+
+	if limit > 0 {
+		query.Set("limit", fmt.Sprintf("%d", limit))
+	}
+
+	var response serverapi.SearchEIPsResponse
+	if err := serverGetJSON(ctx, "/api/v1/search/eips", query, &response); err != nil {
+		return nil, err
+	}
+
+	return &response, nil
+}
+
 func listResources(ctx context.Context) (*serverapi.ListResourcesResponse, error) {
 	var response serverapi.ListResourcesResponse
 	if err := serverGetJSON(ctx, "/api/v1/resources", nil, &response); err != nil {

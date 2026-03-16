@@ -113,6 +113,32 @@ type SearchRunbooksResponse struct {
 	AvailableTags []string               `json:"available_tags"`
 }
 
+type SearchEIPResult struct {
+	Number          int     `json:"number"`
+	Title           string  `json:"title"`
+	Description     string  `json:"description"`
+	Author          string  `json:"author,omitempty"`
+	Status          string  `json:"status"`
+	Type            string  `json:"type"`
+	Category        string  `json:"category,omitempty"`
+	Created         string  `json:"created,omitempty"`
+	URL             string  `json:"url"`
+	SimilarityScore float64 `json:"similarity_score"`
+}
+
+type SearchEIPsResponse struct {
+	Type                string             `json:"type"`
+	Query               string             `json:"query"`
+	StatusFilter        string             `json:"status_filter,omitempty"`
+	CategoryFilter      string             `json:"category_filter,omitempty"`
+	TypeFilter          string             `json:"type_filter,omitempty"`
+	TotalMatches        int                `json:"total_matches"`
+	Results             []*SearchEIPResult `json:"results"`
+	AvailableStatuses   []string           `json:"available_statuses"`
+	AvailableCategories []string           `json:"available_categories"`
+	AvailableTypes      []string           `json:"available_types"`
+}
+
 type ExecuteRequest struct {
 	Code      string `json:"code"`
 	Timeout   int    `json:"timeout,omitempty"`

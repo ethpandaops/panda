@@ -8,17 +8,14 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/sirupsen/logrus"
 
-	"github.com/ethpandaops/panda/pkg/module"
-	"github.com/ethpandaops/panda/pkg/resource"
 	"github.com/ethpandaops/panda/pkg/searchsvc"
-	"github.com/ethpandaops/panda/runbooks"
 )
 
 const SearchToolName = "search"
 
-const searchDescription = `Search indexed examples and runbooks using semantic search.
+const searchDescription = `Search indexed examples, runbooks, and EIPs using semantic search.
 
-Use ` + "`type=\"examples\"`" + ` for query snippets (SQL, PromQL, LogQL) and ` + "`type=\"runbooks\"`" + ` for multi-step investigation procedures.
+Use ` + "`type=\"examples\"`" + ` for query snippets (SQL, PromQL, LogQL), ` + "`type=\"runbooks\"`" + ` for multi-step investigation procedures, and ` + "`type=\"eips\"`" + ` for Ethereum Improvement Proposals.
 
 ` + "`type=\"notebooks\"`" + ` is accepted as an alias for runbooks.
 
@@ -26,23 +23,23 @@ Examples:
 - search(type="examples", query="block")
 - search(type="examples", query="validator", category="validators")
 - search(type="runbooks", query="network not finalizing")
-- search(type="runbooks", query="slow clickhouse query", tag="performance")`
+- search(type="runbooks", query="slow clickhouse query", tag="performance")
+- search(type="eips", query="account abstraction")
+- search(type="eips", query="blob transactions", status="Final")`
 
 type searchHandler struct {
 	log     logrus.FieldLogger
 	service *searchsvc.Service
 }
 
+// NewSearchTool creates the unified search MCP tool definition.
 func NewSearchTool(
 	log logrus.FieldLogger,
-	exampleIndex *resource.ExampleIndex,
-	moduleReg *module.Registry,
-	runbookIndex *resource.RunbookIndex,
-	runbookReg *runbooks.Registry,
+	service *searchsvc.Service,
 ) Definition {
 	h := &searchHandler{
 		log:     log.WithField("tool", SearchToolName),
-		service: searchsvc.New(exampleIndex, moduleReg, runbookIndex, runbookReg),
+		service: service,
 	}
 
 	return Definition{
@@ -54,11 +51,12 @@ func NewSearchTool(
 				Properties: map[string]any{
 					"type": map[string]any{
 						"type":        "string",
-						"description": "Search target: 'examples' for query snippets or 'runbooks' for investigation procedures. 'notebooks' is accepted as an alias for 'runbooks'.",
+						"description": "Search target: 'examples' for query snippets, 'runbooks' for investigation procedures, or 'eips' for Ethereum Improvement Proposals. 'notebooks' is accepted as an alias for 'runbooks'.",
 						"enum": []string{
 							searchsvc.SearchTypeExamples,
 							searchsvc.SearchTypeRunbooks,
 							searchsvc.SearchTypeNotebooks,
+							searchsvc.SearchTypeEIPs,
 						},
 					},
 					"query": map[string]any{
@@ -73,9 +71,13 @@ func NewSearchTool(
 						"type":        "string",
 						"description": "Optional for type='runbooks': filter to runbooks with a specific tag (e.g., 'finality', 'performance')",
 					},
+					"status": map[string]any{
+						"type":        "string",
+						"description": "Optional for type='eips': filter by EIP status (e.g., 'Final', 'Draft', 'Review')",
+					},
 					"limit": map[string]any{
 						"type":        "integer",
-						"description": "Maximum results to return. Defaults to 3. Max is 10 for examples and 5 for runbooks.",
+						"description": "Maximum results to return. Defaults to 3. Max is 10 for examples/eips and 5 for runbooks.",
 						"minimum":     1,
 						"maximum":     searchsvc.MaxExampleSearchLimit,
 					},
@@ -87,7 +89,10 @@ func NewSearchTool(
 	}
 }
 
-func (h *searchHandler) handle(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (h *searchHandler) handle(
+	_ context.Context,
+	request mcp.CallToolRequest,
+) (*mcp.CallToolResult, error) {
 	h.log.Debug("Handling search request")
 
 	searchType, err := searchsvc.NormalizeSearchType(request.GetString("type", ""))
@@ -105,6 +110,8 @@ func (h *searchHandler) handle(_ context.Context, request mcp.CallToolRequest) (
 		return h.searchExamples(request, query)
 	case searchsvc.SearchTypeRunbooks:
 		return h.searchRunbooks(request, query)
+	case searchsvc.SearchTypeEIPs:
+		return h.searchEIPs(request, query)
 	default:
 		return CallToolError(fmt.Errorf("unsupported search type: %q", searchType)), nil
 	}
@@ -165,6 +172,43 @@ func (h *searchHandler) searchRunbooks(
 
 	h.log.WithFields(logrus.Fields{
 		"type":    searchsvc.SearchTypeRunbooks,
+		"query":   query,
+		"matches": response.TotalMatches,
+	}).Debug("Search completed")
+
+	return CallToolSuccess(string(data)), nil
+}
+
+func (h *searchHandler) searchEIPs(
+	request mcp.CallToolRequest,
+	query string,
+) (*mcp.CallToolResult, error) {
+	if tag := request.GetString("tag", ""); tag != "" {
+		return CallToolError(fmt.Errorf("tag is only supported for type=%q", searchsvc.SearchTypeRunbooks)), nil
+	}
+
+	if category := request.GetString("category", ""); category != "" {
+		return CallToolError(fmt.Errorf("category is only supported for type=%q", searchsvc.SearchTypeExamples)), nil
+	}
+
+	response, err := h.service.SearchEIPs(
+		query,
+		request.GetString("status", ""),
+		"",
+		"",
+		request.GetInt("limit", searchsvc.DefaultSearchLimit),
+	)
+	if err != nil {
+		return CallToolError(err), nil
+	}
+
+	data, err := json.MarshalIndent(response, "", "  ")
+	if err != nil {
+		return CallToolError(fmt.Errorf("marshaling response: %w", err)), nil
+	}
+
+	h.log.WithFields(logrus.Fields{
+		"type":    searchsvc.SearchTypeEIPs,
 		"query":   query,
 		"matches": response.TotalMatches,
 	}).Debug("Search completed")
