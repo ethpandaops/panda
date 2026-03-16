@@ -5,37 +5,37 @@ import "strings"
 // SuccessPageConfig defines rules for customizing the OAuth success page.
 // Rules are evaluated in order; the first match wins.
 type SuccessPageConfig struct {
-	Rules   []SuccessPageRule   `yaml:"rules,omitempty"`
-	Default *SuccessPageDisplay `yaml:"default,omitempty"`
+	Rules   []SuccessPageRule   `yaml:"rules,omitempty" json:"rules,omitempty"`
+	Default *SuccessPageDisplay `yaml:"default,omitempty" json:"default,omitempty"`
 }
 
 // SuccessPageRule pairs a match condition with display content.
 type SuccessPageRule struct {
-	Match              SuccessPageMatch `yaml:"match"`
+	Match              SuccessPageMatch `yaml:"match" json:"match"`
 	SuccessPageDisplay `yaml:",inline"`
 }
 
 // SuccessPageMatch defines the conditions under which a rule applies.
 // All specified fields must match (AND logic).
 type SuccessPageMatch struct {
-	Orgs  []string `yaml:"orgs,omitempty"`
-	Users []string `yaml:"users,omitempty"`
+	Orgs  []string `yaml:"orgs,omitempty" json:"orgs,omitempty"`
+	Users []string `yaml:"users,omitempty" json:"users,omitempty"`
 }
 
 // SuccessPageDisplay holds the customizable content shown on the success page.
 type SuccessPageDisplay struct {
-	Tagline string            `yaml:"tagline,omitempty"`
-	Media   *SuccessPageMedia `yaml:"media,omitempty"`
+	Tagline string            `yaml:"tagline,omitempty" json:"tagline,omitempty"`
+	Media   *SuccessPageMedia `yaml:"media,omitempty" json:"media,omitempty"`
 }
 
 // SuccessPageMedia defines the media block shown on the success page.
 type SuccessPageMedia struct {
 	// Type is "gif" or "ascii".
-	Type string `yaml:"type"`
+	Type string `yaml:"type" json:"type"`
 	// URL is the image source when Type is "gif".
-	URL string `yaml:"url,omitempty"`
+	URL string `yaml:"url,omitempty" json:"url,omitempty"`
 	// ASCIIArtBase64 is base64-encoded ASCII art when Type is "ascii".
-	ASCIIArtBase64 string `yaml:"ascii_art_base64,omitempty"`
+	ASCIIArtBase64 string `yaml:"ascii_art_base64,omitempty" json:"ascii_art_base64,omitempty"`
 }
 
 // Resolve evaluates rules against the given user and returns the display

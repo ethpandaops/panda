@@ -42,12 +42,6 @@ type Service interface {
 	// LokiDatasourceInfo returns detailed Loki datasource info.
 	LokiDatasourceInfo() []types.DatasourceInfo
 
-	// S3Bucket returns the configured S3 bucket name.
-	S3Bucket() string
-
-	// S3PublicURLPrefix returns the public URL prefix for S3 objects.
-	S3PublicURLPrefix() string
-
 	// EthNodeAvailable returns true if ethnode proxy access is configured.
 	EthNodeAvailable() bool
 }

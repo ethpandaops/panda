@@ -38,9 +38,6 @@ type Server interface {
 
 	// LokiDatasources returns the list of Loki datasource names.
 	LokiDatasources() []string
-
-	// S3Bucket returns the configured S3 bucket name.
-	S3Bucket() string
 }
 
 // server implements the Server interface.
@@ -59,7 +56,6 @@ type server struct {
 	clickhouseHandler *handlers.ClickHouseHandler
 	prometheusHandler *handlers.PrometheusHandler
 	lokiHandler       *handlers.LokiHandler
-	s3Handler         *handlers.S3Handler
 	ethNodeHandler    *handlers.EthNodeHandler
 
 	mu      sync.RWMutex
@@ -93,11 +89,14 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 		s.authenticator = NewNoneAuthenticator(log)
 	case AuthModeOAuth:
 		authCfg := simpleauth.Config{
-			Enabled:     true,
-			GitHub:      cfg.Auth.GitHub,
-			AllowedOrgs: append([]string(nil), cfg.Auth.AllowedOrgs...),
-			Tokens:      cfg.Auth.Tokens,
-			SuccessPage: cfg.Auth.SuccessPage,
+			Enabled:         true,
+			IssuerURL:       cfg.Auth.IssuerURL,
+			GitHub:          cfg.Auth.GitHub,
+			AllowedOrgs:     append([]string(nil), cfg.Auth.AllowedOrgs...),
+			Tokens:          cfg.Auth.Tokens,
+			AccessTokenTTL:  cfg.Auth.AccessTokenTTL,
+			RefreshTokenTTL: cfg.Auth.RefreshTokenTTL,
+			SuccessPage:     cfg.Auth.SuccessPage,
 		}
 
 		authSvc, err := simpleauth.NewSimpleService(log, authCfg)
@@ -107,6 +106,16 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 
 		s.authService = authSvc
 		s.authenticator = NewSimpleServiceAuthenticator(authSvc)
+	case AuthModeOIDC:
+		oidcAuth, err := NewOIDCAuthenticator(log, OIDCAuthenticatorConfig{
+			IssuerURL: cfg.Auth.IssuerURL,
+			ClientID:  cfg.Auth.ClientID,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("creating OIDC authenticator: %w", err)
+		}
+
+		s.authenticator = oidcAuth
 	default:
 		return nil, fmt.Errorf("unsupported auth mode: %s", cfg.Auth.Mode)
 	}
@@ -121,14 +130,11 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 
 	// Create auditor if enabled.
 	if cfg.Audit.Enabled {
-		s.auditor = NewAuditor(log, AuditorConfig{
-			LogQueries:     cfg.Audit.LogQueries,
-			MaxQueryLength: cfg.Audit.MaxQueryLength,
-		})
+		s.auditor = NewAuditor(log, AuditorConfig{})
 	}
 
 	// Create handlers from config.
-	chConfigs, promConfigs, lokiConfigs, s3Config, ethNodeConfig := cfg.ToHandlerConfigs()
+	chConfigs, promConfigs, lokiConfigs, ethNodeConfig := cfg.ToHandlerConfigs()
 
 	if len(chConfigs) > 0 {
 		s.clickhouseHandler = handlers.NewClickHouseHandler(log, chConfigs)
@@ -140,10 +146,6 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 
 	if len(lokiConfigs) > 0 {
 		s.lokiHandler = handlers.NewLokiHandler(log, lokiConfigs)
-	}
-
-	if s3Config != nil && s3Config.Endpoint != "" {
-		s.s3Handler = handlers.NewS3Handler(log, s3Config)
 	}
 
 	if ethNodeConfig != nil {
@@ -183,6 +185,9 @@ func (s *server) registerRoutes() {
 		}
 	})
 
+	// Branding endpoint (no auth required) — serves success_page config as JSON.
+	s.mux.HandleFunc("/auth/branding", s.handleBranding)
+
 	// Datasources info endpoint (for discovery by MCP server and Python modules).
 	// Build middleware chain.
 	chain := s.buildMiddlewareChain()
@@ -191,28 +196,24 @@ func (s *server) registerRoutes() {
 		s.authService.MountRoutes(s.mux)
 	}
 
-	s.mux.Handle("/datasources", chain(http.HandlerFunc(s.handleDatasources)))
+	s.mux.Handle("/datasources", s.metricsMiddleware(chain(http.HandlerFunc(s.handleDatasources))))
 
 	// Authenticated routes.
 	if s.clickhouseHandler != nil {
-		s.handleSubtreeRoute("/clickhouse", chain(s.clickhouseHandler))
+		s.handleSubtreeRoute("/clickhouse", s.metricsMiddleware(chain(s.clickhouseHandler)))
 	}
 
 	if s.prometheusHandler != nil {
-		s.handleSubtreeRoute("/prometheus", chain(s.prometheusHandler))
+		s.handleSubtreeRoute("/prometheus", s.metricsMiddleware(chain(s.prometheusHandler)))
 	}
 
 	if s.lokiHandler != nil {
-		s.handleSubtreeRoute("/loki", chain(s.lokiHandler))
-	}
-
-	if s.s3Handler != nil {
-		s.handleSubtreeRoute("/s3", chain(s.s3Handler))
+		s.handleSubtreeRoute("/loki", s.metricsMiddleware(chain(s.lokiHandler)))
 	}
 
 	if s.ethNodeHandler != nil {
-		s.handleSubtreeRoute("/beacon", chain(s.ethNodeHandler))
-		s.handleSubtreeRoute("/execution", chain(s.ethNodeHandler))
+		s.handleSubtreeRoute("/beacon", s.metricsMiddleware(chain(s.ethNodeHandler)))
+		s.handleSubtreeRoute("/execution", s.metricsMiddleware(chain(s.ethNodeHandler)))
 	}
 }
 
@@ -239,9 +240,6 @@ func (s *server) buildMiddlewareChain() func(http.Handler) http.Handler {
 			h = s.rateLimiter.Middleware()(h)
 		}
 
-		// Per-user request metrics (after auth, wraps rate limiting so 429s are counted).
-		h = metricsMiddleware(h)
-
 		// Authentication (outermost).
 		h = s.authenticator.Middleware()(h)
 
@@ -252,29 +250,25 @@ func (s *server) buildMiddlewareChain() func(http.Handler) http.Handler {
 // DatasourcesResponse is the response from the /datasources endpoint.
 // This is used by the MCP server client to discover available datasources.
 type DatasourcesResponse struct {
-	ClickHouse        []string               `json:"clickhouse,omitempty"`
-	Prometheus        []string               `json:"prometheus,omitempty"`
-	Loki              []string               `json:"loki,omitempty"`
-	ClickHouseInfo    []types.DatasourceInfo `json:"clickhouse_info,omitempty"`
-	PrometheusInfo    []types.DatasourceInfo `json:"prometheus_info,omitempty"`
-	LokiInfo          []types.DatasourceInfo `json:"loki_info,omitempty"`
-	S3Bucket          string                 `json:"s3_bucket,omitempty"`
-	S3PublicURLPrefix string                 `json:"s3_public_url_prefix,omitempty"`
-	EthNodeAvailable  bool                   `json:"ethnode_available,omitempty"`
+	ClickHouse       []string               `json:"clickhouse,omitempty"`
+	Prometheus       []string               `json:"prometheus,omitempty"`
+	Loki             []string               `json:"loki,omitempty"`
+	ClickHouseInfo   []types.DatasourceInfo `json:"clickhouse_info,omitempty"`
+	PrometheusInfo   []types.DatasourceInfo `json:"prometheus_info,omitempty"`
+	LokiInfo         []types.DatasourceInfo `json:"loki_info,omitempty"`
+	EthNodeAvailable bool                   `json:"ethnode_available,omitempty"`
 }
 
 // handleDatasources returns the list of available datasources.
 func (s *server) handleDatasources(w http.ResponseWriter, _ *http.Request) {
 	info := DatasourcesResponse{
-		ClickHouse:        s.ClickHouseDatasources(),
-		Prometheus:        s.PrometheusDatasources(),
-		Loki:              s.LokiDatasources(),
-		ClickHouseInfo:    s.ClickHouseDatasourceInfo(),
-		PrometheusInfo:    s.PrometheusDatasourceInfo(),
-		LokiInfo:          s.LokiDatasourceInfo(),
-		S3Bucket:          s.S3Bucket(),
-		S3PublicURLPrefix: s.S3PublicURLPrefix(),
-		EthNodeAvailable:  s.EthNodeAvailable(),
+		ClickHouse:       s.ClickHouseDatasources(),
+		Prometheus:       s.PrometheusDatasources(),
+		Loki:             s.LokiDatasources(),
+		ClickHouseInfo:   s.ClickHouseDatasourceInfo(),
+		PrometheusInfo:   s.PrometheusDatasourceInfo(),
+		LokiInfo:         s.LokiDatasourceInfo(),
+		EthNodeAvailable: s.EthNodeAvailable(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -282,6 +276,21 @@ func (s *server) handleDatasources(w http.ResponseWriter, _ *http.Request) {
 
 	if err := json.NewEncoder(w).Encode(info); err != nil {
 		s.log.WithError(err).Error("Failed to encode datasources response")
+	}
+}
+
+// handleBranding returns the success_page config as JSON, or 204 if not configured.
+func (s *server) handleBranding(w http.ResponseWriter, _ *http.Request) {
+	if s.cfg.Auth.SuccessPage == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	if err := json.NewEncoder(w).Encode(s.cfg.Auth.SuccessPage); err != nil {
+		s.log.WithError(err).Error("Failed to encode branding response")
 	}
 }
 
@@ -469,24 +478,6 @@ func (s *server) LokiDatasourceInfo() []types.DatasourceInfo {
 	}
 
 	return result
-}
-
-// S3Bucket returns the configured S3 bucket name.
-func (s *server) S3Bucket() string {
-	if s.s3Handler == nil {
-		return ""
-	}
-
-	return s.s3Handler.Bucket()
-}
-
-// S3PublicURLPrefix returns the public URL prefix for S3 objects.
-func (s *server) S3PublicURLPrefix() string {
-	if s.s3Handler == nil {
-		return ""
-	}
-
-	return s.s3Handler.PublicURLPrefix()
 }
 
 // EthNodeAvailable returns true if the ethnode handler is configured.

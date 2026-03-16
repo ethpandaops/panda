@@ -123,11 +123,24 @@ type ProxyConfig struct {
 
 // ProxyAuthConfig configures authentication for the proxy.
 type ProxyAuthConfig struct {
+	// Mode describes the proxy auth flow. "oauth" is the legacy embedded proxy issuer,
+	// "oidc" is an external OpenID Connect issuer such as Dex.
+	Mode string `yaml:"mode,omitempty"`
+
 	// IssuerURL is the OAuth issuer URL for proxy authentication.
 	IssuerURL string `yaml:"issuer_url"`
 
 	// ClientID is the OAuth client ID for authentication.
 	ClientID string `yaml:"client_id"`
+
+	// Resource is the optional OAuth resource indicator to request.
+	// Leave empty for standard OIDC providers that do not use RFC 8707 resource parameters.
+	Resource string `yaml:"resource,omitempty"`
+
+	// RefreshTokenTTL is the expected lifetime of the refresh token issued by the
+	// OIDC provider. When set, the client will proactively refresh at 50% of this
+	// duration to keep the refresh token alive via provider rotation.
+	RefreshTokenTTL time.Duration `yaml:"refresh_token_ttl,omitempty"`
 }
 
 // Load loads configuration from a YAML file with environment variable substitution.

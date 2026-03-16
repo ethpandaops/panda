@@ -44,8 +44,10 @@ proxy:
   # Auth configuration (optional, for remote hosted proxies).
   # Users run `ep auth login` and the local server reuses those credentials.
   # auth:
+  #   mode: "oidc"   # "oidc" for Dex/authentik/etc, "oauth" for the legacy embedded proxy issuer
   #   issuer_url: "https://proxy.ethpandaops.io"
-  #   client_id: "panda"
+  #   client_id: "panda-proxy"
+  #   # resource: "https://proxy.ethpandaops.io"   # only for providers that require RFC 8707 resource params
 
 # Observability configuration
 observability:

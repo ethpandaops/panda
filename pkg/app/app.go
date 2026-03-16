@@ -222,7 +222,12 @@ func (a *App) buildProxyClient() proxy.Client {
 	if a.cfg.Proxy.Auth != nil {
 		cfg.IssuerURL = a.cfg.Proxy.Auth.IssuerURL
 		cfg.ClientID = a.cfg.Proxy.Auth.ClientID
-		cfg.Resource = a.cfg.Proxy.URL
+		cfg.Resource = strings.TrimSpace(a.cfg.Proxy.Auth.Resource)
+		cfg.RefreshTokenTTL = a.cfg.Proxy.Auth.RefreshTokenTTL
+
+		if cfg.Resource == "" && strings.TrimSpace(a.cfg.Proxy.Auth.Mode) != "oidc" {
+			cfg.Resource = a.cfg.Proxy.URL
+		}
 	}
 
 	return proxy.NewClient(a.log, cfg)

@@ -190,15 +190,27 @@ func buildProxyAuthMetadata(cfg *config.Config) *serverapi.ProxyAuthMetadataResp
 		return &serverapi.ProxyAuthMetadataResponse{}
 	}
 
+	mode := strings.TrimSpace(cfg.Proxy.Auth.Mode)
+	if mode == "" {
+		mode = "oauth"
+	}
+
 	issuerURL := strings.TrimSpace(cfg.Proxy.Auth.IssuerURL)
 	if issuerURL == "" {
 		issuerURL = strings.TrimRight(cfg.Proxy.URL, "/")
 	}
 
-	resource := strings.TrimRight(cfg.Proxy.URL, "/")
+	resource := strings.TrimSpace(cfg.Proxy.Auth.Resource)
+	if resource == "" && mode != "oidc" {
+		resource = issuerURL
+		if resource == "" {
+			resource = strings.TrimRight(cfg.Proxy.URL, "/")
+		}
+	}
 
 	return &serverapi.ProxyAuthMetadataResponse{
 		Enabled:   issuerURL != "" && cfg.Proxy.Auth.ClientID != "",
+		Mode:      mode,
 		IssuerURL: issuerURL,
 		ClientID:  cfg.Proxy.Auth.ClientID,
 		Resource:  resource,

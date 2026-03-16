@@ -72,7 +72,7 @@ func runServe(_ *cobra.Command, _ []string) error {
 	var metricsServer *http.Server
 
 	if cfg.Metrics.Enabled {
-		addr := fmt.Sprintf(":%d", cfg.Metrics.Port)
+		addr := cfg.Metrics.ListenAddr
 
 		mux := http.NewServeMux()
 		mux.Handle("/metrics", promhttp.Handler())

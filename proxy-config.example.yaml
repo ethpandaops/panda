@@ -19,8 +19,17 @@ server:
 auth:
   # Authentication mode:
   # - "none": No authentication (for local development only - DEFAULT)
-  # - "oauth": Hosted proxy auth flow backed by GitHub OAuth
-  mode: none  # Use 'oauth' for hosted remote access
+  # - "oauth": Embedded GitHub-backed OAuth issuer hosted by panda-proxy
+  # - "oidc": External OpenID Connect issuer (Dex, authentik, Keycloak, ...)
+  mode: none  # Use 'oauth' or 'oidc' for hosted remote access
+
+  # External URL used for OAuth metadata, callbacks, and token validation.
+  # Required when mode is "oauth" or "oidc".
+  # issuer_url: "https://proxy.example.com"
+
+  # OIDC client identifier expected in bearer token audiences.
+  # Required when mode is "oidc".
+  # client_id: "panda-proxy"
 
   # GitHub OAuth app config (required when mode is "oauth")
   # github:
@@ -35,6 +44,10 @@ auth:
   # Proxy-issued bearer token signing key
   # tokens:
   #   secret_key: "${PROXY_TOKEN_SECRET}"
+
+  # Proxy-issued token lifetimes
+  # access_token_ttl: 1h
+  # refresh_token_ttl: 720h
 
   # Customize the OAuth callback success page shown in the browser.
   # Rules are evaluated in order; the first match wins.
@@ -91,15 +104,6 @@ loki:
 #   username: "${ETHPANDAOPS_ETHNODE_USERNAME}"
 #   password: "${ETHPANDAOPS_ETHNODE_PASSWORD}"
 
-# S3 storage for file uploads
-s3:
-  endpoint: "${S3_ENDPOINT}"
-  access_key: "${S3_ACCESS_KEY}"
-  secret_key: "${S3_SECRET_KEY}"
-  bucket: "ethpandaops-panda-outputs"
-  region: "us-east-1"
-  public_url_prefix: "${S3_PUBLIC_URL_PREFIX}"
-
 # Rate limiting
 rate_limiting:
   enabled: true
@@ -109,10 +113,9 @@ rate_limiting:
 # Audit logging
 audit:
   enabled: true
-  log_queries: true
-  max_query_length: 500
 
 # Prometheus metrics
 metrics:
   enabled: true
+  listen_addr: "127.0.0.1:9090"
   port: 9090

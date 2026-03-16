@@ -3,7 +3,6 @@ package proxy
 import (
 	"context"
 	"net/http"
-	"strconv"
 
 	"github.com/sirupsen/logrus"
 
@@ -17,9 +16,12 @@ const (
 	// AuthModeNone disables authentication (for local development only).
 	AuthModeNone AuthMode = "none"
 
-	// AuthModeOAuth enables GitHub-backed OAuth on the proxy control plane and
-	// validates proxy-issued bearer tokens on data-plane routes.
+	// AuthModeOAuth enables the embedded GitHub-backed OAuth server on the proxy control plane
+	// and validates proxy-issued bearer tokens on data-plane routes.
 	AuthModeOAuth AuthMode = "oauth"
+
+	// AuthModeOIDC validates bearer tokens from an external OpenID Connect issuer.
+	AuthModeOIDC AuthMode = "oidc"
 )
 
 // Authenticator validates incoming requests to the proxy.
@@ -93,10 +95,15 @@ func (a *simpleServiceAuthenticator) Middleware() func(http.Handler) http.Handle
 
 // GetUserID extracts the authenticated user ID from the request context.
 func GetUserID(ctx context.Context) string {
-	user := simpleauth.GetAuthUser(ctx)
-	if user == nil || user.GitHubID == 0 {
+	user := GetAuthUser(ctx)
+	if user != nil && user.Subject != "" {
+		return user.Subject
+	}
+
+	legacyUser := simpleauth.GetAuthUser(ctx)
+	if legacyUser == nil || legacyUser.Subject == "" {
 		return ""
 	}
 
-	return strconv.FormatInt(user.GitHubID, 10)
+	return legacyUser.Subject
 }

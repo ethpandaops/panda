@@ -66,6 +66,66 @@ func TestGetAccessTokenFallsBackWhenRefreshFailsButTokenIsStillValid(t *testing.
 	}
 }
 
+func TestGetAccessTokenRefreshesAtRefreshTokenHalfLife(t *testing.T) {
+	t.Parallel()
+
+	client := &stubAuthClient{}
+	store := New(logrus.New(), Config{
+		AuthClient:      client,
+		RefreshBuffer:   5 * time.Minute,
+		RefreshTokenTTL: 30 * 24 * time.Hour, // 30 days
+	}).(*store)
+	store.tokens = &authclient.Tokens{
+		AccessToken:          "still-valid",
+		RefreshToken:         "refresh-token",
+		ExpiresAt:            time.Now().Add(time.Hour),            // access token is fresh
+		RefreshTokenIssuedAt: time.Now().Add(-16 * 24 * time.Hour), // issued 16 days ago (past 50%)
+	}
+
+	token, err := store.GetAccessToken()
+	if err != nil {
+		t.Fatalf("GetAccessToken returned error: %v", err)
+	}
+
+	if token != "refreshed-token" {
+		t.Fatalf("expected refreshed token, got %q", token)
+	}
+
+	if client.refreshCalls != 1 {
+		t.Fatalf("expected 1 refresh call, got %d", client.refreshCalls)
+	}
+}
+
+func TestGetAccessTokenDoesNotRefreshBeforeRefreshTokenHalfLife(t *testing.T) {
+	t.Parallel()
+
+	client := &stubAuthClient{}
+	store := New(logrus.New(), Config{
+		AuthClient:      client,
+		RefreshBuffer:   5 * time.Minute,
+		RefreshTokenTTL: 30 * 24 * time.Hour, // 30 days
+	}).(*store)
+	store.tokens = &authclient.Tokens{
+		AccessToken:          "still-valid",
+		RefreshToken:         "refresh-token",
+		ExpiresAt:            time.Now().Add(time.Hour),            // access token is fresh
+		RefreshTokenIssuedAt: time.Now().Add(-10 * 24 * time.Hour), // issued 10 days ago (before 50%)
+	}
+
+	token, err := store.GetAccessToken()
+	if err != nil {
+		t.Fatalf("GetAccessToken returned error: %v", err)
+	}
+
+	if token != "still-valid" {
+		t.Fatalf("expected original token, got %q", token)
+	}
+
+	if client.refreshCalls != 0 {
+		t.Fatalf("expected no refresh calls, got %d", client.refreshCalls)
+	}
+}
+
 type stubAuthClient struct {
 	refreshCalls int
 	refreshErr   error

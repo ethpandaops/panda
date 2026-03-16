@@ -20,6 +20,7 @@ type DatasourcesResponse struct {
 
 type ProxyAuthMetadataResponse struct {
 	Enabled   bool   `json:"enabled"`
+	Mode      string `json:"mode,omitempty"`
 	IssuerURL string `json:"issuer_url,omitempty"`
 	ClientID  string `json:"client_id,omitempty"`
 	Resource  string `json:"resource,omitempty"`

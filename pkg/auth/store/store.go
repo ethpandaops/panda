@@ -57,6 +57,11 @@ type Config struct {
 	// RefreshBuffer is how long before expiry to refresh the token.
 	RefreshBuffer time.Duration
 
+	// RefreshTokenTTL is the expected lifetime of the refresh token.
+	// When set, the store will trigger a refresh at 50% of this duration
+	// to keep the refresh token alive via provider rotation.
+	RefreshTokenTTL time.Duration
+
 	// AuthClient is the OAuth client for refreshing tokens.
 	AuthClient client.Client
 }
@@ -223,8 +228,22 @@ func (s *store) needsRefresh(tokens *client.Tokens) bool {
 		return true
 	}
 
-	// Refresh if within buffer of expiry.
-	return time.Now().Add(s.cfg.RefreshBuffer).After(tokens.ExpiresAt)
+	// Refresh if the access token is within the buffer of expiry.
+	if time.Now().Add(s.cfg.RefreshBuffer).After(tokens.ExpiresAt) {
+		return true
+	}
+
+	// Refresh if the refresh token has passed 50% of its expected lifetime.
+	// This keeps the refresh token alive via provider rotation so the
+	// server doesn't get hard logged out.
+	if s.cfg.RefreshTokenTTL > 0 && !tokens.RefreshTokenIssuedAt.IsZero() {
+		halfLife := tokens.RefreshTokenIssuedAt.Add(s.cfg.RefreshTokenTTL / 2)
+		if time.Now().After(halfLife) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // refresh refreshes the access token.
@@ -242,6 +261,12 @@ func (s *store) refresh(refreshToken string) (*client.Tokens, error) {
 	newTokens, err := s.cfg.AuthClient.Refresh(context.Background(), refreshToken)
 	if err != nil {
 		return nil, fmt.Errorf("refreshing token: %w", err)
+	}
+
+	// If the provider did not rotate the refresh token, preserve the
+	// original issued-at so the half-life check stays correct.
+	if newTokens.RefreshTokenIssuedAt.IsZero() && s.tokens != nil {
+		newTokens.RefreshTokenIssuedAt = s.tokens.RefreshTokenIssuedAt
 	}
 
 	// Save new tokens.
