@@ -21,6 +21,7 @@ type authTarget struct {
 	issuerURL string
 	clientID  string
 	resource  string
+	proxyURL  string
 	enabled   bool
 }
 
@@ -91,12 +92,18 @@ func runAuthLogin(_ *cobra.Command, _ []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	client := authclient.New(log, authclient.Config{
+	clientCfg := authclient.Config{
 		IssuerURL: target.issuerURL,
 		ClientID:  target.clientID,
 		Resource:  target.resource,
 		Headless:  headless,
-	})
+	}
+
+	if target.proxyURL != "" {
+		clientCfg.BrandingURL = strings.TrimRight(target.proxyURL, "/") + "/auth/branding"
+	}
+
+	client := authclient.New(log, clientCfg)
 
 	tokens, err := client.Login(ctx)
 	if err != nil {
@@ -299,6 +306,7 @@ func resolveAuthTargetFromConfig() *authTarget {
 		issuerURL: issuerURL,
 		clientID:  clientID,
 		resource:  resource,
+		proxyURL:  strings.TrimRight(strings.TrimSpace(cfg.Proxy.URL), "/"),
 		enabled:   true,
 	}
 }

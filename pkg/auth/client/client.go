@@ -18,6 +18,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/ethpandaops/panda/internal/version"
+	"github.com/ethpandaops/panda/pkg/auth"
 )
 
 // Client handles OAuth PKCE authentication flow.
@@ -50,6 +51,11 @@ type Config struct {
 	// Resource is the optional OAuth protected resource to request tokens for.
 	// Leave empty for standard OIDC providers that do not use RFC 8707 resource parameters.
 	Resource string
+
+	// BrandingURL is the URL to fetch branding config from (optional).
+	// When set, the client fetches SuccessPageConfig from this endpoint
+	// before login so it can resolve branding rules client-side in OIDC mode.
+	BrandingURL string
 
 	// RedirectPort is the local port for the callback server.
 	// When zero, a free loopback port is selected automatically.
@@ -127,11 +133,14 @@ func (c *client) Login(ctx context.Context) (*Tokens, error) {
 		return nil, fmt.Errorf("generating state: %w", err)
 	}
 
-	// Start callback server.
-	codeCh := make(chan string, 1)
+	// Fetch branding config (best-effort, nil on failure).
+	branding := c.fetchBranding(ctx)
+
+	// Start callback server — it exchanges the code for tokens internally.
+	tokensCh := make(chan *Tokens, 1)
 	errCh := make(chan error, 1)
 
-	server, redirectURI, err := c.startCallbackServer(ctx, state, codeCh, errCh)
+	server, redirectURI, err := c.startCallbackServer(state, verifier, branding, tokensCh, errCh)
 	if err != nil {
 		return nil, fmt.Errorf("starting callback server: %w", err)
 	}
@@ -150,25 +159,16 @@ func (c *client) Login(ctx context.Context) (*Tokens, error) {
 	fmt.Printf("\nPlease open the following URL in your browser to authenticate:\n\n%s\n\n", authURL)
 	fmt.Println("Waiting for authentication...")
 
-	// Wait for callback or context cancellation.
-	var code string
-
+	// Wait for tokens or context cancellation.
 	select {
-	case code = <-codeCh:
-		c.log.Debug("Received authorization code")
+	case tokens := <-tokensCh:
+		c.log.Debug("Received tokens from callback")
+		return tokens, nil
 	case err := <-errCh:
 		return nil, fmt.Errorf("callback error: %w", err)
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
-
-	// Exchange code for tokens.
-	tokens, err := c.exchangeCode(ctx, code, verifier, redirectURI)
-	if err != nil {
-		return nil, fmt.Errorf("exchanging code: %w", err)
-	}
-
-	return tokens, nil
 }
 
 // loginDevice performs the RFC 8628 device authorization flow.
@@ -339,47 +339,15 @@ func (c *client) buildAuthURL(state, challenge, redirectURI string) string {
 }
 
 // startCallbackServer starts the local callback server.
-func (c *client) startCallbackServer(_ context.Context, expectedState string, codeCh chan<- string, errCh chan<- error) (*http.Server, string, error) {
+// The callback handler exchanges the authorization code for tokens, resolves
+// branding (from query params in oauth mode, or from ID token claims + branding
+// config in OIDC mode), renders the success page, and sends tokens on tokensCh.
+func (c *client) startCallbackServer(expectedState, verifier string, branding *auth.SuccessPageConfig, tokensCh chan<- *Tokens, errCh chan<- error) (*http.Server, string, error) {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
-		state := r.URL.Query().Get("state")
-		if state != expectedState {
-			errCh <- fmt.Errorf("state mismatch")
-			http.Error(w, "State mismatch", http.StatusBadRequest)
-
-			return
-		}
-
-		code := r.URL.Query().Get("code")
-		if code == "" {
-			err := r.URL.Query().Get("error")
-			desc := r.URL.Query().Get("error_description")
-			errCh <- fmt.Errorf("oauth error: %s - %s", err, desc)
-			http.Error(w, fmt.Sprintf("Error: %s - %s", err, desc), http.StatusBadRequest)
-
-			return
-		}
-
-		user := callbackUser{
-			Login:         r.URL.Query().Get("login"),
-			AvatarURL:     r.URL.Query().Get("avatar_url"),
-			Tagline:       r.URL.Query().Get("sp_tagline"),
-			MediaType:     r.URL.Query().Get("sp_media_type"),
-			MediaURL:      r.URL.Query().Get("sp_media_url"),
-			MediaASCIIB64: r.URL.Query().Get("sp_media_ascii"),
-		}
-
-		if orgsParam := r.URL.Query().Get("orgs"); orgsParam != "" {
-			user.Orgs = strings.Split(orgsParam, ",")
-		}
-
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(buildSuccessPage(user)))
-
-		codeCh <- code
-	})
-
+	// We need the redirectURI before registering the handler, but we also
+	// need the listener to know the port. Bind the listener first, then
+	// capture redirectURI in the closure.
 	listenAddr := "localhost:0"
 	if c.cfg.RedirectPort > 0 {
 		listenAddr = fmt.Sprintf("localhost:%d", c.cfg.RedirectPort)
@@ -398,19 +366,60 @@ func (c *client) startCallbackServer(_ context.Context, expectedState string, co
 
 	redirectURI := fmt.Sprintf("http://localhost:%d/callback", tcpAddr.Port)
 
-	server := &http.Server{
+	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
+		state := r.URL.Query().Get("state")
+		if state != expectedState {
+			errCh <- fmt.Errorf("state mismatch")
+			http.Error(w, "State mismatch", http.StatusBadRequest)
+
+			return
+		}
+
+		code := r.URL.Query().Get("code")
+		if code == "" {
+			oauthErr := r.URL.Query().Get("error")
+			desc := r.URL.Query().Get("error_description")
+			errCh <- fmt.Errorf("oauth error: %s - %s", oauthErr, desc)
+			http.Error(w, fmt.Sprintf("Error: %s - %s", oauthErr, desc), http.StatusBadRequest)
+
+			return
+		}
+
+		// Exchange code for tokens. Use a detached context so the exchange
+		// completes even if the browser closes the connection early.
+		exchangeCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		tokens, err := c.exchangeCode(exchangeCtx, code, verifier, redirectURI)
+		if err != nil {
+			errCh <- fmt.Errorf("exchanging code: %w", err)
+			http.Error(w, "Token exchange failed", http.StatusInternalServerError)
+
+			return
+		}
+
+		// Build user info for the success page.
+		user := c.resolveCallbackUser(r, tokens, branding)
+
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(buildSuccessPage(user)))
+
+		tokensCh <- tokens
+	})
+
+	srv := &http.Server{
 		Addr:              listener.Addr().String(),
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	go func() {
-		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
+		if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
 			errCh <- fmt.Errorf("callback server error: %w", err)
 		}
 	}()
 
-	return server, redirectURI, nil
+	return srv, redirectURI, nil
 }
 
 // exchangeCode exchanges an authorization code for tokens.
@@ -606,6 +615,119 @@ func bearerTokenFromResponse(resp tokenResponse) string {
 	}
 
 	return resp.AccessToken
+}
+
+// idTokenClaims holds display-relevant claims extracted from an OIDC ID token.
+type idTokenClaims struct {
+	PreferredUsername string   `json:"preferred_username"`
+	Email             string   `json:"email"`
+	Groups            []string `json:"groups"`
+}
+
+// fetchBranding fetches the SuccessPageConfig from the proxy branding endpoint.
+// Returns nil on any error (best-effort).
+func (c *client) fetchBranding(ctx context.Context) *auth.SuccessPageConfig {
+	if c.cfg.BrandingURL == "" {
+		return nil
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.cfg.BrandingURL, nil)
+	if err != nil {
+		c.log.WithError(err).Debug("Failed to create branding request")
+		return nil
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		c.log.WithError(err).Debug("Failed to fetch branding config")
+		return nil
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
+
+	var cfg auth.SuccessPageConfig
+	if err := json.NewDecoder(resp.Body).Decode(&cfg); err != nil {
+		c.log.WithError(err).Debug("Failed to decode branding config")
+		return nil
+	}
+
+	return &cfg
+}
+
+// parseIDTokenClaims extracts display-relevant claims from a JWT ID token
+// by base64-decoding the payload. No cryptographic verification is performed
+// because the token was just exchanged over TLS and is used only for display.
+func parseIDTokenClaims(token string) idTokenClaims {
+	parts := strings.SplitN(token, ".", 3)
+	if len(parts) < 2 {
+		return idTokenClaims{}
+	}
+
+	// JWT payload is base64url-encoded without padding.
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return idTokenClaims{}
+	}
+
+	var claims idTokenClaims
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return idTokenClaims{}
+	}
+
+	return claims
+}
+
+// resolveCallbackUser builds a callbackUser from the OAuth callback request.
+// In oauth mode (sp_* query params present), uses them directly.
+// In OIDC mode, parses ID token claims and resolves branding rules client-side.
+func (c *client) resolveCallbackUser(r *http.Request, tokens *Tokens, branding *auth.SuccessPageConfig) callbackUser {
+	// If sp_* params are present, the proxy already resolved branding (oauth mode).
+	if r.URL.Query().Get("sp_tagline") != "" || r.URL.Query().Get("sp_media_type") != "" {
+		user := callbackUser{
+			Login:         r.URL.Query().Get("login"),
+			AvatarURL:     r.URL.Query().Get("avatar_url"),
+			Tagline:       r.URL.Query().Get("sp_tagline"),
+			MediaType:     r.URL.Query().Get("sp_media_type"),
+			MediaURL:      r.URL.Query().Get("sp_media_url"),
+			MediaASCIIB64: r.URL.Query().Get("sp_media_ascii"),
+		}
+
+		if orgsParam := r.URL.Query().Get("orgs"); orgsParam != "" {
+			user.Orgs = strings.Split(orgsParam, ",")
+		}
+
+		return user
+	}
+
+	// OIDC mode — extract identity from ID token claims.
+	claims := parseIDTokenClaims(tokens.AccessToken)
+
+	login := claims.PreferredUsername
+	if login == "" {
+		login = claims.Email
+	}
+
+	user := callbackUser{
+		Login: login,
+		Orgs:  claims.Groups,
+	}
+
+	// Resolve branding rules if available.
+	if branding != nil {
+		display := branding.Resolve(user.Login, user.Orgs)
+		user.Tagline = display.Tagline
+
+		if display.Media != nil {
+			user.MediaType = display.Media.Type
+			user.MediaURL = display.Media.URL
+			user.MediaASCIIB64 = display.Media.ASCIIArtBase64
+		}
+	}
+
+	return user
 }
 
 // generatePKCE generates a PKCE verifier and challenge.

@@ -185,6 +185,9 @@ func (s *server) registerRoutes() {
 		}
 	})
 
+	// Branding endpoint (no auth required) — serves success_page config as JSON.
+	s.mux.HandleFunc("/auth/branding", s.handleBranding)
+
 	// Datasources info endpoint (for discovery by MCP server and Python modules).
 	// Build middleware chain.
 	chain := s.buildMiddlewareChain()
@@ -273,6 +276,21 @@ func (s *server) handleDatasources(w http.ResponseWriter, _ *http.Request) {
 
 	if err := json.NewEncoder(w).Encode(info); err != nil {
 		s.log.WithError(err).Error("Failed to encode datasources response")
+	}
+}
+
+// handleBranding returns the success_page config as JSON, or 204 if not configured.
+func (s *server) handleBranding(w http.ResponseWriter, _ *http.Request) {
+	if s.cfg.Auth.SuccessPage == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	if err := json.NewEncoder(w).Encode(s.cfg.Auth.SuccessPage); err != nil {
+		s.log.WithError(err).Error("Failed to encode branding response")
 	}
 }
 
