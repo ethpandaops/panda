@@ -136,6 +136,11 @@ type ProxyAuthConfig struct {
 	// Resource is the optional OAuth resource indicator to request.
 	// Leave empty for standard OIDC providers that do not use RFC 8707 resource parameters.
 	Resource string `yaml:"resource,omitempty"`
+
+	// RefreshTokenTTL is the expected lifetime of the refresh token issued by the
+	// OIDC provider. When set, the client will proactively refresh at 50% of this
+	// duration to keep the refresh token alive via provider rotation.
+	RefreshTokenTTL time.Duration `yaml:"refresh_token_ttl,omitempty"`
 }
 
 // Load loads configuration from a YAML file with environment variable substitution.

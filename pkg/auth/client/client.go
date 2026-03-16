@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -30,11 +31,12 @@ type Client interface {
 
 // Tokens contains the authentication tokens.
 type Tokens struct {
-	AccessToken  string    `json:"access_token"`
-	RefreshToken string    `json:"refresh_token,omitempty"`
-	TokenType    string    `json:"token_type"`
-	ExpiresIn    int       `json:"expires_in"`
-	ExpiresAt    time.Time `json:"expires_at"`
+	AccessToken          string    `json:"access_token"`
+	RefreshToken         string    `json:"refresh_token,omitempty"`
+	TokenType            string    `json:"token_type"`
+	ExpiresIn            int       `json:"expires_in"`
+	ExpiresAt            time.Time `json:"expires_at"`
+	RefreshTokenIssuedAt time.Time `json:"refresh_token_issued_at,omitempty"`
 }
 
 // Config configures the OAuth client.
@@ -50,6 +52,7 @@ type Config struct {
 	Resource string
 
 	// RedirectPort is the local port for the callback server.
+	// When zero, a free loopback port is selected automatically.
 	RedirectPort int
 
 	// Scopes are the OAuth scopes to request.
@@ -90,10 +93,6 @@ type deviceAuthResponse struct {
 
 // New creates a new OAuth client.
 func New(log logrus.FieldLogger, cfg Config) Client {
-	if cfg.RedirectPort == 0 {
-		cfg.RedirectPort = 8085
-	}
-
 	if len(cfg.Scopes) == 0 {
 		cfg.Scopes = []string{"openid", "email", "groups", "offline_access"}
 	}
@@ -132,7 +131,7 @@ func (c *client) Login(ctx context.Context) (*Tokens, error) {
 	codeCh := make(chan string, 1)
 	errCh := make(chan error, 1)
 
-	server, err := c.startCallbackServer(ctx, state, codeCh, errCh)
+	server, redirectURI, err := c.startCallbackServer(ctx, state, codeCh, errCh)
 	if err != nil {
 		return nil, fmt.Errorf("starting callback server: %w", err)
 	}
@@ -144,7 +143,7 @@ func (c *client) Login(ctx context.Context) (*Tokens, error) {
 	}()
 
 	// Build authorization URL.
-	authURL := c.buildAuthURL(state, challenge)
+	authURL := c.buildAuthURL(state, challenge, redirectURI)
 
 	// Open browser.
 	c.log.WithField("url", authURL).Info("Opening browser for authentication")
@@ -164,7 +163,7 @@ func (c *client) Login(ctx context.Context) (*Tokens, error) {
 	}
 
 	// Exchange code for tokens.
-	tokens, err := c.exchangeCode(ctx, code, verifier)
+	tokens, err := c.exchangeCode(ctx, code, verifier, redirectURI)
 	if err != nil {
 		return nil, fmt.Errorf("exchanging code: %w", err)
 	}
@@ -245,16 +244,22 @@ func (c *client) Refresh(ctx context.Context, refreshToken string) (*Tokens, err
 	}
 
 	resolvedRefreshToken := tokenResp.RefreshToken
+	refreshTokenIssuedAt := time.Now()
+
 	if resolvedRefreshToken == "" {
+		// Provider did not rotate the refresh token; keep the old one.
+		// The caller will preserve the original RefreshTokenIssuedAt.
 		resolvedRefreshToken = refreshToken
+		refreshTokenIssuedAt = time.Time{}
 	}
 
 	return &Tokens{
-		AccessToken:  bearerTokenFromResponse(tokenResp),
-		RefreshToken: resolvedRefreshToken,
-		TokenType:    tokenResp.TokenType,
-		ExpiresIn:    tokenResp.ExpiresIn,
-		ExpiresAt:    time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second),
+		AccessToken:          bearerTokenFromResponse(tokenResp),
+		RefreshToken:         resolvedRefreshToken,
+		TokenType:            tokenResp.TokenType,
+		ExpiresIn:            tokenResp.ExpiresIn,
+		ExpiresAt:            time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second),
+		RefreshTokenIssuedAt: refreshTokenIssuedAt,
 	}, nil
 }
 
@@ -316,9 +321,7 @@ func (c *client) fetchDiscovery(ctx context.Context, discoveryURL string) (*OIDC
 }
 
 // buildAuthURL builds the authorization URL.
-func (c *client) buildAuthURL(state, challenge string) string {
-	redirectURI := fmt.Sprintf("http://localhost:%d/callback", c.cfg.RedirectPort)
-
+func (c *client) buildAuthURL(state, challenge, redirectURI string) string {
 	params := url.Values{
 		"response_type":         {"code"},
 		"client_id":             {c.cfg.ClientID},
@@ -336,7 +339,7 @@ func (c *client) buildAuthURL(state, challenge string) string {
 }
 
 // startCallbackServer starts the local callback server.
-func (c *client) startCallbackServer(_ context.Context, expectedState string, codeCh chan<- string, errCh chan<- error) (*http.Server, error) {
+func (c *client) startCallbackServer(_ context.Context, expectedState string, codeCh chan<- string, errCh chan<- error) (*http.Server, string, error) {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
@@ -377,28 +380,41 @@ func (c *client) startCallbackServer(_ context.Context, expectedState string, co
 		codeCh <- code
 	})
 
+	listenAddr := "localhost:0"
+	if c.cfg.RedirectPort > 0 {
+		listenAddr = fmt.Sprintf("localhost:%d", c.cfg.RedirectPort)
+	}
+
+	listener, err := net.Listen("tcp", listenAddr)
+	if err != nil {
+		return nil, "", fmt.Errorf("listening on callback port: %w", err)
+	}
+
+	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
+	if !ok {
+		_ = listener.Close()
+		return nil, "", fmt.Errorf("unexpected callback listener address type %T", listener.Addr())
+	}
+
+	redirectURI := fmt.Sprintf("http://localhost:%d/callback", tcpAddr.Port)
+
 	server := &http.Server{
-		Addr:              fmt.Sprintf(":%d", c.cfg.RedirectPort),
+		Addr:              listener.Addr().String(),
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	go func() {
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
 			errCh <- fmt.Errorf("callback server error: %w", err)
 		}
 	}()
 
-	// Give server time to start.
-	time.Sleep(100 * time.Millisecond)
-
-	return server, nil
+	return server, redirectURI, nil
 }
 
 // exchangeCode exchanges an authorization code for tokens.
-func (c *client) exchangeCode(ctx context.Context, code, verifier string) (*Tokens, error) {
-	redirectURI := fmt.Sprintf("http://localhost:%d/callback", c.cfg.RedirectPort)
-
+func (c *client) exchangeCode(ctx context.Context, code, verifier, redirectURI string) (*Tokens, error) {
 	data := url.Values{
 		"grant_type":    {"authorization_code"},
 		"code":          {code},
@@ -434,11 +450,12 @@ func (c *client) exchangeCode(ctx context.Context, code, verifier string) (*Toke
 	}
 
 	return &Tokens{
-		AccessToken:  bearerTokenFromResponse(tokenResp),
-		RefreshToken: tokenResp.RefreshToken,
-		TokenType:    tokenResp.TokenType,
-		ExpiresIn:    tokenResp.ExpiresIn,
-		ExpiresAt:    time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second),
+		AccessToken:          bearerTokenFromResponse(tokenResp),
+		RefreshToken:         tokenResp.RefreshToken,
+		TokenType:            tokenResp.TokenType,
+		ExpiresIn:            tokenResp.ExpiresIn,
+		ExpiresAt:            time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second),
+		RefreshTokenIssuedAt: time.Now(),
 	}, nil
 }
 
@@ -542,11 +559,12 @@ func (c *client) exchangeDeviceCode(ctx context.Context, deviceCode string) (tok
 		}
 
 		return &Tokens{
-			AccessToken:  bearerTokenFromResponse(tokenResp),
-			RefreshToken: tokenResp.RefreshToken,
-			TokenType:    tokenResp.TokenType,
-			ExpiresIn:    tokenResp.ExpiresIn,
-			ExpiresAt:    time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second),
+			AccessToken:          bearerTokenFromResponse(tokenResp),
+			RefreshToken:         tokenResp.RefreshToken,
+			TokenType:            tokenResp.TokenType,
+			ExpiresIn:            tokenResp.ExpiresIn,
+			ExpiresAt:            time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second),
+			RefreshTokenIssuedAt: time.Now(),
 		}, false, nil
 	}
 

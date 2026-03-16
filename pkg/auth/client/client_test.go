@@ -63,7 +63,7 @@ func TestBuildAuthURLOmitsResourceWhenEmpty(t *testing.T) {
 	}).(*client)
 	c.oidc = &OIDCConfig{AuthorizationEndpoint: "https://issuer.example.com/auth"}
 
-	authURL := c.buildAuthURL("state-123", "challenge-123")
+	authURL := c.buildAuthURL("state-123", "challenge-123", "http://localhost:8085/callback")
 	parsed, err := url.Parse(authURL)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)

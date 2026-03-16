@@ -78,6 +78,11 @@ type ClientConfig struct {
 	// Leave empty for standard OIDC providers that do not use RFC 8707 resource parameters.
 	Resource string
 
+	// RefreshTokenTTL is the expected lifetime of the refresh token.
+	// When set, the credential store will refresh at 50% of this duration
+	// to keep the refresh token alive via provider rotation.
+	RefreshTokenTTL time.Duration
+
 	// DiscoveryInterval is how often to refresh datasource info (default: 5 minutes).
 	// Set to 0 to disable background refresh.
 	DiscoveryInterval time.Duration
@@ -150,10 +155,11 @@ func NewClient(log logrus.FieldLogger, cfg ClientConfig) Client {
 		})
 
 		c.credStore = store.New(log, store.Config{
-			AuthClient: c.authClient,
-			IssuerURL:  issuerURL,
-			ClientID:   cfg.ClientID,
-			Resource:   resource,
+			AuthClient:      c.authClient,
+			IssuerURL:       issuerURL,
+			ClientID:        cfg.ClientID,
+			Resource:        resource,
+			RefreshTokenTTL: cfg.RefreshTokenTTL,
 		})
 	}
 

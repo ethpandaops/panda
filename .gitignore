@@ -55,6 +55,8 @@ __pycache__/
 
 # Binaries
 /cli
+/panda
+/panda-server
 
 # Claude settings
 .claude/settings.json
