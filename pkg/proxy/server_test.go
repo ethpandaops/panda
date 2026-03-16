@@ -74,6 +74,90 @@ func TestMetricsDatasourceLabelUsesConfiguredNamesOnly(t *testing.T) {
 	}
 }
 
+func TestAuthMetadataEndpointReturnsConfig(t *testing.T) {
+	t.Parallel()
+
+	cfg := ServerConfig{
+		Auth: AuthConfig{
+			Mode:      AuthModeOIDC,
+			IssuerURL: "https://dex.example.com",
+			ClientID:  "panda-proxy",
+		},
+		ClickHouse: []ClickHouseClusterConfig{
+			{Name: "xatu", Host: "example.com", Port: 8123, Username: "user", Password: "pass"},
+		},
+	}
+	cfg.ApplyDefaults()
+
+	srv, err := newServer(logrus.New(), cfg, "http://proxy.test", "18081")
+	if err != nil {
+		t.Fatalf("newServer failed: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/auth/metadata", nil)
+	srv.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var got AuthMetadataResponse
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	if !got.Enabled {
+		t.Fatal("expected enabled=true")
+	}
+
+	if got.Mode != "oidc" {
+		t.Fatalf("expected mode=oidc, got %q", got.Mode)
+	}
+
+	if got.IssuerURL != "https://dex.example.com" {
+		t.Fatalf("expected issuer_url=https://dex.example.com, got %q", got.IssuerURL)
+	}
+
+	if got.ClientID != "panda-proxy" {
+		t.Fatalf("expected client_id=panda-proxy, got %q", got.ClientID)
+	}
+}
+
+func TestAuthMetadataEndpointNoAuth(t *testing.T) {
+	t.Parallel()
+
+	cfg := ServerConfig{
+		Auth: AuthConfig{Mode: AuthModeNone},
+		ClickHouse: []ClickHouseClusterConfig{
+			{Name: "xatu", Host: "example.com", Port: 8123, Username: "user", Password: "pass"},
+		},
+	}
+	cfg.ApplyDefaults()
+
+	srv, err := newServer(logrus.New(), cfg, "http://proxy.test", "18081")
+	if err != nil {
+		t.Fatalf("newServer failed: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/auth/metadata", nil)
+	srv.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var got AuthMetadataResponse
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	if got.Enabled {
+		t.Fatal("expected enabled=false for none mode")
+	}
+}
+
 func TestBrandingEndpointReturnsConfigWhenSet(t *testing.T) {
 	t.Parallel()
 

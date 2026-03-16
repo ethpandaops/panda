@@ -29,9 +29,7 @@ concurrency:
 
 jobs:
   goreleaser-check:
-    runs-on:
-      - self-hosted-ghr
-      - size-l-x64
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -98,9 +96,7 @@ jobs:
           docker network rm panda-smoke-test 2>/dev/null || true
 
   build-sandbox:
-    runs-on:
-      - self-hosted-ghr
-      - size-m-x64
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 

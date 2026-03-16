@@ -25,9 +25,7 @@ concurrency:
 
 jobs:
   test:
-    runs-on:
-      - self-hosted-ghr
-      - size-m-x64
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -47,9 +45,7 @@ jobs:
         run: make test
 
   lint:
-    runs-on:
-      - self-hosted-ghr
-      - size-m-x64
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 

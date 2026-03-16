@@ -188,6 +188,9 @@ func (s *server) registerRoutes() {
 	// Branding endpoint (no auth required) — serves success_page config as JSON.
 	s.mux.HandleFunc("/auth/branding", s.handleBranding)
 
+	// Auth metadata endpoint (no auth required) — lets clients discover auth settings.
+	s.mux.HandleFunc("/auth/metadata", s.handleAuthMetadata)
+
 	// Datasources info endpoint (for discovery by MCP server and Python modules).
 	// Build middleware chain.
 	chain := s.buildMiddlewareChain()
@@ -291,6 +294,35 @@ func (s *server) handleBranding(w http.ResponseWriter, _ *http.Request) {
 
 	if err := json.NewEncoder(w).Encode(s.cfg.Auth.SuccessPage); err != nil {
 		s.log.WithError(err).Error("Failed to encode branding response")
+	}
+}
+
+// AuthMetadataResponse describes the proxy's auth configuration for client discovery.
+type AuthMetadataResponse struct {
+	Enabled   bool   `json:"enabled"`
+	Mode      string `json:"mode"`
+	IssuerURL string `json:"issuer_url,omitempty"`
+	ClientID  string `json:"client_id,omitempty"`
+}
+
+// handleAuthMetadata returns the proxy's auth config so clients can discover
+// the correct issuer URL and client ID without hardcoding them.
+func (s *server) handleAuthMetadata(w http.ResponseWriter, _ *http.Request) {
+	resp := AuthMetadataResponse{
+		Enabled: s.cfg.Auth.Mode != AuthModeNone,
+		Mode:    string(s.cfg.Auth.Mode),
+	}
+
+	if resp.Enabled {
+		resp.IssuerURL = s.cfg.Auth.IssuerURL
+		resp.ClientID = s.cfg.Auth.ClientID
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		s.log.WithError(err).Error("Failed to encode auth metadata response")
 	}
 }
 

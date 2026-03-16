@@ -39,7 +39,11 @@ func TestBuildConfigTemplate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			result := buildConfigTemplate(tt.proxyURL, tt.sandboxImage)
+			authCfg := initAuthConfig{
+				IssuerURL: "https://dex.example.com",
+				ClientID:  "test-client",
+			}
+			result := buildConfigTemplate(tt.proxyURL, tt.sandboxImage, authCfg)
 
 			// Parse the generated YAML.
 			var parsed map[string]any
@@ -68,8 +72,8 @@ func TestBuildConfigTemplate(t *testing.T) {
 
 			auth, ok := proxy["auth"].(map[string]any)
 			require.True(t, ok, "proxy must have an auth block")
-			assert.Equal(t, tt.proxyURL, auth["issuer_url"])
-			assert.Equal(t, defaultProxyClientID, auth["client_id"])
+			assert.Equal(t, authCfg.IssuerURL, auth["issuer_url"])
+			assert.Equal(t, authCfg.ClientID, auth["client_id"])
 		})
 	}
 }
