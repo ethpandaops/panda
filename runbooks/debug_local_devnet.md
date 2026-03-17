@@ -35,7 +35,7 @@ with open("/workspace/debug_file_path.txt", "w") as f:
     f.write(debug_file)
 ```
 
-**Appending to the debug report:** In every subsequent step, read the path from `/workspace/debug_file_path.txt` and append with `open(debug_file, "a")`. Do this for every piece of data collected — raw API responses, log extracts, summaries, and theories. Do not repeat this boilerplate in every step; apply the pattern consistently.
+**Appending to the debug report:** In every subsequent step, read the path from `/workspace/debug_file_path.txt` and append with `open(debug_file, "a")`. Do this for every piece of data collected — raw API responses, log extracts, summaries, and theories.
 
 ## Timeframe Rules
 
@@ -45,7 +45,6 @@ All steps in this runbook MUST use the same consistent timeframe OR there must b
 2. If a network split is detected in step 1 → override to the divergence slot/epoch and investigate around that point (before and after)
 3. Otherwise → default to the **past 1 hour**
 
-Once set, use it consistently for: epoch queries, slot lookbacks (~300 slots per hour, 1 slot ≈ 12s), Loki log queries, and all correlation. Do NOT mix timeframes across step UNLESS needed.
 
 ## Phase 0: Network Discovery
 
@@ -90,7 +89,7 @@ Before collecting data, determine what tooling is available in the Kurtosis encl
 1. **Collect all Dora data** - If Dora is available in the enclave, query it via its localhost port. In a single step, gather all network data and append raw responses to the debug report. You MAY combine these into one `execute_python` call:
 
    - **Network overview** — use `search_examples("network overview")` for the pattern. Note: `current_slot` is `epoch * 32` (epoch's first slot), not actual head slot.
-   - **Network splits** — use `search_examples("network splits")`. A healthy network has one fork.
+   - **Network forks** — use `search_examples("network splits")`. Query the Dora `/forks` endpoint (with `Accept: application/json` header) to detect splits. A healthy network has one fork.
    - **Epoch details** — use `search_examples("epoch summary")`. Iterate through ~9 epochs per hour across the active timeframe. **Always start from head epoch - 1** (the most recent completed epoch) — the head epoch is still in progress and will show artificially low participation. You SHOULD also check the head epoch, but treat its data as preliminary since the epoch may not be finished — it is still useful for identifying offline proposers in recent slots. You SHOULD use try/except per epoch to handle failures without crashing.
    - **Missing proposers** — use `search_examples("missing proposers")`. Adjust `slot_lookback` to match the active timeframe (~300 slots per hour).
    - **Offline attesters** — use `search_examples("offline attesters")`.
@@ -123,11 +122,7 @@ Local Kurtosis Loki has a different label schema than remote ethpandaops Loki.
 
 **JSON fields** (accessible via `| json`): The log body is JSON containing fields like `kurtosis_service_name`, `kurtosis_enclave_uuid`, `container_name`, `source`, and `log` (the actual log content). Use `| json` to parse these and filter by service.
 
-**Trimming log payloads with `line_format`:** Loki returns full stream metadata (labels, container info, timestamps) for every log entry. This is verbose and wastes context window space. For local Kurtosis Loki, the actual log content is in the `log` JSON field. **Always** append `| line_format` after `| json` to extract only the log message:
-```
-| json | line_format "{{.log}}"
-```
-This dramatically reduces response size. Apply this to ALL Loki queries below.
+**Trimming log payloads with `line_format`:** Loki returns full stream metadata (labels, container info, timestamps) for every log entry. This is verbose and wastes context window space. For local Kurtosis Loki, the actual log content is in the `log` JSON field. **Always** append `| json | line_format "{{.log}}"` to extract only the log message. Applied in all queries below.
 
 **Example LogQL queries for local Kurtosis Loki:**
 
@@ -168,7 +163,7 @@ Use `kurtosis service logs` only when no Loki instance exists in the enclave:
 
 Regardless of which log source is used, follow this procedure:
 
-**You SHOULD start with the consensus layer (CL).** The network moves forward via the CL — block proposals, attestations, and finality are all CL concerns. Most devnet issues originate at the CL level. Only investigate EL logs after reviewing CL logs, and only if the CL logs suggest the problem is on the execution side (e.g. payload validation errors, engine API failures, execution timeouts).
+**You SHOULD start with the consensus layer (CL).** Most devnet issues originate at the CL level. Only investigate EL logs if CL logs point to execution-side problems (e.g. payload validation errors, engine API failures).
 
 3. **Discover Loki labels** - If using Loki, fetch available labels and values to understand the topology. Append to debug report.
 
@@ -202,8 +197,6 @@ Regardless of which log source is used, follow this procedure:
    - Are errors from one client type or spread across multiple?
    - Are the errors at the CL level, EL level, or both?
    - If the network has split, compare logs from nodes on different forks to find the divergence point
-
-This concludes the **data collection phase**. You should now have: a baseline (from Dora or direct API queries), targeted CL logs (and EL logs if relevant) from the problematic nodes, and an understanding of which layer the errors originate from.
 
 ## Phase 3: Root Cause Analysis
 

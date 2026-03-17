@@ -7,7 +7,7 @@ prerequisites: [loki]
 
 The first step in debugging a devnet is discovering which datasources have the network, then gathering information from whatever is available. Not all devnets are registered in Dora — some only have Loki logs. Phase 0 determines the data profile so the debug flow adapts accordingly.
 
-**The user MUST specify which network to debug.** Do NOT assume a network — if the user hasn't specified one, ask them before proceeding. You can show available networks with `dora.list_networks()` or check Loki labels via `loki.get_label_values("ethpandaops", "testnet")` to help them choose.
+**The user MUST specify which network to debug.** Do NOT assume a network — if the user hasn't specified one, ask them before proceeding. You can show available networks with `dora.list_networks()` or discover them across all Loki instances (see Phase 0).
 
 Refer to the query skill for general API usage patterns (Dora overview, Loki label discovery, direct HTTP calls, Dora link generation, etc.). This runbook only covers the debugging-specific procedure and API calls not in the skill.
 
@@ -33,7 +33,7 @@ with open("/workspace/debug_file_path.txt", "w") as f:
     f.write(debug_file)
 ```
 
-**Appending to the debug report:** In every subsequent step, read the path from `/workspace/debug_file_path.txt` and append with `open(debug_file, "a")`. Do this for every piece of data collected — raw API responses, log extracts, summaries, and theories. Do not repeat this boilerplate in every step; apply the pattern consistently.
+**Appending to the debug report:** In every subsequent step, read the path from `/workspace/debug_file_path.txt` and append with `open(debug_file, "a")`. Do this for every piece of data collected — raw API responses, log extracts, summaries, and theories.
 
 ## Timeframe Rules
 
@@ -43,47 +43,61 @@ All steps in this runbook MUST use the same consistent timeframe OR there must b
 2. If a network split is detected in step 1 → override to the divergence slot/epoch and investigate around that point (before and after)
 3. Otherwise → default to the **past 1 hour**
 
-Once set, use it consistently for: epoch queries, slot lookbacks (~300 slots per hour, 1 slot ≈ 12s), Loki log queries, and all correlation. Do NOT mix timeframes across step UNLESS needed.
 
 ## Phase 0: Network Discovery
 
-Before collecting data, determine which datasources have the target network. This avoids wasted calls and adapts the debug flow to what is actually available.
+Before collecting data, determine which datasources have the target network.
 
-0. **Determine the data profile** — In a single `execute_python` call, check all datasources for the target network:
+0. **Discover datasources and determine the data profile** — Do not assume instance names. First discover what is available, then check for the target network:
 
    ```python
+   from ethpandaops import dora, loki
+   import os
+
+   network = "<network>"
+
    # Check Dora
    try:
        networks = dora.list_networks()
-       has_dora = "<network>" in [n["name"] for n in networks]
+       has_dora = network in [n["name"] for n in networks]
    except Exception:
        has_dora = False
 
-   # Check Loki
-   try:
-       testnets = loki.get_label_values("ethpandaops", "testnet")
-       has_loki = "<network>" in testnets
-   except Exception:
-       has_loki = False
+   # Check Loki — search ALL instances, not just "ethpandaops"
+   loki_instance = None
+   for ds in loki.list_datasources():
+       try:
+           testnets = loki.get_label_values(ds["name"], "testnet")
+           if network in testnets:
+               loki_instance = ds["name"]
+               break
+       except Exception:
+           pass
+
+   has_loki = loki_instance is not None
 
    # If Loki is available, also discover instances for later use
    instances = []
    if has_loki:
        try:
-           instances = loki.get_label_values("ethpandaops", "instance", f'{{testnet="{network}"}}')
+           instances = loki.get_label_values(loki_instance, "instance", f'{{testnet="{network}"}}')
        except Exception:
            pass
 
    # Check ethnode (direct node API access)
-   import os
    has_ethnode = os.environ.get("ETHPANDAOPS_ETHNODE_AVAILABLE") == "true"
+
+   print(f"has_dora={has_dora}, has_loki={has_loki}, loki_instance={loki_instance}, has_ethnode={has_ethnode}")
+   print(f"instances={instances}")
    ```
 
    Record the **data profile** in the debug report:
    - `has_dora: true/false`
-   - `has_loki: true/false`
+   - `has_loki: true/false` and `loki_instance: <name>`
    - `has_ethnode: true/false`
    - List of discovered instances (if Loki is available)
+
+   **Use the discovered `loki_instance` name in ALL subsequent Loki calls.** Do not hardcode `"ethpandaops"`.
 
    **Routing rules:**
    - If the network is not found in **any** datasource → report to the user that the network doesn't exist in any known datasource and **stop**.
@@ -94,13 +108,13 @@ Before collecting data, determine which datasources have the target network. Thi
 
 ## Phase 1: Data Collection with Dora
 
-**Skip this phase if Phase 0 determined `has_dora = false`.** If `has_ethnode = true`, use the ethnode module (`search(type="examples", query="ethnode")` for patterns) to build a partial baseline: query head slots/roots, finality checkpoints, and sync status across the discovered instances. This helps answer the baseline questions in step 2 (single fork vs split, finalizing, which nodes are behind) without Dora. Append results to the debug report, then proceed to Phase 2.
+**Skip this phase if Phase 0 determined `has_dora = false`.** If `has_ethnode = true`, use the ethnode module (`search(type="examples", query="ethnode")` for patterns) to build a partial baseline instead. Then proceed to Phase 2.
 
 1. **Collect all Dora data** - In a single step, gather all network data and append raw responses to the debug report. You MAY combine these into one `execute_python` call:
 
    - **Network overview** — use `search(type="examples", query="network overview")` for the pattern. Note: `current_slot` is `epoch * 32` (epoch's first slot), not actual head slot.
-   - **Network splits** — use `search(type="examples", query="network splits")`. A healthy network has one fork.
-   - **Epoch details** — use `search(type="examples", query="epoch summary")`. Iterate through ~9 epochs per hour across the active timeframe. **Always start from head epoch - 1** (the most recent completed epoch) — the head epoch is still in progress and will show artificially low participation. You SHOULD also check the head epoch, but treat its data as preliminary since the epoch may not be finished — it is still useful for identifying offline proposers in recent slots. You SHOULD use try/except per epoch to handle failures without crashing.
+   - **Network forks** — use `search(type="examples", query="network splits")`. Query the Dora `/forks` endpoint (with `Accept: application/json` header) to detect splits. A healthy network has one fork.
+   - **Epoch details** — use `search(type="examples", query="epoch summary")`. Iterate through ~9 epochs per hour across the active timeframe. **Always start from head epoch - 1** (the most recent completed epoch) — the head epoch is still in progress and will show artificially low participation. You SHOULD also check the head epoch, but treat its data as preliminary. Use try/except per epoch.
    - **Missing proposers** — use `search(type="examples", query="missing proposers")`. Adjust `slot_lookback` to match the active timeframe (~300 slots per hour).
    - **Offline attesters** — use `search(type="examples", query="offline attesters")`.
 
@@ -124,11 +138,9 @@ Before collecting data, determine which datasources have the target network. Thi
 
 ## Phase 2: Log Investigation with Loki
 
-**If Dora was available (Phase 1 ran):** Use the Dora findings to target specific offline or problematic nodes. You SHOULD always use label filters — unfiltered logs are slow and may time out.
+Use Dora findings (if available) to target specific nodes. In Loki-only mode, start with broad label discovery to identify which nodes have issues. Always use label filters — unfiltered logs are slow and may time out.
 
-**If Dora was unavailable (Loki-only mode):** Start with broad label discovery to understand the network topology, then fetch CRIT/ERR logs across all CL clients to identify which nodes have issues. Since there is no Dora baseline, you need to build a basic picture from logs alone — which clients are present, are they producing logs, are there widespread errors or isolated ones.
-
-The standard Loki instance is `"ethpandaops"`. Refer to the query skill for Loki label discovery and query patterns.
+Use the `loki_instance` name discovered in Phase 0 for all Loki calls. Refer to the query skill for Loki label discovery and query patterns.
 
 **Use the same active timeframe** established in the Timeframe Rules section above.
 
@@ -143,9 +155,9 @@ The standard Loki instance is `"ethpandaops"`. Refer to the query skill for Loki
 ```
 If `message` is still empty after `| json`, try `{{.log}}` or `{{.msg}}` instead — field names vary by log shipper. As a last resort, drop `| json | line_format` entirely and use the raw line.
 
-**You SHOULD start with the consensus layer (CL).** The network moves forward via the CL — block proposals, attestations, and finality are all CL concerns. Most devnet issues originate at the CL level. Only investigate EL logs after reviewing CL logs, and only if the CL logs suggest the problem is on the execution side (e.g. payload validation errors, engine API failures, execution timeouts).
+**You SHOULD start with the consensus layer (CL).** Most devnet issues originate at the CL level. Only investigate EL logs if CL logs point to execution-side problems (e.g. payload validation errors, engine API failures).
 
-3. **Discover Loki labels** - In Loki-only mode (no Dora), you MUST fetch available labels and values from the `"ethpandaops"` Loki instance to understand the network topology — this is the only way to discover what nodes exist. When Dora is available, you MAY fetch labels to confirm that the expected `testnet`, `ethereum_cl`, `ethereum_el`, and `instance` labels exist and contain the target network/nodes. Append to debug report.
+3. **Discover Loki labels** - In Loki-only mode (no Dora), you MUST fetch available labels and values from the discovered Loki instance to understand the network topology — this is the only way to discover what nodes exist. When Dora is available, you MAY fetch labels to confirm that the expected `testnet`, `ethereum_cl`, `ethereum_el`, and `instance` labels exist and contain the target network/nodes. Append to debug report.
 
 4. **Fetch CL logs first (CRIT/ERR)** - For each problematic node (or all CL clients in Loki-only mode), query CL logs at the most severe log levels:
 
@@ -157,7 +169,7 @@ If `message` is still empty after `| json`, try `{{.log}}` or `{{.msg}}` instead
 
    Log level formats vary by client — see the query skill's Loki section for format details and fallback strategies.
 
-   If multiple nodes are offline, you MUST query each one. Look for common error patterns across nodes — the same error on multiple CL nodes likely points to a shared cause (CL client bug, consensus rule issue).
+   If multiple nodes are offline, you MUST query each one. Look for common error patterns across nodes.
 
    **If Loki returns no logs at all** for a node, that is itself a signal — but it does not necessarily mean the node is down (it may just not be shipping logs). If `has_ethnode = true`, verify by querying the node directly (e.g. sync status or health check). If the node responds, it is running but not logging; if it is unreachable, it is truly down. Report either finding to the user.
 
@@ -183,8 +195,6 @@ If `message` is still empty after `| json`, try `{{.log}}` or `{{.msg}}` instead
    - Are errors from one client type or spread across multiple?
    - Are the errors at the CL level, EL level, or both?
    - If the network has split, compare logs from nodes on different forks to find the divergence point
-
-This concludes the **data collection phase**. If Dora was available, you should now have: a Dora baseline (network state, split status, offline proposers/attesters), targeted CL logs (and EL logs if relevant) from the problematic nodes, and an understanding of which layer the errors originate from. If Loki-only, you should have: a log-driven baseline (network topology from labels, error patterns across clients, which nodes are healthy vs problematic), and an understanding of the error landscape without Dora context.
 
 ## Phase 3: Root Cause Analysis
 
@@ -212,10 +222,10 @@ This concludes the **data collection phase**. If Dora was available, you should 
 **If the ethnode module is available**, use direct node RPC queries via `from ethpandaops import ethnode` to validate hypotheses and gather concrete proof. Use `search(type="examples", query="ethnode")` for API patterns. Target the instances discovered in Phase 0 or identified as problematic in Phases 1–2.
 
 **When to use RPC:**
-- **Network split suspected** → compare head slots/roots and finality checkpoints across nodes on different forks; fetch the divergence block from each side
-- **Node offline/stuck** → check sync status and peer counts to confirm whether the node is down, syncing, or isolated
-- **Verifying a hypothesis** → when you need to confirm or rule out a theory, query the relevant nodes directly using curated functions or generic pass-through (`beacon_get`, `execution_rpc`) to get concrete evidence that strengthens the root cause analysis
-- **Finality stalled** → compare finality checkpoints across all nodes to find disagreements
+- **Network split suspected** → compare head slots/roots and finality checkpoints across nodes
+- **Node offline/stuck** → check sync status and peer counts
+- **Verifying a hypothesis** → query nodes directly via `beacon_get` / `execution_rpc`
+- **Finality stalled** → compare finality checkpoints across all nodes
 
 Append all RPC query results and analysis to the debug report.
 

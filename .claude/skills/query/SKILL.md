@@ -17,9 +17,9 @@ Query Ethereum network data through the ethpandaops tools. Execute Python code i
 
 ## Access Methods
 
-This skill works with **either** the CLI (`panda`) or the MCP server. Use whichever is available.
+This skill works with **either** the CLI (`panda` binary) or the MCP server. **Prefer the CLI** — it is always available. Only use the MCP tools (`execute_python`, `manage_session`, `search`) if they appear in your available tools list. If they do not, use the CLI equivalents below via the Bash tool.
 
-### CLI (`panda` binary)
+### CLI (`panda` binary) — primary interface
 
 ```bash
 # Discovery
@@ -191,26 +191,7 @@ print(f"Swagger docs: {base_url}/api/swagger/index.html")
 
 3. Use the discovered endpoints to make targeted API calls via the Python `dora` module or direct HTTP requests.
 
-**Common API usage:**
-
-```python
-from ethpandaops import dora
-
-# Get network health
-overview = dora.get_network_overview("mainnet")
-print(f"Current epoch: {overview['current_epoch']}")
-print(f"Active validators: {overview['active_validator_count']}")
-
-# Check finality
-epochs_behind = overview['current_epoch'] - overview.get('finalized_epoch', 0)
-if epochs_behind > 2:
-    print(f"Warning: {epochs_behind} epochs behind finality")
-
-# Generate explorer links
-link = dora.link_validator("mainnet", "12345")
-link = dora.link_slot("mainnet", "9000000")
-link = dora.link_epoch("mainnet", 280000)
-```
+Use `search(type="examples", query="network overview")` and `search(type="examples", query="dora")` for common API patterns.
 
 **Direct HTTP calls for endpoints not in the Python module:**
 
