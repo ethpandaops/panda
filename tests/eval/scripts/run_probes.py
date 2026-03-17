@@ -31,9 +31,90 @@ from rich.table import Table
 
 console = Console()
 
-PROBES_DIR = Path(__file__).parent.parent / "probes"
+EVAL_DIR = Path(__file__).parent.parent
+REPO_ROOT = EVAL_DIR.parent.parent
+PROBES_DIR = EVAL_DIR / "probes"
 RESULTS_DIR = PROBES_DIR / "results"
-CASES_FILE = Path(__file__).parent.parent / "cases" / "probes.yaml"
+CASES_FILE = EVAL_DIR / "cases" / "probes.yaml"
+PROBE_CONFIG = EVAL_DIR / "config-probe.yaml"
+SERVER_BINARY = REPO_ROOT / "panda-server"
+PROBE_SERVER_PORT = 2481
+PROBE_SERVER_URL = f"http://localhost:{PROBE_SERVER_PORT}"
+
+
+import signal
+import subprocess
+import time
+import urllib.request
+
+
+class PandaServer:
+    """Manages a local panda-server process for probe runs."""
+
+    def __init__(self) -> None:
+        self._proc: subprocess.Popen[bytes] | None = None
+
+    def start(self) -> None:
+        if not SERVER_BINARY.exists():
+            console.print(
+                f"[red]Server binary not found at {SERVER_BINARY}[/red]\n"
+                f"  Run: make build"
+            )
+            sys.exit(1)
+
+        if not PROBE_CONFIG.exists():
+            console.print(f"[red]Probe config not found at {PROBE_CONFIG}[/red]")
+            sys.exit(1)
+
+        # Check if something is already on our port
+        if self._port_open():
+            console.print(f"[yellow]Port {PROBE_SERVER_PORT} already in use, assuming server is running[/yellow]")
+            return
+
+        console.print(f"[dim]Starting panda-server on :{PROBE_SERVER_PORT}...[/dim]")
+
+        self._proc = subprocess.Popen(
+            [str(SERVER_BINARY), "serve", "--config", str(PROBE_CONFIG)],
+            cwd=str(REPO_ROOT),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+        # Wait for server to be ready (embedding index build can take a while on first run)
+        for i in range(120):
+            if self._port_open():
+                console.print(f"[green]Server ready on :{PROBE_SERVER_PORT} ({i + 1}s)[/green]")
+                return
+            if self._proc.poll() is not None:
+                console.print(f"[red]Server process exited with code {self._proc.returncode}[/red]")
+                sys.exit(1)
+            time.sleep(1)
+            if i > 0 and i % 10 == 0:
+                console.print(f"[dim]  Still waiting... ({i}s)[/dim]")
+
+        console.print("[red]Server failed to start within 120s[/red]")
+        self.stop()
+        sys.exit(1)
+
+    def stop(self) -> None:
+        if self._proc is None:
+            return
+        console.print("[dim]Stopping panda-server...[/dim]")
+        self._proc.send_signal(signal.SIGTERM)
+        try:
+            self._proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            self._proc.kill()
+        self._proc = None
+
+    def _port_open(self) -> bool:
+        import socket
+
+        try:
+            with socket.create_connection(("localhost", PROBE_SERVER_PORT), timeout=2):
+                return True
+        except (OSError, ConnectionRefusedError):
+            return False
 
 
 def load_probe_cases(filepath: Path) -> list[dict[str, Any]]:
@@ -392,24 +473,36 @@ async def main_async(args: argparse.Namespace) -> None:
         console.print("[yellow]No matching probe cases found[/yellow]")
         return
 
-    console.print(
-        f"[bold]Running {len(cases)} probes, {args.attempts} attempts each[/bold]"
-    )
-    console.print(f"  Model: [cyan]{args.model}[/cyan]")
-    console.print(f"  Server: [cyan]{args.url}[/cyan]")
+    server = None
+    if args.url:
+        mcp_url = args.url
+    else:
+        server = PandaServer()
+        server.start()
+        mcp_url = PROBE_SERVER_URL
 
-    previous = get_latest_result()
-    results = await run_all_probes(
-        cases, args.attempts, args.model, args.url, verbose=args.verbose
-    )
+    try:
+        console.print(
+            f"[bold]Running {len(cases)} probes, {args.attempts} attempts each[/bold]"
+        )
+        console.print(f"  Model: [cyan]{args.model}[/cyan]")
+        console.print(f"  Server: [cyan]{mcp_url}[/cyan]")
 
-    print_results(results)
+        previous = get_latest_result()
+        results = await run_all_probes(
+            cases, args.attempts, args.model, mcp_url, verbose=args.verbose
+        )
 
-    filepath = save_results(results)
-    console.print(f"\n  [dim]Results saved: {filepath}[/dim]")
+        print_results(results)
 
-    if previous:
-        print_comparison(results, previous)
+        filepath = save_results(results)
+        console.print(f"\n  [dim]Results saved: {filepath}[/dim]")
+
+        if previous:
+            print_comparison(results, previous)
+    finally:
+        if server:
+            server.stop()
 
 
 def main() -> None:
@@ -457,8 +550,8 @@ Examples:
     )
     parser.add_argument(
         "--url",
-        default="http://localhost:2480",
-        help="Panda server URL (default: http://localhost:2480)",
+        default=None,
+        help=f"Panda server URL (default: starts local server on :{PROBE_SERVER_PORT})",
     )
     args = parser.parse_args()
 

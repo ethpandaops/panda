@@ -1,0 +1,21 @@
+# Panda server config for probe runs. Started/stopped by run_probes.py.
+# Uses the hosted proxy — no local proxy needed.
+
+server:
+  host: "0.0.0.0"
+  port: 2481
+  base_url: "http://localhost:2481"
+  sandbox_url: "http://host.docker.internal:2481"
+
+sandbox:
+  backend: docker
+  image: "ethpandaops/panda:sandbox-latest"
+  network: "ethpandaops-panda-internal"
+
+proxy:
+  url: "https://panda-proxy.ethpandaops.io"
+  auth:
+    mode: "oidc"
+    issuer_url: "https://dex.primary.production.platform.ethpandaops.io"
+    client_id: "panda-proxy"
+
