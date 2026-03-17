@@ -33,7 +33,7 @@ type ExampleIndex struct {
 }
 
 // NewExampleIndex creates and populates a semantic search index
-// from query examples.
+// from query examples using batch embedding.
 func NewExampleIndex(
 	log logrus.FieldLogger,
 	embedder embedding.Embedder,
@@ -41,24 +41,31 @@ func NewExampleIndex(
 ) (*ExampleIndex, error) {
 	log = log.WithField("component", "example_index")
 
+	// Collect all examples and their texts for batch embedding.
 	var examples []indexedExample
+	var texts []string
 
 	for catKey, cat := range categories {
 		for _, ex := range cat.Examples {
-			text := ex.Name + ". " + ex.Description
-
-			vec, err := embedder.Embed(text)
-			if err != nil {
-				return nil, fmt.Errorf("embedding example %q: %w", ex.Name, err)
-			}
+			texts = append(texts, ex.Name+". "+ex.Description)
 
 			examples = append(examples, indexedExample{
 				CategoryKey:  catKey,
 				CategoryName: cat.Name,
 				Example:      ex,
-				Vector:       vec,
 			})
 		}
+	}
+
+	log.WithField("example_count", len(examples)).Info("Embedding examples")
+
+	vectors, err := embedder.EmbedBatch(texts)
+	if err != nil {
+		return nil, fmt.Errorf("batch embedding examples: %w", err)
+	}
+
+	for i := range examples {
+		examples[i].Vector = vectors[i]
 	}
 
 	log.WithField("example_count", len(examples)).Info("Example index built")

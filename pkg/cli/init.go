@@ -215,6 +215,7 @@ sandbox:
 
 storage:
   base_dir: "/data/storage"
+  cache_dir: "/data/cache"
 
 proxy:
   url: %q
@@ -288,6 +289,7 @@ services:
       - %s/config.yaml:/app/config.yaml:ro
       - %s/credentials:/home/panda/.config/panda/credentials
       - panda-storage:/data/storage
+      - panda-cache:/data/cache
     dns:
       - 1.1.1.1
       - 8.8.8.8
@@ -302,6 +304,7 @@ networks:
 
 volumes:
   panda-storage:
+  panda-cache:
 `, serverImage, dockerGID, configDir, configDir)
 }
 

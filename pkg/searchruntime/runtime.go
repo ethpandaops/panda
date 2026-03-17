@@ -6,6 +6,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/ethpandaops/panda/pkg/cache"
 	"github.com/ethpandaops/panda/pkg/eips"
 	"github.com/ethpandaops/panda/pkg/embedding"
 	"github.com/ethpandaops/panda/pkg/module"
@@ -26,12 +27,13 @@ type Runtime struct {
 
 // Build creates a new search runtime with example, runbook, and EIP indices.
 // Embedding is provided by the proxy's remote embedding service.
-// Returns nil if the proxy does not have embedding configured.
+// cacheDir enables a local filesystem cache for embedding vectors when non-empty.
 func Build(
 	ctx context.Context,
 	log logrus.FieldLogger,
 	moduleRegistry *module.Registry,
 	proxyService proxy.Service,
+	cacheDir string,
 ) (*Runtime, error) {
 	if proxyService == nil {
 		return nil, fmt.Errorf("proxy service is required for semantic search")
@@ -41,25 +43,49 @@ func Build(
 		return nil, fmt.Errorf("proxy embedding not available: ensure the proxy has embedding configured")
 	}
 
-	log.WithField("model", proxyService.EmbeddingModel()).
+	model := proxyService.EmbeddingModel()
+
+	log.WithField("model", model).
 		Info("Using remote embedder via proxy")
+
+	var localCache cache.Cache
+
+	if cacheDir != "" {
+		var err error
+
+		localCache, err = cache.NewFilesystem(cacheDir)
+		if err != nil {
+			log.WithError(err).Warn("Failed to create local embedding cache, continuing without")
+		} else {
+			log.WithField("dir", cacheDir).Info("Local embedding cache enabled")
+		}
+	}
 
 	embedder := embedding.NewRemote(
 		log,
 		proxyService.URL(),
 		func() string { return proxyService.RegisterToken("embedding") },
+		localCache,
+		model,
 	)
 
 	runtime := &Runtime{embedder: embedder}
 
-	exampleIndex, err := resource.NewExampleIndex(log, embedder, resource.GetQueryExamples(moduleRegistry))
+	examples := resource.GetQueryExamples(moduleRegistry)
+	exampleCount := 0
+	for _, cat := range examples {
+		exampleCount += len(cat.Examples)
+	}
+
+	log.WithField("examples", exampleCount).Info("Building example search index")
+
+	exampleIndex, err := resource.NewExampleIndex(log, embedder, examples)
 	if err != nil {
 		_ = runtime.Close()
 		return nil, fmt.Errorf("building example index: %w", err)
 	}
 
 	runtime.ExampleIndex = exampleIndex
-	log.Info("Semantic search example index built")
 
 	runbookReg, err := runbooks.NewRegistry(log)
 	if err != nil {
@@ -68,10 +94,13 @@ func Build(
 	}
 
 	runtime.RunbookRegistry = runbookReg
+
 	if runbookReg.Count() == 0 {
 		log.Warn("No runbooks found, runbook search will be disabled")
 		return runtime, nil
 	}
+
+	log.WithField("runbooks", runbookReg.Count()).Info("Building runbook search index")
 
 	runbookIndex, err := resource.NewRunbookIndex(log, embedder, runbookReg.All())
 	if err != nil {
@@ -80,9 +109,10 @@ func Build(
 	}
 
 	runtime.RunbookIndex = runbookIndex
-	log.Info("Semantic search runbook index built")
 
 	// Build EIP index (non-fatal — gracefully disabled if GitHub unreachable).
+	log.Info("Fetching EIPs from GitHub for search index")
+
 	eipReg, err := eips.NewRegistry(ctx, log, "")
 	if err != nil {
 		log.WithError(err).Warn("Failed to initialize EIP registry — EIP search disabled")
@@ -96,15 +126,13 @@ func Build(
 		return runtime, nil
 	}
 
-	eipIndex, updatedVectors, err := resource.NewEIPIndex(log, embedder, eipReg.All(), eipReg.CachedVectors())
+	log.WithField("eips", eipReg.Count()).Info("Building EIP search index")
+
+	eipIndex, err := resource.NewEIPIndex(log, embedder, eipReg.All())
 	if err != nil {
 		log.WithError(err).Warn("Failed to build EIP index — EIP search disabled")
 
 		return runtime, nil
-	}
-
-	if err := eipReg.SaveVectors(updatedVectors); err != nil {
-		log.WithError(err).Warn("Failed to save EIP vectors to cache")
 	}
 
 	runtime.EIPRegistry = eipReg

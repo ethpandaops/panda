@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -17,10 +16,9 @@ import (
 )
 
 type cacheData struct {
-	CommitSHA string                     `json:"commit_sha"`
-	FetchedAt time.Time                  `json:"fetched_at"`
-	EIPs      []types.EIP                `json:"eips"`
-	Vectors   map[string]types.EIPVector `json:"vectors,omitempty"`
+	CommitSHA string      `json:"commit_sha"`
+	FetchedAt time.Time   `json:"fetched_at"`
+	EIPs      []types.EIP `json:"eips"`
 }
 
 // Registry manages a collection of parsed EIPs with disk caching.
@@ -87,16 +85,10 @@ func NewRegistry(
 		return eipList[i].Number < eipList[j].Number
 	})
 
-	var oldVectors map[string]types.EIPVector
-	if cached != nil {
-		oldVectors = cached.Vectors
-	}
-
 	newCache := &cacheData{
 		CommitSHA: latestSHA,
 		FetchedAt: time.Now(),
 		EIPs:      eipList,
-		Vectors:   oldVectors,
 	}
 
 	if err := writeCache(cacheDir, newCache); err != nil {
@@ -128,35 +120,6 @@ func (r *Registry) Count() int {
 	return len(r.eips)
 }
 
-// CachedVectors returns a copy of the cached embedding vectors.
-func (r *Registry) CachedVectors() map[string]types.EIPVector {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	if r.cache == nil || len(r.cache.Vectors) == 0 {
-		return nil
-	}
-
-	out := make(map[string]types.EIPVector, len(r.cache.Vectors))
-	maps.Copy(out, r.cache.Vectors)
-
-	return out
-}
-
-// SaveVectors persists updated embedding vectors to the cache file.
-func (r *Registry) SaveVectors(vectors map[string]types.EIPVector) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if r.cache == nil {
-		return fmt.Errorf("no cache loaded")
-	}
-
-	r.cache.Vectors = vectors
-
-	return writeCache(r.cacheDir, r.cache)
-}
-
 // Statuses returns sorted unique status values across all EIPs.
 func (r *Registry) Statuses() []string {
 	return r.uniqueField(func(e types.EIP) string { return e.Status })
@@ -172,7 +135,7 @@ func (r *Registry) Types() []string {
 	return r.uniqueField(func(e types.EIP) string { return e.Type })
 }
 
-// Refresh re-fetches EIPs from GitHub, preserving existing vectors.
+// Refresh re-fetches EIPs from GitHub.
 func (r *Registry) Refresh(ctx context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -197,16 +160,10 @@ func (r *Registry) Refresh(ctx context.Context) error {
 		return eipList[i].Number < eipList[j].Number
 	})
 
-	var oldVectors map[string]types.EIPVector
-	if r.cache != nil {
-		oldVectors = r.cache.Vectors
-	}
-
 	r.cache = &cacheData{
 		CommitSHA: latestSHA,
 		FetchedAt: time.Now(),
 		EIPs:      eipList,
-		Vectors:   oldVectors,
 	}
 
 	r.eips = eipList

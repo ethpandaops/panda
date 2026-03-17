@@ -332,6 +332,12 @@ func (s *server) handleEmbed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(req.Items) > maxEmbedItems {
+		http.Error(w, fmt.Sprintf("too many items: %d exceeds maximum of %d", len(req.Items), maxEmbedItems), http.StatusBadRequest)
+
+		return
+	}
+
 	resp, err := s.embeddingService.Embed(r.Context(), req.Items)
 	if err != nil {
 		s.log.WithError(err).Error("Embedding request failed")

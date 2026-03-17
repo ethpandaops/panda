@@ -14,9 +14,3 @@ type EIP struct {
 	Content     string `json:"content,omitempty"`
 	URL         string `json:"url"`
 }
-
-// EIPVector stores a cached embedding vector for a chunk of EIP text.
-type EIPVector struct {
-	TextHash string    `json:"text_hash"`
-	Vector   []float32 `json:"vector"`
-}

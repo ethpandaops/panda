@@ -33,6 +33,10 @@ type StorageConfig struct {
 	// BaseDir is the directory where uploaded files are stored.
 	// Defaults to ~/.panda/data/storage.
 	BaseDir string `yaml:"base_dir,omitempty"`
+
+	// CacheDir is the directory for the local embedding vector cache.
+	// Defaults to ~/.panda/data/cache.
+	CacheDir string `yaml:"cache_dir,omitempty"`
 }
 
 // ServerConfig holds server-specific configuration.
@@ -268,16 +272,24 @@ func applyDefaults(cfg *Config) {
 
 	// Storage defaults.
 	if cfg.Storage.BaseDir == "" {
-		home, err := os.UserHomeDir()
-		if err == nil {
-			cfg.Storage.BaseDir = filepath.Join(home, ".panda", "data", "storage")
-		} else {
-			cfg.Storage.BaseDir = filepath.Join(".", ".panda", "data", "storage")
-		}
+		cfg.Storage.BaseDir = pandaDataDir("storage")
+	}
+
+	if cfg.Storage.CacheDir == "" {
+		cfg.Storage.CacheDir = pandaDataDir("cache")
 	}
 
 	// Semantic search defaults — model path is resolved at runtime by searchruntime.
 	// Leave empty to use the default search paths.
+}
+
+func pandaDataDir(subdir string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(".", ".panda", "data", subdir)
+	}
+
+	return filepath.Join(home, ".panda", "data", subdir)
 }
 
 // MaxSandboxTimeout is the maximum allowed sandbox timeout in seconds.

@@ -103,6 +103,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - /tmp/ethpandaops-panda-sandbox:/tmp/ethpandaops-panda-sandbox  # Shared with sandbox containers
       - panda-storage:/data/storage  # Local file storage
+      - panda-cache:/data/cache      # Local embedding vector cache
     networks:
       - ethpandaops-panda-external
       - ethpandaops-panda-internal
@@ -128,3 +129,4 @@ networks:
 
 volumes:
   panda-storage:
+  panda-cache:

@@ -65,7 +65,7 @@ func TestRemoteEmbedder_Embed(t *testing.T) {
 		require.NoError(t, json.NewEncoder(w).Encode(resp))
 	}, nil)
 
-	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" })
+	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" }, nil, "")
 
 	vec, err := embedder.Embed("hello world")
 	require.NoError(t, err)
@@ -111,7 +111,7 @@ func TestRemoteEmbedder_EmbedBatch_AllMisses(t *testing.T) {
 		},
 	)
 
-	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" })
+	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" }, nil, "")
 
 	vectors, err := embedder.EmbedBatch(texts)
 	require.NoError(t, err)
@@ -155,7 +155,7 @@ func TestRemoteEmbedder_EmbedBatch_AllCached(t *testing.T) {
 		},
 	)
 
-	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" })
+	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" }, nil, "")
 
 	vectors, err := embedder.EmbedBatch(texts)
 	require.NoError(t, err)
@@ -197,7 +197,7 @@ func TestRemoteEmbedder_EmbedBatch_PartialCache(t *testing.T) {
 		},
 	)
 
-	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" })
+	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" }, nil, "")
 
 	vectors, err := embedder.EmbedBatch(texts)
 	require.NoError(t, err)
@@ -228,7 +228,7 @@ func TestRemoteEmbedder_EmbedBatch_DuplicateTexts(t *testing.T) {
 		nil,
 	)
 
-	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" })
+	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" }, nil, "")
 
 	vectors, err := embedder.EmbedBatch(texts)
 	require.NoError(t, err)
@@ -245,7 +245,7 @@ func TestRemoteEmbedder_ServerError(t *testing.T) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}, nil)
 
-	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" })
+	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" }, nil, "")
 
 	_, err := embedder.Embed("test")
 	require.Error(t, err)
@@ -273,7 +273,7 @@ func TestRemoteEmbedder_AuthHeader(t *testing.T) {
 		tokenCalled.Store(true)
 
 		return expectedToken
-	})
+	}, nil, "")
 
 	_, err := embedder.Embed("test")
 	require.NoError(t, err)

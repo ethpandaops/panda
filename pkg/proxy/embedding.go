@@ -17,7 +17,13 @@ import (
 	"github.com/ethpandaops/panda/pkg/cache"
 )
 
-const embeddingAPITimeout = 2 * time.Minute
+const (
+	embeddingAPITimeout = 2 * time.Minute
+	// maxEmbedBatchSize limits items sent to the upstream API per request.
+	maxEmbedBatchSize = 100
+	// maxEmbedItems is the hard cap on items accepted in a single /embed request.
+	maxEmbedItems = 500
+)
 
 // EmbedCheckRequest is the request payload for the /embed/check endpoint.
 type EmbedCheckRequest struct {
@@ -106,10 +112,17 @@ func (s *EmbeddingService) Model() string {
 }
 
 // Embed computes embeddings for the given items, using the cache where possible.
+// Uncached items are sent to the upstream API in sub-batches of maxEmbedBatchSize.
 func (s *EmbeddingService) Embed(ctx context.Context, items []EmbedItem) (*EmbedResponse, error) {
 	if len(items) == 0 {
 		return &EmbedResponse{Model: s.model}, nil
 	}
+
+	if len(items) > maxEmbedItems {
+		return nil, fmt.Errorf("too many items: %d exceeds maximum of %d", len(items), maxEmbedItems)
+	}
+
+	s.log.WithField("items", len(items)).Info("Embed request received")
 
 	// Build cache keys: {model}:{hash}.
 	cacheKeys := make([]string, len(items))
@@ -152,6 +165,13 @@ func (s *EmbeddingService) Embed(ctx context.Context, items []EmbedItem) (*Embed
 
 	// Record cache metrics.
 	cacheHits := len(items) - len(misses)
+
+	s.log.WithFields(logrus.Fields{
+		"total":        len(items),
+		"cache_hits":   cacheHits,
+		"cache_misses": len(misses),
+	}).Info("Embedding cache stats")
+
 	if cacheHits > 0 {
 		EmbeddingItemsTotal.WithLabelValues("cache_hit").Add(float64(cacheHits))
 	}
@@ -159,54 +179,75 @@ func (s *EmbeddingService) Embed(ctx context.Context, items []EmbedItem) (*Embed
 	if len(misses) > 0 {
 		EmbeddingItemsTotal.WithLabelValues("cache_miss").Add(float64(len(misses)))
 
-		s.log.WithFields(logrus.Fields{
-			"total":        len(items),
-			"cache_hits":   cacheHits,
-			"cache_misses": len(misses),
-		}).Debug("Embedding cache stats")
-
-		// Collect texts for the misses.
-		missTexts := make([]string, len(misses))
-		for j, idx := range misses {
-			missTexts[j] = items[idx].Text
-		}
-
-		// Call OpenRouter API.
-		vectors, _, err := s.callEmbeddingAPI(ctx, missTexts)
-		if err != nil {
-			return nil, fmt.Errorf("calling embedding API: %w", err)
-		}
-
-		if len(vectors) != len(misses) {
-			return nil, fmt.Errorf(
-				"embedding API returned %d vectors, expected %d",
-				len(vectors), len(misses),
-			)
-		}
-
-		// L2-normalize and store results + cache entries.
+		// Embed misses in sub-batches to avoid upstream API limits.
+		totalBatches := (len(misses) + maxEmbedBatchSize - 1) / maxEmbedBatchSize
 		toCache := make(map[string][]byte, len(misses))
 
-		for j, idx := range misses {
-			vec := l2Normalize(vectors[j])
-			results[idx] = EmbedResult{Hash: items[idx].Hash, Vector: vec}
+		for batchStart := 0; batchStart < len(misses); batchStart += maxEmbedBatchSize {
+			batchEnd := min(batchStart+maxEmbedBatchSize, len(misses))
+			batchMisses := misses[batchStart:batchEnd]
+			batchNum := batchStart/maxEmbedBatchSize + 1
 
-			data, err := json.Marshal(vec)
-			if err != nil {
-				s.log.WithError(err).Warn("Failed to marshal vector for cache")
-
-				continue
+			missTexts := make([]string, len(batchMisses))
+			for j, idx := range batchMisses {
+				missTexts[j] = items[idx].Text
 			}
 
-			toCache[cacheKeys[idx]] = data
+			if totalBatches > 1 {
+				s.log.WithFields(logrus.Fields{
+					"batch":        fmt.Sprintf("%d/%d", batchNum, totalBatches),
+					"items":        len(missTexts),
+					"total_misses": len(misses),
+				}).Info("Calling upstream embedding API")
+			} else {
+				s.log.WithField("items", len(missTexts)).Info("Calling upstream embedding API")
+			}
+
+			vectors, usage, err := s.callEmbeddingAPI(ctx, missTexts)
+			if err != nil {
+				return nil, fmt.Errorf("calling embedding API (batch %d/%d): %w", batchNum, totalBatches, err)
+			}
+
+			if len(vectors) != len(batchMisses) {
+				return nil, fmt.Errorf(
+					"embedding API returned %d vectors, expected %d",
+					len(vectors), len(batchMisses),
+				)
+			}
+
+			if usage != nil {
+				s.log.WithFields(logrus.Fields{
+					"prompt_tokens": usage.PromptTokens,
+					"total_tokens":  usage.TotalTokens,
+				}).Info("Upstream API token usage")
+			}
+
+			// L2-normalize and store results + cache entries.
+			for j, idx := range batchMisses {
+				vec := l2Normalize(vectors[j])
+				results[idx] = EmbedResult{Hash: items[idx].Hash, Vector: vec}
+
+				data, err := json.Marshal(vec)
+				if err != nil {
+					s.log.WithError(err).Warn("Failed to marshal vector for cache")
+
+					continue
+				}
+
+				toCache[cacheKeys[idx]] = data
+			}
 		}
 
 		if len(toCache) > 0 {
 			if err := s.cache.SetMulti(ctx, toCache); err != nil {
 				s.log.WithError(err).Warn("Cache SetMulti failed")
+			} else {
+				s.log.WithField("entries", len(toCache)).Info("Cached embedding vectors")
 			}
 		}
 	}
+
+	s.log.WithField("results", len(results)).Info("Embed request complete")
 
 	return &EmbedResponse{
 		Results: results,
@@ -220,6 +261,8 @@ func (s *EmbeddingService) CheckCached(ctx context.Context, hashes []string) ([]
 	if len(hashes) == 0 {
 		return nil, nil
 	}
+
+	s.log.WithField("hashes", len(hashes)).Info("Embed check request received")
 
 	cacheKeys := make([]string, len(hashes))
 	for i, h := range hashes {
@@ -251,6 +294,11 @@ func (s *EmbeddingService) CheckCached(ctx context.Context, hashes []string) ([]
 	if len(results) > 0 {
 		EmbeddingItemsTotal.WithLabelValues("cache_hit").Add(float64(len(results)))
 	}
+
+	s.log.WithFields(logrus.Fields{
+		"requested": len(hashes),
+		"found":     len(results),
+	}).Info("Embed check complete")
 
 	return results, nil
 }

@@ -29,7 +29,8 @@ type RunbookIndex struct {
 	runbooks []indexedRunbook
 }
 
-// NewRunbookIndex creates and populates a semantic search index from runbooks.
+// NewRunbookIndex creates and populates a semantic search index from runbooks
+// using batch embedding.
 func NewRunbookIndex(
 	log logrus.FieldLogger,
 	embedder embedding.Embedder,
@@ -37,20 +38,19 @@ func NewRunbookIndex(
 ) (*RunbookIndex, error) {
 	log = log.WithField("component", "runbook_index")
 
-	indexed := make([]indexedRunbook, 0, len(runbooks))
+	texts := make([]string, len(runbooks))
+	for i, rb := range runbooks {
+		texts[i] = buildRunbookSearchText(rb)
+	}
 
-	for _, rb := range runbooks {
-		text := buildRunbookSearchText(rb)
+	vectors, err := embedder.EmbedBatch(texts)
+	if err != nil {
+		return nil, fmt.Errorf("batch embedding runbooks: %w", err)
+	}
 
-		vec, err := embedder.Embed(text)
-		if err != nil {
-			return nil, fmt.Errorf("embedding runbook %q: %w", rb.Name, err)
-		}
-
-		indexed = append(indexed, indexedRunbook{
-			Runbook: rb,
-			Vector:  vec,
-		})
+	indexed := make([]indexedRunbook, len(runbooks))
+	for i, rb := range runbooks {
+		indexed[i] = indexedRunbook{Runbook: rb, Vector: vectors[i]}
 	}
 
 	log.WithField("runbook_count", len(indexed)).Info("Runbook index built")

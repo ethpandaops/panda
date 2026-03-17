@@ -1,7 +1,6 @@
 package resource
 
 import (
-	"crypto/sha256"
 	"fmt"
 	"regexp"
 	"sort"
@@ -40,68 +39,54 @@ type EIPIndex struct {
 }
 
 // NewEIPIndex creates a semantic search index from EIPs.
-// It reuses cached vectors where the text hash matches, embedding only changed chunks.
-// Returns the index and the updated vector map (for cache persistence).
+// All chunks are batch-embedded via the remote embedder (which handles
+// its own model-aware caching on the proxy side).
 func NewEIPIndex(
 	log logrus.FieldLogger,
 	embedder embedding.Embedder,
 	eips []types.EIP,
-	cachedVectors map[string]types.EIPVector,
-) (*EIPIndex, map[string]types.EIPVector, error) {
+) (*EIPIndex, error) {
 	log = log.WithField("component", "eip_index")
 
-	updatedVectors := make(map[string]types.EIPVector, len(eips)*2)
-	chunks := make([]indexedEIPChunk, 0, len(eips)*2)
-
-	var embedded, reused int
+	// Chunk all EIPs and collect texts for batch embedding.
+	eipIndices := make([]int, 0, len(eips)*2)
+	texts := make([]string, 0, len(eips)*2)
 
 	for eipIdx, eip := range eips {
-		eipChunks := chunkEIP(eip)
+		for _, chunk := range chunkEIP(eip) {
+			eipIndices = append(eipIndices, eipIdx)
+			texts = append(texts, chunk)
+		}
+	}
 
-		for chunkIdx, chunk := range eipChunks {
-			chunkKey := fmt.Sprintf("%d:%d", eip.Number, chunkIdx)
-			textHash := sha256Hex(chunk)
+	log.WithFields(logrus.Fields{
+		"eip_count":    len(eips),
+		"total_chunks": len(texts),
+	}).Info("Embedding EIP chunks")
 
-			var vec []float32
+	vectors, err := embedder.EmbedBatch(texts)
+	if err != nil {
+		return nil, fmt.Errorf("batch embedding EIP chunks: %w", err)
+	}
 
-			if cached, ok := cachedVectors[chunkKey]; ok && cached.TextHash == textHash {
-				vec = cached.Vector
-				reused++
-			} else {
-				var err error
-
-				vec, err = embedder.Embed(chunk)
-				if err != nil {
-					return nil, nil, fmt.Errorf("embedding EIP-%d chunk %d: %w", eip.Number, chunkIdx, err)
-				}
-
-				embedded++
-			}
-
-			updatedVectors[chunkKey] = types.EIPVector{
-				TextHash: textHash,
-				Vector:   vec,
-			}
-
-			chunks = append(chunks, indexedEIPChunk{
-				EIPIdx: eipIdx,
-				Vector: vec,
-			})
+	chunks := make([]indexedEIPChunk, len(eipIndices))
+	for i, eipIdx := range eipIndices {
+		chunks[i] = indexedEIPChunk{
+			EIPIdx: eipIdx,
+			Vector: vectors[i],
 		}
 	}
 
 	log.WithFields(logrus.Fields{
 		"eip_count": len(eips),
 		"chunks":    len(chunks),
-		"embedded":  embedded,
-		"reused":    reused,
 	}).Info("EIP index built")
 
 	return &EIPIndex{
 		embedder: embedder,
 		chunks:   chunks,
 		eips:     eips,
-	}, updatedVectors, nil
+	}, nil
 }
 
 // Search returns the top-k semantically similar EIPs for a query.
@@ -253,11 +238,6 @@ func containsText(eip types.EIP, lowerQuery string) bool {
 	return strings.Contains(strings.ToLower(eip.Title), lowerQuery) ||
 		strings.Contains(strings.ToLower(eip.Description), lowerQuery) ||
 		strings.Contains(strings.ToLower(eip.Content), lowerQuery)
-}
-
-func sha256Hex(text string) string {
-	h := sha256.Sum256([]byte(text))
-	return fmt.Sprintf("%x", h)
 }
 
 func truncate(s string, maxLen int) string {
