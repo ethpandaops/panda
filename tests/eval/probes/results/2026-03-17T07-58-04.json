@@ -1,0 +1,52 @@
+{
+  "run_id": "2026-03-17T07-58-04",
+  "timestamp": "2026-03-17T07:59:21.643209+00:00",
+  "model": "claude-haiku-4-5",
+  "attempts_per_probe": 2,
+  "total_probes": 1,
+  "total_cost_usd": 0.366134,
+  "summary": {
+    "full_agreement": 0,
+    "disagreement": 1,
+    "agreement_rate": 0.0
+  },
+  "probes": [
+    {
+      "id": "max_block_size",
+      "question": "What is the maximum block size in bytes seen in the last hour on mainnet?",
+      "attempts": [
+        {
+          "tables": [
+            "canonical_beacon_block",
+            "fct_blocks"
+          ],
+          "persona": "default",
+          "error": false,
+          "error_message": null,
+          "cost_usd": 0.27656395,
+          "duration_ms": 28088
+        },
+        {
+          "tables": [
+            "fct_prepared_block"
+          ],
+          "persona": "careful",
+          "error": false,
+          "error_message": null,
+          "cost_usd": 0.08956955,
+          "duration_ms": 41963
+        }
+      ],
+      "agreement": {
+        "table_agreement": 0.5,
+        "all_agreed": false,
+        "tables_used": {
+          "canonical_beacon_block": 1,
+          "fct_blocks": 1,
+          "fct_prepared_block": 1
+        },
+        "finding": "1/2 used canonical_beacon_block, fct_blocks; 1/2 used fct_prepared_block"
+      }
+    }
+  ]
+}

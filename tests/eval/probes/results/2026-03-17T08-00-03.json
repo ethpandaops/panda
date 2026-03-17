@@ -1,0 +1,245 @@
+{
+  "run_id": "2026-03-17T08-00-03",
+  "timestamp": "2026-03-17T08:12:03.133545+00:00",
+  "model": "claude-haiku-4-5",
+  "attempts_per_probe": 3,
+  "total_probes": 5,
+  "total_cost_usd": 1.580316,
+  "summary": {
+    "full_agreement": 2,
+    "disagreement": 3,
+    "agreement_rate": 0.4
+  },
+  "probes": [
+    {
+      "id": "max_block_size",
+      "question": "What is the maximum block size in bytes seen in the last hour on mainnet?",
+      "attempts": [
+        {
+          "tables": [
+            "beacon_api_eth_v2_beacon_block",
+            "fct_blocks",
+            "fct_blocks_canonical"
+          ],
+          "persona": "default",
+          "error": false,
+          "error_message": null,
+          "cost_usd": 0.12796775000000002,
+          "duration_ms": 39822
+        },
+        {
+          "tables": [
+            "fct_blocks",
+            "fct_prepared_block"
+          ],
+          "persona": "careful",
+          "error": false,
+          "error_message": null,
+          "cost_usd": 0.11132645,
+          "duration_ms": 57269
+        },
+        {
+          "tables": [
+            "fct_prepared_block"
+          ],
+          "persona": "concise",
+          "error": false,
+          "error_message": null,
+          "cost_usd": 0.15470435,
+          "duration_ms": 49764
+        }
+      ],
+      "agreement": {
+        "table_agreement": 0.3333333333333333,
+        "all_agreed": false,
+        "tables_used": {
+          "beacon_api_eth_v2_beacon_block": 1,
+          "fct_blocks": 2,
+          "fct_blocks_canonical": 1,
+          "fct_prepared_block": 2
+        },
+        "finding": "1/3 used beacon_api_eth_v2_beacon_block, fct_blocks, fct_blocks_canonical; 1/3 used fct_blocks, fct_prepared_block; 1/3 used fct_prepared_block"
+      }
+    },
+    {
+      "id": "avg_block_arrival_time",
+      "question": "What is the average block arrival time in milliseconds over the last hour on mainnet?",
+      "attempts": [
+        {
+          "tables": [
+            "fct_block_first_seen_by_node"
+          ],
+          "persona": "default",
+          "error": false,
+          "error_message": null,
+          "cost_usd": 0.09106075,
+          "duration_ms": 21058
+        },
+        {
+          "tables": [
+            "fct_block_first_seen_by_node"
+          ],
+          "persona": "careful",
+          "error": false,
+          "error_message": null,
+          "cost_usd": 0.0750944,
+          "duration_ms": 33826
+        },
+        {
+          "tables": [
+            "fct_block_first_seen_by_node"
+          ],
+          "persona": "concise",
+          "error": false,
+          "error_message": null,
+          "cost_usd": 0.0822985,
+          "duration_ms": 24614
+        }
+      ],
+      "agreement": {
+        "table_agreement": 1.0,
+        "all_agreed": true,
+        "tables_used": {
+          "fct_block_first_seen_by_node": 3
+        },
+        "finding": "all 3 agreed on fct_block_first_seen_by_node"
+      }
+    },
+    {
+      "id": "block_arrival_by_client",
+      "question": "What is the average block arrival time broken down by consensus client implementation over the last hour on mainnet?",
+      "attempts": [
+        {
+          "tables": [
+            "fct_block_first_seen_by_node"
+          ],
+          "persona": "default",
+          "error": false,
+          "error_message": null,
+          "cost_usd": 0.10641115000000001,
+          "duration_ms": 65593
+        },
+        {
+          "tables": [
+            "fct_block_first_seen_by_node"
+          ],
+          "persona": "careful",
+          "error": false,
+          "error_message": null,
+          "cost_usd": 0.10015569999999999,
+          "duration_ms": 60291
+        },
+        {
+          "tables": [
+            "fct_block_first_seen_by_node"
+          ],
+          "persona": "concise",
+          "error": false,
+          "error_message": null,
+          "cost_usd": 0.0915835,
+          "duration_ms": 27656
+        }
+      ],
+      "agreement": {
+        "table_agreement": 1.0,
+        "all_agreed": true,
+        "tables_used": {
+          "fct_block_first_seen_by_node": 3
+        },
+        "finding": "all 3 agreed on fct_block_first_seen_by_node"
+      }
+    },
+    {
+      "id": "block_gas_used",
+      "question": "What is the average gas used per block over the last hour on mainnet?",
+      "attempts": [
+        {
+          "tables": [
+            "fct_engine_new_payload_by_slot"
+          ],
+          "persona": "default",
+          "error": false,
+          "error_message": null,
+          "cost_usd": 0.0519076,
+          "duration_ms": 24811
+        },
+        {
+          "tables": [
+            "fct_engine_new_payload_by_slot"
+          ],
+          "persona": "careful",
+          "error": false,
+          "error_message": null,
+          "cost_usd": 0.11361574999999999,
+          "duration_ms": 51263
+        },
+        {
+          "tables": [
+            "canonical_execution_block",
+            "fct_blocks"
+          ],
+          "persona": "concise",
+          "error": false,
+          "error_message": null,
+          "cost_usd": 0.0941672,
+          "duration_ms": 58780
+        }
+      ],
+      "agreement": {
+        "table_agreement": 0.6666666666666666,
+        "all_agreed": false,
+        "tables_used": {
+          "fct_engine_new_payload_by_slot": 2,
+          "canonical_execution_block": 1,
+          "fct_blocks": 1
+        },
+        "finding": "2/3 used fct_engine_new_payload_by_slot; 1/3 used canonical_execution_block, fct_blocks"
+      }
+    },
+    {
+      "id": "orphaned_blocks_24h",
+      "question": "How many orphaned blocks have there been in the last 24 hours on mainnet?",
+      "attempts": [
+        {
+          "tables": [
+            "fct_blocks",
+            "fct_reorg_hourly"
+          ],
+          "persona": "default",
+          "error": false,
+          "error_message": null,
+          "cost_usd": 0.1335385,
+          "duration_ms": 54625
+        },
+        {
+          "tables": [],
+          "persona": "careful",
+          "error": false,
+          "error_message": null,
+          "cost_usd": 0.10496299999999999,
+          "duration_ms": 59509
+        },
+        {
+          "tables": [
+            "fct_block"
+          ],
+          "persona": "concise",
+          "error": false,
+          "error_message": null,
+          "cost_usd": 0.14152165,
+          "duration_ms": 45956
+        }
+      ],
+      "agreement": {
+        "table_agreement": 0.3333333333333333,
+        "all_agreed": false,
+        "tables_used": {
+          "fct_blocks": 1,
+          "fct_reorg_hourly": 1,
+          "fct_block": 1
+        },
+        "finding": "1/3 used fct_blocks, fct_reorg_hourly; 1/3 used (no tables); 1/3 used fct_block"
+      }
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "run_id": "2026-03-17T06-46-57",
+  "timestamp": "2026-03-17T06:49:54.834864+00:00",
+  "model": "claude-haiku-4-5",
+  "attempts_per_probe": 3,
+  "total_probes": 1,
+  "total_cost_usd": 0.0,
+  "summary": {
+    "full_agreement": 0,
+    "disagreement": 1,
+    "agreement_rate": 0.0
+  },
+  "probes": [
+    {
+      "id": "max_block_size",
+      "question": "What is the maximum block size in bytes seen in the last hour on mainnet?",
+      "attempts": [
+        {
+          "tables": [],
+          "persona": "default",
+          "error": true,
+          "error_message": "'network'",
+          "cost_usd": 0.0,
+          "duration_ms": 0
+        },
+        {
+          "tables": [],
+          "persona": "careful",
+          "error": true,
+          "error_message": "'network'",
+          "cost_usd": 0.0,
+          "duration_ms": 0
+        },
+        {
+          "tables": [],
+          "persona": "concise",
+          "error": true,
+          "error_message": "'network'",
+          "cost_usd": 0.0,
+          "duration_ms": 0
+        }
+      ],
+      "agreement": {
+        "table_agreement": 0.0,
+        "all_agreed": false,
+        "tables_used": {},
+        "finding": "all attempts errored"
+      }
+    }
+  ]
+}
