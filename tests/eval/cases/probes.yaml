@@ -1,0 +1,153 @@
+# Schema probing questions for self-play agreement testing.
+# Each question is asked N times independently. Disagreements reveal schema ambiguity.
+#
+# Sources:
+#   grafana:  - seeded from Grafana dashboard panel titles
+#   alert:    - seeded from Grafana alert descriptions (domain invariants)
+#   example:  - seeded from modules/clickhouse/examples.yaml
+
+# === Blocks ===
+
+- id: max_block_size
+  question: "What is the maximum block size in bytes seen in the last hour on mainnet?"
+  tags: [blocks, size]
+
+- id: avg_block_arrival_time
+  question: "What is the average block arrival time in milliseconds over the last hour on mainnet?"
+  tags: [blocks, timing]
+
+- id: block_arrival_by_client
+  question: "What is the average block arrival time broken down by consensus client implementation over the last hour on mainnet?"
+  tags: [blocks, timing, clients]
+
+- id: block_gas_used
+  question: "What is the average gas used per block over the last hour on mainnet?"
+  tags: [blocks, gas]
+
+- id: orphaned_blocks_24h
+  question: "How many orphaned blocks have there been in the last 24 hours on mainnet?"
+  tags: [blocks, orphans]
+
+# === Slots ===
+
+- id: missed_slots_24h
+  question: "How many slots were missed (had no block proposed) in the last 24 hours on mainnet?"
+  tags: [slots, missed]
+
+- id: finalized_epoch_distance
+  question: "What is the current finalized epoch distance on mainnet? This is the gap between the head epoch and the finalized epoch."
+  tags: [finality]
+
+# === Validators ===
+
+- id: active_validators
+  question: "How many active validators are there currently on mainnet?"
+  tags: [validators]
+
+- id: validator_status_distribution
+  question: "What is the distribution of validator statuses (active_ongoing, exited, pending, etc.) on mainnet?"
+  tags: [validators, status]
+
+# === Attestations ===
+
+- id: attestation_agreement
+  question: "What is the attestation agreement percentage for the last hour on mainnet? Agreement means what fraction of attestations pointed to the same beacon block root."
+  tags: [attestations, agreement]
+
+- id: attestation_propagation_p95
+  question: "What is the p95 attestation propagation time in milliseconds over the last hour on mainnet?"
+  tags: [attestations, propagation]
+
+- id: attestation_participation_rate
+  question: "What is the attestation participation rate for the most recent epoch on mainnet?"
+  tags: [attestations, participation]
+
+- id: head_attestation_correctness
+  question: "What is the head attestation correctness percentage over the last 6 hours on mainnet? This measures what fraction of attesters voted for the correct head."
+  tags: [attestations, correctness, head]
+
+- id: attestation_liveness_by_entity
+  question: "Which staking entities have the lowest attestation liveness over the last 24 hours on mainnet? Show the top 10 worst performers."
+  tags: [attestations, liveness, entities]
+
+- id: validators_per_included_attestation
+  question: "What is the average number of validators per included attestation on mainnet over the last hour?"
+  tags: [attestations, inclusion]
+
+# === Blobs ===
+
+- id: blob_count_last_hour
+  question: "How many blobs were included in blocks in the last hour on mainnet?"
+  tags: [blobs]
+
+- id: blob_submitters_ranking
+  question: "Which addresses submitted the most blobs in the last 24 hours on mainnet? Show the top 10."
+  tags: [blobs, submitters]
+
+- id: blobs_per_slot
+  question: "What is the average number of blobs per slot over the last hour on mainnet?"
+  tags: [blobs, slots]
+
+# === Reorgs ===
+
+- id: chain_reorgs_last_day
+  question: "How many chain reorgs have been detected in the last 24 hours on mainnet?"
+  tags: [reorgs]
+
+# === MEV ===
+
+- id: mev_relay_market_share
+  question: "What is the market share of each MEV relay by number of blocks delivered in the last 24 hours on mainnet?"
+  tags: [mev, relays]
+
+- id: mev_top_builders
+  question: "Who are the top 10 MEV builders by total bid value in ETH over the last 24 hours on mainnet?"
+  tags: [mev, builders]
+
+- id: mev_bid_value_distribution
+  question: "What is the distribution of MEV bid values in ETH (min, p50, p95, max) over the last hour on mainnet?"
+  tags: [mev, bids]
+
+- id: mev_validator_registrations
+  question: "How many unique validators have registered with each MEV relay in the last 24 hours on mainnet?"
+  tags: [mev, validators, registrations]
+
+# === P2P / Gossipsub ===
+
+- id: gossipsub_aggregate_duplication
+  question: "What is the gossipsub duplication factor for aggregate attestation messages on mainnet over the last hour? This is the ratio of total messages to unique aggregates."
+  tags: [p2p, gossipsub, duplication]
+
+- id: aggregate_propagation_timing
+  question: "What is the p95 aggregate and proof propagation time from slot start in milliseconds on mainnet over the last hour?"
+  tags: [p2p, propagation, aggregates]
+
+- id: committees_per_slot
+  question: "What is the average number of committees per slot on mainnet?"
+  tags: [committees]
+
+# === Network Nodes ===
+
+- id: active_nodes_by_client
+  question: "How many active Ethereum nodes are there on mainnet broken down by consensus client implementation?"
+  tags: [nodes, clients]
+
+- id: nodes_by_country
+  question: "What is the distribution of Ethereum nodes by country on mainnet? Show the top 10 countries."
+  tags: [nodes, geography]
+
+# === Data Pipeline ===
+
+- id: data_pipeline_health
+  question: "What is the most recent slot_start_date_time across the main Xatu ClickHouse tables on mainnet? This checks data freshness."
+  tags: [pipeline, health]
+
+# === Cross-domain (intentionally ambiguous) ===
+
+- id: block_timing_vs_attestation
+  question: "For the last hour on mainnet, is there a correlation between late block arrivals (blocks arriving after 4 seconds into the slot) and lower attestation participation in the following slot?"
+  tags: [blocks, attestations, correlation]
+
+- id: entity_performance_comparison
+  question: "Compare the top 5 staking entities on mainnet by both attestation liveness and head correctness over the last 24 hours."
+  tags: [entities, attestations, correctness, comparison]

@@ -13,8 +13,9 @@ dependencies = [
     "PyYAML>=6.0.0",
     "httpx>=0.27.0",
     "rich>=13.0.0",
-    "openai>=1.0.0",  # For OpenRouter evaluator support
-    "langfuse>=2.0.0",  # LLM observability and trace viewing
+    "openai>=1.0.0", # For OpenRouter evaluator support
+    "langfuse>=2.0.0", # LLM observability and trace viewing
+    "matplotlib>=3.10.8",
 ]
 
 [project.optional-dependencies]
