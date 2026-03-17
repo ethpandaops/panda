@@ -132,7 +132,7 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 
 	// Create auditor if enabled.
 	if cfg.Audit.Enabled {
-		s.auditor = NewAuditor(log, AuditorConfig{})
+		s.auditor = NewAuditor(log)
 	}
 
 	// Create authorizer for per-datasource access control.
@@ -260,12 +260,7 @@ func (s *server) buildMiddlewareChain() func(http.Handler) http.Handler {
 	return func(handler http.Handler) http.Handler {
 		h := handler
 
-		// Audit logging (innermost).
-		if s.auditor != nil {
-			h = s.auditor.Middleware()(h)
-		}
-
-		// Rate limiting.
+		// Rate limiting (innermost).
 		if s.rateLimiter != nil {
 			h = s.rateLimiter.Middleware()(h)
 		}
@@ -273,6 +268,12 @@ func (s *server) buildMiddlewareChain() func(http.Handler) http.Handler {
 		// Authorization (per-datasource org check).
 		if s.authorizer != nil {
 			h = s.authorizer.Middleware()(h)
+		}
+
+		// Audit logging (after auth, wraps authorizer and rate limiter
+		// so that 403s and 429s are captured in the audit log).
+		if s.auditor != nil {
+			h = s.auditor.Middleware()(h)
 		}
 
 		// Authentication (outermost).
