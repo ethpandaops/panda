@@ -74,6 +74,7 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 		runbookIndex    *resource.RunbookIndex
 		eipRegistry     *eips.Registry
 		eipIndex        *resource.EIPIndex
+		searchSvc       *searchsvc.Service
 	)
 
 	if searchRuntime != nil {
@@ -82,16 +83,16 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 		runbookIndex = searchRuntime.RunbookIndex
 		eipRegistry = searchRuntime.EIPRegistry
 		eipIndex = searchRuntime.EIPIndex
-	}
 
-	searchSvc := searchsvc.New(
-		exampleIndex,
-		application.ModuleRegistry,
-		runbookIndex,
-		runbookRegistry,
-		eipIndex,
-		eipRegistry,
-	)
+		searchSvc = searchsvc.New(
+			exampleIndex,
+			application.ModuleRegistry,
+			runbookIndex,
+			runbookRegistry,
+			eipIndex,
+			eipRegistry,
+		)
+	}
 
 	runtimeTokens := tokenstore.New(2 * time.Hour)
 
