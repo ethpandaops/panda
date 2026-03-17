@@ -194,10 +194,6 @@ type EmbeddingConfig struct {
 	// APIURL is the base URL of the embedding API (default: "https://openrouter.ai/api/v1").
 	APIURL string `yaml:"api_url,omitempty"`
 
-	// CostPerToken is the USD cost per token for estimating embedding spend.
-	// If zero, the cost is fetched from the API's /models endpoint at startup.
-	CostPerToken float64 `yaml:"cost_per_token,omitempty"`
-
 	// Cache holds embedding cache configuration.
 	Cache EmbeddingCacheConfig `yaml:"cache"`
 }
