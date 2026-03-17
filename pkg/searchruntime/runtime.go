@@ -33,10 +33,12 @@ func Build(
 	moduleRegistry *module.Registry,
 	proxyService proxy.Service,
 ) (*Runtime, error) {
-	if proxyService == nil || !proxyService.EmbeddingAvailable() {
-		log.Warn("Proxy embedding not available — semantic search disabled")
+	if proxyService == nil {
+		return nil, fmt.Errorf("proxy service is required for semantic search")
+	}
 
-		return nil, nil
+	if !proxyService.EmbeddingAvailable() {
+		return nil, fmt.Errorf("proxy embedding not available: ensure the proxy has embedding configured")
 	}
 
 	log.WithField("model", proxyService.EmbeddingModel()).

@@ -76,7 +76,9 @@ func (a *Authorizer) FilterDatasources(ctx context.Context, resp DatasourcesResp
 	}
 
 	filtered := DatasourcesResponse{
-		EthNodeAvailable: resp.EthNodeAvailable && a.orgsMatch(userOrgs, ruleKey("ethnode", "")),
+		EthNodeAvailable:   resp.EthNodeAvailable && a.orgsMatch(userOrgs, ruleKey("ethnode", "")),
+		EmbeddingAvailable: resp.EmbeddingAvailable,
+		EmbeddingModel:     resp.EmbeddingModel,
 	}
 
 	for i, name := range resp.ClickHouse {
