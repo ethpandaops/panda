@@ -224,6 +224,7 @@ func (s *server) registerRoutes() {
 
 	if s.embeddingService != nil {
 		s.mux.Method(http.MethodPost, "/embed", s.metricsMiddleware(chain(http.HandlerFunc(s.handleEmbed))))
+		s.mux.Method(http.MethodPost, "/embed/check", s.metricsMiddleware(chain(http.HandlerFunc(s.handleEmbedCheck))))
 	}
 
 	// Authenticated routes.
@@ -343,6 +344,31 @@ func (s *server) handleEmbed(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		s.log.WithError(err).Error("Failed to encode embedding response")
+	}
+}
+
+// handleEmbedCheck returns cached vectors for the given hashes without embedding new content.
+func (s *server) handleEmbedCheck(w http.ResponseWriter, r *http.Request) {
+	var req EmbedCheckRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
+
+		return
+	}
+
+	results, err := s.embeddingService.CheckCached(r.Context(), req.Hashes)
+	if err != nil {
+		s.log.WithError(err).Error("Embed check failed")
+		http.Error(w, fmt.Sprintf("embed check failed: %v", err), http.StatusInternalServerError)
+
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	if err := json.NewEncoder(w).Encode(EmbedCheckResponse{Cached: results}); err != nil {
+		s.log.WithError(err).Error("Failed to encode embed check response")
 	}
 }
 

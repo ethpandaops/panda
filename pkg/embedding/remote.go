@@ -15,6 +15,17 @@ import (
 
 const remoteEmbedTimeout = 2 * time.Minute
 
+// embedCheckRequest is the request payload for the proxy /embed/check endpoint.
+type embedCheckRequest struct {
+	Model  string   `json:"model"`
+	Hashes []string `json:"hashes"`
+}
+
+// embedCheckResponse is the response from /embed/check.
+type embedCheckResponse struct {
+	Cached []embedResult `json:"cached"`
+}
+
 // embedRequest is the request payload for the proxy /embed endpoint.
 type embedRequest struct {
 	Items []embedItem `json:"items"`
@@ -75,61 +86,70 @@ func (e *RemoteEmbedder) Embed(text string) ([]float32, error) {
 }
 
 // EmbedBatch returns L2-normalized embedding vectors for multiple texts.
+// For batches larger than 1, it first checks the proxy cache with just hashes,
+// then only sends text for uncached items.
 func (e *RemoteEmbedder) EmbedBatch(texts []string) ([][]float32, error) {
-	items := make([]embedItem, len(texts))
-	// Track all indices per hash to handle duplicate texts correctly.
+	if len(texts) == 0 {
+		return nil, nil
+	}
+
+	hashes := make([]string, len(texts))
 	hashToIndices := make(map[string][]int, len(texts))
 
 	for i, text := range texts {
-		hash := sha256Hex(text)
-		items[i] = embedItem{Hash: hash, Text: text}
-		hashToIndices[hash] = append(hashToIndices[hash], i)
+		h := sha256Hex(text)
+		hashes[i] = h
+		hashToIndices[h] = append(hashToIndices[h], i)
 	}
 
-	reqBody, err := json.Marshal(embedRequest{Items: items})
-	if err != nil {
-		return nil, fmt.Errorf("marshaling embed request: %w", err)
-	}
-
-	url := fmt.Sprintf("%s/embed", e.proxyURL)
-
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, url, bytes.NewReader(reqBody))
-	if err != nil {
-		return nil, fmt.Errorf("creating embed request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	if token := e.tokenFn(); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-
-	resp, err := e.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("calling proxy embed endpoint: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-
-		return nil, fmt.Errorf("proxy embed returned status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var embedResp embedResponse
-	if err := json.NewDecoder(resp.Body).Decode(&embedResp); err != nil {
-		return nil, fmt.Errorf("decoding embed response: %w", err)
-	}
-
-	// Map results back to input order by hash, assigning to all indices.
 	vectors := make([][]float32, len(texts))
-	for _, result := range embedResp.Results {
-		indices, ok := hashToIndices[result.Hash]
-		if !ok {
-			continue
-		}
 
-		for _, idx := range indices {
+	// For single items, skip the check and just embed directly.
+	if len(texts) == 1 {
+		return e.embedDirect(texts, hashes, hashToIndices)
+	}
+
+	// Phase 1: check which hashes are already cached.
+	cached, err := e.checkCached(hashes)
+	if err != nil {
+		e.log.WithError(err).Warn("Cache check failed, falling back to full embed")
+
+		return e.embedDirect(texts, hashes, hashToIndices)
+	}
+
+	// Fill in cached vectors.
+	for _, result := range cached {
+		for _, idx := range hashToIndices[result.Hash] {
+			vectors[idx] = result.Vector
+		}
+	}
+
+	// Collect misses.
+	var missItems []embedItem
+	for i, text := range texts {
+		if vectors[i] == nil {
+			missItems = append(missItems, embedItem{Hash: hashes[i], Text: text})
+		}
+	}
+
+	if len(missItems) == 0 {
+		return vectors, nil
+	}
+
+	e.log.WithFields(logrus.Fields{
+		"total":  len(texts),
+		"cached": len(texts) - len(missItems),
+		"misses": len(missItems),
+	}).Debug("Embedding batch cache stats")
+
+	// Phase 2: embed only the misses.
+	resp, err := e.callEmbed(missItems)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, result := range resp.Results {
+		for _, idx := range hashToIndices[result.Hash] {
 			vectors[idx] = result.Vector
 		}
 	}
@@ -146,6 +166,118 @@ func (e *RemoteEmbedder) EmbedBatch(texts []string) ([][]float32, error) {
 // Close is a no-op for the remote embedder.
 func (e *RemoteEmbedder) Close() error {
 	return nil
+}
+
+// embedDirect sends all items to /embed without checking the cache first.
+func (e *RemoteEmbedder) embedDirect(
+	texts []string,
+	hashes []string,
+	hashToIndices map[string][]int,
+) ([][]float32, error) {
+	items := make([]embedItem, len(texts))
+	for i, text := range texts {
+		items[i] = embedItem{Hash: hashes[i], Text: text}
+	}
+
+	resp, err := e.callEmbed(items)
+	if err != nil {
+		return nil, err
+	}
+
+	vectors := make([][]float32, len(texts))
+	for _, result := range resp.Results {
+		for _, idx := range hashToIndices[result.Hash] {
+			vectors[idx] = result.Vector
+		}
+	}
+
+	for i, v := range vectors {
+		if v == nil {
+			return nil, fmt.Errorf("missing embedding for text at index %d", i)
+		}
+	}
+
+	return vectors, nil
+}
+
+func (e *RemoteEmbedder) checkCached(hashes []string) ([]embedResult, error) {
+	reqBody, err := json.Marshal(embedCheckRequest{Hashes: hashes})
+	if err != nil {
+		return nil, fmt.Errorf("marshaling check request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(
+		context.Background(), http.MethodPost,
+		e.proxyURL+"/embed/check", bytes.NewReader(reqBody),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("creating check request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	if token := e.tokenFn(); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := e.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("calling embed check: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+
+		return nil, fmt.Errorf("embed check returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var checkResp embedCheckResponse
+	if err := json.NewDecoder(resp.Body).Decode(&checkResp); err != nil {
+		return nil, fmt.Errorf("decoding check response: %w", err)
+	}
+
+	return checkResp.Cached, nil
+}
+
+func (e *RemoteEmbedder) callEmbed(items []embedItem) (*embedResponse, error) {
+	reqBody, err := json.Marshal(embedRequest{Items: items})
+	if err != nil {
+		return nil, fmt.Errorf("marshaling embed request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(
+		context.Background(), http.MethodPost,
+		e.proxyURL+"/embed", bytes.NewReader(reqBody),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("creating embed request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	if token := e.tokenFn(); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := e.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("calling proxy embed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+
+		return nil, fmt.Errorf("proxy embed returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var embedResp embedResponse
+	if err := json.NewDecoder(resp.Body).Decode(&embedResp); err != nil {
+		return nil, fmt.Errorf("decoding embed response: %w", err)
+	}
+
+	return &embedResp, nil
 }
 
 func sha256Hex(text string) string {

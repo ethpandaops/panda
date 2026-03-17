@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/sirupsen/logrus"
@@ -13,13 +14,30 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// newMockProxyEmbedServer creates a test server that mimics the proxy /embed endpoint.
-// The handler receives a decoded embedRequest, and the caller controls the response
-// via the returned channel or by providing a static handler function.
-func newMockProxyEmbedServer(t *testing.T, handler http.HandlerFunc) *httptest.Server {
+// newMockProxy creates a test server that handles /embed and /embed/check.
+// checkHandler can be nil if the test doesn't expect a check call.
+func newMockProxy(
+	t *testing.T,
+	embedHandler http.HandlerFunc,
+	checkHandler http.HandlerFunc,
+) *httptest.Server {
 	t.Helper()
 
-	srv := httptest.NewServer(handler)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/embed/check", func(w http.ResponseWriter, r *http.Request) {
+		if checkHandler != nil {
+			checkHandler(w, r)
+
+			return
+		}
+
+		// Default: nothing cached.
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(embedCheckResponse{})
+	})
+	mux.HandleFunc("/embed", embedHandler)
+
+	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
 	return srv
@@ -30,24 +48,22 @@ func TestRemoteEmbedder_Embed(t *testing.T) {
 
 	fakeVector := []float32{0.1, 0.2, 0.3}
 
-	srv := newMockProxyEmbedServer(t, func(w http.ResponseWriter, r *http.Request) {
+	// Single embed goes directly to /embed, no /embed/check call.
+	srv := newMockProxy(t, func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, http.MethodPost, r.Method)
-		require.Equal(t, "/embed", r.URL.Path)
 
 		var req embedRequest
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 		require.Len(t, req.Items, 1)
 
 		resp := embedResponse{
-			Model: "test-model",
-			Results: []embedResult{
-				{Hash: req.Items[0].Hash, Vector: fakeVector},
-			},
+			Model:   "test-model",
+			Results: []embedResult{{Hash: req.Items[0].Hash, Vector: fakeVector}},
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		require.NoError(t, json.NewEncoder(w).Encode(resp))
-	})
+	}, nil)
 
 	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" })
 
@@ -56,7 +72,7 @@ func TestRemoteEmbedder_Embed(t *testing.T) {
 	assert.Equal(t, fakeVector, vec)
 }
 
-func TestRemoteEmbedder_EmbedBatch(t *testing.T) {
+func TestRemoteEmbedder_EmbedBatch_AllMisses(t *testing.T) {
 	t.Parallel()
 
 	texts := []string{"alpha", "beta", "gamma"}
@@ -66,24 +82,34 @@ func TestRemoteEmbedder_EmbedBatch(t *testing.T) {
 		"gamma": {0.0, 0.0, 1.0},
 	}
 
-	srv := newMockProxyEmbedServer(t, func(w http.ResponseWriter, r *http.Request) {
-		var req embedRequest
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
-		require.Len(t, req.Items, 3)
+	var checkCalled atomic.Bool
 
-		results := make([]embedResult, 0, len(req.Items))
-		for _, item := range req.Items {
-			results = append(results, embedResult{
-				Hash:   item.Hash,
-				Vector: fakeVectors[item.Text],
-			})
-		}
+	srv := newMockProxy(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			var req embedRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 
-		resp := embedResponse{Model: "test-model", Results: results}
+			results := make([]embedResult, 0, len(req.Items))
+			for _, item := range req.Items {
+				results = append(results, embedResult{
+					Hash:   item.Hash,
+					Vector: fakeVectors[item.Text],
+				})
+			}
 
-		w.Header().Set("Content-Type", "application/json")
-		require.NoError(t, json.NewEncoder(w).Encode(resp))
-	})
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(embedResponse{
+				Model:   "test-model",
+				Results: results,
+			}))
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			checkCalled.Store(true)
+			// Nothing cached.
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(embedCheckResponse{})
+		},
+	)
 
 	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" })
 
@@ -91,38 +117,43 @@ func TestRemoteEmbedder_EmbedBatch(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, vectors, 3)
 
-	// Verify vectors are returned in the same order as input texts.
+	assert.True(t, checkCalled.Load(), "/embed/check should be called for batch > 1")
 	assert.Equal(t, fakeVectors["alpha"], vectors[0])
 	assert.Equal(t, fakeVectors["beta"], vectors[1])
 	assert.Equal(t, fakeVectors["gamma"], vectors[2])
 }
 
-func TestRemoteEmbedder_EmbedBatch_DuplicateTexts(t *testing.T) {
+func TestRemoteEmbedder_EmbedBatch_AllCached(t *testing.T) {
 	t.Parallel()
 
-	// Two identical texts should both get vectors assigned. This was a bug where
-	// the hash-to-index mapping only tracked a single index per hash.
-	texts := []string{"duplicate", "duplicate"}
-	fakeVector := []float32{0.5, 0.5, 0.5}
+	texts := []string{"alpha", "beta"}
+	cachedVectors := map[string][]float32{
+		sha256Hex("alpha"): {1.0, 0.0},
+		sha256Hex("beta"):  {0.0, 1.0},
+	}
 
-	srv := newMockProxyEmbedServer(t, func(w http.ResponseWriter, r *http.Request) {
-		var req embedRequest
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
-		// Both items have the same hash, but both are sent.
-		require.Len(t, req.Items, 2)
+	var embedCalled atomic.Bool
 
-		hash := sha256Hex("duplicate")
-		// The proxy only needs to return one result per unique hash.
-		resp := embedResponse{
-			Model: "test-model",
-			Results: []embedResult{
-				{Hash: hash, Vector: fakeVector},
-			},
-		}
+	srv := newMockProxy(t,
+		func(w http.ResponseWriter, _ *http.Request) {
+			embedCalled.Store(true)
+			http.Error(w, "should not be called", http.StatusInternalServerError)
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			var req embedCheckRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 
-		w.Header().Set("Content-Type", "application/json")
-		require.NoError(t, json.NewEncoder(w).Encode(resp))
-	})
+			results := make([]embedResult, 0, len(req.Hashes))
+			for _, h := range req.Hashes {
+				if vec, ok := cachedVectors[h]; ok {
+					results = append(results, embedResult{Hash: h, Vector: vec})
+				}
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(embedCheckResponse{Cached: results})
+		},
+	)
 
 	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" })
 
@@ -130,7 +161,79 @@ func TestRemoteEmbedder_EmbedBatch_DuplicateTexts(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, vectors, 2)
 
-	// Both indices must have received the vector.
+	assert.False(t, embedCalled.Load(), "/embed should NOT be called when everything is cached")
+	assert.Equal(t, cachedVectors[sha256Hex("alpha")], vectors[0])
+	assert.Equal(t, cachedVectors[sha256Hex("beta")], vectors[1])
+}
+
+func TestRemoteEmbedder_EmbedBatch_PartialCache(t *testing.T) {
+	t.Parallel()
+
+	texts := []string{"cached-text", "uncached-text"}
+	cachedHash := sha256Hex("cached-text")
+	cachedVec := []float32{1.0, 0.0}
+	uncachedVec := []float32{0.0, 1.0}
+
+	srv := newMockProxy(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			var req embedRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			// Only the uncached item should be sent.
+			require.Len(t, req.Items, 1)
+			assert.Equal(t, "uncached-text", req.Items[0].Text)
+
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(embedResponse{
+				Model:   "test-model",
+				Results: []embedResult{{Hash: req.Items[0].Hash, Vector: uncachedVec}},
+			})
+		},
+		func(w http.ResponseWriter, _ *http.Request) {
+			// Only "cached-text" is cached.
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(embedCheckResponse{
+				Cached: []embedResult{{Hash: cachedHash, Vector: cachedVec}},
+			})
+		},
+	)
+
+	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" })
+
+	vectors, err := embedder.EmbedBatch(texts)
+	require.NoError(t, err)
+	require.Len(t, vectors, 2)
+
+	assert.Equal(t, cachedVec, vectors[0])
+	assert.Equal(t, uncachedVec, vectors[1])
+}
+
+func TestRemoteEmbedder_EmbedBatch_DuplicateTexts(t *testing.T) {
+	t.Parallel()
+
+	texts := []string{"duplicate", "duplicate"}
+	fakeVector := []float32{0.5, 0.5, 0.5}
+
+	srv := newMockProxy(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			var req embedRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+
+			hash := sha256Hex("duplicate")
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(embedResponse{
+				Model:   "test-model",
+				Results: []embedResult{{Hash: hash, Vector: fakeVector}},
+			})
+		},
+		nil,
+	)
+
+	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" })
+
+	vectors, err := embedder.EmbedBatch(texts)
+	require.NoError(t, err)
+	require.Len(t, vectors, 2)
+
 	assert.Equal(t, fakeVector, vectors[0])
 	assert.Equal(t, fakeVector, vectors[1])
 }
@@ -138,9 +241,9 @@ func TestRemoteEmbedder_EmbedBatch_DuplicateTexts(t *testing.T) {
 func TestRemoteEmbedder_ServerError(t *testing.T) {
 	t.Parallel()
 
-	srv := newMockProxyEmbedServer(t, func(w http.ResponseWriter, _ *http.Request) {
+	srv := newMockProxy(t, func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
-	})
+	}, nil)
 
 	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" })
 
@@ -153,35 +256,26 @@ func TestRemoteEmbedder_AuthHeader(t *testing.T) {
 	t.Parallel()
 
 	const expectedToken = "my-secret-token"
-	tokenCalled := false
+	var tokenCalled atomic.Bool
 
-	srv := newMockProxyEmbedServer(t, func(w http.ResponseWriter, r *http.Request) {
-		// Verify the Authorization header is set correctly.
-		authHeader := r.Header.Get("Authorization")
-		assert.Equal(t, "Bearer "+expectedToken, authHeader)
+	srv := newMockProxy(t, func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "Bearer "+expectedToken, r.Header.Get("Authorization"))
 
 		hash := fmt.Sprintf("%x", sha256.Sum256([]byte("test")))
-
-		resp := embedResponse{
-			Model: "test-model",
-			Results: []embedResult{
-				{Hash: hash, Vector: []float32{0.1, 0.2, 0.3}},
-			},
-		}
-
 		w.Header().Set("Content-Type", "application/json")
-		require.NoError(t, json.NewEncoder(w).Encode(resp))
-	})
+		_ = json.NewEncoder(w).Encode(embedResponse{
+			Model:   "test-model",
+			Results: []embedResult{{Hash: hash, Vector: []float32{0.1, 0.2, 0.3}}},
+		})
+	}, nil)
 
-	tokenFn := func() string {
-		tokenCalled = true
+	embedder := NewRemote(logrus.New(), srv.URL, func() string {
+		tokenCalled.Store(true)
 
 		return expectedToken
-	}
-
-	embedder := NewRemote(logrus.New(), srv.URL, tokenFn)
+	})
 
 	_, err := embedder.Embed("test")
 	require.NoError(t, err)
-	assert.True(t, tokenCalled, "token function should have been called")
+	assert.True(t, tokenCalled.Load(), "token function should have been called")
 }

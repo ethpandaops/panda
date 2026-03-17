@@ -18,6 +18,17 @@ import (
 
 const embeddingAPITimeout = 2 * time.Minute
 
+// EmbedCheckRequest is the request payload for the /embed/check endpoint.
+type EmbedCheckRequest struct {
+	Model  string   `json:"model"`
+	Hashes []string `json:"hashes"`
+}
+
+// EmbedCheckResponse is the response from /embed/check.
+type EmbedCheckResponse struct {
+	Cached []EmbedResult `json:"cached"`
+}
+
 // EmbedRequest is the request payload for the /embed endpoint.
 type EmbedRequest struct {
 	Items []EmbedItem `json:"items"`
@@ -171,6 +182,43 @@ func (s *EmbeddingService) Embed(ctx context.Context, items []EmbedItem) (*Embed
 		Results: results,
 		Model:   s.model,
 	}, nil
+}
+
+// CheckCached returns cached vectors for the given hashes.
+// Only hashes that exist in the cache are returned.
+func (s *EmbeddingService) CheckCached(ctx context.Context, hashes []string) ([]EmbedResult, error) {
+	if len(hashes) == 0 {
+		return nil, nil
+	}
+
+	cacheKeys := make([]string, len(hashes))
+	for i, h := range hashes {
+		cacheKeys[i] = s.model + ":" + h
+	}
+
+	cached, err := s.cache.GetMulti(ctx, cacheKeys)
+	if err != nil {
+		return nil, fmt.Errorf("cache lookup: %w", err)
+	}
+
+	results := make([]EmbedResult, 0, len(cached))
+	for i, h := range hashes {
+		data, ok := cached[cacheKeys[i]]
+		if !ok {
+			continue
+		}
+
+		var vec []float32
+		if err := json.Unmarshal(data, &vec); err != nil {
+			s.log.WithError(err).WithField("hash", h).Warn("Cache deserialization failed, skipping")
+
+			continue
+		}
+
+		results = append(results, EmbedResult{Hash: h, Vector: vec})
+	}
+
+	return results, nil
 }
 
 // Close releases resources held by the embedding service.
