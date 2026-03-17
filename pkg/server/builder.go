@@ -14,7 +14,6 @@ import (
 	"github.com/ethpandaops/panda/pkg/app"
 	"github.com/ethpandaops/panda/pkg/cartographoor"
 	"github.com/ethpandaops/panda/pkg/config"
-	"github.com/ethpandaops/panda/pkg/eips"
 	"github.com/ethpandaops/panda/pkg/execsvc"
 	"github.com/ethpandaops/panda/pkg/module"
 	"github.com/ethpandaops/panda/pkg/resource"
@@ -25,7 +24,6 @@ import (
 	"github.com/ethpandaops/panda/pkg/storage"
 	"github.com/ethpandaops/panda/pkg/tokenstore"
 	"github.com/ethpandaops/panda/pkg/tool"
-	"github.com/ethpandaops/panda/runbooks"
 )
 
 // Dependencies contains all the services required to run the MCP server.
@@ -68,29 +66,13 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 		return nil, fmt.Errorf("building search runtime: %w", err)
 	}
 
-	var (
-		exampleIndex    *resource.ExampleIndex
-		runbookRegistry *runbooks.Registry
-		runbookIndex    *resource.RunbookIndex
-		eipRegistry     *eips.Registry
-		eipIndex        *resource.EIPIndex
-	)
-
-	if searchRuntime != nil {
-		exampleIndex = searchRuntime.ExampleIndex
-		runbookRegistry = searchRuntime.RunbookRegistry
-		runbookIndex = searchRuntime.RunbookIndex
-		eipRegistry = searchRuntime.EIPRegistry
-		eipIndex = searchRuntime.EIPIndex
-	}
-
 	searchSvc := searchsvc.New(
-		exampleIndex,
+		searchRuntime.ExampleIndex,
 		application.ModuleRegistry,
-		runbookIndex,
-		runbookRegistry,
-		eipIndex,
-		eipRegistry,
+		searchRuntime.RunbookIndex,
+		searchRuntime.RunbookRegistry,
+		searchRuntime.EIPIndex,
+		searchRuntime.EIPRegistry,
 	)
 
 	runtimeTokens := tokenstore.New(2 * time.Hour)
@@ -108,10 +90,6 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 		application.Sandbox,
 		execSvc,
 		searchSvc,
-		exampleIndex,
-		runbookIndex,
-		runbookRegistry,
-		eipIndex,
 	)
 
 	// Create resource registry and register resources (MCP-server-specific).
@@ -171,10 +149,6 @@ func (b *Builder) buildToolRegistry(
 	sandboxSvc sandbox.Service,
 	execSvc *execsvc.Service,
 	searchSvc *searchsvc.Service,
-	exampleIndex *resource.ExampleIndex,
-	runbookIndex *resource.RunbookIndex,
-	runbookReg *runbooks.Registry,
-	eipIndex *resource.EIPIndex,
 ) tool.Registry {
 	reg := tool.NewRegistry(b.log)
 
@@ -184,10 +158,8 @@ func (b *Builder) buildToolRegistry(
 	// Register manage_session tool.
 	reg.Register(tool.NewManageSessionTool(b.log, execSvc))
 
-	// Register unified search tool when any search index is available.
-	if exampleIndex != nil || (runbookIndex != nil && runbookReg != nil) || eipIndex != nil {
-		reg.Register(tool.NewSearchTool(b.log, searchSvc))
-	}
+	// Register unified search tool (search runtime is required at startup).
+	reg.Register(tool.NewSearchTool(b.log, searchSvc))
 
 	b.log.WithField("tool_count", len(reg.List())).Info("Tool registry built")
 

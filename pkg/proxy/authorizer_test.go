@@ -153,13 +153,25 @@ func TestAuthorizerFilterDatasources(t *testing.T) {
 	cfg := testConfig()
 	authorizer := NewAuthorizer(logrus.New(), cfg)
 
+	const testEmbeddingModel = "test-embed-model"
+
 	resp := DatasourcesResponse{
-		ClickHouse:     []string{"restricted", "public"},
-		ClickHouseInfo: []types.DatasourceInfo{{Type: "clickhouse", Name: "restricted"}, {Type: "clickhouse", Name: "public"}},
-		Prometheus:     []string{"internal"},
-		PrometheusInfo: []types.DatasourceInfo{{Type: "prometheus", Name: "internal"}},
-		Loki:           []string{"logs"},
-		LokiInfo:       []types.DatasourceInfo{{Type: "loki", Name: "logs"}},
+		ClickHouse:         []string{"restricted", "public"},
+		ClickHouseInfo:     []types.DatasourceInfo{{Type: "clickhouse", Name: "restricted"}, {Type: "clickhouse", Name: "public"}},
+		Prometheus:         []string{"internal"},
+		PrometheusInfo:     []types.DatasourceInfo{{Type: "prometheus", Name: "internal"}},
+		Loki:               []string{"logs"},
+		LokiInfo:           []types.DatasourceInfo{{Type: "loki", Name: "logs"}},
+		EmbeddingAvailable: true,
+		EmbeddingModel:     testEmbeddingModel,
+	}
+
+	// Embedding is infrastructure metadata, not a per-user datasource — it must
+	// survive filtering unconditionally regardless of org membership.
+	assertEmbeddingPreserved := func(t *testing.T, filtered DatasourcesResponse) {
+		t.Helper()
+		assert.True(t, filtered.EmbeddingAvailable)
+		assert.Equal(t, testEmbeddingModel, filtered.EmbeddingModel)
 	}
 
 	// User in ethpandaops — should see everything.
@@ -168,6 +180,7 @@ func TestAuthorizerFilterDatasources(t *testing.T) {
 	assert.Equal(t, []string{"restricted", "public"}, filtered.ClickHouse)
 	assert.Equal(t, []string{"internal"}, filtered.Prometheus)
 	assert.Equal(t, []string{"logs"}, filtered.Loki)
+	assertEmbeddingPreserved(t, filtered)
 
 	// User in sigp — should see public clickhouse + internal prometheus + logs.
 	ctx = withAuthUser(context.Background(), &AuthUser{Groups: []string{"sigp"}})
@@ -175,6 +188,7 @@ func TestAuthorizerFilterDatasources(t *testing.T) {
 	assert.Equal(t, []string{"public"}, filtered.ClickHouse)
 	assert.Equal(t, []string{"internal"}, filtered.Prometheus)
 	assert.Equal(t, []string{"logs"}, filtered.Loki)
+	assertEmbeddingPreserved(t, filtered)
 
 	// User in unknown org — only unrestricted datasources.
 	ctx = withAuthUser(context.Background(), &AuthUser{Groups: []string{"unknown"}})
@@ -182,6 +196,7 @@ func TestAuthorizerFilterDatasources(t *testing.T) {
 	assert.Equal(t, []string{"public"}, filtered.ClickHouse)
 	assert.Empty(t, filtered.Prometheus)
 	assert.Equal(t, []string{"logs"}, filtered.Loki)
+	assertEmbeddingPreserved(t, filtered)
 
 	// No auth user — return everything.
 	filtered = authorizer.FilterDatasources(context.Background(), resp)
