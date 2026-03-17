@@ -3,6 +3,7 @@ package cache
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -11,6 +12,7 @@ import (
 type RedisCache struct {
 	client *redis.Client
 	prefix string
+	ttl    time.Duration
 }
 
 // Compile-time interface check.
@@ -18,7 +20,8 @@ var _ Cache = (*RedisCache)(nil)
 
 // NewRedis creates a new Redis-backed cache.
 // The prefix is prepended to all keys (e.g., "panda:embed:").
-func NewRedis(redisURL, prefix string) (*RedisCache, error) {
+// A zero TTL means entries never expire.
+func NewRedis(redisURL, prefix string, ttl time.Duration) (*RedisCache, error) {
 	opts, err := redis.ParseURL(redisURL)
 	if err != nil {
 		return nil, fmt.Errorf("parsing redis URL: %w", err)
@@ -29,6 +32,7 @@ func NewRedis(redisURL, prefix string) (*RedisCache, error) {
 	return &RedisCache{
 		client: client,
 		prefix: prefix,
+		ttl:    ttl,
 	}, nil
 }
 
@@ -46,9 +50,9 @@ func (c *RedisCache) Get(ctx context.Context, key string) ([]byte, bool, error) 
 	return val, true, nil
 }
 
-// Set stores a value by key with no expiration.
+// Set stores a value by key.
 func (c *RedisCache) Set(ctx context.Context, key string, value []byte) error {
-	if err := c.client.Set(ctx, c.prefix+key, value, 0).Err(); err != nil {
+	if err := c.client.Set(ctx, c.prefix+key, value, c.ttl).Err(); err != nil {
 		return fmt.Errorf("redis set %q: %w", key, err)
 	}
 
@@ -93,7 +97,7 @@ func (c *RedisCache) SetMulti(ctx context.Context, entries map[string][]byte) er
 
 	pipe := c.client.Pipeline()
 	for key, value := range entries {
-		pipe.Set(ctx, c.prefix+key, value, 0)
+		pipe.Set(ctx, c.prefix+key, value, c.ttl)
 	}
 
 	if _, err := pipe.Exec(ctx); err != nil {

@@ -54,12 +54,13 @@ type EmbedResult struct {
 
 // EmbeddingService handles embedding requests using a remote API with caching.
 type EmbeddingService struct {
-	log    logrus.FieldLogger
-	cache  cache.Cache
-	apiKey string
-	model  string
-	apiURL string
-	client *http.Client
+	log          logrus.FieldLogger
+	cache        cache.Cache
+	apiKey       string
+	model        string
+	apiURL       string
+	client       *http.Client
+	costPerToken float64
 }
 
 // NewEmbeddingService creates a new EmbeddingService.
@@ -67,14 +68,16 @@ func NewEmbeddingService(
 	log logrus.FieldLogger,
 	c cache.Cache,
 	apiKey, model, apiURL string,
+	costPerToken float64,
 ) *EmbeddingService {
 	return &EmbeddingService{
-		log:    log.WithField("component", "embedding-service"),
-		cache:  c,
-		apiKey: apiKey,
-		model:  model,
-		apiURL: strings.TrimRight(apiURL, "/"),
-		client: &http.Client{Timeout: embeddingAPITimeout},
+		log:          log.WithField("component", "embedding-service"),
+		cache:        c,
+		apiKey:       apiKey,
+		model:        model,
+		apiURL:       strings.TrimRight(apiURL, "/"),
+		client:       &http.Client{Timeout: embeddingAPITimeout},
+		costPerToken: costPerToken,
 	}
 }
 
@@ -128,10 +131,18 @@ func (s *EmbeddingService) Embed(ctx context.Context, items []EmbedItem) (*Embed
 		misses = append(misses, i)
 	}
 
+	// Record cache metrics.
+	cacheHits := len(items) - len(misses)
+	if cacheHits > 0 {
+		EmbeddingItemsTotal.WithLabelValues("cache_hit").Add(float64(cacheHits))
+	}
+
 	if len(misses) > 0 {
+		EmbeddingItemsTotal.WithLabelValues("cache_miss").Add(float64(len(misses)))
+
 		s.log.WithFields(logrus.Fields{
 			"total":        len(items),
-			"cache_hits":   len(items) - len(misses),
+			"cache_hits":   cacheHits,
 			"cache_misses": len(misses),
 		}).Debug("Embedding cache stats")
 
@@ -142,7 +153,7 @@ func (s *EmbeddingService) Embed(ctx context.Context, items []EmbedItem) (*Embed
 		}
 
 		// Call OpenRouter API.
-		vectors, err := s.callEmbeddingAPI(ctx, missTexts)
+		vectors, _, err := s.callEmbeddingAPI(ctx, missTexts)
 		if err != nil {
 			return nil, fmt.Errorf("calling embedding API: %w", err)
 		}
@@ -218,6 +229,10 @@ func (s *EmbeddingService) CheckCached(ctx context.Context, hashes []string) ([]
 		results = append(results, EmbedResult{Hash: h, Vector: vec})
 	}
 
+	if len(results) > 0 {
+		EmbeddingItemsTotal.WithLabelValues("cache_hit").Add(float64(len(results)))
+	}
+
 	return results, nil
 }
 
@@ -234,7 +249,14 @@ type openRouterRequest struct {
 
 // openRouterResponse is the response body from the OpenRouter embeddings API.
 type openRouterResponse struct {
-	Data []openRouterEmbedding `json:"data"`
+	Data  []openRouterEmbedding `json:"data"`
+	Usage *openRouterUsage      `json:"usage,omitempty"`
+}
+
+// openRouterUsage contains token consumption from the API response.
+type openRouterUsage struct {
+	PromptTokens int `json:"prompt_tokens"`
+	TotalTokens  int `json:"total_tokens"`
 }
 
 // openRouterEmbedding is a single embedding in the OpenRouter response.
@@ -243,7 +265,7 @@ type openRouterEmbedding struct {
 	Embedding []float32 `json:"embedding"`
 }
 
-func (s *EmbeddingService) callEmbeddingAPI(ctx context.Context, texts []string) ([][]float32, error) {
+func (s *EmbeddingService) callEmbeddingAPI(ctx context.Context, texts []string) ([][]float32, *openRouterUsage, error) {
 	reqBody := openRouterRequest{
 		Model: s.model,
 		Input: texts,
@@ -251,41 +273,62 @@ func (s *EmbeddingService) callEmbeddingAPI(ctx context.Context, texts []string)
 
 	body, err := json.Marshal(reqBody)
 	if err != nil {
-		return nil, fmt.Errorf("marshaling request: %w", err)
+		return nil, nil, fmt.Errorf("marshaling request: %w", err)
 	}
 
 	url := s.apiURL + "/embeddings"
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
+		return nil, nil, fmt.Errorf("creating request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+s.apiKey)
 
+	start := time.Now()
+
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("sending request: %w", err)
+		EmbeddingRequestsTotal.WithLabelValues("error").Inc()
+
+		return nil, nil, fmt.Errorf("sending request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	duration := time.Since(start).Seconds()
+
 	if resp.StatusCode != http.StatusOK {
+		EmbeddingRequestsTotal.WithLabelValues("error").Inc()
+		EmbeddingRequestDurationSeconds.Observe(duration)
+
 		respBody, _ := io.ReadAll(resp.Body)
 
-		return nil, fmt.Errorf("embedding API returned status %d: %s", resp.StatusCode, string(respBody))
+		return nil, nil, fmt.Errorf("embedding API returned status %d: %s", resp.StatusCode, string(respBody))
 	}
 
 	var apiResp openRouterResponse
 	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-		return nil, fmt.Errorf("decoding response: %w", err)
+		return nil, nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	EmbeddingRequestsTotal.WithLabelValues("success").Inc()
+	EmbeddingRequestDurationSeconds.Observe(duration)
+
+	if apiResp.Usage != nil {
+		EmbeddingTokensTotal.WithLabelValues("prompt").Add(float64(apiResp.Usage.PromptTokens))
+		EmbeddingTokensTotal.WithLabelValues("total").Add(float64(apiResp.Usage.TotalTokens))
+
+		if s.costPerToken > 0 {
+			EmbeddingCostUSD.Add(float64(apiResp.Usage.TotalTokens) * s.costPerToken)
+		}
 	}
 
 	// Sort by index to maintain input order.
 	vectors := make([][]float32, len(texts))
 	for _, emb := range apiResp.Data {
 		if emb.Index < 0 || emb.Index >= len(vectors) {
-			return nil, fmt.Errorf("embedding API returned invalid index %d", emb.Index)
+			return nil, nil, fmt.Errorf("embedding API returned invalid index %d", emb.Index)
 		}
 
 		vectors[emb.Index] = emb.Embedding
@@ -293,20 +336,22 @@ func (s *EmbeddingService) callEmbeddingAPI(ctx context.Context, texts []string)
 
 	for i, v := range vectors {
 		if v == nil {
-			return nil, fmt.Errorf("embedding API missing vector for index %d", i)
+			return nil, nil, fmt.Errorf("embedding API missing vector for index %d", i)
 		}
 	}
 
-	return vectors, nil
+	return vectors, apiResp.Usage, nil
 }
+
+const embeddingCacheTTL = 30 * 24 * time.Hour
 
 // buildEmbeddingCache creates a cache instance based on the config.
 func buildEmbeddingCache(cfg EmbeddingCacheConfig) (cache.Cache, error) {
 	switch cfg.Backend {
 	case "redis":
-		return cache.NewRedis(cfg.RedisURL, "panda:embed:")
+		return cache.NewRedis(cfg.RedisURL, "panda:embed:", embeddingCacheTTL)
 	case "memory", "":
-		return cache.NewInMemory(), nil
+		return cache.NewInMemory(embeddingCacheTTL), nil
 	default:
 		return nil, fmt.Errorf("unsupported cache backend: %s", cfg.Backend)
 	}

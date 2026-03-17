@@ -170,6 +170,7 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 			cfg.Embedding.APIKey,
 			cfg.Embedding.Model,
 			cfg.Embedding.APIURL,
+			cfg.Embedding.CostPerToken,
 		)
 	}
 

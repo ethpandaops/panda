@@ -118,6 +118,7 @@ loki:
 # embedding:
 #   api_key: "${OPENROUTER_API_KEY}"
 #   model: "openai/text-embedding-3-small"
+#   cost_per_token: 0.00000002  # $0.02 per 1M tokens
 #   cache:
 #     backend: memory  # or "redis"
 #     # redis_url: "redis://localhost:6379"

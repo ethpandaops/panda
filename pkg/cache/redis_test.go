@@ -32,7 +32,7 @@ func startRedisCache(t *testing.T, ctx context.Context) (*RedisCache, func()) {
 	require.NoError(t, err)
 
 	redisURL := fmt.Sprintf("redis://%s:%s/0", host, mappedPort.Port())
-	rc, err := NewRedis(redisURL, "test:")
+	rc, err := NewRedis(redisURL, "test:", 0)
 	require.NoError(t, err)
 
 	cleanup := func() {

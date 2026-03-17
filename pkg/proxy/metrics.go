@@ -76,6 +76,63 @@ var (
 	)
 )
 
+// Embedding metrics.
+var (
+	// EmbeddingRequestsTotal counts OpenRouter embedding API calls.
+	EmbeddingRequestsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: proxyMetricsNamespace,
+			Subsystem: proxyMetricsSubsystem,
+			Name:      "embedding_requests_total",
+			Help:      "Total number of embedding API calls to the upstream provider",
+		},
+		[]string{"status"},
+	)
+
+	// EmbeddingRequestDurationSeconds measures OpenRouter API call duration.
+	EmbeddingRequestDurationSeconds = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: proxyMetricsNamespace,
+			Subsystem: proxyMetricsSubsystem,
+			Name:      "embedding_request_duration_seconds",
+			Help:      "Duration of embedding API calls in seconds",
+			Buckets:   []float64{0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120},
+		},
+	)
+
+	// EmbeddingTokensTotal tracks token consumption from the embedding API.
+	EmbeddingTokensTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: proxyMetricsNamespace,
+			Subsystem: proxyMetricsSubsystem,
+			Name:      "embedding_tokens_total",
+			Help:      "Total number of tokens consumed by the embedding API",
+		},
+		[]string{"type"},
+	)
+
+	// EmbeddingCostUSD tracks estimated cost in USD from the embedding API.
+	EmbeddingCostUSD = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: proxyMetricsNamespace,
+			Subsystem: proxyMetricsSubsystem,
+			Name:      "embedding_cost_usd",
+			Help:      "Estimated cumulative cost in USD for embedding API calls",
+		},
+	)
+
+	// EmbeddingItemsTotal counts embedding items by resolution source.
+	EmbeddingItemsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: proxyMetricsNamespace,
+			Subsystem: proxyMetricsSubsystem,
+			Name:      "embedding_items_total",
+			Help:      "Total embedding items processed, by source",
+		},
+		[]string{"source"},
+	)
+)
+
 func init() {
 	prometheus.MustRegister(
 		ProxyRequestsTotal,
@@ -83,6 +140,11 @@ func init() {
 		ProxyResponseSizeBytes,
 		ProxyActiveRequests,
 		ProxyRateLimitRejectionsTotal,
+		EmbeddingRequestsTotal,
+		EmbeddingRequestDurationSeconds,
+		EmbeddingTokensTotal,
+		EmbeddingCostUSD,
+		EmbeddingItemsTotal,
 	)
 }
 
@@ -201,6 +263,8 @@ func extractDatasourceType(path string) string {
 		return "ethnode"
 	case "datasources":
 		return "datasources"
+	case "embed":
+		return "embed"
 	default:
 		return "unknown"
 	}

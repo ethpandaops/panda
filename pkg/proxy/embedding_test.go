@@ -60,8 +60,8 @@ func TestEmbeddingService_Embed_CacheMiss(t *testing.T) {
 
 	mockAPI := newMockOpenRouterServer(t, &apiCalls)
 
-	memCache := cache.NewInMemory()
-	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL+"/v1")
+	memCache := cache.NewInMemory(0)
+	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL+"/v1", 0)
 
 	items := []EmbedItem{
 		{Hash: "aaa", Text: "hello"},
@@ -99,7 +99,7 @@ func TestEmbeddingService_Embed_CacheHit(t *testing.T) {
 
 	mockAPI := newMockOpenRouterServer(t, &apiCalls)
 
-	memCache := cache.NewInMemory()
+	memCache := cache.NewInMemory(0)
 
 	// Pre-populate the cache with vectors.
 	cachedVec := []float32{0.6, 0.7, 0.1}
@@ -111,7 +111,7 @@ func TestEmbeddingService_Embed_CacheHit(t *testing.T) {
 		testModel + ":bbb": vecData,
 	}))
 
-	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL+"/v1")
+	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL+"/v1", 0)
 
 	items := []EmbedItem{
 		{Hash: "aaa", Text: "hello"},
@@ -137,7 +137,7 @@ func TestEmbeddingService_Embed_PartialCacheHit(t *testing.T) {
 
 	mockAPI := newMockOpenRouterServer(t, &apiCalls)
 
-	memCache := cache.NewInMemory()
+	memCache := cache.NewInMemory(0)
 
 	// Pre-populate only the first item in the cache.
 	cachedVec := []float32{0.9, 0.1, 0.0}
@@ -146,7 +146,7 @@ func TestEmbeddingService_Embed_PartialCacheHit(t *testing.T) {
 
 	require.NoError(t, memCache.Set(context.Background(), testModel+":aaa", vecData))
 
-	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL+"/v1")
+	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL+"/v1", 0)
 
 	items := []EmbedItem{
 		{Hash: "aaa", Text: "hello"},
@@ -177,8 +177,8 @@ func TestEmbeddingService_Embed_Empty(t *testing.T) {
 
 	mockAPI := newMockOpenRouterServer(t, &apiCalls)
 
-	memCache := cache.NewInMemory()
-	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL+"/v1")
+	memCache := cache.NewInMemory(0)
+	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL+"/v1", 0)
 
 	resp, err := svc.Embed(context.Background(), []EmbedItem{})
 	require.NoError(t, err)
@@ -197,8 +197,8 @@ func TestEmbeddingService_Embed_L2Normalized(t *testing.T) {
 
 	mockAPI := newMockOpenRouterServer(t, &apiCalls)
 
-	memCache := cache.NewInMemory()
-	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL+"/v1")
+	memCache := cache.NewInMemory(0)
+	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL+"/v1", 0)
 
 	items := []EmbedItem{
 		{Hash: "aaa", Text: "test normalization"},
@@ -229,8 +229,8 @@ func TestEmbeddingService_Embed_APIError(t *testing.T) {
 	}))
 	t.Cleanup(errorServer.Close)
 
-	memCache := cache.NewInMemory()
-	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, errorServer.URL+"/v1")
+	memCache := cache.NewInMemory(0)
+	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, errorServer.URL+"/v1", 0)
 
 	items := []EmbedItem{
 		{Hash: "aaa", Text: "hello"},

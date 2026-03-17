@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -14,7 +15,7 @@ func TestInMemoryCache_GetSet(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	c := NewInMemory()
+	c := NewInMemory(0)
 
 	// Set a value and read it back.
 	require.NoError(t, c.Set(ctx, "k1", []byte("v1")))
@@ -37,7 +38,7 @@ func TestInMemoryCache_GetMiss(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	c := NewInMemory()
+	c := NewInMemory(0)
 
 	val, ok, err := c.Get(ctx, "nonexistent")
 	require.NoError(t, err)
@@ -49,7 +50,7 @@ func TestInMemoryCache_GetMulti_SetMulti(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	c := NewInMemory()
+	c := NewInMemory(0)
 
 	// SetMulti with several entries.
 	entries := map[string][]byte{
@@ -84,7 +85,7 @@ func TestInMemoryCache_ConcurrentAccess(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	c := NewInMemory()
+	c := NewInMemory(0)
 
 	const goroutines = 50
 	const iterations = 200
@@ -126,9 +127,38 @@ func TestInMemoryCache_ConcurrentAccess(t *testing.T) {
 	wg.Wait()
 }
 
+func TestInMemoryCache_TTLExpiry(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	c := NewInMemory(50 * time.Millisecond)
+
+	require.NoError(t, c.Set(ctx, "k1", []byte("v1")))
+
+	// Immediately readable.
+	val, ok, err := c.Get(ctx, "k1")
+	require.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, []byte("v1"), val)
+
+	// Wait for expiry.
+	time.Sleep(60 * time.Millisecond)
+
+	// Should be invisible now.
+	val, ok, err = c.Get(ctx, "k1")
+	require.NoError(t, err)
+	assert.False(t, ok)
+	assert.Nil(t, val)
+
+	// GetMulti should also skip expired entries.
+	result, err := c.GetMulti(ctx, []string{"k1"})
+	require.NoError(t, err)
+	assert.Empty(t, result)
+}
+
 func TestInMemoryCache_Close(t *testing.T) {
 	t.Parallel()
 
-	c := NewInMemory()
+	c := NewInMemory(0)
 	require.NoError(t, c.Close())
 }
