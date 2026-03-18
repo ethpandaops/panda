@@ -52,8 +52,8 @@ COPY --from=builder /app/models-output/ /usr/share/panda/
 RUN addgroup -g 1000 panda && \
     adduser -u 1000 -G panda -D panda
 
-# Pre-create storage directory with correct ownership.
-RUN mkdir -p /data/storage && chown panda:panda /data/storage
+# Pre-create data directories with correct ownership.
+RUN mkdir -p /data/storage /data/cache && chown panda:panda /data/storage /data/cache
 
 # Entrypoint runs as root to fix volume ownership, then drops to panda.
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh

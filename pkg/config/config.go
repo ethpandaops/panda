@@ -35,7 +35,7 @@ type StorageConfig struct {
 	BaseDir string `yaml:"base_dir,omitempty"`
 
 	// CacheDir is the directory for the local embedding vector cache.
-	// Defaults to ~/.panda/data/cache.
+	// Defaults to a "cache" sibling of BaseDir.
 	CacheDir string `yaml:"cache_dir,omitempty"`
 }
 
@@ -281,7 +281,7 @@ func applyDefaults(cfg *Config) {
 	}
 
 	if cfg.Storage.CacheDir == "" {
-		cfg.Storage.CacheDir = pandaDataDir("cache")
+		cfg.Storage.CacheDir = filepath.Join(filepath.Dir(cfg.Storage.BaseDir), "cache")
 	}
 
 	// Semantic search defaults — model path is resolved at runtime by searchruntime.
