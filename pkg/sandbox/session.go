@@ -47,7 +47,9 @@ type SessionManager struct {
 
 	// lastUsed tracks access times for TTL enforcement (best-effort, lost on restart).
 	lastUsed map[string]time.Time
-	mu       sync.RWMutex
+	// activeExecs tracks sessions with running executions to prevent TTL purging mid-execution.
+	activeExecs map[string]int
+	mu          sync.RWMutex
 
 	done chan struct{}
 	wg   sync.WaitGroup
@@ -72,6 +74,7 @@ func NewSessionManager(
 		cfg:              cfg,
 		log:              log.WithField("component", "session-manager"),
 		lastUsed:         make(map[string]time.Time, cfg.MaxSessions),
+		activeExecs:      make(map[string]int, cfg.MaxSessions),
 		done:             make(chan struct{}),
 		containerLister:  containerLister,
 		containerListAll: containerListAll,
@@ -126,9 +129,10 @@ func (m *SessionManager) Stop(ctx context.Context) error {
 		}
 	}
 
-	// Clear lastUsed map.
+	// Clear state maps.
 	m.mu.Lock()
 	m.lastUsed = make(map[string]time.Time, m.cfg.MaxSessions)
+	m.activeExecs = make(map[string]int, m.cfg.MaxSessions)
 	m.mu.Unlock()
 
 	m.log.Info("Session manager stopped")
@@ -146,6 +150,30 @@ func (m *SessionManager) GenerateSessionID() string {
 func (m *SessionManager) RecordAccess(sessionID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	m.lastUsed[sessionID] = time.Now()
+}
+
+// markExecuting increments the active execution count for a session.
+// Sessions with active executions are protected from TTL-based purging.
+func (m *SessionManager) markExecuting(sessionID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.activeExecs[sessionID]++
+}
+
+// unmarkExecuting decrements the active execution count for a session
+// and refreshes the TTL so the idle timer restarts from execution completion.
+func (m *SessionManager) unmarkExecuting(sessionID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.activeExecs[sessionID] <= 1 {
+		delete(m.activeExecs, sessionID)
+	} else {
+		m.activeExecs[sessionID]--
+	}
 
 	m.lastUsed[sessionID] = time.Now()
 }
@@ -189,12 +217,14 @@ func (m *SessionManager) Get(ctx context.Context, sessionID string, ownerID stri
 	}
 
 	// Check if session has exceeded TTL (idle timeout).
+	// Sessions with active executions are protected from TTL expiry.
 	// Note: On server restart, lastUsed is empty, so sessions get a fresh TTL timer.
 	m.mu.RLock()
 	lastUsed, hasLastUsed := m.lastUsed[sessionID]
+	executing := m.activeExecs[sessionID] > 0
 	m.mu.RUnlock()
 
-	if hasLastUsed && time.Since(lastUsed) > m.cfg.TTL {
+	if hasLastUsed && !executing && time.Since(lastUsed) > m.cfg.TTL {
 		return nil, m.expireSession(sessionID, container.ContainerID, "idle timeout exceeded")
 	}
 
@@ -374,11 +404,16 @@ func (m *SessionManager) cleanupExpired(ctx context.Context) {
 	now := time.Now()
 	expiredContainers := make([]*SessionContainer, 0)
 
-	// Get a snapshot of lastUsed times.
+	// Snapshot lastUsed and activeExecs under the same lock to avoid TOCTOU races.
 	m.mu.RLock()
 	lastUsedSnapshot := make(map[string]time.Time, len(m.lastUsed))
 	for k, v := range m.lastUsed {
 		lastUsedSnapshot[k] = v
+	}
+
+	activeExecsSnapshot := make(map[string]int, len(m.activeExecs))
+	for k, v := range m.activeExecs {
+		activeExecsSnapshot[k] = v
 	}
 	m.mu.RUnlock()
 
@@ -390,7 +425,8 @@ func (m *SessionManager) cleanupExpired(ctx context.Context) {
 			reason = "max duration"
 		} else if lastUsed, ok := lastUsedSnapshot[container.SessionID]; ok {
 			// Check TTL (from in-memory lastUsed map).
-			if now.Sub(lastUsed) > m.cfg.TTL {
+			// Sessions with active executions are protected from TTL expiry.
+			if now.Sub(lastUsed) > m.cfg.TTL && activeExecsSnapshot[container.SessionID] == 0 {
 				reason = "TTL"
 			}
 		}

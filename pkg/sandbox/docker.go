@@ -359,6 +359,10 @@ func (b *DockerBackend) executeWithNewSession(ctx context.Context, req ExecuteRe
 		LastUsed:    time.Now(),
 	}
 
+	// Mark session as executing to prevent TTL-based purging during execution.
+	b.sessionManager.markExecuting(sessionID)
+	defer b.sessionManager.unmarkExecuting(sessionID)
+
 	// Execute the code in the session.
 	result, err := b.execInContainer(ctx, session, req.Code, timeout, req.Env)
 	if err != nil {
@@ -392,6 +396,10 @@ func (b *DockerBackend) executeInSession(ctx context.Context, req ExecuteRequest
 	}
 
 	log.Debug("Executing in existing session")
+
+	// Mark session as executing to prevent TTL-based purging during execution.
+	b.sessionManager.markExecuting(req.SessionID)
+	defer b.sessionManager.unmarkExecuting(req.SessionID)
 
 	// Execute the code in the session.
 	result, err := b.execInContainer(ctx, session, req.Code, timeout, req.Env)
