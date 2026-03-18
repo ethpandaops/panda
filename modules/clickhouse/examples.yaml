@@ -74,6 +74,50 @@ block_timing:
         GROUP BY client
         ORDER BY avg_arrival_ms
 
+block_properties:
+  name: Block Properties (Execution Payload)
+  description: Queries for analyzing block-level execution payload properties (gas, size, transactions) using the fct_block_head table on xatu-cbt. Use fct_block_head for canonical block properties — NOT canonical_execution_block, fct_prepared_block, or fct_execution_block.
+  examples:
+    - name: Average gas used per block
+      description: Get the average gas used per block over a recent time window. Use fct_block_head which contains execution_payload_gas_used.
+      cluster: xatu-cbt
+      query: |
+        SELECT
+          COUNT() AS block_count,
+          AVG(execution_payload_gas_used) AS avg_gas_used,
+          MIN(execution_payload_gas_used) AS min_gas_used,
+          MAX(execution_payload_gas_used) AS max_gas_used,
+          quantile(0.50)(execution_payload_gas_used) AS median_gas_used
+        FROM {network}.fct_block_head FINAL
+        WHERE slot_start_date_time >= now() - INTERVAL 1 HOUR
+
+    - name: Gas used per block over time
+      description: Track gas usage per slot over time using fct_block_head.
+      cluster: xatu-cbt
+      query: |
+        SELECT
+          slot,
+          slot_start_date_time,
+          execution_payload_gas_used AS gas_used,
+          execution_payload_gas_limit AS gas_limit,
+          execution_payload_gas_used / execution_payload_gas_limit AS gas_utilization
+        FROM {network}.fct_block_head FINAL
+        WHERE slot_start_date_time >= now() - INTERVAL 1 HOUR
+        ORDER BY slot DESC
+
+    - name: Block size statistics
+      description: Get block size statistics (in bytes) from fct_block_head. Use this for max/avg/min block size queries.
+      cluster: xatu-cbt
+      query: |
+        SELECT
+          COUNT() AS block_count,
+          AVG(block_total_bytes) AS avg_block_bytes,
+          MAX(block_total_bytes) AS max_block_bytes,
+          MIN(block_total_bytes) AS min_block_bytes,
+          quantile(0.95)(block_total_bytes) AS p95_block_bytes
+        FROM {network}.fct_block_head FINAL
+        WHERE slot_start_date_time >= now() - INTERVAL 1 HOUR
+
 validators:
   name: Validator Analysis
   description: Queries for analyzing validator statistics
