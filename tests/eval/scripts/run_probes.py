@@ -596,7 +596,7 @@ Examples:
         "--concurrency",
         type=int,
         default=5,
-        help="Number of probes to run in parallel (default: 5)",
+        help="Max concurrent agents (default: 5)",
     )
     parser.add_argument(
         "--only-previously-failed",
