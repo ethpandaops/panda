@@ -466,6 +466,21 @@ async def main_async(args: argparse.Namespace) -> None:
     if args.probe:
         cases = [c for c in cases if fnmatch.fnmatch(c["id"], args.probe)]
 
+    if args.retry:
+        previous = get_latest_result()
+        if previous:
+            failed_ids = {
+                p["id"]
+                for p in previous.get("probes", [])
+                if not p["agreement"]["all_agreed"]
+            }
+            cases = [c for c in cases if c["id"] in failed_ids]
+            console.print(
+                f"[dim]Retrying {len(cases)} previously disagreeing probes[/dim]"
+            )
+        else:
+            console.print("[yellow]No previous results to retry from[/yellow]")
+
     if args.limit:
         cases = cases[:args.limit]
 
@@ -539,6 +554,11 @@ Examples:
         type=int,
         default=None,
         help="Run only the first N probes",
+    )
+    parser.add_argument(
+        "--retry",
+        action="store_true",
+        help="Only re-run probes that disagreed in the last run",
     )
     parser.add_argument(
         "-v",
