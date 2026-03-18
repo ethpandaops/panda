@@ -72,6 +72,12 @@ For examples specifically:
 
 Read existing files before modifying them.
 
+**Important**: Fixes must generalize. Don't add a narrow example that only answers the exact probe question — add something that teaches the agent how to handle the whole class of questions. For example:
+- Bad: "Maximum block size query" → only helps if someone asks exactly that
+- Good: "Block properties (size, gas, tx count, value)" → helps any block property question pick the right table
+
+The goal is that fixing one probe also fixes 5 others in the same domain that we haven't written yet.
+
 **Tip**: Include negative guidance in category descriptions (e.g. "Use fct_block_head — NOT canonical_execution_block, fct_prepared_block"). This steers the model away from wrong tables effectively.
 
 ### Step 4: Rebuild and re-run
