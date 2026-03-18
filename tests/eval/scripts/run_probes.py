@@ -106,6 +106,27 @@ class PandaServer:
         except subprocess.TimeoutExpired:
             self._proc.kill()
         self._proc = None
+        self._cleanup_containers()
+
+    def _cleanup_containers(self) -> None:
+        """Remove sandbox containers created by the probe server."""
+        try:
+            result = subprocess.run(
+                ["docker", "ps", "-aq", "--filter",
+                 "label=io.ethpandaops-panda.instance=probe"],
+                capture_output=True, text=True, timeout=10,
+            )
+            container_ids = result.stdout.strip().split("\n")
+            container_ids = [c for c in container_ids if c]
+            if not container_ids:
+                return
+            console.print(f"[dim]Cleaning up {len(container_ids)} sandbox containers...[/dim]")
+            subprocess.run(
+                ["docker", "rm", "-f", *container_ids],
+                capture_output=True, timeout=30,
+            )
+        except Exception:
+            pass
 
     def _port_open(self) -> bool:
         import socket

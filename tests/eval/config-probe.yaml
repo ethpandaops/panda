@@ -11,6 +11,7 @@ sandbox:
   backend: docker
   image: "ethpandaops/panda:sandbox-latest"
   network: "ethpandaops-panda-internal"
+  instance: "probe"
   sessions:
     max_sessions: 50
 

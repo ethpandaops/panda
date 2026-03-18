@@ -65,6 +65,11 @@ type SandboxConfig struct {
 	Network        string  `yaml:"network"`
 	HostSharedPath string  `yaml:"host_shared_path,omitempty"`
 
+	// Instance identifies this server's sandbox containers with a custom label.
+	// Used to distinguish containers from different server instances (e.g., probe runner vs production).
+	// When set, containers are labeled with "io.ethpandaops-panda.instance=<value>".
+	Instance string `yaml:"instance,omitempty"`
+
 	// Session configuration for persistent execution environments.
 	Sessions SessionConfig `yaml:"sessions"`
 

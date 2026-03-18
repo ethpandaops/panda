@@ -36,6 +36,8 @@ const (
 	LabelSessionID = "io.ethpandaops-panda.session-id"
 	// LabelOwnerID stores the owner ID (GitHub user ID) if auth is enabled.
 	LabelOwnerID = "io.ethpandaops-panda.owner-id"
+	// LabelInstance identifies which server instance created this container.
+	LabelInstance = "io.ethpandaops-panda.instance"
 )
 
 // parseContainerCreatedAt extracts the creation time from container labels.
@@ -431,6 +433,10 @@ func (b *DockerBackend) createSessionContainer(ctx context.Context, sessionID st
 		LabelCreatedAt: strconv.FormatInt(time.Now().Unix(), 10),
 	}
 
+	if b.cfg.Instance != "" {
+		labels[LabelInstance] = b.cfg.Instance
+	}
+
 	if ownerID != "" {
 		labels[LabelOwnerID] = ownerID
 	}
@@ -779,15 +785,21 @@ func (b *DockerBackend) buildContainerConfig(
 		envSlice = append(envSlice, k+"="+v)
 	}
 
+	oneShotLabels := map[string]string{
+		LabelManaged:   "true",
+		LabelCreatedAt: strconv.FormatInt(time.Now().Unix(), 10),
+	}
+
+	if b.cfg.Instance != "" {
+		oneShotLabels[LabelInstance] = b.cfg.Instance
+	}
+
 	containerConfig := &container.Config{
-		Image: b.cfg.Image,
-		Cmd:   []string{"python", "/shared/script.py"},
-		Env:   envSlice,
-		User:  "nobody",
-		Labels: map[string]string{
-			LabelManaged:   "true",
-			LabelCreatedAt: strconv.FormatInt(time.Now().Unix(), 10),
-		},
+		Image:  b.cfg.Image,
+		Cmd:    []string{"python", "/shared/script.py"},
+		Env:    envSlice,
+		User:   "nobody",
+		Labels: oneShotLabels,
 	}
 
 	// Determine the source paths for mounts.
