@@ -57,6 +57,16 @@ type ClickHouseSchemaConfig struct {
 	Datasources     []SchemaDiscoveryDatasource
 }
 
+// discoveredTable represents a table found during schema discovery.
+// Database is empty for default-database clusters (xatu) and set to a
+// representative network database name for per-network-database clusters (xatu-cbt).
+// Networks lists all databases where this table exists (for xatu-cbt).
+type discoveredTable struct {
+	Name     string
+	Database string
+	Networks []string
+}
+
 // TableColumn represents a column in a ClickHouse table.
 type TableColumn struct {
 	Name         string `json:"name"`
@@ -397,29 +407,32 @@ func (c *clickhouseSchemaClient) discoverClusterSchema(
 	datasourceName string,
 	token string,
 ) (*ClusterTables, error) {
-	// Get table list.
-	tables, err := c.fetchTableList(ctx, datasourceName, token)
+	discovered, err := c.fetchTableList(ctx, datasourceName, token)
 	if err != nil {
 		return nil, fmt.Errorf("fetching table list: %w", err)
 	}
 
+	c.log.WithFields(logrus.Fields{
+		"cluster": clusterName,
+		"tables":  len(discovered),
+	}).Info("Discovered tables for cluster, fetching schemas")
+
 	clusterTables := &ClusterTables{
 		ClusterName: clusterName,
-		Tables:      make(map[string]*TableSchema, len(tables)),
+		Tables:      make(map[string]*TableSchema, len(discovered)),
 		LastUpdated: time.Now(),
 	}
 
-	// Get schema for each table with concurrency limit.
 	sem := make(chan struct{}, schemaQueryConcurrency)
 
 	var wg sync.WaitGroup
 
 	var mu sync.Mutex
 
-	for _, tableName := range tables {
+	for _, dt := range discovered {
 		wg.Add(1)
 
-		go func(name string) {
+		go func(dt discoveredTable) {
 			defer wg.Done()
 
 			select {
@@ -429,27 +442,23 @@ func (c *clickhouseSchemaClient) discoverClusterSchema(
 				return
 			}
 
-			schema, err := c.fetchTableSchema(ctx, datasourceName, token, name)
+			schema, err := c.fetchTableSchema(ctx, datasourceName, token, dt.Name, dt.Database)
 			if err != nil {
-				c.log.WithError(err).WithField("table", name).Debug("Failed to fetch table schema")
+				c.log.WithError(err).WithField("table", dt.Name).Debug("Failed to fetch table schema")
 
 				return
 			}
 
-			// Get networks if table has meta_network_name column.
-			if schema.HasNetworkCol {
-				networks, err := c.fetchTableNetworks(ctx, datasourceName, token, name)
-				if err != nil {
-					c.log.WithError(err).WithField("table", name).Debug("Failed to fetch table networks")
-				} else {
-					schema.Networks = networks
-				}
+			if len(dt.Networks) > 0 {
+				// Per-network-database cluster: networks come from database names.
+				sort.Strings(dt.Networks)
+				schema.Networks = dt.Networks
 			}
 
 			mu.Lock()
-			clusterTables.Tables[name] = schema
+			clusterTables.Tables[dt.Name] = schema
 			mu.Unlock()
-		}(tableName)
+		}(dt)
 	}
 
 	wg.Wait()
@@ -550,7 +559,27 @@ func (c *clickhouseSchemaClient) queryJSON(ctx context.Context, datasourceName, 
 }
 
 // fetchTableList fetches the list of tables from a ClickHouse datasource.
-func (c *clickhouseSchemaClient) fetchTableList(ctx context.Context, datasourceName, token string) ([]string, error) {
+// First tries SHOW TABLES (works for clusters with a default database like xatu).
+// If that returns 0 rows, falls back to querying system.tables to discover
+// tables across per-network databases (like xatu-cbt).
+func (c *clickhouseSchemaClient) fetchTableList(ctx context.Context, datasourceName, token string) ([]discoveredTable, error) {
+	tables, err := c.fetchTableListDefault(ctx, datasourceName, token)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(tables) > 0 {
+		return tables, nil
+	}
+
+	// Default database is empty — try per-network-database discovery.
+	c.log.WithField("datasource", datasourceName).Info("SHOW TABLES returned 0 rows, trying per-database discovery fallback")
+
+	return c.fetchTableListFromSystemTables(ctx, datasourceName, token)
+}
+
+// fetchTableListDefault fetches tables from the default database via SHOW TABLES.
+func (c *clickhouseSchemaClient) fetchTableListDefault(ctx context.Context, datasourceName, token string) ([]discoveredTable, error) {
 	result, err := c.queryJSON(ctx, datasourceName, token, "SHOW TABLES")
 	if err != nil {
 		return nil, fmt.Errorf("executing SHOW TABLES: %w", err)
@@ -561,19 +590,133 @@ func (c *clickhouseSchemaClient) fetchTableList(ctx context.Context, datasourceN
 		return nil, fmt.Errorf("SHOW TABLES response missing columns")
 	}
 
-	tables := make([]string, 0, len(result.Data))
+	tables := make([]discoveredTable, 0, len(result.Data))
 	for _, row := range result.Data {
 		tableName := strings.TrimSpace(asString(row[column]))
 		if tableName == "" {
 			continue
 		}
 
-		// Skip tables with _local suffix (internal ClickHouse distributed table shards).
 		if strings.HasSuffix(tableName, "_local") {
 			continue
 		}
 
-		tables = append(tables, tableName)
+		tables = append(tables, discoveredTable{Name: tableName})
+	}
+
+	return tables, nil
+}
+
+// systemDatabaseBlacklist contains databases to skip during per-network discovery.
+var systemDatabaseBlacklist = map[string]bool{
+	"system":                         true,
+	"information_schema":             true,
+	"INFORMATION_SCHEMA":             true,
+	"default":                        true,
+	"_temporary_and_external_tables": true,
+}
+
+// fetchTableListFromSystemTables discovers tables across per-network databases.
+// Used for clusters like xatu-cbt where tables live in per-network databases
+// (e.g. mainnet.fct_block_head). Discovers all databases, then lists tables
+// from each. Schema is only fetched from one representative database since
+// all network databases have identical table schemas.
+func (c *clickhouseSchemaClient) fetchTableListFromSystemTables(ctx context.Context, datasourceName, token string) ([]discoveredTable, error) {
+	databases, err := c.fetchDatabases(ctx, datasourceName, token)
+	if err != nil {
+		return nil, fmt.Errorf("discovering databases: %w", err)
+	}
+
+	if len(databases) == 0 {
+		return nil, nil
+	}
+
+	// Collect tables from all databases to build the full network mapping.
+	// tableNetworks maps table name -> list of databases it exists in.
+	tableNetworks := make(map[string][]string, 256)
+
+	for _, db := range databases {
+		dbTables, err := c.fetchTablesFromDatabase(ctx, datasourceName, token, db)
+		if err != nil {
+			c.log.WithError(err).WithField("database", db).Debug("Failed to list tables from database")
+
+			continue
+		}
+
+		for _, name := range dbTables {
+			tableNetworks[name] = append(tableNetworks[name], db)
+		}
+	}
+
+	// Build discovered table list. Pick the first database as the representative
+	// for schema fetching — all network databases have identical schemas.
+	tables := make([]discoveredTable, 0, len(tableNetworks))
+	for name, dbs := range tableNetworks {
+		tables = append(tables, discoveredTable{
+			Name:     name,
+			Database: dbs[0],
+			Networks: dbs,
+		})
+	}
+
+	return tables, nil
+}
+
+// fetchDatabases returns non-system database names from a ClickHouse cluster.
+func (c *clickhouseSchemaClient) fetchDatabases(ctx context.Context, datasourceName, token string) ([]string, error) {
+	result, err := c.queryJSON(ctx, datasourceName, token, "SHOW DATABASES")
+	if err != nil {
+		return nil, fmt.Errorf("executing SHOW DATABASES: %w", err)
+	}
+
+	column := pickColumn(result.Meta, "name")
+	if column == "" {
+		return nil, fmt.Errorf("SHOW DATABASES response missing columns")
+	}
+
+	databases := make([]string, 0, len(result.Data))
+	for _, row := range result.Data {
+		db := strings.TrimSpace(asString(row[column]))
+		if db == "" || systemDatabaseBlacklist[db] {
+			continue
+		}
+
+		databases = append(databases, db)
+	}
+
+	return databases, nil
+}
+
+// fetchTablesFromDatabase lists tables in a specific database.
+func (c *clickhouseSchemaClient) fetchTablesFromDatabase(ctx context.Context, datasourceName, token, database string) ([]string, error) {
+	if err := validateIdentifier(database); err != nil {
+		return nil, fmt.Errorf("validating database name: %w", err)
+	}
+
+	query := fmt.Sprintf("SHOW TABLES FROM `%s`", database)
+
+	result, err := c.queryJSON(ctx, datasourceName, token, query)
+	if err != nil {
+		return nil, fmt.Errorf("executing SHOW TABLES FROM %s: %w", database, err)
+	}
+
+	column := pickColumn(result.Meta, "name")
+	if column == "" {
+		return nil, fmt.Errorf("SHOW TABLES FROM %s response missing columns", database)
+	}
+
+	tables := make([]string, 0, len(result.Data))
+	for _, row := range result.Data {
+		name := strings.TrimSpace(asString(row[column]))
+		if name == "" {
+			continue
+		}
+
+		if strings.HasSuffix(name, "_local") {
+			continue
+		}
+
+		tables = append(tables, name)
 	}
 
 	return tables, nil
@@ -589,17 +732,26 @@ func validateIdentifier(name string) error {
 }
 
 // fetchTableSchema fetches the schema for a specific table.
+// When database is non-empty, the query is qualified as `database`.`table`.
 func (c *clickhouseSchemaClient) fetchTableSchema(
 	ctx context.Context,
 	datasourceName string,
 	token string,
 	tableName string,
+	database string,
 ) (*TableSchema, error) {
 	if err := validateIdentifier(tableName); err != nil {
 		return nil, fmt.Errorf("validating table name: %w", err)
 	}
 
 	query := fmt.Sprintf("SHOW CREATE TABLE `%s`", tableName)
+	if database != "" {
+		if err := validateIdentifier(database); err != nil {
+			return nil, fmt.Errorf("validating database name: %w", err)
+		}
+
+		query = fmt.Sprintf("SHOW CREATE TABLE `%s`.`%s`", database, tableName)
+	}
 
 	result, err := c.queryJSON(ctx, datasourceName, token, query)
 	if err != nil {
@@ -622,45 +774,6 @@ func (c *clickhouseSchemaClient) fetchTableSchema(
 	}
 
 	return parseCreateTable(tableName, createStmt)
-}
-
-// fetchTableNetworks fetches distinct networks available in a table.
-func (c *clickhouseSchemaClient) fetchTableNetworks(
-	ctx context.Context,
-	datasourceName string,
-	token string,
-	tableName string,
-) ([]string, error) {
-	if err := validateIdentifier(tableName); err != nil {
-		return nil, fmt.Errorf("validating table name: %w", err)
-	}
-
-	query := fmt.Sprintf(
-		"SELECT DISTINCT meta_network_name FROM `%s` WHERE meta_network_name IS NOT NULL AND meta_network_name != '' LIMIT 1000",
-		tableName,
-	)
-
-	result, err := c.queryJSON(ctx, datasourceName, token, query)
-	if err != nil {
-		return nil, fmt.Errorf("executing network query: %w", err)
-	}
-
-	column := pickColumn(result.Meta, "meta_network_name")
-	if column == "" {
-		return nil, fmt.Errorf("network query response missing columns")
-	}
-
-	networks := make([]string, 0, len(result.Data))
-	for _, row := range result.Data {
-		network := strings.TrimSpace(asString(row[column]))
-		if network != "" {
-			networks = append(networks, network)
-		}
-	}
-
-	sort.Strings(networks)
-
-	return networks, nil
 }
 
 // parseCreateTable parses SHOW CREATE TABLE output to extract schema info.
