@@ -17,9 +17,9 @@ import (
 
 const (
 	remoteEmbedTimeout = 2 * time.Minute
-	// maxBatchSize limits how many items are sent in a single /embed request
-	// to avoid upstream API timeouts and oversized payloads.
-	maxBatchSize = 50
+	// maxBatchSize limits how many items are sent in a single /embed request.
+	// The proxy accepts up to 500 items and sub-batches to the upstream API internally.
+	maxBatchSize = 500
 )
 
 // embedCheckRequest is the request payload for the proxy /embed/check endpoint.
