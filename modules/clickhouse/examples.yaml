@@ -215,6 +215,19 @@ attestations:
         WHERE meta_network_name = 'mainnet'
           AND slot_start_date_time >= now() - INTERVAL 1 HOUR
 
+    - name: Average validators per attestation
+      description: Count the average number of attesting validators per attestation using the aggregation_bits length from beacon_api_eth_v1_events_attestation. Each attestation has aggregation_bits showing which validators in the committee participated.
+      cluster: xatu
+      query: |
+        SELECT
+          AVG(length(aggregation_bits)) AS avg_validators_per_attestation,
+          MIN(length(aggregation_bits)) AS min_validators,
+          MAX(length(aggregation_bits)) AS max_validators,
+          COUNT() AS total_attestations
+        FROM beacon_api_eth_v1_events_attestation
+        WHERE meta_network_name = 'mainnet'
+          AND slot_start_date_time >= now() - INTERVAL 1 HOUR
+
 network_health:
   name: Network Health Monitoring
   description: Queries used for monitoring Ethereum network health, derived from production alerting rules
@@ -258,19 +271,26 @@ network_health:
         ORDER BY t.slot_start_date_time
 
     - name: Finalized epoch distance
-      description: Check how long ago the last finalization occurred. Values consistently above 21 minutes suggest finalization issues.
+      description: Calculate the gap between the current head epoch and the finalized epoch. Use beacon_api_eth_v1_events_finalized_checkpoint for the finalized epoch and beacon_api_eth_v1_events_head for the current head epoch.
       cluster: xatu
       query: |
+        WITH latest_finalized AS (
+          SELECT MAX(epoch) AS finalized_epoch
+          FROM beacon_api_eth_v1_events_finalized_checkpoint
+          WHERE meta_network_name = 'mainnet'
+            AND epoch_start_date_time >= now() - INTERVAL 1 DAY
+        ),
+        latest_head AS (
+          SELECT MAX(intDiv(slot, 32)) AS head_epoch
+          FROM beacon_api_eth_v1_events_head
+          WHERE meta_network_name = 'mainnet'
+            AND slot_start_date_time >= now() - INTERVAL 5 MINUTE
+        )
         SELECT
-          epoch,
-          MIN(epoch_start_date_time) AS first_finalized_event_time,
-          dateDiff('minute', MIN(epoch_start_date_time), now()) AS finalized_age_minutes
-        FROM beacon_api_eth_v1_events_finalized_checkpoint
-        WHERE meta_network_name = 'mainnet'
-          AND epoch_start_date_time >= now() - INTERVAL 1 DAY
-        GROUP BY epoch
-        ORDER BY finalized_age_minutes ASC
-        LIMIT 10
+          h.head_epoch,
+          f.finalized_epoch,
+          h.head_epoch - f.finalized_epoch AS epoch_distance
+        FROM latest_head h, latest_finalized f
 
     - name: Data pipeline health check
       description: Verify the data pipeline is healthy by checking for sufficient client diversity and event volume. Used as a guard condition before other alerts fire.
@@ -300,7 +320,7 @@ network_health:
         WHERE slot_start_date_time >= now() - INTERVAL 1 HOUR
         ORDER BY slot_start_date_time DESC
 
-    - name: Attestation correctness rate 
+    - name: Attestation correctness rate
       description: Calculate the percentage of attestations voting for the correct (head) block vs other blocks. Low correctness may indicate forks or reorgs.
       cluster: xatu-cbt
       query: |
@@ -465,6 +485,41 @@ entity_analysis:
         GROUP BY hour, entity
         ORDER BY hour DESC, attestations DESC
 
+    - name: Entity performance comparison (liveness + correctness)
+      description: Compare staking entities by both attestation liveness and head correctness. Use fct_attestation_liveness_by_entity_head for liveness and fct_attestation_correctness_by_entity_head for entity-level correctness.
+      cluster: xatu-cbt
+      query: |
+        WITH liveness AS (
+          SELECT
+            entity,
+            SUM(attestation_count) AS total_attestations,
+            SUM(missed_count) AS total_missed,
+            SUM(attestation_count) / (SUM(attestation_count) + SUM(missed_count)) AS liveness_rate
+          FROM {network}.fct_attestation_liveness_by_entity_head FINAL
+          WHERE slot_start_date_time >= now() - INTERVAL 1 DAY
+          GROUP BY entity
+        ),
+        correctness AS (
+          SELECT
+            entity,
+            SUM(votes_head) AS total_head_votes,
+            SUM(votes_head + votes_other) AS total_votes,
+            SUM(votes_head) / SUM(votes_head + votes_other) AS correctness_rate
+          FROM {network}.fct_attestation_correctness_by_entity_head FINAL
+          WHERE slot_start_date_time >= now() - INTERVAL 1 DAY
+          GROUP BY entity
+        )
+        SELECT
+          l.entity,
+          l.liveness_rate,
+          c.correctness_rate,
+          l.total_attestations
+        FROM liveness l
+        JOIN correctness c ON l.entity = c.entity
+        WHERE l.entity != 'unknown'
+        ORDER BY l.total_attestations DESC
+        LIMIT 10
+
     - name: Entity block proposals
       description: Count block proposals per staking entity.
       cluster: xatu-cbt
@@ -560,6 +615,23 @@ mev_analysis:
         ORDER BY total_bids DESC
         LIMIT 20
 
+    - name: Top MEV builders by total bid value
+      description: Rank builders by total bid value in ETH. Use mev_relay_bid_trace which has the actual bid values per builder.
+      cluster: xatu
+      query: |
+        SELECT
+          builder_pub_key,
+          SUM(value) / 1e18 AS total_bid_value_eth,
+          COUNT() AS total_bids,
+          AVG(value) / 1e18 AS avg_bid_value_eth,
+          MAX(value) / 1e18 AS max_bid_value_eth
+        FROM mev_relay_bid_trace
+        WHERE meta_network_name = 'mainnet'
+          AND slot_start_date_time >= now() - INTERVAL 1 DAY
+        GROUP BY builder_pub_key
+        ORDER BY total_bid_value_eth DESC
+        LIMIT 10
+
     - name: MEV block value distribution
       description: Analyze the distribution of MEV block values.
       cluster: xatu-cbt
@@ -630,6 +702,20 @@ mev_analysis:
         ORDER BY blocks_built DESC
         LIMIT 20
 
+    - name: MEV validator registrations per relay
+      description: Count unique validators registered with each MEV relay using mev_relay_validator_registration.
+      cluster: xatu
+      query: |
+        SELECT
+          relay_name,
+          COUNT(DISTINCT validator_index) AS unique_validators,
+          COUNT() AS total_registrations
+        FROM mev_relay_validator_registration
+        WHERE meta_network_name = 'mainnet'
+          AND slot_start_date_time >= now() - INTERVAL 1 DAY
+        GROUP BY relay_name
+        ORDER BY unique_validators DESC
+
     - name: MEV vs local block comparison
       description: Compare MEV blocks vs locally built blocks in terms of value and gas usage.
       cluster: xatu-cbt
@@ -658,6 +744,20 @@ mev_analysis:
         SELECT * FROM mev_stats
         UNION ALL
         SELECT * FROM local_stats
+
+    - name: MEV bid value distribution
+      description: Get the distribution of MEV bid values (min, p50, p95, max) using fct_mev_bid_value.
+      cluster: xatu-cbt
+      query: |
+        SELECT
+          MIN(value) / 1e18 AS min_value_eth,
+          quantile(0.50)(value) / 1e18 AS p50_value_eth,
+          quantile(0.95)(value) / 1e18 AS p95_value_eth,
+          MAX(value) / 1e18 AS max_value_eth,
+          AVG(value) / 1e18 AS avg_value_eth,
+          COUNT() AS total_bids
+        FROM {network}.fct_mev_bid_value FINAL
+        WHERE slot_start_date_time >= now() - INTERVAL 1 HOUR
 
     - name: Hourly MEV activity trend
       description: Track MEV activity trends by hour including bid counts and block values.
@@ -1999,6 +2099,24 @@ libp2p_gossipsub:
         ORDER BY messages DESC
         LIMIT 20
 
+    - name: Aggregate and proof gossip propagation timing
+      description: Analyze aggregate and proof propagation timing using libp2p_gossipsub_beacon_aggregate_and_proof.
+      cluster: xatu
+      query: |
+        SELECT
+          slot,
+          MIN(propagation_slot_start_diff) AS first_seen_ms,
+          AVG(propagation_slot_start_diff) AS avg_propagation_ms,
+          quantile(0.95)(propagation_slot_start_diff) AS p95_ms,
+          COUNT() AS message_count,
+          countDistinct(peer_id_unique_key) AS unique_peers
+        FROM libp2p_gossipsub_beacon_aggregate_and_proof
+        WHERE meta_network_name = 'mainnet'
+          AND slot_start_date_time >= now() - INTERVAL 1 HOUR
+        GROUP BY slot
+        ORDER BY slot DESC
+        LIMIT 50
+
     - name: Attestation gossip propagation
       description: Attestation propagation times per slot.
       cluster: xatu
@@ -2228,6 +2346,19 @@ libp2p_messages:
         GROUP BY reason, topic_name
         ORDER BY reject_count DESC
         LIMIT 30
+
+    - name: Gossipsub duplication factor for aggregates
+      description: Calculate the duplication factor for aggregate attestation messages using libp2p_duplicate_message. Filter by topic to isolate aggregate messages.
+      cluster: xatu
+      query: |
+        SELECT
+          COUNT() AS total_duplicates,
+          countDistinct(message_id) AS unique_messages,
+          COUNT() * 1.0 / countDistinct(message_id) AS duplication_factor
+        FROM libp2p_duplicate_message
+        WHERE meta_network_name = 'mainnet'
+          AND event_date_time >= now() - INTERVAL 1 HOUR
+          AND topic_name LIKE '%beacon_aggregate_and_proof%'
 
     - name: Duplicate messages by topic
       description: Duplicate message statistics by gossipsub topic.

@@ -60,3 +60,4 @@ __pycache__/
 
 # Claude settings
 .claude/settings.json
+panda-proxy

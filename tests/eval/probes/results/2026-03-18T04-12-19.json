@@ -1,0 +1,59 @@
+{
+  "run_id": "2026-03-18T04-12-19",
+  "timestamp": "2026-03-18T04:14:01.048029+00:00",
+  "model": "claude-haiku-4-5",
+  "attempts_per_probe": 3,
+  "total_probes": 1,
+  "total_cost_usd": 0.280996,
+  "summary": {
+    "full_agreement": 1,
+    "disagreement": 0,
+    "agreement_rate": 1.0
+  },
+  "probes": [
+    {
+      "id": "orphaned_blocks_24h",
+      "question": "How many orphaned blocks have there been in the last 24 hours on mainnet?",
+      "attempts": [
+        {
+          "tables": [
+            "fct_block"
+          ],
+          "persona": "default",
+          "error": false,
+          "error_message": null,
+          "cost_usd": 0.1304244,
+          "duration_ms": 25493
+        },
+        {
+          "tables": [
+            "fct_block"
+          ],
+          "persona": "careful",
+          "error": false,
+          "error_message": null,
+          "cost_usd": 0.0863473,
+          "duration_ms": 41356
+        },
+        {
+          "tables": [
+            "fct_block"
+          ],
+          "persona": "concise",
+          "error": false,
+          "error_message": null,
+          "cost_usd": 0.0642247,
+          "duration_ms": 19109
+        }
+      ],
+      "agreement": {
+        "table_agreement": 1.0,
+        "all_agreed": true,
+        "tables_used": {
+          "fct_block": 3
+        },
+        "finding": "all 3 agreed on fct_block"
+      }
+    }
+  ]
+}
