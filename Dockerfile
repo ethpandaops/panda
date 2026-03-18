@@ -83,8 +83,8 @@ COPY --from=builder /app/panda-proxy /app/panda-proxy
 COPY --from=builder /assets/all-MiniLM-L6-v2 /usr/share/panda/all-MiniLM-L6-v2
 
 # Create directories
-RUN mkdir -p /config /shared /output /data/storage && \
-    chown -R panda:panda /app /config /shared /output /data/storage
+RUN mkdir -p /config /shared /output /data/storage /data/cache && \
+    chown -R panda:panda /app /config /shared /output /data/storage /data/cache
 
 # Entrypoint runs as root to fix volume ownership, then drops to panda.
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh

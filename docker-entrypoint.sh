@@ -2,10 +2,12 @@
 set -e
 
 # Fix ownership of mounted volumes that Docker may create as root.
-# The panda user (UID 1000) needs write access to the storage directory.
-if [ -d /data/storage ] && [ "$(stat -c '%u' /data/storage)" != "1000" ]; then
-    chown panda:panda /data/storage
-fi
+# The panda user (UID 1000) needs write access to the data directories.
+for dir in /data/storage /data/cache; do
+    if [ -d "$dir" ] && [ "$(stat -c '%u' "$dir")" != "1000" ]; then
+        chown panda:panda "$dir"
+    fi
+done
 
 # If the Docker socket is mounted, add panda to its group so the server
 # can manage sandbox containers after dropping root.
