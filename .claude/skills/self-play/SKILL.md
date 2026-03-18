@@ -11,10 +11,9 @@ You are running the self-play loop for the ethpandaops/panda project. This finds
 
 The panda repo must be at the working directory. The probe infrastructure lives in `tests/eval/`.
 
-**Server**: Always use `--local-server` to run probes against a fresh local binary on :2481. This keeps the docker `panda-server` on :2480 untouched (it uses the published image, not local code). Build first:
+**Server**: Build first, then the probe runner auto-starts a local server on :2481:
    ```bash
    make build  # builds panda-server binary
-   # The probe runner handles startup/shutdown with --local-server flag
    ```
 
 **Dependencies**: The evaluator LLM needs `OPENROUTER_API_KEY` set in the environment.
@@ -27,7 +26,7 @@ Run the probe runner. Start with a small batch to keep iteration fast:
 
 ```bash
 cd tests/eval
-uv run python -m scripts.run_probes --model claude-haiku-4-5 -n 10 --attempts 3 --local-server
+uv run python -m scripts.run_probes --model claude-haiku-4-5 -n 10
 ```
 
 The local server starts on :2481 and shuts down automatically when probes finish. First run takes ~10s for startup.
@@ -36,32 +35,38 @@ Read the latest results file from `tests/eval/probes/results/`.
 
 ### Step 2: Present disagreements
 
-For each probe where `all_agreed` is false, present the disagreement to the user using `AskUserQuestion`. Show:
-- The question that was asked
+For each probe where `all_agreed` is false, present the disagreement to the user using `AskUserQuestion`. Always include the **full probe question** in the AskUserQuestion so the user has complete context without needing to look it up. Show:
+- The full question that was asked (from probes.yaml)
 - What each persona chose (which tables)
 - Ask which approach is correct
 
+**Triage scores before presenting:**
+- **0.80 with 1 "(no tables)"**: Usually means one persona errored — not a real disagreement. Skip these unless the user asks about them.
+- **0.60 and below**: Real schema ambiguity worth presenting.
+- **1.00**: Fully agreed, no action needed.
+
 Example:
 ```
-Question: "What is the maximum block size in bytes seen in the last hour on mainnet?"
+**blob_mempool_getblobs_success**: "How does blob mempool propagation affect engine_getBlobs success rates on mainnet? What fraction of getBlobs calls return SUCCESS vs EMPTY?"
 
-Attempt 1 (default): canonical_beacon_block
-Attempt 2 (careful): fct_prepared_block
-Attempt 3 (concise): fct_prepared_block
+- default: fct_engine_get_blobs_by_slot, libp2p_gossipsub_blob_sidecar
+- careful: blob_propagation_by_slot, fct_engine_get_blobs_by_slot, getblobs_by_slot, getblobs_status_by_slot, libp2p_gossipsub_blob_sidecar
+- concise: fct_engine_get_blobs_by_slot, libp2p_gossipsub_blob_sidecar
 
-Which table should be used for block size queries?
+Which tables should be used?
 ```
 
 Let the user pick, or tell you the right answer.
 
 ### Step 3: Write the fix
 
-Based on the user's answer, decide the best intervention. Everything in this repo is in scope — pick whatever will most effectively resolve the ambiguity:
+Based on the user's answer, decide the best intervention. The entire repo is in scope — pick whatever will most effectively resolve the ambiguity. Find the root cause of why the model is confused rather than adding surface-level patches.
+
+Possible fixes, in rough order of impact:
 
 - **Examples** (`modules/clickhouse/examples.yaml`) — add a query example showing the correct table and pattern. Best for "which table do I use for X?" ambiguities.
-- **Runbooks** (`runbooks/*.md`) — add or update a runbook with procedural guidance. Best for multi-step investigative workflows.
-- **Python API docs** — update module docstrings/descriptions if the Python API itself is misleading.
-- **Getting-started snippets** — update per-module guidance if the agent is missing basic context.
+- **Runbooks** (`runbooks/*.md`) — add or update a runbook with procedural guidance. Best for multi-step cross-cluster workflows.
+- **Search tool / Python API docs** — if the model can't discover the right content, the platform itself might need changes (search behavior, tool descriptions, etc).
 - **Schema comments** — if a table's purpose is unclear, the fix might be upstream in xatu-cbt, not here. Flag it.
 
 For examples specifically:
@@ -78,13 +83,13 @@ Read existing files before modifying them.
 
 The goal is that fixing one probe also fixes 5 others in the same domain that we haven't written yet.
 
-**Tip**: Include negative guidance in category descriptions (e.g. "Use fct_block_head — NOT canonical_execution_block, fct_prepared_block"). This steers the model away from wrong tables effectively.
+**Tip**: Add clear positive examples that demonstrate the correct pattern. Never resort to "do NOT use X" negative guidance — that's lazy and doesn't teach anything.
 
 ### Step 4: Rebuild and re-run
 
-After adding examples:
-1. `make build` to rebuild the server with new examples
-2. Re-run only the previously failing probes: `uv run python -m scripts.run_probes --model claude-haiku-4-5 --only-previously-failed --local-server`
+After making fixes:
+1. `make build` to rebuild the server
+2. Re-run only the previously failing probes: `uv run python -m scripts.run_probes --model claude-haiku-4-5 --only-previously-failed`
 3. Check if agreement improved
 
 ### Step 5: Repeat
