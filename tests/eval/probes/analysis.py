@@ -20,6 +20,8 @@ class AttemptResult:
     error_message: str | None = None
     cost_usd: float = 0.0
     duration_ms: int = 0
+    num_turns: int = 0
+    num_tool_calls: int = 0
 
 
 @dataclass
@@ -42,12 +44,25 @@ class ProbeResult:
     agreement: AgreementResult = field(default_factory=AgreementResult)
 
 
+# System/metadata tables to exclude from agreement scoring.
+# These are used for schema discovery, not for answering the question.
+_IGNORED_TABLES = frozenset({
+    "system.tables",
+    "system.columns",
+    "tables",
+    "columns",
+    "information_schema.tables",
+    "information_schema.columns",
+})
+
 _EXTRACT_TABLES_PROMPT = """\
 The Python code below contains SQL queries sent to ClickHouse. Extract the LITERAL table names that appear in FROM and JOIN clauses in the SQL strings.
 
 Rules:
 - ONLY return table names that literally appear as text in the SQL strings after FROM or JOIN keywords
 - Strip schema/database prefixes (e.g. "default.foo" → "foo", "mainnet.bar" → "bar", "{network}.baz" → "baz")
+- Do NOT include CTE aliases (names defined in WITH clauses, e.g. "WITH latest AS (...)" — "latest" is NOT a table)
+- Do NOT include subquery aliases or temporary names defined in the SQL itself
 - Do NOT infer or guess table names from column names, variable names, or context
 - Do NOT include Python module names, function names, or imports
 - If the code has no SQL queries or no FROM/JOIN clauses, return an empty array
@@ -121,7 +136,7 @@ async def extract_tables(tool_calls: list[dict[str, Any]]) -> list[str]:
     try:
         tables = json.loads(text)
         if isinstance(tables, list):
-            return sorted(set(str(t) for t in tables))
+            return sorted(set(str(t) for t in tables) - _IGNORED_TABLES)
     except json.JSONDecodeError:
         pass
 

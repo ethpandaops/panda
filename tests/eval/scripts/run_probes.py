@@ -343,6 +343,8 @@ async def _run_single_attempt(
                 error_message=result.error_message,
                 cost_usd=result.total_cost_usd or 0.0,
                 duration_ms=result.duration_ms,
+                num_turns=result.num_turns,
+                num_tool_calls=len(result.tool_calls),
             )
         except Exception as e:
             attempt = AttemptResult(persona=persona["name"], error=True, error_message=str(e))

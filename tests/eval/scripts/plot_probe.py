@@ -45,7 +45,7 @@ def _plot_probe(runs: list[dict], probe_id: str) -> None:
     timestamps = []
     agreements = []
     costs = []
-    durations = []
+    turns = []
 
     for run in runs:
         for probe in run.get("probes", []):
@@ -53,9 +53,9 @@ def _plot_probe(runs: list[dict], probe_id: str) -> None:
                 timestamps.append(run["run_id"])
                 agreements.append(probe["agreement"]["table_agreement"])
                 probe_cost = sum(a.get("cost_usd", 0) for a in probe["attempts"])
-                probe_dur = sum(a.get("duration_ms", 0) for a in probe["attempts"]) / 1000
+                probe_turns = sum(a.get("num_turns", 0) for a in probe["attempts"])
                 costs.append(probe_cost)
-                durations.append(probe_dur)
+                turns.append(probe_turns)
 
     if not timestamps:
         print(f"No results found for probe '{probe_id}'")
@@ -77,9 +77,9 @@ def _plot_probe(runs: list[dict], probe_id: str) -> None:
     ax2.bar(x, costs, color="#f59e0b", alpha=0.7)
     ax2.set_ylabel("Cost ($)")
 
-    # Duration
-    ax3.bar(x, durations, color="#8b5cf6", alpha=0.7)
-    ax3.set_ylabel("Duration (s)")
+    # Turns
+    ax3.bar(x, turns, color="#8b5cf6", alpha=0.7)
+    ax3.set_ylabel("Turns (total)")
     ax3.set_xticks(list(x))
     ax3.set_xticklabels(timestamps, rotation=45, ha="right", fontsize=7)
 
@@ -106,17 +106,17 @@ def _plot_summary(runs: list[dict]) -> None:
             all_probe_ids.add(probe["id"])
     probe_ids = sorted(all_probe_ids)
 
-    # Build grids: agreement, cost, duration (NaN where probe wasn't in that run)
+    # Build grids: agreement, cost, turns (NaN where probe wasn't in that run)
     agreement_grid = np.full((len(probe_ids), len(runs)), float("nan"))
     cost_grid = np.full((len(probe_ids), len(runs)), float("nan"))
-    duration_grid = np.full((len(probe_ids), len(runs)), float("nan"))
+    turns_grid = np.full((len(probe_ids), len(runs)), float("nan"))
 
     for j, run in enumerate(runs):
         for probe in run.get("probes", []):
             i = probe_ids.index(probe["id"])
             agreement_grid[i, j] = probe["agreement"]["table_agreement"]
             cost_grid[i, j] = sum(a.get("cost_usd", 0) for a in probe["attempts"])
-            duration_grid[i, j] = sum(a.get("duration_ms", 0) for a in probe["attempts"]) / 1000
+            turns_grid[i, j] = sum(a.get("num_turns", 0) for a in probe["attempts"])
 
     fig, (ax1, ax2, ax3) = plt.subplots(
         1, 3, figsize=(20, max(6, len(probe_ids) * 0.35)),
@@ -141,13 +141,13 @@ def _plot_summary(runs: list[dict]) -> None:
     ax2.set_yticks([])
     fig.colorbar(im2, ax=ax2, shrink=0.6, label="$")
 
-    # Duration heatmap
-    im3 = ax3.imshow(duration_grid, aspect="auto", cmap="YlOrRd", interpolation="nearest")
-    ax3.set_title("Duration (s)")
+    # Turns heatmap
+    im3 = ax3.imshow(turns_grid, aspect="auto", cmap="YlOrRd", interpolation="nearest")
+    ax3.set_title("Turns (total)")
     ax3.set_xticks(range(len(timestamps)))
     ax3.set_xticklabels(timestamps, rotation=45, ha="right", fontsize=6)
     ax3.set_yticks([])
-    fig.colorbar(im3, ax=ax3, shrink=0.6, label="s")
+    fig.colorbar(im3, ax=ax3, shrink=0.6, label="turns")
 
     plt.suptitle("Self-Play Probe Dashboard", fontsize=14, fontweight="bold")
     plt.tight_layout()
