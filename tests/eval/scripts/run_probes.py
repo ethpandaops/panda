@@ -521,13 +521,10 @@ async def main_async(args: argparse.Namespace) -> None:
     server = None
     if args.url:
         mcp_url = args.url
-    elif args.local_server:
+    else:
         server = PandaServer()
         server.start()
         mcp_url = PROBE_SERVER_URL
-    else:
-        # Default: use docker server on :2480
-        mcp_url = "http://localhost:2480"
 
     try:
         global _agent_semaphore
@@ -616,12 +613,7 @@ Examples:
     parser.add_argument(
         "--url",
         default=None,
-        help="Panda server URL (default: http://localhost:2480)",
-    )
-    parser.add_argument(
-        "--local-server",
-        action="store_true",
-        help=f"Start a local panda-server on :{PROBE_SERVER_PORT} instead of using docker",
+        help=f"Panda server URL (default: starts local server on :{PROBE_SERVER_PORT})",
     )
     args = parser.parse_args()
 
