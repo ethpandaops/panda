@@ -43,6 +43,15 @@ All steps in this runbook MUST use the same consistent timeframe OR there must b
 2. If a network split is detected in step 1 → override to the divergence slot/epoch and investigate around that point (before and after)
 3. Otherwise → default to the **past 1 hour**
 
+## Search-First Principle
+
+Use the `search` tool to find relevant patterns, related procedures, and protocol context throughout this runbook:
+
+- **Examples** — Phase 1 already references specific example searches. In other phases, if you need a query pattern you don't have (e.g., Prometheus metrics for node health, EL-specific ClickHouse queries), search for it rather than guessing: `search(type="examples", query="<what you need>")`
+- **Runbooks** — If you hit a sub-problem during debugging that feels like it deserves its own procedure (e.g., "finality stalled but no split", "single client type failing"), check whether a dedicated runbook exists: `search(type="runbooks", query="<sub-problem>")`
+- **EIPs** — When investigating protocol-level behavior, fork boundary issues, or suspected consensus rule edge cases, look up the relevant specification: `search(type="eips", query="<EIP topic or number>")`
+
+This does NOT replace the hardcoded patterns in this runbook — those encode debug-specific knowledge that generic examples won't have. Use search to fill gaps.
 
 ## Phase 0: Network Discovery
 
@@ -213,7 +222,7 @@ If `message` is still empty after `| json`, try `{{.log}}` or `{{.msg}}` instead
    - Did the problem start at a specific slot/epoch correlating with a config change, fork boundary, or deployment?
    - Are affected nodes in the same region or infrastructure?
    - If a network split occurred, what is the first block where forks diverge? What is special about that block?
-   - If you suspect a specific EIP is involved, and an EIP skill is available, use it to fetch the exact specification to confirm or rule out a faulty implementation.
+   - If you suspect a specific EIP is involved, use `search(type="eips", query="<EIP topic or number>")` to fetch the specification and confirm or rule out a faulty implementation.
 
    Append theories and reasoning to the debug report.
 
