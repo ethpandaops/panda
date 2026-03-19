@@ -146,6 +146,43 @@ block_status:
         GROUP BY hour
         ORDER BY hour DESC
 
+    - name: Investigate a specific orphaned block
+      description: Investigate why a specific block was orphaned by checking its status in fct_block and arrival timing in fct_block_first_seen_by_node. Use fct_block for finalized chain analysis (has status column), fct_block_first_seen_by_node for when nodes saw it.
+      cluster: xatu-cbt
+      query: |
+        SELECT
+          b.slot,
+          b.status,
+          b.block_root,
+          b.parent_root,
+          b.proposer_index,
+          b.execution_payload_transactions_count AS tx_count,
+          b.execution_payload_blob_gas_used AS blob_gas_used,
+          MIN(t.seen_slot_start_diff) AS first_seen_ms,
+          AVG(t.seen_slot_start_diff) AS avg_arrival_ms,
+          MAX(t.seen_slot_start_diff) AS last_seen_ms,
+          COUNT(DISTINCT t.node_id) AS nodes_observed
+        FROM {network}.fct_block b FINAL
+        LEFT JOIN {network}.fct_block_first_seen_by_node t FINAL ON b.slot = t.slot AND b.block_root = t.block_root
+        WHERE b.slot = 13505944
+        GROUP BY b.slot, b.status, b.block_root, b.parent_root, b.proposer_index, tx_count, blob_gas_used
+
+    - name: Parent distance distribution (stale parent detection)
+      description: Detect stale parent usage by measuring the slot gap between blocks and their parents. A parent distance > 1 means missed slots were skipped. Use fct_block with a self-join on parent_root to resolve parent slot.
+      cluster: xatu-cbt
+      query: |
+        SELECT
+          child.slot - parent.slot AS parent_distance,
+          count() AS block_count,
+          count() * 100.0 / sum(count()) OVER () AS percentage
+        FROM {network}.fct_block child FINAL
+        INNER JOIN {network}.fct_block parent FINAL ON child.parent_root = parent.block_root
+        WHERE child.slot_start_date_time >= now() - INTERVAL 24 HOUR
+          AND child.status = 'canonical'
+          AND parent.status = 'canonical'
+        GROUP BY parent_distance
+        ORDER BY parent_distance
+
 validators:
   name: Validator Analysis
   description: Queries for analyzing validator statistics
@@ -624,6 +661,32 @@ entity_analysis:
         GROUP BY entity
         ORDER BY total_duties DESC
         LIMIT 30
+
+    - name: Head vote accuracy by entity vs blob count
+      description: Correlate head vote correctness with blob count per entity (e.g., Lido CSM, Rocketpool). Uses fct_attestation_correctness_by_validator_head for per-validator correctness, ethseer_validator_entity to map validators to entities, and fct_block_blob_count_head for blob counts per slot.
+      cluster: xatu-cbt
+      query: |
+        WITH entity_correctness AS (
+          SELECT
+            c.slot,
+            e.entity,
+            countIf(c.slot_distance = 0) AS correct_head_votes,
+            count() AS total_votes
+          FROM {network}.fct_attestation_correctness_by_validator_head c FINAL
+          INNER JOIN {network}.ethseer_validator_entity e FINAL ON c.attesting_validator_index = e.index
+          WHERE c.slot_start_date_time >= now() - INTERVAL 6 HOUR
+            AND e.entity IN ('Lido CSM', 'Rocketpool', 'Solo Staker')
+          GROUP BY c.slot, e.entity
+        )
+        SELECT
+          b.blob_count,
+          ec.entity,
+          AVG(ec.correct_head_votes * 100.0 / ec.total_votes) AS avg_head_accuracy_pct,
+          count() AS slot_count
+        FROM entity_correctness ec
+        INNER JOIN {network}.fct_block_blob_count_head b FINAL ON ec.slot = b.slot
+        GROUP BY b.blob_count, ec.entity
+        ORDER BY b.blob_count, ec.entity
 
 mev_analysis:
   name: MEV Analysis
@@ -1528,6 +1591,20 @@ engine_api:
         GROUP BY blob_count
         ORDER BY blob_count
 
+    - name: Engine getBlobs success rate distribution
+      description: Breakdown of getBlobs call outcomes (SUCCESS, EMPTY, PARTIAL, ERROR). Use fct_engine_get_blobs_by_slot which has a status column with the call result. This table alone answers questions about getBlobs success/failure rates.
+      cluster: xatu-cbt
+      query: |
+        SELECT
+          status,
+          SUM(observation_count) AS total_calls,
+          SUM(observation_count) * 100.0 / SUM(SUM(observation_count)) OVER () AS percentage,
+          AVG(avg_duration_ms) AS avg_duration_ms
+        FROM {network}.fct_engine_get_blobs_by_slot FINAL
+        WHERE slot_start_date_time >= now() - INTERVAL 24 HOUR
+        GROUP BY status
+        ORDER BY total_calls DESC
+
 execution_state:
   name: Execution State Growth
   description: Queries for analyzing Ethereum state size and storage slot usage
@@ -2222,7 +2299,7 @@ libp2p_gossipsub:
         LIMIT 20
 
     - name: Aggregate and proof gossip propagation timing
-      description: Analyze aggregate and proof propagation timing using libp2p_gossipsub_beacon_aggregate_and_proof.
+      description: Analyze aggregate and proof propagation timing using libp2p_gossipsub_aggregate_and_proof.
       cluster: xatu
       query: |
         SELECT
@@ -2232,7 +2309,7 @@ libp2p_gossipsub:
           quantile(0.95)(propagation_slot_start_diff) AS p95_ms,
           COUNT() AS message_count,
           countDistinct(peer_id_unique_key) AS unique_peers
-        FROM libp2p_gossipsub_beacon_aggregate_and_proof
+        FROM libp2p_gossipsub_aggregate_and_proof
         WHERE meta_network_name = 'mainnet'
           AND slot_start_date_time >= now() - INTERVAL 1 HOUR
         GROUP BY slot
@@ -2432,6 +2509,19 @@ libp2p_peers:
           AND event_date_time >= now() - INTERVAL 1 HOUR
         GROUP BY minute
         ORDER BY minute DESC
+
+    - name: Per-node peer count estimate
+      description: Estimate the number of connected peers per node by counting connection events in libp2p_connected. Use this to derive peer counts for correlation analysis (e.g., does high peer count improve block arrival time). Join to fct_block_first_seen_by_node on meta_client_name for block timing.
+      cluster: xatu
+      query: |
+        SELECT
+          meta_client_name,
+          countDistinct(remote_peer_id_unique_key) AS estimated_peer_count
+        FROM libp2p_connected
+        WHERE meta_network_name = 'mainnet'
+          AND event_date_time >= now() - INTERVAL 1 HOUR
+        GROUP BY meta_client_name
+        ORDER BY estimated_peer_count DESC
 
 libp2p_messages:
   name: libp2p Message Handling

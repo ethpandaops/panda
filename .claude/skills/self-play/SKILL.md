@@ -85,11 +85,17 @@ The goal is that fixing one probe also fixes 5 others in the same domain that we
 ### Step 4: Rebuild and re-run by domain
 
 After making fixes:
-1. `make build` to rebuild the server
-2. Identify the domain tags of the fixed probes (from `probes.yaml`)
-3. Re-run the entire domain to test generalization: `uv run python -m scripts.run_probes --model claude-haiku-4-5 --tag <domain>`
-4. Check if average entropy improved — both for the fixed probes and for related probes in the same domain
-5. If entropy increased on probes you didn't touch, the fix may be overfitting — reconsider the approach
+1. **Commit the fix** as an atomic commit (one fix per commit) so it can be reverted independently if needed
+2. `make build` to rebuild the server
+3. Identify the domain tags of the fixed probes (from `probes.yaml`)
+4. Re-run the entire domain to test generalization: `uv run python -m scripts.run_probes --model claude-haiku-4-5 -c 20 --tag <domain>`
+5. Check if average entropy improved — both for the fixed probes and for related probes in the same domain
+6. **Evaluate the results**: If entropy regressed on other probes, decide whether the regression is caused by your fix or is just noise (LLM variance). Consider:
+   - Did the target probe improve? By how much?
+   - Did other probes in the same domain regress? Or unrelated probes?
+   - Is the regression small (0.72 → 0.72 fluctuation) or large (0.00 → 1.52)?
+   - If the fix clearly caused harm, `git revert <commit>` and try a different approach
+   - If the fix helped the target and regressions look like noise, keep going
 
 ### Step 5: Repeat
 
