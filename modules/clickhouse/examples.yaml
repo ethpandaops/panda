@@ -188,7 +188,7 @@ validators:
   description: Queries for analyzing validator counts, status distribution, and balances. Use canonical_beacon_validators on the xatu cluster — it has one row per validator per epoch with status and balance. This single table is sufficient for validator count, status distribution, and balance queries. Do not join to dim_validator_status or fct_validator_balance for simple count/status queries.
   examples:
     - name: Active validator count for most recent finalized epoch
-      description: Get total count of active validators
+      description: Get total count of active validators using canonical_beacon_validators on the xatu cluster. Filter on status = 'active_ongoing' and the latest epoch. This single table has everything needed for validator counts.
       cluster: xatu
       query: |
         SELECT
@@ -199,7 +199,7 @@ validators:
           AND epoch = (SELECT max(epoch) FROM canonical_beacon_validators WHERE meta_network_name = 'mainnet')
 
     - name: Validator status distribution for most recent finalized epoch
-      description: Count validators by status
+      description: Count validators grouped by status (active_ongoing, pending_queued, exited_slashed, etc.) using canonical_beacon_validators on the xatu cluster. This table has one row per validator per epoch with the current status — no need to join dim_validator_status which tracks lifecycle transitions, not current state.
       cluster: xatu
       query: |
         SELECT
@@ -212,7 +212,7 @@ validators:
         ORDER BY validator_count DESC
 
     - name: Validator balance statistics for most recent finalized epoch
-      description: Get balance distribution of active validators
+      description: Get balance distribution of active validators using canonical_beacon_validators. The balance column is in Gwei — divide by 1e9 for ETH.
       cluster: xatu
       query: |
         SELECT
