@@ -252,16 +252,22 @@ func containsText(eip types.EIP, lowerQuery string) bool {
 		strings.Contains(strings.ToLower(eip.Content), lowerQuery)
 }
 
-var eipNumberRe = regexp.MustCompile(`(?i)(?:eip|erc)[- ]?(\d+)`)
+var eipNumberRe = regexp.MustCompile(`(?i)eip[- ]?(\d+)`)
 
-// extractEIPNumber parses an EIP/ERC number from a query string.
-// Matches patterns like "eip-4844", "EIP 4844", "erc-20", "ERC20".
+// extractEIPNumber parses an EIP number from a query string.
+// Matches patterns like "eip-4844", "EIP 4844", "EIP4844",
+// and bare numbers like "4844".
 func extractEIPNumber(query string) int {
 	if m := eipNumberRe.FindStringSubmatch(query); len(m) == 2 {
 		n, err := strconv.Atoi(m[1])
 		if err == nil {
 			return n
 		}
+	}
+
+	// Bare number: if the entire query is digits, treat it as an EIP number.
+	if n, err := strconv.Atoi(strings.TrimSpace(query)); err == nil && n > 0 {
+		return n
 	}
 
 	return 0

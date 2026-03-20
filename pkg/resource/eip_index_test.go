@@ -71,10 +71,7 @@ func TestExtractEIPNumber(t *testing.T) {
 		{"EIP-4844", 4844},
 		{"eip 4844", 4844},
 		{"EIP4844", 4844},
-		{"erc-20", 20},
-		{"ERC 721", 721},
-		{"erc20", 20},
-		{"4844", 0},
+		{"4844", 4844},
 		{"blob transactions", 0},
 		{"", 0},
 	}
@@ -102,13 +99,18 @@ func TestEIPSearchExactNumberMatch(t *testing.T) {
 	idx, err := NewEIPIndex(log, embedder, eips)
 	require.NoError(t, err)
 
-	results, err := idx.Search("eip-4844", 3)
-	require.NoError(t, err)
-	require.NotEmpty(t, results)
+	for _, query := range []string{"eip-4844", "4844"} {
+		t.Run(query, func(t *testing.T) {
+			t.Parallel()
 
-	// EIP-4844 must be the top result with the exact number score.
-	assert.Equal(t, 4844, results[0].EIP.Number)
-	assert.Equal(t, exactNumberScore, results[0].Score)
+			results, err := idx.Search(query, 3)
+			require.NoError(t, err)
+			require.NotEmpty(t, results)
+
+			assert.Equal(t, 4844, results[0].EIP.Number)
+			assert.Equal(t, exactNumberScore, results[0].Score)
+		})
+	}
 }
 
 func TestEIPSearchIndex(t *testing.T) {
