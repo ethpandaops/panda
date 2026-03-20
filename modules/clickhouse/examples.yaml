@@ -252,18 +252,18 @@ attestations:
         WHERE meta_network_name = 'mainnet'
           AND slot_start_date_time >= now() - INTERVAL 1 HOUR
 
-    - name: Average validators per attestation
-      description: Count the average number of attesting validators per attestation using the aggregation_bits length from beacon_api_eth_v1_events_attestation. Each attestation has aggregation_bits showing which validators in the committee participated.
+    - name: Average validators per included attestation
+      description: Count the average number of validators per included attestation using canonical_beacon_elaborated_attestation. This table has a validators array column — use length(validators) to count participants per attestation.
       cluster: xatu
       query: |
         SELECT
-          AVG(length(aggregation_bits)) AS avg_validators_per_attestation,
-          MIN(length(aggregation_bits)) AS min_validators,
-          MAX(length(aggregation_bits)) AS max_validators,
+          AVG(length(validators)) AS avg_validators_per_attestation,
+          MIN(length(validators)) AS min_validators,
+          MAX(length(validators)) AS max_validators,
           COUNT() AS total_attestations
-        FROM beacon_api_eth_v1_events_attestation
+        FROM canonical_beacon_elaborated_attestation
         WHERE meta_network_name = 'mainnet'
-          AND slot_start_date_time >= now() - INTERVAL 1 HOUR
+          AND block_slot_start_date_time >= now() - INTERVAL 1 HOUR
 
 network_health:
   name: Network Health Monitoring
