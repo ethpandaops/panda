@@ -60,6 +60,57 @@ func (s *stubEmbedder) EmbedBatch(texts []string) ([][]float32, error) {
 
 func (s *stubEmbedder) Close() error { return nil }
 
+func TestExtractEIPNumber(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		query    string
+		expected int
+	}{
+		{"eip-4844", 4844},
+		{"EIP-4844", 4844},
+		{"eip 4844", 4844},
+		{"EIP4844", 4844},
+		{"erc-20", 20},
+		{"ERC 721", 721},
+		{"erc20", 20},
+		{"4844", 0},
+		{"blob transactions", 0},
+		{"", 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.query, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.expected, extractEIPNumber(tt.query))
+		})
+	}
+}
+
+func TestEIPSearchExactNumberMatch(t *testing.T) {
+	t.Parallel()
+
+	embedder := &stubEmbedder{dim: 8}
+	log := logrus.New()
+
+	eips := []types.EIP{
+		{Number: 4844, Title: "Shard Blob Transactions", Description: "Proto-Danksharding"},
+		{Number: 4834, Title: "Some Other EIP", Description: "Unrelated proposal"},
+		{Number: 1844, Title: "Another EIP", Description: "Also unrelated"},
+	}
+
+	idx, err := NewEIPIndex(log, embedder, eips)
+	require.NoError(t, err)
+
+	results, err := idx.Search("eip-4844", 3)
+	require.NoError(t, err)
+	require.NotEmpty(t, results)
+
+	// EIP-4844 must be the top result with the exact number score.
+	assert.Equal(t, 4844, results[0].EIP.Number)
+	assert.Equal(t, exactNumberScore, results[0].Score)
+}
+
 func TestEIPSearchIndex(t *testing.T) {
 	t.Parallel()
 

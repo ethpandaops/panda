@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -14,9 +15,10 @@ import (
 )
 
 const (
-	maxEmbedChars  = 600
-	textMatchBoost = 0.15
-	textMatchBase  = 0.30
+	maxEmbedChars    = 600
+	textMatchBoost   = 0.15
+	textMatchBase    = 0.30
+	exactNumberScore = 1.0
 )
 
 // EIPSearchResult includes the EIP and its similarity score.
@@ -116,6 +118,16 @@ func (idx *EIPIndex) Search(query string, limit int) ([]EIPSearchResult, error) 
 	for _, s := range chunkScores {
 		if s.score > bestByEIP[s.eipIdx] {
 			bestByEIP[s.eipIdx] = s.score
+		}
+	}
+
+	// Exact EIP number match: if the query references a specific EIP number,
+	// pin it to the top regardless of vector similarity.
+	if num := extractEIPNumber(query); num > 0 {
+		for eipIdx, eip := range idx.eips {
+			if eip.Number == num {
+				bestByEIP[eipIdx] = exactNumberScore
+			}
 		}
 	}
 
@@ -238,6 +250,21 @@ func containsText(eip types.EIP, lowerQuery string) bool {
 	return strings.Contains(strings.ToLower(eip.Title), lowerQuery) ||
 		strings.Contains(strings.ToLower(eip.Description), lowerQuery) ||
 		strings.Contains(strings.ToLower(eip.Content), lowerQuery)
+}
+
+var eipNumberRe = regexp.MustCompile(`(?i)(?:eip|erc)[- ]?(\d+)`)
+
+// extractEIPNumber parses an EIP/ERC number from a query string.
+// Matches patterns like "eip-4844", "EIP 4844", "erc-20", "ERC20".
+func extractEIPNumber(query string) int {
+	if m := eipNumberRe.FindStringSubmatch(query); len(m) == 2 {
+		n, err := strconv.Atoi(m[1])
+		if err == nil {
+			return n
+		}
+	}
+
+	return 0
 }
 
 func truncate(s string, maxLen int) string {
