@@ -28,7 +28,7 @@ const gettingStartedHeaderMCP = `# Getting Started Guide
    - ` + "`search(query=\"...\")`" + ` → Search everything (examples, runbooks, EIPs, consensus specs)
    - ` + "`search(type=\"examples\", query=\"...\")`" + ` → Query snippets only
    - ` + "`search(type=\"runbooks\", query=\"...\")`" + ` → Investigation procedures only
-   - ` + "`search(type=\"specs\", query=\"...\")`" + ` → Consensus-specs documents and protocol constants
+   - ` + "`search(type=\"consensus-specs\", query=\"...\")`" + ` → Consensus-specs documents and protocol constants
 3. **Execute** → ` + "`execute_python`" + ` tool with the ethpandaops library
 
 `

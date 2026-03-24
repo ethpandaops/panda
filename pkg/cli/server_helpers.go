@@ -326,7 +326,7 @@ func searchSpecs(
 	}
 
 	var response serverapi.SearchSpecsResponse
-	if err := serverGetJSON(ctx, "/api/v1/search/specs", query, &response); err != nil {
+	if err := serverGetJSON(ctx, "/api/v1/search/consensus-specs", query, &response); err != nil {
 		return nil, err
 	}
 

@@ -37,7 +37,7 @@ Examples:
   panda search examples "attestation participation"
   panda search runbooks "finality delay"
   panda search eips "account abstraction"
-  panda search specs "MAX_EFFECTIVE_BALANCE"`,
+  panda search consensus-specs "MAX_EFFECTIVE_BALANCE"`,
 	Args: cobra.ArbitraryArgs,
 	RunE: runSearchAll,
 }
@@ -64,10 +64,11 @@ var searchEIPsCmd = &cobra.Command{
 }
 
 var searchSpecsCmd = &cobra.Command{
-	Use:   "specs <query>",
-	Short: "Search consensus-specs documents and protocol constants",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runSearchSpecs,
+	Use:     "consensus-specs <query>",
+	Aliases: []string{"specs"},
+	Short:   "Search consensus-specs documents and protocol constants",
+	Args:    cobra.ExactArgs(1),
+	RunE:    runSearchSpecs,
 }
 
 func init() {

@@ -18,8 +18,8 @@ const (
 	SearchTypeRunbooks       = "runbooks"
 	SearchTypeNotebooks      = "notebooks"
 	SearchTypeEIPs           = "eips"
-	SearchTypeSpecs          = "specs"
 	SearchTypeConsensusSpecs = "consensus-specs"
+	SearchTypeSpecsAlias     = "specs"
 
 	DefaultSearchLimit    = 3
 	MaxExampleSearchLimit = 10
@@ -219,8 +219,8 @@ func NormalizeSearchType(searchType string) (string, error) {
 		return SearchTypeRunbooks, nil
 	case SearchTypeEIPs:
 		return SearchTypeEIPs, nil
-	case SearchTypeSpecs, SearchTypeConsensusSpecs:
-		return SearchTypeSpecs, nil
+	case SearchTypeConsensusSpecs, SearchTypeSpecsAlias:
+		return SearchTypeConsensusSpecs, nil
 	default:
 		return "", fmt.Errorf("unsupported search type: %q", searchType)
 	}
@@ -536,7 +536,7 @@ func (s *Service) SearchSpecs(
 	totalMatches := len(specs) + len(constants)
 
 	return &SearchSpecsResponse{
-		Type:           SearchTypeSpecs,
+		Type:           SearchTypeConsensusSpecs,
 		Query:          query,
 		ForkFilter:     forkFilter,
 		TotalMatches:   totalMatches,

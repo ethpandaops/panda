@@ -26,7 +26,7 @@ func (s *service) mountAPIRoutes(r chi.Router) {
 		r.Get("/search/examples", s.handleAPISearchExamples)
 		r.Get("/search/runbooks", s.handleAPISearchRunbooks)
 		r.Get("/search/eips", s.handleAPISearchEIPs)
-		r.Get("/search/specs", s.handleAPISearchSpecs)
+		r.Get("/search/consensus-specs", s.handleAPISearchSpecs)
 		r.Post("/execute", s.handleAPIExecute)
 		r.Get("/sessions", s.handleAPIListSessions)
 		r.Post("/sessions", s.handleAPICreateSession)

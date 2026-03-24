@@ -17,7 +17,7 @@ const searchDescription = `Search indexed examples, runbooks, EIPs, and consensu
 
 When ` + "`type`" + ` is omitted, searches across all types and returns combined results. Use a specific type to narrow results.
 
-` + "`type=\"examples\"`" + ` for query snippets (SQL, PromQL, LogQL), ` + "`type=\"runbooks\"`" + ` for multi-step investigation procedures, ` + "`type=\"eips\"`" + ` for Ethereum Improvement Proposals, ` + "`type=\"specs\"`" + ` for consensus-specs documents and protocol constants. ` + "`type=\"notebooks\"`" + ` is accepted as an alias for runbooks, ` + "`type=\"consensus-specs\"`" + ` as an alias for specs.
+` + "`type=\"examples\"`" + ` for query snippets (SQL, PromQL, LogQL), ` + "`type=\"runbooks\"`" + ` for multi-step investigation procedures, ` + "`type=\"eips\"`" + ` for Ethereum Improvement Proposals, ` + "`type=\"consensus-specs\"`" + ` for consensus-specs documents and protocol constants. ` + "`type=\"notebooks\"`" + ` is accepted as an alias for runbooks, ` + "`type=\"specs\"`" + ` as an alias for consensus-specs.
 
 Examples:
 - search(query="blob propagation getBlobs")
@@ -25,8 +25,8 @@ Examples:
 - search(type="examples", query="block", category="validators")
 - search(type="runbooks", query="network not finalizing", tag="finality")
 - search(type="eips", query="account abstraction", status="Final")
-- search(type="specs", query="MAX_EFFECTIVE_BALANCE")
-- search(type="specs", query="fork choice", fork="deneb")`
+- search(type="consensus-specs", query="MAX_EFFECTIVE_BALANCE")
+- search(type="consensus-specs", query="fork choice", fork="deneb")`
 
 type searchHandler struct {
 	log     logrus.FieldLogger
@@ -52,14 +52,14 @@ func NewSearchTool(
 				Properties: map[string]any{
 					"type": map[string]any{
 						"type":        "string",
-						"description": "Optional. When omitted, searches all types. Use 'examples' for query snippets, 'runbooks' for investigation procedures, 'eips' for Ethereum Improvement Proposals, or 'specs' for consensus-specs documents and protocol constants. 'notebooks' is an alias for 'runbooks', 'consensus-specs' is an alias for 'specs'.",
+						"description": "Optional. When omitted, searches all types. Use 'examples' for query snippets, 'runbooks' for investigation procedures, 'eips' for Ethereum Improvement Proposals, or 'consensus-specs' for consensus-specs documents and protocol constants. 'notebooks' is an alias for 'runbooks', 'specs' is an alias for 'consensus-specs'.",
 						"enum": []string{
 							searchsvc.SearchTypeExamples,
 							searchsvc.SearchTypeRunbooks,
 							searchsvc.SearchTypeNotebooks,
 							searchsvc.SearchTypeEIPs,
-							searchsvc.SearchTypeSpecs,
 							searchsvc.SearchTypeConsensusSpecs,
+							searchsvc.SearchTypeSpecsAlias,
 						},
 					},
 					"query": map[string]any{
@@ -80,7 +80,7 @@ func NewSearchTool(
 					},
 					"fork": map[string]any{
 						"type":        "string",
-						"description": "Optional for type='specs': filter by consensus layer fork (e.g., 'phase0', 'deneb', 'electra')",
+						"description": "Optional for type='consensus-specs': filter by consensus layer fork (e.g., 'phase0', 'deneb', 'electra')",
 					},
 					"limit": map[string]any{
 						"type":        "integer",
@@ -124,7 +124,7 @@ func (h *searchHandler) handle(
 		return h.searchRunbooks(request, query)
 	case searchsvc.SearchTypeEIPs:
 		return h.searchEIPs(request, query)
-	case searchsvc.SearchTypeSpecs:
+	case searchsvc.SearchTypeConsensusSpecs:
 		return h.searchSpecs(request, query)
 	default:
 		return CallToolError(fmt.Errorf("unsupported search type: %q", searchType)), nil
@@ -282,7 +282,7 @@ func (h *searchHandler) searchSpecs(
 	}
 
 	h.log.WithFields(logrus.Fields{
-		"type":    searchsvc.SearchTypeSpecs,
+		"type":    searchsvc.SearchTypeConsensusSpecs,
 		"query":   query,
 		"matches": response.TotalMatches,
 	}).Debug("Search completed")
