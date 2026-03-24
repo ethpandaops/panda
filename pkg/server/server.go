@@ -17,6 +17,7 @@ import (
 	"github.com/ethpandaops/panda/internal/version"
 	"github.com/ethpandaops/panda/pkg/cartographoor"
 	"github.com/ethpandaops/panda/pkg/config"
+	"github.com/ethpandaops/panda/pkg/consensusspecs"
 	"github.com/ethpandaops/panda/pkg/execsvc"
 	"github.com/ethpandaops/panda/pkg/module"
 	"github.com/ethpandaops/panda/pkg/observability"
@@ -50,6 +51,7 @@ type service struct {
 	storageService       storage.Service
 	moduleRegistry       *module.Registry
 	cartographoorClient  cartographoor.CartographoorClient
+	specsRegistry        *consensusspecs.Registry
 	proxyAuthMetadata    *serverapi.ProxyAuthMetadataResponse
 	runtimeTokens        *tokenstore.Store
 	cleanup              func(context.Context) error
@@ -75,6 +77,7 @@ func NewService(
 	storageSvc storage.Service,
 	moduleReg *module.Registry,
 	cartographoorClient cartographoor.CartographoorClient,
+	specsReg *consensusspecs.Registry,
 	proxyAuthMetadata *serverapi.ProxyAuthMetadataResponse,
 	runtimeTokens *tokenstore.Store,
 	cleanup func(context.Context) error,
@@ -90,6 +93,7 @@ func NewService(
 		storageService:      storageSvc,
 		moduleRegistry:      moduleReg,
 		cartographoorClient: cartographoorClient,
+		specsRegistry:       specsReg,
 		proxyAuthMetadata:   proxyAuthMetadata,
 		runtimeTokens:       runtimeTokens,
 		cleanup:             cleanup,

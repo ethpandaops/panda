@@ -139,6 +139,34 @@ type SearchEIPsResponse struct {
 	AvailableTypes      []string           `json:"available_types"`
 }
 
+// SearchSpecResult represents a single consensus spec search result.
+type SearchSpecResult struct {
+	Fork            string  `json:"fork"`
+	Topic           string  `json:"topic"`
+	Title           string  `json:"title"`
+	URL             string  `json:"url"`
+	SimilarityScore float64 `json:"similarity_score"`
+}
+
+// SearchConstantResult represents a single spec constant search result.
+type SearchConstantResult struct {
+	Name            string  `json:"name"`
+	Value           string  `json:"value"`
+	Fork            string  `json:"fork"`
+	SimilarityScore float64 `json:"similarity_score"`
+}
+
+// SearchSpecsResponse is the response for consensus spec search.
+type SearchSpecsResponse struct {
+	Type           string                  `json:"type"`
+	Query          string                  `json:"query"`
+	ForkFilter     string                  `json:"fork_filter,omitempty"`
+	TotalMatches   int                     `json:"total_matches"`
+	Specs          []*SearchSpecResult     `json:"specs"`
+	Constants      []*SearchConstantResult `json:"constants,omitempty"`
+	AvailableForks []string                `json:"available_forks"`
+}
+
 type ExecuteRequest struct {
 	Code      string `json:"code"`
 	Timeout   int    `json:"timeout,omitempty"`

@@ -49,6 +49,12 @@ proxy:
   #   client_id: "panda-proxy"
   #   # resource: "https://proxy.ethpandaops.io"   # only for providers that require RFC 8707 resource params
 
+# Consensus specs configuration (optional).
+# By default, fetches the latest release from ethereum/consensus-specs.
+# consensus_specs:
+#   repository: "ethereum/consensus-specs"  # GitHub owner/repo (for forks)
+#   ref: ""                                 # Branch, tag, or SHA (empty = latest release)
+
 # Observability configuration
 observability:
   metrics_enabled: true

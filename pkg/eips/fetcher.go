@@ -8,27 +8,22 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"path"
 	"regexp"
-	"strings"
 	"time"
 
+	"github.com/ethpandaops/panda/internal/githubapi"
 	"github.com/ethpandaops/panda/pkg/types"
 )
 
 const (
-	repoOwner     = "ethereum"
-	repoName      = "EIPs"
-	repoBranch    = "master"
-	githubAPIBase = "https://api.github.com"
-	fetchTimeout  = 5 * time.Minute
+	repoOwner    = "ethereum"
+	repoName     = "EIPs"
+	repoBranch   = "master"
+	fetchTimeout = 5 * time.Minute
 )
 
-var (
-	eipFilePattern = regexp.MustCompile(`^eip-(\d+)\.md$`)
-	getenv         = os.Getenv
-)
+var eipFilePattern = regexp.MustCompile(`^eip-(\d+)\.md$`)
 
 type fetcher struct {
 	client *http.Client
@@ -43,10 +38,10 @@ func newFetcher() *fetcher {
 func (f *fetcher) latestCommitSHA(ctx context.Context) (string, error) {
 	url := fmt.Sprintf(
 		"%s/repos/%s/%s/git/ref/heads/%s",
-		githubAPIBase, repoOwner, repoName, repoBranch,
+		githubapi.APIBase, repoOwner, repoName, repoBranch,
 	)
 
-	req, err := newRequest(ctx, url)
+	req, err := githubapi.NewRequest(ctx, url)
 	if err != nil {
 		return "", err
 	}
@@ -79,10 +74,10 @@ func (f *fetcher) latestCommitSHA(ctx context.Context) (string, error) {
 func (f *fetcher) fetchAll(ctx context.Context) ([]types.EIP, error) {
 	url := fmt.Sprintf(
 		"%s/repos/%s/%s/tarball/%s",
-		githubAPIBase, repoOwner, repoName, repoBranch,
+		githubapi.APIBase, repoOwner, repoName, repoBranch,
 	)
 
-	req, err := newRequest(ctx, url)
+	req, err := githubapi.NewRequest(ctx, url)
 	if err != nil {
 		return nil, err
 	}
@@ -148,29 +143,4 @@ func extractEIPs(r io.Reader) ([]types.EIP, error) {
 	}
 
 	return eips, nil
-}
-
-func newRequest(ctx context.Context, url string) (*http.Request, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
-	}
-
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-
-	if token := githubToken(); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-
-	return req, nil
-}
-
-func githubToken() string {
-	for _, key := range []string{"GITHUB_TOKEN", "GH_TOKEN"} {
-		if v := strings.TrimSpace(getenv(key)); v != "" {
-			return v
-		}
-	}
-
-	return ""
 }

@@ -310,6 +310,29 @@ func searchEIPs(
 	return &response, nil
 }
 
+func searchSpecs(
+	ctx context.Context,
+	queryText, fork string,
+	limit int,
+) (*serverapi.SearchSpecsResponse, error) {
+	query := url.Values{"query": []string{queryText}}
+
+	if fork != "" {
+		query.Set("fork", fork)
+	}
+
+	if limit > 0 {
+		query.Set("limit", fmt.Sprintf("%d", limit))
+	}
+
+	var response serverapi.SearchSpecsResponse
+	if err := serverGetJSON(ctx, "/api/v1/search/specs", query, &response); err != nil {
+		return nil, err
+	}
+
+	return &response, nil
+}
+
 func listResources(ctx context.Context) (*serverapi.ListResourcesResponse, error) {
 	var response serverapi.ListResourcesResponse
 	if err := serverGetJSON(ctx, "/api/v1/resources", nil, &response); err != nil {

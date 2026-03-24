@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ethpandaops/panda/pkg/consensusspecs"
 	"github.com/ethpandaops/panda/pkg/eips"
 	"github.com/ethpandaops/panda/pkg/module"
 	"github.com/ethpandaops/panda/pkg/resource"
@@ -13,21 +14,26 @@ import (
 )
 
 const (
-	SearchTypeExamples  = "examples"
-	SearchTypeRunbooks  = "runbooks"
-	SearchTypeNotebooks = "notebooks"
-	SearchTypeEIPs      = "eips"
+	SearchTypeExamples       = "examples"
+	SearchTypeRunbooks       = "runbooks"
+	SearchTypeNotebooks      = "notebooks"
+	SearchTypeEIPs           = "eips"
+	SearchTypeSpecs          = "specs"
+	SearchTypeConsensusSpecs = "consensus-specs"
 
 	DefaultSearchLimit    = 3
 	MaxExampleSearchLimit = 10
 	MaxRunbookSearchLimit = 5
 	MaxEIPSearchLimit     = 10
+	MaxSpecsSearchLimit   = 10
 	MinExampleScore       = 0.3
 	MinRunbookScore       = 0.25
 	MinEIPScore           = 0.25
+	MinSpecsScore         = 0.25
 	exampleFilterOverscan = 3
 	runbookFilterOverscan = 2
 	eipFilterOverscan     = 3
+	specsFilterOverscan   = 3
 )
 
 type ExampleSearcher interface {
@@ -52,6 +58,17 @@ type EIPMetadataProvider interface {
 	Statuses() []string
 	Categories() []string
 	Types() []string
+}
+
+// SpecsSearcher provides semantic search over consensus specs.
+type SpecsSearcher interface {
+	SearchSpecs(query string, limit int) ([]resource.ConsensusSpecSearchResult, error)
+	SearchConstants(query string, limit int) []resource.ConstantSearchResult
+}
+
+// SpecsMetadataProvider provides filter metadata for consensus spec search.
+type SpecsMetadataProvider interface {
+	Forks() []string
 }
 
 type SearchExampleResult struct {
@@ -106,6 +123,34 @@ type SearchEIPResult struct {
 	SimilarityScore float64 `json:"similarity_score"`
 }
 
+// SearchSpecResult represents a single consensus spec search result.
+type SearchSpecResult struct {
+	Fork            string  `json:"fork"`
+	Topic           string  `json:"topic"`
+	Title           string  `json:"title"`
+	URL             string  `json:"url"`
+	SimilarityScore float64 `json:"similarity_score"`
+}
+
+// SearchConstantResult represents a single spec constant search result.
+type SearchConstantResult struct {
+	Name            string  `json:"name"`
+	Value           string  `json:"value"`
+	Fork            string  `json:"fork"`
+	SimilarityScore float64 `json:"similarity_score"`
+}
+
+// SearchSpecsResponse is the response for consensus spec search.
+type SearchSpecsResponse struct {
+	Type           string                  `json:"type"`
+	Query          string                  `json:"query"`
+	ForkFilter     string                  `json:"fork_filter,omitempty"`
+	TotalMatches   int                     `json:"total_matches"`
+	Specs          []*SearchSpecResult     `json:"specs"`
+	Constants      []*SearchConstantResult `json:"constants,omitempty"`
+	AvailableForks []string                `json:"available_forks"`
+}
+
 // SearchAllResponse is the response for searching across all types.
 type SearchAllResponse struct {
 	Type     string                  `json:"type"`
@@ -113,6 +158,7 @@ type SearchAllResponse struct {
 	Examples *SearchExamplesResponse `json:"examples,omitempty"`
 	Runbooks *SearchRunbooksResponse `json:"runbooks,omitempty"`
 	EIPs     *SearchEIPsResponse     `json:"eips,omitempty"`
+	Specs    *SearchSpecsResponse    `json:"specs,omitempty"`
 }
 
 // SearchEIPsResponse is the response for EIP search.
@@ -129,7 +175,7 @@ type SearchEIPsResponse struct {
 	AvailableTypes      []string           `json:"available_types"`
 }
 
-// Service provides search across examples, runbooks, and EIPs.
+// Service provides search across examples, runbooks, EIPs, and consensus specs.
 type Service struct {
 	exampleIndex ExampleSearcher
 	moduleReg    *module.Registry
@@ -137,6 +183,8 @@ type Service struct {
 	runbookReg   RunbookTagProvider
 	eipIndex     EIPSearcher
 	eipReg       EIPMetadataProvider
+	specsIndex   SpecsSearcher
+	specsReg     SpecsMetadataProvider
 }
 
 // New creates a new search service.
@@ -147,6 +195,8 @@ func New(
 	runbookReg RunbookTagProvider,
 	eipIndex EIPSearcher,
 	eipReg EIPMetadataProvider,
+	specsIndex SpecsSearcher,
+	specsReg SpecsMetadataProvider,
 ) *Service {
 	return &Service{
 		exampleIndex: exampleIndex,
@@ -155,6 +205,8 @@ func New(
 		runbookReg:   runbookReg,
 		eipIndex:     eipIndex,
 		eipReg:       eipReg,
+		specsIndex:   specsIndex,
+		specsReg:     specsReg,
 	}
 }
 
@@ -167,6 +219,8 @@ func NormalizeSearchType(searchType string) (string, error) {
 		return SearchTypeRunbooks, nil
 	case SearchTypeEIPs:
 		return SearchTypeEIPs, nil
+	case SearchTypeSpecs, SearchTypeConsensusSpecs:
+		return SearchTypeSpecs, nil
 	default:
 		return "", fmt.Errorf("unsupported search type: %q", searchType)
 	}
@@ -407,6 +461,91 @@ func (s *Service) SearchEIPs(
 	}, nil
 }
 
+// SearchSpecs searches consensus specs with optional fork filter.
+func (s *Service) SearchSpecs(
+	query, forkFilter string,
+	limit int,
+) (*SearchSpecsResponse, error) {
+	if s.specsIndex == nil || s.specsReg == nil {
+		return nil, fmt.Errorf("consensus specs search index not available")
+	}
+
+	limit = clampSearchLimit(limit, MaxSpecsSearchLimit)
+
+	availableForks := s.specsReg.Forks() // Already sorted by Registry.Forks().
+
+	if forkFilter != "" && !slices.Contains(availableForks, forkFilter) {
+		return nil, fmt.Errorf(
+			"unknown fork: %q. Available forks: %s",
+			forkFilter,
+			strings.Join(availableForks, ", "),
+		)
+	}
+
+	searchLimit := limit
+	if forkFilter != "" {
+		searchLimit = limit * specsFilterOverscan
+	}
+
+	specResults, err := s.specsIndex.SearchSpecs(query, searchLimit)
+	if err != nil {
+		return nil, fmt.Errorf("search failed: %w", err)
+	}
+
+	specs := make([]*SearchSpecResult, 0, len(specResults))
+
+	for _, result := range specResults {
+		if result.Score < MinSpecsScore {
+			continue
+		}
+
+		if forkFilter != "" && result.Spec.Fork != forkFilter {
+			continue
+		}
+
+		specs = append(specs, &SearchSpecResult{
+			Fork:            result.Spec.Fork,
+			Topic:           result.Spec.Topic,
+			Title:           result.Spec.Title,
+			URL:             result.Spec.URL,
+			SimilarityScore: result.Score,
+		})
+
+		if len(specs) >= limit {
+			break
+		}
+	}
+
+	// Also search constants by name.
+	constantResults := s.specsIndex.SearchConstants(query, limit)
+	constants := make([]*SearchConstantResult, 0, len(constantResults))
+
+	for _, result := range constantResults {
+		if forkFilter != "" && result.Constant.Fork != forkFilter {
+			continue
+		}
+
+		constants = append(constants, &SearchConstantResult{
+			Name:            result.Constant.Name,
+			Value:           result.Constant.Value,
+			Fork:            result.Constant.Fork,
+			SimilarityScore: result.Score,
+		})
+	}
+
+	totalMatches := len(specs) + len(constants)
+
+	return &SearchSpecsResponse{
+		Type:           SearchTypeSpecs,
+		Query:          query,
+		ForkFilter:     forkFilter,
+		TotalMatches:   totalMatches,
+		Specs:          specs,
+		Constants:      constants,
+		AvailableForks: availableForks,
+	}, nil
+}
+
 // SearchAll searches across all available indices and merges results.
 func (s *Service) SearchAll(query string, limit int) (*SearchAllResponse, error) {
 	resp := &SearchAllResponse{
@@ -435,6 +574,13 @@ func (s *Service) SearchAll(query string, limit int) (*SearchAllResponse, error)
 		}
 	}
 
+	if s.specsIndex != nil && s.specsReg != nil {
+		specs, err := s.SearchSpecs(query, "", limit)
+		if err == nil {
+			resp.Specs = specs
+		}
+	}
+
 	return resp, nil
 }
 
@@ -455,9 +601,11 @@ func clampSearchLimit(limit, max int) int {
 }
 
 var (
-	_ ExampleSearcher     = (*resource.ExampleIndex)(nil)
-	_ RunbookSearcher     = (*resource.RunbookIndex)(nil)
-	_ RunbookTagProvider  = (*runbooks.Registry)(nil)
-	_ EIPSearcher         = (*resource.EIPIndex)(nil)
-	_ EIPMetadataProvider = (*eips.Registry)(nil)
+	_ ExampleSearcher       = (*resource.ExampleIndex)(nil)
+	_ RunbookSearcher       = (*resource.RunbookIndex)(nil)
+	_ RunbookTagProvider    = (*runbooks.Registry)(nil)
+	_ EIPSearcher           = (*resource.EIPIndex)(nil)
+	_ EIPMetadataProvider   = (*eips.Registry)(nil)
+	_ SpecsSearcher         = (*resource.ConsensusSpecIndex)(nil)
+	_ SpecsMetadataProvider = (*consensusspecs.Registry)(nil)
 )
