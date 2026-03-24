@@ -19,7 +19,7 @@ const (
 	SearchTypeNotebooks      = "notebooks"
 	SearchTypeEIPs           = "eips"
 	SearchTypeConsensusSpecs = "consensus-specs"
-	SearchTypeSpecsAlias     = "specs"
+	SearchTypeSpecs          = "specs"
 
 	DefaultSearchLimit    = 3
 	MaxExampleSearchLimit = 10
@@ -219,7 +219,7 @@ func NormalizeSearchType(searchType string) (string, error) {
 		return SearchTypeRunbooks, nil
 	case SearchTypeEIPs:
 		return SearchTypeEIPs, nil
-	case SearchTypeConsensusSpecs, SearchTypeSpecsAlias:
+	case SearchTypeConsensusSpecs, SearchTypeSpecs:
 		return SearchTypeConsensusSpecs, nil
 	default:
 		return "", fmt.Errorf("unsupported search type: %q", searchType)

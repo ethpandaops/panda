@@ -59,7 +59,7 @@ func NewSearchTool(
 							searchsvc.SearchTypeNotebooks,
 							searchsvc.SearchTypeEIPs,
 							searchsvc.SearchTypeConsensusSpecs,
-							searchsvc.SearchTypeSpecsAlias,
+							searchsvc.SearchTypeSpecs,
 						},
 					},
 					"query": map[string]any{
@@ -84,7 +84,7 @@ func NewSearchTool(
 					},
 					"limit": map[string]any{
 						"type":        "integer",
-						"description": "Maximum results to return. Defaults to 3. Max is 10 for examples/eips/specs and 5 for runbooks.",
+						"description": "Maximum results to return. Defaults to 3. Max is 10 for examples/eips/consensus-specs and 5 for runbooks.",
 						"minimum":     1,
 						"maximum":     searchsvc.MaxExampleSearchLimit,
 					},
