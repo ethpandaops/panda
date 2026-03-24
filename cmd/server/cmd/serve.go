@@ -36,8 +36,8 @@ func runServe(_ *cobra.Command, _ []string) error {
 
 	log.WithField("version", version.Version).Info("Starting panda server")
 
-	// Load configuration.
-	cfg, err := config.Load(cfgFile)
+	// Load configuration (base config merged with user overrides).
+	cfg, err := config.LoadWithUserOverrides(cfgFile)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
