@@ -290,8 +290,8 @@ func pandaDataDir(subdir string) string {
 	return filepath.Join(home, ".panda", "data", subdir)
 }
 
-// MaxSandboxTimeout is the maximum allowed sandbox timeout in seconds.
-const MaxSandboxTimeout = 600
+// MaxSandboxTimeout is the maximum allowed sandbox timeout in seconds (~3 months).
+const MaxSandboxTimeout = 7_776_000
 
 // Validate validates the configuration.
 func (c *Config) Validate() error {

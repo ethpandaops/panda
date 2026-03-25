@@ -20,6 +20,7 @@ import (
 
 	authclient "github.com/ethpandaops/panda/pkg/auth/client"
 	authstore "github.com/ethpandaops/panda/pkg/auth/store"
+	"github.com/ethpandaops/panda/pkg/config"
 	"github.com/ethpandaops/panda/pkg/configpath"
 	"github.com/ethpandaops/panda/pkg/proxy"
 )
@@ -113,6 +114,14 @@ func runInit(_ *cobra.Command, _ []string) error {
 		return err
 	}
 
+	// Write user config placeholder (never overwritten, even with --force).
+	userConfigPath := filepath.Join(initDir, config.UserConfigFilename)
+
+	userConfigCreated, err := writeConfigFile(userConfigPath, config.UserConfigPlaceholder(), false)
+	if err != nil {
+		return err
+	}
+
 	composeContent := buildComposeTemplate(initServerImage, absConfigDir)
 	composePath := filepath.Join(initDir, "docker-compose.yaml")
 
@@ -128,6 +137,10 @@ func runInit(_ *cobra.Command, _ []string) error {
 		fmt.Printf("Config written to: %s\n", configPath)
 	} else {
 		fmt.Printf("Config already exists: %s (use --force to overwrite)\n", configPath)
+	}
+
+	if userConfigCreated > 0 {
+		fmt.Printf("User config written to: %s\n", userConfigPath)
 	}
 
 	if composeCreated > 0 {
@@ -287,6 +300,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - /tmp/ethpandaops-panda-sandbox:/tmp/ethpandaops-panda-sandbox
       - %s/config.yaml:/app/config.yaml:ro
+      - %s/config.user.yaml:/app/config.user.yaml:ro
       - %s/credentials:/home/panda/.config/panda/credentials
       - panda-storage:/data/storage
       - panda-cache:/data/cache
@@ -305,7 +319,7 @@ networks:
 volumes:
   panda-storage:
   panda-cache:
-`, serverImage, dockerGID, configDir, configDir)
+`, serverImage, dockerGID, configDir, configDir, configDir)
 }
 
 func checkDockerAndPullImages() error {

@@ -24,6 +24,7 @@ import (
 
 	"github.com/ethpandaops/panda/internal/github"
 	"github.com/ethpandaops/panda/internal/version"
+	"github.com/ethpandaops/panda/pkg/config"
 )
 
 const (
@@ -233,6 +234,14 @@ func regenerateComposeFile() error {
 	absConfigDir, err := filepath.Abs(configDir)
 	if err != nil {
 		return fmt.Errorf("resolving config directory: %w", err)
+	}
+
+	// Ensure user config file exists (compose bind mount requires it).
+	userConfigPath := filepath.Join(absConfigDir, config.UserConfigFilename)
+	if _, err := os.Stat(userConfigPath); os.IsNotExist(err) {
+		if writeErr := os.WriteFile(userConfigPath, []byte(config.UserConfigPlaceholder()), 0o644); writeErr != nil {
+			return fmt.Errorf("creating user config placeholder: %w", writeErr)
+		}
 	}
 
 	content := buildComposeTemplate(defaultServerImage, absConfigDir)
