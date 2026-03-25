@@ -16,12 +16,13 @@ import (
 type paramType int
 
 const (
-	paramString   paramType = iota // free-text input
-	paramInt                       // integer input
-	paramFloat                     // float input
-	paramBool                      // toggle
-	paramDuration                  // Go duration string (e.g. "30m", "4h")
-	paramPort                      // port number (1-65535)
+	paramString         paramType = iota // free-text input
+	paramOptionalString                  // free-text input (empty allowed)
+	paramInt                             // integer input
+	paramFloat                           // float input
+	paramBool                            // toggle
+	paramDuration                        // Go duration string (e.g. "30m", "4h")
+	paramPort                            // port number (1-65535)
 )
 
 // configParam describes a single configurable setting.
@@ -225,6 +226,28 @@ func buildCategories(cfg *config.Config) []configCategory {
 					Type:        paramPort,
 					Value:       strconv.Itoa(cfg.Observability.MetricsPort),
 					Default:     2490,
+				},
+			},
+		},
+		{
+			Name:        "Consensus Specs",
+			Description: "Configure how ethereum/consensus-specs are fetched from GitHub.\n\nSpec documents and protocol constants are indexed for semantic search and available in Python via ethpandaops.specs.",
+			Params: []*configParam{
+				{
+					Name:        "Repository",
+					Description: "GitHub owner/repo to fetch consensus specs from.\n\nChange this to point at a fork, e.g. \"myorg/consensus-specs\".\n\nDefault: ethereum/consensus-specs",
+					Path:        "consensus_specs.repository",
+					Type:        paramString,
+					Value:       cfg.ConsensusSpecs.Repository,
+					Default:     "ethereum/consensus-specs",
+				},
+				{
+					Name:        "Ref",
+					Description: "Git ref (branch, tag, or commit SHA) to fetch.\n\nLeave empty to track the latest GitHub release automatically.\n\nExamples: dev, v1.5.0-alpha.10, electra",
+					Path:        "consensus_specs.ref",
+					Type:        paramOptionalString,
+					Value:       cfg.ConsensusSpecs.Ref,
+					Default:     "",
 				},
 			},
 		},
