@@ -498,13 +498,14 @@ func formatSettingLine(p *configParam) string {
 }
 
 // formatParamValue formats just the value with color tags.
+// Uses bold to ensure visibility against the highlighted-row background.
 func formatParamValue(p *configParam) string {
 	if p.Type == paramBool {
 		if p.Value == "true" {
-			return "[green]on[-]"
+			return "[green::b]on[-::-]"
 		}
 
-		return "[red]off[-]"
+		return "[red::b]off[-::-]"
 	}
 
 	display := p.Value
@@ -513,7 +514,7 @@ func formatParamValue(p *configParam) string {
 	}
 
 	if p.Value != p.Original {
-		return "[green]" + display + "[-]"
+		return "[green::b]" + display + "[-::-]"
 	}
 
 	return display
