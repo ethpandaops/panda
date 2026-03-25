@@ -69,7 +69,7 @@ func (d *configDisplay) run() {
 
 // buildHomePage creates the grouped category browser.
 func (d *configDisplay) buildHomePage() {
-	list := tview.NewList().
+	list := styledList().
 		ShowSecondaryText(false).
 		SetHighlightFullLine(true)
 
@@ -161,7 +161,7 @@ func (d *configDisplay) buildCategoryPage(catIdx int) {
 	cat := &d.categories[catIdx]
 	pageID := fmt.Sprintf("category-%d", catIdx)
 
-	list := tview.NewList().
+	list := styledList().
 		ShowSecondaryText(false).
 		SetHighlightFullLine(true)
 
@@ -498,14 +498,13 @@ func formatSettingLine(p *configParam) string {
 }
 
 // formatParamValue formats just the value with color tags.
-// Uses bold to ensure visibility against the highlighted-row background.
 func formatParamValue(p *configParam) string {
 	if p.Type == paramBool {
 		if p.Value == "true" {
-			return "[green::b]on[-::-]"
+			return "[green]on[-]"
 		}
 
-		return "[red::b]off[-::-]"
+		return "[red]off[-]"
 	}
 
 	display := p.Value
@@ -514,7 +513,7 @@ func formatParamValue(p *configParam) string {
 	}
 
 	if p.Value != p.Original {
-		return "[green::b]" + display + "[-::-]"
+		return "[green]" + display + "[-]"
 	}
 
 	return display
@@ -529,6 +528,16 @@ func descriptionText(p *configParam) string {
 	}
 
 	return text
+}
+
+// styledList creates a list with a selected-row style that preserves inline
+// color tags. The default tview style inverts colors, making green/red text
+// unreadable on the highlighted row.
+func styledList() *tview.List {
+	return tview.NewList().
+		SetSelectedStyle(tcell.StyleDefault.
+			Foreground(tcell.ColorWhite).
+			Background(tcell.ColorDarkSlateGray))
 }
 
 // hasBoolParams returns true if the category has any bool parameters.
