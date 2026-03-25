@@ -36,9 +36,10 @@ type configParam struct {
 	Default     any    // base default for override map (omit if unchanged)
 }
 
-// configCategory groups related config parameters.
+// configCategory groups related config parameters under a named group.
 type configCategory struct {
-	Name        string
+	Group       string // top-level group (e.g. "Sandbox", "Server", "Modules")
+	Name        string // category name within the group (e.g. "Execution", "Sessions")
 	Description string
 	Params      []*configParam
 }
@@ -110,7 +111,8 @@ func runConfigTUI(_ *cobra.Command, _ []string) error {
 func buildCategories(cfg *config.Config) []configCategory {
 	return []configCategory{
 		{
-			Name:        "Sandbox Execution",
+			Group:       "Sandbox",
+			Name:        "Execution",
 			Description: "Configure execution limits for the Python sandbox, including timeout, memory, and CPU constraints.",
 			Params: []*configParam{
 				{
@@ -140,6 +142,7 @@ func buildCategories(cfg *config.Config) []configCategory {
 			},
 		},
 		{
+			Group:       "Sandbox",
 			Name:        "Sessions",
 			Description: "Configure persistent sandbox sessions. Sessions allow code to share state across multiple executions.",
 			Params: []*configParam{
@@ -178,7 +181,8 @@ func buildCategories(cfg *config.Config) []configCategory {
 			},
 		},
 		{
-			Name:        "Sandbox Logging",
+			Group:       "Sandbox",
+			Name:        "Logging",
 			Description: "Control what sandbox activity is logged. Useful for debugging but may expose sensitive data.",
 			Params: []*configParam{
 				{
@@ -200,7 +204,8 @@ func buildCategories(cfg *config.Config) []configCategory {
 			},
 		},
 		{
-			Name:        "Server",
+			Group:       "Server",
+			Name:        "Connection",
 			Description: "Configure the panda server, proxy connection, and observability settings.",
 			Params: []*configParam{
 				{
@@ -230,7 +235,8 @@ func buildCategories(cfg *config.Config) []configCategory {
 			},
 		},
 		{
-			Name:        "Modules: Consensus Specs",
+			Group:       "Modules",
+			Name:        "Consensus Specs",
 			Description: "Configure how ethereum/consensus-specs are fetched from GitHub.\n\nSpec documents and protocol constants are indexed for semantic search and available in Python via ethpandaops.specs.",
 			Params: []*configParam{
 				{
