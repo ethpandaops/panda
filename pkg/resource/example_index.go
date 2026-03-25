@@ -2,13 +2,39 @@ package resource
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
+	"strings"
 
 	"github.com/sirupsen/logrus"
 
 	"github.com/ethpandaops/panda/pkg/embedding"
 	"github.com/ethpandaops/panda/pkg/types"
 )
+
+// tableNameRe matches table names after FROM/JOIN keywords in SQL, stripping
+// schema prefixes like {network}. or default.
+var tableNameRe = regexp.MustCompile(`(?i)(?:FROM|JOIN)\s+(?:\{?\w+\}?\.)?(\w+)`)
+
+// extractTableNames pulls table names from a SQL query string.
+func extractTableNames(query string) []string {
+	matches := tableNameRe.FindAllStringSubmatch(query, -1)
+	seen := make(map[string]struct{})
+
+	var tables []string
+
+	for _, m := range matches {
+		name := strings.ToLower(m[1])
+		if _, ok := seen[name]; ok {
+			continue
+		}
+
+		seen[name] = struct{}{}
+		tables = append(tables, name)
+	}
+
+	return tables
+}
 
 // SearchResult includes the example and its similarity score.
 type SearchResult struct {
@@ -47,7 +73,23 @@ func NewExampleIndex(
 
 	for catKey, cat := range categories {
 		for _, ex := range cat.Examples {
-			texts = append(texts, ex.Name+". "+ex.Description)
+			// Build a rich embedding text that includes category context,
+			// cluster, and table names from the query. This gives the
+			// embedding model enough signal to distinguish examples that
+			// use different tables for similar-sounding questions.
+			var parts []string
+			parts = append(parts, cat.Name+": "+ex.Name)
+			parts = append(parts, ex.Description)
+
+			if ex.Cluster != "" {
+				parts = append(parts, "Cluster: "+ex.Cluster)
+			}
+
+			if tables := extractTableNames(ex.Query); len(tables) > 0 {
+				parts = append(parts, "Tables: "+strings.Join(tables, ", "))
+			}
+
+			texts = append(texts, strings.Join(parts, ". "))
 
 			examples = append(examples, indexedExample{
 				CategoryKey:  catKey,

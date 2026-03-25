@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 from collections import Counter
@@ -32,6 +33,7 @@ class AgreementResult:
     all_agreed: bool = False
     tables_used: dict[str, int] = field(default_factory=dict)
     finding: str = ""
+    entropy: float = 0.0
 
 
 @dataclass
@@ -179,9 +181,20 @@ def score_agreement(attempts: list[AttemptResult]) -> AgreementResult:
             parts.append(f"{count}/{len(valid)} used {tables_str}")
         finding = "; ".join(parts)
 
+    # Shannon entropy over the distribution of table-set choices.
+    # 0 = all personas agree. Higher = more confusion.
+    n = len(valid)
+    entropy = 0.0
+    if n > 1:
+        for count in set_counts.values():
+            p = count / n
+            if p > 0:
+                entropy -= p * math.log2(p)
+
     return AgreementResult(
         table_agreement=table_agreement,
         all_agreed=all_agreed,
         tables_used=dict(all_tables),
         finding=finding,
+        entropy=round(entropy, 4),
     )

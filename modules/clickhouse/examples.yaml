@@ -146,12 +146,49 @@ block_status:
         GROUP BY hour
         ORDER BY hour DESC
 
+    - name: Investigate a specific orphaned block
+      description: Investigate why a specific block was orphaned by checking its status in fct_block and arrival timing in fct_block_first_seen_by_node. Use fct_block for finalized chain analysis (has status column), fct_block_first_seen_by_node for when nodes saw it.
+      cluster: xatu-cbt
+      query: |
+        SELECT
+          b.slot,
+          b.status,
+          b.block_root,
+          b.parent_root,
+          b.proposer_index,
+          b.execution_payload_transactions_count AS tx_count,
+          b.execution_payload_blob_gas_used AS blob_gas_used,
+          MIN(t.seen_slot_start_diff) AS first_seen_ms,
+          AVG(t.seen_slot_start_diff) AS avg_arrival_ms,
+          MAX(t.seen_slot_start_diff) AS last_seen_ms,
+          COUNT(DISTINCT t.node_id) AS nodes_observed
+        FROM {network}.fct_block b FINAL
+        LEFT JOIN {network}.fct_block_first_seen_by_node t FINAL ON b.slot = t.slot AND b.block_root = t.block_root
+        WHERE b.slot = 13505944
+        GROUP BY b.slot, b.status, b.block_root, b.parent_root, b.proposer_index, tx_count, blob_gas_used
+
+    - name: Parent distance distribution (stale parent detection)
+      description: Detect stale parent usage by measuring the slot gap between blocks and their parents. A parent distance > 1 means missed slots were skipped. Use fct_block with a self-join on parent_root to resolve parent slot.
+      cluster: xatu-cbt
+      query: |
+        SELECT
+          child.slot - parent.slot AS parent_distance,
+          count() AS block_count,
+          count() * 100.0 / sum(count()) OVER () AS percentage
+        FROM {network}.fct_block child FINAL
+        INNER JOIN {network}.fct_block parent FINAL ON child.parent_root = parent.block_root
+        WHERE child.slot_start_date_time >= now() - INTERVAL 24 HOUR
+          AND child.status = 'canonical'
+          AND parent.status = 'canonical'
+        GROUP BY parent_distance
+        ORDER BY parent_distance
+
 validators:
   name: Validator Analysis
-  description: Queries for analyzing validator statistics
+  description: Queries for analyzing validator counts, status distribution, and balances. Use canonical_beacon_validators on the xatu cluster — it has one row per validator per epoch with status and balance. This single table is sufficient for validator count, status distribution, and balance queries. Do not join to dim_validator_status or fct_validator_balance for simple count/status queries.
   examples:
     - name: Active validator count for most recent finalized epoch
-      description: Get total count of active validators
+      description: Get total count of active validators using canonical_beacon_validators on the xatu cluster. Filter on status = 'active_ongoing' and the latest epoch. This single table has everything needed for validator counts.
       cluster: xatu
       query: |
         SELECT
@@ -162,7 +199,7 @@ validators:
           AND epoch = (SELECT max(epoch) FROM canonical_beacon_validators WHERE meta_network_name = 'mainnet')
 
     - name: Validator status distribution for most recent finalized epoch
-      description: Count validators by status
+      description: Count validators grouped by status (active_ongoing, pending_queued, exited_slashed, etc.) using canonical_beacon_validators on the xatu cluster. This table has one row per validator per epoch with the current status — no need to join dim_validator_status which tracks lifecycle transitions, not current state.
       cluster: xatu
       query: |
         SELECT
@@ -175,7 +212,7 @@ validators:
         ORDER BY validator_count DESC
 
     - name: Validator balance statistics for most recent finalized epoch
-      description: Get balance distribution of active validators
+      description: Get balance distribution of active validators using canonical_beacon_validators. The balance column is in Gwei — divide by 1e9 for ETH.
       cluster: xatu
       query: |
         SELECT
@@ -215,25 +252,25 @@ attestations:
         WHERE meta_network_name = 'mainnet'
           AND slot_start_date_time >= now() - INTERVAL 1 HOUR
 
-    - name: Average validators per attestation
-      description: Count the average number of attesting validators per attestation using the aggregation_bits length from beacon_api_eth_v1_events_attestation. Each attestation has aggregation_bits showing which validators in the committee participated.
+    - name: Average validators per included attestation
+      description: Count the average number of validators per included attestation using canonical_beacon_elaborated_attestation. This table has a validators array column — use length(validators) to count participants per attestation.
       cluster: xatu
       query: |
         SELECT
-          AVG(length(aggregation_bits)) AS avg_validators_per_attestation,
-          MIN(length(aggregation_bits)) AS min_validators,
-          MAX(length(aggregation_bits)) AS max_validators,
+          AVG(length(validators)) AS avg_validators_per_attestation,
+          MIN(length(validators)) AS min_validators,
+          MAX(length(validators)) AS max_validators,
           COUNT() AS total_attestations
-        FROM beacon_api_eth_v1_events_attestation
+        FROM canonical_beacon_elaborated_attestation
         WHERE meta_network_name = 'mainnet'
-          AND slot_start_date_time >= now() - INTERVAL 1 HOUR
+          AND block_slot_start_date_time >= now() - INTERVAL 1 HOUR
 
 network_health:
   name: Network Health Monitoring
   description: Queries used for monitoring Ethereum network health, derived from production alerting rules
   examples:
-    - name: Attestation participation rate
-      description: Calculate the ratio of attesting validators to total validators per slot. Used to detect participation drops below 66% which could indicate network issues.
+    - name: Attestation participation rate (raw events)
+      description: Calculate the ratio of attesting validators to total validators per slot using raw event data from xatu cluster. For a simpler pre-aggregated approach, use fct_attestation_correctness_head on xatu-cbt instead.
       cluster: xatu
       query: |
         WITH total_validators AS (
@@ -245,7 +282,7 @@ network_health:
               slot_start_date_time,
               committee_index,
               validators
-            FROM default.beacon_api_eth_v1_beacon_committee
+            FROM beacon_api_eth_v1_beacon_committee
             WHERE slot_start_date_time >= now() - INTERVAL 5 MINUTE
               AND meta_network_name = 'mainnet'
             LIMIT 1 BY slot_start_date_time, committee_index
@@ -256,7 +293,7 @@ network_health:
           SELECT
             slot_start_date_time,
             COUNT(DISTINCT attesting_validator_index) AS attesting_validators
-          FROM default.beacon_api_eth_v1_events_attestation
+          FROM beacon_api_eth_v1_events_attestation
           WHERE slot_start_date_time >= now() - INTERVAL 5 MINUTE
             AND meta_network_name = 'mainnet'
           GROUP BY slot_start_date_time
@@ -385,8 +422,8 @@ network_health:
         GROUP BY slot_start_date_time, slot
         ORDER BY slot_start_date_time DESC
 
-    - name: Block arrival by consensus client 
-      description: Compare block arrival times across different consensus client implementations.
+    - name: Block arrival comparison across consensus clients
+      description: Compare block arrival times across consensus client implementations for network health monitoring.
       cluster: xatu-cbt
       query: |
         SELECT
@@ -401,7 +438,7 @@ network_health:
         GROUP BY client
         ORDER BY avg_arrival_ms ASC
 
-    - name: Block arrival by country 
+    - name: Block arrival by country
       description: Compare block arrival times across different geographic locations.
       cluster: xatu-cbt
       query: |
@@ -466,9 +503,36 @@ network_health:
         GROUP BY epoch, epoch_start_date_time
         ORDER BY epoch DESC
 
+    - name: Missed slots count
+      description: Count missed slots (where no block was proposed) in a time window. Uses fct_block_head alone — compare the expected slot range to actual slots present. No join to proposer entity needed for a simple count.
+      cluster: xatu-cbt
+      query: |
+        SELECT
+          (max(slot) - min(slot) + 1) AS total_slots_in_range,
+          count(DISTINCT slot) AS proposed_slots,
+          (max(slot) - min(slot) + 1) - count(DISTINCT slot) AS missed_slots,
+          ((max(slot) - min(slot) + 1) - count(DISTINCT slot)) * 100.0 / (max(slot) - min(slot) + 1) AS missed_rate_pct
+        FROM {network}.fct_block_head FINAL
+        WHERE slot_start_date_time >= now() - INTERVAL 24 HOUR
+
+    - name: Missed slots per hour
+      description: Track missed slot rate per hour using fct_block_head. Each hour has 300 expected slots (3600s / 12s).
+      cluster: xatu-cbt
+      query: |
+        SELECT
+          toStartOfHour(slot_start_date_time) AS hour,
+          300 AS expected_slots,
+          count(DISTINCT slot) AS proposed_slots,
+          300 - count(DISTINCT slot) AS missed_slots,
+          (300 - count(DISTINCT slot)) * 100.0 / 300 AS missed_rate_pct
+        FROM {network}.fct_block_head FINAL
+        WHERE slot_start_date_time >= now() - INTERVAL 24 HOUR
+        GROUP BY hour
+        ORDER BY hour DESC
+
 entity_analysis:
   name: Entity Analysis
-  description: Queries for analyzing staking entities (operators, pools, exchanges) and their performance
+  description: Queries for analyzing staking entities (operators, pools, exchanges) and their performance. For entity-level liveness, use fct_attestation_liveness_by_entity_head (pre-aggregated by entity). For entity-level correctness, aggregate fct_attestation_correctness_by_validator_head joined with ethseer_validator_entity — there is no pre-aggregated correctness-by-entity table. For block proposals by entity, use fct_block_proposer_entity.
   examples:
     - name: Entity attestation liveness ranking
       description: Rank staking entities by attestation liveness (attestations vs missed).
@@ -502,7 +566,7 @@ entity_analysis:
         ORDER BY hour DESC, attestations DESC
 
     - name: Entity performance comparison (liveness + correctness)
-      description: Compare staking entities by both attestation liveness and head correctness. Use fct_attestation_liveness_by_entity_head for liveness and fct_attestation_correctness_by_entity_head for entity-level correctness.
+      description: Compare staking entities by both attestation liveness and head correctness. Use fct_attestation_liveness_by_entity_head for liveness. For entity-level correctness, aggregate fct_attestation_correctness_by_validator_head joined with ethseer_validator_entity (there is no pre-aggregated correctness-by-entity table).
       cluster: xatu-cbt
       query: |
         WITH liveness AS (
@@ -517,13 +581,14 @@ entity_analysis:
         ),
         correctness AS (
           SELECT
-            entity,
-            SUM(votes_head) AS total_head_votes,
-            SUM(votes_head + votes_other) AS total_votes,
-            SUM(votes_head) / SUM(votes_head + votes_other) AS correctness_rate
-          FROM {network}.fct_attestation_correctness_by_entity_head FINAL
-          WHERE slot_start_date_time >= now() - INTERVAL 1 DAY
-          GROUP BY entity
+            e.entity,
+            countIf(c.slot_distance = 0) AS correct_head_votes,
+            count() AS total_votes,
+            correct_head_votes / total_votes AS correctness_rate
+          FROM {network}.fct_attestation_correctness_by_validator_head c FINAL
+          INNER JOIN {network}.ethseer_validator_entity e FINAL ON c.attesting_validator_index = e.index
+          WHERE c.slot_start_date_time >= now() - INTERVAL 1 DAY
+          GROUP BY e.entity
         )
         SELECT
           l.entity,
@@ -598,9 +663,54 @@ entity_analysis:
         ORDER BY total_duties DESC
         LIMIT 30
 
+    - name: Head vote accuracy by entity vs blob count
+      description: Correlate head vote correctness with blob count per entity (e.g., Lido CSM, Rocketpool). Uses fct_attestation_correctness_by_validator_head for per-validator correctness, ethseer_validator_entity to map validators to entities, and fct_block_blob_count_head for blob counts per slot.
+      cluster: xatu-cbt
+      query: |
+        WITH entity_correctness AS (
+          SELECT
+            c.slot,
+            e.entity,
+            countIf(c.slot_distance = 0) AS correct_head_votes,
+            count() AS total_votes
+          FROM {network}.fct_attestation_correctness_by_validator_head c FINAL
+          INNER JOIN {network}.ethseer_validator_entity e FINAL ON c.attesting_validator_index = e.index
+          WHERE c.slot_start_date_time >= now() - INTERVAL 6 HOUR
+            AND e.entity IN ('Lido CSM', 'Rocketpool', 'Solo Staker')
+          GROUP BY c.slot, e.entity
+        )
+        SELECT
+          b.blob_count,
+          ec.entity,
+          AVG(ec.correct_head_votes * 100.0 / ec.total_votes) AS avg_head_accuracy_pct,
+          count() AS slot_count
+        FROM entity_correctness ec
+        INNER JOIN {network}.fct_block_blob_count_head b FINAL ON ec.slot = b.slot
+        GROUP BY b.blob_count, ec.entity
+        ORDER BY b.blob_count, ec.entity
+
+    - name: Timing games by entity
+      description: Identify entities that consistently propose blocks late (timing games to capture more MEV). Uses fct_block_first_seen_by_node for arrival timing and fct_block_proposer_entity for entity identity. These two tables are sufficient — do not add fct_block_mev_head or fct_prepared_block.
+      cluster: xatu-cbt
+      query: |
+        SELECT
+          e.entity,
+          AVG(b.seen_slot_start_diff) AS avg_arrival_ms,
+          quantile(0.50)(b.seen_slot_start_diff) AS p50_arrival_ms,
+          quantile(0.95)(b.seen_slot_start_diff) AS p95_arrival_ms,
+          COUNT(DISTINCT b.slot) AS slots_proposed
+        FROM {network}.fct_block_first_seen_by_node b FINAL
+        INNER JOIN {network}.fct_block_proposer_entity e FINAL ON b.slot = e.slot
+        WHERE b.slot_start_date_time >= now() - INTERVAL 24 HOUR
+          AND e.entity != 'unknown'
+        GROUP BY e.entity
+        HAVING slots_proposed >= 10
+        ORDER BY avg_arrival_ms DESC
+        LIMIT 20
+
 mev_analysis:
   name: MEV Analysis
-  description: Queries for analyzing MEV (Maximal Extractable Value) activity including relays, builders, and block values
+  description: Queries for analyzing MEV (Maximal Extractable Value) activity including relays, builders, and block values. For relay-level market share use fct_block_mev_head (xatu-cbt). For individual bid data (values, builder pubkeys, bid traces) use mev_relay_bid_trace (xatu) — the value column is in wei (UInt256). For validator registrations use mev_relay_validator_registration (xatu). For bid count trends use fct_mev_bid_count_by_relay and fct_mev_bid_count_by_builder (xatu-cbt). For highest bid value timing use fct_mev_bid_highest_value_by_builder_chunked_50ms (xatu-cbt).
   examples:
     - name: MEV relay activity
       description: Analyze MEV relay bid activity per slot.
@@ -761,20 +871,6 @@ mev_analysis:
         UNION ALL
         SELECT * FROM local_stats
 
-    - name: MEV bid value distribution
-      description: Get the distribution of MEV bid values (min, p50, p95, max) using fct_mev_bid_value.
-      cluster: xatu-cbt
-      query: |
-        SELECT
-          MIN(value) / 1e18 AS min_value_eth,
-          quantile(0.50)(value) / 1e18 AS p50_value_eth,
-          quantile(0.95)(value) / 1e18 AS p95_value_eth,
-          MAX(value) / 1e18 AS max_value_eth,
-          AVG(value) / 1e18 AS avg_value_eth,
-          COUNT() AS total_bids
-        FROM {network}.fct_mev_bid_value FINAL
-        WHERE slot_start_date_time >= now() - INTERVAL 1 HOUR
-
     - name: Hourly MEV activity trend
       description: Track MEV activity trends by hour including bid counts and block values.
       cluster: xatu-cbt
@@ -790,6 +886,26 @@ mev_analysis:
           AND value IS NOT NULL
         GROUP BY hour
         ORDER BY hour DESC
+
+    - name: MEV bid value distribution
+      description: Distribution of MEV bid values to understand the value spectrum. Uses mev_relay_bid_trace on the xatu cluster which contains individual bid data with value (in wei).
+      cluster: xatu
+      query: |
+        SELECT
+          CASE
+            WHEN value / 1e18 < 0.01 THEN '<0.01 ETH'
+            WHEN value / 1e18 < 0.05 THEN '0.01-0.05 ETH'
+            WHEN value / 1e18 < 0.1 THEN '0.05-0.1 ETH'
+            WHEN value / 1e18 < 0.5 THEN '0.1-0.5 ETH'
+            ELSE '>0.5 ETH'
+          END AS value_bucket,
+          count() AS bid_count,
+          avg(value / 1e18) AS avg_value_eth
+        FROM mev_relay_bid_trace
+        WHERE meta_network_name = 'mainnet'
+          AND slot_start_date_time >= now() - INTERVAL 1 HOUR
+        GROUP BY value_bucket
+        ORDER BY avg_value_eth
 
 head_accuracy:
   name: Head Vote Accuracy
@@ -1000,7 +1116,7 @@ head_accuracy:
 
 blob_analysis:
   name: Blob Analysis
-  description: Queries for analyzing EIP-4844 blob data including blob counts, submitters, and L2 rollup activity
+  description: Queries for analyzing EIP-4844 blob data including blob counts, submitters, and L2 rollup activity. For blob counts and submitter identity, use dim_block_blob_submitter (xatu-cbt). For blob content analysis (empty blobs, blob sizes), use canonical_beacon_blob_sidecar (xatu) which has blob_size and blob_empty_size columns. Cross-cluster joins require two separate queries.
   examples:
     - name: Blob count per slot
       description: Get the number of blobs in each slot.
@@ -1121,6 +1237,24 @@ blob_analysis:
         FROM {network}.dim_block_blob_submitter FINAL
         WHERE updated_date_time >= now() - INTERVAL 1 HOUR
         ORDER BY updated_date_time DESC
+        LIMIT 50
+
+    - name: Empty blob detection
+      description: Find blobs with zero useful data using canonical_beacon_blob_sidecar (xatu cluster). The blob_empty_size column shows how many bytes are empty — when blob_empty_size equals blob_size, the blob is entirely empty. To identify submitters, join these slots to dim_block_blob_submitter on xatu-cbt (separate query, different cluster).
+      cluster: xatu
+      query: |
+        SELECT
+          slot,
+          proposer_index,
+          blob_index,
+          blob_size,
+          blob_empty_size,
+          versioned_hash
+        FROM canonical_beacon_blob_sidecar
+        WHERE slot_start_date_time >= now() - INTERVAL 24 HOUR
+          AND meta_network_name = 'mainnet'
+          AND blob_empty_size = blob_size
+        ORDER BY slot DESC
         LIMIT 50
 
 data_column_sidecars:
@@ -1483,6 +1617,20 @@ engine_api:
         GROUP BY blob_count
         ORDER BY blob_count
 
+    - name: Engine getBlobs success rate distribution
+      description: Breakdown of getBlobs call outcomes (SUCCESS, EMPTY, PARTIAL, ERROR). Use fct_engine_get_blobs_by_slot which has a status column with the call result. This table alone answers questions about getBlobs success/failure rates.
+      cluster: xatu-cbt
+      query: |
+        SELECT
+          status,
+          SUM(observation_count) AS total_calls,
+          SUM(observation_count) * 100.0 / SUM(SUM(observation_count)) OVER () AS percentage,
+          AVG(avg_duration_ms) AS avg_duration_ms
+        FROM {network}.fct_engine_get_blobs_by_slot FINAL
+        WHERE slot_start_date_time >= now() - INTERVAL 24 HOUR
+        GROUP BY status
+        ORDER BY total_calls DESC
+
 execution_state:
   name: Execution State Growth
   description: Queries for analyzing Ethereum state size and storage slot usage
@@ -1548,6 +1696,67 @@ execution_state:
         ORDER BY day_start_date DESC
         LIMIT 1
 
+
+execution_traces:
+  name: Execution Trace Analysis (Call Frames, Gas Breakdown)
+  description: Queries for analyzing EVM execution traces using int_transaction_call_frame on xatu-cbt. This table contains one row per call frame per transaction — use it for gas breakdown by contract, precompile usage, call depth analysis, and function-level profiling. Partitioned by block_number — always filter on block_number. For opcode-level gas breakdown within a frame, use int_transaction_call_frame_opcode_gas instead.
+  examples:
+    - name: Precompile gas usage for a block
+      description: Rank EVM precompiles by gas consumed in a specific block. Precompile contracts live at addresses 0x01–0x0a. Uses int_transaction_call_frame which has per-frame gas accounting.
+      cluster: xatu-cbt
+      query: |
+        SELECT
+          target_address,
+          count() AS call_count,
+          sum(gas) AS total_self_gas,
+          avg(gas) AS avg_gas_per_call,
+          sum(gas_cumulative) AS total_cumulative_gas
+        FROM {network}.int_transaction_call_frame
+        WHERE block_number = 22068000
+          AND target_address IN (
+            '0x0000000000000000000000000000000000000001',
+            '0x0000000000000000000000000000000000000002',
+            '0x0000000000000000000000000000000000000003',
+            '0x0000000000000000000000000000000000000004',
+            '0x0000000000000000000000000000000000000005',
+            '0x0000000000000000000000000000000000000006',
+            '0x0000000000000000000000000000000000000007',
+            '0x0000000000000000000000000000000000000008',
+            '0x0000000000000000000000000000000000000009',
+            '0x000000000000000000000000000000000000000a'
+          )
+        GROUP BY target_address
+        ORDER BY total_self_gas DESC
+
+    - name: Top gas-consuming contracts in a block
+      description: Find the contracts consuming the most gas in a specific block. Uses self gas (excludes child frames) for accurate per-contract attribution.
+      cluster: xatu-cbt
+      query: |
+        SELECT
+          target_address,
+          count() AS call_count,
+          sum(gas) AS total_self_gas,
+          avg(gas) AS avg_gas_per_call
+        FROM {network}.int_transaction_call_frame
+        WHERE block_number = 22068000
+          AND target_address IS NOT NULL
+        GROUP BY target_address
+        ORDER BY total_self_gas DESC
+        LIMIT 20
+
+    - name: Call type distribution for a block range
+      description: Breakdown of call types (CALL, DELEGATECALL, STATICCALL, CREATE, etc.) and their gas usage across a block range.
+      cluster: xatu-cbt
+      query: |
+        SELECT
+          call_type,
+          count() AS frame_count,
+          sum(gas) AS total_gas,
+          avg(depth) AS avg_depth
+        FROM {network}.int_transaction_call_frame
+        WHERE block_number BETWEEN 22068000 AND 22068100
+        GROUP BY call_type
+        ORDER BY total_gas DESC
 
 prepared_blocks:
   name: Prepared Blocks (Local Block Building)
@@ -2116,7 +2325,7 @@ libp2p_gossipsub:
         LIMIT 20
 
     - name: Aggregate and proof gossip propagation timing
-      description: Analyze aggregate and proof propagation timing using libp2p_gossipsub_beacon_aggregate_and_proof.
+      description: Analyze aggregate and proof propagation timing using libp2p_gossipsub_aggregate_and_proof.
       cluster: xatu
       query: |
         SELECT
@@ -2126,7 +2335,7 @@ libp2p_gossipsub:
           quantile(0.95)(propagation_slot_start_diff) AS p95_ms,
           COUNT() AS message_count,
           countDistinct(peer_id_unique_key) AS unique_peers
-        FROM libp2p_gossipsub_beacon_aggregate_and_proof
+        FROM libp2p_gossipsub_aggregate_and_proof
         WHERE meta_network_name = 'mainnet'
           AND slot_start_date_time >= now() - INTERVAL 1 HOUR
         GROUP BY slot
@@ -2326,6 +2535,19 @@ libp2p_peers:
           AND event_date_time >= now() - INTERVAL 1 HOUR
         GROUP BY minute
         ORDER BY minute DESC
+
+    - name: Per-node peer count estimate
+      description: Estimate the number of connected peers per node by counting connection events in libp2p_connected. Use this to derive peer counts for correlation analysis (e.g., does high peer count improve block arrival time). Join to fct_block_first_seen_by_node on meta_client_name for block timing.
+      cluster: xatu
+      query: |
+        SELECT
+          meta_client_name,
+          countDistinct(remote_peer_id_unique_key) AS estimated_peer_count
+        FROM libp2p_connected
+        WHERE meta_network_name = 'mainnet'
+          AND event_date_time >= now() - INTERVAL 1 HOUR
+        GROUP BY meta_client_name
+        ORDER BY estimated_peer_count DESC
 
 libp2p_messages:
   name: libp2p Message Handling

@@ -183,42 +183,43 @@ def print_comparison(current: dict[str, Any], previous: dict[str, Any]) -> None:
     changes = []
     for probe_id, curr in curr_probes.items():
         prev = prev_probes.get(probe_id)
-        curr_score = curr["agreement"]["table_agreement"]
+        curr_entropy = curr["agreement"].get("entropy", 0.0)
 
         if prev is None:
-            changes.append((probe_id, None, curr_score, "NEW"))
+            changes.append((probe_id, None, curr_entropy, "NEW"))
             continue
 
-        prev_score = prev["agreement"]["table_agreement"]
-        delta = curr_score - prev_score
+        prev_entropy = prev["agreement"].get("entropy", 0.0)
+        delta = curr_entropy - prev_entropy
 
-        if delta > 0.01:
+        # For entropy, lower is better — negative delta is improvement
+        if delta < -0.01:
             label = "[green]IMPROVED[/green]"
-        elif delta < -0.01:
+        elif delta > 0.01:
             label = "[red]REGRESSED[/red]"
         else:
             label = ""
 
-        changes.append((probe_id, prev_score, curr_score, label))
+        changes.append((probe_id, prev_entropy, curr_entropy, label))
 
-    for probe_id, prev_score, curr_score, label in changes:
-        prev_str = f"{prev_score:.2f}" if prev_score is not None else "-"
-        delta_val = curr_score - prev_score if prev_score is not None else 0.0
-        delta_str = f"{delta_val:+.2f}" if prev_score is not None else "NEW"
-        table.add_row(probe_id, prev_str, f"{curr_score:.2f}", f"{delta_str} {label}")
+    for probe_id, prev_val, curr_val, label in changes:
+        prev_str = f"{prev_val:.2f}" if prev_val is not None else "-"
+        delta_val = curr_val - prev_val if prev_val is not None else 0.0
+        delta_str = f"{delta_val:+.2f}" if prev_val is not None else "NEW"
+        table.add_row(probe_id, prev_str, f"{curr_val:.2f}", f"{delta_str} {label}")
 
     prev_summary = previous.get("summary", {})
     curr_summary = current.get("summary", {})
+    prev_entropy = prev_summary.get("avg_entropy", "?")
+    curr_entropy = curr_summary.get("avg_entropy", "?")
     console.print()
     console.print(table)
-    console.print(
-        f"\n  Previous: {prev_summary.get('full_agreement', '?')} agreed, "
-        f"{prev_summary.get('disagreement', '?')} disagreed"
-    )
-    console.print(
-        f"  Current:  {curr_summary.get('full_agreement', '?')} agreed, "
-        f"{curr_summary.get('disagreement', '?')} disagreed"
-    )
+    if isinstance(prev_entropy, (int, float)) and isinstance(curr_entropy, (int, float)):
+        delta = curr_entropy - prev_entropy
+        direction = "[green]▼[/green]" if delta < 0 else "[red]▲[/red]" if delta > 0 else ""
+        console.print(f"\n  Entropy: {prev_entropy:.4f} → {curr_entropy:.4f} ({delta:+.4f}) {direction}")
+    else:
+        console.print(f"\n  Previous entropy: {prev_entropy}, Current entropy: {curr_entropy}")
 
 
 def _format_duration(ms: int) -> str:
@@ -412,6 +413,7 @@ async def run_probe(
     return {
         "id": probe_id,
         "question": question,
+        "tags": case.get("tags", []),
         "attempts": [asdict(a) for a in attempt_results],
         "agreement": asdict(agreement),
     }
@@ -444,6 +446,11 @@ async def run_all_probes(
 
     full_agreement = sum(1 for p in probe_results if p["agreement"]["all_agreed"])
     disagreement = len(probe_results) - full_agreement
+    avg_entropy = (
+        sum(p["agreement"]["entropy"] for p in probe_results) / len(probe_results)
+        if probe_results
+        else 0.0
+    )
 
     return {
         "run_id": run_id,
@@ -458,6 +465,7 @@ async def run_all_probes(
             "agreement_rate": round(full_agreement / len(probe_results), 3)
             if probe_results
             else 0.0,
+            "avg_entropy": round(avg_entropy, 4),
         },
         "probes": probe_results,
     }
@@ -467,25 +475,25 @@ def print_results(results: dict[str, Any]) -> None:
     """Print a rich summary table."""
     table = Table(title="Probe Results")
     table.add_column("Probe", style="cyan")
+    table.add_column("Entropy", justify="right")
     table.add_column("Agreement", justify="right")
-    table.add_column("Agreed?", justify="center")
     table.add_column("Finding")
 
     for probe in results["probes"]:
         agreement = probe["agreement"]
-        score = agreement["table_agreement"]
+        entropy = agreement.get("entropy", 0.0)
 
         if agreement["all_agreed"]:
-            agreed_str = "[green]yes[/green]"
-            score_style = "green"
+            entropy_style = "green"
+        elif entropy > 1.0:
+            entropy_style = "red"
         else:
-            agreed_str = "[red]no[/red]"
-            score_style = "red"
+            entropy_style = "yellow"
 
         table.add_row(
             probe["id"],
-            f"[{score_style}]{score:.2f}[/{score_style}]",
-            agreed_str,
+            f"[{entropy_style}]{entropy:.2f}[/{entropy_style}]",
+            f"{agreement['table_agreement']:.2f}",
             agreement["finding"],
         )
 
@@ -493,10 +501,11 @@ def print_results(results: dict[str, Any]) -> None:
     console.print(table)
 
     summary = results["summary"]
+    avg_entropy = summary.get("avg_entropy", 0.0)
     console.print(
-        f"\n  [bold]Summary:[/bold] {summary['full_agreement']} agreed, "
-        f"{summary['disagreement']} disagreed "
-        f"({summary['agreement_rate']:.0%} agreement rate)"
+        f"\n  [bold]Average entropy: {avg_entropy:.4f}[/bold]  "
+        f"({summary['full_agreement']} agreed, "
+        f"{summary['disagreement']} disagreed)"
     )
     console.print(f"  [dim]Cost: ${results['total_cost_usd']:.4f}[/dim]")
 
@@ -518,6 +527,9 @@ async def main_async(args: argparse.Namespace) -> None:
 
     if args.probe:
         cases = [c for c in cases if fnmatch.fnmatch(c["id"], args.probe)]
+
+    if args.tag:
+        cases = [c for c in cases if args.tag in c.get("tags", [])]
 
     if args.only_previously_failed:
         previous = get_latest_result()
@@ -608,6 +620,12 @@ Examples:
         type=str,
         default=None,
         help="Filter probes by ID glob pattern (e.g., 'blocks_*')",
+    )
+    parser.add_argument(
+        "--tag",
+        type=str,
+        default=None,
+        help="Filter probes by tag (e.g., 'blobs', 'mev', 'attestations')",
     )
     parser.add_argument(
         "-n",
