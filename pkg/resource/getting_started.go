@@ -25,9 +25,10 @@ const gettingStartedHeaderMCP = `# Getting Started Guide
 
 1. **Discover** → Read datasource resources to find available data sources and schemas
 2. **Find patterns** → Use the ` + "`search`" + ` tool to find relevant examples and procedures:
-   - ` + "`search(query=\"...\")`" + ` → Search everything (examples, runbooks, EIPs)
+   - ` + "`search(query=\"...\")`" + ` → Search everything (examples, runbooks, EIPs, consensus specs)
    - ` + "`search(type=\"examples\", query=\"...\")`" + ` → Query snippets only
    - ` + "`search(type=\"runbooks\", query=\"...\")`" + ` → Investigation procedures only
+   - ` + "`search(type=\"consensus-specs\", query=\"...\")`" + ` → Consensus-specs documents and protocol constants
 3. **Execute** → ` + "`execute_python`" + ` tool with the ethpandaops library
 
 `

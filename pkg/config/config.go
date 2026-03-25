@@ -18,13 +18,25 @@ import (
 
 // Config is the main configuration structure.
 type Config struct {
-	Server        ServerConfig        `yaml:"server"`
-	Sandbox       SandboxConfig       `yaml:"sandbox"`
-	Proxy         ProxyConfig         `yaml:"proxy"`
-	Storage       StorageConfig       `yaml:"storage"`
-	Observability ObservabilityConfig `yaml:"observability"`
+	Server         ServerConfig         `yaml:"server"`
+	Sandbox        SandboxConfig        `yaml:"sandbox"`
+	Proxy          ProxyConfig          `yaml:"proxy"`
+	Storage        StorageConfig        `yaml:"storage"`
+	Observability  ObservabilityConfig  `yaml:"observability"`
+	ConsensusSpecs ConsensusSpecsConfig `yaml:"consensus_specs,omitempty"`
 
 	path string `yaml:"-"`
+}
+
+// ConsensusSpecsConfig configures how consensus-specs are fetched from GitHub.
+type ConsensusSpecsConfig struct {
+	// Repository is the GitHub owner/repo (e.g. "ethereum/consensus-specs").
+	// Defaults to "ethereum/consensus-specs".
+	Repository string `yaml:"repository,omitempty"`
+
+	// Ref is the git ref (branch, tag, or SHA) to fetch.
+	// When empty, the latest GitHub release tag is used.
+	Ref string `yaml:"ref,omitempty"`
 }
 
 // StorageConfig holds configuration for local file storage.
@@ -269,6 +281,11 @@ func applyDefaults(cfg *Config) {
 	// Proxy defaults.
 	if cfg.Proxy.URL == "" {
 		cfg.Proxy.URL = "http://localhost:18081"
+	}
+
+	// Consensus specs defaults.
+	if cfg.ConsensusSpecs.Repository == "" {
+		cfg.ConsensusSpecs.Repository = "ethereum/consensus-specs"
 	}
 
 	// Storage defaults.

@@ -16,12 +16,13 @@ import (
 type paramType int
 
 const (
-	paramString   paramType = iota // free-text input
-	paramInt                       // integer input
-	paramFloat                     // float input
-	paramBool                      // toggle
-	paramDuration                  // Go duration string (e.g. "30m", "4h")
-	paramPort                      // port number (1-65535)
+	paramString         paramType = iota // free-text input
+	paramOptionalString                  // free-text input (empty allowed)
+	paramInt                             // integer input
+	paramFloat                           // float input
+	paramBool                            // toggle
+	paramDuration                        // Go duration string (e.g. "30m", "4h")
+	paramPort                            // port number (1-65535)
 )
 
 // configParam describes a single configurable setting.
@@ -35,9 +36,10 @@ type configParam struct {
 	Default     any    // base default for override map (omit if unchanged)
 }
 
-// configCategory groups related config parameters.
+// configCategory groups related config parameters under a named group.
 type configCategory struct {
-	Name        string
+	Group       string // top-level group (e.g. "Sandbox", "Server", "Modules")
+	Name        string // category name within the group (e.g. "Execution", "Sessions")
 	Description string
 	Params      []*configParam
 }
@@ -109,7 +111,8 @@ func runConfigTUI(_ *cobra.Command, _ []string) error {
 func buildCategories(cfg *config.Config) []configCategory {
 	return []configCategory{
 		{
-			Name:        "Sandbox Execution",
+			Group:       "Sandbox",
+			Name:        "Execution",
 			Description: "Configure execution limits for the Python sandbox, including timeout, memory, and CPU constraints.",
 			Params: []*configParam{
 				{
@@ -139,6 +142,7 @@ func buildCategories(cfg *config.Config) []configCategory {
 			},
 		},
 		{
+			Group:       "Sandbox",
 			Name:        "Sessions",
 			Description: "Configure persistent sandbox sessions. Sessions allow code to share state across multiple executions.",
 			Params: []*configParam{
@@ -177,7 +181,8 @@ func buildCategories(cfg *config.Config) []configCategory {
 			},
 		},
 		{
-			Name:        "Sandbox Logging",
+			Group:       "Sandbox",
+			Name:        "Logging",
 			Description: "Control what sandbox activity is logged. Useful for debugging but may expose sensitive data.",
 			Params: []*configParam{
 				{
@@ -199,7 +204,8 @@ func buildCategories(cfg *config.Config) []configCategory {
 			},
 		},
 		{
-			Name:        "Server",
+			Group:       "Server",
+			Name:        "Connection",
 			Description: "Configure the panda server, proxy connection, and observability settings.",
 			Params: []*configParam{
 				{
@@ -228,6 +234,29 @@ func buildCategories(cfg *config.Config) []configCategory {
 				},
 			},
 		},
+		{
+			Group:       "Modules",
+			Name:        "Consensus Specs",
+			Description: "Configure how ethereum/consensus-specs are fetched from GitHub.\n\nSpec documents and protocol constants are indexed for semantic search and available in Python via ethpandaops.specs.",
+			Params: []*configParam{
+				{
+					Name:        "Repository",
+					Description: "GitHub owner/repo to fetch consensus specs from.\n\nChange this to point at a fork, e.g. \"myorg/consensus-specs\".\n\nDefault: ethereum/consensus-specs",
+					Path:        "consensus_specs.repository",
+					Type:        paramString,
+					Value:       cfg.ConsensusSpecs.Repository,
+					Default:     "ethereum/consensus-specs",
+				},
+				{
+					Name:        "Ref",
+					Description: "Git ref (branch, tag, or commit SHA) to fetch.\n\nLeave empty to track the latest GitHub release automatically.\n\nExamples: dev, v1.5.0-alpha.10, electra",
+					Path:        "consensus_specs.ref",
+					Type:        paramOptionalString,
+					Value:       cfg.ConsensusSpecs.Ref,
+					Default:     "",
+				},
+			},
+		},
 	}
 }
 
@@ -251,10 +280,20 @@ func buildOverrideMap(categories []configCategory, existing map[string]any) (map
 				return nil, fmt.Errorf("%s: %w", p.Name, err)
 			}
 
+			defaultVal := p.Default
+
+			// If the user actively changed this param, always include it in the
+			// override map — even if the new value matches the base default.
+			// This ensures "reset to default" correctly overrides a previously
+			// saved user value in config.user.yaml.
+			if p.Value != p.Original {
+				defaultVal = nil
+			}
+
 			fields = append(fields, config.OverrideField{
 				Path:    p.Path,
 				Value:   val,
-				Default: p.Default,
+				Default: defaultVal,
 			})
 		}
 	}

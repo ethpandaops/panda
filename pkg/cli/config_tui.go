@@ -67,18 +67,42 @@ func (d *configDisplay) run() {
 	}
 }
 
-// buildHomePage creates the category browser.
+// buildHomePage creates the grouped category browser.
 func (d *configDisplay) buildHomePage() {
-	list := tview.NewList().
+	list := styledList().
 		ShowSecondaryText(false).
 		SetHighlightFullLine(true)
 
-	for _, cat := range d.categories {
-		list.AddItem("  "+cat.Name, "", 0, nil)
+	// Build the list with group headers and indented categories.
+	// indexToCat maps selectable list indices to category indices (-1 = not a category).
+	indexToCat := make([]int, 0, len(d.categories)*2)
+	lastGroup := ""
+
+	for catIdx, cat := range d.categories {
+		if cat.Group != lastGroup {
+			// Group header (non-selectable separator + header).
+			if lastGroup != "" {
+				list.AddItem("", "", 0, nil)
+				indexToCat = append(indexToCat, -1)
+			}
+
+			list.AddItem("  [::b]"+cat.Group+"[::-]", "", 0, nil)
+			indexToCat = append(indexToCat, -1)
+
+			lastGroup = cat.Group
+		}
+
+		list.AddItem("    "+cat.Name, "", 0, nil)
+		indexToCat = append(indexToCat, catIdx)
 	}
 
 	list.AddItem("", "", 0, nil)
+	indexToCat = append(indexToCat, -1)
+
+	reviewIdx := list.GetItemCount()
+
 	list.AddItem("  Review Changes and Save", "", 0, nil)
+	indexToCat = append(indexToCat, -1)
 
 	list.SetBorder(true).SetTitle(" Categories ")
 
@@ -90,15 +114,21 @@ func (d *configDisplay) buildHomePage() {
 		SetTitle(" Description ").
 		SetBorderPadding(1, 1, 2, 2)
 
-	if len(d.categories) > 0 {
-		desc.SetText(d.categories[0].Description)
+	// Start with focus on the first actual category.
+	for i, catIdx := range indexToCat {
+		if catIdx >= 0 {
+			list.SetCurrentItem(i)
+			desc.SetText(d.categories[catIdx].Description)
+
+			break
+		}
 	}
 
 	list.SetChangedFunc(func(index int, mainText, secondaryText string, shortcut rune) {
 		switch {
-		case index < len(d.categories):
-			desc.SetText(d.categories[index].Description)
-		case strings.TrimSpace(mainText) != "":
+		case index < len(indexToCat) && indexToCat[index] >= 0:
+			desc.SetText(d.categories[indexToCat[index]].Description)
+		case index == reviewIdx:
 			desc.SetText("Review all pending changes and save to config.user.yaml.\n\nYour overrides survive 'panda init' and 'panda upgrade'.")
 		default:
 			desc.SetText("")
@@ -106,9 +136,9 @@ func (d *configDisplay) buildHomePage() {
 	})
 
 	list.SetSelectedFunc(func(index int, mainText, secondaryText string, shortcut rune) {
-		if index < len(d.categories) {
-			d.pages.SwitchToPage(fmt.Sprintf("category-%d", index))
-		} else if strings.TrimSpace(mainText) != "" {
+		if index < len(indexToCat) && indexToCat[index] >= 0 {
+			d.pages.SwitchToPage(fmt.Sprintf("category-%d", indexToCat[index]))
+		} else if index == reviewIdx {
 			d.refreshReviewPage()
 			d.pages.SwitchToPage("review")
 		}
@@ -131,7 +161,7 @@ func (d *configDisplay) buildCategoryPage(catIdx int) {
 	cat := &d.categories[catIdx]
 	pageID := fmt.Sprintf("category-%d", catIdx)
 
-	list := tview.NewList().
+	list := styledList().
 		ShowSecondaryText(false).
 		SetHighlightFullLine(true)
 
@@ -200,7 +230,7 @@ func (d *configDisplay) buildCategoryPage(catIdx int) {
 	}
 
 	frame := tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(titleBar("Categories > "+cat.Name), 1, 0, false).
+		AddItem(titleBar(cat.Group+" > "+cat.Name), 1, 0, false).
 		AddItem(content, 0, 1, true).
 		AddItem(hintBar(hint), 1, 0, false)
 
@@ -310,7 +340,7 @@ func (d *configDisplay) createReviewContent() tview.Primitive {
 			}
 
 			if len(catChanges) > 0 {
-				fmt.Fprintf(&sb, "[yellow]%s[-]\n", cat.Name)
+				fmt.Fprintf(&sb, "[yellow]%s > %s[-]\n", cat.Group, cat.Name)
 
 				for _, c := range catChanges {
 					sb.WriteString(c + "\n")
@@ -477,11 +507,16 @@ func formatParamValue(p *configParam) string {
 		return "[red]off[-]"
 	}
 
-	if p.Value != p.Original {
-		return "[green]" + p.Value + "[-]"
+	display := p.Value
+	if display == "" && p.Type == paramOptionalString {
+		display = "(default)"
 	}
 
-	return p.Value
+	if p.Value != p.Original {
+		return "[green]" + display + "[-]"
+	}
+
+	return display
 }
 
 // descriptionText builds the description panel text for a param.
@@ -493,6 +528,16 @@ func descriptionText(p *configParam) string {
 	}
 
 	return text
+}
+
+// styledList creates a list with a selected-row style that preserves inline
+// color tags. The default tview style inverts colors, making green/red text
+// unreadable on the highlighted row.
+func styledList() *tview.List {
+	return tview.NewList().
+		SetSelectedStyle(tcell.StyleDefault.
+			Foreground(tcell.ColorWhite).
+			Background(tcell.ColorDarkSlateGray))
 }
 
 // hasBoolParams returns true if the category has any bool parameters.

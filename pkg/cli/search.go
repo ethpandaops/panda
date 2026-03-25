@@ -20,13 +20,15 @@ var (
 	searchEIPCategory     string
 	searchEIPType         string
 	searchEIPLimit        int
+	searchSpecsFork       string
+	searchSpecsLimit      int
 )
 
 var searchCmd = &cobra.Command{
 	GroupID: groupWorkflow,
 	Use:     "search [query]",
-	Short:   "Search examples, runbooks, and EIPs",
-	Long: `Semantic search over query examples, investigation runbooks, and EIPs.
+	Short:   "Search examples, runbooks, EIPs, and consensus specs",
+	Long: `Semantic search over query examples, investigation runbooks, EIPs, and consensus specs.
 
 When called with a query and no subcommand, searches all indices at once.
 
@@ -34,7 +36,8 @@ Examples:
   panda search "eip-4844"
   panda search examples "attestation participation"
   panda search runbooks "finality delay"
-  panda search eips "account abstraction"`,
+  panda search eips "account abstraction"
+  panda search consensus-specs "MAX_EFFECTIVE_BALANCE"`,
 	Args: cobra.ArbitraryArgs,
 	RunE: runSearchAll,
 }
@@ -60,11 +63,20 @@ var searchEIPsCmd = &cobra.Command{
 	RunE:  runSearchEIPs,
 }
 
+var searchSpecsCmd = &cobra.Command{
+	Use:     "consensus-specs <query>",
+	Aliases: []string{"specs"},
+	Short:   "Search consensus-specs documents and protocol constants",
+	Args:    cobra.ExactArgs(1),
+	RunE:    runSearchSpecs,
+}
+
 func init() {
 	rootCmd.AddCommand(searchCmd)
 	searchCmd.AddCommand(searchExamplesCmd)
 	searchCmd.AddCommand(searchRunbooksCmd)
 	searchCmd.AddCommand(searchEIPsCmd)
+	searchCmd.AddCommand(searchSpecsCmd)
 
 	searchCmd.Flags().IntVar(&searchAllLimit, "limit", 3, "Max results per index (default: 3)")
 	searchCmd.ValidArgsFunction = noCompletions
@@ -82,6 +94,10 @@ func init() {
 	searchEIPsCmd.Flags().StringVar(&searchEIPType, "type", "", "Filter by type (e.g., Standards Track)")
 	searchEIPsCmd.Flags().IntVar(&searchEIPLimit, "limit", 5, "Max results (default: 5, max: 10)")
 	searchEIPsCmd.ValidArgsFunction = noCompletions
+
+	searchSpecsCmd.Flags().StringVar(&searchSpecsFork, "fork", "", "Filter by consensus fork (e.g., deneb, electra)")
+	searchSpecsCmd.Flags().IntVar(&searchSpecsLimit, "limit", 5, "Max results (default: 5, max: 10)")
+	searchSpecsCmd.ValidArgsFunction = noCompletions
 }
 
 func runSearchAll(cmd *cobra.Command, args []string) error {
@@ -96,14 +112,16 @@ func runSearchAll(cmd *cobra.Command, args []string) error {
 		examplesResp *serverapi.SearchExamplesResponse
 		runbooksResp *serverapi.SearchRunbooksResponse
 		eipsResp     *serverapi.SearchEIPsResponse
+		specsResp    *serverapi.SearchSpecsResponse
 		examplesErr  error
 		runbooksErr  error
 		eipsErr      error
+		specsErr     error
 	)
 
 	var wg sync.WaitGroup
 
-	wg.Add(3)
+	wg.Add(4)
 
 	go func() {
 		defer wg.Done()
@@ -118,6 +136,11 @@ func runSearchAll(cmd *cobra.Command, args []string) error {
 	go func() {
 		defer wg.Done()
 		eipsResp, eipsErr = searchEIPs(ctx, query, "", "", "", searchAllLimit)
+	}()
+
+	go func() {
+		defer wg.Done()
+		specsResp, specsErr = searchSpecs(ctx, query, "", searchAllLimit)
 	}()
 
 	wg.Wait()
@@ -135,11 +158,16 @@ func runSearchAll(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("searching eips: %w", eipsErr)
 		}
 
+		if specsErr != nil {
+			return fmt.Errorf("searching specs: %w", specsErr)
+		}
+
 		return printJSON(map[string]any{
 			"query":    query,
 			"examples": examplesResp,
 			"runbooks": runbooksResp,
 			"eips":     eipsResp,
+			"specs":    specsResp,
 		})
 	}
 
@@ -175,6 +203,19 @@ func runSearchAll(cmd *cobra.Command, args []string) error {
 		printEIPResults(eipsResp.Results)
 	}
 
+	if specsErr == nil && specsResp != nil {
+		specMatches := len(specsResp.Specs) + len(specsResp.Constants)
+		if specMatches > 0 {
+			if sections > 0 {
+				fmt.Println()
+			}
+
+			sections++
+			fmt.Printf("=== Consensus Specs (%d) ===\n\n", specMatches)
+			printSpecResults(specsResp)
+		}
+	}
+
 	if sections == 0 {
 		fmt.Println("No results found.")
 	}
@@ -190,6 +231,10 @@ func runSearchAll(cmd *cobra.Command, args []string) error {
 
 	if eipsErr != nil {
 		errs = append(errs, fmt.Sprintf("eips: %v", eipsErr))
+	}
+
+	if specsErr != nil {
+		errs = append(errs, fmt.Sprintf("specs: %v", specsErr))
 	}
 
 	if len(errs) > 0 {
@@ -320,6 +365,51 @@ func printEIPResults(results []*serverapi.SearchEIPResult) {
 		}
 
 		fmt.Println()
+		fmt.Printf("  %s\n", result.URL)
+	}
+}
+
+func runSearchSpecs(cmd *cobra.Command, args []string) error {
+	response, err := searchSpecs(cmd.Context(), args[0], searchSpecsFork, searchSpecsLimit)
+	if err != nil {
+		return err
+	}
+
+	if isJSON() {
+		return printJSON(response)
+	}
+
+	if len(response.Specs) == 0 && len(response.Constants) == 0 {
+		fmt.Println("No matching consensus specs found.")
+		return nil
+	}
+
+	printSpecResults(response)
+
+	return nil
+}
+
+func printSpecResults(response *serverapi.SearchSpecsResponse) {
+	if len(response.Constants) > 0 {
+		fmt.Println("Constants:")
+
+		for _, c := range response.Constants {
+			fmt.Printf("  %s = %s (fork: %s, score: %.2f)\n",
+				c.Name, c.Value, c.Fork, c.SimilarityScore)
+		}
+
+		if len(response.Specs) > 0 {
+			fmt.Println()
+		}
+	}
+
+	for i, result := range response.Specs {
+		if i > 0 {
+			fmt.Println("---")
+		}
+
+		fmt.Printf("[%s] %s (score: %.2f)\n", result.Fork, result.Title, result.SimilarityScore)
+		fmt.Printf("  Topic: %s\n", result.Topic)
 		fmt.Printf("  %s\n", result.URL)
 	}
 }

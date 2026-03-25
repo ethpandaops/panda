@@ -60,7 +60,7 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 		return nil, err
 	}
 
-	searchRuntime, err := searchruntime.Build(ctx, b.log, application.ModuleRegistry, application.ProxyClient, b.cfg.Storage.CacheDir)
+	searchRuntime, err := searchruntime.Build(ctx, b.log, application.ModuleRegistry, application.ProxyClient, b.cfg.Storage.CacheDir, b.cfg.ConsensusSpecs)
 	if err != nil {
 		_ = application.Stop(ctx)
 		return nil, fmt.Errorf("building search runtime: %w", err)
@@ -73,6 +73,8 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 		searchRuntime.RunbookRegistry,
 		searchRuntime.EIPIndex,
 		searchRuntime.EIPRegistry,
+		searchRuntime.SpecsIndex,
+		searchRuntime.SpecsRegistry,
 	)
 
 	runtimeTokens := tokenstore.New(2 * time.Hour)
@@ -138,6 +140,7 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 		storageSvc,
 		application.ModuleRegistry,
 		application.Cartographoor,
+		searchRuntime.SpecsRegistry,
 		buildProxyAuthMetadata(b.cfg),
 		runtimeTokens,
 		cleanup,

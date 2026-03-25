@@ -3,10 +3,13 @@ package searchruntime
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/sirupsen/logrus"
 
 	"github.com/ethpandaops/panda/pkg/cache"
+	"github.com/ethpandaops/panda/pkg/config"
+	"github.com/ethpandaops/panda/pkg/consensusspecs"
 	"github.com/ethpandaops/panda/pkg/eips"
 	"github.com/ethpandaops/panda/pkg/embedding"
 	"github.com/ethpandaops/panda/pkg/module"
@@ -22,10 +25,13 @@ type Runtime struct {
 	RunbookIndex    *resource.RunbookIndex
 	EIPRegistry     *eips.Registry
 	EIPIndex        *resource.EIPIndex
+	SpecsRegistry   *consensusspecs.Registry
+	SpecsIndex      *resource.ConsensusSpecIndex
 	embedder        embedding.Embedder
 }
 
-// Build creates a new search runtime with example, runbook, and EIP indices.
+// Build creates a new search runtime with example, runbook, EIP, and
+// consensus spec indices.
 // Embedding is provided by the proxy's remote embedding service.
 // cacheDir enables a local filesystem cache for embedding vectors when non-empty.
 func Build(
@@ -34,6 +40,7 @@ func Build(
 	moduleRegistry *module.Registry,
 	proxyService proxy.Service,
 	cacheDir string,
+	specsCfg config.ConsensusSpecsConfig,
 ) (*Runtime, error) {
 	if proxyService == nil {
 		return nil, fmt.Errorf("proxy service is required for semantic search")
@@ -110,34 +117,74 @@ func Build(
 
 	runtime.RunbookIndex = runbookIndex
 
-	// Build EIP index (non-fatal — gracefully disabled if GitHub unreachable).
-	log.Info("Fetching EIPs from GitHub for search index")
+	// Fetch EIP and consensus-specs registries concurrently. Both make
+	// independent GitHub API calls, so parallelizing them reduces startup
+	// latency. Both are non-fatal — gracefully disabled if GitHub is
+	// unreachable.
+	var (
+		eipReg   *eips.Registry
+		eipErr   error
+		specsReg *consensusspecs.Registry
+		specsErr error
+		wg       sync.WaitGroup
+	)
 
-	eipReg, err := eips.NewRegistry(ctx, log, "")
-	if err != nil {
-		log.WithError(err).Warn("Failed to initialize EIP registry — EIP search disabled")
+	wg.Add(2)
 
-		return runtime, nil
-	}
+	go func() {
+		defer wg.Done()
+		log.Info("Fetching EIPs from GitHub for search index")
+		eipReg, eipErr = eips.NewRegistry(ctx, log, "")
+	}()
 
-	if eipReg.Count() == 0 {
+	go func() {
+		defer wg.Done()
+		log.Info("Fetching consensus specs from GitHub for search index")
+		specsReg, specsErr = consensusspecs.NewRegistry(ctx, log, specsCfg, "")
+	}()
+
+	wg.Wait()
+
+	// Build EIP search index from fetched registry.
+	switch {
+	case eipErr != nil:
+		log.WithError(eipErr).Warn("Failed to initialize EIP registry — EIP search disabled")
+	case eipReg.Count() == 0:
 		log.Warn("No EIPs found, EIP search will be disabled")
+	default:
+		log.WithField("eips", eipReg.Count()).Info("Building EIP search index")
 
-		return runtime, nil
+		eipIndex, indexErr := resource.NewEIPIndex(log, embedder, eipReg.All())
+		if indexErr != nil {
+			log.WithError(indexErr).Warn("Failed to build EIP index — EIP search disabled")
+		} else {
+			runtime.EIPRegistry = eipReg
+			runtime.EIPIndex = eipIndex
+			log.Info("Semantic search EIP index built")
+		}
 	}
 
-	log.WithField("eips", eipReg.Count()).Info("Building EIP search index")
+	// Build consensus specs search index from fetched registry.
+	switch {
+	case specsErr != nil:
+		log.WithError(specsErr).Warn("Failed to initialize consensus specs registry — specs search disabled")
+	case specsReg.SpecCount() == 0:
+		log.Warn("No consensus specs found, specs search will be disabled")
+	default:
+		log.WithFields(logrus.Fields{
+			"specs":     specsReg.SpecCount(),
+			"constants": specsReg.ConstantCount(),
+		}).Info("Building consensus specs search index")
 
-	eipIndex, err := resource.NewEIPIndex(log, embedder, eipReg.All())
-	if err != nil {
-		log.WithError(err).Warn("Failed to build EIP index — EIP search disabled")
-
-		return runtime, nil
+		specsIndex, indexErr := resource.NewConsensusSpecIndex(log, embedder, specsReg.AllSpecs(), specsReg.AllConstants())
+		if indexErr != nil {
+			log.WithError(indexErr).Warn("Failed to build consensus specs index — specs search disabled")
+		} else {
+			runtime.SpecsRegistry = specsReg
+			runtime.SpecsIndex = specsIndex
+			log.Info("Semantic search consensus specs index built")
+		}
 	}
-
-	runtime.EIPRegistry = eipReg
-	runtime.EIPIndex = eipIndex
-	log.Info("Semantic search EIP index built")
 
 	return runtime, nil
 }
