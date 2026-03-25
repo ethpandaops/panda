@@ -230,7 +230,7 @@ func buildCategories(cfg *config.Config) []configCategory {
 			},
 		},
 		{
-			Name:        "Consensus Specs",
+			Name:        "Modules: Consensus Specs",
 			Description: "Configure how ethereum/consensus-specs are fetched from GitHub.\n\nSpec documents and protocol constants are indexed for semantic search and available in Python via ethpandaops.specs.",
 			Params: []*configParam{
 				{
@@ -274,10 +274,20 @@ func buildOverrideMap(categories []configCategory, existing map[string]any) (map
 				return nil, fmt.Errorf("%s: %w", p.Name, err)
 			}
 
+			defaultVal := p.Default
+
+			// If the user actively changed this param, always include it in the
+			// override map — even if the new value matches the base default.
+			// This ensures "reset to default" correctly overrides a previously
+			// saved user value in config.user.yaml.
+			if p.Value != p.Original {
+				defaultVal = nil
+			}
+
 			fields = append(fields, config.OverrideField{
 				Path:    p.Path,
 				Value:   val,
-				Default: p.Default,
+				Default: defaultVal,
 			})
 		}
 	}

@@ -477,11 +477,16 @@ func formatParamValue(p *configParam) string {
 		return "[red]off[-]"
 	}
 
-	if p.Value != p.Original {
-		return "[green]" + p.Value + "[-]"
+	display := p.Value
+	if display == "" && p.Type == paramOptionalString {
+		display = "(default)"
 	}
 
-	return p.Value
+	if p.Value != p.Original {
+		return "[green]" + display + "[-]"
+	}
+
+	return display
 }
 
 // descriptionText builds the description panel text for a param.
