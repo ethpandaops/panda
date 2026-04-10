@@ -19,7 +19,7 @@ var (
 	buildRef       string
 	buildRepo      string
 	buildDockerTag string
-	buildWait      bool
+	buildNoWait    bool
 )
 
 var buildCmd = &cobra.Command{
@@ -36,13 +36,14 @@ eth-client-docker-image-builder repository:
   lighthouse  -> build-push-lighthouse.yml
   nimbus-eth2 -> build-push-nimbus-eth2.yml
 
-Use --wait to block until the build completes (useful in scripts and
-agent workflows).
+By default the command waits for the build to complete. Use --no-wait
+to trigger and return immediately.
 
 Examples:
-  panda build geth
+  panda build geth                        # build and wait
   panda build geth --ref master
-  panda build lighthouse --ref unstable --wait
+  panda build lighthouse --ref unstable
+  panda build geth --no-wait              # fire and forget
   panda build geth --repo ethereum/go-ethereum --ref my-branch
   panda build geth --ref my-branch --tag my-custom-tag`,
 	Args: cobra.ExactArgs(1),
@@ -54,7 +55,7 @@ func init() {
 	buildCmd.Flags().StringVar(&buildRef, "ref", "", "branch, tag, or SHA to build from (uses workflow default if omitted)")
 	buildCmd.Flags().StringVar(&buildRepo, "repo", "", "source repository override (e.g. user/go-ethereum)")
 	buildCmd.Flags().StringVar(&buildDockerTag, "tag", "", "override target docker tag")
-	buildCmd.Flags().BoolVar(&buildWait, "wait", false, "wait for the build to complete before returning")
+	buildCmd.Flags().BoolVar(&buildNoWait, "no-wait", false, "trigger the build and return immediately without waiting")
 }
 
 func runBuild(_ *cobra.Command, args []string) error {
@@ -71,11 +72,11 @@ func runBuild(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("triggering build: %w", err)
 	}
 
-	if !buildWait {
+	if buildNoWait {
 		return printBuildTriggered(resp)
 	}
 
-	// --wait mode: poll until complete.
+	// Default: wait for completion.
 	if resp.RunID == 0 {
 		// Trigger succeeded but we couldn't find the run ID.
 		// Fall back to non-wait output.
