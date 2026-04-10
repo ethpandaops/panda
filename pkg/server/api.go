@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -32,6 +33,7 @@ func (s *service) mountAPIRoutes(r chi.Router) {
 		r.Delete("/sessions/{sessionID}", s.handleAPIDestroySession)
 		r.Get("/resources", s.handleAPIListResources)
 		r.Get("/resources/read", s.handleAPIReadResource)
+		r.Post("/build/trigger", s.handleAPIBuildTrigger)
 		r.HandleFunc("/operations/{operationID}", s.handleAPIOperation)
 
 		// Public file serving (no auth — same as MinIO anonymous download).
@@ -520,6 +522,86 @@ func (s *service) handleStorageServeFile(w http.ResponseWriter, r *http.Request)
 	}
 
 	s.storageService.ServeFile(w, r, filePath)
+}
+
+func (s *service) handleAPIBuildTrigger(w http.ResponseWriter, r *http.Request) {
+	if s.proxyService == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "proxy service is unavailable")
+		return
+	}
+
+	var req serverapi.BuildTriggerRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if strings.TrimSpace(req.Client) == "" {
+		writeAPIError(w, http.StatusBadRequest, "client is required")
+		return
+	}
+
+	// Build the proxy request: map client name to workflow filename.
+	workflow := fmt.Sprintf("build-push-%s.yml", req.Client)
+
+	inputs := make(map[string]string)
+	if req.Repository != "" {
+		inputs["repository"] = req.Repository
+	}
+	if req.Ref != "" {
+		inputs["ref"] = req.Ref
+	}
+	if req.DockerTag != "" {
+		inputs["docker_tag"] = req.DockerTag
+	}
+
+	proxyReq := map[string]any{
+		"repository": "ethpandaops/eth-client-docker-image-builder",
+		"workflow":   workflow,
+		"ref":        "master",
+		"inputs":     inputs,
+	}
+
+	body, err := json.Marshal(proxyReq)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "failed to marshal proxy request")
+		return
+	}
+
+	data, status, _, err := s.proxyRequest(
+		r.Context(),
+		http.MethodPost,
+		"/github/actions/trigger",
+		bytes.NewReader(body),
+		http.Header{"Content-Type": []string{"application/json"}},
+	)
+	if err != nil {
+		writeAPIError(w, http.StatusBadGateway, fmt.Sprintf("proxy request failed: %v", err))
+		return
+	}
+
+	if status < 200 || status >= 300 {
+		// Forward the proxy error.
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, _ = w.Write(data)
+
+		return
+	}
+
+	var proxyResp struct {
+		WorkflowURL string `json:"workflow_url"`
+	}
+	if err := json.Unmarshal(data, &proxyResp); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "failed to decode proxy response")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, serverapi.BuildTriggerResponse{
+		WorkflowURL: proxyResp.WorkflowURL,
+		Client:      req.Client,
+		Workflow:    workflow,
+	})
 }
 
 func (s *service) proxyRequest(

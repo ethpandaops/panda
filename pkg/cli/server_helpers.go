@@ -373,6 +373,15 @@ func readClickHouseTable(ctx context.Context, tableName string) (*clickhousemodu
 	return &payload, nil
 }
 
+func triggerBuild(ctx context.Context, req serverapi.BuildTriggerRequest) (*serverapi.BuildTriggerResponse, error) {
+	var response serverapi.BuildTriggerResponse
+	if err := serverPostJSON(ctx, "/api/v1/build/trigger", req, &response); err != nil {
+		return nil, err
+	}
+
+	return &response, nil
+}
+
 func decodeAPIError(status int, data []byte) error {
 	var message string
 

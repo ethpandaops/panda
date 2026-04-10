@@ -59,6 +59,7 @@ type server struct {
 	lokiHandler       *handlers.LokiHandler
 	ethNodeHandler    *handlers.EthNodeHandler
 	embeddingService  *EmbeddingService
+	githubHandler     *handlers.GitHubHandler
 
 	mu      sync.RWMutex
 	started bool
@@ -174,6 +175,13 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 		)
 	}
 
+	// Create GitHub handler if configured.
+	if cfg.GitHub != nil && cfg.GitHub.Token != "" {
+		s.githubHandler = handlers.NewGitHubHandler(log, handlers.GitHubConfig{
+			Token: cfg.GitHub.Token,
+		})
+	}
+
 	if s.url == "" {
 		s.url = fmt.Sprintf("http://localhost:%s", port)
 	}
@@ -244,6 +252,10 @@ func (s *server) registerRoutes() {
 	if s.ethNodeHandler != nil {
 		s.handleSubtreeRoute("/beacon", s.metricsMiddleware(chain(s.ethNodeHandler)))
 		s.handleSubtreeRoute("/execution", s.metricsMiddleware(chain(s.ethNodeHandler)))
+	}
+
+	if s.githubHandler != nil {
+		s.handleSubtreeRoute("/github", s.metricsMiddleware(chain(s.githubHandler)))
 	}
 }
 

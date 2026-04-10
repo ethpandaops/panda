@@ -176,3 +176,25 @@ type CreateSessionResponse struct {
 	SessionID    string `json:"session_id"`
 	TTLRemaining string `json:"ttl_remaining,omitempty"`
 }
+
+// BuildTriggerRequest is the request for POST /api/v1/build/trigger.
+type BuildTriggerRequest struct {
+	// Client is the client name (e.g. "geth", "lighthouse", "prysm").
+	Client string `json:"client"`
+	// Repository is the source repository override (optional).
+	Repository string `json:"repository,omitempty"`
+	// Ref is the branch, tag, or SHA to build from (optional).
+	Ref string `json:"ref,omitempty"`
+	// DockerTag is the target docker tag override (optional).
+	DockerTag string `json:"docker_tag,omitempty"`
+}
+
+// BuildTriggerResponse is the response from POST /api/v1/build/trigger.
+type BuildTriggerResponse struct {
+	// WorkflowURL is the URL to the GitHub Actions workflow page.
+	WorkflowURL string `json:"workflow_url"`
+	// Client is the client that was built.
+	Client string `json:"client"`
+	// Workflow is the workflow filename that was triggered.
+	Workflow string `json:"workflow"`
+}
