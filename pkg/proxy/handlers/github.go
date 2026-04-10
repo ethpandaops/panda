@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -23,6 +24,13 @@ const (
 	runFindTimeout = 20 * time.Second
 	// runFindInterval is how often to poll.
 	runFindInterval = 2 * time.Second
+
+	// workflowCooldown is the minimum time between triggers for the same workflow.
+	workflowCooldown = 2 * time.Minute
+	// globalTriggerLimit is the max number of triggers allowed within globalTriggerWindow.
+	globalTriggerLimit = 10
+	// globalTriggerWindow is the time window for the global trigger limit.
+	globalTriggerWindow = 10 * time.Minute
 )
 
 // GitHubConfig holds GitHub API proxy configuration.
@@ -77,15 +85,70 @@ type GitHubHandler struct {
 	log        logrus.FieldLogger
 	token      string
 	httpClient *http.Client
+
+	mu               sync.Mutex
+	lastTrigger      map[string]time.Time // workflow -> last trigger time
+	globalTriggerLog []time.Time          // timestamps of recent triggers
 }
 
 // NewGitHubHandler creates a new GitHub handler.
 func NewGitHubHandler(log logrus.FieldLogger, cfg GitHubConfig) *GitHubHandler {
 	return &GitHubHandler{
-		log:        log.WithField("handler", "github"),
-		token:      cfg.Token,
-		httpClient: &http.Client{},
+		log:         log.WithField("handler", "github"),
+		token:       cfg.Token,
+		httpClient:  &http.Client{},
+		lastTrigger: make(map[string]time.Time),
 	}
+}
+
+// checkTriggerAllowed returns an error message if the trigger should be rejected.
+func (h *GitHubHandler) checkTriggerAllowed(workflow string) string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	now := time.Now()
+
+	// Per-workflow cooldown.
+	if last, ok := h.lastTrigger[workflow]; ok {
+		remaining := workflowCooldown - now.Sub(last)
+		if remaining > 0 {
+			return fmt.Sprintf(
+				"workflow %s was triggered %s ago, wait %s (cooldown: %s)",
+				workflow, now.Sub(last).Round(time.Second), remaining.Round(time.Second), workflowCooldown,
+			)
+		}
+	}
+
+	// Global rate limit: count triggers within the window.
+	cutoff := now.Add(-globalTriggerWindow)
+	recent := h.globalTriggerLog[:0]
+
+	for _, t := range h.globalTriggerLog {
+		if t.After(cutoff) {
+			recent = append(recent, t)
+		}
+	}
+
+	h.globalTriggerLog = recent
+
+	if len(h.globalTriggerLog) >= globalTriggerLimit {
+		return fmt.Sprintf(
+			"global trigger limit reached: %d triggers in the last %s (max %d)",
+			len(h.globalTriggerLog), globalTriggerWindow, globalTriggerLimit,
+		)
+	}
+
+	return ""
+}
+
+// recordTrigger records a successful trigger for rate limiting.
+func (h *GitHubHandler) recordTrigger(workflow string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	now := time.Now()
+	h.lastTrigger[workflow] = now
+	h.globalTriggerLog = append(h.globalTriggerLog, now)
 }
 
 // ServeHTTP routes GitHub API requests.
@@ -125,6 +188,18 @@ func (h *GitHubHandler) handleTriggerWorkflow(w http.ResponseWriter, r *http.Req
 
 	if req.Repository != defaultAllowedRepository {
 		writeError(w, http.StatusForbidden, "repository %q is not allowed", req.Repository)
+		return
+	}
+
+	// Rate limit check.
+	if reason := h.checkTriggerAllowed(req.Workflow); reason != "" {
+		h.log.WithFields(logrus.Fields{
+			"workflow": req.Workflow,
+			"reason":   reason,
+		}).Warn("Build trigger rate limited")
+
+		writeError(w, http.StatusTooManyRequests, "%s", reason)
+
 		return
 	}
 
@@ -176,6 +251,9 @@ func (h *GitHubHandler) handleTriggerWorkflow(w http.ResponseWriter, r *http.Req
 
 		return
 	}
+
+	// Record successful trigger for rate limiting.
+	h.recordTrigger(req.Workflow)
 
 	h.log.WithFields(logrus.Fields{
 		"repository": req.Repository,
