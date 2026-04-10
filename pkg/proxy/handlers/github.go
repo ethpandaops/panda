@@ -313,8 +313,14 @@ func (h *GitHubHandler) handleRunStatus(w http.ResponseWriter, r *http.Request) 
 }
 
 // findTriggeredRun polls GitHub to find the workflow run created after dispatchTime.
+// It lists recent runs and compares timestamps client-side rather than relying on
+// the GitHub API's created filter syntax.
 func (h *GitHubHandler) findTriggeredRun(ctx context.Context, repo, workflow string, after time.Time) *gitHubWorkflowRun {
 	deadline := time.After(runFindTimeout)
+	listURL := fmt.Sprintf(
+		"%s/repos/%s/actions/workflows/%s/runs?event=workflow_dispatch&per_page=5",
+		githubAPIBase, repo, workflow,
+	)
 
 	for {
 		select {
@@ -326,12 +332,7 @@ func (h *GitHubHandler) findTriggeredRun(ctx context.Context, repo, workflow str
 		default:
 		}
 
-		url := fmt.Sprintf(
-			"%s/repos/%s/actions/workflows/%s/runs?event=workflow_dispatch&per_page=5&created=>=%%3A%s",
-			githubAPIBase, repo, workflow, after.Format("2006-01-02T15:04:05Z"),
-		)
-
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, listURL, nil)
 		if err != nil {
 			return nil
 		}
@@ -355,16 +356,24 @@ func (h *GitHubHandler) findTriggeredRun(ctx context.Context, repo, workflow str
 			return nil
 		}
 
-		if len(result.WorkflowRuns) > 0 {
-			run := &result.WorkflowRuns[0]
+		// Find the most recent run created after our dispatch time.
+		for i := range result.WorkflowRuns {
+			run := &result.WorkflowRuns[i]
 
-			h.log.WithFields(logrus.Fields{
-				"run_id": run.ID,
-				"status": run.Status,
-				"url":    run.HTMLURL,
-			}).Info("Found triggered workflow run")
+			createdAt, err := time.Parse(time.RFC3339, run.CreatedAt)
+			if err != nil {
+				continue
+			}
 
-			return run
+			if createdAt.After(after) || createdAt.Equal(after) {
+				h.log.WithFields(logrus.Fields{
+					"run_id": run.ID,
+					"status": run.Status,
+					"url":    run.HTMLURL,
+				}).Info("Found triggered workflow run")
+
+				return run
+			}
 		}
 
 		time.Sleep(runFindInterval)
