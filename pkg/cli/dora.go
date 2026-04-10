@@ -90,7 +90,7 @@ var doraOverviewCmd = &cobra.Command{
 		// Format participation rate as a percentage.
 		participationStr := fmt.Sprintf("%v", data["participation_rate"])
 		if rate, ok := data["participation_rate"].(float64); ok {
-			participationStr = fmt.Sprintf("%.2f%%", rate*100)
+			participationStr = fmt.Sprintf("%.2f%%", rate)
 		}
 
 		pairs := [][2]string{
