@@ -46,6 +46,15 @@ type ServerConfig struct {
 
 	// Embedding holds optional embedding API configuration.
 	Embedding *EmbeddingConfig `yaml:"embedding,omitempty"`
+
+	// GitHub holds optional GitHub API configuration for triggering workflows.
+	GitHub *GitHubAPIConfig `yaml:"github,omitempty"`
+}
+
+// GitHubAPIConfig holds GitHub API configuration for the proxy.
+type GitHubAPIConfig struct {
+	// Token is a GitHub personal access token or app token with actions:write permission.
+	Token string `yaml:"token"`
 }
 
 // HTTPServerConfig holds HTTP server configuration.
