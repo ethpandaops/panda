@@ -382,6 +382,15 @@ func triggerBuild(ctx context.Context, req serverapi.BuildTriggerRequest) (*serv
 	return &response, nil
 }
 
+func getBuildStatus(ctx context.Context, runID int64) (*serverapi.BuildStatusResponse, error) {
+	var response serverapi.BuildStatusResponse
+	if err := serverPostJSON(ctx, "/api/v1/build/status", serverapi.BuildStatusRequest{RunID: runID}, &response); err != nil {
+		return nil, err
+	}
+
+	return &response, nil
+}
+
 func decodeAPIError(status int, data []byte) error {
 	var message string
 

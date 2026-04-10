@@ -197,4 +197,21 @@ type BuildTriggerResponse struct {
 	Client string `json:"client"`
 	// Workflow is the workflow filename that was triggered.
 	Workflow string `json:"workflow"`
+	// RunID is the GitHub Actions run ID (0 if not yet available).
+	RunID int64 `json:"run_id,omitempty"`
+	// RunURL is the direct URL to the specific workflow run.
+	RunURL string `json:"run_url,omitempty"`
+}
+
+// BuildStatusRequest is the request for GET /api/v1/build/status.
+type BuildStatusRequest struct {
+	RunID int64 `json:"run_id"`
+}
+
+// BuildStatusResponse is the response from GET /api/v1/build/status.
+type BuildStatusResponse struct {
+	RunID      int64  `json:"run_id"`
+	Status     string `json:"status"`
+	Conclusion string `json:"conclusion"`
+	HTMLURL    string `json:"html_url"`
 }
