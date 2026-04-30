@@ -26,10 +26,6 @@ on:
         default: false
         type: boolean
 
-  schedule:
-    # Run daily at 6am UTC with Sonnet
-    - cron: '0 6 * * *'
-
   # Allow triggering from other workflows
   workflow_call:
     inputs:
