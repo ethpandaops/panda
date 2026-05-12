@@ -72,7 +72,12 @@ func (a *App) Build(ctx context.Context) error {
 	a.log.WithField("backend", sandboxSvc.Name()).Info("Sandbox service started")
 
 	// 3. Create and start proxy client (performs initial discovery).
-	proxyClient := a.buildProxyClient()
+	// The OnDiscover hook fires on every successful refresh; it reapplies the
+	// freshly discovered datasource list to ProxyDiscoverable modules so new
+	// datasources show up without a server restart. During the initial
+	// Discover (before step 4) no modules are initialized yet, so the hook is
+	// a no-op until the first background tick.
+	proxyClient := a.buildProxyClient(a.refreshModulesFromDiscovery)
 	if err := proxyClient.Start(ctx); err != nil {
 		a.stop(ctx)
 
@@ -166,18 +171,7 @@ func (a *App) registerModules() *module.Registry {
 func (a *App) initModules(proxyClient proxy.Client) error {
 	reg := a.ModuleRegistry
 
-	// Collect discovered datasources.
-	var discovered []types.DatasourceInfo
-	discovered = append(discovered, proxyClient.ClickHouseDatasourceInfo()...)
-	discovered = append(discovered, proxyClient.PrometheusDatasourceInfo()...)
-	discovered = append(discovered, proxyClient.LokiDatasourceInfo()...)
-
-	if proxyClient.EthNodeAvailable() {
-		discovered = append(discovered, types.DatasourceInfo{
-			Type: "ethnode",
-			Name: "ethnode",
-		})
-	}
+	discovered := a.discoveredDatasources(proxyClient)
 
 	for _, name := range reg.All() {
 		// Try proxy discovery for modules that support it.
@@ -214,9 +208,10 @@ func (a *App) initModules(proxyClient proxy.Client) error {
 	return nil
 }
 
-func (a *App) buildProxyClient() proxy.Client {
+func (a *App) buildProxyClient(onDiscover func()) proxy.Client {
 	cfg := proxy.ClientConfig{
-		URL: a.cfg.Proxy.URL,
+		URL:        a.cfg.Proxy.URL,
+		OnDiscover: onDiscover,
 	}
 
 	if a.cfg.Proxy.Auth != nil {
@@ -231,6 +226,61 @@ func (a *App) buildProxyClient() proxy.Client {
 	}
 
 	return proxy.NewClient(a.log, cfg)
+}
+
+// refreshModulesFromDiscovery re-applies the proxy client's current
+// datasource list to every already-initialized ProxyDiscoverable module.
+// Called from the proxy client's discovery hook so periodic refresh
+// propagates to module state without restarting the server.
+//
+// Only modules that were initialized at startup are refreshed — a module
+// that was skipped because no datasources existed will not be activated
+// here. This keeps the startup-time decision about which modules to enable
+// authoritative; bringing up new modules still requires a restart.
+func (a *App) refreshModulesFromDiscovery() {
+	if a.ModuleRegistry == nil || a.ProxyClient == nil {
+		return
+	}
+
+	discovered := a.discoveredDatasources(a.ProxyClient)
+	if len(discovered) == 0 {
+		return
+	}
+
+	for _, ext := range a.ModuleRegistry.Initialized() {
+		if _, ok := ext.(module.ProxyDiscoverable); !ok {
+			continue
+		}
+
+		if err := a.ModuleRegistry.InitModuleFromDiscovery(ext.Name(), discovered); err != nil {
+			if errors.Is(err, module.ErrNoValidConfig) {
+				continue
+			}
+
+			a.log.WithError(err).
+				WithField("module", ext.Name()).
+				Warn("Failed to refresh module from proxy discovery")
+		}
+	}
+}
+
+// discoveredDatasources collects the proxy client's current view of
+// datasources across all types in the same order as initModules so refresh
+// behavior matches startup.
+func (a *App) discoveredDatasources(proxyClient proxy.Client) []types.DatasourceInfo {
+	var discovered []types.DatasourceInfo
+	discovered = append(discovered, proxyClient.ClickHouseDatasourceInfo()...)
+	discovered = append(discovered, proxyClient.PrometheusDatasourceInfo()...)
+	discovered = append(discovered, proxyClient.LokiDatasourceInfo()...)
+
+	if proxyClient.EthNodeAvailable() {
+		discovered = append(discovered, types.DatasourceInfo{
+			Type: "ethnode",
+			Name: "ethnode",
+		})
+	}
+
+	return discovered
 }
 
 func (a *App) injectProxyClient() {

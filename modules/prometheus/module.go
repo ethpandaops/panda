@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 
@@ -21,6 +22,7 @@ var (
 // Module implements the module.Module interface for Prometheus.
 type Module struct {
 	cfg         Config
+	dsMu        sync.RWMutex
 	datasources []types.DatasourceInfo
 }
 
@@ -30,8 +32,10 @@ func New() *Module { return &Module{} }
 func (p *Module) Name() string { return "prometheus" }
 
 // InitFromDiscovery initializes the module from discovered datasources.
+// Safe to call repeatedly: subsequent calls replace the datasource list in
+// place so the proxy client's periodic refresh propagates without a restart.
 func (p *Module) InitFromDiscovery(datasources []types.DatasourceInfo) error {
-	var filtered []types.DatasourceInfo
+	filtered := make([]types.DatasourceInfo, 0, len(datasources))
 
 	for _, ds := range datasources {
 		if ds.Type != "prometheus" {
@@ -45,7 +49,9 @@ func (p *Module) InitFromDiscovery(datasources []types.DatasourceInfo) error {
 		return module.ErrNoValidConfig
 	}
 
+	p.dsMu.Lock()
 	p.datasources = filtered
+	p.dsMu.Unlock()
 
 	return nil
 }
@@ -71,9 +77,9 @@ func (p *Module) Init(rawConfig []byte) error {
 	}
 
 	// Populate internal datasources from config.
-	p.datasources = make([]types.DatasourceInfo, 0, len(p.cfg.Instances))
+	datasources := make([]types.DatasourceInfo, 0, len(p.cfg.Instances))
 	for _, inst := range p.cfg.Instances {
-		p.datasources = append(p.datasources, types.DatasourceInfo{
+		datasources = append(datasources, types.DatasourceInfo{
 			Type:        "prometheus",
 			Name:        inst.Name,
 			Description: inst.Description,
@@ -83,6 +89,10 @@ func (p *Module) Init(rawConfig []byte) error {
 		})
 	}
 
+	p.dsMu.Lock()
+	p.datasources = datasources
+	p.dsMu.Unlock()
+
 	return nil
 }
 
@@ -91,6 +101,9 @@ func (p *Module) ApplyDefaults() {}
 
 // Validate checks that the parsed config is valid.
 func (p *Module) Validate() error {
+	p.dsMu.RLock()
+	defer p.dsMu.RUnlock()
+
 	names := make(map[string]struct{}, len(p.datasources))
 	for i, ds := range p.datasources {
 		if ds.Name == "" {
@@ -109,6 +122,9 @@ func (p *Module) Validate() error {
 
 // SandboxEnv returns environment variables for the sandbox.
 func (p *Module) SandboxEnv() (map[string]string, error) {
+	p.dsMu.RLock()
+	defer p.dsMu.RUnlock()
+
 	if len(p.datasources) == 0 {
 		return nil, nil
 	}
@@ -138,6 +154,9 @@ func (p *Module) SandboxEnv() (map[string]string, error) {
 
 // DatasourceInfo returns datasource metadata for datasources:// resources.
 func (p *Module) DatasourceInfo() []types.DatasourceInfo {
+	p.dsMu.RLock()
+	defer p.dsMu.RUnlock()
+
 	result := make([]types.DatasourceInfo, len(p.datasources))
 	copy(result, p.datasources)
 
