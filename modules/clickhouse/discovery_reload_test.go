@@ -2,11 +2,13 @@ package clickhouse
 
 import (
 	"context"
+	"errors"
 	"io"
 	"testing"
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/ethpandaops/panda/pkg/module"
 	"github.com/ethpandaops/panda/pkg/types"
 )
 
@@ -145,6 +147,62 @@ func TestModule_OnDiscoveryReloaded_NoSchemaClient(t *testing.T) {
 
 	if err := mod.OnDiscoveryReloaded(context.Background()); err != nil {
 		t.Fatalf("OnDiscoveryReloaded error = %v", err)
+	}
+}
+
+// TestModule_InitFromDiscovery_AllDisappearClearsList verifies the contract
+// that even when the filtered list is empty, the module's datasource state is
+// updated. Without this, an already-running module whose datasources have all
+// disappeared would keep reporting them through DatasourceInfo/SandboxEnv.
+func TestModule_InitFromDiscovery_AllDisappearClearsList(t *testing.T) {
+	t.Parallel()
+
+	mod := New()
+
+	if err := mod.InitFromDiscovery([]types.DatasourceInfo{
+		{Type: "clickhouse", Name: "xatu"},
+	}); err != nil {
+		t.Fatalf("initial InitFromDiscovery error = %v", err)
+	}
+
+	if got := len(mod.DatasourceInfo()); got != 1 {
+		t.Fatalf("after initial init: DatasourceInfo() has %d entries, want 1", got)
+	}
+
+	err := mod.InitFromDiscovery([]types.DatasourceInfo{})
+	if !errors.Is(err, module.ErrNoValidConfig) {
+		t.Fatalf("after all-disappear: err = %v, want ErrNoValidConfig", err)
+	}
+
+	if got := len(mod.DatasourceInfo()); got != 0 {
+		t.Fatalf("after all-disappear: DatasourceInfo() has %d entries, want 0", got)
+	}
+}
+
+// TestSchemaClient_RefreshEmptyDatasourcesClearsStale verifies that when the
+// schema client refreshes with no datasources, any previously cached schemas
+// are dropped — so queries don't keep reporting clusters that no longer exist.
+func TestSchemaClient_RefreshEmptyDatasourcesClearsStale(t *testing.T) {
+	t.Parallel()
+
+	log := logrus.New()
+	log.SetOutput(io.Discard)
+
+	client := &clickhouseSchemaClient{
+		log: log.WithField("test", "true"),
+		clusters: map[string]*ClusterTables{
+			"xatu": {ClusterName: "xatu", Tables: map[string]*TableSchema{"t": {Name: "t"}}},
+		},
+		datasources: map[string]string{},
+		refreshNow:  make(chan struct{}, 1),
+	}
+
+	if err := client.refresh(context.Background()); err != nil {
+		t.Fatalf("refresh error = %v", err)
+	}
+
+	if got := len(client.GetAllTables()); got != 0 {
+		t.Fatalf("after empty refresh: GetAllTables() = %d, want 0", got)
 	}
 }
 

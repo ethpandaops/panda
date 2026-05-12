@@ -51,6 +51,12 @@ func (p *Module) SetProxyClient(client proxy.Service) {
 // InitFromDiscovery initializes the module from discovered datasources.
 // Safe to call repeatedly: subsequent calls replace the datasource list in
 // place so the proxy client's periodic refresh propagates without a restart.
+//
+// Always writes the filtered list, including when empty. ErrNoValidConfig is
+// purely a hint to the registry ("don't activate me at initial init") — an
+// already-running module whose datasources have all disappeared still gets
+// its list cleared, so panda datasources, sandbox env, and schema discovery
+// stop reporting stale entries.
 func (p *Module) InitFromDiscovery(datasources []types.DatasourceInfo) error {
 	filtered := make([]types.DatasourceInfo, 0, len(datasources))
 
@@ -62,13 +68,13 @@ func (p *Module) InitFromDiscovery(datasources []types.DatasourceInfo) error {
 		filtered = append(filtered, ds)
 	}
 
-	if len(filtered) == 0 {
-		return module.ErrNoValidConfig
-	}
-
 	p.dsMu.Lock()
 	p.datasources = filtered
 	p.dsMu.Unlock()
+
+	if len(filtered) == 0 {
+		return module.ErrNoValidConfig
+	}
 
 	return nil
 }

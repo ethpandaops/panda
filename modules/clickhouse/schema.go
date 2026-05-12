@@ -454,7 +454,19 @@ func (c *clickhouseSchemaClient) refresh(ctx context.Context) error {
 	datasources := c.snapshotDatasources()
 
 	if len(datasources) == 0 {
-		c.log.Warn("No ClickHouse datasources available for schema discovery")
+		// Drop any stale cached schemas — the proxy no longer reports any
+		// ClickHouse clusters, so callers should see an empty view rather than
+		// last-known-good data that points at clusters that don't exist.
+		c.mu.Lock()
+		hadStale := len(c.clusters) > 0
+		c.clusters = make(map[string]*ClusterTables, 0)
+		c.mu.Unlock()
+
+		if hadStale {
+			c.log.Info("ClickHouse datasource list emptied; cleared cached schemas")
+		} else {
+			c.log.Debug("No ClickHouse datasources available for schema discovery")
+		}
 
 		return nil
 	}

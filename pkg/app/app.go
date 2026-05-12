@@ -252,10 +252,10 @@ func (a *App) refreshModulesFromDiscovery() {
 		return
 	}
 
+	// An empty list isn't a no-op signal — it means every previously-known
+	// datasource is gone, and already-running modules need to clear their
+	// state instead of holding on to stale entries.
 	discovered := a.discoveredDatasources(a.ProxyClient)
-	if len(discovered) == 0 {
-		return
-	}
 
 	previouslyInitialized := initializedSet(a.ModuleRegistry)
 
@@ -270,15 +270,23 @@ func (a *App) refreshModulesFromDiscovery() {
 		}
 
 		if err := a.ModuleRegistry.InitModuleFromDiscovery(name, discovered); err != nil {
+			// ErrNoValidConfig means the module has no datasources of its
+			// type after this refresh. The module is required to write its
+			// (empty) state before returning, so an already-running module
+			// still gets to clean up downstream state in OnDiscoveryReloaded.
+			// A not-yet-initialized module is skipped — there's nothing to
+			// activate.
 			if errors.Is(err, module.ErrNoValidConfig) {
+				if !previouslyInitialized[name] {
+					continue
+				}
+			} else {
+				a.log.WithError(err).
+					WithField("module", name).
+					Warn("Failed to refresh module from proxy discovery")
+
 				continue
 			}
-
-			a.log.WithError(err).
-				WithField("module", name).
-				Warn("Failed to refresh module from proxy discovery")
-
-			continue
 		}
 	}
 

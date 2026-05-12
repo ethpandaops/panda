@@ -60,6 +60,51 @@ func TestRefreshModulesActivatesNewlyDiscoverable(t *testing.T) {
 	}
 }
 
+// TestRefreshModulesClearsStateWhenAllDatasourcesDisappear verifies that an
+// already-running module whose datasources have all disappeared gets its list
+// cleared and OnDiscoveryReloaded still fires — so panda datasources, sandbox
+// env, and schema discovery don't keep reporting clusters that no longer
+// exist.
+func TestRefreshModulesClearsStateWhenAllDatasourcesDisappear(t *testing.T) {
+	t.Parallel()
+
+	log := logrus.New()
+	log.SetOutput(io.Discard)
+
+	reg := module.NewRegistry(log)
+	mod := &fakeDiscoverableModule{name: "fake"}
+	reg.Add(mod)
+
+	if err := reg.InitModuleFromDiscovery("fake",
+		[]types.DatasourceInfo{{Type: "clickhouse", Name: "xatu"}}); err != nil {
+		t.Fatalf("initial InitModuleFromDiscovery error = %v", err)
+	}
+
+	if got := len(mod.lastInit); got != 1 {
+		t.Fatalf("after initial init: module has %d datasources, want 1", got)
+	}
+
+	// Simulate every ClickHouse datasource being removed.
+	client := &fakeProxyClient{clickhouse: nil}
+
+	a := &App{
+		log:            log,
+		ModuleRegistry: reg,
+		ProxyClient:    client,
+	}
+
+	a.refreshModulesFromDiscovery()
+
+	if got := len(mod.lastInit); got != 0 {
+		t.Fatalf("after all-disappear refresh: module retained %d datasources, want 0", got)
+	}
+
+	if mod.reloadCalls.Load() != 1 {
+		t.Fatalf("OnDiscoveryReloaded was called %d times after all-disappear refresh, want 1",
+			mod.reloadCalls.Load())
+	}
+}
+
 // TestRefreshModulesReloadsAlreadyRunning verifies that a module already in
 // the initialized set gets its DiscoveryReloadable hook called (and is not
 // re-Started) when the proxy refreshes.
@@ -132,11 +177,11 @@ func (m *fakeDiscoverableModule) InitFromDiscovery(datasources []types.Datasourc
 		}
 	}
 
+	m.lastInit = filtered
+
 	if len(filtered) == 0 {
 		return module.ErrNoValidConfig
 	}
-
-	m.lastInit = filtered
 
 	return nil
 }
