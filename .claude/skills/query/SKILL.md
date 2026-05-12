@@ -59,8 +59,8 @@ All commands support `--json` for structured output.
 | `datasources://prometheus` | Prometheus instances |
 | `datasources://loki` | Loki instances |
 | `networks://active` | Active Ethereum networks |
-| `clickhouse://tables` | Available tables |
-| `clickhouse://tables/{table}` | Table schema details |
+| `clickhouse://tables` | Available tables (keyed by database + name) |
+| `clickhouse://tables/{database}/{table}` | Table schema details |
 | `python://ethpandaops` | Python library API docs |
 
 ```

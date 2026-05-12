@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"regexp"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -57,14 +56,9 @@ type ClickHouseSchemaConfig struct {
 	Datasources     []SchemaDiscoveryDatasource
 }
 
-// discoveredTable represents a table found during schema discovery.
-// Database is empty for default-database clusters (xatu) and set to a
-// representative network database name for per-network-database clusters (xatu-cbt).
-// Networks lists all databases where this table exists (for xatu-cbt).
 type discoveredTable struct {
 	Name     string
 	Database string
-	Networks []string
 }
 
 // TableColumn represents a column in a ClickHouse table.
@@ -76,18 +70,18 @@ type TableColumn struct {
 	DefaultValue string `json:"default_value,omitempty"`
 }
 
-// TableSchema represents the full schema of a ClickHouse table.
+// TableSchema is the full schema of a ClickHouse table identified by (Database, Name).
 type TableSchema struct {
+	Database        string        `json:"database"`
 	Name            string        `json:"name"`
 	Engine          string        `json:"engine,omitempty"`
 	Columns         []TableColumn `json:"columns"`
-	Networks        []string      `json:"networks,omitempty"`
 	HasNetworkCol   bool          `json:"has_network_column"`
 	CreateStatement string        `json:"create_statement,omitempty"`
 	Comment         string        `json:"comment,omitempty"`
 }
 
-// ClusterTables represents tables available in a ClickHouse cluster.
+// ClusterTables holds tables for a ClickHouse cluster, keyed by "<database>.<name>".
 type ClusterTables struct {
 	ClusterName string                  `json:"cluster_name"`
 	Tables      map[string]*TableSchema `json:"tables"`
@@ -100,19 +94,17 @@ type TableMatch struct {
 	ClusterName string
 }
 
+func tableKey(database, name string) string {
+	return database + "." + name
+}
+
 // ClickHouseSchemaClient fetches and caches ClickHouse schema information.
 type ClickHouseSchemaClient interface {
-	// Start initializes the client and fetches initial schema data.
 	Start(ctx context.Context) error
-	// Stop stops background refresh.
 	Stop() error
-	// WaitForReady blocks until the initial schema fetch completes or ctx is cancelled.
 	WaitForReady(ctx context.Context) error
-	// GetAllTables returns all tables across all clusters.
 	GetAllTables() map[string]*ClusterTables
-	// GetTableAll returns schema for a table from every cluster that contains it.
-	// Falls back to case-insensitive matching when no exact match is found.
-	GetTableAll(tableName string) []TableMatch
+	GetTableExact(database, tableName string) []TableMatch
 }
 
 // Compile-time interface compliance check.
@@ -289,36 +281,20 @@ func (c *clickhouseSchemaClient) GetAllTables() map[string]*ClusterTables {
 	return result
 }
 
-// GetTableAll returns schema for a table from every cluster that contains it.
-// Falls back to case-insensitive matching when no exact match is found.
-func (c *clickhouseSchemaClient) GetTableAll(tableName string) []TableMatch {
+func (c *clickhouseSchemaClient) GetTableExact(database, tableName string) []TableMatch {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+
+	key := tableKey(database, tableName)
 
 	var matches []TableMatch
 
 	for clusterName, cluster := range c.clusters {
-		if schema, ok := cluster.Tables[tableName]; ok {
+		if schema, ok := cluster.Tables[key]; ok {
 			matches = append(matches, TableMatch{
 				Schema:      schema,
 				ClusterName: clusterName,
 			})
-		}
-	}
-
-	if len(matches) > 0 {
-		return matches
-	}
-
-	// Fall back to case-insensitive matching.
-	for clusterName, cluster := range c.clusters {
-		for name, schema := range cluster.Tables {
-			if strings.EqualFold(name, tableName) {
-				matches = append(matches, TableMatch{
-					Schema:      schema,
-					ClusterName: clusterName,
-				})
-			}
 		}
 	}
 
@@ -444,19 +420,18 @@ func (c *clickhouseSchemaClient) discoverClusterSchema(
 
 			schema, err := c.fetchTableSchema(ctx, datasourceName, token, dt.Name, dt.Database)
 			if err != nil {
-				c.log.WithError(err).WithField("table", dt.Name).Debug("Failed to fetch table schema")
+				c.log.WithError(err).WithFields(logrus.Fields{
+					"database": dt.Database,
+					"table":    dt.Name,
+				}).Debug("Failed to fetch table schema")
 
 				return
 			}
 
-			if len(dt.Networks) > 0 {
-				// Per-network-database cluster: networks come from database names.
-				sort.Strings(dt.Networks)
-				schema.Networks = dt.Networks
-			}
+			schema.Database = dt.Database
 
 			mu.Lock()
-			clusterTables.Tables[dt.Name] = schema
+			clusterTables.Tables[tableKey(dt.Database, dt.Name)] = schema
 			mu.Unlock()
 		}(dt)
 	}
@@ -578,8 +553,21 @@ func (c *clickhouseSchemaClient) fetchTableList(ctx context.Context, datasourceN
 	return c.fetchTableListFromSystemTables(ctx, datasourceName, token)
 }
 
-// fetchTableListDefault fetches tables from the default database via SHOW TABLES.
+// fetchTableListDefault fetches tables from the cluster's default database via
+// SHOW TABLES, resolving the database name via currentDatabase() so each entry
+// carries an explicit Database.
 func (c *clickhouseSchemaClient) fetchTableListDefault(ctx context.Context, datasourceName, token string) ([]discoveredTable, error) {
+	dbResult, err := c.queryJSON(ctx, datasourceName, token, "SELECT currentDatabase() AS db")
+	if err != nil {
+		return nil, fmt.Errorf("resolving current database: %w", err)
+	}
+
+	currentDB := ""
+	if len(dbResult.Data) > 0 {
+		col := pickColumn(dbResult.Meta, "db")
+		currentDB = strings.TrimSpace(asString(dbResult.Data[0][col]))
+	}
+
 	result, err := c.queryJSON(ctx, datasourceName, token, "SHOW TABLES")
 	if err != nil {
 		return nil, fmt.Errorf("executing SHOW TABLES: %w", err)
@@ -601,7 +589,7 @@ func (c *clickhouseSchemaClient) fetchTableListDefault(ctx context.Context, data
 			continue
 		}
 
-		tables = append(tables, discoveredTable{Name: tableName})
+		tables = append(tables, discoveredTable{Name: tableName, Database: currentDB})
 	}
 
 	return tables, nil
@@ -616,11 +604,9 @@ var systemDatabaseBlacklist = map[string]bool{
 	"_temporary_and_external_tables": true,
 }
 
-// fetchTableListFromSystemTables discovers tables across per-network databases.
-// Used for clusters like xatu-cbt where tables live in per-network databases
-// (e.g. mainnet.fct_block_head). Discovers all databases, then lists tables
-// from each. Schema is only fetched from one representative database since
-// all network databases have identical table schemas.
+// fetchTableListFromSystemTables emits one discoveredTable per (database, table)
+// for every non-system database. Used when the cluster's default database is
+// empty (xatu-cbt, observability tier-scoped clusters).
 func (c *clickhouseSchemaClient) fetchTableListFromSystemTables(ctx context.Context, datasourceName, token string) ([]discoveredTable, error) {
 	databases, err := c.fetchDatabases(ctx, datasourceName, token)
 	if err != nil {
@@ -631,9 +617,7 @@ func (c *clickhouseSchemaClient) fetchTableListFromSystemTables(ctx context.Cont
 		return nil, nil
 	}
 
-	// Collect tables from all databases to build the full network mapping.
-	// tableNetworks maps table name -> list of databases it exists in.
-	tableNetworks := make(map[string][]string, 256)
+	tables := make([]discoveredTable, 0, 256)
 
 	for _, db := range databases {
 		dbTables, err := c.fetchTablesFromDatabase(ctx, datasourceName, token, db)
@@ -644,19 +628,8 @@ func (c *clickhouseSchemaClient) fetchTableListFromSystemTables(ctx context.Cont
 		}
 
 		for _, name := range dbTables {
-			tableNetworks[name] = append(tableNetworks[name], db)
+			tables = append(tables, discoveredTable{Name: name, Database: db})
 		}
-	}
-
-	// Build discovered table list. Pick the first database as the representative
-	// for schema fetching — all network databases have identical schemas.
-	tables := make([]discoveredTable, 0, len(tableNetworks))
-	for name, dbs := range tableNetworks {
-		tables = append(tables, discoveredTable{
-			Name:     name,
-			Database: dbs[0],
-			Networks: dbs,
-		})
 	}
 
 	return tables, nil

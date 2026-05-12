@@ -382,8 +382,15 @@ func readClickHouseTables(ctx context.Context) (*clickhousemodule.TablesListResp
 	return &payload, nil
 }
 
-func readClickHouseTable(ctx context.Context, tableName string) (*clickhousemodule.TableDetailResponse, error) {
-	response, err := readResource(ctx, "clickhouse://tables/"+tableName)
+// readClickHouseTable resolves a qualified table reference ("database.table"
+// or "database/table") to its schema.
+func readClickHouseTable(ctx context.Context, tableRef string) (*clickhousemodule.TableDetailResponse, error) {
+	path, err := clickhouseTableRefToURIPath(tableRef)
+	if err != nil {
+		return nil, err
+	}
+
+	response, err := readResource(ctx, "clickhouse://tables/"+path)
 	if err != nil {
 		return nil, err
 	}
@@ -394,6 +401,24 @@ func readClickHouseTable(ctx context.Context, tableName string) (*clickhousemodu
 	}
 
 	return &payload, nil
+}
+
+func clickhouseTableRefToURIPath(ref string) (string, error) {
+	if strings.Count(ref, "/") == 1 {
+		parts := strings.SplitN(ref, "/", 2)
+		if parts[0] != "" && parts[1] != "" {
+			return ref, nil
+		}
+	}
+
+	if strings.Count(ref, ".") == 1 && !strings.Contains(ref, "/") {
+		parts := strings.SplitN(ref, ".", 2)
+		if parts[0] != "" && parts[1] != "" {
+			return parts[0] + "/" + parts[1], nil
+		}
+	}
+
+	return "", fmt.Errorf("table reference must be qualified as 'database.table' or 'database/table', got %q", ref)
 }
 
 func triggerBuild(ctx context.Context, req serverapi.BuildTriggerRequest) (*serverapi.BuildTriggerResponse, error) {

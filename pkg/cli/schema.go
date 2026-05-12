@@ -11,15 +11,16 @@ import (
 
 var schemaCmd = &cobra.Command{
 	GroupID: groupDiscovery,
-	Use:     "schema [table-name]",
+	Use:     "schema [database.table]",
 	Short:   "Show ClickHouse table schemas",
 	Long: `Show available ClickHouse tables and their schemas. Without arguments,
-lists all tables. With a table name, shows the full schema including
-columns, types, and available networks.
+lists all tables. With a qualified "database.table" reference, shows the
+full schema including columns, types, and engine.
 
 Examples:
   panda schema
-  panda schema beacon_api_eth_v1_events_block
+  panda schema mainnet.fct_block_head
+  panda schema internal.logs
   panda schema --json`,
 	RunE: runSchema,
 }
@@ -65,7 +66,7 @@ func listTables(ctx context.Context) error {
 				net = " (network-filtered)"
 			}
 
-			fmt.Printf("  %-50s  %d cols%s\n", table.Name, table.ColumnCount, net)
+			fmt.Printf("  %-60s  %d cols%s\n", table.Database+"."+table.Name, table.ColumnCount, net)
 		}
 
 		fmt.Println()
@@ -91,16 +92,14 @@ func showTable(ctx context.Context, tableName string) error {
 		clusterNames = append(clusterNames, c.Name)
 	}
 
-	fmt.Printf("Table: %s  (clusters: %s)\n", schema.Name, strings.Join(clusterNames, ", "))
+	fmt.Printf("Table: %s.%s  (clusters: %s)\n", schema.Database, schema.Name, strings.Join(clusterNames, ", "))
 
 	if schema.Comment != "" {
 		fmt.Printf("Comment: %s\n", schema.Comment)
 	}
 
 	for _, c := range response.Clusters {
-		if len(c.Networks) > 0 {
-			fmt.Printf("Networks (%s): %s\n", c.Name, strings.Join(c.Networks, ", "))
-		}
+		fmt.Printf("  %s -> %s.%s\n", c.Name, c.Database, schema.Name)
 	}
 
 	fmt.Println()

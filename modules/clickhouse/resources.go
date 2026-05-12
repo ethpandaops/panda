@@ -30,23 +30,23 @@ type ClusterTablesSummary struct {
 }
 
 // TableSummary is a compact overview of a table for the list view.
-// Use clickhouse://tables/{table_name} for detailed schema including networks.
 type TableSummary struct {
+	Database      string `json:"database"`
 	Name          string `json:"name"`
 	ColumnCount   int    `json:"column_count"`
 	HasNetworkCol bool   `json:"has_network_column"`
 }
 
-// ClusterNetworks pairs a cluster name with the networks available in it.
-type ClusterNetworks struct {
-	Name     string   `json:"name"`
-	Networks []string `json:"networks"`
+// ClusterTableLocation pairs a cluster name with the database the table is in.
+type ClusterTableLocation struct {
+	Name     string `json:"name"`
+	Database string `json:"database"`
 }
 
-// TableDetailResponse is the response for clickhouse://tables/{table_name}.
+// TableDetailResponse is the response for clickhouse://tables/{database}/{table_name}.
 type TableDetailResponse struct {
-	Table    *TableSchema      `json:"table"`
-	Clusters []ClusterNetworks `json:"clusters"`
+	Table    *TableSchema           `json:"table"`
+	Clusters []ClusterTableLocation `json:"clusters"`
 }
 
 // RegisterSchemaResources registers ClickHouse schema resources with the registry.
@@ -57,48 +57,44 @@ func RegisterSchemaResources(
 ) {
 	log = log.WithField("resource", "clickhouse_schema")
 
-	// clickhouse://tables - List all tables across clusters
 	reg.RegisterStatic(types.StaticResource{
 		Resource: mcp.NewResource(
 			"clickhouse://tables",
 			"ClickHouse Tables",
-			mcp.WithResourceDescription("List all available ClickHouse tables across xatu clusters with brief schema info"),
+			mcp.WithResourceDescription("List all available ClickHouse tables across clusters. Each entry is keyed by (database, table)."),
 			mcp.WithMIMEType("application/json"),
 			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.7),
 		),
 		Handler: createTablesListHandler(client),
 	})
 
-	// clickhouse://tables/{table_name} - Individual table details
 	template := mcp.NewResourceTemplate(
-		"clickhouse://tables/{table_name}",
+		"clickhouse://tables/{database}/{table_name}",
 		"ClickHouse Table Schema",
-		mcp.WithTemplateDescription("Full schema for a specific ClickHouse table including columns, types, comments, and available networks"),
+		mcp.WithTemplateDescription("Full schema for a specific ClickHouse table identified by (database, table) — columns, types, comments, engine."),
 		mcp.WithTemplateMIMEType("application/json"),
 		mcp.WithTemplateAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.6),
 	)
 
 	reg.RegisterTemplate(types.TemplateResource{
 		Template: template,
-		Pattern:  regexp.MustCompile(`^clickhouse://tables/(.+)$`),
+		Pattern:  regexp.MustCompile(`^clickhouse://tables/([^/]+)/([^/]+)$`),
 		Handler:  createTableDetailHandler(log, client),
 	})
 
 	log.Debug("Registered ClickHouse schema resources")
 }
 
-// createTablesListHandler creates a handler for the clickhouse://tables resource.
 func createTablesListHandler(client ClickHouseSchemaClient) types.ReadHandler {
 	return func(_ context.Context, _ string) (string, error) {
 		allTables := client.GetAllTables()
 
 		response := &TablesListResponse{
-			Description: "Available ClickHouse tables across xatu clusters. Use clickhouse://tables/{table_name} for detailed schema.",
+			Description: "Available ClickHouse tables across clusters. Each entry is keyed by (database, table).",
 			Clusters:    make(map[string]*ClusterTablesSummary, len(allTables)),
-			Usage:       "To get detailed schema for a table, access clickhouse://tables/{table_name}",
+			Usage:       "Read clickhouse://tables/{database}/{table_name} for the detailed schema.",
 		}
 
-		// Build cluster summaries
 		for clusterName, cluster := range allTables {
 			summary := &ClusterTablesSummary{
 				Tables:      make([]*TableSummary, 0, len(cluster.Tables)),
@@ -106,25 +102,22 @@ func createTablesListHandler(client ClickHouseSchemaClient) types.ReadHandler {
 				LastUpdated: cluster.LastUpdated.Format("2006-01-02T15:04:05Z"),
 			}
 
-			// Sort table names for consistent output
-			tableNames := make([]string, 0, len(cluster.Tables))
-			for tableName := range cluster.Tables {
-				tableNames = append(tableNames, tableName)
-			}
-
-			sort.Strings(tableNames)
-
-			for _, tableName := range tableNames {
-				schema := cluster.Tables[tableName]
-
-				tableSummary := &TableSummary{
+			for _, schema := range cluster.Tables {
+				summary.Tables = append(summary.Tables, &TableSummary{
+					Database:      schema.Database,
 					Name:          schema.Name,
 					ColumnCount:   len(schema.Columns),
 					HasNetworkCol: schema.HasNetworkCol,
+				})
+			}
+
+			sort.Slice(summary.Tables, func(i, j int) bool {
+				if summary.Tables[i].Database != summary.Tables[j].Database {
+					return summary.Tables[i].Database < summary.Tables[j].Database
 				}
 
-				summary.Tables = append(summary.Tables, tableSummary)
-			}
+				return summary.Tables[i].Name < summary.Tables[j].Name
+			})
 
 			response.Clusters[clusterName] = summary
 		}
@@ -138,45 +131,35 @@ func createTablesListHandler(client ClickHouseSchemaClient) types.ReadHandler {
 	}
 }
 
-// createTableDetailHandler creates a handler for the clickhouse://tables/{table_name} resource.
 func createTableDetailHandler(log logrus.FieldLogger, client ClickHouseSchemaClient) types.ReadHandler {
 	return func(_ context.Context, uri string) (string, error) {
-		tableName := extractTableName(uri)
-		if tableName == "" {
+		database, tableName := extractQualifiedTableName(uri)
+		if database == "" || tableName == "" {
 			return "", fmt.Errorf("invalid table URI: %s", uri)
 		}
 
-		matches := client.GetTableAll(tableName)
+		matches := client.GetTableExact(database, tableName)
 
 		if len(matches) == 0 {
-			availableTables := listAvailableTables(client)
-
-			return "", fmt.Errorf("table %q not found. Available tables: %s", tableName, strings.Join(availableTables, ", "))
+			return "", fmt.Errorf("table %q in database %q not found", tableName, database)
 		}
 
-		// Use the first match as the base schema; strip networks since they're per-cluster.
 		sort.Slice(matches, func(i, j int) bool {
 			return matches[i].ClusterName < matches[j].ClusterName
 		})
 
 		base := *matches[0].Schema
-		base.Networks = nil
 
-		clusters := make([]ClusterNetworks, 0, len(matches))
+		clusters := make([]ClusterTableLocation, 0, len(matches))
 
 		for _, m := range matches {
-			clusters = append(clusters, ClusterNetworks{
+			clusters = append(clusters, ClusterTableLocation{
 				Name:     m.ClusterName,
-				Networks: m.Schema.Networks,
+				Database: m.Schema.Database,
 			})
 		}
 
-		response := &TableDetailResponse{
-			Table:    &base,
-			Clusters: clusters,
-		}
-
-		data, err := json.MarshalIndent(response, "", "  ")
+		data, err := json.MarshalIndent(&TableDetailResponse{Table: &base, Clusters: clusters}, "", "  ")
 		if err != nil {
 			return "", fmt.Errorf("marshaling table detail: %w", err)
 		}
@@ -187,6 +170,7 @@ func createTableDetailHandler(log logrus.FieldLogger, client ClickHouseSchemaCli
 		}
 
 		log.WithFields(logrus.Fields{
+			"database": database,
 			"table":    tableName,
 			"clusters": clusterNames,
 		}).Debug("Returned table schema")
@@ -195,40 +179,25 @@ func createTableDetailHandler(log logrus.FieldLogger, client ClickHouseSchemaCli
 	}
 }
 
-// extractTableName extracts the table name from a clickhouse://tables/{table_name} URI.
-func extractTableName(uri string) string {
+func extractQualifiedTableName(uri string) (string, string) {
 	prefix := "clickhouse://tables/"
 	if !strings.HasPrefix(uri, prefix) {
-		return ""
+		return "", ""
 	}
 
-	return strings.TrimPrefix(uri, prefix)
-}
+	rest := strings.TrimPrefix(uri, prefix)
 
-// listAvailableTables returns a sorted list of all available table names.
-func listAvailableTables(client ClickHouseSchemaClient) []string {
-	allTables := client.GetAllTables()
-	tableNames := make([]string, 0, 64)
-
-	for _, cluster := range allTables {
-		for tableName := range cluster.Tables {
-			tableNames = append(tableNames, tableName)
-		}
+	idx := strings.Index(rest, "/")
+	if idx <= 0 || idx == len(rest)-1 {
+		return "", ""
 	}
 
-	sort.Strings(tableNames)
+	database := rest[:idx]
+	table := rest[idx+1:]
 
-	// Deduplicate (in case same table exists in multiple clusters)
-	unique := make([]string, 0, len(tableNames))
-
-	prev := ""
-
-	for _, name := range tableNames {
-		if name != prev {
-			unique = append(unique, name)
-			prev = name
-		}
+	if strings.Contains(table, "/") {
+		return "", ""
 	}
 
-	return unique
+	return database, table
 }
