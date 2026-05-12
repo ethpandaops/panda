@@ -113,6 +113,11 @@ type ClickHouseSchemaClient interface {
 	// GetTableAll returns schema for a table from every cluster that contains it.
 	// Falls back to case-insensitive matching when no exact match is found.
 	GetTableAll(tableName string) []TableMatch
+	// UpdateDatasources replaces the cluster→datasource mapping used on the next
+	// refresh and signals an immediate refresh so newly added clusters get their
+	// schemas discovered without waiting for the next interval. Safe to call
+	// concurrently with reads and with the background refresh loop.
+	UpdateDatasources(datasources []SchemaDiscoveryDatasource)
 }
 
 // Compile-time interface compliance check.
@@ -123,13 +128,16 @@ type clickhouseSchemaClient struct {
 	cfg      ClickHouseSchemaConfig
 	proxySvc proxy.Service
 
-	mu          sync.RWMutex
-	clusters    map[string]*ClusterTables
+	mu       sync.RWMutex
+	clusters map[string]*ClusterTables
+
+	dsMu        sync.RWMutex
 	datasources map[string]string // cluster name -> datasource name
 
-	done  chan struct{}
-	ready chan struct{} // closed when initial fetch completes
-	wg    sync.WaitGroup
+	done       chan struct{}
+	ready      chan struct{} // closed when initial fetch completes
+	refreshNow chan struct{} // capacity 1; coalesces on-demand refresh signals
+	wg         sync.WaitGroup
 
 	httpClient *http.Client
 }
@@ -156,8 +164,63 @@ func NewClickHouseSchemaClient(
 		datasources: make(map[string]string, 2),
 		done:        make(chan struct{}),
 		ready:       make(chan struct{}),
+		refreshNow:  make(chan struct{}, 1),
 		httpClient:  &http.Client{},
 	}
+}
+
+// UpdateDatasources replaces the cluster→datasource mapping used on the next
+// refresh and signals an immediate refresh.
+func (c *clickhouseSchemaClient) UpdateDatasources(datasources []SchemaDiscoveryDatasource) {
+	newMap := make(map[string]string, len(datasources))
+
+	for _, ds := range datasources {
+		if ds.Name == "" || ds.Cluster == "" {
+			continue
+		}
+
+		if _, exists := newMap[ds.Cluster]; exists {
+			c.log.WithFields(logrus.Fields{
+				"name":    ds.Name,
+				"cluster": ds.Cluster,
+			}).Warn("Duplicate schema discovery cluster name; keeping first entry")
+
+			continue
+		}
+
+		newMap[ds.Cluster] = ds.Name
+	}
+
+	c.dsMu.Lock()
+	previous := c.datasources
+	c.datasources = newMap
+	c.dsMu.Unlock()
+
+	if datasourceMapsEqual(previous, newMap) {
+		return
+	}
+
+	c.log.WithField("cluster_count", len(newMap)).Info("ClickHouse schema datasources updated; triggering refresh")
+
+	select {
+	case c.refreshNow <- struct{}{}:
+	default:
+		// Refresh already pending.
+	}
+}
+
+func datasourceMapsEqual(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+
+	for k, v := range a {
+		if b[k] != v {
+			return false
+		}
+	}
+
+	return true
 }
 
 // Start initializes the client and starts background refresh.
@@ -216,12 +279,14 @@ func (c *clickhouseSchemaClient) initDatasources() error {
 		return fmt.Errorf("proxy service is required for schema discovery")
 	}
 
+	initial := make(map[string]string, len(c.cfg.Datasources))
+
 	for _, ds := range c.cfg.Datasources {
 		if ds.Name == "" || ds.Cluster == "" {
 			continue
 		}
 
-		if _, exists := c.datasources[ds.Cluster]; exists {
+		if _, exists := initial[ds.Cluster]; exists {
 			c.log.WithFields(logrus.Fields{
 				"name":    ds.Name,
 				"cluster": ds.Cluster,
@@ -230,7 +295,7 @@ func (c *clickhouseSchemaClient) initDatasources() error {
 			continue
 		}
 
-		c.datasources[ds.Cluster] = ds.Name
+		initial[ds.Cluster] = ds.Name
 
 		c.log.WithFields(logrus.Fields{
 			"name":    ds.Name,
@@ -238,11 +303,29 @@ func (c *clickhouseSchemaClient) initDatasources() error {
 		}).Debug("Configured ClickHouse schema discovery datasource")
 	}
 
-	if len(c.datasources) == 0 {
+	c.dsMu.Lock()
+	c.datasources = initial
+	c.dsMu.Unlock()
+
+	if len(initial) == 0 {
 		return fmt.Errorf("no ClickHouse schema discovery datasources configured")
 	}
 
 	return nil
+}
+
+// snapshotDatasources returns a copy of the current cluster→datasource mapping
+// so the refresh loop can iterate without holding the lock across network calls.
+func (c *clickhouseSchemaClient) snapshotDatasources() map[string]string {
+	c.dsMu.RLock()
+	defer c.dsMu.RUnlock()
+
+	out := make(map[string]string, len(c.datasources))
+	for k, v := range c.datasources {
+		out[k] = v
+	}
+
+	return out
 }
 
 // Stop stops the background refresh goroutine.
@@ -338,6 +421,8 @@ func (c *clickhouseSchemaClient) backgroundRefresh() {
 			return
 		case <-ticker.C:
 			c.doRefresh()
+		case <-c.refreshNow:
+			c.doRefresh()
 		}
 	}
 }
@@ -366,7 +451,9 @@ func (c *clickhouseSchemaClient) doRefresh() {
 
 // refresh fetches the latest schema from all configured clusters.
 func (c *clickhouseSchemaClient) refresh(ctx context.Context) error {
-	if len(c.datasources) == 0 {
+	datasources := c.snapshotDatasources()
+
+	if len(datasources) == 0 {
 		c.log.Warn("No ClickHouse datasources available for schema discovery")
 
 		return nil
@@ -379,9 +466,9 @@ func (c *clickhouseSchemaClient) refresh(ctx context.Context) error {
 		c.log.Warn("Proxy token is empty; schema discovery requests may fail if auth is required")
 	}
 
-	newClusters := make(map[string]*ClusterTables, len(c.datasources))
+	newClusters := make(map[string]*ClusterTables, len(datasources))
 
-	for clusterName, datasourceName := range c.datasources {
+	for clusterName, datasourceName := range datasources {
 		tables, err := c.discoverClusterSchema(ctx, clusterName, datasourceName, token)
 		if err != nil {
 			c.log.WithError(err).WithField("cluster", clusterName).Warn("Failed to discover cluster schema")

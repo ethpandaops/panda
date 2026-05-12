@@ -37,6 +37,19 @@ type ProxyDiscoverable interface {
 	InitFromDiscovery(datasources []types.DatasourceInfo) error
 }
 
+// DiscoveryReloadable is an optional capability for ProxyDiscoverable modules
+// that need to rebuild internal state when the discovered datasource list
+// changes after Start. Without this, the module's datasource list updates but
+// downstream resources (e.g. ClickHouse schema discovery clients) keep their
+// startup-time view.
+//
+// Called by the app's discovery refresh hook after InitFromDiscovery succeeds
+// on an already-started module. Implementations must be safe to call
+// concurrently with module reads (DatasourceInfo, SandboxEnv, etc.).
+type DiscoveryReloadable interface {
+	OnDiscoveryReloaded(ctx context.Context) error
+}
+
 // DefaultEnabled is an optional interface that modules can implement
 // to indicate they should be initialized even without explicit config.
 // This is useful for modules like dora that work with discovered data

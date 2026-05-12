@@ -18,8 +18,9 @@ import (
 
 // Compile-time interface checks.
 var (
-	_ module.Module            = (*Module)(nil)
-	_ module.ProxyDiscoverable = (*Module)(nil)
+	_ module.Module              = (*Module)(nil)
+	_ module.ProxyDiscoverable   = (*Module)(nil)
+	_ module.DiscoveryReloadable = (*Module)(nil)
 )
 
 // Module implements the module.Module interface for ClickHouse.
@@ -68,6 +69,40 @@ func (p *Module) InitFromDiscovery(datasources []types.DatasourceInfo) error {
 	p.dsMu.Lock()
 	p.datasources = filtered
 	p.dsMu.Unlock()
+
+	return nil
+}
+
+// OnDiscoveryReloaded pushes the refreshed datasource list into the running
+// schema discovery client so newly added ClickHouse clusters get their schemas
+// fetched without a server restart. Skipped when YAML schema_discovery.datasources
+// is configured (those are authoritative) or when schema discovery is disabled.
+func (p *Module) OnDiscoveryReloaded(_ context.Context) error {
+	if p.schemaClient == nil {
+		return nil
+	}
+
+	// YAML config is authoritative — don't let proxy discovery widen the set.
+	if len(p.cfg.SchemaDiscovery.Datasources) > 0 {
+		return nil
+	}
+
+	p.dsMu.RLock()
+	dsList := make([]SchemaDiscoveryDatasource, 0, len(p.datasources))
+
+	for _, ds := range p.datasources {
+		if ds.Name == "" {
+			continue
+		}
+
+		dsList = append(dsList, SchemaDiscoveryDatasource{
+			Name:    ds.Name,
+			Cluster: ds.Name,
+		})
+	}
+	p.dsMu.RUnlock()
+
+	p.schemaClient.UpdateDatasources(dsList)
 
 	return nil
 }
