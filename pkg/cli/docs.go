@@ -26,7 +26,7 @@ Examples:
   panda docs clickhouse       # Show clickhouse module docs
   panda docs --json           # Output as JSON`,
 	RunE:      runDocs,
-	ValidArgs: []string{"clickhouse", "prometheus", "loki", "dora", "storage", "ethnode"},
+	ValidArgs: []string{"block_archive", "clickhouse", "prometheus", "loki", "dora", "storage", "ethnode"},
 }
 
 func init() {

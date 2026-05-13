@@ -18,6 +18,7 @@ import (
 	"github.com/ethpandaops/panda/pkg/sandbox"
 	"github.com/ethpandaops/panda/pkg/types"
 
+	blockarchivemodule "github.com/ethpandaops/panda/modules/block_archive"
 	cbtmodule "github.com/ethpandaops/panda/modules/cbt"
 	clickhousemodule "github.com/ethpandaops/panda/modules/clickhouse"
 	doramodule "github.com/ethpandaops/panda/modules/dora"
@@ -163,6 +164,7 @@ func (a *App) stop(ctx context.Context) {
 func (a *App) registerModules() *module.Registry {
 	reg := module.NewRegistry(a.log)
 
+	reg.Add(blockarchivemodule.New())
 	reg.Add(cbtmodule.New())
 	reg.Add(clickhousemodule.New())
 	reg.Add(doramodule.New())
