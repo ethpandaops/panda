@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	dockerimage "github.com/docker/docker/api/types/image"
 	dockerclient "github.com/docker/docker/client"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	authclient "github.com/ethpandaops/panda/pkg/auth/client"
 	authstore "github.com/ethpandaops/panda/pkg/auth/store"
@@ -32,14 +34,16 @@ const (
 )
 
 var (
-	initDir          = configpath.DefaultConfigDir()
-	initForce        bool
-	initProxyURL     string
-	initSandboxImage string
-	initServerImage  string
-	initSkipDocker   bool
-	initSkipAuth     bool
-	initSkipStart    bool
+	initDir             = configpath.DefaultConfigDir()
+	initForce           bool
+	initProxyURL        string
+	initSandboxImage    string
+	initServerImage     string
+	initSkipDocker      bool
+	initSkipAuth        bool
+	initSkipStart       bool
+	initDiscordUsername string
+	initSkipDiscord     bool
 )
 
 var initCmd = &cobra.Command{
@@ -73,6 +77,10 @@ func init() {
 	initCmd.Flags().BoolVar(&initSkipStart, "skip-start", false, "skip starting the server")
 	initCmd.Flags().BoolVar(&noBrowser, "no-browser", false,
 		"manual auth flow for SSH/headless environments (auto-detected over SSH)")
+	initCmd.Flags().StringVar(&initDiscordUsername, "discord-username", "",
+		"Discord username or user ID to DM on build completion (skips interactive prompt)")
+	initCmd.Flags().BoolVar(&initSkipDiscord, "skip-discord", false,
+		"skip the Discord username prompt entirely")
 }
 
 func runInit(_ *cobra.Command, _ []string) error {
@@ -160,6 +168,11 @@ func runInit(_ *cobra.Command, _ []string) error {
 		}
 	} else {
 		fmt.Println("\nSkipping authentication (--skip-auth)")
+	}
+
+	// 4b. Discord username (optional, persisted to config.user.yaml).
+	if err := initEnsureDiscordUsername(configPath); err != nil {
+		fmt.Fprintf(os.Stderr, "  (could not save Discord username: %v)\n", err)
 	}
 
 	// 5. Start the server.
@@ -494,4 +507,87 @@ func initEnsureAuth() (bool, error) {
 	fmt.Println("Authenticating...")
 
 	return false, runAuthLogin(nil, nil)
+}
+
+// initEnsureDiscordUsername gathers an optional Discord username and persists
+// it under notifications.discord.username so future `panda build` invocations
+// notify the user without needing the --discord-dm flag. The prompt is
+// suppressed under --skip-discord, when stdin is not a TTY, or when a value is
+// already configured. A value supplied via --discord-username always wins.
+func initEnsureDiscordUsername(configPath string) error {
+	if initSkipDiscord {
+		return nil
+	}
+
+	username := strings.TrimSpace(initDiscordUsername)
+
+	if username == "" {
+		existing, _ := loadConfiguredDiscordUsername(configPath)
+		if existing != "" {
+			fmt.Printf("Discord notifications: already configured for %q\n", existing)
+			return nil
+		}
+
+		if !term.IsTerminal(int(os.Stdin.Fd())) {
+			return nil
+		}
+
+		fmt.Println()
+		fmt.Println("Optional: Discord username for build-completion DMs.")
+		fmt.Println("  Leave blank to skip; you can set it later with --discord-dm on `panda build`.")
+		fmt.Print("Discord username: ")
+
+		scanner := bufio.NewScanner(os.Stdin)
+		if !scanner.Scan() {
+			return nil
+		}
+
+		username = strings.TrimSpace(scanner.Text())
+	}
+
+	if username == "" {
+		return nil
+	}
+
+	if err := saveDiscordUsername(configPath, username); err != nil {
+		return err
+	}
+
+	fmt.Printf("Saved Discord username %q to config.user.yaml\n", username)
+
+	return nil
+}
+
+func loadConfiguredDiscordUsername(configPath string) (string, error) {
+	cfg, err := config.LoadWithUserOverrides(configPath)
+	if err != nil {
+		return "", err
+	}
+
+	return cfg.Notifications.Discord.Username, nil
+}
+
+func saveDiscordUsername(configPath, username string) error {
+	userPath := config.UserConfigPath(configPath)
+
+	overrides, err := config.LoadUserConfigMap(userPath)
+	if err != nil {
+		return err
+	}
+
+	notifications, _ := overrides["notifications"].(map[string]any)
+	if notifications == nil {
+		notifications = make(map[string]any, 1)
+	}
+
+	discord, _ := notifications["discord"].(map[string]any)
+	if discord == nil {
+		discord = make(map[string]any, 1)
+	}
+
+	discord["username"] = username
+	notifications["discord"] = discord
+	overrides["notifications"] = notifications
+
+	return config.SaveUserConfig(userPath, overrides)
 }
