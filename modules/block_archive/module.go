@@ -116,10 +116,10 @@ func (p *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 		"block_archive": {
 			Description: "Fetch raw beacon blocks (SSZ or decoded JSON) by (network, slot, block_root) from the public block archive.",
 			Functions: map[string]types.FunctionDoc{
-				"list_networks":  {Signature: "list_networks() -> list[str]", Description: "List networks the archive serves"},
+				"list_networks":  {Signature: "list_networks(active_only=True) -> list[dict]", Description: "List networks the archive knows about. Each entry: {name, status, source, tracoor_url, chain_id, polling}. Defaults to active+polling networks; pass active_only=False to include inactive devnets that still have historical blocks."},
 				"get_base_url":   {Signature: "get_base_url() -> str", Description: "Get the block-archiver base URL"},
 				"download_ssz":   {Signature: "download_ssz(network, slot, block_root) -> bytes", Description: "Download the SSZ-encoded SignedBeaconBlock bytes"},
-				"get_block_json": {Signature: "get_block_json(network, slot, block_root) -> dict", Description: "Get the decoded JSON representation of the SignedBeaconBlock"},
+				"get_block_json": {Signature: "get_block_json(network, slot, block_root) -> dict", Description: "Get the decoded JSON representation of the SignedBeaconBlock. Raises ValueError (HTTP 501 no_fork_schedule) for networks without an embedded fork schedule (most devnets) — use download_ssz instead for those."},
 				"link":           {Signature: "link(network, slot, block_root) -> str", Description: "Build a browser link to the block's UI page in the archive"},
 			},
 		},
@@ -137,8 +137,19 @@ Fetch raw canonical beacon blocks by (network, slot, block_root). Source the
 (slot, block_root) pairs from clickhouse, then pull the raw payload from the
 archive when you need the SSZ or decoded JSON.
 
+The archive serves mainnet, sepolia, hoodi, plus a rotating set of active
+devnets discovered from cartographoor. Inactive devnets keep their archived
+history available — pass active_only=False to ` + "`list_networks`" + ` to see them.
+
+The decoded-JSON endpoint needs a known fork schedule, which only exists for
+mainnet/sepolia/hoodi. For devnets use ` + "`download_ssz`" + ` and decode locally.
+
 ` + "```python" + `
 from ethpandaops import block_archive, clickhouse
+
+# What's the archive currently polling?
+for n in block_archive.list_networks():
+    print(n["name"], n["status"], "polling" if n["polling"] else "")
 
 # Look up a recent block_root for a slot from xatu.
 df = clickhouse.query("xatu", """
@@ -151,11 +162,11 @@ df = clickhouse.query("xatu", """
 slot = int(df.iloc[0]["slot"])
 root = df.iloc[0]["block_root"]
 
-# Decoded JSON.
+# Decoded JSON (mainnet/sepolia/hoodi only).
 block = block_archive.get_block_json("mainnet", slot, root)
 print(block["block"]["message"]["proposer_index"])
 
-# Or grab the raw SSZ bytes for offline processing / re-decoding.
+# Raw SSZ bytes — works for every archived network including devnets.
 raw = block_archive.download_ssz("mainnet", slot, root)
 ` + "```" + `
 `

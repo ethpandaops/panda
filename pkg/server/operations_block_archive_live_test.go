@@ -25,12 +25,17 @@ import (
 func TestBlockArchiveLive_ListNetworks(t *testing.T) {
 	svc := newLiveBlockArchiveService(t)
 
-	body := callOp(t, svc, "block_archive.list_networks", nil)
+	body := callOp(t, svc, "block_archive.list_networks", map[string]any{"active": true})
 
 	var payload struct {
 		Kind string `json:"kind"`
 		Data struct {
-			Networks []string `json:"networks"`
+			Networks []struct {
+				Name    string `json:"name"`
+				Status  string `json:"status"`
+				Source  string `json:"source"`
+				Polling bool   `json:"polling"`
+			} `json:"networks"`
 		} `json:"data"`
 	}
 
@@ -42,18 +47,56 @@ func TestBlockArchiveLive_ListNetworks(t *testing.T) {
 		t.Fatalf("unexpected kind %q", payload.Kind)
 	}
 
-	t.Logf("networks: %v", payload.Data.Networks)
+	names := make(map[string]bool, len(payload.Data.Networks))
+	for _, n := range payload.Data.Networks {
+		names[n.Name] = true
+		if !n.Polling {
+			t.Errorf("active=true should only return polling networks, got %+v", n)
+		}
+	}
+
+	t.Logf("active networks: %d (%v)", len(payload.Data.Networks), names)
 	for _, want := range []string{"mainnet", "sepolia", "hoodi"} {
-		found := false
-		for _, got := range payload.Data.Networks {
-			if got == want {
-				found = true
-				break
-			}
+		if !names[want] {
+			t.Errorf("expected %q in active networks, got %v", want, names)
 		}
-		if !found {
-			t.Errorf("expected %q in networks, got %v", want, payload.Data.Networks)
+	}
+}
+
+func TestBlockArchiveLive_ListNetworks_All(t *testing.T) {
+	svc := newLiveBlockArchiveService(t)
+
+	body := callOp(t, svc, "block_archive.list_networks", nil)
+
+	var payload struct {
+		Data struct {
+			Networks []struct {
+				Name   string `json:"name"`
+				Source string `json:"source"`
+			} `json:"networks"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if len(payload.Data.Networks) < 4 {
+		t.Errorf("expected at least 4 networks (3 static + ≥1 devnet), got %d", len(payload.Data.Networks))
+	}
+
+	hasStatic := false
+	hasCartographoor := false
+	for _, n := range payload.Data.Networks {
+		if n.Source == "static" {
+			hasStatic = true
 		}
+		if n.Source == "cartographoor" {
+			hasCartographoor = true
+		}
+	}
+	if !hasStatic || !hasCartographoor {
+		t.Errorf("expected both source=static and source=cartographoor entries")
 	}
 }
 

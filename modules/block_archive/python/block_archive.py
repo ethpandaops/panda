@@ -27,12 +27,21 @@ def _coerce_slot(slot: Any) -> int:
     raise TypeError(f"slot must be an integer, got {type(slot).__name__}")
 
 
-def list_networks() -> list[str]:
-    """Return the networks the archive serves."""
+def list_networks(active_only: bool = True) -> list[dict[str, Any]]:
+    """Return the networks the archive knows about.
+
+    Each entry has keys: name, status ("active"|"inactive"), source
+    ("static"|"cartographoor"), tracoor_url, chain_id, polling.
+    Set active_only=False to include inactive devnets the archive has
+    historical blocks for but is no longer polling.
+    """
     _require_block_archive_available()
-    data = _runtime.invoke_data("block_archive.list_networks")
-    networks = data.get("networks", [])
-    return [name for name in networks if isinstance(name, str)]
+    args: dict[str, Any] = {}
+    if active_only:
+        args["active"] = True
+    data = _runtime.invoke_data("block_archive.list_networks", args)
+    entries = data.get("networks", [])
+    return [e for e in entries if isinstance(e, dict) and e.get("name")]
 
 
 def get_base_url() -> str:

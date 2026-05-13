@@ -23,12 +23,19 @@ Examples:
   panda block-archive link mainnet 9000000 0x...`,
 }
 
+var blockArchiveNetworksAll bool
+
 var blockArchiveNetworksCmd = &cobra.Command{
 	Use:   "networks",
-	Short: "List networks served by the archive",
+	Short: "List networks served by the archive (active by default; use --all to include inactive)",
 	Args:  cobra.NoArgs,
 	RunE: func(_ *cobra.Command, _ []string) error {
-		response, err := runServerOperation("block_archive.list_networks", map[string]any{})
+		args := map[string]any{}
+		if !blockArchiveNetworksAll {
+			args["active"] = true
+		}
+
+		response, err := runServerOperation("block_archive.list_networks", args)
 		if err != nil {
 			return err
 		}
@@ -44,10 +51,18 @@ var blockArchiveNetworksCmd = &cobra.Command{
 			return nil
 		}
 
+		fmt.Printf("%-28s  %-9s  %-13s  %-7s  %s\n", "NAME", "STATUS", "SOURCE", "POLLING", "TRACOOR")
 		for _, item := range items {
-			if name, ok := item.(string); ok {
-				fmt.Println(name)
+			n, _ := item.(map[string]any)
+			if n == nil {
+				continue
 			}
+			name, _ := n["name"].(string)
+			status, _ := n["status"].(string)
+			source, _ := n["source"].(string)
+			polling, _ := n["polling"].(bool)
+			tracoor, _ := n["tracoor_url"].(string)
+			fmt.Printf("%-28s  %-9s  %-13s  %-7v  %s\n", name, status, source, polling, tracoor)
 		}
 
 		return nil
@@ -134,6 +149,8 @@ func init() {
 
 	blockArchiveDownloadCmd.Flags().StringVarP(&blockArchiveDownloadOut, "out", "o", "",
 		"Output file (default: stdout)")
+	blockArchiveNetworksCmd.Flags().BoolVar(&blockArchiveNetworksAll, "all", false,
+		"Include inactive networks the archive has historical blocks for")
 
 	blockArchiveCmd.AddCommand(
 		blockArchiveNetworksCmd,

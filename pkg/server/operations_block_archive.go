@@ -23,11 +23,20 @@ const (
 	blockArchiveMaxMetaSize  = 1 * 1024 * 1024
 )
 
+type blockArchiveNetwork struct {
+	Name       string `json:"name"`
+	Status     string `json:"status"`
+	Source     string `json:"source"`
+	TracoorURL string `json:"tracoor_url,omitempty"`
+	ChainID    *int64 `json:"chain_id,omitempty"`
+	Polling    bool   `json:"polling"`
+}
+
 // blockArchiveNetworksCache caches the supported-networks list fetched from
 // the block-archiver's /api/v1/networks endpoint.
 type blockArchiveNetworksCache struct {
 	mu        sync.Mutex
-	networks  []string
+	networks  []blockArchiveNetwork
 	fetchedAt time.Time
 }
 
@@ -57,10 +66,32 @@ func (s *service) handleBlockArchiveListNetworks(w http.ResponseWriter, r *http.
 		return
 	}
 
+	req, err := decodeOperationRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	activeFilter, err := optionalBoolArg(req.Args, "active")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	networks, err := s.blockArchiveNetworks(r.Context(), baseURL)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
+	}
+
+	if activeFilter != nil {
+		filtered := make([]blockArchiveNetwork, 0, len(networks))
+		for _, n := range networks {
+			if n.Polling == *activeFilter {
+				filtered = append(filtered, n)
+			}
+		}
+		networks = filtered
 	}
 
 	writeOperationResponse(s.log, w, http.StatusOK, operations.Response{
@@ -209,37 +240,36 @@ func (s *service) blockArchiveParams(args map[string]any) (string, string, int64
 	return baseURL, network, slot, blockRoot, http.StatusOK, nil
 }
 
-func (s *service) blockArchiveNetworks(ctx context.Context, baseURL string) ([]string, error) {
+func (s *service) blockArchiveNetworks(ctx context.Context, baseURL string) ([]blockArchiveNetwork, error) {
 	cache := s.blockArchiveCache()
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 
 	if time.Since(cache.fetchedAt) < blockArchiveNetworksTTL && cache.networks != nil {
-		return append([]string(nil), cache.networks...), nil
+		return append([]blockArchiveNetwork(nil), cache.networks...), nil
 	}
 
 	body, _, _, err := s.blockArchiveGetRaw(ctx, baseURL, "/api/v1/networks", blockArchiveMaxMetaSize)
 	if err != nil {
-		// Serve stale on transient failure.
 		if cache.networks != nil {
-			return append([]string(nil), cache.networks...), nil
+			return append([]blockArchiveNetwork(nil), cache.networks...), nil
 		}
 
 		return nil, err
 	}
 
 	var payload struct {
-		Networks []string `json:"networks"`
+		Networks []blockArchiveNetwork `json:"networks"`
 	}
 
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, fmt.Errorf("decoding block archive networks: %w", err)
 	}
 
-	cache.networks = append([]string(nil), payload.Networks...)
+	cache.networks = append([]blockArchiveNetwork(nil), payload.Networks...)
 	cache.fetchedAt = time.Now()
 
-	return append([]string(nil), cache.networks...), nil
+	return append([]blockArchiveNetwork(nil), cache.networks...), nil
 }
 
 func (s *service) blockArchiveGetRaw(ctx context.Context, baseURL, path string, maxBytes int64) ([]byte, string, int, error) {
@@ -329,6 +359,30 @@ func parseSlotArg(raw any, key string) (int64, error) {
 		return parsed, nil
 	default:
 		return 0, fmt.Errorf("%s is required", key)
+	}
+}
+
+func optionalBoolArg(args map[string]any, key string) (*bool, error) {
+	raw, ok := args[key]
+	if !ok || raw == nil {
+		return nil, nil
+	}
+
+	switch v := raw.(type) {
+	case bool:
+		return &v, nil
+	case string:
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "true", "1", "yes":
+			t := true
+			return &t, nil
+		case "false", "0", "no":
+			f := false
+			return &f, nil
+		}
+		return nil, fmt.Errorf("%s must be a boolean", key)
+	default:
+		return nil, fmt.Errorf("%s must be a boolean", key)
 	}
 }
 
