@@ -55,6 +55,13 @@ proxy:
 #   repository: "ethereum/consensus-specs"  # GitHub owner/repo (for forks)
 #   ref: ""                                 # Branch, tag, or SHA (empty = latest release)
 
+# Notification defaults shared by long-running commands (e.g. panda build).
+# Persisted to config.user.yaml the first time `panda build --discord-dm <user>`
+# is invoked, so subsequent builds DM you without re-passing the flag.
+# notifications:
+#   discord:
+#     username: "barnabasbusa"   # Discord username or user ID
+
 # Observability configuration
 observability:
   metrics_enabled: true

@@ -180,6 +180,14 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 		s.githubHandler = handlers.NewGitHubHandler(log, handlers.GitHubConfig{
 			Token: cfg.GitHub.Token,
 		})
+
+		// Attach a Discord client when configured, so completion DMs can be sent.
+		if cfg.Discord != nil && cfg.Discord.BotToken != "" {
+			s.githubHandler.SetDiscordClient(handlers.NewDiscordClient(log, handlers.DiscordConfig{
+				BotToken: cfg.Discord.BotToken,
+				GuildID:  cfg.Discord.GuildID,
+			}))
+		}
 	}
 
 	if s.url == "" {

@@ -114,6 +114,17 @@ loki:
 #   allowed_orgs:
 #     - ethpandaops
 
+# GitHub API (optional — enables `panda build <client>` workflow_dispatch)
+# github:
+#   token: "${GITHUB_TOKEN}"  # PAT with actions:write on the target repo
+
+# Discord (optional — enables build-completion DMs)
+# Requires `github:` to also be configured. The bot must be a member of the
+# guild named in `guild_id` so usernames can be resolved to user IDs.
+# discord:
+#   bot_token: "${DISCORD_BOT_TOKEN}"
+#   guild_id: "${DISCORD_GUILD_ID}"  # comma-separated for multiple guilds
+
 # Embedding API (optional — enables remote embedding for semantic search)
 # embedding:
 #   api_key: "${OPENROUTER_API_KEY}"
