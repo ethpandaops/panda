@@ -24,8 +24,24 @@ type Config struct {
 	Storage        StorageConfig        `yaml:"storage"`
 	Observability  ObservabilityConfig  `yaml:"observability"`
 	ConsensusSpecs ConsensusSpecsConfig `yaml:"consensus_specs,omitempty"`
+	Notifications  NotificationsConfig  `yaml:"notifications,omitempty"`
 
 	path string `yaml:"-"`
+}
+
+// NotificationsConfig holds per-user notification preferences shared by panda
+// CLI commands that produce long-running results (e.g. panda build).
+type NotificationsConfig struct {
+	// Discord configures Discord notifications.
+	Discord DiscordNotificationConfig `yaml:"discord,omitempty"`
+}
+
+// DiscordNotificationConfig holds Discord notification preferences.
+type DiscordNotificationConfig struct {
+	// Username is the Discord username or user ID to DM on build completion.
+	// When set, panda build will auto-include it in trigger requests.
+	// Override with --discord-dm <user> or disable with --no-discord-dm.
+	Username string `yaml:"username,omitempty"`
 }
 
 // ConsensusSpecsConfig configures how consensus-specs are fetched from GitHub.

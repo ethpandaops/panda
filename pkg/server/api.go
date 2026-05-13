@@ -591,6 +591,10 @@ func (s *service) handleAPIBuildTrigger(w http.ResponseWriter, r *http.Request) 
 		"inputs":     inputs,
 	}
 
+	if req.Notify != nil && req.Notify.DiscordUser != "" {
+		proxyReq["notify"] = map[string]string{"discord_user": req.Notify.DiscordUser}
+	}
+
 	body, err := json.Marshal(proxyReq)
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, "failed to marshal proxy request")

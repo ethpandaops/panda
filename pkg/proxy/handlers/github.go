@@ -48,6 +48,14 @@ type GitHubTriggerRequest struct {
 	Ref string `json:"ref"`
 	// Inputs are the workflow_dispatch inputs.
 	Inputs map[string]string `json:"inputs,omitempty"`
+	// Notify carries optional completion-notification settings.
+	Notify *GitHubNotifySpec `json:"notify,omitempty"`
+}
+
+// GitHubNotifySpec configures completion notifications for a triggered run.
+type GitHubNotifySpec struct {
+	// DiscordUser is a Discord username or user ID to DM when the run finishes.
+	DiscordUser string `json:"discord_user,omitempty"`
 }
 
 // GitHubTriggerResponse is the response from a successful workflow trigger.
@@ -85,6 +93,7 @@ type GitHubHandler struct {
 	log        logrus.FieldLogger
 	token      string
 	httpClient *http.Client
+	discord    *DiscordClient
 
 	mu               sync.Mutex
 	lastTrigger      map[string]time.Time // workflow -> last trigger time
@@ -99,6 +108,12 @@ func NewGitHubHandler(log logrus.FieldLogger, cfg GitHubConfig) *GitHubHandler {
 		httpClient:  &http.Client{},
 		lastTrigger: make(map[string]time.Time),
 	}
+}
+
+// SetDiscordClient installs a Discord client used for completion DMs. Safe to
+// pass nil to disable notifications.
+func (h *GitHubHandler) SetDiscordClient(c *DiscordClient) {
+	h.discord = c
 }
 
 // checkTriggerAllowed returns an error message if the trigger should be rejected.
@@ -272,11 +287,86 @@ func (h *GitHubHandler) handleTriggerWorkflow(w http.ResponseWriter, r *http.Req
 	if run := h.findTriggeredRun(r.Context(), req.Repository, req.Workflow, dispatchTime); run != nil {
 		triggerResp.RunID = run.ID
 		triggerResp.RunURL = run.HTMLURL
+
+		// Spawn a watcher if a Discord notification was requested. Detached from
+		// the request context so the goroutine outlives the trigger response.
+		if h.discord != nil && req.Notify != nil && req.Notify.DiscordUser != "" {
+			go h.watchAndNotify(req.Repository, req.Workflow, *run, req.Notify.DiscordUser)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(triggerResp)
+}
+
+// watchAndNotify polls a workflow run until it reaches a terminal status, then
+// DMs the requested Discord user. Errors are logged and swallowed — the user
+// who triggered the build already got an immediate response.
+func (h *GitHubHandler) watchAndNotify(repo, workflow string, initial gitHubWorkflowRun, discordTarget string) {
+	const (
+		pollInterval = 30 * time.Second
+		maxDuration  = 2 * time.Hour
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), maxDuration)
+	defer cancel()
+
+	log := h.log.WithFields(logrus.Fields{
+		"run_id": initial.ID,
+		"target": discordTarget,
+		"client": strings.TrimSuffix(strings.TrimPrefix(workflow, "build-push-"), ".yml"),
+	})
+
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	final := initial
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Warn("Watcher timed out before workflow run completed")
+			return
+		case <-ticker.C:
+			run, err := h.getRun(ctx, repo, initial.ID)
+			if err != nil {
+				log.WithError(err).Debug("Failed to get run status, retrying")
+				continue
+			}
+
+			final = *run
+			if run.Status == "completed" {
+				goto done
+			}
+		}
+	}
+
+done:
+	clientName := strings.TrimSuffix(strings.TrimPrefix(workflow, "build-push-"), ".yml")
+	icon := "✅"
+
+	if final.Conclusion != "success" {
+		icon = "❌"
+	}
+
+	msg := fmt.Sprintf("%s `%s` build %s — %s\n%s",
+		icon, clientName, final.Conclusion, summarizeStatus(final), final.HTMLURL)
+
+	if err := h.discord.SendDM(ctx, discordTarget, msg); err != nil {
+		log.WithError(err).Warn("Failed to send Discord DM")
+		return
+	}
+
+	log.Info("Sent Discord build-completion DM")
+}
+
+func summarizeStatus(run gitHubWorkflowRun) string {
+	if run.Conclusion == "" {
+		return run.Status
+	}
+
+	return run.Conclusion
 }
 
 func (h *GitHubHandler) handleRunStatus(w http.ResponseWriter, r *http.Request) {

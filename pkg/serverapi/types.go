@@ -215,6 +215,15 @@ type BuildTriggerRequest struct {
 	Ref string `json:"ref,omitempty"`
 	// DockerTag is the target docker tag override (optional).
 	DockerTag string `json:"docker_tag,omitempty"`
+	// Notify configures completion notifications for this build (optional).
+	Notify *BuildNotifySpec `json:"notify,omitempty"`
+}
+
+// BuildNotifySpec configures completion notifications for a build.
+type BuildNotifySpec struct {
+	// DiscordUser is a Discord username or user ID to DM when the build
+	// reaches a terminal state. Empty disables Discord notifications.
+	DiscordUser string `json:"discord_user,omitempty"`
 }
 
 // BuildTriggerResponse is the response from POST /api/v1/build/trigger.

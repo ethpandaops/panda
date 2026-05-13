@@ -9,6 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/ethpandaops/panda/pkg/config"
+	"github.com/ethpandaops/panda/pkg/configpath"
 	"github.com/ethpandaops/panda/pkg/serverapi"
 )
 
@@ -21,6 +23,8 @@ var (
 	buildRepo      string
 	buildDockerTag string
 	buildWait      bool
+	buildDiscordDM string
+	buildNoDiscord bool
 )
 
 var buildCmd = &cobra.Command{
@@ -65,17 +69,24 @@ func init() {
 	buildCmd.Flags().StringVar(&buildRepo, "repo", "", "source repository override (e.g. user/go-ethereum)")
 	buildCmd.Flags().StringVar(&buildDockerTag, "tag", "", "override target docker tag")
 	buildCmd.Flags().BoolVar(&buildWait, "wait", false, "block until the build completes instead of returning immediately")
+	buildCmd.Flags().StringVar(&buildDiscordDM, "discord-dm", "",
+		"Discord username or user ID to DM on build completion (default: notifications.discord.username in config)")
+	buildCmd.Flags().BoolVar(&buildNoDiscord, "no-discord-dm", false,
+		"disable Discord notification for this build, even if a default username is configured")
 }
 
 func runBuild(_ *cobra.Command, args []string) error {
 	client := args[0]
 	ctx := context.Background()
 
+	discordUser := resolveDiscordTarget()
+
 	resp, err := triggerBuild(ctx, serverapi.BuildTriggerRequest{
 		Client:     client,
 		Repository: buildRepo,
 		Ref:        buildRef,
 		DockerTag:  buildDockerTag,
+		Notify:     buildNotifySpec(discordUser),
 	})
 	if err != nil {
 		return fmt.Errorf("triggering build: %w", err)
@@ -194,6 +205,85 @@ func printBuildTriggered(resp *serverapi.BuildTriggerResponse) error {
 	}
 
 	return nil
+}
+
+// resolveDiscordTarget picks the Discord recipient for this build invocation.
+// Precedence: --no-discord-dm wins; otherwise --discord-dm; otherwise the
+// configured default in notifications.discord.username. When --discord-dm is
+// supplied but the configured default is empty, the value is persisted to
+// config.user.yaml so subsequent builds notify without re-passing the flag.
+func resolveDiscordTarget() string {
+	if buildNoDiscord {
+		return ""
+	}
+
+	configured := loadDiscordDefault()
+
+	if buildDiscordDM == "" {
+		return configured
+	}
+
+	if configured == "" {
+		if err := persistDiscordDefault(buildDiscordDM); err != nil {
+			fmt.Fprintf(os.Stderr, "  (could not save Discord username to config: %v)\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "  Saved %q as default for future builds (override with --discord-dm or --no-discord-dm)\n", buildDiscordDM)
+		}
+	}
+
+	return buildDiscordDM
+}
+
+func buildNotifySpec(discordUser string) *serverapi.BuildNotifySpec {
+	if discordUser == "" {
+		return nil
+	}
+
+	return &serverapi.BuildNotifySpec{DiscordUser: discordUser}
+}
+
+func loadDiscordDefault() string {
+	resolved, err := configpath.ResolveAppConfigPath(cfgFile)
+	if err != nil {
+		return ""
+	}
+
+	cfg, err := config.LoadWithUserOverrides(resolved)
+	if err != nil {
+		return ""
+	}
+
+	return cfg.Notifications.Discord.Username
+}
+
+func persistDiscordDefault(username string) error {
+	resolved, err := configpath.ResolveAppConfigPath(cfgFile)
+	if err != nil {
+		return err
+	}
+
+	userPath := config.UserConfigPath(resolved)
+
+	overrides, err := config.LoadUserConfigMap(userPath)
+	if err != nil {
+		return err
+	}
+
+	notifications, _ := overrides["notifications"].(map[string]any)
+	if notifications == nil {
+		notifications = make(map[string]any, 1)
+	}
+
+	discord, _ := notifications["discord"].(map[string]any)
+	if discord == nil {
+		discord = make(map[string]any, 1)
+	}
+
+	discord["username"] = username
+	notifications["discord"] = discord
+	overrides["notifications"] = notifications
+
+	return config.SaveUserConfig(userPath, overrides)
 }
 
 func pollBuildStatus(ctx context.Context, runID int64) (*serverapi.BuildStatusResponse, error) {

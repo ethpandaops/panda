@@ -49,12 +49,26 @@ type ServerConfig struct {
 
 	// GitHub holds optional GitHub API configuration for triggering workflows.
 	GitHub *GitHubAPIConfig `yaml:"github,omitempty"`
+
+	// Discord holds optional Discord configuration used for build completion DMs.
+	Discord *DiscordAPIConfig `yaml:"discord,omitempty"`
 }
 
 // GitHubAPIConfig holds GitHub API configuration for the proxy.
 type GitHubAPIConfig struct {
 	// Token is a GitHub personal access token or app token with actions:write permission.
 	Token string `yaml:"token"`
+}
+
+// DiscordAPIConfig holds Discord configuration used to send build completion DMs.
+type DiscordAPIConfig struct {
+	// BotToken is the Discord bot token used to authenticate as the bot user.
+	BotToken string `yaml:"bot_token"`
+
+	// GuildID is the Discord guild used to resolve @usernames to user IDs.
+	// The bot must be a member of this guild. Multiple comma-separated IDs are
+	// accepted; the first that yields a match is used.
+	GuildID string `yaml:"guild_id,omitempty"`
 }
 
 // HTTPServerConfig holds HTTP server configuration.
