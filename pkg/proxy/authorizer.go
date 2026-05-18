@@ -8,42 +8,45 @@ import (
 
 	simpleauth "github.com/ethpandaops/panda/pkg/auth"
 	"github.com/ethpandaops/panda/pkg/proxy/handlers"
+	"github.com/ethpandaops/panda/pkg/types"
 )
 
 // Authorizer enforces per-datasource access control based on GitHub org membership.
 // Rules are built from datasource configs at startup and checked on every request.
 type Authorizer struct {
 	log   logrus.FieldLogger
-	rules map[string][]string // "type:name" -> allowed_orgs; "type" for type-level rules (ethnode)
+	rules map[string][]datasourceVariantRule // "type:name" -> variants; "type" for type-level rules (ethnode)
+}
+
+type datasourceVariantRule struct {
+	routeName   string
+	allowedOrgs []string
+	metadata    map[string]string
 }
 
 // NewAuthorizer creates an Authorizer from the server config.
 func NewAuthorizer(log logrus.FieldLogger, cfg ServerConfig) *Authorizer {
 	a := &Authorizer{
 		log:   log.WithField("component", "authorizer"),
-		rules: make(map[string][]string, len(cfg.ClickHouse)+len(cfg.Prometheus)+len(cfg.Loki)+1),
+		rules: make(map[string][]datasourceVariantRule, len(cfg.ClickHouse)+len(cfg.Prometheus)+len(cfg.Loki)+1),
 	}
 
 	for _, ds := range cfg.ClickHouse {
-		if len(ds.AllowedOrgs) > 0 {
-			a.rules[ruleKey("clickhouse", ds.Name)] = ds.AllowedOrgs
-		}
+		a.rules[ruleKey("clickhouse", ds.Name)] = clickHouseVariantRules(ds)
 	}
 
 	for _, ds := range cfg.Prometheus {
-		if len(ds.AllowedOrgs) > 0 {
-			a.rules[ruleKey("prometheus", ds.Name)] = ds.AllowedOrgs
-		}
+		a.rules[ruleKey("prometheus", ds.Name)] = prometheusVariantRules(ds)
 	}
 
 	for _, ds := range cfg.Loki {
-		if len(ds.AllowedOrgs) > 0 {
-			a.rules[ruleKey("loki", ds.Name)] = ds.AllowedOrgs
-		}
+		a.rules[ruleKey("loki", ds.Name)] = lokiVariantRules(ds)
 	}
 
 	if cfg.EthNode != nil && len(cfg.EthNode.AllowedOrgs) > 0 {
-		a.rules[ruleKey("ethnode", "")] = cfg.EthNode.AllowedOrgs
+		a.rules[ruleKey("ethnode", "")] = []datasourceVariantRule{{
+			allowedOrgs: append([]string(nil), cfg.EthNode.AllowedOrgs...),
+		}}
 	}
 
 	return a
@@ -82,31 +85,31 @@ func (a *Authorizer) FilterDatasources(ctx context.Context, resp DatasourcesResp
 	}
 
 	for i, name := range resp.ClickHouse {
-		if a.orgsMatch(userOrgs, ruleKey("clickhouse", name)) {
+		if variant, ok := a.matchingVariant(userOrgs, ruleKey("clickhouse", name)); ok {
 			filtered.ClickHouse = append(filtered.ClickHouse, name)
 
 			if i < len(resp.ClickHouseInfo) {
-				filtered.ClickHouseInfo = append(filtered.ClickHouseInfo, resp.ClickHouseInfo[i])
+				filtered.ClickHouseInfo = append(filtered.ClickHouseInfo, datasourceInfoForVariant(resp.ClickHouseInfo[i], variant))
 			}
 		}
 	}
 
 	for i, name := range resp.Prometheus {
-		if a.orgsMatch(userOrgs, ruleKey("prometheus", name)) {
+		if variant, ok := a.matchingVariant(userOrgs, ruleKey("prometheus", name)); ok {
 			filtered.Prometheus = append(filtered.Prometheus, name)
 
 			if i < len(resp.PrometheusInfo) {
-				filtered.PrometheusInfo = append(filtered.PrometheusInfo, resp.PrometheusInfo[i])
+				filtered.PrometheusInfo = append(filtered.PrometheusInfo, datasourceInfoForVariant(resp.PrometheusInfo[i], variant))
 			}
 		}
 	}
 
 	for i, name := range resp.Loki {
-		if a.orgsMatch(userOrgs, ruleKey("loki", name)) {
+		if variant, ok := a.matchingVariant(userOrgs, ruleKey("loki", name)); ok {
 			filtered.Loki = append(filtered.Loki, name)
 
 			if i < len(resp.LokiInfo) {
-				filtered.LokiInfo = append(filtered.LokiInfo, resp.LokiInfo[i])
+				filtered.LokiInfo = append(filtered.LokiInfo, datasourceInfoForVariant(resp.LokiInfo[i], variant))
 			}
 		}
 	}
@@ -134,12 +137,55 @@ func (a *Authorizer) isAllowed(ctx context.Context, dsType, dsName string) bool 
 	return a.orgsMatch(userOrgs, ruleKey(dsType, dsName))
 }
 
+// RouteName returns the internal backend route selected for the datasource.
+func (a *Authorizer) RouteName(ctx context.Context, dsType, dsName string) (string, bool) {
+	userOrgs := getUserOrgs(ctx)
+	variant, ok := a.matchingVariant(userOrgs, ruleKey(dsType, dsName))
+	if !ok {
+		return "", false
+	}
+
+	if variant.routeName == "" {
+		return dsName, true
+	}
+
+	return variant.routeName, true
+}
+
 // orgsMatch returns true if the user has access based on the rule for the given key.
 // If no rule exists for the key, access is allowed (open by default).
 func (a *Authorizer) orgsMatch(userOrgs []string, key string) bool {
-	allowedOrgs, exists := a.rules[key]
+	_, ok := a.matchingVariant(userOrgs, key)
+
+	return ok
+}
+
+func (a *Authorizer) matchingVariant(userOrgs []string, key string) (datasourceVariantRule, bool) {
+	variants, exists := a.rules[key]
 	if !exists {
-		return true // no restriction configured
+		return datasourceVariantRule{}, true // no restriction configured
+	}
+
+	if len(variants) == 0 {
+		return datasourceVariantRule{}, false
+	}
+
+	if userOrgs == nil {
+		return variants[0], true // no auth user in context (none mode) → select first configured backend
+	}
+
+	for _, variant := range variants {
+		if allowedOrgsMatch(userOrgs, variant.allowedOrgs) {
+			return variant, true
+		}
+	}
+
+	return datasourceVariantRule{}, false
+}
+
+func allowedOrgsMatch(userOrgs, allowedOrgs []string) bool {
+	if len(allowedOrgs) == 0 {
+		return true
 	}
 
 	for _, allowed := range allowedOrgs {
@@ -179,4 +225,77 @@ func ruleKey(dsType, dsName string) string {
 	}
 
 	return dsType + ":" + dsName
+}
+
+func clickHouseVariantRules(ds ClickHouseClusterConfig) []datasourceVariantRule {
+	if len(ds.Variants) == 0 {
+		return []datasourceVariantRule{{
+			routeName:   ds.Name,
+			allowedOrgs: append([]string(nil), ds.AllowedOrgs...),
+			metadata:    metadataValue("database", ds.Database),
+		}}
+	}
+
+	rules := make([]datasourceVariantRule, 0, len(ds.Variants))
+	for i, variant := range ds.Variants {
+		rules = append(rules, datasourceVariantRule{
+			routeName:   datasourceVariantRouteName(ds.Name, i),
+			allowedOrgs: append([]string(nil), variant.AllowedOrgs...),
+			metadata:    metadataValue("database", variant.Database),
+		})
+	}
+
+	return rules
+}
+
+func prometheusVariantRules(ds PrometheusInstanceConfig) []datasourceVariantRule {
+	if len(ds.Variants) == 0 {
+		return []datasourceVariantRule{{
+			routeName:   ds.Name,
+			allowedOrgs: append([]string(nil), ds.AllowedOrgs...),
+			metadata:    metadataValue("url", ds.URL),
+		}}
+	}
+
+	rules := make([]datasourceVariantRule, 0, len(ds.Variants))
+	for i, variant := range ds.Variants {
+		rules = append(rules, datasourceVariantRule{
+			routeName:   datasourceVariantRouteName(ds.Name, i),
+			allowedOrgs: append([]string(nil), variant.AllowedOrgs...),
+			metadata:    metadataValue("url", variant.URL),
+		})
+	}
+
+	return rules
+}
+
+func lokiVariantRules(ds LokiInstanceConfig) []datasourceVariantRule {
+	if len(ds.Variants) == 0 {
+		return []datasourceVariantRule{{
+			routeName:   ds.Name,
+			allowedOrgs: append([]string(nil), ds.AllowedOrgs...),
+			metadata:    metadataValue("url", ds.URL),
+		}}
+	}
+
+	rules := make([]datasourceVariantRule, 0, len(ds.Variants))
+	for i, variant := range ds.Variants {
+		rules = append(rules, datasourceVariantRule{
+			routeName:   datasourceVariantRouteName(ds.Name, i),
+			allowedOrgs: append([]string(nil), variant.AllowedOrgs...),
+			metadata:    metadataValue("url", variant.URL),
+		})
+	}
+
+	return rules
+}
+
+func datasourceInfoForVariant(info types.DatasourceInfo, variant datasourceVariantRule) types.DatasourceInfo {
+	if len(variant.metadata) == 0 {
+		return info
+	}
+
+	info.Metadata = cloneMetadata(variant.metadata)
+
+	return info
 }

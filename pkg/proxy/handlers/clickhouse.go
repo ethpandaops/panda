@@ -16,9 +16,13 @@ import (
 // DatasourceHeader is the HTTP header used to specify which datasource to route to.
 const DatasourceHeader = "X-Datasource"
 
+// DatasourceRouteResolver maps a logical datasource name to an internal backend route.
+type DatasourceRouteResolver func(ctx context.Context, datasource string) (string, bool)
+
 // ClickHouseConfig holds ClickHouse proxy configuration for a single cluster.
 type ClickHouseConfig struct {
 	Name        string
+	RouteName   string
 	Description string
 	Host        string
 	Port        int
@@ -32,8 +36,10 @@ type ClickHouseConfig struct {
 
 // ClickHouseHandler handles requests to ClickHouse clusters.
 type ClickHouseHandler struct {
-	log      logrus.FieldLogger
-	clusters map[string]*clickhouseCluster
+	log          logrus.FieldLogger
+	clusters     map[string]*clickhouseCluster
+	names        []string
+	routeResolve DatasourceRouteResolver
 }
 
 type clickhouseCluster struct {
@@ -42,14 +48,16 @@ type clickhouseCluster struct {
 }
 
 // NewClickHouseHandler creates a new ClickHouse handler.
-func NewClickHouseHandler(log logrus.FieldLogger, configs []ClickHouseConfig) *ClickHouseHandler {
+func NewClickHouseHandler(log logrus.FieldLogger, configs []ClickHouseConfig, routeResolve DatasourceRouteResolver) *ClickHouseHandler {
 	h := &ClickHouseHandler{
-		log:      log.WithField("handler", "clickhouse"),
-		clusters: make(map[string]*clickhouseCluster, len(configs)),
+		log:          log.WithField("handler", "clickhouse"),
+		clusters:     make(map[string]*clickhouseCluster, len(configs)),
+		routeResolve: routeResolve,
 	}
 
 	for _, cfg := range configs {
-		h.clusters[cfg.Name] = h.createCluster(cfg)
+		h.names = appendUniqueName(h.names, cfg.Name)
+		h.clusters[handlerRouteName(cfg.Name, cfg.RouteName)] = h.createCluster(cfg)
 	}
 
 	return h
@@ -124,7 +132,14 @@ func (h *ClickHouseHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cluster, ok := h.clusters[clusterName]
+	routeName, allowed := h.resolveRoute(r.Context(), clusterName)
+	if !allowed {
+		http.Error(w, "forbidden: insufficient org membership for this datasource", http.StatusForbidden)
+
+		return
+	}
+
+	cluster, ok := h.clusters[routeName]
 	if !ok {
 		http.Error(w, fmt.Sprintf("unknown cluster: %s", clusterName), http.StatusNotFound)
 
@@ -155,12 +170,33 @@ func (h *ClickHouseHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	cluster.proxy.ServeHTTP(w, r)
 }
 
-// Clusters returns the list of configured cluster names.
-func (h *ClickHouseHandler) Clusters() []string {
-	names := make([]string, 0, len(h.clusters))
-	for name := range h.clusters {
-		names = append(names, name)
+func (h *ClickHouseHandler) resolveRoute(ctx context.Context, datasource string) (string, bool) {
+	if h.routeResolve == nil {
+		return datasource, true
 	}
 
-	return names
+	return h.routeResolve(ctx, datasource)
+}
+
+// Clusters returns the list of configured cluster names.
+func (h *ClickHouseHandler) Clusters() []string {
+	return append([]string(nil), h.names...)
+}
+
+func handlerRouteName(name, routeName string) string {
+	if routeName != "" {
+		return routeName
+	}
+
+	return name
+}
+
+func appendUniqueName(names []string, name string) []string {
+	for _, existing := range names {
+		if existing == name {
+			return names
+		}
+	}
+
+	return append(names, name)
 }

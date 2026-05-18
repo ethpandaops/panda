@@ -17,6 +17,7 @@ import (
 // PrometheusConfig holds Prometheus proxy configuration for a single instance.
 type PrometheusConfig struct {
 	Name        string
+	RouteName   string
 	Description string
 	URL         string
 	Username    string
@@ -27,8 +28,10 @@ type PrometheusConfig struct {
 
 // PrometheusHandler handles requests to Prometheus instances.
 type PrometheusHandler struct {
-	log       logrus.FieldLogger
-	instances map[string]*prometheusInstance
+	log          logrus.FieldLogger
+	instances    map[string]*prometheusInstance
+	names        []string
+	routeResolve DatasourceRouteResolver
 }
 
 type prometheusInstance struct {
@@ -37,14 +40,16 @@ type prometheusInstance struct {
 }
 
 // NewPrometheusHandler creates a new Prometheus handler.
-func NewPrometheusHandler(log logrus.FieldLogger, configs []PrometheusConfig) *PrometheusHandler {
+func NewPrometheusHandler(log logrus.FieldLogger, configs []PrometheusConfig, routeResolve DatasourceRouteResolver) *PrometheusHandler {
 	h := &PrometheusHandler{
-		log:       log.WithField("handler", "prometheus"),
-		instances: make(map[string]*prometheusInstance, len(configs)),
+		log:          log.WithField("handler", "prometheus"),
+		instances:    make(map[string]*prometheusInstance, len(configs)),
+		routeResolve: routeResolve,
 	}
 
 	for _, cfg := range configs {
-		h.instances[cfg.Name] = h.createInstance(cfg)
+		h.names = appendUniqueName(h.names, cfg.Name)
+		h.instances[handlerRouteName(cfg.Name, cfg.RouteName)] = h.createInstance(cfg)
 	}
 
 	return h
@@ -106,7 +111,14 @@ func (h *PrometheusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	instance, ok := h.instances[instanceName]
+	routeName, allowed := h.resolveRoute(r.Context(), instanceName)
+	if !allowed {
+		http.Error(w, "forbidden: insufficient org membership for this datasource", http.StatusForbidden)
+
+		return
+	}
+
+	instance, ok := h.instances[routeName]
 	if !ok {
 		http.Error(w, fmt.Sprintf("unknown instance: %s", instanceName), http.StatusNotFound)
 
@@ -143,12 +155,15 @@ func (h *PrometheusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	instance.proxy.ServeHTTP(w, r)
 }
 
-// Instances returns the list of configured instance names.
-func (h *PrometheusHandler) Instances() []string {
-	names := make([]string, 0, len(h.instances))
-	for name := range h.instances {
-		names = append(names, name)
+func (h *PrometheusHandler) resolveRoute(ctx context.Context, datasource string) (string, bool) {
+	if h.routeResolve == nil {
+		return datasource, true
 	}
 
-	return names
+	return h.routeResolve(ctx, datasource)
+}
+
+// Instances returns the list of configured instance names.
+func (h *PrometheusHandler) Instances() []string {
+	return append([]string(nil), h.names...)
 }

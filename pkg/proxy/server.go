@@ -79,6 +79,11 @@ func NewServer(log logrus.FieldLogger, cfg ServerConfig) (Server, error) {
 }
 
 func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (*server, error) {
+	cfg.ApplyDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("validating proxy config: %w", err)
+	}
+
 	s := &server{
 		log: log.WithField("component", "proxy"),
 		cfg: cfg,
@@ -143,15 +148,15 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 	chConfigs, promConfigs, lokiConfigs, ethNodeConfig := cfg.ToHandlerConfigs()
 
 	if len(chConfigs) > 0 {
-		s.clickhouseHandler = handlers.NewClickHouseHandler(log, chConfigs)
+		s.clickhouseHandler = handlers.NewClickHouseHandler(log, chConfigs, s.datasourceRouteResolver("clickhouse"))
 	}
 
 	if len(promConfigs) > 0 {
-		s.prometheusHandler = handlers.NewPrometheusHandler(log, promConfigs)
+		s.prometheusHandler = handlers.NewPrometheusHandler(log, promConfigs, s.datasourceRouteResolver("prometheus"))
 	}
 
 	if len(lokiConfigs) > 0 {
-		s.lokiHandler = handlers.NewLokiHandler(log, lokiConfigs)
+		s.lokiHandler = handlers.NewLokiHandler(log, lokiConfigs, s.datasourceRouteResolver("loki"))
 	}
 
 	if ethNodeConfig != nil {
@@ -292,6 +297,16 @@ func (s *server) buildMiddlewareChain() func(http.Handler) http.Handler {
 		h = s.authenticator.Middleware()(h)
 
 		return h
+	}
+}
+
+func (s *server) datasourceRouteResolver(dsType string) handlers.DatasourceRouteResolver {
+	return func(ctx context.Context, datasource string) (string, bool) {
+		if s.authorizer == nil {
+			return datasource, true
+		}
+
+		return s.authorizer.RouteName(ctx, dsType, datasource)
 	}
 }
 
@@ -532,11 +547,16 @@ func (s *server) RevokeToken(executionID string) {
 
 // ClickHouseDatasources returns the list of ClickHouse datasource names.
 func (s *server) ClickHouseDatasources() []string {
-	if s.clickhouseHandler == nil {
+	if len(s.cfg.ClickHouse) == 0 {
 		return nil
 	}
 
-	return s.clickhouseHandler.Clusters()
+	names := make([]string, 0, len(s.cfg.ClickHouse))
+	for _, cfg := range s.cfg.ClickHouse {
+		names = append(names, cfg.Name)
+	}
+
+	return names
 }
 
 // ClickHouseDatasourceInfo returns detailed ClickHouse datasource info.
@@ -552,11 +572,7 @@ func (s *server) ClickHouseDatasourceInfo() []types.DatasourceInfo {
 			Name:        ch.Name,
 			Description: ch.Description,
 		}
-		if ch.Database != "" {
-			info.Metadata = map[string]string{
-				"database": ch.Database,
-			}
-		}
+		info.Metadata = ch.datasourceMetadata()
 		result = append(result, info)
 	}
 
@@ -565,11 +581,16 @@ func (s *server) ClickHouseDatasourceInfo() []types.DatasourceInfo {
 
 // PrometheusDatasources returns the list of Prometheus datasource names.
 func (s *server) PrometheusDatasources() []string {
-	if s.prometheusHandler == nil {
+	if len(s.cfg.Prometheus) == 0 {
 		return nil
 	}
 
-	return s.prometheusHandler.Instances()
+	names := make([]string, 0, len(s.cfg.Prometheus))
+	for _, cfg := range s.cfg.Prometheus {
+		names = append(names, cfg.Name)
+	}
+
+	return names
 }
 
 // PrometheusDatasourceInfo returns detailed Prometheus datasource info.
@@ -585,11 +606,7 @@ func (s *server) PrometheusDatasourceInfo() []types.DatasourceInfo {
 			Name:        prom.Name,
 			Description: prom.Description,
 		}
-		if prom.URL != "" {
-			info.Metadata = map[string]string{
-				"url": prom.URL,
-			}
-		}
+		info.Metadata = prom.datasourceMetadata()
 		result = append(result, info)
 	}
 
@@ -598,11 +615,16 @@ func (s *server) PrometheusDatasourceInfo() []types.DatasourceInfo {
 
 // LokiDatasources returns the list of Loki datasource names.
 func (s *server) LokiDatasources() []string {
-	if s.lokiHandler == nil {
+	if len(s.cfg.Loki) == 0 {
 		return nil
 	}
 
-	return s.lokiHandler.Instances()
+	names := make([]string, 0, len(s.cfg.Loki))
+	for _, cfg := range s.cfg.Loki {
+		names = append(names, cfg.Name)
+	}
+
+	return names
 }
 
 // LokiDatasourceInfo returns detailed Loki datasource info.
@@ -618,11 +640,7 @@ func (s *server) LokiDatasourceInfo() []types.DatasourceInfo {
 			Name:        loki.Name,
 			Description: loki.Description,
 		}
-		if loki.URL != "" {
-			info.Metadata = map[string]string{
-				"url": loki.URL,
-			}
-		}
+		info.Metadata = loki.datasourceMetadata()
 		result = append(result, info)
 	}
 

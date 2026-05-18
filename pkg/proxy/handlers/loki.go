@@ -17,6 +17,7 @@ import (
 // LokiConfig holds Loki proxy configuration for a single instance.
 type LokiConfig struct {
 	Name        string
+	RouteName   string
 	Description string
 	URL         string
 	Username    string
@@ -27,8 +28,10 @@ type LokiConfig struct {
 
 // LokiHandler handles requests to Loki instances.
 type LokiHandler struct {
-	log       logrus.FieldLogger
-	instances map[string]*lokiInstance
+	log          logrus.FieldLogger
+	instances    map[string]*lokiInstance
+	names        []string
+	routeResolve DatasourceRouteResolver
 }
 
 type lokiInstance struct {
@@ -37,14 +40,16 @@ type lokiInstance struct {
 }
 
 // NewLokiHandler creates a new Loki handler.
-func NewLokiHandler(log logrus.FieldLogger, configs []LokiConfig) *LokiHandler {
+func NewLokiHandler(log logrus.FieldLogger, configs []LokiConfig, routeResolve DatasourceRouteResolver) *LokiHandler {
 	h := &LokiHandler{
-		log:       log.WithField("handler", "loki"),
-		instances: make(map[string]*lokiInstance, len(configs)),
+		log:          log.WithField("handler", "loki"),
+		instances:    make(map[string]*lokiInstance, len(configs)),
+		routeResolve: routeResolve,
 	}
 
 	for _, cfg := range configs {
-		h.instances[cfg.Name] = h.createInstance(cfg)
+		h.names = appendUniqueName(h.names, cfg.Name)
+		h.instances[handlerRouteName(cfg.Name, cfg.RouteName)] = h.createInstance(cfg)
 	}
 
 	return h
@@ -106,7 +111,14 @@ func (h *LokiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	instance, ok := h.instances[instanceName]
+	routeName, allowed := h.resolveRoute(r.Context(), instanceName)
+	if !allowed {
+		http.Error(w, "forbidden: insufficient org membership for this datasource", http.StatusForbidden)
+
+		return
+	}
+
+	instance, ok := h.instances[routeName]
 	if !ok {
 		http.Error(w, fmt.Sprintf("unknown instance: %s", instanceName), http.StatusNotFound)
 
@@ -143,12 +155,15 @@ func (h *LokiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	instance.proxy.ServeHTTP(w, r)
 }
 
-// Instances returns the list of configured instance names.
-func (h *LokiHandler) Instances() []string {
-	names := make([]string, 0, len(h.instances))
-	for name := range h.instances {
-		names = append(names, name)
+func (h *LokiHandler) resolveRoute(ctx context.Context, datasource string) (string, bool) {
+	if h.routeResolve == nil {
+		return datasource, true
 	}
 
-	return names
+	return h.routeResolve(ctx, datasource)
+}
+
+// Instances returns the list of configured instance names.
+func (h *LokiHandler) Instances() []string {
+	return append([]string(nil), h.names...)
 }
