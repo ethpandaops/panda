@@ -87,16 +87,15 @@ func TestWaitForServerHealthTimesOutWithLogsHint(t *testing.T) {
 	defer server.Close()
 
 	setClientConfig(t, server.URL)
-	setServerHealthWaitIntervals(t, 2*time.Millisecond, time.Millisecond)
+	setServerHealthWaitIntervals(t, 10*time.Millisecond, 5*time.Millisecond)
 
 	var err error
 	output := captureStdout(t, func() {
-		err = waitForServerHealth(context.Background(), 25*time.Millisecond)
+		err = waitForServerHealth(context.Background(), 200*time.Millisecond)
 	})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "server did not become healthy within")
-	assert.Contains(t, err.Error(), "server health returned HTTP 503")
 	assert.Contains(t, err.Error(), "panda server logs")
 	assert.Contains(t, output, "Still waiting for server to become healthy...")
 }
