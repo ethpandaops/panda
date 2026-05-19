@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -22,7 +23,17 @@ import (
 	"github.com/ethpandaops/panda/pkg/sandbox"
 )
 
-var composeFile string
+var (
+	composeFile         string
+	dockerComposeRunner = runDockerCompose
+)
+
+const defaultServerHealthWaitTimeout = 90 * time.Second
+
+var (
+	serverHealthPollInterval     = 1 * time.Second
+	serverHealthProgressInterval = 5 * time.Second
+)
 
 var serverCmd = &cobra.Command{
 	GroupID: groupSetup,
@@ -102,11 +113,25 @@ func runServerStop(_ *cobra.Command, _ []string) error {
 	return runDockerCompose(resolveComposeFile(), "down")
 }
 
-func runServerRestart(_ *cobra.Command, _ []string) error {
-	return runDockerCompose(resolveComposeFile(), "restart")
+func runServerRestart(cmd *cobra.Command, _ []string) error {
+	fmt.Println("Restarting server...")
+
+	if err := dockerComposeRunner(resolveComposeFile(), "restart"); err != nil {
+		return err
+	}
+
+	fmt.Println("Waiting for server to become healthy...")
+
+	if err := waitForServerHealth(commandContext(cmd), defaultServerHealthWaitTimeout); err != nil {
+		return err
+	}
+
+	fmt.Println("Server ready.")
+
+	return nil
 }
 
-func runServerStatus(_ *cobra.Command, _ []string) error {
+func runServerStatus(cmd *cobra.Command, _ []string) error {
 	// Show container status.
 	if err := runDockerCompose(resolveComposeFile(), "ps"); err != nil {
 		return err
@@ -115,7 +140,7 @@ func runServerStatus(_ *cobra.Command, _ []string) error {
 	fmt.Println()
 
 	// Show server health.
-	printHealthStatus()
+	printHealthStatus(commandContext(cmd))
 
 	// Show auth status.
 	printAuthStatus()
@@ -124,6 +149,142 @@ func runServerStatus(_ *cobra.Command, _ []string) error {
 	printProxyURL()
 
 	return nil
+}
+
+type serverHealthConfigError struct {
+	err error
+}
+
+func (e *serverHealthConfigError) Error() string {
+	return fmt.Sprintf("load client config: %v", e.err)
+}
+
+func (e *serverHealthConfigError) Unwrap() error {
+	return e.err
+}
+
+type serverHealthRequestError struct {
+	err error
+}
+
+func (e *serverHealthRequestError) Error() string {
+	return fmt.Sprintf("check server health: %v", e.err)
+}
+
+func (e *serverHealthRequestError) Unwrap() error {
+	return e.err
+}
+
+type serverHealthStatusError struct {
+	statusCode int
+}
+
+func (e *serverHealthStatusError) Error() string {
+	return fmt.Sprintf("server health returned HTTP %d", e.statusCode)
+}
+
+func checkServerHealth(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	cfg, err := config.LoadClient(cfgFile)
+	if err != nil {
+		return &serverHealthConfigError{err: err}
+	}
+
+	healthURL := strings.TrimRight(cfg.ServerURL(), "/") + "/health"
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthURL, nil)
+	if err != nil {
+		return &serverHealthRequestError{err: err}
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return &serverHealthRequestError{err: err}
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return &serverHealthStatusError{statusCode: resp.StatusCode}
+	}
+
+	return nil
+}
+
+func waitForServerHealth(ctx context.Context, timeout time.Duration) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	if timeout <= 0 {
+		timeout = defaultServerHealthWaitTimeout
+	}
+
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	deadline := time.Now().Add(timeout)
+	nextProgressAt := time.Now().Add(serverHealthProgressInterval)
+	var lastErr error
+
+	for {
+		err := checkServerHealth(waitCtx)
+		if err == nil {
+			return nil
+		}
+
+		var configErr *serverHealthConfigError
+		if errors.As(err, &configErr) {
+			return fmt.Errorf("cannot check server health: %w", err)
+		}
+
+		lastErr = err
+
+		now := time.Now()
+		if !now.Before(nextProgressAt) {
+			remaining := time.Until(deadline).Round(time.Second)
+			if remaining < 0 {
+				remaining = 0
+			}
+
+			fmt.Printf("Still waiting for server to become healthy... (%s remaining)\n", remaining)
+			nextProgressAt = now.Add(serverHealthProgressInterval)
+		}
+
+		timer := time.NewTimer(serverHealthPollInterval)
+		select {
+		case <-waitCtx.Done():
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+
+			if errors.Is(waitCtx.Err(), context.DeadlineExceeded) {
+				return fmt.Errorf(
+					"server did not become healthy within %s (last check: %v). Check logs with 'panda server logs'",
+					timeout,
+					lastErr,
+				)
+			}
+
+			return fmt.Errorf("server health wait canceled: %w", waitCtx.Err())
+		case <-timer.C:
+		}
+	}
+}
+
+func commandContext(cmd *cobra.Command) context.Context {
+	if cmd != nil && cmd.Context() != nil {
+		return cmd.Context()
+	}
+
+	return context.Background()
 }
 
 func runServerLogs(_ *cobra.Command, _ []string) error {
@@ -175,29 +336,26 @@ func runDockerCompose(compose string, args ...string) error {
 
 // printHealthStatus checks the server's /health endpoint and prints
 // the result.
-func printHealthStatus() {
-	cfg, err := config.LoadClient(cfgFile)
-	if err != nil {
+func printHealthStatus(ctx context.Context) {
+	err := checkServerHealth(ctx)
+	if err == nil {
+		fmt.Println("Health: Healthy")
+		return
+	}
+
+	var configErr *serverHealthConfigError
+	if errors.As(err, &configErr) {
 		fmt.Println("Health: Unknown (config not loaded)")
 		return
 	}
 
-	healthURL := strings.TrimRight(cfg.ServerURL(), "/") + "/health"
-
-	client := &http.Client{Timeout: 5 * time.Second}
-
-	resp, err := client.Get(healthURL) //nolint:noctx // simple health check
-	if err != nil {
-		fmt.Println("Health: Unreachable")
+	var statusErr *serverHealthStatusError
+	if errors.As(err, &statusErr) {
+		fmt.Printf("Health: Unhealthy (HTTP %d)\n", statusErr.statusCode)
 		return
 	}
-	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode == http.StatusOK {
-		fmt.Println("Health: Healthy")
-	} else {
-		fmt.Printf("Health: Unhealthy (HTTP %d)\n", resp.StatusCode)
-	}
+	fmt.Println("Health: Unreachable")
 }
 
 // printAuthStatus loads auth credentials and prints whether the user
