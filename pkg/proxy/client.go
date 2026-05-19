@@ -94,6 +94,12 @@ type ClientConfig struct {
 
 	// HTTPTimeout is the timeout for HTTP requests (default: 30 seconds).
 	HTTPTimeout time.Duration
+
+	// OnDiscover is invoked after every successful Discover (initial and background).
+	// It runs synchronously on the discovery goroutine — keep work short and panic-free.
+	// Typical use: re-initialize ProxyDiscoverable modules so newly added datasources
+	// surface without a server restart.
+	OnDiscover func()
 }
 
 // ApplyDefaults sets default values for the client config.
@@ -432,6 +438,10 @@ func (c *proxyClient) Discover(ctx context.Context) error {
 	c.mu.Lock()
 	c.datasources = &datasources
 	c.mu.Unlock()
+
+	if c.cfg.OnDiscover != nil {
+		c.cfg.OnDiscover()
+	}
 
 	clickhouseCount := len(datasources.ClickHouse)
 	if clickhouseCount == 0 {

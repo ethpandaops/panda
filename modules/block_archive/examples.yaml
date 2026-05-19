@@ -1,0 +1,72 @@
+block_archive_fetch:
+  name: Fetch raw blocks
+  description: Pull raw or decoded canonical beacon blocks by (network, slot, block_root)
+  examples:
+    - name: List active networks
+      description: Show which networks the archive is currently polling (mainnet/sepolia/hoodi plus rotating devnets)
+      query: |
+        from ethpandaops import block_archive
+
+        for n in block_archive.list_networks():
+            print(f"{n['name']:30s}  status={n['status']}  source={n['source']}")
+
+    - name: Include inactive devnets
+      description: Inactive devnets keep their archived history; pass active_only=False to see them
+      query: |
+        from ethpandaops import block_archive
+
+        all_nets = block_archive.list_networks(active_only=False)
+        active = [n for n in all_nets if n["polling"]]
+        inactive = [n for n in all_nets if not n["polling"]]
+        print(f"active polling: {len(active)}, archived-only: {len(inactive)}")
+
+    - name: Download SSZ for a block
+      description: Fetch the SSZ-encoded SignedBeaconBlock as raw bytes
+      query: |
+        from ethpandaops import block_archive
+
+        network = "mainnet"
+        slot = 9000000
+        block_root = "0x..."  # 0x-prefixed 32-byte root
+
+        raw = block_archive.download_ssz(network, slot, block_root)
+        print(f"{len(raw)} bytes (SSZ)")
+
+        # Save to disk for offline processing.
+        with open("/tmp/block.ssz", "wb") as f:
+            f.write(raw)
+
+    - name: Get decoded JSON for a block
+      description: Server-side decode of the SSZ into the canonical JSON SignedBeaconBlock (mainnet/sepolia/hoodi only; devnets need download_ssz + local decode)
+      query: |
+        from ethpandaops import block_archive
+
+        block = block_archive.get_block_json("mainnet", 9000000, "0x...")
+        msg = block["block"]["message"]
+        print(f"proposer={msg['proposer_index']} slot={msg['slot']}")
+
+    - name: Look up the latest archived block from xatu
+      description: Combine xatu (clickhouse) with the block archive to fetch the most recently observed block
+      query: |
+        from ethpandaops import block_archive, clickhouse
+
+        df = clickhouse.query("xatu", """
+            SELECT slot, block_root
+            FROM beacon_api_eth_v1_events_block
+            WHERE meta_network_name = 'mainnet'
+            ORDER BY slot DESC
+            LIMIT 1
+        """)
+        slot = int(df.iloc[0]["slot"])
+        root = df.iloc[0]["block_root"]
+
+        block = block_archive.get_block_json("mainnet", slot, root)
+        print(f"latest archived block at slot {slot}: proposer "
+              f"{block['block']['message']['proposer_index']}")
+
+    - name: Browser link to a block
+      description: Build a link to the block archive UI for a (network, slot, root)
+      query: |
+        from ethpandaops import block_archive
+
+        print(block_archive.link("mainnet", 9000000, "0x..."))

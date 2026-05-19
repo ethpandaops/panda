@@ -65,6 +65,76 @@ func (e *gettingStartedTestExtension) GettingStartedSnippet() string {
 	return e.snippet
 }
 
+type discoverableTestExtension struct {
+	baseTestExtension
+	infos []types.DatasourceInfo
+}
+
+func (e *discoverableTestExtension) InitFromDiscovery(datasources []types.DatasourceInfo) error {
+	filtered := make([]types.DatasourceInfo, 0, len(datasources))
+	for _, ds := range datasources {
+		if ds.Type != "test" {
+			continue
+		}
+
+		filtered = append(filtered, ds)
+	}
+
+	if len(filtered) == 0 {
+		return ErrNoValidConfig
+	}
+
+	e.infos = filtered
+
+	return nil
+}
+
+func (e *discoverableTestExtension) DatasourceInfo() []types.DatasourceInfo {
+	result := make([]types.DatasourceInfo, len(e.infos))
+	copy(result, e.infos)
+
+	return result
+}
+
+// TestInitModuleFromDiscoveryRepeatable verifies the registry handles the
+// proxy client's periodic refresh: re-running InitModuleFromDiscovery must
+// update the module's datasource list in place, not duplicate it across the
+// initialized set.
+func TestInitModuleFromDiscoveryRepeatable(t *testing.T) {
+	t.Parallel()
+
+	reg := NewRegistry(logrus.New())
+	reg.Add(&discoverableTestExtension{
+		baseTestExtension: baseTestExtension{name: "discoverable"},
+	})
+
+	first := []types.DatasourceInfo{{Type: "test", Name: "a"}}
+	if err := reg.InitModuleFromDiscovery("discoverable", first); err != nil {
+		t.Fatalf("first InitModuleFromDiscovery error = %v", err)
+	}
+
+	if len(reg.Initialized()) != 1 {
+		t.Fatalf("after first init: Initialized() = %d, want 1", len(reg.Initialized()))
+	}
+
+	second := []types.DatasourceInfo{
+		{Type: "test", Name: "a"},
+		{Type: "test", Name: "b"},
+	}
+	if err := reg.InitModuleFromDiscovery("discoverable", second); err != nil {
+		t.Fatalf("second InitModuleFromDiscovery error = %v", err)
+	}
+
+	if got := len(reg.Initialized()); got != 1 {
+		t.Fatalf("after second init: Initialized() = %d, want 1 (no duplicate appends)", got)
+	}
+
+	infos := reg.DatasourceInfo()
+	if len(infos) != 2 {
+		t.Fatalf("DatasourceInfo() = %#v, want 2 entries reflecting refreshed datasources", infos)
+	}
+}
+
 func TestRegistryCapabilityAggregation(t *testing.T) {
 	t.Parallel()
 

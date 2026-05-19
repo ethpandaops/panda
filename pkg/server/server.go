@@ -63,6 +63,9 @@ type service struct {
 	mu                   sync.Mutex
 	done                 chan struct{}
 	running              bool
+
+	blockArchiveCacheOnce         sync.Once
+	blockArchiveNetworksCacheInst *blockArchiveNetworksCache
 }
 
 // NewService creates a new MCP server service.

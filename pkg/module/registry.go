@@ -71,6 +71,11 @@ func (r *Registry) InitModule(name string, rawConfig []byte) error {
 
 // InitModuleFromDiscovery initializes a module from discovered datasources.
 // The module must implement ProxyDiscoverable.
+//
+// Safe to call repeatedly: when the module is already initialized, the new
+// datasource list is applied in place and the module is not re-added to the
+// initialized set. This is what allows the proxy client's periodic refresh to
+// propagate to module state without restarting the server.
 func (r *Registry) InitModuleFromDiscovery(name string, datasources []types.DatasourceInfo) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -93,6 +98,12 @@ func (r *Registry) InitModuleFromDiscovery(name string, datasources []types.Data
 
 	if err := ext.Validate(); err != nil {
 		return fmt.Errorf("validating module %q: %w", name, err)
+	}
+
+	if r.isInitializedLocked(name) {
+		r.log.WithField("module", name).Debug("Module re-initialized from proxy discovery")
+
+		return nil
 	}
 
 	r.initialized = append(r.initialized, ext)
@@ -139,6 +150,12 @@ func (r *Registry) IsInitialized(name string) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
+	return r.isInitializedLocked(name)
+}
+
+// isInitializedLocked returns whether the named module is already in the
+// initialized set. Caller must hold r.mu (read or write).
+func (r *Registry) isInitializedLocked(name string) bool {
 	for _, ext := range r.initialized {
 		if ext.Name() == name {
 			return true

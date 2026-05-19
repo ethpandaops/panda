@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/sirupsen/logrus"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/ethpandaops/panda/pkg/sandbox"
 	"github.com/ethpandaops/panda/pkg/types"
 
+	blockarchivemodule "github.com/ethpandaops/panda/modules/block_archive"
 	cbtmodule "github.com/ethpandaops/panda/modules/cbt"
 	clickhousemodule "github.com/ethpandaops/panda/modules/clickhouse"
 	doramodule "github.com/ethpandaops/panda/modules/dora"
@@ -24,6 +26,11 @@ import (
 	lokimodule "github.com/ethpandaops/panda/modules/loki"
 	prometheusmodule "github.com/ethpandaops/panda/modules/prometheus"
 )
+
+// refreshActivationTimeout caps Start + OnDiscoveryReloaded calls dispatched
+// from the proxy client's discovery hook so a slow module can't stall the
+// discovery goroutine.
+const refreshActivationTimeout = 30 * time.Second
 
 // App contains the shared core components used by both the MCP server and CLI.
 type App struct {
@@ -72,7 +79,12 @@ func (a *App) Build(ctx context.Context) error {
 	a.log.WithField("backend", sandboxSvc.Name()).Info("Sandbox service started")
 
 	// 3. Create and start proxy client (performs initial discovery).
-	proxyClient := a.buildProxyClient()
+	// The OnDiscover hook fires on every successful refresh; it reapplies the
+	// freshly discovered datasource list to ProxyDiscoverable modules so new
+	// datasources show up without a server restart. During the initial
+	// Discover (before step 4) no modules are initialized yet, so the hook is
+	// a no-op until the first background tick.
+	proxyClient := a.buildProxyClient(a.refreshModulesFromDiscovery)
 	if err := proxyClient.Start(ctx); err != nil {
 		a.stop(ctx)
 
@@ -152,6 +164,7 @@ func (a *App) stop(ctx context.Context) {
 func (a *App) registerModules() *module.Registry {
 	reg := module.NewRegistry(a.log)
 
+	reg.Add(blockarchivemodule.New())
 	reg.Add(cbtmodule.New())
 	reg.Add(clickhousemodule.New())
 	reg.Add(doramodule.New())
@@ -166,18 +179,7 @@ func (a *App) registerModules() *module.Registry {
 func (a *App) initModules(proxyClient proxy.Client) error {
 	reg := a.ModuleRegistry
 
-	// Collect discovered datasources.
-	var discovered []types.DatasourceInfo
-	discovered = append(discovered, proxyClient.ClickHouseDatasourceInfo()...)
-	discovered = append(discovered, proxyClient.PrometheusDatasourceInfo()...)
-	discovered = append(discovered, proxyClient.LokiDatasourceInfo()...)
-
-	if proxyClient.EthNodeAvailable() {
-		discovered = append(discovered, types.DatasourceInfo{
-			Type: "ethnode",
-			Name: "ethnode",
-		})
-	}
+	discovered := a.discoveredDatasources(proxyClient)
 
 	for _, name := range reg.All() {
 		// Try proxy discovery for modules that support it.
@@ -214,9 +216,10 @@ func (a *App) initModules(proxyClient proxy.Client) error {
 	return nil
 }
 
-func (a *App) buildProxyClient() proxy.Client {
+func (a *App) buildProxyClient(onDiscover func()) proxy.Client {
 	cfg := proxy.ClientConfig{
-		URL: a.cfg.Proxy.URL,
+		URL:        a.cfg.Proxy.URL,
+		OnDiscover: onDiscover,
 	}
 
 	if a.cfg.Proxy.Auth != nil {
@@ -233,20 +236,160 @@ func (a *App) buildProxyClient() proxy.Client {
 	return proxy.NewClient(a.log, cfg)
 }
 
+// refreshModulesFromDiscovery re-applies the proxy client's current datasource
+// list to every ProxyDiscoverable module. Called from the proxy client's
+// discovery hook so periodic refresh propagates to module state without
+// restarting the server.
+//
+// Three behaviors:
+//   - Already-running modules get their datasource list refreshed in place.
+//     If they implement DiscoveryReloadable (e.g. clickhouse), state derived
+//     from the list (schema discovery clients) is rebuilt as well.
+//   - Modules that were skipped at startup because no relevant datasources
+//     existed are activated: deps are injected and Start runs.
+//   - Modules whose datasources have disappeared keep their last-seen state;
+//     deactivating a running module isn't supported here.
+func (a *App) refreshModulesFromDiscovery() {
+	if a.ModuleRegistry == nil || a.ProxyClient == nil {
+		return
+	}
+
+	// An empty list isn't a no-op signal — it means every previously-known
+	// datasource is gone, and already-running modules need to clear their
+	// state instead of holding on to stale entries.
+	discovered := a.discoveredDatasources(a.ProxyClient)
+
+	previouslyInitialized := initializedSet(a.ModuleRegistry)
+
+	for _, name := range a.ModuleRegistry.All() {
+		ext := a.ModuleRegistry.Get(name)
+		if ext == nil {
+			continue
+		}
+
+		if _, ok := ext.(module.ProxyDiscoverable); !ok {
+			continue
+		}
+
+		if err := a.ModuleRegistry.InitModuleFromDiscovery(name, discovered); err != nil {
+			// ErrNoValidConfig means the module has no datasources of its
+			// type after this refresh. The module is required to write its
+			// (empty) state before returning, so an already-running module
+			// still gets to clean up downstream state in OnDiscoveryReloaded.
+			// A not-yet-initialized module is skipped — there's nothing to
+			// activate.
+			if errors.Is(err, module.ErrNoValidConfig) {
+				if !previouslyInitialized[name] {
+					continue
+				}
+			} else {
+				a.log.WithError(err).
+					WithField("module", name).
+					Warn("Failed to refresh module from proxy discovery")
+
+				continue
+			}
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), refreshActivationTimeout)
+	defer cancel()
+
+	for _, ext := range a.ModuleRegistry.Initialized() {
+		if previouslyInitialized[ext.Name()] {
+			if reloadable, ok := ext.(module.DiscoveryReloadable); ok {
+				if err := reloadable.OnDiscoveryReloaded(ctx); err != nil {
+					a.log.WithError(err).
+						WithField("module", ext.Name()).
+						Warn("Module failed to reload after proxy discovery refresh")
+				}
+			}
+
+			continue
+		}
+
+		a.activateModule(ctx, ext)
+	}
+}
+
+// activateModule injects dependencies and starts a module that newly entered
+// the initialized set during a refresh. Errors are logged, not returned, so a
+// single misbehaving module can't stall the discovery loop.
+func (a *App) activateModule(ctx context.Context, ext module.Module) {
+	a.injectProxyClientInto(ext)
+	a.injectCartographoorClientInto(ext)
+
+	if err := ext.Start(ctx); err != nil {
+		a.log.WithError(err).
+			WithField("module", ext.Name()).
+			Warn("Failed to start newly-initialized module after refresh")
+
+		return
+	}
+
+	a.log.WithField("module", ext.Name()).Info("Module activated after proxy discovery refresh")
+}
+
+func initializedSet(reg *module.Registry) map[string]bool {
+	initialized := reg.Initialized()
+	set := make(map[string]bool, len(initialized))
+
+	for _, ext := range initialized {
+		set[ext.Name()] = true
+	}
+
+	return set
+}
+
+// discoveredDatasources collects the proxy client's current view of
+// datasources across all types in the same order as initModules so refresh
+// behavior matches startup.
+func (a *App) discoveredDatasources(proxyClient proxy.Client) []types.DatasourceInfo {
+	var discovered []types.DatasourceInfo
+	discovered = append(discovered, proxyClient.ClickHouseDatasourceInfo()...)
+	discovered = append(discovered, proxyClient.PrometheusDatasourceInfo()...)
+	discovered = append(discovered, proxyClient.LokiDatasourceInfo()...)
+
+	if proxyClient.EthNodeAvailable() {
+		discovered = append(discovered, types.DatasourceInfo{
+			Type: "ethnode",
+			Name: "ethnode",
+		})
+	}
+
+	return discovered
+}
+
 func (a *App) injectProxyClient() {
 	for _, ext := range a.ModuleRegistry.Initialized() {
-		if aware, ok := ext.(module.ProxyAware); ok {
-			aware.SetProxyClient(a.ProxyClient)
-			a.log.WithField("module", ext.Name()).Debug("Injected proxy client into module")
-		}
+		a.injectProxyClientInto(ext)
 	}
 }
 
 func (a *App) injectCartographoorClient() {
 	for _, ext := range a.ModuleRegistry.Initialized() {
-		if aware, ok := ext.(module.CartographoorAware); ok {
-			aware.SetCartographoorClient(a.Cartographoor)
-			a.log.WithField("module", ext.Name()).Debug("Injected cartographoor client into module")
-		}
+		a.injectCartographoorClientInto(ext)
+	}
+}
+
+func (a *App) injectProxyClientInto(ext module.Module) {
+	if a.ProxyClient == nil {
+		return
+	}
+
+	if aware, ok := ext.(module.ProxyAware); ok {
+		aware.SetProxyClient(a.ProxyClient)
+		a.log.WithField("module", ext.Name()).Debug("Injected proxy client into module")
+	}
+}
+
+func (a *App) injectCartographoorClientInto(ext module.Module) {
+	if a.Cartographoor == nil {
+		return
+	}
+
+	if aware, ok := ext.(module.CartographoorAware); ok {
+		aware.SetCartographoorClient(a.Cartographoor)
+		a.log.WithField("module", ext.Name()).Debug("Injected cartographoor client into module")
 	}
 }
