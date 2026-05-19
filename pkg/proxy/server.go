@@ -148,15 +148,15 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 	chConfigs, promConfigs, lokiConfigs, ethNodeConfig := cfg.ToHandlerConfigs()
 
 	if len(chConfigs) > 0 {
-		s.clickhouseHandler = handlers.NewClickHouseHandler(log, chConfigs, s.datasourceRouteResolver("clickhouse"))
+		s.clickhouseHandler = handlers.NewClickHouseHandler(log, chConfigs)
 	}
 
 	if len(promConfigs) > 0 {
-		s.prometheusHandler = handlers.NewPrometheusHandler(log, promConfigs, s.datasourceRouteResolver("prometheus"))
+		s.prometheusHandler = handlers.NewPrometheusHandler(log, promConfigs)
 	}
 
 	if len(lokiConfigs) > 0 {
-		s.lokiHandler = handlers.NewLokiHandler(log, lokiConfigs, s.datasourceRouteResolver("loki"))
+		s.lokiHandler = handlers.NewLokiHandler(log, lokiConfigs)
 	}
 
 	if ethNodeConfig != nil {
@@ -297,16 +297,6 @@ func (s *server) buildMiddlewareChain() func(http.Handler) http.Handler {
 		h = s.authenticator.Middleware()(h)
 
 		return h
-	}
-}
-
-func (s *server) datasourceRouteResolver(dsType string) handlers.DatasourceRouteResolver {
-	return func(ctx context.Context, datasource string) (string, bool) {
-		if s.authorizer == nil {
-			return datasource, true
-		}
-
-		return s.authorizer.RouteName(ctx, dsType, datasource)
 	}
 }
 
@@ -572,7 +562,10 @@ func (s *server) ClickHouseDatasourceInfo() []types.DatasourceInfo {
 			Name:        ch.Name,
 			Description: ch.Description,
 		}
-		info.Metadata = ch.datasourceMetadata()
+		info.Metadata = metadataValue("database", ch.Database)
+		if len(ch.Variants) > 0 {
+			info.Metadata = metadataValue("database", ch.Variants[0].Database)
+		}
 		result = append(result, info)
 	}
 
@@ -606,7 +599,10 @@ func (s *server) PrometheusDatasourceInfo() []types.DatasourceInfo {
 			Name:        prom.Name,
 			Description: prom.Description,
 		}
-		info.Metadata = prom.datasourceMetadata()
+		info.Metadata = metadataValue("url", prom.URL)
+		if len(prom.Variants) > 0 {
+			info.Metadata = metadataValue("url", prom.Variants[0].URL)
+		}
 		result = append(result, info)
 	}
 
@@ -640,7 +636,10 @@ func (s *server) LokiDatasourceInfo() []types.DatasourceInfo {
 			Name:        loki.Name,
 			Description: loki.Description,
 		}
-		info.Metadata = loki.datasourceMetadata()
+		info.Metadata = metadataValue("url", loki.URL)
+		if len(loki.Variants) > 0 {
+			info.Metadata = metadataValue("url", loki.Variants[0].URL)
+		}
 		result = append(result, info)
 	}
 

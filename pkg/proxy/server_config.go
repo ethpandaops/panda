@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
 
@@ -140,147 +139,63 @@ var (
 
 // ClickHouseClusterConfig holds ClickHouse cluster configuration.
 type ClickHouseClusterConfig struct {
-	BaseDatasourceConfig  `yaml:",inline"`
-	Host                  string                           `yaml:"host"`
-	Port                  int                              `yaml:"port"`
-	Database              string                           `yaml:"database,omitempty"`
-	Username              string                           `yaml:"username"`
-	Password              string                           `yaml:"password"`
-	Secure                bool                             `yaml:"secure"`
-	SkipVerify            bool                             `yaml:"skip_verify,omitempty"`
-	Timeout               int                              `yaml:"timeout,omitempty"`
-	Variants              []ClickHouseClusterVariantConfig `yaml:"variants,omitempty"`
-	topLevelBackendFields []string
+	BaseDatasourceConfig `yaml:",inline"`
+	Host                 string                           `yaml:"host"`
+	Port                 int                              `yaml:"port"`
+	Database             string                           `yaml:"database,omitempty"`
+	Username             string                           `yaml:"username"`
+	Password             string                           `yaml:"password"`
+	Secure               bool                             `yaml:"secure"`
+	SkipVerify           bool                             `yaml:"skip_verify,omitempty"`
+	Timeout              int                              `yaml:"timeout,omitempty"`
+	Variants             []ClickHouseClusterVariantConfig `yaml:"variants,omitempty"`
 }
 
 // ClickHouseClusterVariantConfig holds one selectable ClickHouse backend.
 type ClickHouseClusterVariantConfig struct {
-	DatasourceVariantConfig `yaml:",inline"`
-	Host                    string `yaml:"host"`
-	Port                    int    `yaml:"port"`
-	Database                string `yaml:"database,omitempty"`
-	Username                string `yaml:"username"`
-	Password                string `yaml:"password"`
-	Secure                  bool   `yaml:"secure"`
-	SkipVerify              bool   `yaml:"skip_verify,omitempty"`
-	Timeout                 int    `yaml:"timeout,omitempty"`
+	AllowedOrgs []string `yaml:"allowed_orgs,omitempty"`
+	Host        string   `yaml:"host"`
+	Port        int      `yaml:"port"`
+	Database    string   `yaml:"database,omitempty"`
+	Username    string   `yaml:"username"`
+	Password    string   `yaml:"password"`
+	Secure      bool     `yaml:"secure"`
+	SkipVerify  bool     `yaml:"skip_verify,omitempty"`
+	Timeout     int      `yaml:"timeout,omitempty"`
 }
 
 // PrometheusInstanceConfig holds Prometheus instance configuration.
 type PrometheusInstanceConfig struct {
-	BaseDatasourceConfig  `yaml:",inline"`
-	URL                   string                            `yaml:"url"`
-	Username              string                            `yaml:"username,omitempty"`
-	Password              string                            `yaml:"password,omitempty"`
-	Variants              []PrometheusInstanceVariantConfig `yaml:"variants,omitempty"`
-	topLevelBackendFields []string
+	BaseDatasourceConfig `yaml:",inline"`
+	URL                  string                            `yaml:"url"`
+	Username             string                            `yaml:"username,omitempty"`
+	Password             string                            `yaml:"password,omitempty"`
+	Variants             []PrometheusInstanceVariantConfig `yaml:"variants,omitempty"`
 }
 
 // PrometheusInstanceVariantConfig holds one selectable Prometheus backend.
 type PrometheusInstanceVariantConfig struct {
-	DatasourceVariantConfig `yaml:",inline"`
-	URL                     string `yaml:"url"`
-	Username                string `yaml:"username,omitempty"`
-	Password                string `yaml:"password,omitempty"`
+	AllowedOrgs []string `yaml:"allowed_orgs,omitempty"`
+	URL         string   `yaml:"url"`
+	Username    string   `yaml:"username,omitempty"`
+	Password    string   `yaml:"password,omitempty"`
 }
 
 // LokiInstanceConfig holds Loki instance configuration.
 type LokiInstanceConfig struct {
-	BaseDatasourceConfig  `yaml:",inline"`
-	URL                   string                      `yaml:"url"`
-	Username              string                      `yaml:"username,omitempty"`
-	Password              string                      `yaml:"password,omitempty"`
-	Variants              []LokiInstanceVariantConfig `yaml:"variants,omitempty"`
-	topLevelBackendFields []string
+	BaseDatasourceConfig `yaml:",inline"`
+	URL                  string                      `yaml:"url"`
+	Username             string                      `yaml:"username,omitempty"`
+	Password             string                      `yaml:"password,omitempty"`
+	Variants             []LokiInstanceVariantConfig `yaml:"variants,omitempty"`
 }
 
 // LokiInstanceVariantConfig holds one selectable Loki backend.
 type LokiInstanceVariantConfig struct {
-	DatasourceVariantConfig `yaml:",inline"`
-	URL                     string `yaml:"url"`
-	Username                string `yaml:"username,omitempty"`
-	Password                string `yaml:"password,omitempty"`
-}
-
-// DatasourceVariantConfig holds fields common to datasource variants.
-type DatasourceVariantConfig struct {
 	AllowedOrgs []string `yaml:"allowed_orgs,omitempty"`
-}
-
-// VariantAllowedOrgs returns the list of GitHub orgs allowed to select this variant.
-func (v DatasourceVariantConfig) VariantAllowedOrgs() []string { return v.AllowedOrgs }
-
-var (
-	clickHouseTopLevelBackendFields = map[string]struct{}{
-		"host":        {},
-		"port":        {},
-		"database":    {},
-		"username":    {},
-		"password":    {},
-		"secure":      {},
-		"skip_verify": {},
-		"timeout":     {},
-	}
-
-	prometheusTopLevelBackendFields = map[string]struct{}{
-		"url":      {},
-		"username": {},
-		"password": {},
-	}
-
-	lokiTopLevelBackendFields = map[string]struct{}{
-		"url":      {},
-		"username": {},
-		"password": {},
-	}
-)
-
-// UnmarshalYAML records top-level backend fields so variants cannot be mixed
-// with explicit legacy backend fields, even when the configured value is false or 0.
-func (c *ClickHouseClusterConfig) UnmarshalYAML(value *yaml.Node) error {
-	type rawConfig ClickHouseClusterConfig
-
-	var raw rawConfig
-	if err := value.Decode(&raw); err != nil {
-		return err
-	}
-
-	*c = ClickHouseClusterConfig(raw)
-	c.topLevelBackendFields = yamlFieldNames(value, clickHouseTopLevelBackendFields)
-
-	return nil
-}
-
-// UnmarshalYAML records top-level backend fields so variants cannot be mixed
-// with explicit legacy backend fields.
-func (c *PrometheusInstanceConfig) UnmarshalYAML(value *yaml.Node) error {
-	type rawConfig PrometheusInstanceConfig
-
-	var raw rawConfig
-	if err := value.Decode(&raw); err != nil {
-		return err
-	}
-
-	*c = PrometheusInstanceConfig(raw)
-	c.topLevelBackendFields = yamlFieldNames(value, prometheusTopLevelBackendFields)
-
-	return nil
-}
-
-// UnmarshalYAML records top-level backend fields so variants cannot be mixed
-// with explicit legacy backend fields.
-func (c *LokiInstanceConfig) UnmarshalYAML(value *yaml.Node) error {
-	type rawConfig LokiInstanceConfig
-
-	var raw rawConfig
-	if err := value.Decode(&raw); err != nil {
-		return err
-	}
-
-	*c = LokiInstanceConfig(raw)
-	c.topLevelBackendFields = yamlFieldNames(value, lokiTopLevelBackendFields)
-
-	return nil
+	URL         string   `yaml:"url"`
+	Username    string   `yaml:"username,omitempty"`
+	Password    string   `yaml:"password,omitempty"`
 }
 
 // EthNodeInstanceConfig holds Ethereum node API access configuration.
@@ -486,8 +401,9 @@ func (c *ServerConfig) Validate() error {
 		}
 
 		if len(ch.Variants) > 0 {
-			if err := validateNoTopLevelVariantFields("clickhouse", i, ch.AllowedOrgs, ch.topLevelBackendFieldNames()); err != nil {
-				return err
+			if ch.Host != "" || ch.Port != 0 || ch.Database != "" ||
+				ch.Username != "" || ch.Password != "" || ch.Secure || ch.SkipVerify || ch.Timeout != 0 {
+				return fmt.Errorf("clickhouse[%d] cannot mix variants with top-level backend fields", i)
 			}
 
 			for j, variant := range ch.Variants {
@@ -511,8 +427,8 @@ func (c *ServerConfig) Validate() error {
 		}
 
 		if len(prom.Variants) > 0 {
-			if err := validateNoTopLevelVariantFields("prometheus", i, prom.AllowedOrgs, prom.topLevelBackendFieldNames()); err != nil {
-				return err
+			if prom.URL != "" || prom.Username != "" || prom.Password != "" {
+				return fmt.Errorf("prometheus[%d] cannot mix variants with top-level backend fields", i)
 			}
 
 			for j, variant := range prom.Variants {
@@ -536,8 +452,8 @@ func (c *ServerConfig) Validate() error {
 		}
 
 		if len(loki.Variants) > 0 {
-			if err := validateNoTopLevelVariantFields("loki", i, loki.AllowedOrgs, loki.topLevelBackendFieldNames()); err != nil {
-				return err
+			if loki.URL != "" || loki.Username != "" || loki.Password != "" {
+				return fmt.Errorf("loki[%d] cannot mix variants with top-level backend fields", i)
 			}
 
 			for j, variant := range loki.Variants {
@@ -670,44 +586,6 @@ func defaultClickHousePort(secure bool) int {
 	return 8123
 }
 
-func validateNoTopLevelVariantFields(kind string, index int, allowedOrgs, backendFields []string) error {
-	if len(backendFields) > 0 {
-		return fmt.Errorf("%s[%d] cannot mix variants with top-level backend fields: %s", kind, index, strings.Join(backendFields, ", "))
-	}
-
-	if len(allowedOrgs) > 0 {
-		return fmt.Errorf("%s[%d].allowed_orgs cannot be set with variants; set allowed_orgs on each variant", kind, index)
-	}
-
-	return nil
-}
-
-func yamlFieldNames(value *yaml.Node, fields map[string]struct{}) []string {
-	if value == nil || value.Kind != yaml.MappingNode {
-		return nil
-	}
-
-	names := make([]string, 0)
-	seen := make(map[string]struct{}, len(fields))
-
-	for i := 0; i+1 < len(value.Content); i += 2 {
-		key := value.Content[i].Value
-		if _, ok := fields[key]; !ok {
-			continue
-		}
-		if _, ok := seen[key]; ok {
-			continue
-		}
-
-		seen[key] = struct{}{}
-		names = append(names, key)
-	}
-
-	sort.Strings(names)
-
-	return names
-}
-
 func datasourceVariantRouteName(name string, index int) string {
 	return fmt.Sprintf("%s\x00variant\x00%d", name, index)
 }
@@ -718,130 +596,6 @@ func metadataValue(key, value string) map[string]string {
 	}
 
 	return map[string]string{key: value}
-}
-
-func cloneMetadata(in map[string]string) map[string]string {
-	if len(in) == 0 {
-		return nil
-	}
-
-	out := make(map[string]string, len(in))
-	for key, value := range in {
-		out[key] = value
-	}
-
-	return out
-}
-
-func (c ClickHouseClusterConfig) topLevelBackendFieldNames() []string {
-	fields := stringSet(c.topLevelBackendFields)
-
-	if c.Host != "" {
-		fields["host"] = struct{}{}
-	}
-	if c.Port != 0 {
-		fields["port"] = struct{}{}
-	}
-	if c.Database != "" {
-		fields["database"] = struct{}{}
-	}
-	if c.Username != "" {
-		fields["username"] = struct{}{}
-	}
-	if c.Password != "" {
-		fields["password"] = struct{}{}
-	}
-	if c.Secure {
-		fields["secure"] = struct{}{}
-	}
-	if c.SkipVerify {
-		fields["skip_verify"] = struct{}{}
-	}
-	if c.Timeout != 0 {
-		fields["timeout"] = struct{}{}
-	}
-
-	return sortedKeys(fields)
-}
-
-func (c ClickHouseClusterConfig) datasourceMetadata() map[string]string {
-	if len(c.Variants) > 0 {
-		return metadataValue("database", c.Variants[0].Database)
-	}
-
-	return metadataValue("database", c.Database)
-}
-
-func (c PrometheusInstanceConfig) topLevelBackendFieldNames() []string {
-	fields := stringSet(c.topLevelBackendFields)
-
-	if c.URL != "" {
-		fields["url"] = struct{}{}
-	}
-	if c.Username != "" {
-		fields["username"] = struct{}{}
-	}
-	if c.Password != "" {
-		fields["password"] = struct{}{}
-	}
-
-	return sortedKeys(fields)
-}
-
-func (c PrometheusInstanceConfig) datasourceMetadata() map[string]string {
-	if len(c.Variants) > 0 {
-		return metadataValue("url", c.Variants[0].URL)
-	}
-
-	return metadataValue("url", c.URL)
-}
-
-func (c LokiInstanceConfig) topLevelBackendFieldNames() []string {
-	fields := stringSet(c.topLevelBackendFields)
-
-	if c.URL != "" {
-		fields["url"] = struct{}{}
-	}
-	if c.Username != "" {
-		fields["username"] = struct{}{}
-	}
-	if c.Password != "" {
-		fields["password"] = struct{}{}
-	}
-
-	return sortedKeys(fields)
-}
-
-func (c LokiInstanceConfig) datasourceMetadata() map[string]string {
-	if len(c.Variants) > 0 {
-		return metadataValue("url", c.Variants[0].URL)
-	}
-
-	return metadataValue("url", c.URL)
-}
-
-func stringSet(values []string) map[string]struct{} {
-	result := make(map[string]struct{}, len(values))
-	for _, value := range values {
-		result[value] = struct{}{}
-	}
-
-	return result
-}
-
-func sortedKeys(values map[string]struct{}) []string {
-	if len(values) == 0 {
-		return nil
-	}
-
-	result := make([]string, 0, len(values))
-	for value := range values {
-		result = append(result, value)
-	}
-
-	sort.Strings(result)
-
-	return result
 }
 
 // envVarWithDefaultPattern matches ${VAR_NAME:-default} patterns.

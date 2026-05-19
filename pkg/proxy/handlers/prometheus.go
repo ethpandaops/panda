@@ -28,10 +28,9 @@ type PrometheusConfig struct {
 
 // PrometheusHandler handles requests to Prometheus instances.
 type PrometheusHandler struct {
-	log          logrus.FieldLogger
-	instances    map[string]*prometheusInstance
-	names        []string
-	routeResolve DatasourceRouteResolver
+	log       logrus.FieldLogger
+	instances map[string]*prometheusInstance
+	names     []string
 }
 
 type prometheusInstance struct {
@@ -40,11 +39,10 @@ type prometheusInstance struct {
 }
 
 // NewPrometheusHandler creates a new Prometheus handler.
-func NewPrometheusHandler(log logrus.FieldLogger, configs []PrometheusConfig, routeResolve DatasourceRouteResolver) *PrometheusHandler {
+func NewPrometheusHandler(log logrus.FieldLogger, configs []PrometheusConfig) *PrometheusHandler {
 	h := &PrometheusHandler{
-		log:          log.WithField("handler", "prometheus"),
-		instances:    make(map[string]*prometheusInstance, len(configs)),
-		routeResolve: routeResolve,
+		log:       log.WithField("handler", "prometheus"),
+		instances: make(map[string]*prometheusInstance, len(configs)),
 	}
 
 	for _, cfg := range configs {
@@ -111,14 +109,7 @@ func (h *PrometheusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	routeName, allowed := h.resolveRoute(r.Context(), instanceName)
-	if !allowed {
-		http.Error(w, "forbidden: insufficient org membership for this datasource", http.StatusForbidden)
-
-		return
-	}
-
-	instance, ok := h.instances[routeName]
+	instance, ok := h.instances[datasourceRoute(r, instanceName)]
 	if !ok {
 		http.Error(w, fmt.Sprintf("unknown instance: %s", instanceName), http.StatusNotFound)
 
@@ -153,14 +144,6 @@ func (h *PrometheusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}).Debug("Proxying Prometheus request")
 
 	instance.proxy.ServeHTTP(w, r)
-}
-
-func (h *PrometheusHandler) resolveRoute(ctx context.Context, datasource string) (string, bool) {
-	if h.routeResolve == nil {
-		return datasource, true
-	}
-
-	return h.routeResolve(ctx, datasource)
 }
 
 // Instances returns the list of configured instance names.

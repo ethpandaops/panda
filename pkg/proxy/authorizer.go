@@ -59,10 +59,15 @@ func (a *Authorizer) Middleware() func(http.Handler) http.Handler {
 			dsType := extractDatasourceType(r.URL.Path)
 			dsName := r.Header.Get(handlers.DatasourceHeader)
 
-			if !a.isAllowed(r.Context(), dsType, dsName) {
+			routeName, ok := a.routeName(r.Context(), dsType, dsName)
+			if !ok {
 				http.Error(w, "forbidden: insufficient org membership for this datasource", http.StatusForbidden)
 
 				return
+			}
+
+			if routeName != "" {
+				r = r.WithContext(handlers.WithDatasourceRoute(r.Context(), routeName))
 			}
 
 			next.ServeHTTP(w, r)
@@ -84,62 +89,56 @@ func (a *Authorizer) FilterDatasources(ctx context.Context, resp DatasourcesResp
 		EmbeddingModel:     resp.EmbeddingModel,
 	}
 
-	for i, name := range resp.ClickHouse {
-		if variant, ok := a.matchingVariant(userOrgs, ruleKey("clickhouse", name)); ok {
-			filtered.ClickHouse = append(filtered.ClickHouse, name)
-
-			if i < len(resp.ClickHouseInfo) {
-				filtered.ClickHouseInfo = append(filtered.ClickHouseInfo, datasourceInfoForVariant(resp.ClickHouseInfo[i], variant))
-			}
-		}
-	}
-
-	for i, name := range resp.Prometheus {
-		if variant, ok := a.matchingVariant(userOrgs, ruleKey("prometheus", name)); ok {
-			filtered.Prometheus = append(filtered.Prometheus, name)
-
-			if i < len(resp.PrometheusInfo) {
-				filtered.PrometheusInfo = append(filtered.PrometheusInfo, datasourceInfoForVariant(resp.PrometheusInfo[i], variant))
-			}
-		}
-	}
-
-	for i, name := range resp.Loki {
-		if variant, ok := a.matchingVariant(userOrgs, ruleKey("loki", name)); ok {
-			filtered.Loki = append(filtered.Loki, name)
-
-			if i < len(resp.LokiInfo) {
-				filtered.LokiInfo = append(filtered.LokiInfo, datasourceInfoForVariant(resp.LokiInfo[i], variant))
-			}
-		}
-	}
+	filtered.ClickHouse, filtered.ClickHouseInfo = a.filterDatasourceList(userOrgs, "clickhouse", resp.ClickHouse, resp.ClickHouseInfo)
+	filtered.Prometheus, filtered.PrometheusInfo = a.filterDatasourceList(userOrgs, "prometheus", resp.Prometheus, resp.PrometheusInfo)
+	filtered.Loki, filtered.LokiInfo = a.filterDatasourceList(userOrgs, "loki", resp.Loki, resp.LokiInfo)
 
 	return filtered
 }
 
+func (a *Authorizer) filterDatasourceList(userOrgs []string, dsType string, names []string, infos []types.DatasourceInfo) ([]string, []types.DatasourceInfo) {
+	filteredNames := make([]string, 0, len(names))
+	filteredInfos := make([]types.DatasourceInfo, 0, len(infos))
+
+	for i, name := range names {
+		variant, ok := a.matchingVariant(userOrgs, ruleKey(dsType, name))
+		if !ok {
+			continue
+		}
+
+		filteredNames = append(filteredNames, name)
+		if i < len(infos) {
+			filteredInfos = append(filteredInfos, datasourceInfoForVariant(infos[i], variant))
+		}
+	}
+
+	return filteredNames, filteredInfos
+}
+
 // isAllowed checks if the request context is authorized to access the datasource.
 func (a *Authorizer) isAllowed(ctx context.Context, dsType, dsName string) bool {
+	_, ok := a.routeName(ctx, dsType, dsName)
+
+	return ok
+}
+
+func (a *Authorizer) routeName(ctx context.Context, dsType, dsName string) (string, bool) {
 	userOrgs := getUserOrgs(ctx)
-	if userOrgs == nil {
-		return true // no auth user in context (none mode) → allow
-	}
 
 	// For ethnode, check at type level (no per-name granularity).
 	if dsType == "ethnode" {
-		return a.orgsMatch(userOrgs, ruleKey("ethnode", ""))
+		if a.orgsMatch(userOrgs, ruleKey("ethnode", "")) {
+			return "", true
+		}
+
+		return "", false
 	}
 
 	// For datasources endpoint, skip middleware check (filtered in handler).
 	if dsType == "datasources" || dsType == "unknown" {
-		return true
+		return "", true
 	}
 
-	return a.orgsMatch(userOrgs, ruleKey(dsType, dsName))
-}
-
-// RouteName returns the internal backend route selected for the datasource.
-func (a *Authorizer) RouteName(ctx context.Context, dsType, dsName string) (string, bool) {
-	userOrgs := getUserOrgs(ctx)
 	variant, ok := a.matchingVariant(userOrgs, ruleKey(dsType, dsName))
 	if !ok {
 		return "", false
@@ -295,7 +294,7 @@ func datasourceInfoForVariant(info types.DatasourceInfo, variant datasourceVaria
 		return info
 	}
 
-	info.Metadata = cloneMetadata(variant.metadata)
+	info.Metadata = variant.metadata
 
 	return info
 }

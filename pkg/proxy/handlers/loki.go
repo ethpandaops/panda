@@ -28,10 +28,9 @@ type LokiConfig struct {
 
 // LokiHandler handles requests to Loki instances.
 type LokiHandler struct {
-	log          logrus.FieldLogger
-	instances    map[string]*lokiInstance
-	names        []string
-	routeResolve DatasourceRouteResolver
+	log       logrus.FieldLogger
+	instances map[string]*lokiInstance
+	names     []string
 }
 
 type lokiInstance struct {
@@ -40,11 +39,10 @@ type lokiInstance struct {
 }
 
 // NewLokiHandler creates a new Loki handler.
-func NewLokiHandler(log logrus.FieldLogger, configs []LokiConfig, routeResolve DatasourceRouteResolver) *LokiHandler {
+func NewLokiHandler(log logrus.FieldLogger, configs []LokiConfig) *LokiHandler {
 	h := &LokiHandler{
-		log:          log.WithField("handler", "loki"),
-		instances:    make(map[string]*lokiInstance, len(configs)),
-		routeResolve: routeResolve,
+		log:       log.WithField("handler", "loki"),
+		instances: make(map[string]*lokiInstance, len(configs)),
 	}
 
 	for _, cfg := range configs {
@@ -111,14 +109,7 @@ func (h *LokiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	routeName, allowed := h.resolveRoute(r.Context(), instanceName)
-	if !allowed {
-		http.Error(w, "forbidden: insufficient org membership for this datasource", http.StatusForbidden)
-
-		return
-	}
-
-	instance, ok := h.instances[routeName]
+	instance, ok := h.instances[datasourceRoute(r, instanceName)]
 	if !ok {
 		http.Error(w, fmt.Sprintf("unknown instance: %s", instanceName), http.StatusNotFound)
 
@@ -153,14 +144,6 @@ func (h *LokiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}).Debug("Proxying Loki request")
 
 	instance.proxy.ServeHTTP(w, r)
-}
-
-func (h *LokiHandler) resolveRoute(ctx context.Context, datasource string) (string, bool) {
-	if h.routeResolve == nil {
-		return datasource, true
-	}
-
-	return h.routeResolve(ctx, datasource)
 }
 
 // Instances returns the list of configured instance names.

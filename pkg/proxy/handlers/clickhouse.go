@@ -16,8 +16,21 @@ import (
 // DatasourceHeader is the HTTP header used to specify which datasource to route to.
 const DatasourceHeader = "X-Datasource"
 
-// DatasourceRouteResolver maps a logical datasource name to an internal backend route.
-type DatasourceRouteResolver func(ctx context.Context, datasource string) (string, bool)
+type datasourceRouteContextKey struct{}
+
+// WithDatasourceRoute stores the selected backend route for the current request.
+func WithDatasourceRoute(ctx context.Context, routeName string) context.Context {
+	return context.WithValue(ctx, datasourceRouteContextKey{}, routeName)
+}
+
+func datasourceRoute(r *http.Request, fallback string) string {
+	routeName, _ := r.Context().Value(datasourceRouteContextKey{}).(string)
+	if routeName == "" {
+		return fallback
+	}
+
+	return routeName
+}
 
 // ClickHouseConfig holds ClickHouse proxy configuration for a single cluster.
 type ClickHouseConfig struct {
@@ -36,10 +49,9 @@ type ClickHouseConfig struct {
 
 // ClickHouseHandler handles requests to ClickHouse clusters.
 type ClickHouseHandler struct {
-	log          logrus.FieldLogger
-	clusters     map[string]*clickhouseCluster
-	names        []string
-	routeResolve DatasourceRouteResolver
+	log      logrus.FieldLogger
+	clusters map[string]*clickhouseCluster
+	names    []string
 }
 
 type clickhouseCluster struct {
@@ -48,11 +60,10 @@ type clickhouseCluster struct {
 }
 
 // NewClickHouseHandler creates a new ClickHouse handler.
-func NewClickHouseHandler(log logrus.FieldLogger, configs []ClickHouseConfig, routeResolve DatasourceRouteResolver) *ClickHouseHandler {
+func NewClickHouseHandler(log logrus.FieldLogger, configs []ClickHouseConfig) *ClickHouseHandler {
 	h := &ClickHouseHandler{
-		log:          log.WithField("handler", "clickhouse"),
-		clusters:     make(map[string]*clickhouseCluster, len(configs)),
-		routeResolve: routeResolve,
+		log:      log.WithField("handler", "clickhouse"),
+		clusters: make(map[string]*clickhouseCluster, len(configs)),
 	}
 
 	for _, cfg := range configs {
@@ -132,14 +143,7 @@ func (h *ClickHouseHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	routeName, allowed := h.resolveRoute(r.Context(), clusterName)
-	if !allowed {
-		http.Error(w, "forbidden: insufficient org membership for this datasource", http.StatusForbidden)
-
-		return
-	}
-
-	cluster, ok := h.clusters[routeName]
+	cluster, ok := h.clusters[datasourceRoute(r, clusterName)]
 	if !ok {
 		http.Error(w, fmt.Sprintf("unknown cluster: %s", clusterName), http.StatusNotFound)
 
@@ -168,14 +172,6 @@ func (h *ClickHouseHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}).Debug("Proxying ClickHouse request")
 
 	cluster.proxy.ServeHTTP(w, r)
-}
-
-func (h *ClickHouseHandler) resolveRoute(ctx context.Context, datasource string) (string, bool) {
-	if h.routeResolve == nil {
-		return datasource, true
-	}
-
-	return h.routeResolve(ctx, datasource)
 }
 
 // Clusters returns the list of configured cluster names.
