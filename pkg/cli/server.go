@@ -28,11 +28,11 @@ var (
 	dockerComposeRunner = runDockerCompose
 )
 
-const defaultServerHealthWaitTimeout = 90 * time.Second
+const defaultServerHealthWaitTimeout = 5 * time.Minute
 
 var (
-	serverHealthPollInterval     = 1 * time.Second
-	serverHealthProgressInterval = 5 * time.Second
+	serverHealthPollInterval     = 10 * time.Second
+	serverHealthProgressInterval = 10 * time.Second
 )
 
 var serverCmd = &cobra.Command{
@@ -246,10 +246,7 @@ func waitForServerHealth(ctx context.Context, timeout time.Duration) error {
 
 		now := time.Now()
 		if !now.Before(nextProgressAt) {
-			remaining := time.Until(deadline).Round(time.Second)
-			if remaining < 0 {
-				remaining = 0
-			}
+			remaining := max(time.Until(deadline).Round(time.Second), 0)
 
 			fmt.Printf("Still waiting for server to become healthy... (%s remaining)\n", remaining)
 			nextProgressAt = now.Add(serverHealthProgressInterval)
