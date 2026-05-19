@@ -401,9 +401,13 @@ func (c *ServerConfig) Validate() error {
 		}
 
 		if len(ch.Variants) > 0 {
+			if len(ch.AllowedOrgs) > 0 {
+				return fmt.Errorf("clickhouse[%d] %q cannot set top-level allowed_orgs with variants", i, ch.Name)
+			}
+
 			if ch.Host != "" || ch.Port != 0 || ch.Database != "" ||
 				ch.Username != "" || ch.Password != "" || ch.Secure || ch.SkipVerify || ch.Timeout != 0 {
-				return fmt.Errorf("clickhouse[%d] cannot mix variants with top-level backend fields", i)
+				return fmt.Errorf("clickhouse[%d] %q cannot mix top-level backend fields with variants", i, ch.Name)
 			}
 
 			for j, variant := range ch.Variants {
@@ -427,8 +431,12 @@ func (c *ServerConfig) Validate() error {
 		}
 
 		if len(prom.Variants) > 0 {
+			if len(prom.AllowedOrgs) > 0 {
+				return fmt.Errorf("prometheus[%d] %q cannot set top-level allowed_orgs with variants", i, prom.Name)
+			}
+
 			if prom.URL != "" || prom.Username != "" || prom.Password != "" {
-				return fmt.Errorf("prometheus[%d] cannot mix variants with top-level backend fields", i)
+				return fmt.Errorf("prometheus[%d] %q cannot mix top-level backend fields with variants", i, prom.Name)
 			}
 
 			for j, variant := range prom.Variants {
@@ -452,8 +460,12 @@ func (c *ServerConfig) Validate() error {
 		}
 
 		if len(loki.Variants) > 0 {
+			if len(loki.AllowedOrgs) > 0 {
+				return fmt.Errorf("loki[%d] %q cannot set top-level allowed_orgs with variants", i, loki.Name)
+			}
+
 			if loki.URL != "" || loki.Username != "" || loki.Password != "" {
-				return fmt.Errorf("loki[%d] cannot mix variants with top-level backend fields", i)
+				return fmt.Errorf("loki[%d] %q cannot mix top-level backend fields with variants", i, loki.Name)
 			}
 
 			for j, variant := range loki.Variants {

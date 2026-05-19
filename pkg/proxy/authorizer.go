@@ -78,30 +78,30 @@ func (a *Authorizer) Middleware() func(http.Handler) http.Handler {
 // FilterDatasources returns a copy of the response with only the datasources
 // the authenticated user is allowed to access.
 func (a *Authorizer) FilterDatasources(ctx context.Context, resp DatasourcesResponse) DatasourcesResponse {
-	userOrgs := getUserOrgs(ctx)
-	if userOrgs == nil {
+	userOrgs, hasUser := getUserOrgs(ctx)
+	if !hasUser {
 		return resp // no auth → return everything
 	}
 
 	filtered := DatasourcesResponse{
-		EthNodeAvailable:   resp.EthNodeAvailable && a.orgsMatch(userOrgs, ruleKey("ethnode", "")),
+		EthNodeAvailable:   resp.EthNodeAvailable && a.orgsMatch(userOrgs, hasUser, ruleKey("ethnode", "")),
 		EmbeddingAvailable: resp.EmbeddingAvailable,
 		EmbeddingModel:     resp.EmbeddingModel,
 	}
 
-	filtered.ClickHouse, filtered.ClickHouseInfo = a.filterDatasourceList(userOrgs, "clickhouse", resp.ClickHouse, resp.ClickHouseInfo)
-	filtered.Prometheus, filtered.PrometheusInfo = a.filterDatasourceList(userOrgs, "prometheus", resp.Prometheus, resp.PrometheusInfo)
-	filtered.Loki, filtered.LokiInfo = a.filterDatasourceList(userOrgs, "loki", resp.Loki, resp.LokiInfo)
+	filtered.ClickHouse, filtered.ClickHouseInfo = a.filterDatasourceList(userOrgs, hasUser, "clickhouse", resp.ClickHouse, resp.ClickHouseInfo)
+	filtered.Prometheus, filtered.PrometheusInfo = a.filterDatasourceList(userOrgs, hasUser, "prometheus", resp.Prometheus, resp.PrometheusInfo)
+	filtered.Loki, filtered.LokiInfo = a.filterDatasourceList(userOrgs, hasUser, "loki", resp.Loki, resp.LokiInfo)
 
 	return filtered
 }
 
-func (a *Authorizer) filterDatasourceList(userOrgs []string, dsType string, names []string, infos []types.DatasourceInfo) ([]string, []types.DatasourceInfo) {
+func (a *Authorizer) filterDatasourceList(userOrgs []string, hasUser bool, dsType string, names []string, infos []types.DatasourceInfo) ([]string, []types.DatasourceInfo) {
 	filteredNames := make([]string, 0, len(names))
 	filteredInfos := make([]types.DatasourceInfo, 0, len(infos))
 
 	for i, name := range names {
-		variant, ok := a.matchingVariant(userOrgs, ruleKey(dsType, name))
+		variant, ok := a.matchingVariant(userOrgs, hasUser, ruleKey(dsType, name))
 		if !ok {
 			continue
 		}
@@ -123,11 +123,11 @@ func (a *Authorizer) isAllowed(ctx context.Context, dsType, dsName string) bool 
 }
 
 func (a *Authorizer) routeName(ctx context.Context, dsType, dsName string) (string, bool) {
-	userOrgs := getUserOrgs(ctx)
+	userOrgs, hasUser := getUserOrgs(ctx)
 
 	// For ethnode, check at type level (no per-name granularity).
 	if dsType == "ethnode" {
-		if a.orgsMatch(userOrgs, ruleKey("ethnode", "")) {
+		if a.orgsMatch(userOrgs, hasUser, ruleKey("ethnode", "")) {
 			return "", true
 		}
 
@@ -139,7 +139,7 @@ func (a *Authorizer) routeName(ctx context.Context, dsType, dsName string) (stri
 		return "", true
 	}
 
-	variant, ok := a.matchingVariant(userOrgs, ruleKey(dsType, dsName))
+	variant, ok := a.matchingVariant(userOrgs, hasUser, ruleKey(dsType, dsName))
 	if !ok {
 		return "", false
 	}
@@ -153,13 +153,13 @@ func (a *Authorizer) routeName(ctx context.Context, dsType, dsName string) (stri
 
 // orgsMatch returns true if the user has access based on the rule for the given key.
 // If no rule exists for the key, access is allowed (open by default).
-func (a *Authorizer) orgsMatch(userOrgs []string, key string) bool {
-	_, ok := a.matchingVariant(userOrgs, key)
+func (a *Authorizer) orgsMatch(userOrgs []string, hasUser bool, key string) bool {
+	_, ok := a.matchingVariant(userOrgs, hasUser, key)
 
 	return ok
 }
 
-func (a *Authorizer) matchingVariant(userOrgs []string, key string) (datasourceVariantRule, bool) {
+func (a *Authorizer) matchingVariant(userOrgs []string, hasUser bool, key string) (datasourceVariantRule, bool) {
 	variants, exists := a.rules[key]
 	if !exists {
 		return datasourceVariantRule{}, true // no restriction configured
@@ -169,7 +169,7 @@ func (a *Authorizer) matchingVariant(userOrgs []string, key string) (datasourceV
 		return datasourceVariantRule{}, false
 	}
 
-	if userOrgs == nil {
+	if !hasUser {
 		return variants[0], true // no auth user in context (none mode) → select first configured backend
 	}
 
@@ -202,19 +202,19 @@ func allowedOrgsMatch(userOrgs, allowedOrgs []string) bool {
 // Works across both auth modes:
 //   - OAuth mode: auth.AuthUser.Orgs
 //   - OIDC mode: proxy.AuthUser.Groups
-//   - None mode: returns nil (no restriction)
-func getUserOrgs(ctx context.Context) []string {
+//   - None mode: returns false (no restriction)
+func getUserOrgs(ctx context.Context) ([]string, bool) {
 	// Check proxy.AuthUser (OIDC mode).
 	if user := GetAuthUser(ctx); user != nil {
-		return user.Groups
+		return user.Groups, true
 	}
 
 	// Check auth.AuthUser (OAuth mode).
 	if user := simpleauth.GetAuthUser(ctx); user != nil {
-		return user.Orgs
+		return user.Orgs, true
 	}
 
-	return nil
+	return nil, false
 }
 
 // ruleKey builds the map key for an authorization rule.

@@ -3,8 +3,10 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/sirupsen/logrus"
@@ -313,6 +315,47 @@ func TestAuthorizerDeniesWhenNoDatasourceVariantMatches(t *testing.T) {
 	assert.Empty(t, filtered.ClickHouseInfo)
 }
 
+func TestAuthenticatedUserWithNoOrgsCannotUseRestrictedVariant(t *testing.T) {
+	t.Parallel()
+
+	cfg := ServerConfig{
+		Auth: AuthConfig{Mode: AuthModeNone},
+		ClickHouse: []ClickHouseClusterConfig{
+			{
+				BaseDatasourceConfig: BaseDatasourceConfig{Name: "clickhouse-raw"},
+				Variants: []ClickHouseClusterVariantConfig{
+					{AllowedOrgs: []string{"ethpandaops:Core"}, Host: "clickhouse.internal.example.com", Username: "internal", Password: "secret"},
+				},
+			},
+		},
+	}
+	cfg.ApplyDefaults()
+	require.NoError(t, cfg.Validate())
+
+	authorizer := NewAuthorizer(logrus.New(), cfg)
+	resp := DatasourcesResponse{
+		ClickHouse:     []string{"clickhouse-raw"},
+		ClickHouseInfo: []types.DatasourceInfo{{Type: "clickhouse", Name: "clickhouse-raw"}},
+	}
+
+	for _, tt := range []struct {
+		name   string
+		groups []string
+	}{
+		{name: "nil groups", groups: nil},
+		{name: "empty groups", groups: []string{}},
+	} {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := withAuthUser(context.Background(), &AuthUser{Groups: tt.groups})
+			assert.False(t, authorizer.isAllowed(ctx, "clickhouse", "clickhouse-raw"))
+			assert.Empty(t, authorizer.FilterDatasources(ctx, resp).ClickHouse)
+		})
+	}
+}
+
 func TestDatasourceVariantsRejectTopLevelBackendFields(t *testing.T) {
 	t.Parallel()
 
@@ -335,7 +378,7 @@ func TestDatasourceVariantsRejectTopLevelBackendFields(t *testing.T) {
 					},
 				},
 			},
-			wantErr: "clickhouse[0] cannot mix variants with top-level backend fields",
+			wantErr: `clickhouse[0] "mixed" cannot mix top-level backend fields with variants`,
 		},
 		{
 			name: "prometheus",
@@ -351,7 +394,7 @@ func TestDatasourceVariantsRejectTopLevelBackendFields(t *testing.T) {
 					},
 				},
 			},
-			wantErr: "prometheus[0] cannot mix variants with top-level backend fields",
+			wantErr: `prometheus[0] "mixed" cannot mix top-level backend fields with variants`,
 		},
 		{
 			name: "loki",
@@ -367,7 +410,22 @@ func TestDatasourceVariantsRejectTopLevelBackendFields(t *testing.T) {
 					},
 				},
 			},
-			wantErr: "loki[0] cannot mix variants with top-level backend fields",
+			wantErr: `loki[0] "mixed" cannot mix top-level backend fields with variants`,
+		},
+		{
+			name: "top-level allowed_orgs",
+			cfg: ServerConfig{
+				Auth: AuthConfig{Mode: AuthModeNone},
+				Prometheus: []PrometheusInstanceConfig{
+					{
+						BaseDatasourceConfig: BaseDatasourceConfig{Name: "mixed", AllowedOrgs: []string{"ethpandaops:Core"}},
+						Variants: []PrometheusInstanceVariantConfig{
+							{URL: "https://variant.example.com"},
+						},
+					},
+				},
+			},
+			wantErr: `prometheus[0] "mixed" cannot set top-level allowed_orgs with variants`,
 		},
 	}
 
@@ -380,6 +438,115 @@ func TestDatasourceVariantsRejectTopLevelBackendFields(t *testing.T) {
 			err := tt.cfg.Validate()
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+}
+
+func TestDatasourceVariantMiddlewareRoutesToSelectedBackend(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name       string
+		path       string
+		datasource string
+		config     func(internal, external *httptest.Server) ServerConfig
+	}{
+		{
+			name:       "clickhouse",
+			path:       "/clickhouse",
+			datasource: "clickhouse-raw",
+			config: func(internal, external *httptest.Server) ServerConfig {
+				internalHost, internalPort := clickHouseServerAddr(t, internal)
+				externalHost, externalPort := clickHouseServerAddr(t, external)
+
+				return ServerConfig{
+					Auth: AuthConfig{Mode: AuthModeNone},
+					ClickHouse: []ClickHouseClusterConfig{
+						{
+							BaseDatasourceConfig: BaseDatasourceConfig{Name: "clickhouse-raw"},
+							Variants: []ClickHouseClusterVariantConfig{
+								{AllowedOrgs: []string{"ethpandaops:Core"}, Host: internalHost, Port: internalPort, Username: "internal", Password: "secret"},
+								{Host: externalHost, Port: externalPort, Username: "external", Password: "secret"},
+							},
+						},
+					},
+				}
+			},
+		},
+		{
+			name:       "prometheus",
+			path:       "/prometheus",
+			datasource: "prometheus-main",
+			config: func(internal, external *httptest.Server) ServerConfig {
+				return ServerConfig{
+					Auth: AuthConfig{Mode: AuthModeNone},
+					Prometheus: []PrometheusInstanceConfig{
+						{
+							BaseDatasourceConfig: BaseDatasourceConfig{Name: "prometheus-main"},
+							Variants: []PrometheusInstanceVariantConfig{
+								{AllowedOrgs: []string{"ethpandaops:Core"}, URL: internal.URL, Username: "internal"},
+								{URL: external.URL, Username: "external"},
+							},
+						},
+					},
+				}
+			},
+		},
+		{
+			name:       "loki",
+			path:       "/loki",
+			datasource: "loki-main",
+			config: func(internal, external *httptest.Server) ServerConfig {
+				return ServerConfig{
+					Auth: AuthConfig{Mode: AuthModeNone},
+					Loki: []LokiInstanceConfig{
+						{
+							BaseDatasourceConfig: BaseDatasourceConfig{Name: "loki-main"},
+							Variants: []LokiInstanceVariantConfig{
+								{AllowedOrgs: []string{"ethpandaops:Core"}, URL: internal.URL, Username: "internal"},
+								{URL: external.URL, Username: "external"},
+							},
+						},
+					},
+				}
+			},
+		},
+	} {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			internal := upstreamAuthServer("internal")
+			defer internal.Close()
+
+			external := upstreamAuthServer("external")
+			defer external.Close()
+
+			cfg := tt.config(internal, external)
+			cfg.ApplyDefaults()
+
+			srv, err := newServer(logrus.New(), cfg, "http://proxy.test", "18081")
+			require.NoError(t, err)
+
+			for _, reqCase := range []struct {
+				name   string
+				groups []string
+				want   string
+			}{
+				{name: "core", groups: []string{"ethpandaops:Core"}, want: "internal:internal"},
+				{name: "catch-all", groups: []string{"other-org"}, want: "external:external"},
+			} {
+				reqCase := reqCase
+				t.Run(reqCase.name, func(t *testing.T) {
+					rec := httptest.NewRecorder()
+					req := requestWithProxyUser(http.MethodGet, tt.path, reqCase.groups)
+					req.Header.Set("X-Datasource", tt.datasource)
+					srv.mux.ServeHTTP(rec, req)
+
+					require.Equal(t, http.StatusOK, rec.Code)
+					assert.Equal(t, reqCase.want, rec.Body.String())
+				})
+			}
 		})
 	}
 }
@@ -414,6 +581,25 @@ func TestAuthorizerEthnode(t *testing.T) {
 	req = requestWithProxyUser(http.MethodGet, "/beacon/mainnet/lighthouse/eth/v1/node/version", []string{"other"})
 	srv.mux.ServeHTTP(rec, req)
 	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func upstreamAuthServer(label string) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		username, _, _ := r.BasicAuth()
+		_, _ = w.Write([]byte(label + ":" + username))
+	}))
+}
+
+func clickHouseServerAddr(t *testing.T, srv *httptest.Server) (string, int) {
+	t.Helper()
+
+	host, portValue, err := net.SplitHostPort(srv.Listener.Addr().String())
+	require.NoError(t, err)
+
+	port, err := strconv.Atoi(portValue)
+	require.NoError(t, err)
+
+	return host, port
 }
 
 func clickHouseUsernameForRoute(configs []handlers.ClickHouseConfig, authorizer *Authorizer, ctx context.Context) string {
