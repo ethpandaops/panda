@@ -152,6 +152,57 @@ func TestRunServerRestartLogsAndWaitsForHealth(t *testing.T) {
 	)
 }
 
+func TestRunServerStartLogsAndWaitsForHealth(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/health" {
+			http.NotFound(w, r)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	setClientConfig(t, server.URL)
+	setServerHealthWaitIntervals(t, time.Millisecond, time.Hour)
+
+	originalComposeFile := composeFile
+	originalRunner := dockerComposeRunner
+	composeFile = filepath.Join(t.TempDir(), "docker-compose.yaml")
+
+	var runnerCalls atomic.Int32
+	var runnerCompose string
+	var runnerArgs []string
+	dockerComposeRunner = func(compose string, args ...string) error {
+		runnerCalls.Add(1)
+		runnerCompose = compose
+		runnerArgs = append([]string(nil), args...)
+
+		return nil
+	}
+
+	t.Cleanup(func() {
+		composeFile = originalComposeFile
+		dockerComposeRunner = originalRunner
+	})
+
+	cmd := &cobra.Command{}
+
+	output := captureStdout(t, func() {
+		err := runServerStart(cmd, nil)
+		require.NoError(t, err)
+	})
+
+	assert.Equal(t, int32(1), runnerCalls.Load())
+	assert.Equal(t, composeFile, runnerCompose)
+	assert.Equal(t, []string{"up", "-d", "--force-recreate"}, runnerArgs)
+	assertContainsInOrder(t, output,
+		"Starting server...",
+		"Waiting for server to become healthy...",
+		"Server ready.",
+	)
+}
+
 func setClientConfig(t *testing.T, serverURL string) {
 	t.Helper()
 

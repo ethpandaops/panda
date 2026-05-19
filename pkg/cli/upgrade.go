@@ -221,7 +221,12 @@ func upgradeServer() error {
 
 	fmt.Println("Restarting server...")
 
-	return runDockerCompose(compose, "up", "-d")
+	return runComposeAndWait(
+		context.Background(),
+		compose,
+		[]string{"up", "-d"},
+		defaultServerHealthWaitTimeout,
+	)
 }
 
 // regenerateComposeFile overwrites the docker-compose.yaml with the

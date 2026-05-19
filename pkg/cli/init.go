@@ -75,7 +75,7 @@ func init() {
 		"manual auth flow for SSH/headless environments (auto-detected over SSH)")
 }
 
-func runInit(_ *cobra.Command, _ []string) error {
+func runInit(cmd *cobra.Command, _ []string) error {
 	// 1. Docker check and image pulls.
 	if !initSkipDocker {
 		if err := checkDockerAndPullImages(); err != nil {
@@ -174,13 +174,17 @@ func runInit(_ *cobra.Command, _ []string) error {
 		fmt.Println()
 		fmt.Println("Starting server...")
 
-		if err := runDockerCompose(resolveComposeFile(), "up", "-d", "--force-recreate"); err != nil {
+		if err := runComposeAndWait(
+			commandContext(cmd),
+			resolveComposeFile(),
+			[]string{"up", "-d", "--force-recreate"},
+			defaultServerHealthWaitTimeout,
+		); err != nil {
 			return fmt.Errorf("starting server: %w", err)
 		}
 
 		fmt.Println()
-		fmt.Println("Server is starting at http://localhost:2480")
-		fmt.Println("Run 'panda server status' to check health")
+		fmt.Println("Server available at http://localhost:2480")
 		fmt.Println("Run 'panda datasources' to list available datasources")
 	}
 

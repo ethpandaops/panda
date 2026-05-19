@@ -101,8 +101,15 @@ func init() {
 	)
 }
 
-func runServerStart(_ *cobra.Command, _ []string) error {
-	return runDockerCompose(resolveComposeFile(), "up", "-d", "--force-recreate")
+func runServerStart(cmd *cobra.Command, _ []string) error {
+	fmt.Println("Starting server...")
+
+	return runComposeAndWait(
+		commandContext(cmd),
+		resolveComposeFile(),
+		[]string{"up", "-d", "--force-recreate"},
+		defaultServerHealthWaitTimeout,
+	)
 }
 
 func runServerStop(_ *cobra.Command, _ []string) error {
@@ -116,19 +123,12 @@ func runServerStop(_ *cobra.Command, _ []string) error {
 func runServerRestart(cmd *cobra.Command, _ []string) error {
 	fmt.Println("Restarting server...")
 
-	if err := dockerComposeRunner(resolveComposeFile(), "restart"); err != nil {
-		return err
-	}
-
-	fmt.Println("Waiting for server to become healthy...")
-
-	if err := waitForServerHealth(commandContext(cmd), defaultServerHealthWaitTimeout); err != nil {
-		return err
-	}
-
-	fmt.Println("Server ready.")
-
-	return nil
+	return runComposeAndWait(
+		commandContext(cmd),
+		resolveComposeFile(),
+		[]string{"restart"},
+		defaultServerHealthWaitTimeout,
+	)
 }
 
 func runServerStatus(cmd *cobra.Command, _ []string) error {
@@ -276,6 +276,22 @@ func waitForServerHealth(ctx context.Context, timeout time.Duration) error {
 	}
 }
 
+func runComposeAndWait(ctx context.Context, composeFile string, composeArgs []string, timeout time.Duration) error {
+	if err := dockerComposeRunner(composeFile, composeArgs...); err != nil {
+		return err
+	}
+
+	fmt.Println("Waiting for server to become healthy...")
+
+	if err := waitForServerHealth(ctx, timeout); err != nil {
+		return err
+	}
+
+	fmt.Println("Server ready.")
+
+	return nil
+}
+
 func commandContext(cmd *cobra.Command) context.Context {
 	if cmd != nil && cmd.Context() != nil {
 		return cmd.Context()
@@ -407,25 +423,21 @@ func restartServerIfRunning() {
 		return
 	}
 
-	cfg, err := config.LoadClient(cfgFile)
-	if err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	if err := checkServerHealth(ctx); err != nil {
 		return
 	}
-
-	healthURL := strings.TrimRight(cfg.ServerURL(), "/") + "/health"
-
-	client := &http.Client{Timeout: 3 * time.Second}
-
-	resp, err := client.Get(healthURL) //nolint:noctx // quick reachability check
-	if err != nil {
-		return
-	}
-
-	_ = resp.Body.Close()
 
 	fmt.Println("Restarting server to pick up new credentials...")
 
-	if err := runDockerCompose(compose, "restart"); err != nil {
+	if err := runComposeAndWait(
+		context.Background(),
+		compose,
+		[]string{"restart"},
+		defaultServerHealthWaitTimeout,
+	); err != nil {
 		log.WithError(err).Warn("Failed to restart server")
 	}
 }

@@ -59,7 +59,7 @@ func init() {
 	rootCmd.AddCommand(configTUICmd)
 }
 
-func runConfigTUI(_ *cobra.Command, _ []string) error {
+func runConfigTUI(cmd *cobra.Command, _ []string) error {
 	resolvedPath, err := configpath.ResolveAppConfigPath(cfgFile)
 	if err != nil {
 		return fmt.Errorf("no config found — run 'panda init' first: %w", err)
@@ -99,7 +99,12 @@ func runConfigTUI(_ *cobra.Command, _ []string) error {
 	if promptConfirm("Restart server to apply changes?") {
 		fmt.Println("Restarting server...")
 
-		return runDockerCompose(compose, "restart")
+		return runComposeAndWait(
+			commandContext(cmd),
+			compose,
+			[]string{"restart"},
+			defaultServerHealthWaitTimeout,
+		)
 	}
 
 	fmt.Println("Run 'panda server restart' to apply changes.")
