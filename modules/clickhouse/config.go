@@ -26,7 +26,7 @@ type SchemaDiscoveryDatasource struct {
 	// Name references a ClickHouse datasource by its proxy name.
 	Name string `yaml:"name"`
 
-	// Cluster is the logical cluster name used in schema resources (e.g., "xatu", "xatu-cbt").
+	// Cluster is the logical cluster name used in schema resources (e.g., "clickhouse-raw", "clickhouse-refined").
 	// Defaults to Name when empty.
 	Cluster string `yaml:"cluster"`
 }

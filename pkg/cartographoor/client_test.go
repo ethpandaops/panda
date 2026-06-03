@@ -83,9 +83,9 @@ func TestClientClusters(t *testing.T) {
 
 	devnet := discovery.Network{Repository: "ethpandaops/fusaka-devnets"}
 	assert.True(t, c.IsDevnet(devnet))
-	assert.Equal(t, []string{"xatu-experimental", "xatu-cbt"}, c.GetClusters(devnet))
+	assert.Equal(t, []string{"xatu-experimental", "clickhouse-refined"}, c.GetClusters(devnet))
 
 	mainnet := discovery.Network{Repository: "ethereum/mainnet"}
 	assert.False(t, c.IsDevnet(mainnet))
-	assert.Equal(t, []string{"xatu", "xatu-cbt"}, c.GetClusters(mainnet))
+	assert.Equal(t, []string{"clickhouse-raw", "clickhouse-refined"}, c.GetClusters(mainnet))
 }

@@ -55,9 +55,10 @@ that module commands cannot provide.
 ` + "```" + `
 panda execute --code '
 from ethpandaops import clickhouse
-df = clickhouse.query("xatu-cbt", """
+df = clickhouse.query("clickhouse-refined", """
     SELECT slot, proposer_index
-    FROM mainnet.fct_block_canonical
+    FROM mainnet.fct_block_head FINAL
+    WHERE slot_start_date_time >= now() - INTERVAL 1 HOUR
     ORDER BY slot DESC
     LIMIT 5
 """)
@@ -85,7 +86,7 @@ const gettingStartedFooterMCP = `
 **Example - Multi-step workflow:**
 ` + "```python" + `
 # Call 1: Query and SAVE to workspace
-df = clickhouse.query("xatu-cbt", "SELECT ...")
+df = clickhouse.query("clickhouse-refined", "SELECT ...")
 df.to_parquet("/workspace/data.parquet")  # Persist!
 ` + "```" + `
 
@@ -114,7 +115,7 @@ const gettingStartedFooterCLI = `
 **Example — Multi-step workflow:**
 ` + "```" + `
 panda execute --code '
-df = clickhouse.query("xatu-cbt", "SELECT ...")
+df = clickhouse.query("clickhouse-refined", "SELECT ...")
 df.to_parquet("/workspace/data.parquet")
 '
 ` + "```" + `

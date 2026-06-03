@@ -14,7 +14,7 @@ Example usage:
 
     # List available ClickHouse clusters
     clusters = clickhouse.list_datasources()
-    cluster_name = clusters[0]['name']  # e.g., "xatu"
+    cluster_name = clusters[0]['name']  # e.g., "clickhouse-raw"
 
     # Query ClickHouse using cluster name
     df = clickhouse.query(cluster_name, "SELECT * FROM beacon_api_eth_v1_events_block LIMIT 10")

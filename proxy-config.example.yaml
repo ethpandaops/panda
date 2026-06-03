@@ -71,8 +71,8 @@ auth:
 
 # ClickHouse clusters
 clickhouse:
-  - name: xatu
-    description: "Main Xatu ClickHouse cluster"
+  - name: clickhouse-raw
+    description: "Raw ClickHouse cluster with raw Ethereum event data"
     host: "${CLICKHOUSE_HOST}"
     port: 8443
     database: default

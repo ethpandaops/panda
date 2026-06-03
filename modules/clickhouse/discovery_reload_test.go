@@ -25,18 +25,18 @@ func TestSchemaClient_UpdateDatasources_TriggersRefresh(t *testing.T) {
 	client := &clickhouseSchemaClient{
 		log:         log.WithField("test", "true"),
 		clusters:    make(map[string]*ClusterTables, 1),
-		datasources: map[string]string{"xatu": "xatu"},
+		datasources: map[string]string{"clickhouse-raw": "clickhouse-raw"},
 		refreshNow:  make(chan struct{}, 1),
 	}
 
 	client.UpdateDatasources([]SchemaDiscoveryDatasource{
-		{Name: "xatu", Cluster: "xatu"},
-		{Name: "xatu-cbt", Cluster: "xatu-cbt"},
+		{Name: "clickhouse-raw", Cluster: "clickhouse-raw"},
+		{Name: "clickhouse-refined", Cluster: "clickhouse-refined"},
 	})
 
 	snapshot := client.snapshotDatasources()
-	if len(snapshot) != 2 || snapshot["xatu-cbt"] != "xatu-cbt" {
-		t.Fatalf("snapshotDatasources() = %v, want xatu + xatu-cbt", snapshot)
+	if len(snapshot) != 2 || snapshot["clickhouse-refined"] != "clickhouse-refined" {
+		t.Fatalf("snapshotDatasources() = %v, want clickhouse-raw + clickhouse-refined", snapshot)
 	}
 
 	select {
@@ -60,12 +60,12 @@ func TestSchemaClient_UpdateDatasources_NoChangeSkipsRefresh(t *testing.T) {
 	client := &clickhouseSchemaClient{
 		log:         log.WithField("test", "true"),
 		clusters:    make(map[string]*ClusterTables, 1),
-		datasources: map[string]string{"xatu": "xatu"},
+		datasources: map[string]string{"clickhouse-raw": "clickhouse-raw"},
 		refreshNow:  make(chan struct{}, 1),
 	}
 
 	client.UpdateDatasources([]SchemaDiscoveryDatasource{
-		{Name: "xatu", Cluster: "xatu"},
+		{Name: "clickhouse-raw", Cluster: "clickhouse-raw"},
 	})
 
 	select {
@@ -90,8 +90,8 @@ func TestModule_OnDiscoveryReloaded_PushesDatasourcesToSchemaClient(t *testing.T
 	// Simulate the proxy discovery hook updating p.datasources.
 	mod.dsMu.Lock()
 	mod.datasources = []types.DatasourceInfo{
-		{Type: "clickhouse", Name: "xatu"},
-		{Type: "clickhouse", Name: "xatu-cbt"},
+		{Type: "clickhouse", Name: "clickhouse-raw"},
+		{Type: "clickhouse", Name: "clickhouse-refined"},
 	}
 	mod.dsMu.Unlock()
 
@@ -103,8 +103,8 @@ func TestModule_OnDiscoveryReloaded_PushesDatasourcesToSchemaClient(t *testing.T
 		t.Fatalf("schema client received %d datasources, want 2", got)
 	}
 
-	if fake.lastUpdate[0].Name != "xatu" || fake.lastUpdate[1].Name != "xatu-cbt" {
-		t.Fatalf("schema client received %v, want xatu + xatu-cbt", fake.lastUpdate)
+	if fake.lastUpdate[0].Name != "clickhouse-raw" || fake.lastUpdate[1].Name != "clickhouse-refined" {
+		t.Fatalf("schema client received %v, want clickhouse-raw + clickhouse-refined", fake.lastUpdate)
 	}
 }
 
@@ -119,12 +119,12 @@ func TestModule_OnDiscoveryReloaded_RespectsYAMLConfig(t *testing.T) {
 	mod := New()
 	mod.schemaClient = fake
 	mod.cfg.SchemaDiscovery.Datasources = []SchemaDiscoveryDatasource{
-		{Name: "xatu", Cluster: "xatu"},
+		{Name: "clickhouse-raw", Cluster: "clickhouse-raw"},
 	}
 
 	mod.dsMu.Lock()
 	mod.datasources = []types.DatasourceInfo{
-		{Type: "clickhouse", Name: "xatu"},
+		{Type: "clickhouse", Name: "clickhouse-raw"},
 		{Type: "clickhouse", Name: "new-cluster"},
 	}
 	mod.dsMu.Unlock()
@@ -160,7 +160,7 @@ func TestModule_InitFromDiscovery_AllDisappearClearsList(t *testing.T) {
 	mod := New()
 
 	if err := mod.InitFromDiscovery([]types.DatasourceInfo{
-		{Type: "clickhouse", Name: "xatu"},
+		{Type: "clickhouse", Name: "clickhouse-raw"},
 	}); err != nil {
 		t.Fatalf("initial InitFromDiscovery error = %v", err)
 	}
@@ -191,7 +191,7 @@ func TestSchemaClient_RefreshEmptyDatasourcesClearsStale(t *testing.T) {
 	client := &clickhouseSchemaClient{
 		log: log.WithField("test", "true"),
 		clusters: map[string]*ClusterTables{
-			"xatu": {ClusterName: "xatu", Tables: map[string]*TableSchema{"t": {Name: "t"}}},
+			"clickhouse-raw": {ClusterName: "clickhouse-raw", Tables: map[string]*TableSchema{"t": {Name: "t"}}},
 		},
 		datasources: map[string]string{},
 		refreshNow:  make(chan struct{}, 1),

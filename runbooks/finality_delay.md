@@ -2,7 +2,7 @@
 name: Investigate Finality Delay
 description: Systematic diagnosis of network finality issues when epochs are not finalizing
 tags: [finality, consensus, attestations, incident, epoch, validators]
-prerequisites: [xatu, xatu-cbt, prometheus, dora]
+prerequisites: [clickhouse-raw, clickhouse-refined, prometheus, dora]
 ---
 
 When the network isn't finalizing, you MUST verify current status before deep diving - the issue MAY have self-resolved.
@@ -20,7 +20,7 @@ When the network isn't finalizing, you MUST verify current status before deep di
    print(f"Finalized epoch: {overview.get('finalized_epoch', 'N/A')}")
    ```
 
-2. **Query attestation participation** - If finality is delayed >2 epochs, check participation rates. You MUST use the xatu-cbt cluster for participation queries (pre-aggregated, faster). Use `search(type="examples", query="attestation participation")` for the query pattern.
+2. **Query attestation participation** - If finality is delayed >2 epochs, check participation rates. You MUST use the clickhouse-refined cluster for participation queries (pre-aggregated, faster). Use `search(type="examples", query="attestation participation")` for the query pattern.
 
    Key metrics to check:
    - Target participation rate (should be >66.7% for finality)

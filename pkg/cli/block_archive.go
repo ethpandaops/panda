@@ -13,7 +13,7 @@ var blockArchiveCmd = &cobra.Command{
 	Short:   "Fetch raw beacon blocks from the block archive",
 	Long: `Fetch canonical beacon blocks (SSZ or decoded JSON) from the public block archive.
 
-Block-root lookups are intended to be sourced from clickhouse (xatu) — this
+Block-root lookups are intended to be sourced from clickhouse (clickhouse-raw) — this
 command group is the raw-data fetcher, not a search/index API.
 
 Examples:

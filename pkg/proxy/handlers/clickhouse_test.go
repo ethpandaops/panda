@@ -41,7 +41,7 @@ func TestClickHouseHandlerProxiesViaRewrite(t *testing.T) {
 	require.NoError(t, err)
 
 	h := NewClickHouseHandler(logrus.New(), []ClickHouseConfig{{
-		Name:     "xatu",
+		Name:     "clickhouse-raw",
 		Host:     u.Hostname(),
 		Port:     port,
 		Secure:   false,
@@ -51,7 +51,7 @@ func TestClickHouseHandlerProxiesViaRewrite(t *testing.T) {
 	}})
 
 	req := httptest.NewRequest(http.MethodGet, "/clickhouse/?query=SELECT+1", nil)
-	req.Header.Set(DatasourceHeader, "xatu")
+	req.Header.Set(DatasourceHeader, "clickhouse-raw")
 	req.Header.Set("Authorization", "Bearer sandbox-token")
 	req.RemoteAddr = "203.0.113.9:5555"
 

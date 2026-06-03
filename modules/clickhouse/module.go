@@ -231,7 +231,7 @@ func (p *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 					Signature:   "clickhouse.query(cluster: str, sql: str) -> pandas.DataFrame",
 					Description: "Execute SQL query, return DataFrame",
 					Parameters: map[string]string{
-						"cluster": "'xatu' or 'xatu-cbt' - see panda://getting-started for syntax differences",
+						"cluster": "'clickhouse-raw' or 'clickhouse-refined' - see panda://getting-started for syntax differences",
 						"sql":     "SQL query string",
 					},
 					Returns: "pandas.DataFrame",
@@ -240,7 +240,7 @@ func (p *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 					Signature:   "clickhouse.query_raw(cluster: str, sql: str) -> tuple[list[tuple], list[str]]",
 					Description: "Execute SQL query, return raw tuples",
 					Parameters: map[string]string{
-						"cluster": "'xatu' or 'xatu-cbt'",
+						"cluster": "'clickhouse-raw' or 'clickhouse-refined'",
 						"sql":     "SQL query string",
 					},
 					Returns: "(rows, column_names)",
@@ -258,8 +258,8 @@ Xatu data is split across **TWO clusters** with **DIFFERENT syntax**:
 
 | Cluster | Contains | Table Syntax | Network Filter |
 |---------|----------|--------------|----------------|
-| **xatu** | Raw events | ` + "`FROM table_name`" + ` | ` + "`WHERE meta_network_name = 'mainnet'`" + ` |
-| **xatu-cbt** | Pre-aggregated | ` + "`FROM mainnet.table_name`" + ` | Database prefix IS the filter |
+| **clickhouse-raw** | Raw events | ` + "`FROM table_name`" + ` | ` + "`WHERE meta_network_name = 'mainnet'`" + ` |
+| **clickhouse-refined** | Pre-aggregated | ` + "`FROM mainnet.table_name`" + ` | Database prefix IS the filter |
 
 **Always filter by partition column** (usually ` + "`slot_start_date_time`" + `) to avoid timeouts.
 

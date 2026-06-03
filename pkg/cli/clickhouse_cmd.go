@@ -17,8 +17,8 @@ var clickhouseCmd = &cobra.Command{
 
 Examples:
   panda clickhouse list-datasources
-  panda clickhouse query xatu "SELECT count() FROM beacon_api_eth_v1_events_block WHERE slot_start_date_time > now() - INTERVAL 1 HOUR"
-  panda clickhouse query xatu "SELECT * FROM beacon_api_eth_v1_events_block LIMIT 5" --json`,
+  panda clickhouse query clickhouse-raw "SELECT count() FROM beacon_api_eth_v1_events_block WHERE meta_network_name = 'mainnet' AND slot_start_date_time > now() - INTERVAL 1 HOUR"
+  panda clickhouse query clickhouse-raw "SELECT * FROM beacon_api_eth_v1_events_block WHERE meta_network_name = 'mainnet' AND slot_start_date_time > now() - INTERVAL 1 HOUR LIMIT 5" --json`,
 }
 
 func init() {
@@ -50,12 +50,12 @@ var clickhouseQueryCmd = &cobra.Command{
 	Short: "Execute a SQL query",
 	Long: `Execute a SQL query against a ClickHouse cluster.
 
-The cluster name is typically "xatu" or "xatu-cbt". Use 'panda clickhouse list-datasources'
+The cluster name is typically "clickhouse-raw" or "clickhouse-refined". Use 'panda clickhouse list-datasources'
 to see available clusters.
 
 Examples:
-  panda clickhouse query xatu "SELECT count() FROM beacon_api_eth_v1_events_block LIMIT 1"
-  panda clickhouse query xatu-cbt "SELECT count() FROM mainnet.beacon_api_eth_v1_events_block LIMIT 1"`,
+  panda clickhouse query clickhouse-raw "SELECT count() FROM beacon_api_eth_v1_events_block WHERE meta_network_name = 'mainnet' AND slot_start_date_time > now() - INTERVAL 1 HOUR"
+  panda clickhouse query clickhouse-refined "SELECT count() FROM mainnet.fct_block_head FINAL WHERE slot_start_date_time > now() - INTERVAL 1 HOUR"`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
 		return runClickHouseOperation("clickhouse.query", args[0], args[1], false)

@@ -9,7 +9,7 @@ The first step in debugging a local devnet is discovering what tooling is availa
 
 **The user MUST specify which enclave to debug.** Do NOT assume an enclave — if the user hasn't specified one, ask them before proceeding. You can discover running enclaves with `kurtosis enclave ls`.
 
-**Local devnets do NOT have ClickHouse or xatu.** Do not attempt to use `clickhouse.query()` or any xatu-related datasources — these only exist on remote deployments.
+**Local devnets do NOT have xatu.** Do not attempt to use `clickhouse.query()` or any xatu-related datasources — these only exist on remote deployments.
 
 Refer to the query skill for general API usage patterns (Dora overview, Loki label discovery, direct HTTP calls, Dora link generation, etc.). This runbook only covers the debugging-specific procedure and API calls not in the skill.
 

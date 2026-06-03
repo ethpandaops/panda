@@ -45,12 +45,12 @@ block_archive_fetch:
         msg = block["block"]["message"]
         print(f"proposer={msg['proposer_index']} slot={msg['slot']}")
 
-    - name: Look up the latest archived block from xatu
-      description: Combine xatu (clickhouse) with the block archive to fetch the most recently observed block
+    - name: Look up the latest archived block from clickhouse-raw
+      description: Combine clickhouse-raw with the block archive to fetch the most recently observed block
       query: |
         from ethpandaops import block_archive, clickhouse
 
-        df = clickhouse.query("xatu", """
+        df = clickhouse.query("clickhouse-raw", """
             SELECT slot, block_root
             FROM beacon_api_eth_v1_events_block
             WHERE meta_network_name = 'mainnet'

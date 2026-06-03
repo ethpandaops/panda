@@ -10,7 +10,7 @@ type Runbook struct {
 	Description string `yaml:"description" json:"description"`
 	// Tags are keywords for search (e.g., "finality", "consensus", "attestations").
 	Tags []string `yaml:"tags,omitempty" json:"tags,omitempty"`
-	// Prerequisites lists datasources needed (e.g., "xatu", "prometheus", "dora").
+	// Prerequisites lists datasources needed (e.g., "clickhouse-raw", "prometheus", "dora").
 	Prerequisites []string `yaml:"prerequisites,omitempty" json:"prerequisites,omitempty"`
 	// Content is the markdown body (not from frontmatter).
 	Content string `yaml:"-" json:"content"`

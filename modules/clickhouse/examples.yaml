@@ -8,7 +8,7 @@
 #   examples:
 #     - name: Example Name
 #       description: What this query does
-#       cluster: xatu
+#       cluster: clickhouse-raw
 #       query: |
 #         SELECT ...
 #         FROM table
@@ -19,23 +19,23 @@
 
 block_timing:
   name: Block Timing Analysis
-  description: Queries for analyzing block arrival and propagation times using xatu-cbt aggregated data
+  description: Queries for analyzing block arrival and propagation times using clickhouse-refined aggregated data
   examples:
     - name: Average block arrival time
       description: Get the average block arrival time (seen_slot_start_diff) for recent slots.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           avg(seen_slot_start_diff) as avg_arrival_ms,
           median(seen_slot_start_diff) as median_arrival_ms,
           min(seen_slot_start_diff) as min_arrival_ms,
           max(seen_slot_start_diff) as max_arrival_ms
-        FROM {network}.fct_block_first_seen_by_node
+        FROM {network}.fct_block_first_seen_by_node FINAL
         WHERE slot_start_date_time >= now() - INTERVAL 1 HOUR
 
-    - name: Block arrival time percentiles 
+    - name: Block arrival time percentiles
       description: Get percentile distribution of block arrival times.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           quantile(0.05)(seen_slot_start_diff) as p5_ms,
@@ -43,44 +43,44 @@ block_timing:
           quantile(0.50)(seen_slot_start_diff) as p50_ms,
           quantile(0.75)(seen_slot_start_diff) as p75_ms,
           quantile(0.95)(seen_slot_start_diff) as p95_ms
-        FROM {network}.fct_block_first_seen_by_node
+        FROM {network}.fct_block_first_seen_by_node FINAL
         WHERE slot_start_date_time >= now() - INTERVAL 1 HOUR
 
-    - name: Block arrival time for last N slots 
+    - name: Block arrival time for last N slots
       description: Get block arrival stats aggregated per slot for the last 1000 slots.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           slot,
           min(seen_slot_start_diff) as arrival_time_ms,
           count() as observations
-        FROM {network}.fct_block_first_seen_by_node
+        FROM {network}.fct_block_first_seen_by_node FINAL
         WHERE slot_start_date_time >= now() - INTERVAL 4 HOUR
-          AND slot >= (SELECT max(slot) - 999 FROM {network}.fct_block_first_seen_by_node WHERE slot_start_date_time >= now() - INTERVAL 4 HOUR)
+          AND slot >= (SELECT max(slot) - 999 FROM {network}.fct_block_first_seen_by_node FINAL WHERE slot_start_date_time >= now() - INTERVAL 4 HOUR)
         GROUP BY slot
         ORDER BY slot DESC
 
-    - name: Block arrival by consensus client 
+    - name: Block arrival by consensus client
       description: Compare block arrival times across different consensus clients.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           meta_consensus_implementation as client,
           avg(seen_slot_start_diff) as avg_arrival_ms,
           quantile(0.95)(seen_slot_start_diff) as p95_arrival_ms,
           count() as observations
-        FROM {network}.fct_block_first_seen_by_node
+        FROM {network}.fct_block_first_seen_by_node FINAL
         WHERE slot_start_date_time >= now() - INTERVAL 1 HOUR
         GROUP BY client
         ORDER BY avg_arrival_ms
 
 block_properties:
   name: Block Properties (Execution Payload)
-  description: Queries for analyzing block-level execution payload properties (gas, size, transactions) using the fct_block_head table on xatu-cbt. Use fct_block_head for canonical block properties — NOT canonical_execution_block, fct_prepared_block, or fct_execution_block.
+  description: Queries for analyzing block-level execution payload properties (gas, size, transactions) using the fct_block_head table on clickhouse-refined. Use fct_block_head for canonical block properties — NOT canonical_execution_block, fct_prepared_block, or fct_execution_block.
   examples:
     - name: Average gas used per block
       description: Get the average gas used per block over a recent time window. Use fct_block_head which contains execution_payload_gas_used.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           COUNT() AS block_count,
@@ -93,7 +93,7 @@ block_properties:
 
     - name: Gas used per block over time
       description: Track gas usage per slot over time using fct_block_head.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           slot,
@@ -107,7 +107,7 @@ block_properties:
 
     - name: Block size statistics
       description: Get block size statistics (in bytes) from fct_block_head. Use this for max/avg/min block size queries.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           COUNT() AS block_count,
@@ -120,11 +120,11 @@ block_properties:
 
 block_status:
   name: Block Status (Orphans & Reorgs)
-  description: Queries for analyzing orphaned and reorged blocks using the fct_block table on xatu-cbt. Use fct_block for orphan/reorg queries — it has a `status` column with values like 'canonical' and 'orphaned'. Do NOT use fct_block_canonical or fct_block_head for orphan detection. Note that fct_block does NOT include missed slots — only blocks that were actually produced.
+  description: Queries for analyzing orphaned and reorged blocks using the fct_block table on clickhouse-refined. Use fct_block for orphan/reorg queries — it has a `status` column with values like 'canonical' and 'orphaned'. Do NOT use fct_block_canonical or fct_block_head for orphan detection. Note that fct_block does NOT include missed slots — only blocks that were actually produced.
   examples:
     - name: Orphaned block count
       description: Count orphaned (reorged) blocks over a time window using fct_block. Filter on status = 'orphaned'.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           count() AS orphaned_blocks
@@ -134,7 +134,7 @@ block_status:
 
     - name: Orphaned blocks over time
       description: Track orphaned blocks per hour using fct_block.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           toStartOfHour(slot_start_date_time) AS hour,
@@ -148,7 +148,7 @@ block_status:
 
     - name: Investigate a specific orphaned block
       description: Investigate why a specific block was orphaned by checking its status in fct_block and arrival timing in fct_block_first_seen_by_node. Use fct_block for finalized chain analysis (has status column), fct_block_first_seen_by_node for when nodes saw it.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           b.slot,
@@ -162,34 +162,49 @@ block_status:
           AVG(t.seen_slot_start_diff) AS avg_arrival_ms,
           MAX(t.seen_slot_start_diff) AS last_seen_ms,
           COUNT(DISTINCT t.node_id) AS nodes_observed
-        FROM {network}.fct_block b FINAL
-        LEFT JOIN {network}.fct_block_first_seen_by_node t FINAL ON b.slot = t.slot AND b.block_root = t.block_root
-        WHERE b.slot = 13505944
+        FROM (
+          SELECT slot, status, block_root, parent_root, proposer_index,
+                 execution_payload_transactions_count, execution_payload_blob_gas_used
+          FROM {network}.fct_block FINAL
+          WHERE slot_start_date_time >= now() - INTERVAL 24 HOUR AND status = 'orphaned'
+        ) b
+        GLOBAL LEFT JOIN (
+          SELECT slot, block_root, seen_slot_start_diff, node_id
+          FROM {network}.fct_block_first_seen_by_node FINAL
+          WHERE slot_start_date_time >= now() - INTERVAL 24 HOUR
+        ) t ON b.slot = t.slot AND b.block_root = t.block_root
         GROUP BY b.slot, b.status, b.block_root, b.parent_root, b.proposer_index, tx_count, blob_gas_used
+        ORDER BY b.slot DESC
+        LIMIT 10
 
     - name: Parent distance distribution (stale parent detection)
       description: Detect stale parent usage by measuring the slot gap between blocks and their parents. A parent distance > 1 means missed slots were skipped. Use fct_block with a self-join on parent_root to resolve parent slot.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           child.slot - parent.slot AS parent_distance,
           count() AS block_count,
           count() * 100.0 / sum(count()) OVER () AS percentage
-        FROM {network}.fct_block child FINAL
-        INNER JOIN {network}.fct_block parent FINAL ON child.parent_root = parent.block_root
-        WHERE child.slot_start_date_time >= now() - INTERVAL 24 HOUR
-          AND child.status = 'canonical'
-          AND parent.status = 'canonical'
+        FROM (
+          SELECT slot, parent_root
+          FROM {network}.fct_block FINAL
+          WHERE slot_start_date_time >= now() - INTERVAL 24 HOUR AND status = 'canonical'
+        ) child
+        GLOBAL INNER JOIN (
+          SELECT slot, block_root
+          FROM {network}.fct_block FINAL
+          WHERE slot_start_date_time >= now() - INTERVAL 25 HOUR AND status = 'canonical'
+        ) parent ON child.parent_root = parent.block_root
         GROUP BY parent_distance
         ORDER BY parent_distance
 
 validators:
   name: Validator Analysis
-  description: Queries for analyzing validator counts, status distribution, and balances. Use canonical_beacon_validators on the xatu cluster — it has one row per validator per epoch with status and balance. This single table is sufficient for validator count, status distribution, and balance queries. Do not join to dim_validator_status or fct_validator_balance for simple count/status queries.
+  description: Queries for analyzing validator counts, status distribution, and balances. Use canonical_beacon_validators on the clickhouse-raw cluster — it has one row per validator per epoch with status and balance. This single table is sufficient for validator count, status distribution, and balance queries. Do not join to dim_validator_status or fct_validator_balance for simple count/status queries.
   examples:
     - name: Active validator count for most recent finalized epoch
-      description: Get total count of active validators using canonical_beacon_validators on the xatu cluster. Filter on status = 'active_ongoing' and the latest epoch. This single table has everything needed for validator counts.
-      cluster: xatu
+      description: Get total count of active validators using canonical_beacon_validators on the clickhouse-raw cluster. Filter on status = 'active_ongoing' and the latest epoch. This single table has everything needed for validator counts.
+      cluster: clickhouse-raw
       query: |
         SELECT
           count() as active_validators
@@ -199,8 +214,8 @@ validators:
           AND epoch = (SELECT max(epoch) FROM canonical_beacon_validators WHERE meta_network_name = 'mainnet')
 
     - name: Validator status distribution for most recent finalized epoch
-      description: Count validators grouped by status (active_ongoing, pending_queued, exited_slashed, etc.) using canonical_beacon_validators on the xatu cluster. This table has one row per validator per epoch with the current status — no need to join dim_validator_status which tracks lifecycle transitions, not current state.
-      cluster: xatu
+      description: Count validators grouped by status (active_ongoing, pending_queued, exited_slashed, etc.) using canonical_beacon_validators on the clickhouse-raw cluster. This table has one row per validator per epoch with the current status — no need to join dim_validator_status which tracks lifecycle transitions, not current state.
+      cluster: clickhouse-raw
       query: |
         SELECT
           status,
@@ -213,7 +228,7 @@ validators:
 
     - name: Validator balance statistics for most recent finalized epoch
       description: Get balance distribution of active validators using canonical_beacon_validators. The balance column is in Gwei — divide by 1e9 for ETH.
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         SELECT
           avg(balance) / 1e9 as avg_balance_eth,
@@ -231,7 +246,7 @@ attestations:
   examples:
     - name: Attestation count
       description: Count attestations in the last hour
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         SELECT
           count() as attestation_count,
@@ -242,7 +257,7 @@ attestations:
 
     - name: Attestation propagation time
       description: Analyze attestation propagation delays
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         SELECT
           avg(propagation_slot_start_diff) as avg_propagation_ms,
@@ -254,7 +269,7 @@ attestations:
 
     - name: Average validators per included attestation
       description: Count the average number of validators per included attestation using canonical_beacon_elaborated_attestation. This table has a validators array column — use length(validators) to count participants per attestation.
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         SELECT
           AVG(length(validators)) AS avg_validators_per_attestation,
@@ -270,8 +285,8 @@ network_health:
   description: Queries used for monitoring Ethereum network health, derived from production alerting rules
   examples:
     - name: Attestation participation rate (raw events)
-      description: Calculate the ratio of attesting validators to total validators per slot using raw event data from xatu cluster. For a simpler pre-aggregated approach, use fct_attestation_correctness_head on xatu-cbt instead.
-      cluster: xatu
+      description: Calculate the ratio of attesting validators to total validators per slot using raw event data from clickhouse-raw cluster. For a simpler pre-aggregated approach, use fct_attestation_correctness_head on clickhouse-refined instead.
+      cluster: clickhouse-raw
       query: |
         WITH total_validators AS (
           SELECT
@@ -309,7 +324,7 @@ network_health:
 
     - name: Finalized epoch distance
       description: Calculate the gap between the current head epoch and the finalized epoch. Use beacon_api_eth_v1_events_finalized_checkpoint for the finalized epoch and beacon_api_eth_v1_events_head for the current head epoch.
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         WITH latest_finalized AS (
           SELECT MAX(epoch) AS finalized_epoch
@@ -331,7 +346,7 @@ network_health:
 
     - name: Data pipeline health check
       description: Verify the data pipeline is healthy by checking for sufficient client diversity and event volume. Used as a guard condition before other alerts fire.
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         SELECT
           COUNT(DISTINCT meta_client_name) AS distinct_clients,
@@ -341,9 +356,9 @@ network_health:
         WHERE slot_start_date_time >= now() - INTERVAL 5 MINUTE
           AND meta_network_name = 'mainnet'
 
-    - name: Attestation participation rate 
+    - name: Attestation participation rate
       description: Calculate attestation participation using pre-aggregated correctness data. votes_head shows attestations for the current slot's block vs votes_max (total scheduled).
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           slot_start_date_time,
@@ -359,7 +374,7 @@ network_health:
 
     - name: Attestation correctness rate
       description: Calculate the percentage of attestations voting for the correct (head) block vs other blocks. Low correctness may indicate forks or reorgs.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           slot_start_date_time,
@@ -377,7 +392,7 @@ network_health:
 
     - name: Attestation agreement rate
       description: Calculate attestation agreement — what fraction of attestations pointed to the same head block. This is the same as head correctness rate. Use fct_attestation_correctness_head which has votes_head (agreed on head) vs votes_other (disagreed).
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           toStartOfHour(slot_start_date_time) AS hour,
@@ -393,7 +408,7 @@ network_health:
 
     - name: Block arrival time by node
       description: Get block arrival times (seen_slot_start_diff) per node. Useful for identifying slow nodes or network issues.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           slot_start_date_time,
@@ -406,9 +421,9 @@ network_health:
         WHERE slot_start_date_time >= now() - INTERVAL 5 MINUTE
         ORDER BY slot_start_date_time DESC, arrival_time_ms ASC
 
-    - name: Minimum block arrival time per slot 
+    - name: Minimum block arrival time per slot
       description: Get the minimum (fastest) block arrival time per slot across all nodes.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           slot_start_date_time,
@@ -424,7 +439,7 @@ network_health:
 
     - name: Block arrival comparison across consensus clients
       description: Compare block arrival times across consensus client implementations for network health monitoring.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           meta_consensus_implementation AS client,
@@ -440,7 +455,7 @@ network_health:
 
     - name: Block arrival by country
       description: Compare block arrival times across different geographic locations.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           meta_client_geo_country AS country,
@@ -455,9 +470,9 @@ network_health:
         GROUP BY country
         ORDER BY avg_arrival_ms ASC
 
-    - name: Locally built blocks by client 
+    - name: Locally built blocks by client
       description: Track locally prepared/built blocks per consensus client using the pre-aggregated fct_prepared_block table.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           meta_consensus_implementation AS consensus_client,
@@ -471,9 +486,9 @@ network_health:
         GROUP BY consensus_client
         ORDER BY consensus_client
 
-    - name: Validator committee size per slot 
+    - name: Validator committee size per slot
       description: Get the total validators scheduled per slot from committee data.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           slot_start_date_time,
@@ -485,9 +500,9 @@ network_health:
         GROUP BY slot_start_date_time, slot
         ORDER BY slot_start_date_time DESC
 
-    - name: Epoch participation summary 
+    - name: Epoch participation summary
       description: Summarize attestation participation per epoch using pre-aggregated data.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           epoch,
@@ -500,12 +515,13 @@ network_health:
           SUM(votes_head) / SUM(votes_head + votes_other) AS correctness_rate
         FROM {network}.fct_attestation_correctness_head FINAL
         WHERE epoch_start_date_time >= now() - INTERVAL 1 DAY
+          AND slot_start_date_time >= now() - INTERVAL 1 DAY
         GROUP BY epoch, epoch_start_date_time
         ORDER BY epoch DESC
 
     - name: Missed slots count
       description: Count missed slots (where no block was proposed) in a time window. Uses fct_block_head alone — compare the expected slot range to actual slots present. No join to proposer entity needed for a simple count.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           (max(slot) - min(slot) + 1) AS total_slots_in_range,
@@ -517,7 +533,7 @@ network_health:
 
     - name: Missed slots per hour
       description: Track missed slot rate per hour using fct_block_head. Each hour has 300 expected slots (3600s / 12s).
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           toStartOfHour(slot_start_date_time) AS hour,
@@ -536,7 +552,7 @@ entity_analysis:
   examples:
     - name: Entity attestation liveness ranking
       description: Rank staking entities by attestation liveness (attestations vs missed).
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           entity,
@@ -551,7 +567,7 @@ entity_analysis:
 
     - name: Entity attestation liveness over time
       description: Track attestation liveness per entity over time (hourly).
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           toStartOfHour(slot_start_date_time) AS hour,
@@ -567,7 +583,7 @@ entity_analysis:
 
     - name: Entity performance comparison (liveness + correctness)
       description: Compare staking entities by both attestation liveness and head correctness. Use fct_attestation_liveness_by_entity_head for liveness. For entity-level correctness, aggregate fct_attestation_correctness_by_validator_head joined with ethseer_validator_entity (there is no pre-aggregated correctness-by-entity table).
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         WITH liveness AS (
           SELECT
@@ -585,9 +601,16 @@ entity_analysis:
             countIf(c.slot_distance = 0) AS correct_head_votes,
             count() AS total_votes,
             correct_head_votes / total_votes AS correctness_rate
-          FROM {network}.fct_attestation_correctness_by_validator_head c FINAL
-          INNER JOIN {network}.ethseer_validator_entity e FINAL ON c.attesting_validator_index = e.index
-          WHERE c.slot_start_date_time >= now() - INTERVAL 1 DAY
+          FROM (
+            SELECT slot_distance, attesting_validator_index
+            FROM {network}.fct_attestation_correctness_by_validator_head FINAL
+            WHERE slot_start_date_time >= now() - INTERVAL 1 DAY
+          ) c
+          GLOBAL INNER JOIN (
+            SELECT validator_index, source AS entity
+            FROM {network}.dim_node FINAL
+            WHERE validator_index > 0
+          ) e ON c.attesting_validator_index = e.validator_index
           GROUP BY e.entity
         )
         SELECT
@@ -603,7 +626,7 @@ entity_analysis:
 
     - name: Entity block proposals
       description: Count block proposals per staking entity.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           entity,
@@ -618,7 +641,7 @@ entity_analysis:
 
     - name: Entity missed slots
       description: Identify entities with missed block proposals by comparing scheduled vs proposed.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         WITH scheduled AS (
           SELECT
@@ -632,9 +655,16 @@ entity_analysis:
           SELECT
             e.entity,
             COUNT() AS proposed_blocks
-          FROM {network}.fct_block_proposer_entity e FINAL
-          INNER JOIN {network}.fct_block_head b FINAL ON e.slot = b.slot
-          WHERE e.slot_start_date_time >= now() - INTERVAL 1 DAY
+          FROM (
+            SELECT slot, entity
+            FROM {network}.fct_block_proposer_entity FINAL
+            WHERE slot_start_date_time >= now() - INTERVAL 1 DAY
+          ) e
+          GLOBAL INNER JOIN (
+            SELECT slot
+            FROM {network}.fct_block_head FINAL
+            WHERE slot_start_date_time >= now() - INTERVAL 1 DAY
+          ) b ON e.slot = b.slot
           GROUP BY e.entity
         )
         SELECT
@@ -649,7 +679,7 @@ entity_analysis:
 
     - name: Top staking entities by validator count
       description: Estimate validator count per entity from attestation duties.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           entity,
@@ -665,7 +695,7 @@ entity_analysis:
 
     - name: Head vote accuracy by entity vs blob count
       description: Correlate head vote correctness with blob count per entity (e.g., Lido CSM, Rocketpool). Uses fct_attestation_correctness_by_validator_head for per-validator correctness, ethseer_validator_entity to map validators to entities, and fct_block_blob_count_head for blob counts per slot.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         WITH entity_correctness AS (
           SELECT
@@ -673,10 +703,16 @@ entity_analysis:
             e.entity,
             countIf(c.slot_distance = 0) AS correct_head_votes,
             count() AS total_votes
-          FROM {network}.fct_attestation_correctness_by_validator_head c FINAL
-          INNER JOIN {network}.ethseer_validator_entity e FINAL ON c.attesting_validator_index = e.index
-          WHERE c.slot_start_date_time >= now() - INTERVAL 6 HOUR
-            AND e.entity IN ('Lido CSM', 'Rocketpool', 'Solo Staker')
+          FROM (
+            SELECT slot, slot_distance, attesting_validator_index
+            FROM {network}.fct_attestation_correctness_by_validator_head FINAL
+            WHERE slot_start_date_time >= now() - INTERVAL 6 HOUR
+          ) c
+          GLOBAL INNER JOIN (
+            SELECT validator_index, source AS entity
+            FROM {network}.dim_node FINAL
+            WHERE validator_index > 0 AND source IN ('lido', 'rocketpool', 'solo_stakers')
+          ) e ON c.attesting_validator_index = e.validator_index
           GROUP BY c.slot, e.entity
         )
         SELECT
@@ -685,13 +721,17 @@ entity_analysis:
           AVG(ec.correct_head_votes * 100.0 / ec.total_votes) AS avg_head_accuracy_pct,
           count() AS slot_count
         FROM entity_correctness ec
-        INNER JOIN {network}.fct_block_blob_count_head b FINAL ON ec.slot = b.slot
+        GLOBAL INNER JOIN (
+          SELECT slot, blob_count
+          FROM {network}.fct_block_blob_count_head FINAL
+          WHERE slot_start_date_time >= now() - INTERVAL 6 HOUR
+        ) b ON ec.slot = b.slot
         GROUP BY b.blob_count, ec.entity
         ORDER BY b.blob_count, ec.entity
 
     - name: Timing games by entity
       description: Identify entities that consistently propose blocks late (timing games to capture more MEV). Uses fct_block_first_seen_by_node for arrival timing and fct_block_proposer_entity for entity identity. These two tables are sufficient — do not add fct_block_mev_head or fct_prepared_block.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           e.entity,
@@ -699,10 +739,16 @@ entity_analysis:
           quantile(0.50)(b.seen_slot_start_diff) AS p50_arrival_ms,
           quantile(0.95)(b.seen_slot_start_diff) AS p95_arrival_ms,
           COUNT(DISTINCT b.slot) AS slots_proposed
-        FROM {network}.fct_block_first_seen_by_node b FINAL
-        INNER JOIN {network}.fct_block_proposer_entity e FINAL ON b.slot = e.slot
-        WHERE b.slot_start_date_time >= now() - INTERVAL 24 HOUR
-          AND e.entity != 'unknown'
+        FROM (
+          SELECT slot, seen_slot_start_diff
+          FROM {network}.fct_block_first_seen_by_node FINAL
+          WHERE slot_start_date_time >= now() - INTERVAL 24 HOUR
+        ) b
+        GLOBAL INNER JOIN (
+          SELECT slot, entity
+          FROM {network}.fct_block_proposer_entity FINAL
+          WHERE slot_start_date_time >= now() - INTERVAL 24 HOUR AND entity != 'unknown'
+        ) e ON b.slot = e.slot
         GROUP BY e.entity
         HAVING slots_proposed >= 10
         ORDER BY avg_arrival_ms DESC
@@ -710,11 +756,11 @@ entity_analysis:
 
 mev_analysis:
   name: MEV Analysis
-  description: Queries for analyzing MEV (Maximal Extractable Value) activity including relays, builders, and block values. For relay-level market share use fct_block_mev_head (xatu-cbt). For individual bid data (values, builder pubkeys, bid traces) use mev_relay_bid_trace (xatu) — the value column is in wei (UInt256). For validator registrations use mev_relay_validator_registration (xatu). For bid count trends use fct_mev_bid_count_by_relay and fct_mev_bid_count_by_builder (xatu-cbt). For highest bid value timing use fct_mev_bid_highest_value_by_builder_chunked_50ms (xatu-cbt).
+  description: Queries for analyzing MEV (Maximal Extractable Value) activity including relays, builders, and block values. For relay-level market share use fct_block_mev_head (clickhouse-refined). For individual bid data (values, builder pubkeys, bid traces) use mev_relay_bid_trace (clickhouse-raw) — the value column is in wei (UInt256). For validator registrations use mev_relay_validator_registration (clickhouse-raw). For bid count trends use fct_mev_bid_count_by_relay and fct_mev_bid_count_by_builder (clickhouse-refined). For highest bid value timing use fct_mev_bid_highest_value_by_builder_chunked_50ms (clickhouse-refined).
   examples:
     - name: MEV relay activity
       description: Analyze MEV relay bid activity per slot.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           relay_name,
@@ -728,7 +774,7 @@ mev_analysis:
 
     - name: MEV builder activity
       description: Analyze MEV builder bid activity.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           builder_pubkey,
@@ -743,7 +789,7 @@ mev_analysis:
 
     - name: Top MEV builders by total bid value
       description: Rank builders by total bid value in ETH. Use mev_relay_bid_trace which has the actual bid values per builder.
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         SELECT
           builder_pub_key,
@@ -760,7 +806,7 @@ mev_analysis:
 
     - name: MEV block value distribution
       description: Analyze the distribution of MEV block values.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           toStartOfHour(slot_start_date_time) AS hour,
@@ -778,7 +824,7 @@ mev_analysis:
 
     - name: Top MEV blocks by value
       description: Find the highest value MEV blocks.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           slot,
@@ -797,7 +843,7 @@ mev_analysis:
 
     - name: MEV relay market share
       description: Calculate MEV relay market share by delivered blocks.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           arrayJoin(relay_names) AS relay,
@@ -812,7 +858,7 @@ mev_analysis:
 
     - name: Builder market share
       description: Calculate builder market share by block count and value.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           builder_pubkey,
@@ -830,7 +876,7 @@ mev_analysis:
 
     - name: MEV validator registrations per relay
       description: Count unique validators registered with each MEV relay using mev_relay_validator_registration.
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         SELECT
           relay_name,
@@ -844,7 +890,7 @@ mev_analysis:
 
     - name: MEV vs local block comparison
       description: Compare MEV blocks vs locally built blocks in terms of value and gas usage.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         WITH mev_stats AS (
           SELECT
@@ -873,7 +919,7 @@ mev_analysis:
 
     - name: Hourly MEV activity trend
       description: Track MEV activity trends by hour including bid counts and block values.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           toStartOfHour(slot_start_date_time) AS hour,
@@ -888,8 +934,8 @@ mev_analysis:
         ORDER BY hour DESC
 
     - name: MEV bid value distribution
-      description: Distribution of MEV bid values to understand the value spectrum. Uses mev_relay_bid_trace on the xatu cluster which contains individual bid data with value (in wei).
-      cluster: xatu
+      description: Distribution of MEV bid values to understand the value spectrum. Uses mev_relay_bid_trace on the clickhouse-raw cluster which contains individual bid data with value (in wei).
+      cluster: clickhouse-raw
       query: |
         SELECT
           CASE
@@ -913,7 +959,7 @@ head_accuracy:
   examples:
     - name: Head vote accuracy by slot
       description: Calculate the percentage of attestations that voted for the correct head (slot_distance=0) per slot.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           slot_start_date_time,
@@ -931,7 +977,7 @@ head_accuracy:
 
     - name: Head vote accuracy summary
       description: Overall head vote accuracy metrics for a time period.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           COUNT() AS total_attestations,
@@ -945,7 +991,7 @@ head_accuracy:
 
     - name: Slot distance distribution
       description: Distribution of how far behind validators attested (0 = perfect head vote).
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           slot_distance,
@@ -958,7 +1004,7 @@ head_accuracy:
 
     - name: Propagation timing distribution
       description: When attestations were propagated relative to their duty slot (0 = same slot, ideal).
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           propagation_distance,
@@ -971,7 +1017,7 @@ head_accuracy:
 
     - name: Attestation inclusion delay distribution
       description: How many slots after the attestation duty it was included in a block (1 = optimal).
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           inclusion_distance,
@@ -985,7 +1031,7 @@ head_accuracy:
 
     - name: Attestation status breakdown
       description: Breakdown of attestation outcomes - canonical (included), missed, orphaned.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           status,
@@ -998,7 +1044,7 @@ head_accuracy:
 
     - name: Head accuracy over time (hourly)
       description: Track head vote accuracy trends by hour.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           toStartOfHour(slot_start_date_time) AS hour,
@@ -1013,7 +1059,7 @@ head_accuracy:
 
     - name: Validators with poor head accuracy
       description: Find validators with below-average head vote accuracy (potential issues).
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           attesting_validator_index,
@@ -1030,7 +1076,7 @@ head_accuracy:
 
     - name: Validators with high inclusion delay
       description: Find validators whose attestations are consistently included late.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           attesting_validator_index,
@@ -1048,7 +1094,7 @@ head_accuracy:
 
     - name: Epoch head accuracy summary
       description: Head vote accuracy aggregated by epoch.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           epoch,
@@ -1059,12 +1105,13 @@ head_accuracy:
           AVG(slot_distance) AS avg_slot_distance
         FROM {network}.fct_attestation_correctness_by_validator_head FINAL
         WHERE epoch_start_date_time >= now() - INTERVAL 1 DAY
+          AND slot_start_date_time >= now() - INTERVAL 1 DAY
         GROUP BY epoch, epoch_start_date_time
         ORDER BY epoch DESC
 
     - name: Slots with low head accuracy
       description: Identify slots where head vote accuracy dropped significantly (potential reorgs or issues).
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           slot_start_date_time,
@@ -1082,7 +1129,7 @@ head_accuracy:
 
     - name: Combined head and inclusion metrics
       description: Comprehensive view combining head accuracy and inclusion timing per slot.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         WITH head_stats AS (
           SELECT
@@ -1116,11 +1163,11 @@ head_accuracy:
 
 blob_analysis:
   name: Blob Analysis
-  description: Queries for analyzing EIP-4844 blob data including blob counts, submitters, and L2 rollup activity. For blob counts and submitter identity, use dim_block_blob_submitter (xatu-cbt). For blob content analysis (empty blobs, blob sizes), use canonical_beacon_blob_sidecar (xatu) which has blob_size and blob_empty_size columns. Cross-cluster joins require two separate queries.
+  description: Queries for analyzing EIP-4844 blob data including blob counts, submitters, and L2 rollup activity. For blob counts and submitter identity, use dim_block_blob_submitter (clickhouse-refined). For blob content analysis (empty blobs, blob sizes), use canonical_beacon_blob_sidecar (clickhouse-raw) which has blob_size and blob_empty_size columns. Cross-cluster joins require two separate queries.
   examples:
     - name: Blob count per slot
       description: Get the number of blobs in each slot.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           slot_start_date_time,
@@ -1132,7 +1179,7 @@ blob_analysis:
 
     - name: Blob count distribution
       description: Distribution of blob counts across slots
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           blob_count,
@@ -1145,7 +1192,7 @@ blob_analysis:
 
     - name: Average blobs per slot over time
       description: Track blob usage trends by hour.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           toStartOfHour(slot_start_date_time) AS hour,
@@ -1160,7 +1207,7 @@ blob_analysis:
 
     - name: Blob submitters ranking
       description: Top blob submitters (L2 rollups and other users) by blob count.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           name,
@@ -1169,13 +1216,14 @@ blob_analysis:
           SUM(length(versioned_hashes)) AS total_blobs
         FROM {network}.dim_block_blob_submitter FINAL
         WHERE updated_date_time >= now() - INTERVAL 1 DAY
+          AND block_number > 0
         GROUP BY name, address
         ORDER BY total_blobs DESC
         LIMIT 20
 
     - name: Blob submitters over time
       description: Track blob submission activity by submitter over time (hourly).
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           toStartOfHour(updated_date_time) AS hour,
@@ -1184,21 +1232,23 @@ blob_analysis:
           SUM(length(versioned_hashes)) AS blobs
         FROM {network}.dim_block_blob_submitter FINAL
         WHERE updated_date_time >= now() - INTERVAL 1 DAY
+          AND block_number > 0
           AND name IS NOT NULL
         GROUP BY hour, name
         ORDER BY hour DESC, blobs DESC
 
     - name: L2 rollup blob market share
       description: Calculate blob market share by L2 rollup/submitter.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           COALESCE(name, 'Unknown') AS submitter,
           SUM(length(versioned_hashes)) AS total_blobs,
           SUM(length(versioned_hashes)) * 100.0 /
-            (SELECT SUM(length(versioned_hashes)) FROM {network}.dim_block_blob_submitter FINAL WHERE updated_date_time >= now() - INTERVAL 1 DAY) AS market_share_pct
+            (SELECT SUM(length(versioned_hashes)) FROM {network}.dim_block_blob_submitter FINAL WHERE updated_date_time >= now() - INTERVAL 1 DAY AND block_number > 0) AS market_share_pct
         FROM {network}.dim_block_blob_submitter FINAL
         WHERE updated_date_time >= now() - INTERVAL 1 DAY
+          AND block_number > 0
         GROUP BY submitter
         ORDER BY total_blobs DESC
 
@@ -1206,7 +1256,7 @@ blob_analysis:
 
     - name: Daily blob statistics
       description: Daily summary of blob activity.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           toDate(slot_start_date_time) AS day,
@@ -1223,7 +1273,7 @@ blob_analysis:
 
     - name: Blob submitter transaction details
       description: Get detailed transaction info for blob submissions.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           updated_date_time,
@@ -1236,12 +1286,13 @@ blob_analysis:
           versioned_hashes
         FROM {network}.dim_block_blob_submitter FINAL
         WHERE updated_date_time >= now() - INTERVAL 1 HOUR
+          AND block_number > 0
         ORDER BY updated_date_time DESC
         LIMIT 50
 
     - name: Empty blob detection
-      description: Find blobs with zero useful data using canonical_beacon_blob_sidecar (xatu cluster). The blob_empty_size column shows how many bytes are empty — when blob_empty_size equals blob_size, the blob is entirely empty. To identify submitters, join these slots to dim_block_blob_submitter on xatu-cbt (separate query, different cluster).
-      cluster: xatu
+      description: Find blobs with zero useful data using canonical_beacon_blob_sidecar (clickhouse-raw cluster). The blob_empty_size column shows how many bytes are empty — when blob_empty_size equals blob_size, the blob is entirely empty. To identify submitters, join these slots to dim_block_blob_submitter on clickhouse-refined (separate query, different cluster).
+      cluster: clickhouse-raw
       query: |
         SELECT
           slot,
@@ -1263,7 +1314,7 @@ data_column_sidecars:
   examples:
     - name: Data column availability by slot
       description: Get data column availability percentage per slot and column index.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           slot,
@@ -1281,7 +1332,7 @@ data_column_sidecars:
 
     - name: Average column availability by index
       description: Average availability percentage for each column index over recent slots.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           column_index,
@@ -1296,7 +1347,7 @@ data_column_sidecars:
 
     - name: Data column availability by epoch
       description: Epoch-level aggregated data column availability statistics.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           epoch,
@@ -1315,7 +1366,7 @@ data_column_sidecars:
 
     - name: Hourly data column availability trend
       description: Hourly trend of data column availability across all columns.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           hour_start_date_time,
@@ -1331,7 +1382,7 @@ data_column_sidecars:
 
     - name: Columns with lowest availability
       description: Find data columns with the lowest availability in recent slots.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           column_index,
@@ -1347,7 +1398,7 @@ data_column_sidecars:
 
     - name: Data column first seen timing
       description: When data columns were first seen across the network.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           slot,
@@ -1364,7 +1415,7 @@ data_column_sidecars:
 
     - name: Data column propagation by consensus client
       description: Compare data column propagation times across consensus clients.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           meta_consensus_implementation AS client,
@@ -1379,7 +1430,7 @@ data_column_sidecars:
 
     - name: Data column propagation by country
       description: Compare data column propagation times across geographic regions.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           meta_client_geo_country AS country,
@@ -1395,7 +1446,7 @@ data_column_sidecars:
 
     - name: Slots with data column availability issues
       description: Find slots where any column had less than 100% availability.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           slot,
@@ -1412,7 +1463,7 @@ data_column_sidecars:
 
     - name: Data column response time distribution
       description: Response time percentiles for data column probes by column index.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           column_index,
@@ -1428,7 +1479,7 @@ data_column_sidecars:
 
     - name: Node custody count per epoch
       description: Calculate how many columns each node is responsible for per epoch. Identifies supernodes (128 custody) vs regular nodes.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           node_id,
@@ -1448,7 +1499,7 @@ data_column_sidecars:
 
     - name: Column spread per slot
       description: Measure time spread between first and last column received per slot per node. High spread indicates slow column acquisition.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           slot,
@@ -1471,7 +1522,7 @@ engine_api:
   examples:
     - name: Engine newPayload duration by slot
       description: Get newPayload execution times per slot.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           slot,
@@ -1491,7 +1542,7 @@ engine_api:
 
     - name: Engine newPayload by execution client
       description: Compare newPayload performance across execution layer clients.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           meta_execution_implementation AS el_client,
@@ -1507,7 +1558,7 @@ engine_api:
 
     - name: Engine newPayload hourly trend by client
       description: Hourly trend of newPayload duration per execution client.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           toStartOfHour(slot_start_date_time) AS hour,
@@ -1522,7 +1573,7 @@ engine_api:
 
     - name: Slowest newPayload executions
       description: Find slots with the slowest newPayload execution times.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           slot,
@@ -1540,7 +1591,7 @@ engine_api:
 
     - name: Engine getBlobs by slot
       description: Get getBlobs call statistics per slot.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           slot,
@@ -1559,7 +1610,7 @@ engine_api:
 
     - name: Engine getBlobs by execution client
       description: Compare getBlobs performance across execution layer clients.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           meta_execution_implementation AS el_client,
@@ -1576,7 +1627,7 @@ engine_api:
 
     - name: Engine API duration percentile distribution
       description: Distribution of newPayload durations in 50ms buckets.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           duration_bucket_ms,
@@ -1589,7 +1640,7 @@ engine_api:
 
     - name: Correlation between gas usage and newPayload duration
       description: Analyze how block gas usage affects newPayload execution time.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           intDiv(gas_used, 1000000) AS gas_millions,
@@ -1605,7 +1656,7 @@ engine_api:
 
     - name: Engine API performance by blob count
       description: Analyze how blob count affects newPayload and getBlobs duration.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           blob_count,
@@ -1619,7 +1670,7 @@ engine_api:
 
     - name: Engine getBlobs success rate distribution
       description: Breakdown of getBlobs call outcomes (SUCCESS, EMPTY, PARTIAL, ERROR). Use fct_engine_get_blobs_by_slot which has a status column with the call result. This table alone answers questions about getBlobs success/failure rates.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           status,
@@ -1637,7 +1688,7 @@ execution_state:
   examples:
     - name: Daily state size growth
       description: Track daily growth of Ethereum state size.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           day_start_date,
@@ -1648,12 +1699,13 @@ execution_state:
           formatReadableSize(storage_bytes) AS storage_size,
           formatReadableSize(contract_code_bytes) AS code_size
         FROM {network}.fct_execution_state_size_daily FINAL
+        WHERE day_start_date >= today() - 90
         ORDER BY day_start_date DESC
         LIMIT 30
 
     - name: Hourly state size growth
       description: Track hourly growth of Ethereum state size.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           hour_start_date_time,
@@ -1662,12 +1714,13 @@ execution_state:
           storages,
           formatReadableSize(storage_bytes) AS storage_size
         FROM {network}.fct_execution_state_size_hourly FINAL
+        WHERE hour_start_date_time >= now() - INTERVAL 7 DAY
         ORDER BY hour_start_date_time DESC
         LIMIT 48
 
     - name: State growth rate
       description: Calculate daily state growth rate over the past week.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           day_start_date,
@@ -1676,13 +1729,14 @@ execution_state:
           accounts - lagInFrame(accounts) OVER (ORDER BY day_start_date) AS accounts_growth,
           storages - lagInFrame(storages) OVER (ORDER BY day_start_date) AS storages_growth
         FROM {network}.fct_execution_state_size_daily FINAL
+        WHERE day_start_date >= today() - 90
         ORDER BY day_start_date DESC
         LIMIT 8
 
 
     - name: State composition breakdown
       description: Breakdown of state size by component type.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           day_start_date,
@@ -1693,17 +1747,18 @@ execution_state:
           formatReadableSize(storage_trienode_bytes) AS storage_tries,
           formatReadableSize(total_bytes) AS total
         FROM {network}.fct_execution_state_size_daily FINAL
+        WHERE day_start_date >= today() - 90
         ORDER BY day_start_date DESC
         LIMIT 1
 
 
 execution_traces:
   name: Execution Trace Analysis (Call Frames, Gas Breakdown)
-  description: Queries for analyzing EVM execution traces using int_transaction_call_frame on xatu-cbt. This table contains one row per call frame per transaction — use it for gas breakdown by contract, precompile usage, call depth analysis, and function-level profiling. Partitioned by block_number — always filter on block_number. For opcode-level gas breakdown within a frame, use int_transaction_call_frame_opcode_gas instead.
+  description: Queries for analyzing EVM execution traces using int_transaction_call_frame on clickhouse-refined. This table contains one row per call frame per transaction — use it for gas breakdown by contract, precompile usage, call depth analysis, and function-level profiling. Partitioned by block_number — always filter on block_number. For opcode-level gas breakdown within a frame, use int_transaction_call_frame_opcode_gas instead.
   examples:
     - name: Precompile gas usage for a block
       description: Rank EVM precompiles by gas consumed in a specific block. Precompile contracts live at addresses 0x01–0x0a. Uses int_transaction_call_frame which has per-frame gas accounting.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           target_address,
@@ -1730,7 +1785,7 @@ execution_traces:
 
     - name: Top gas-consuming contracts in a block
       description: Find the contracts consuming the most gas in a specific block. Uses self gas (excludes child frames) for accurate per-contract attribution.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           target_address,
@@ -1746,7 +1801,7 @@ execution_traces:
 
     - name: Call type distribution for a block range
       description: Breakdown of call types (CALL, DELEGATECALL, STATICCALL, CREATE, etc.) and their gas usage across a block range.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           call_type,
@@ -1764,7 +1819,7 @@ prepared_blocks:
   examples:
     - name: Recent prepared blocks
       description: Get details of recently prepared blocks by local nodes.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           slot,
@@ -1783,7 +1838,7 @@ prepared_blocks:
 
     - name: Prepared blocks by consensus client
       description: Compare block building across consensus clients.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           meta_consensus_implementation AS cl_client,
@@ -1799,7 +1854,7 @@ prepared_blocks:
 
     - name: Prepared blocks by country
       description: Geographic distribution of block preparation.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           meta_client_geo_country AS country,
@@ -1814,7 +1869,7 @@ prepared_blocks:
 
     - name: Block size distribution
       description: Distribution of prepared block sizes.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           intDiv(block_total_bytes, 10000) * 10 AS size_kb_bucket,
@@ -1829,7 +1884,7 @@ prepared_blocks:
 
     - name: High value prepared blocks
       description: Find prepared blocks with highest execution payload values.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           slot,
@@ -1846,7 +1901,7 @@ prepared_blocks:
 
     - name: Block version distribution
       description: Distribution of block versions (deneb, electra, etc).
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           block_version,
@@ -1864,7 +1919,7 @@ node_metadata:
   examples:
     - name: Active nodes summary
       description: Get summary of active sentry nodes in the last 24 hours.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           COUNT() AS total_nodes,
@@ -1872,22 +1927,24 @@ node_metadata:
           countDistinct(meta_client_geo_country) AS unique_countries,
           countDistinct(meta_client_geo_autonomous_system_organization) AS unique_asns
         FROM {network}.fct_node_active_last_24h FINAL
+        WHERE meta_client_name != ''
 
     - name: Nodes by consensus client
       description: Distribution of active nodes by consensus client.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           meta_consensus_implementation AS cl_client,
           COUNT() AS node_count,
           COUNT() * 100.0 / SUM(COUNT()) OVER () AS percentage
         FROM {network}.fct_node_active_last_24h FINAL
+        WHERE meta_client_name != ''
         GROUP BY cl_client
         ORDER BY node_count DESC
 
     - name: Nodes by country
       description: Geographic distribution of active sentry nodes.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           meta_client_geo_country AS country,
@@ -1895,13 +1952,14 @@ node_metadata:
           COUNT() AS node_count,
           COUNT() * 100.0 / SUM(COUNT()) OVER () AS percentage
         FROM {network}.fct_node_active_last_24h FINAL
+        WHERE meta_client_name != ''
         GROUP BY country, country_code
         ORDER BY node_count DESC
         LIMIT 20
 
     - name: Nodes by ASN
       description: Distribution of nodes by autonomous system (hosting provider).
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           meta_client_geo_autonomous_system_organization AS asn_org,
@@ -1909,25 +1967,27 @@ node_metadata:
           COUNT() AS node_count
         FROM {network}.fct_node_active_last_24h FINAL
         WHERE meta_client_geo_autonomous_system_organization IS NOT NULL
+          AND meta_client_name != ''
         GROUP BY asn_org, asn
         ORDER BY node_count DESC
         LIMIT 20
 
     - name: Client version distribution
       description: Distribution of consensus client versions.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           meta_consensus_implementation AS cl_client,
           meta_consensus_version AS version,
           COUNT() AS node_count
         FROM {network}.fct_node_active_last_24h FINAL
+        WHERE meta_client_name != ''
         GROUP BY cl_client, version
         ORDER BY cl_client, node_count DESC
 
     - name: Node classification breakdown
       description: Breakdown of nodes by classification type.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           classification,
@@ -1935,12 +1995,13 @@ node_metadata:
           countDistinct(meta_consensus_implementation) AS unique_clients,
           countDistinct(meta_client_geo_country) AS unique_countries
         FROM {network}.fct_node_active_last_24h FINAL
+        WHERE meta_client_name != ''
         GROUP BY classification
         ORDER BY node_count DESC
 
     - name: Nodes by continent
       description: Distribution of nodes by continent.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           meta_client_geo_continent_code AS continent,
@@ -1948,6 +2009,7 @@ node_metadata:
           countDistinct(meta_client_geo_country) AS countries,
           countDistinct(meta_consensus_implementation) AS cl_clients
         FROM {network}.fct_node_active_last_24h FINAL
+        WHERE meta_client_name != ''
         GROUP BY continent
         ORDER BY node_count DESC
 
@@ -1957,7 +2019,7 @@ mev_bids:
   examples:
     - name: Bids per slot by builder
       description: Total bids submitted per slot by each builder.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           slot,
@@ -1970,7 +2032,7 @@ mev_bids:
 
     - name: Top builders by total bids
       description: Builders ranked by total bid count.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           builder_pubkey,
@@ -1985,7 +2047,7 @@ mev_bids:
 
     - name: Bids per slot by relay
       description: Total bids received per slot by each relay.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           slot,
@@ -1998,7 +2060,7 @@ mev_bids:
 
     - name: Relay bid volume comparison
       description: Compare bid volumes across relays.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           relay_name,
@@ -2013,7 +2075,7 @@ mev_bids:
 
     - name: Highest value bids by timing
       description: Track when highest value bids arrive relative to slot start.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           slot,
@@ -2029,7 +2091,7 @@ mev_bids:
 
     - name: Bid value progression within slot
       description: How bid values increase as slot deadline approaches.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           chunk_slot_start_diff AS timing_ms,
@@ -2043,7 +2105,7 @@ mev_bids:
 
     - name: Builder bid timing patterns
       description: When different builders typically submit their highest bids.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           builder_pubkey,
@@ -2064,7 +2126,7 @@ attestation_propagation:
   examples:
     - name: Attestation arrival distribution
       description: Distribution of attestation arrival times in 50ms buckets.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           chunk_slot_start_diff AS timing_ms,
@@ -2077,7 +2139,7 @@ attestation_propagation:
 
     - name: Attestation arrival by slot
       description: Attestation timing statistics per slot.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           slot,
@@ -2092,7 +2154,7 @@ attestation_propagation:
 
     - name: Attestation observations by node
       description: How each node observes attestations.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           meta_consensus_implementation AS cl_client,
@@ -2108,7 +2170,7 @@ attestation_propagation:
 
     - name: Attestation propagation by consensus client
       description: Compare attestation arrival times across consensus clients.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           meta_consensus_implementation AS cl_client,
@@ -2123,7 +2185,7 @@ attestation_propagation:
 
     - name: Attestation propagation by country
       description: Compare attestation arrival times across countries.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           meta_client_geo_country AS country,
@@ -2139,7 +2201,7 @@ attestation_propagation:
 
     - name: Late attestation analysis
       description: Find slots with late-arriving attestations.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           slot,
@@ -2158,7 +2220,7 @@ head_tracking:
   examples:
     - name: Head adoption timing by slot
       description: When nodes adopt new heads relative to slot start.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           slot,
@@ -2174,7 +2236,7 @@ head_tracking:
 
     - name: Head adoption by consensus client
       description: Compare head adoption timing across consensus clients.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           meta_consensus_implementation AS cl_client,
@@ -2189,7 +2251,7 @@ head_tracking:
 
     - name: Head adoption by country
       description: Compare head adoption timing across countries.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           meta_client_geo_country AS country,
@@ -2205,7 +2267,7 @@ head_tracking:
 
     - name: Slow head adoption events
       description: Find slots where head adoption was unusually slow.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           slot,
@@ -2222,7 +2284,7 @@ head_tracking:
 
     - name: Head adoption by source
       description: Compare head adoption timing by event source.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           source,
@@ -2236,7 +2298,7 @@ head_tracking:
 
     - name: Head adoption variance by slot
       description: Measure how much head adoption timing varies across nodes per slot.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           slot,
@@ -2252,7 +2314,7 @@ head_tracking:
 
     - name: Head adoption by ASN
       description: Compare head adoption timing across hosting providers.
-      cluster: xatu-cbt
+      cluster: clickhouse-refined
       query: |
         SELECT
           meta_client_geo_autonomous_system_organization AS asn_org,
@@ -2272,7 +2334,7 @@ libp2p_gossipsub:
   examples:
     - name: Block gossip propagation timing
       description: Block message propagation times across the gossipsub network.
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         SELECT
           slot,
@@ -2292,7 +2354,7 @@ libp2p_gossipsub:
 
     - name: Block gossip by consensus client
       description: Compare block propagation across consensus client implementations.
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         SELECT
           meta_client_implementation AS client,
@@ -2309,7 +2371,7 @@ libp2p_gossipsub:
 
     - name: Block gossip by country
       description: Geographic distribution of block propagation timing.
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         SELECT
           meta_client_geo_country AS country,
@@ -2326,7 +2388,7 @@ libp2p_gossipsub:
 
     - name: Aggregate and proof gossip propagation timing
       description: Analyze aggregate and proof propagation timing using libp2p_gossipsub_aggregate_and_proof.
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         SELECT
           slot,
@@ -2344,7 +2406,7 @@ libp2p_gossipsub:
 
     - name: Attestation gossip propagation
       description: Attestation propagation times per slot.
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         SELECT
           slot,
@@ -2362,7 +2424,7 @@ libp2p_gossipsub:
 
     - name: Attestation gossip by committee
       description: Attestation propagation breakdown by committee index.
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         SELECT
           committee_index,
@@ -2377,7 +2439,7 @@ libp2p_gossipsub:
 
     - name: Blob sidecar gossip propagation
       description: Blob sidecar propagation times by slot and blob index.
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         SELECT
           slot,
@@ -2396,7 +2458,7 @@ libp2p_gossipsub:
 
     - name: Data column sidecar gossip propagation
       description: Data column sidecar (PeerDAS) propagation times.
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         SELECT
           slot,
@@ -2415,7 +2477,7 @@ libp2p_gossipsub:
 
     - name: Message size by topic
       description: Average message sizes across different gossipsub topics.
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         SELECT
           topic_name,
@@ -2435,7 +2497,7 @@ libp2p_peers:
   examples:
     - name: Peer connections by client
       description: Distribution of connected peers by client implementation.
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         SELECT
           remote_agent_implementation AS peer_client,
@@ -2449,7 +2511,7 @@ libp2p_peers:
 
     - name: Peer connections by country
       description: Geographic distribution of peer connections.
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         SELECT
           remote_geo_country AS country,
@@ -2464,7 +2526,7 @@ libp2p_peers:
 
     - name: Peer connections by ASN
       description: Distribution of peer connections by hosting provider.
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         SELECT
           remote_geo_autonomous_system_organization AS asn_org,
@@ -2480,7 +2542,7 @@ libp2p_peers:
 
     - name: Connection direction breakdown
       description: Inbound vs outbound peer connections.
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         SELECT
           direction,
@@ -2493,7 +2555,7 @@ libp2p_peers:
 
     - name: Client version distribution
       description: Distribution of peer client versions.
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         SELECT
           remote_agent_implementation AS client,
@@ -2508,7 +2570,7 @@ libp2p_peers:
 
     - name: Disconnection events
       description: Recent peer disconnection events.
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         SELECT
           remote_agent_implementation AS peer_client,
@@ -2525,7 +2587,7 @@ libp2p_peers:
 
     - name: Connection churn rate
       description: Compare connection vs disconnection rates over time.
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         SELECT
           toStartOfMinute(event_date_time) AS minute,
@@ -2538,7 +2600,7 @@ libp2p_peers:
 
     - name: Per-node peer count estimate
       description: Estimate the number of connected peers per node by counting connection events in libp2p_connected. Use this to derive peer counts for correlation analysis (e.g., does high peer count improve block arrival time). Join to fct_block_first_seen_by_node on meta_client_name for block timing.
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         SELECT
           meta_client_name,
@@ -2555,7 +2617,7 @@ libp2p_messages:
   examples:
     - name: Message delivery by topic
       description: Message delivery statistics by gossipsub topic.
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         SELECT
           topic_name,
@@ -2571,7 +2633,7 @@ libp2p_messages:
 
     - name: Rejected messages by reason
       description: Message rejection reasons and counts.
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         SELECT
           reason,
@@ -2587,7 +2649,7 @@ libp2p_messages:
 
     - name: Gossipsub duplication factor for aggregates
       description: Calculate the duplication factor for aggregate attestation messages using libp2p_duplicate_message. Filter by topic to isolate aggregate messages.
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         SELECT
           COUNT() AS total_duplicates,
@@ -2600,7 +2662,7 @@ libp2p_messages:
 
     - name: Duplicate messages by topic
       description: Duplicate message statistics by gossipsub topic.
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         SELECT
           topic_name,
@@ -2615,7 +2677,7 @@ libp2p_messages:
 
     - name: Duplication ratio by topic
       description: Calculate message duplication ratio (duplicates vs deliveries).
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         SELECT
           d.topic_name,
@@ -2640,7 +2702,7 @@ libp2p_messages:
 
     - name: Topic join/leave activity
       description: Peer topic subscription changes.
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         SELECT
           topic_name,
@@ -2653,7 +2715,7 @@ libp2p_messages:
 
     - name: Message rejection rate by client
       description: Which clients are rejecting the most messages.
-      cluster: xatu
+      cluster: clickhouse-raw
       query: |
         SELECT
           meta_client_implementation AS client,

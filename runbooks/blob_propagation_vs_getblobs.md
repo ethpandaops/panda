@@ -2,7 +2,7 @@
 name: Blob Propagation vs engine_getBlobs Success
 description: Investigate whether blob gossip propagation timing affects engine_getBlobs success rates
 tags: [blobs, engine_api, gossipsub, propagation, da]
-prerequisites: [xatu, xatu-cbt]
+prerequisites: [clickhouse-raw, clickhouse-refined]
 ---
 
 This runbook investigates the relationship between blob propagation via gossipsub and engine_getBlobs success rates. Because the data lives on two different clusters, you run separate queries and merge in Python.
@@ -11,8 +11,8 @@ This runbook investigates the relationship between blob propagation via gossipsu
 
 | Metric | Table | Cluster | Join Key |
 |--------|-------|---------|----------|
-| getBlobs success/empty rates | `fct_engine_get_blobs_by_slot` | xatu-cbt | `slot` |
-| Blob gossip propagation timing | `libp2p_gossipsub_blob_sidecar` | xatu | `slot` |
+| getBlobs success/empty rates | `fct_engine_get_blobs_by_slot` | clickhouse-refined | `slot` |
+| Blob gossip propagation timing | `libp2p_gossipsub_blob_sidecar` | clickhouse-raw | `slot` |
 
 ## Steps
 
@@ -21,7 +21,7 @@ This runbook investigates the relationship between blob propagation via gossipsu
 ```python
 from ethpandaops import clickhouse
 
-getblobs = clickhouse.query("xatu-cbt", """
+getblobs = clickhouse.query("clickhouse-refined", """
     SELECT
         slot,
         status,
@@ -40,7 +40,7 @@ The `status` column contains values like `SUCCESS` and `EMPTY`. `full_return_pct
 ### 2. Get blob gossip propagation timing per slot
 
 ```python
-propagation = clickhouse.query("xatu", """
+propagation = clickhouse.query("clickhouse-raw", """
     SELECT
         slot,
         AVG(propagation_slot_start_diff) AS avg_blob_propagation_ms,

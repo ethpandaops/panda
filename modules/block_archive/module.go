@@ -151,8 +151,8 @@ from ethpandaops import block_archive, clickhouse
 for n in block_archive.list_networks():
     print(n["name"], n["status"], "polling" if n["polling"] else "")
 
-# Look up a recent block_root for a slot from xatu.
-df = clickhouse.query("xatu", """
+# Look up a recent block_root for a slot from clickhouse-raw.
+df = clickhouse.query("clickhouse-raw", """
     SELECT slot, block_root
     FROM beacon_api_eth_v1_events_block
     WHERE meta_network_name = 'mainnet'

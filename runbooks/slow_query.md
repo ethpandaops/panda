@@ -2,7 +2,7 @@
 name: Diagnose Slow ClickHouse Query
 description: Troubleshoot and optimize slow-running ClickHouse queries
 tags: [clickhouse, performance, query, optimization, debugging]
-prerequisites: [xatu, xatu-cbt]
+prerequisites: [clickhouse-raw, clickhouse-refined]
 ---
 
 When a query runs slowly or times out, you MUST understand the query execution plan before attempting optimization.
@@ -19,14 +19,14 @@ When a query runs slowly or times out, you MUST understand the query execution p
    """
 
    # Get execution plan
-   explain = clickhouse.query("xatu", f"EXPLAIN {slow_query}")
+   explain = clickhouse.query("clickhouse-raw", f"EXPLAIN {slow_query}")
    print(explain)
    ```
 
-2. **Check the target cluster** - Queries against `xatu` (raw events) are significantly slower than `xatu-cbt` (pre-aggregated). You SHOULD prefer xatu-cbt when possible.
+2. **Check the target cluster** - Queries against `clickhouse-raw` (raw events) are significantly slower than `clickhouse-refined` (pre-aggregated). You SHOULD prefer clickhouse-refined when possible.
 
-   - `xatu`: Raw event data, large tables, use for detailed analysis
-   - `xatu-cbt`: Pre-aggregated data, faster queries, use for common metrics
+   - `clickhouse-raw`: Raw event data, large tables, use for detailed analysis
+   - `clickhouse-refined`: Pre-aggregated data, faster queries, use for common metrics
 
 3. **Verify time range** - You MUST use indexed date columns for filtering. Large unbounded queries will be slow.
 
@@ -60,14 +60,14 @@ When a query runs slowly or times out, you MUST understand the query execution p
 | Issue | Symptom | Solution |
 |-------|---------|----------|
 | No date filter | Query scans entire table | Add `WHERE slot_start_date_time >= ...` |
-| Wrong cluster | Slow aggregations | Use xatu-cbt for pre-aggregated data |
+| Wrong cluster | Slow aggregations | Use clickhouse-refined for pre-aggregated data |
 | Large result set | Memory exceeded | Add LIMIT or more specific WHERE |
 | Bad JOIN order | High memory usage | Smaller table on right side of JOIN |
 | String comparison | Slow WHERE clauses | Use numeric IDs when available |
 
 ## Query Optimization Checklist
 
-- [ ] Using correct cluster (xatu vs xatu-cbt)?
+- [ ] Using correct cluster (clickhouse-raw vs clickhouse-refined)?
 - [ ] Time range filter present and uses indexed column?
 - [ ] LIMIT clause to prevent huge result sets?
 - [ ] GROUP BY cardinality reasonable?
@@ -84,11 +84,11 @@ SELECT
 FROM beacon_api_eth_v1_events_block
 GROUP BY meta_client_name
 
--- Fast: Time bounded, using xatu-cbt
+-- Fast: Time bounded, using clickhouse-refined
 SELECT
     meta_client_name,
     count(*) as block_count
-FROM mainnet.fct_block_first_seen_by_node
+FROM mainnet.fct_block_first_seen_by_node FINAL
 WHERE slot_start_date_time >= now() - INTERVAL 24 HOUR
 GROUP BY meta_client_name
 ORDER BY block_count DESC

@@ -645,9 +645,9 @@ func (c *clickhouseSchemaClient) queryJSON(ctx context.Context, datasourceName, 
 }
 
 // fetchTableList fetches the list of tables from a ClickHouse datasource.
-// First tries SHOW TABLES (works for clusters with a default database like xatu).
+// First tries SHOW TABLES (works for clusters with a default database like clickhouse-raw).
 // If that returns 0 rows, falls back to querying system.tables to discover
-// tables across per-network databases (like xatu-cbt).
+// tables across per-network databases (like clickhouse-refined).
 func (c *clickhouseSchemaClient) fetchTableList(ctx context.Context, datasourceName, token string) ([]discoveredTable, error) {
 	tables, err := c.fetchTableListDefault(ctx, datasourceName, token)
 	if err != nil {
@@ -717,7 +717,7 @@ var systemDatabaseBlacklist = map[string]bool{
 
 // fetchTableListFromSystemTables emits one discoveredTable per (database, table)
 // for every non-system database. Used when the cluster's default database is
-// empty (xatu-cbt, observability tier-scoped clusters).
+// empty (clickhouse-refined, observability tier-scoped clusters).
 func (c *clickhouseSchemaClient) fetchTableListFromSystemTables(ctx context.Context, datasourceName, token string) ([]discoveredTable, error) {
 	databases, err := c.fetchDatabases(ctx, datasourceName, token)
 	if err != nil {

@@ -17,11 +17,11 @@ func TestTableURISegments(t *testing.T) {
 		uri  string
 		want []string
 	}{
-		{name: "cluster", uri: "clickhouse://tables/xatu", want: []string{"xatu"}},
-		{name: "cluster and database", uri: "clickhouse://tables/xatu/mainnet", want: []string{"xatu", "mainnet"}},
-		{name: "fully qualified", uri: "clickhouse://tables/xatu/mainnet/fct_block_head", want: []string{"xatu", "mainnet", "fct_block_head"}},
-		{name: "xatu-cbt cluster", uri: "clickhouse://tables/xatu-cbt/mainnet/int_block", want: []string{"xatu-cbt", "mainnet", "int_block"}},
-		{name: "trailing slash invalid", uri: "clickhouse://tables/xatu/", want: nil},
+		{name: "cluster", uri: "clickhouse://tables/clickhouse-raw", want: []string{"clickhouse-raw"}},
+		{name: "cluster and database", uri: "clickhouse://tables/clickhouse-raw/mainnet", want: []string{"clickhouse-raw", "mainnet"}},
+		{name: "fully qualified", uri: "clickhouse://tables/clickhouse-raw/mainnet/fct_block_head", want: []string{"clickhouse-raw", "mainnet", "fct_block_head"}},
+		{name: "clickhouse-refined cluster", uri: "clickhouse://tables/clickhouse-refined/mainnet/int_block", want: []string{"clickhouse-refined", "mainnet", "int_block"}},
+		{name: "trailing slash invalid", uri: "clickhouse://tables/clickhouse-raw/", want: nil},
 		{name: "leading slash invalid", uri: "clickhouse://tables//mainnet", want: nil},
 		{name: "empty after prefix invalid", uri: "clickhouse://tables/", want: nil},
 		{name: "missing prefix", uri: "clickhouse://something/db/table", want: nil},
@@ -73,15 +73,15 @@ func newStubSchemaClient() *stubSchemaClient {
 
 	return &stubSchemaClient{
 		clusters: map[string]*ClusterTables{
-			"xatu": {
-				ClusterName: "xatu",
+			"clickhouse-raw": {
+				ClusterName: "clickhouse-raw",
 				LastUpdated: time.Unix(0, 0).UTC(),
 				Tables: map[string]*TableSchema{
 					tableKey("default", "beacon_blocks"): {Database: "default", Name: "beacon_blocks", Columns: col},
 				},
 			},
-			"xatu-cbt": {
-				ClusterName: "xatu-cbt",
+			"clickhouse-refined": {
+				ClusterName: "clickhouse-refined",
 				LastUpdated: time.Unix(0, 0).UTC(),
 				Tables: map[string]*TableSchema{
 					tableKey("mainnet", "fct_block"):       {Database: "mainnet", Name: "fct_block", Columns: col},
@@ -103,41 +103,41 @@ func TestTablesListHandler(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(out), &resp))
 
 	assert.Len(t, resp.Clusters, 2)
-	assert.Equal(t, 1, resp.Clusters["xatu"].TableCount)
-	assert.Equal(t, 3, resp.Clusters["xatu-cbt"].TableCount)
+	assert.Equal(t, 1, resp.Clusters["clickhouse-raw"].TableCount)
+	assert.Equal(t, 3, resp.Clusters["clickhouse-refined"].TableCount)
 }
 
 func TestClusterTablesHandler(t *testing.T) {
 	client := newStubSchemaClient()
 	handler := createClusterTablesHandler(client)
 
-	out, err := handler(context.Background(), "clickhouse://tables/xatu-cbt")
+	out, err := handler(context.Background(), "clickhouse://tables/clickhouse-refined")
 	require.NoError(t, err)
 
 	var resp TablesListResponse
 	require.NoError(t, json.Unmarshal([]byte(out), &resp))
 
 	assert.Len(t, resp.Clusters, 1)
-	assert.Equal(t, 3, resp.Clusters["xatu-cbt"].TableCount)
+	assert.Equal(t, 3, resp.Clusters["clickhouse-refined"].TableCount)
 
 	_, err = handler(context.Background(), "clickhouse://tables/nope")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "available clusters are xatu, xatu-cbt")
+	assert.Contains(t, err.Error(), "available clusters are clickhouse-raw, clickhouse-refined")
 }
 
 func TestDatabaseTablesHandler(t *testing.T) {
 	client := newStubSchemaClient()
 	handler := createDatabaseTablesHandler(client)
 
-	out, err := handler(context.Background(), "clickhouse://tables/xatu-cbt/mainnet")
+	out, err := handler(context.Background(), "clickhouse://tables/clickhouse-refined/mainnet")
 	require.NoError(t, err)
 
 	var resp TablesListResponse
 	require.NoError(t, json.Unmarshal([]byte(out), &resp))
 
 	require.Len(t, resp.Clusters, 1)
-	assert.Equal(t, 2, resp.Clusters["xatu-cbt"].TableCount)
-	for _, table := range resp.Clusters["xatu-cbt"].Tables {
+	assert.Equal(t, 2, resp.Clusters["clickhouse-refined"].TableCount)
+	for _, table := range resp.Clusters["clickhouse-refined"].Tables {
 		assert.Equal(t, "mainnet", table.Database)
 	}
 }
@@ -146,22 +146,22 @@ func TestTableDetailHandler(t *testing.T) {
 	client := newStubSchemaClient()
 	handler := createTableDetailHandler(logrus.New(), client)
 
-	out, err := handler(context.Background(), "clickhouse://tables/xatu-cbt/mainnet/fct_block")
+	out, err := handler(context.Background(), "clickhouse://tables/clickhouse-refined/mainnet/fct_block")
 	require.NoError(t, err)
 
 	var resp TableDetailResponse
 	require.NoError(t, json.Unmarshal([]byte(out), &resp))
 
-	assert.Equal(t, "xatu-cbt", resp.Cluster)
+	assert.Equal(t, "clickhouse-refined", resp.Cluster)
 	require.NotNil(t, resp.Table)
 	assert.Equal(t, "mainnet", resp.Table.Database)
 	assert.Equal(t, "fct_block", resp.Table.Name)
 
-	// Same table name exists in the xatu-cbt holesky database and not in xatu;
+	// Same table name exists in the clickhouse-refined holesky database and not in clickhouse-raw;
 	// the cluster+database scoping must not leak across them.
-	_, err = handler(context.Background(), "clickhouse://tables/xatu/mainnet/fct_block")
+	_, err = handler(context.Background(), "clickhouse://tables/clickhouse-raw/mainnet/fct_block")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not found in cluster \"xatu\"")
+	assert.Contains(t, err.Error(), "not found in cluster \"clickhouse-raw\"")
 
 	_, err = handler(context.Background(), "clickhouse://tables/nope/mainnet/fct_block")
 	require.Error(t, err)

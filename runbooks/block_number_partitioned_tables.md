@@ -1,11 +1,11 @@
 ---
 name: Querying Block-Number-Partitioned Tables
-description: How to efficiently query xatu-cbt tables partitioned by block_number instead of slot_start_date_time
+description: How to efficiently query clickhouse-refined tables partitioned by block_number instead of slot_start_date_time
 tags: [clickhouse, performance, execution, block_number, partitioning]
-prerequisites: [xatu-cbt]
+prerequisites: [clickhouse-refined]
 ---
 
-Some xatu-cbt tables are partitioned by `block_number` instead of `slot_start_date_time`. You MUST filter on `block_number` to avoid full table scans.
+Some clickhouse-refined tables are partitioned by `block_number` instead of `slot_start_date_time`. You MUST filter on `block_number` to avoid full table scans.
 
 ## Which tables use block_number partitioning?
 
@@ -24,7 +24,7 @@ To query these tables for a time window (e.g. "last 24 hours"), you MUST first r
 from ethpandaops import clickhouse
 
 # Step 1: Get block number range for your time window
-block_range = clickhouse.query("xatu-cbt", """
+block_range = clickhouse.query("clickhouse-refined", """
     SELECT
         MIN(execution_payload_block_number) AS min_block,
         MAX(execution_payload_block_number) AS max_block
@@ -36,7 +36,7 @@ min_block = block_range['min_block'][0]
 max_block = block_range['max_block'][0]
 
 # Step 2: Use the block range to query execution trace tables
-result = clickhouse.query("xatu-cbt", f"""
+result = clickhouse.query("clickhouse-refined", f"""
     SELECT
         target_address,
         sum(gas) AS total_gas,

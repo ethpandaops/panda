@@ -216,7 +216,7 @@ dora_combined_workflows:
         print(f"Active validators: {overview['active_validator_count']}")
 
         # Get recent blocks from Xatu for deeper analysis
-        df = clickhouse.query("xatu", f'''
+        df = clickhouse.query("clickhouse-raw", f'''
             SELECT
                 slot,
                 block_root,

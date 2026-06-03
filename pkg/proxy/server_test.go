@@ -18,7 +18,7 @@ func TestRegisterRoutesMatchesClickHouseSubpaths(t *testing.T) {
 		Auth: AuthConfig{Mode: AuthModeNone},
 		ClickHouse: []ClickHouseClusterConfig{
 			{
-				BaseDatasourceConfig: BaseDatasourceConfig{Name: "xatu"},
+				BaseDatasourceConfig: BaseDatasourceConfig{Name: "clickhouse-raw"},
 				Host:                 "example.com",
 				Port:                 8123,
 				Username:             "user",
@@ -48,7 +48,7 @@ func TestMetricsDatasourceLabelUsesConfiguredNamesOnly(t *testing.T) {
 	cfg := ServerConfig{
 		Auth: AuthConfig{Mode: AuthModeNone},
 		ClickHouse: []ClickHouseClusterConfig{
-			{BaseDatasourceConfig: BaseDatasourceConfig{Name: "xatu"}, Host: "example.com", Port: 8123, Username: "user", Password: "pass"},
+			{BaseDatasourceConfig: BaseDatasourceConfig{Name: "clickhouse-raw"}, Host: "example.com", Port: 8123, Username: "user", Password: "pass"},
 		},
 		Prometheus: []PrometheusInstanceConfig{
 			{BaseDatasourceConfig: BaseDatasourceConfig{Name: "prod"}, URL: "https://prom.example.com"},
@@ -61,7 +61,7 @@ func TestMetricsDatasourceLabelUsesConfiguredNamesOnly(t *testing.T) {
 		t.Fatalf("newServer failed: %v", err)
 	}
 
-	if got := srv.metricsDatasourceLabel("clickhouse", "xatu"); got != "xatu" {
+	if got := srv.metricsDatasourceLabel("clickhouse", "clickhouse-raw"); got != "clickhouse-raw" {
 		t.Fatalf("expected configured clickhouse datasource, got %q", got)
 	}
 
@@ -84,7 +84,7 @@ func TestAuthMetadataEndpointReturnsConfig(t *testing.T) {
 			ClientID:  "panda-proxy",
 		},
 		ClickHouse: []ClickHouseClusterConfig{
-			{BaseDatasourceConfig: BaseDatasourceConfig{Name: "xatu"}, Host: "example.com", Port: 8123, Username: "user", Password: "pass"},
+			{BaseDatasourceConfig: BaseDatasourceConfig{Name: "clickhouse-raw"}, Host: "example.com", Port: 8123, Username: "user", Password: "pass"},
 		},
 	}
 	cfg.ApplyDefaults()
@@ -130,7 +130,7 @@ func TestAuthMetadataEndpointNoAuth(t *testing.T) {
 	cfg := ServerConfig{
 		Auth: AuthConfig{Mode: AuthModeNone},
 		ClickHouse: []ClickHouseClusterConfig{
-			{BaseDatasourceConfig: BaseDatasourceConfig{Name: "xatu"}, Host: "example.com", Port: 8123, Username: "user", Password: "pass"},
+			{BaseDatasourceConfig: BaseDatasourceConfig{Name: "clickhouse-raw"}, Host: "example.com", Port: 8123, Username: "user", Password: "pass"},
 		},
 	}
 	cfg.ApplyDefaults()
@@ -171,7 +171,7 @@ func TestBrandingEndpointReturnsConfigWhenSet(t *testing.T) {
 			},
 		},
 		ClickHouse: []ClickHouseClusterConfig{
-			{BaseDatasourceConfig: BaseDatasourceConfig{Name: "xatu"}, Host: "example.com", Port: 8123, Username: "user", Password: "pass"},
+			{BaseDatasourceConfig: BaseDatasourceConfig{Name: "clickhouse-raw"}, Host: "example.com", Port: 8123, Username: "user", Password: "pass"},
 		},
 	}
 	cfg.ApplyDefaults()
@@ -205,7 +205,7 @@ func TestBrandingEndpointReturns204WhenNotConfigured(t *testing.T) {
 	cfg := ServerConfig{
 		Auth: AuthConfig{Mode: AuthModeNone},
 		ClickHouse: []ClickHouseClusterConfig{
-			{BaseDatasourceConfig: BaseDatasourceConfig{Name: "xatu"}, Host: "example.com", Port: 8123, Username: "user", Password: "pass"},
+			{BaseDatasourceConfig: BaseDatasourceConfig{Name: "clickhouse-raw"}, Host: "example.com", Port: 8123, Username: "user", Password: "pass"},
 		},
 	}
 	cfg.ApplyDefaults()

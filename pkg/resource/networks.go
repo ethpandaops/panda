@@ -32,7 +32,7 @@ type NetworksActiveResponse struct {
 	Usage    string           `json:"usage"`
 }
 
-// NetworkWithClusters wraps a discovery.Network with xatu-specific cluster info.
+// NetworkWithClusters wraps a discovery.Network with clickhouse cluster info.
 type NetworkWithClusters struct {
 	discovery.Network
 	Clusters []string `json:"clusters"`

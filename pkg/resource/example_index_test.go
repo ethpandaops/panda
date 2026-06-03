@@ -11,12 +11,12 @@ func TestExtractTableNames(t *testing.T) {
 		expected []string
 	}{
 		{
-			name:     "xatu-cbt with network prefix",
+			name:     "clickhouse-refined with network prefix",
 			query:    "SELECT * FROM {network}.fct_block_head FINAL WHERE slot > 100",
 			expected: []string{"fct_block_head"},
 		},
 		{
-			name:     "xatu with bare table name",
+			name:     "clickhouse-raw with bare table name",
 			query:    "SELECT * FROM canonical_beacon_validators WHERE meta_network_name = 'mainnet'",
 			expected: []string{"canonical_beacon_validators"},
 		},

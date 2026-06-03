@@ -27,7 +27,7 @@ func TestRefreshModulesActivatesNewlyDiscoverable(t *testing.T) {
 	reg.Add(mod)
 
 	client := &fakeProxyClient{
-		clickhouse: []types.DatasourceInfo{{Type: "clickhouse", Name: "xatu"}},
+		clickhouse: []types.DatasourceInfo{{Type: "clickhouse", Name: "clickhouse-raw"}},
 	}
 
 	a := &App{
@@ -76,7 +76,7 @@ func TestRefreshModulesClearsStateWhenAllDatasourcesDisappear(t *testing.T) {
 	reg.Add(mod)
 
 	if err := reg.InitModuleFromDiscovery("fake",
-		[]types.DatasourceInfo{{Type: "clickhouse", Name: "xatu"}}); err != nil {
+		[]types.DatasourceInfo{{Type: "clickhouse", Name: "clickhouse-raw"}}); err != nil {
 		t.Fatalf("initial InitModuleFromDiscovery error = %v", err)
 	}
 
@@ -120,13 +120,13 @@ func TestRefreshModulesReloadsAlreadyRunning(t *testing.T) {
 
 	// Simulate startup: a module already initialized + started before refresh.
 	if err := reg.InitModuleFromDiscovery("fake",
-		[]types.DatasourceInfo{{Type: "clickhouse", Name: "xatu"}}); err != nil {
+		[]types.DatasourceInfo{{Type: "clickhouse", Name: "clickhouse-raw"}}); err != nil {
 		t.Fatalf("initial InitModuleFromDiscovery error = %v", err)
 	}
 
 	client := &fakeProxyClient{
 		clickhouse: []types.DatasourceInfo{
-			{Type: "clickhouse", Name: "xatu"},
+			{Type: "clickhouse", Name: "clickhouse-raw"},
 			{Type: "clickhouse", Name: "new-cluster"},
 		},
 	}
