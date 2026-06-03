@@ -42,7 +42,7 @@ Read the latest results file from `tests/eval/probes/results/`.
 For each probe where `all_agreed` is false, **resolve it yourself using the actual schema**:
 
 1. Collect all candidate tables from all personas
-2. Run `./panda schema <table>` for each candidate to get columns, types, and comments
+2. Run `./panda schema <cluster> <database> <table>` for each candidate to get columns, types, and comments (run `./panda schema` with no arguments to find which cluster/database a table lives in)
 3. Compare the schemas against the probe question — which table(s) actually have the columns needed to answer it?
 4. Determine the correct table set based on schema evidence
 5. If a persona chose a table that doesn't exist in `./panda schema`, it hallucinated — discard it

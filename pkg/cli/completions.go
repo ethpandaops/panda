@@ -71,20 +71,72 @@ func completeSessionIDs(_ *cobra.Command, args []string, _ string) ([]string, co
 	return ids, cobra.ShellCompDirectiveNoFileComp
 }
 
-// completeTableNames completes the first positional arg with ClickHouse table names.
-func completeTableNames(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
-	if len(args) > 0 {
+// completeSchemaArgs completes the "schema" positional args, narrowing from
+// cluster (arg 0) to database (arg 1) to table (arg 2).
+func completeSchemaArgs(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
+	ctx := context.Background()
+
+	switch len(args) {
+	case 0:
+		return completeClusterNames(ctx)
+	case 1:
+		return completeDatabaseNames(ctx, args[0])
+	case 2:
+		return completeTableNames(ctx, args[0], args[1])
+	default:
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+}
+
+func completeClusterNames(ctx context.Context) ([]string, cobra.ShellCompDirective) {
+	response, err := readClickHouseTables(ctx)
+	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
-	response, err := readClickHouseTables(context.Background())
+	names := make([]string, 0, len(response.Clusters))
+	for clusterName := range response.Clusters {
+		names = append(names, clusterName)
+	}
+
+	return names, cobra.ShellCompDirectiveNoFileComp
+}
+
+func completeDatabaseNames(ctx context.Context, cluster string) ([]string, cobra.ShellCompDirective) {
+	response, err := readClickHouseClusterTables(ctx, cluster)
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	seen := make(map[string]struct{})
+
+	var names []string
+
+	for _, c := range response.Clusters {
+		for _, table := range c.Tables {
+			if _, ok := seen[table.Database]; ok {
+				continue
+			}
+
+			seen[table.Database] = struct{}{}
+
+			names = append(names, table.Database)
+		}
+	}
+
+	return names, cobra.ShellCompDirectiveNoFileComp
+}
+
+func completeTableNames(ctx context.Context, cluster, database string) ([]string, cobra.ShellCompDirective) {
+	response, err := readClickHouseDatabaseTables(ctx, cluster, database)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
 	var names []string
-	for _, cluster := range response.Clusters {
-		for _, table := range cluster.Tables {
+
+	for _, c := range response.Clusters {
+		for _, table := range c.Tables {
 			names = append(names, table.Name)
 		}
 	}

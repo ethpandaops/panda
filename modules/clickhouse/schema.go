@@ -88,12 +88,6 @@ type ClusterTables struct {
 	LastUpdated time.Time               `json:"last_updated"`
 }
 
-// TableMatch pairs a table schema with the cluster it was found in.
-type TableMatch struct {
-	Schema      *TableSchema
-	ClusterName string
-}
-
 func tableKey(database, name string) string {
 	return database + "." + name
 }
@@ -104,7 +98,8 @@ type ClickHouseSchemaClient interface {
 	Stop() error
 	WaitForReady(ctx context.Context) error
 	GetAllTables() map[string]*ClusterTables
-	GetTableExact(database, tableName string) []TableMatch
+	GetClusterTables(clusterName string) (*ClusterTables, bool)
+	GetTableInCluster(clusterName, database, tableName string) (*TableSchema, bool)
 	UpdateDatasources(datasources []SchemaDiscoveryDatasource)
 }
 
@@ -360,24 +355,45 @@ func (c *clickhouseSchemaClient) GetAllTables() map[string]*ClusterTables {
 	return result
 }
 
-func (c *clickhouseSchemaClient) GetTableExact(database, tableName string) []TableMatch {
+// GetClusterTables returns a copy of the tables for a single cluster.
+func (c *clickhouseSchemaClient) GetClusterTables(clusterName string) (*ClusterTables, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	key := tableKey(database, tableName)
-
-	var matches []TableMatch
-
-	for clusterName, cluster := range c.clusters {
-		if schema, ok := cluster.Tables[key]; ok {
-			matches = append(matches, TableMatch{
-				Schema:      schema,
-				ClusterName: clusterName,
-			})
-		}
+	cluster, ok := c.clusters[clusterName]
+	if !ok {
+		return nil, false
 	}
 
-	return matches
+	clusterCopy := &ClusterTables{
+		ClusterName: cluster.ClusterName,
+		Tables:      make(map[string]*TableSchema, len(cluster.Tables)),
+		LastUpdated: cluster.LastUpdated,
+	}
+
+	for tableName, schema := range cluster.Tables {
+		clusterCopy.Tables[tableName] = schema
+	}
+
+	return clusterCopy, true
+}
+
+// GetTableInCluster returns the schema for a table in a specific cluster.
+func (c *clickhouseSchemaClient) GetTableInCluster(clusterName, database, tableName string) (*TableSchema, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	cluster, ok := c.clusters[clusterName]
+	if !ok {
+		return nil, false
+	}
+
+	schema, ok := cluster.Tables[tableKey(database, tableName)]
+	if !ok {
+		return nil, false
+	}
+
+	return schema, true
 }
 
 // backgroundRefresh periodically refreshes the schema data.

@@ -368,29 +368,24 @@ func readResourceWithClientContext(ctx context.Context, uri, clientContext strin
 	}, nil
 }
 
+// readClickHouseTables lists every cluster and its tables.
 func readClickHouseTables(ctx context.Context) (*clickhousemodule.TablesListResponse, error) {
-	response, err := readResource(ctx, "clickhouse://tables")
-	if err != nil {
-		return nil, err
-	}
-
-	var payload clickhousemodule.TablesListResponse
-	if err := json.Unmarshal([]byte(response.Content), &payload); err != nil {
-		return nil, fmt.Errorf("decoding tables list: %w", err)
-	}
-
-	return &payload, nil
+	return readClickHouseTablesURI(ctx, "clickhouse://tables")
 }
 
-// readClickHouseTable resolves a qualified table reference ("database.table"
-// or "database/table") to its schema.
-func readClickHouseTable(ctx context.Context, tableRef string) (*clickhousemodule.TableDetailResponse, error) {
-	path, err := clickhouseTableRefToURIPath(tableRef)
-	if err != nil {
-		return nil, err
-	}
+// readClickHouseClusterTables lists the tables in a single cluster.
+func readClickHouseClusterTables(ctx context.Context, cluster string) (*clickhousemodule.TablesListResponse, error) {
+	return readClickHouseTablesURI(ctx, "clickhouse://tables/"+cluster)
+}
 
-	response, err := readResource(ctx, "clickhouse://tables/"+path)
+// readClickHouseDatabaseTables lists the tables in a single database of a cluster.
+func readClickHouseDatabaseTables(ctx context.Context, cluster, database string) (*clickhousemodule.TablesListResponse, error) {
+	return readClickHouseTablesURI(ctx, "clickhouse://tables/"+cluster+"/"+database)
+}
+
+// readClickHouseTable resolves a (cluster, database, table) reference to its schema.
+func readClickHouseTable(ctx context.Context, cluster, database, table string) (*clickhousemodule.TableDetailResponse, error) {
+	response, err := readResource(ctx, "clickhouse://tables/"+cluster+"/"+database+"/"+table)
 	if err != nil {
 		return nil, err
 	}
@@ -403,22 +398,18 @@ func readClickHouseTable(ctx context.Context, tableRef string) (*clickhousemodul
 	return &payload, nil
 }
 
-func clickhouseTableRefToURIPath(ref string) (string, error) {
-	if strings.Count(ref, "/") == 1 {
-		parts := strings.SplitN(ref, "/", 2)
-		if parts[0] != "" && parts[1] != "" {
-			return ref, nil
-		}
+func readClickHouseTablesURI(ctx context.Context, uri string) (*clickhousemodule.TablesListResponse, error) {
+	response, err := readResource(ctx, uri)
+	if err != nil {
+		return nil, err
 	}
 
-	if strings.Count(ref, ".") == 1 && !strings.Contains(ref, "/") {
-		parts := strings.SplitN(ref, ".", 2)
-		if parts[0] != "" && parts[1] != "" {
-			return parts[0] + "/" + parts[1], nil
-		}
+	var payload clickhousemodule.TablesListResponse
+	if err := json.Unmarshal([]byte(response.Content), &payload); err != nil {
+		return nil, fmt.Errorf("decoding tables list: %w", err)
 	}
 
-	return "", fmt.Errorf("table reference must be qualified as 'database.table' or 'database/table', got %q", ref)
+	return &payload, nil
 }
 
 func triggerBuild(ctx context.Context, req serverapi.BuildTriggerRequest) (*serverapi.BuildTriggerResponse, error) {

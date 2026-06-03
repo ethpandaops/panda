@@ -4,48 +4,69 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/spf13/cobra"
+
+	clickhousemodule "github.com/ethpandaops/panda/modules/clickhouse"
 )
 
 var schemaCmd = &cobra.Command{
 	GroupID: groupDiscovery,
-	Use:     "schema [database.table]",
+	Use:     "schema [cluster] [database] [table]",
 	Short:   "Show ClickHouse table schemas",
-	Long: `Show available ClickHouse tables and their schemas. Without arguments,
-lists all tables. With a qualified "database.table" reference, shows the
-full schema including columns, types, and engine.
+	Long: `Show available ClickHouse tables and their schemas, scoped by cluster.
+
+Arguments progressively narrow the view:
+  panda schema                              list every cluster and its tables
+  panda schema <cluster>                    list the tables in one cluster
+  panda schema <cluster> <database>         list the tables in one database
+  panda schema <cluster> <database> <table> show the full schema for one table
+
+Run 'panda datasources --type clickhouse' (or 'panda schema' with no arguments)
+to see the available cluster names.
 
 Examples:
   panda schema
-  panda schema mainnet.fct_block_head
-  panda schema internal.logs
+  panda schema xatu
+  panda schema xatu mainnet
+  panda schema xatu mainnet fct_block_head
   panda schema --json`,
+	Args: cobra.MaximumNArgs(3),
 	RunE: runSchema,
 }
 
 func init() {
 	rootCmd.AddCommand(schemaCmd)
-	schemaCmd.ValidArgsFunction = completeTableNames
+	schemaCmd.ValidArgsFunction = completeSchemaArgs
 }
 
 func runSchema(_ *cobra.Command, args []string) error {
 	ctx := context.Background()
 
-	if len(args) == 0 {
-		return listTables(ctx)
+	var (
+		response *clickhousemodule.TablesListResponse
+		err      error
+	)
+
+	switch len(args) {
+	case 0:
+		response, err = readClickHouseTables(ctx)
+	case 1:
+		response, err = readClickHouseClusterTables(ctx, args[0])
+	case 2:
+		response, err = readClickHouseDatabaseTables(ctx, args[0], args[1])
+	default:
+		return showTable(ctx, args[0], args[1], args[2])
 	}
 
-	return showTable(ctx, args[0])
-}
-
-func listTables(ctx context.Context) error {
-	response, err := readClickHouseTables(ctx)
 	if err != nil {
 		return err
 	}
 
+	return renderTablesList(response)
+}
+
+func renderTablesList(response *clickhousemodule.TablesListResponse) error {
 	if isJSON() {
 		return printJSON(response)
 	}
@@ -75,8 +96,8 @@ func listTables(ctx context.Context) error {
 	return nil
 }
 
-func showTable(ctx context.Context, tableName string) error {
-	response, err := readClickHouseTable(ctx, tableName)
+func showTable(ctx context.Context, cluster, database, table string) error {
+	response, err := readClickHouseTable(ctx, cluster, database, table)
 	if err != nil {
 		return err
 	}
@@ -87,19 +108,10 @@ func showTable(ctx context.Context, tableName string) error {
 
 	schema := response.Table
 
-	clusterNames := make([]string, 0, len(response.Clusters))
-	for _, c := range response.Clusters {
-		clusterNames = append(clusterNames, c.Name)
-	}
-
-	fmt.Printf("Table: %s.%s  (clusters: %s)\n", schema.Database, schema.Name, strings.Join(clusterNames, ", "))
+	fmt.Printf("Table: %s.%s  (cluster: %s)\n", schema.Database, schema.Name, response.Cluster)
 
 	if schema.Comment != "" {
 		fmt.Printf("Comment: %s\n", schema.Comment)
-	}
-
-	for _, c := range response.Clusters {
-		fmt.Printf("  %s -> %s.%s\n", c.Name, c.Database, schema.Name)
 	}
 
 	fmt.Println()

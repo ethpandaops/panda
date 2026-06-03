@@ -15,7 +15,8 @@ import (
 	"github.com/ethpandaops/panda/pkg/types"
 )
 
-// TablesListResponse is the response for clickhouse://tables.
+// TablesListResponse is the response for the table listing resources
+// (clickhouse://tables, .../{cluster}, and .../{cluster}/{database}).
 type TablesListResponse struct {
 	Description string                           `json:"description"`
 	Clusters    map[string]*ClusterTablesSummary `json:"clusters"`
@@ -37,16 +38,11 @@ type TableSummary struct {
 	HasNetworkCol bool   `json:"has_network_column"`
 }
 
-// ClusterTableLocation pairs a cluster name with the database the table is in.
-type ClusterTableLocation struct {
-	Name     string `json:"name"`
-	Database string `json:"database"`
-}
-
-// TableDetailResponse is the response for clickhouse://tables/{database}/{table_name}.
+// TableDetailResponse is the response for
+// clickhouse://tables/{cluster}/{database}/{table_name}.
 type TableDetailResponse struct {
-	Table    *TableSchema           `json:"table"`
-	Clusters []ClusterTableLocation `json:"clusters"`
+	Cluster string       `json:"cluster"`
+	Table   *TableSchema `json:"table"`
 }
 
 // RegisterSchemaResources registers ClickHouse schema resources with the registry.
@@ -61,25 +57,47 @@ func RegisterSchemaResources(
 		Resource: mcp.NewResource(
 			"clickhouse://tables",
 			"ClickHouse Tables",
-			mcp.WithResourceDescription("List all available ClickHouse tables across clusters. Each entry is keyed by (database, table)."),
+			mcp.WithResourceDescription("List all available ClickHouse tables, grouped by cluster. Each entry is keyed by (database, table)."),
 			mcp.WithMIMEType("application/json"),
 			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.7),
 		),
 		Handler: createTablesListHandler(client),
 	})
 
-	template := mcp.NewResourceTemplate(
-		"clickhouse://tables/{database}/{table_name}",
-		"ClickHouse Table Schema",
-		mcp.WithTemplateDescription("Full schema for a specific ClickHouse table identified by (database, table) — columns, types, comments, engine."),
-		mcp.WithTemplateMIMEType("application/json"),
-		mcp.WithTemplateAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.6),
-	)
+	reg.RegisterTemplate(types.TemplateResource{
+		Template: mcp.NewResourceTemplate(
+			"clickhouse://tables/{cluster}",
+			"ClickHouse Cluster Tables",
+			mcp.WithTemplateDescription("List the tables in a single ClickHouse cluster, keyed by (database, table)."),
+			mcp.WithTemplateMIMEType("application/json"),
+			mcp.WithTemplateAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.6),
+		),
+		Pattern: regexp.MustCompile(`^clickhouse://tables/([^/]+)$`),
+		Handler: createClusterTablesHandler(client),
+	})
 
 	reg.RegisterTemplate(types.TemplateResource{
-		Template: template,
-		Pattern:  regexp.MustCompile(`^clickhouse://tables/([^/]+)/([^/]+)$`),
-		Handler:  createTableDetailHandler(log, client),
+		Template: mcp.NewResourceTemplate(
+			"clickhouse://tables/{cluster}/{database}",
+			"ClickHouse Database Tables",
+			mcp.WithTemplateDescription("List the tables in a single database within a ClickHouse cluster."),
+			mcp.WithTemplateMIMEType("application/json"),
+			mcp.WithTemplateAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.6),
+		),
+		Pattern: regexp.MustCompile(`^clickhouse://tables/([^/]+)/([^/]+)$`),
+		Handler: createDatabaseTablesHandler(client),
+	})
+
+	reg.RegisterTemplate(types.TemplateResource{
+		Template: mcp.NewResourceTemplate(
+			"clickhouse://tables/{cluster}/{database}/{table_name}",
+			"ClickHouse Table Schema",
+			mcp.WithTemplateDescription("Full schema for a specific ClickHouse table identified by (cluster, database, table) — columns, types, comments, engine."),
+			mcp.WithTemplateMIMEType("application/json"),
+			mcp.WithTemplateAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.6),
+		),
+		Pattern: regexp.MustCompile(`^clickhouse://tables/([^/]+)/([^/]+)/([^/]+)$`),
+		Handler: createTableDetailHandler(log, client),
 	})
 
 	log.Debug("Registered ClickHouse schema resources")
@@ -90,114 +108,179 @@ func createTablesListHandler(client ClickHouseSchemaClient) types.ReadHandler {
 		allTables := client.GetAllTables()
 
 		response := &TablesListResponse{
-			Description: "Available ClickHouse tables across clusters. Each entry is keyed by (database, table).",
+			Description: "Available ClickHouse tables, grouped by cluster. Each entry is keyed by (database, table).",
 			Clusters:    make(map[string]*ClusterTablesSummary, len(allTables)),
-			Usage:       "Read clickhouse://tables/{database}/{table_name} for the detailed schema.",
+			Usage:       "Read clickhouse://tables/{cluster}/{database}/{table_name} for the detailed schema.",
 		}
 
 		for clusterName, cluster := range allTables {
-			summary := &ClusterTablesSummary{
-				Tables:      make([]*TableSummary, 0, len(cluster.Tables)),
-				TableCount:  len(cluster.Tables),
-				LastUpdated: cluster.LastUpdated.Format("2006-01-02T15:04:05Z"),
-			}
-
-			for _, schema := range cluster.Tables {
-				summary.Tables = append(summary.Tables, &TableSummary{
-					Database:      schema.Database,
-					Name:          schema.Name,
-					ColumnCount:   len(schema.Columns),
-					HasNetworkCol: schema.HasNetworkCol,
-				})
-			}
-
-			sort.Slice(summary.Tables, func(i, j int) bool {
-				if summary.Tables[i].Database != summary.Tables[j].Database {
-					return summary.Tables[i].Database < summary.Tables[j].Database
-				}
-
-				return summary.Tables[i].Name < summary.Tables[j].Name
-			})
-
-			response.Clusters[clusterName] = summary
+			response.Clusters[clusterName] = buildClusterSummary(cluster, "")
 		}
 
-		data, err := json.MarshalIndent(response, "", "  ")
-		if err != nil {
-			return "", fmt.Errorf("marshaling tables list: %w", err)
+		return marshalResource(response, "tables list")
+	}
+}
+
+func createClusterTablesHandler(client ClickHouseSchemaClient) types.ReadHandler {
+	return func(_ context.Context, uri string) (string, error) {
+		parts := tableURISegments(uri)
+		if len(parts) != 1 {
+			return "", fmt.Errorf("invalid cluster URI: %s", uri)
 		}
 
-		return string(data), nil
+		clusterName := parts[0]
+
+		cluster, ok := client.GetClusterTables(clusterName)
+		if !ok {
+			return "", clusterNotFoundError(client, clusterName)
+		}
+
+		response := &TablesListResponse{
+			Description: fmt.Sprintf("Tables in ClickHouse cluster %q, keyed by (database, table).", clusterName),
+			Clusters:    map[string]*ClusterTablesSummary{clusterName: buildClusterSummary(cluster, "")},
+			Usage:       "Read clickhouse://tables/{cluster}/{database}/{table_name} for the detailed schema.",
+		}
+
+		return marshalResource(response, "cluster tables")
+	}
+}
+
+func createDatabaseTablesHandler(client ClickHouseSchemaClient) types.ReadHandler {
+	return func(_ context.Context, uri string) (string, error) {
+		parts := tableURISegments(uri)
+		if len(parts) != 2 {
+			return "", fmt.Errorf("invalid database URI: %s", uri)
+		}
+
+		clusterName, database := parts[0], parts[1]
+
+		cluster, ok := client.GetClusterTables(clusterName)
+		if !ok {
+			return "", clusterNotFoundError(client, clusterName)
+		}
+
+		response := &TablesListResponse{
+			Description: fmt.Sprintf("Tables in database %q of ClickHouse cluster %q.", database, clusterName),
+			Clusters:    map[string]*ClusterTablesSummary{clusterName: buildClusterSummary(cluster, database)},
+			Usage:       "Read clickhouse://tables/{cluster}/{database}/{table_name} for the detailed schema.",
+		}
+
+		return marshalResource(response, "database tables")
 	}
 }
 
 func createTableDetailHandler(log logrus.FieldLogger, client ClickHouseSchemaClient) types.ReadHandler {
 	return func(_ context.Context, uri string) (string, error) {
-		database, tableName := extractQualifiedTableName(uri)
-		if database == "" || tableName == "" {
+		parts := tableURISegments(uri)
+		if len(parts) != 3 {
 			return "", fmt.Errorf("invalid table URI: %s", uri)
 		}
 
-		matches := client.GetTableExact(database, tableName)
+		clusterName, database, tableName := parts[0], parts[1], parts[2]
 
-		if len(matches) == 0 {
-			return "", fmt.Errorf("table %q in database %q not found", tableName, database)
+		schema, ok := client.GetTableInCluster(clusterName, database, tableName)
+		if !ok {
+			if _, clusterOK := client.GetClusterTables(clusterName); !clusterOK {
+				return "", clusterNotFoundError(client, clusterName)
+			}
+
+			return "", fmt.Errorf("table %q in database %q not found in cluster %q", tableName, database, clusterName)
 		}
 
-		sort.Slice(matches, func(i, j int) bool {
-			return matches[i].ClusterName < matches[j].ClusterName
-		})
-
-		base := *matches[0].Schema
-
-		clusters := make([]ClusterTableLocation, 0, len(matches))
-
-		for _, m := range matches {
-			clusters = append(clusters, ClusterTableLocation{
-				Name:     m.ClusterName,
-				Database: m.Schema.Database,
-			})
-		}
-
-		data, err := json.MarshalIndent(&TableDetailResponse{Table: &base, Clusters: clusters}, "", "  ")
+		data, err := marshalResource(&TableDetailResponse{Cluster: clusterName, Table: schema}, "table detail")
 		if err != nil {
-			return "", fmt.Errorf("marshaling table detail: %w", err)
-		}
-
-		clusterNames := make([]string, 0, len(clusters))
-		for _, c := range clusters {
-			clusterNames = append(clusterNames, c.Name)
+			return "", err
 		}
 
 		log.WithFields(logrus.Fields{
+			"cluster":  clusterName,
 			"database": database,
 			"table":    tableName,
-			"clusters": clusterNames,
 		}).Debug("Returned table schema")
 
-		return string(data), nil
+		return data, nil
 	}
 }
 
-func extractQualifiedTableName(uri string) (string, string) {
-	prefix := "clickhouse://tables/"
+// buildClusterSummary builds a compact summary of a cluster's tables, optionally
+// restricted to a single database.
+func buildClusterSummary(cluster *ClusterTables, databaseFilter string) *ClusterTablesSummary {
+	summary := &ClusterTablesSummary{
+		Tables:      make([]*TableSummary, 0, len(cluster.Tables)),
+		LastUpdated: cluster.LastUpdated.Format("2006-01-02T15:04:05Z"),
+	}
+
+	for _, schema := range cluster.Tables {
+		if databaseFilter != "" && schema.Database != databaseFilter {
+			continue
+		}
+
+		summary.Tables = append(summary.Tables, &TableSummary{
+			Database:      schema.Database,
+			Name:          schema.Name,
+			ColumnCount:   len(schema.Columns),
+			HasNetworkCol: schema.HasNetworkCol,
+		})
+	}
+
+	summary.TableCount = len(summary.Tables)
+
+	sort.Slice(summary.Tables, func(i, j int) bool {
+		if summary.Tables[i].Database != summary.Tables[j].Database {
+			return summary.Tables[i].Database < summary.Tables[j].Database
+		}
+
+		return summary.Tables[i].Name < summary.Tables[j].Name
+	})
+
+	return summary
+}
+
+// clusterNotFoundError builds an error that names the clusters that do exist.
+func clusterNotFoundError(client ClickHouseSchemaClient, clusterName string) error {
+	available := make([]string, 0, len(client.GetAllTables()))
+	for name := range client.GetAllTables() {
+		available = append(available, name)
+	}
+
+	sort.Strings(available)
+
+	if len(available) == 0 {
+		return fmt.Errorf("cluster %q not found: no ClickHouse clusters are available", clusterName)
+	}
+
+	return fmt.Errorf("cluster %q not found: available clusters are %s", clusterName, strings.Join(available, ", "))
+}
+
+func marshalResource(payload any, what string) (string, error) {
+	data, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("marshaling %s: %w", what, err)
+	}
+
+	return string(data), nil
+}
+
+// tableURISegments returns the path segments after the clickhouse://tables/
+// prefix, or nil if the URI is malformed (wrong prefix or empty segments).
+func tableURISegments(uri string) []string {
+	const prefix = "clickhouse://tables/"
+
 	if !strings.HasPrefix(uri, prefix) {
-		return "", ""
+		return nil
 	}
 
 	rest := strings.TrimPrefix(uri, prefix)
-
-	idx := strings.Index(rest, "/")
-	if idx <= 0 || idx == len(rest)-1 {
-		return "", ""
+	if rest == "" {
+		return nil
 	}
 
-	database := rest[:idx]
-	table := rest[idx+1:]
-
-	if strings.Contains(table, "/") {
-		return "", ""
+	parts := strings.Split(rest, "/")
+	for _, p := range parts {
+		if p == "" {
+			return nil
+		}
 	}
 
-	return database, table
+	return parts
 }

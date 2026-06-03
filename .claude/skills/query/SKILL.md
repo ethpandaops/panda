@@ -25,8 +25,9 @@ This skill works with **either** the CLI (`panda` binary) or the MCP server. **P
 # Discovery
 panda datasources                          # List all datasources
 panda datasources --type clickhouse        # Filter by type
-panda schema                               # List ClickHouse tables
-panda schema beacon_api_eth_v1_events_block  # Show table schema
+panda schema                               # List all clusters and their tables
+panda schema xatu                          # List tables in the xatu cluster
+panda schema xatu mainnet fct_block_head   # Show a table schema (cluster database table)
 panda docs                                 # List Python API modules
 panda docs clickhouse                      # Show module docs
 
@@ -59,8 +60,10 @@ All commands support `--json` for structured output.
 | `datasources://prometheus` | Prometheus instances |
 | `datasources://loki` | Loki instances |
 | `networks://active` | Active Ethereum networks |
-| `clickhouse://tables` | Available tables (keyed by database + name) |
-| `clickhouse://tables/{database}/{table}` | Table schema details |
+| `clickhouse://tables` | All clusters and their tables (keyed by database + name) |
+| `clickhouse://tables/{cluster}` | Tables in one cluster |
+| `clickhouse://tables/{cluster}/{database}` | Tables in one database of a cluster |
+| `clickhouse://tables/{cluster}/{database}/{table}` | Table schema details |
 | `python://ethpandaops` | Python library API docs |
 
 ```
