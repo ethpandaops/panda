@@ -1,15 +1,31 @@
 ---
 name: Debug Devnet
-description: Collect information about a devnet or systematically debug issues using Dora and Loki to diagnose network splits, offline nodes, finality delays, and client bugs
+description: Collect information about a devnet or systematically debug issues using Dora and OTel ClickHouse logs to diagnose network splits, offline nodes, finality delays, and client bugs
 tags: [devnet, debugging, network-split, forks, logs, consensus, validators, status, info]
-prerequisites: [loki]
+prerequisites: [clickhouse-raw]
 ---
 
-The first step in debugging a devnet is discovering which datasources have the network, then gathering information from whatever is available. Not all devnets are registered in Dora — some only have Loki logs. Phase 0 determines the data profile so the debug flow adapts accordingly.
+The first step in debugging a devnet is discovering which datasources have the network, then gathering information from whatever is available. Not all devnets are registered in Dora — some only have container logs in ClickHouse. Phase 0 determines the data profile so the debug flow adapts accordingly.
 
-**The user MUST specify which network to debug.** Do NOT assume a network — if the user hasn't specified one, ask them before proceeding. You can show available networks with `dora.list_networks()` or discover them across all Loki instances (see Phase 0).
+**This runbook is for proper, multi-VM devnets and testnets** (e.g. `fusaka-devnet-0`, `hoodi`) — networks deployed across bare-metal VMs. The `investigate` skill routes here when the target is found in the hosted datasources; local Kurtosis devnets are routed to the **Debug Local Devnet** runbook instead. You are therefore always working with a known, named network.
 
-Refer to the query skill for general API usage patterns (Dora overview, Loki label discovery, direct HTTP calls, Dora link generation, etc.). This runbook only covers the debugging-specific procedure and API calls not in the skill.
+**The user MUST specify which network to debug.** Do NOT assume a network — if the user hasn't specified one, ask them before proceeding. You can list the proper devnets and testnets that exist with `dora.list_networks()`.
+
+Refer to the query skill for general API usage patterns (Dora overview, ClickHouse queries, direct HTTP calls, Dora link generation, etc.). This runbook only covers the debugging-specific procedure and API calls not in the skill.
+
+## How Devnet Logs Flow
+
+Hosted devnets run as Docker containers on bare-metal VMs (managed by Ansible). Each container's logs are scraped and shipped via OpenTelemetry into the `clickhouse-raw` ClickHouse cluster, database `external`, table `external.otel_logs`. Query them with SQL via `clickhouse.query("clickhouse-raw", ...)`, always filtering by `ResourceAttributes['network']` (the devnet) and `Timestamp`. **There is no hosted Loki — devnet container logs live only in ClickHouse.**
+
+Key fields on `external.otel_logs`:
+- `Timestamp DateTime64(9)` — always filter on this (it is the partition key).
+- `Body String` — the raw log line. The level is usually embedded here, not in `SeverityText`.
+- `SeverityText LowCardinality(String)` — often EMPTY for raw Docker logs; do not rely on it. Use `match(Body, ...)` for severity triage.
+- `ServiceName` — empty for these VM/Docker logs (the `k8s.*` materialized columns are also empty — those only apply to Kubernetes platform logs).
+- `ResourceAttributes Map(String, String)` — node identity. Keys: `network` (devnet name), `host.name` (the node, e.g. `lighthouse-geth-super-1`), `ingress_user`, `deployment.environment`.
+- `LogAttributes Map(String, String)` — per-line attributes. Keys include `log.file.name` / `log.file.path` (the Docker container json-log file — one per container on the node), `container_id`, plus any structured fields the client emits (`level`, `msg`, `component`, ...).
+
+**Node naming:** `host.name` encodes the client pair as `<cl>-<el>-<tier>-<index>` (e.g. `lighthouse-geth-super-1` → CL lighthouse, EL geth). Non-paired nodes exist too (`bootnode-1`, `mev-relay-1`). **There is no `ethereum_cl` / `ethereum_el` label like Loki had** — a node VM runs the CL, EL, validator, and sidecar containers together, distinguished only by `LogAttributes['log.file.name']` (a container hash). To isolate one client's logs on a node, discover its containers first (see Phase 2) or identify the client by its log-line format in `Body`.
 
 ## Debug Report
 
@@ -41,7 +57,7 @@ When reporting label values, instance names, counts, or log lines: paste the raw
 
 If the user states a fact (e.g. "we have 16 nodes"), do not let it bias tool output. Report what the tool returned, even if it contradicts the user.
 
-If two sources disagree (e.g. Dora says 16 nodes, Loki labels show 30), surface the disagreement rather than picking one. Dora is authoritative for *what nodes exist*; Loki is authoritative for *what nodes are shipping logs*. They are not interchangeable.
+If two sources disagree (e.g. Dora says 16 nodes, the logs show 30 hosts), surface the disagreement rather than picking one. Dora is authoritative for *what nodes exist*; the OTel logs are authoritative for *what nodes are shipping logs*. They are not interchangeable.
 
 ## Citations
 
@@ -71,10 +87,10 @@ This does NOT replace the hardcoded patterns in this runbook — those encode de
 
 Before collecting data, determine which datasources have the target network.
 
-0. **Discover datasources and determine the data profile** — Do not assume instance names. First discover what is available, then check for the target network:
+0. **Discover datasources and determine the data profile** — Do not assume node names. First discover what is available, then check for the target network:
 
    ```python
-   from ethpandaops import dora, loki
+   from ethpandaops import dora, clickhouse
    import os
 
    network = "<network>"
@@ -86,47 +102,41 @@ Before collecting data, determine which datasources have the target network.
    except Exception:
        has_dora = False
 
-   # Check Loki — search ALL instances, not just "ethpandaops"
-   loki_instance = None
-   for ds in loki.list_datasources():
-       try:
-           testnets = loki.get_label_values(ds["name"], "testnet")
-           if network in testnets:
-               loki_instance = ds["name"]
-               break
-       except Exception:
-           pass
-
-   has_loki = loki_instance is not None
-
-   # If Loki is available, also discover instances for later use
-   instances = []
-   if has_loki:
-       try:
-           instances = loki.get_label_values(loki_instance, "instance", f'{{testnet="{network}"}}')
-       except Exception:
-           pass
+   # Check ClickHouse OTel logs — is this network shipping container logs to external.otel_logs?
+   # The same query also discovers the node (host.name) list for later use.
+   has_logs = False
+   hosts = []
+   try:
+       df = clickhouse.query("clickhouse-raw", """
+           SELECT DISTINCT ResourceAttributes['host.name'] AS host
+           FROM external.otel_logs
+           WHERE ResourceAttributes['network'] = {network:String}
+             AND Timestamp >= now() - INTERVAL 1 HOUR
+           ORDER BY host
+       """, {"network": network})
+       hosts = [h for h in df["host"].tolist() if h]
+       has_logs = len(hosts) > 0
+   except Exception:
+       pass
 
    # Check ethnode (direct node API access)
    has_ethnode = os.environ.get("ETHPANDAOPS_ETHNODE_AVAILABLE") == "true"
 
-   print(f"has_dora={has_dora}, has_loki={has_loki}, loki_instance={loki_instance}, has_ethnode={has_ethnode}")
-   print(f"instances={instances}")
+   print(f"has_dora={has_dora}, has_logs={has_logs}, has_ethnode={has_ethnode}")
+   print(f"hosts={hosts}")
    ```
 
    Record the **data profile** in the debug report:
    - `has_dora: true/false`
-   - `has_loki: true/false` and `loki_instance: <name>`
+   - `has_logs: true/false`
    - `has_ethnode: true/false`
-   - List of discovered instances (if Loki is available)
-
-   **Use the discovered `loki_instance` name in ALL subsequent Loki calls.** Do not hardcode `"ethpandaops"`.
+   - List of discovered nodes (`host.name` values, if logs are available)
 
    **Routing rules:**
    - If the network is not found in **any** datasource → report to the user that the network doesn't exist in any known datasource and **stop**.
    - `has_dora = true` → Phase 1 (Dora) runs normally.
-   - `has_dora = false` → **Skip Phase 1 entirely.** Note in the debug report that Dora is unavailable. If `has_ethnode = true`, use ethnode to build a basic network baseline before proceeding to Phase 2 — query head slots, finality checkpoints, and sync status across discovered instances to approximate what Dora would have provided (see Phase 1 fallback below).
-   - `has_loki = false` → Phase 2 is limited; note that log investigation is unavailable.
+   - `has_dora = false` → **Skip Phase 1 entirely.** Note in the debug report that Dora is unavailable. If `has_ethnode = true`, use ethnode to build a basic network baseline before proceeding to Phase 2 — query head slots, finality checkpoints, and sync status across discovered nodes to approximate what Dora would have provided (see Phase 1 fallback below).
+   - `has_logs = false` → Phase 2 is limited; note that log investigation is unavailable.
    - `has_ethnode = true` → Direct node RPC queries are available in Phase 3 for hypothesis validation.
 
 ## Phase 1: Data Collection with Dora
@@ -157,41 +167,77 @@ Before collecting data, determine which datasources have the target network.
 
    Append the baseline summary to the debug report as a readable narrative. You SHOULD generate Dora links for relevant epochs, slots, and validators using the `dora.link_*()` helpers (see query skill). **Cite each named node, validator, slot, or fork-tip block per the Citations section.**
 
-   **If Dora shows a healthy network** (no splits, finality on track, high participation, no offline nodes) but the user reports issues, present the healthy baseline to the user and ask them for more details about what they're observing. You MAY proceed to Loki only if you have a specific target — otherwise let the user guide the next step.
+   **If Dora shows a healthy network** (no splits, finality on track, high participation, no offline nodes) but the user reports issues, present the healthy baseline to the user and ask them for more details about what they're observing. You MAY proceed to log investigation only if you have a specific target — otherwise let the user guide the next step.
 
-## Phase 2: Log Investigation with Loki
+## Phase 2: Log Investigation with ClickHouse (`external.otel_logs`)
 
-Use Dora findings (if available) to target specific nodes. In Loki-only mode, start with broad label discovery to identify which nodes have issues. Always use label filters — unfiltered logs are slow and may time out.
-
-Use the `loki_instance` name discovered in Phase 0 for all Loki calls. Refer to the query skill for Loki label discovery and query patterns.
+Use Dora findings (if available) to target specific nodes. With logs only (no Dora), start from the `hosts` list discovered in Phase 0 to identify which nodes have issues. **Always filter by `ResourceAttributes['network']` and `Timestamp`** — unfiltered queries scan everything and may time out. All queries go through `clickhouse.query("clickhouse-raw", ...)` against `external.otel_logs`; see the query skill's log section for the full schema and severity-matching details.
 
 **Use the same active timeframe** established in the Timeframe Rules section above.
 
-**Instance naming:** Most pairings follow `<cl>-<el>-<n>` (e.g. `lighthouse-geth-1`), but devnets often include bootnodes, supernodes, or non-paired instances that do NOT match this pattern. Never derive instance names from the convention — always discover them via `loki.get_label_values(..., "instance", ...)` or Dora's `/v1/clients/consensus`. Empty results from a label filter mean the label name is probably wrong (e.g. `nimbusel` vs `nimbus`), not that the node is down. When the convention does hold, the labels map as: `ethereum_cl` = first part, `ethereum_el` = second part, full name = `instance`.
+**Node naming:** Most nodes follow `<cl>-<el>-<tier>-<n>` (e.g. `lighthouse-geth-super-1` → CL lighthouse, EL geth), but devnets also include bootnodes, MEV relays, and other non-paired nodes (`bootnode-1`, `mev-relay-1`) that do NOT match this pattern. Never derive node names from the convention — always use the `hosts` list discovered in Phase 0 (or Dora's `/v1/clients/consensus`).
 
-**Trimming log payloads with `line_format`:** Loki returns full stream metadata (labels, container info, timestamps) for every log entry. This is verbose and wastes context window space. **Always** append `| json | line_format` to your LogQL queries to extract only the log message. The `| json` step parses the log body so that fields like `message` become available to `line_format`. Without `| json`, template fields will be empty. Use:
-```
-| json | line_format "{{.message}}"
-```
-If `message` is still empty after `| json`, try `{{.log}}` or `{{.msg}}` instead — field names vary by log shipper. As a last resort, drop `| json | line_format` entirely and use the raw line.
+**CL vs EL — important difference from Loki:** there is no `ethereum_cl` / `ethereum_el` label. A node VM runs the CL, EL, validator, and sidecar containers together; their logs are separated only by `LogAttributes['log.file.name']` (a per-container json-log file, named by hash). To investigate one client on a node, first discover its containers (step 3) and identify the CL/EL container by its log-line format, then filter on that log file. To sweep a client type across the network, filter on `host.name` (e.g. `host.name LIKE 'lighthouse-%'` for lighthouse-CL nodes, or `host.name LIKE '%-geth-%'` for geth-EL nodes) — but remember the result still mixes that node's CL/EL/sidecar lines.
 
 **You SHOULD start with the consensus layer (CL).** Most devnet issues originate at the CL level. Only investigate EL logs if CL logs point to execution-side problems (e.g. payload validation errors, engine API failures).
 
-3. **Discover Loki labels** - In Loki-only mode (no Dora), you MUST fetch available labels and values from the discovered Loki instance to understand the network topology — this is the only way to discover what nodes exist. When Dora is available, you MAY fetch labels to confirm that the expected `testnet`, `ethereum_cl`, `ethereum_el`, and `instance` labels exist and contain the target network/nodes. Append to debug report.
+3. **Discover nodes and their containers** - You already have the node (`host.name`) list from Phase 0. For a node you want to drill into, list its containers and a sample line from each so you can tell which is the CL, EL, validator, or sidecar:
 
-4. **Fetch CL logs first (CRIT/ERR)** - For each problematic node (or all CL clients in Loki-only mode), query CL logs at the most severe log levels:
+   ```python
+   from ethpandaops import clickhouse
 
+   network = "<network>"
+   host = "<host.name>"
+
+   df = clickhouse.query("clickhouse-raw", """
+       SELECT
+         LogAttributes['log.file.name'] AS container_log,
+         count() AS lines,
+         any(substring(Body, 1, 120)) AS sample
+       FROM external.otel_logs
+       WHERE ResourceAttributes['network'] = {network:String}
+         AND ResourceAttributes['host.name'] = {host:String}
+         AND Timestamp >= now() - INTERVAL 1 HOUR
+       GROUP BY container_log
+       ORDER BY lines DESC
+   """, parameters={"network": network, "host": host})
+   print(df)
    ```
-   {testnet="<network>", ethereum_cl="<cl_type>", instance="<instance_name>"} |~ "(?i)(CRIT|ERR)" | json | line_format "{{.message}}"
+
+   Identify the client from each `sample` log format (e.g. lighthouse `MMM DD HH:MM:SS.mmm LEVEL ...`, geth `LEVEL [MM-DD|HH:MM:SS.mmm] ...`, prysm `level=... msg=...`). Append the node→container map to the debug report.
+
+4. **Fetch CL errors first (CRIT/ERR)** - For each problematic node (or all CL nodes when there is no Dora target), fetch the most severe lines. `SeverityText` is usually empty for these Docker logs, so match severity on the raw `Body`:
+
+   ```python
+   from ethpandaops import clickhouse
+
+   network = "<network>"
+   host = "<host.name>"
+
+   df = clickhouse.query("clickhouse-raw", """
+       SELECT
+         Timestamp,
+         ResourceAttributes['host.name'] AS host,
+         LogAttributes['log.file.name'] AS container_log,
+         Body
+       FROM external.otel_logs
+       WHERE ResourceAttributes['network'] = {network:String}
+         AND ResourceAttributes['host.name'] = {host:String}
+         AND match(Body, '(?i)(crit|err|error|fatal)')
+         AND Timestamp >= now() - INTERVAL 1 HOUR
+       ORDER BY Timestamp DESC
+       LIMIT 200
+   """, parameters={"network": network, "host": host})
+   print(df)
    ```
 
-   If `line_format` returns empty results, the field name may differ — try `{{.log}}` or `{{.msg}}`. If all are empty, drop `| json | line_format` and use the raw line.
+   Once you have identified the CL container's log file (step 3), add `AND LogAttributes['log.file.name'] = {container:String}` to isolate the CL client's lines from the EL and sidecars on the same node.
 
-   Log level formats vary by client — see the query skill's Loki section for format details and fallback strategies.
+   To sweep a CL client type across the whole network instead of one node, replace the host filter with `AND ResourceAttributes['host.name'] LIKE {cl_prefix:String}` and pass e.g. `{"cl_prefix": "lighthouse-%"}`.
 
-   If multiple nodes are offline, you MUST query each one. Look for common error patterns across nodes.
+   If multiple nodes are erroring, query each one. Look for common error patterns across nodes — the same error across nodes of one client type points to a client bug.
 
-   **If Loki returns no logs at all** for a node, that is itself a signal — but it does not necessarily mean the node is down (it may just not be shipping logs). If `has_ethnode = true`, verify by querying the node directly (e.g. sync status or health check). If the node responds, it is running but not logging; if it is unreachable, it is truly down. Report either finding to the user.
+   **If a node returns no logs at all**, that is itself a signal — but it does not necessarily mean the node is down (it may just not be shipping logs). If `has_ethnode = true`, verify by querying the node directly (e.g. sync status or health check). If it responds, it is running but not logging; if it is unreachable, it is truly down. Report either finding to the user.
 
 5. **Fetch EL logs if CL points to execution issues** - You MAY investigate EL logs if CL logs show:
    - Engine API errors (e.g. `engine_newPayload` failures, timeouts)
@@ -199,7 +245,7 @@ If `message` is still empty after `| json`, try `{{.log}}` or `{{.msg}}` instead
    - Execution sync issues
    - "execution client unavailable" or similar
 
-   If any appear, fetch EL logs for the same node using `ethereum_el="<el_type>"` with the same filter pattern.
+   If any appear, fetch the EL container's logs on the same node — use the same query as step 4, filtering on the EL container's `LogAttributes['log.file.name']` (identified in step 3).
 
    **CL/EL diagnostic matrix** — use this to narrow the root cause:
    - **Errors only in CL logs** → consensus issue (attestation bug, fork choice problem, CL client bug)
@@ -207,7 +253,7 @@ If `message` is still empty after `| json`, try `{{.log}}` or `{{.msg}}` instead
    - **CL clean but EL errors** → EL struggling but CL compensating; monitor but may not be primary cause
    - **Both layers erroring** → shared dependency (disk, memory, network) or cascading failure
 
-6. **Escalate to WARN/INFO if needed** - If CRIT/ERR logs are empty or inconclusive at both CL and EL levels, broaden to WARN, then INFO. You MAY go to DEBUG as a last resort — DEBUG logs are very verbose and may time out.
+6. **Escalate to WARN/INFO if needed** - If CRIT/ERR lines are empty or inconclusive at both CL and EL, broaden the `Body` pattern to include `warn`, then drop the severity filter entirely for INFO/DEBUG. Unfiltered-severity queries are verbose — keep a tight `Timestamp` window and a `LIMIT`, and they may still time out.
 
 7. **Correlate logs with Dora timeline** - **Only applicable when Dora data exists (Phase 1 ran).** You SHOULD match log timestamps against the Dora data:
    - When did errors start relative to missed slots or participation drops?

@@ -31,11 +31,11 @@ panda datasources --json 2>/dev/null
   ```
   Then follow that runbook. It covers Kurtosis service discovery, local Dora detection, `local-kurtosis` ClickHouse datasource detection for OTel logs/traces, direct CL/EL API queries, and `kurtosis service logs` fallback.
 
-- If the target network is found in **panda datasources** (Dora networks, Loki instances) → **remote deployment**. Load the remote debugging procedure:
+- If the target network is found in **panda datasources** (Dora networks, or shipping container logs to `external.otel_logs` in the `clickhouse-raw` datasource) → **remote deployment**. Load the remote debugging procedure:
   ```bash
   panda search runbooks "debug devnet"
   ```
-  Then follow that runbook. It covers remote datasource discovery, Dora data collection, remote Loki log investigation, and ethnode RPC validation.
+  Then follow that runbook. It covers remote datasource discovery, Dora data collection, ClickHouse OTel log investigation (`external.otel_logs`), and ethnode RPC validation.
 
 - If found in **neither** → stop, tell the user the network was not found in any local enclave or remote datasource.
 

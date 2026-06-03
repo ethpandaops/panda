@@ -1,13 +1,13 @@
 ---
 name: query
-description: Query Ethereum network data via ethpandaops CLI or MCP server. Use when analyzing blockchain data, block timing, attestations, validator performance, network health, or infrastructure metrics. Provides access to ClickHouse (blockchain data), Prometheus (metrics), Loki (logs), and Dora (explorer APIs).
+description: Query Ethereum network data via ethpandaops CLI or MCP server. Use when analyzing blockchain data, block timing, attestations, validator performance, network health, or infrastructure metrics. Provides access to ClickHouse (blockchain data and OTel logs), Prometheus (metrics), and Dora (explorer APIs).
 argument-hint: <query or question>
 user-invocable: false
 ---
 
 # ethpandaops Query Guide
 
-Query Ethereum network data through the ethpandaops tools. Execute Python code in sandboxed containers with access to ClickHouse blockchain data, Prometheus metrics, Loki logs, and Dora explorer APIs.
+Query Ethereum network data through the ethpandaops tools. Execute Python code in sandboxed containers with access to ClickHouse blockchain data and OTel logs, Prometheus metrics, and Dora explorer APIs.
 
 ## Workflow
 
@@ -58,7 +58,6 @@ All commands support `--json` for structured output.
 | `datasources://list` | All configured datasources |
 | `datasources://clickhouse` | ClickHouse clusters |
 | `datasources://prometheus` | Prometheus instances |
-| `datasources://loki` | Loki instances |
 | `networks://active` | Active Ethereum networks |
 | `clickhouse://tables` | All clusters and their tables (keyed by database + name) |
 | `clickhouse://tables/{cluster}` | Tables in one cluster |
@@ -130,52 +129,61 @@ result = prometheus.query_range(
 
 **Time formats:** RFC3339 or relative (`now`, `now-1h`, `now-30m`)
 
-### Loki - Log Data
+### Logs — OTel ClickHouse (`external.otel_logs`)
 
-**Always discover labels first.** Before querying logs, fetch the available labels and their values so you can add the right filters. Unfiltered Loki queries are slow and may time out — label filters narrow the search at the storage level and are essential for efficient log retrieval.
+Container logs from hosted devnets and platform services are shipped via OpenTelemetry into the `clickhouse-raw` ClickHouse cluster, database `external`, table `external.otel_logs`. Query them with SQL through the `clickhouse` module — **there is no Loki datasource**. (Local Kurtosis devnet logs are separate: query the autodiscovered `local-kurtosis` datasource / `otel.otel_logs` instead.)
 
 ```python
-from ethpandaops import loki
+from ethpandaops import clickhouse
 
-# Step 1: List instances
-instances = loki.list_datasources()
-
-# Step 2: Fetch all available labels
-labels = loki.get_labels("ethpandaops")
-print(labels)
-# Example: ['app', 'cluster', 'ethereum_cl', 'ethereum_el', 'ethereum_network',
-#           'instance', 'namespace', 'node', 'testnet', 'validator_client', ...]
-
-# Step 3: Get values for a specific label to build your filter
-networks = loki.get_label_values("ethpandaops", "testnet")
-print(networks)  # e.g. ['fusaka-devnet-3', 'hoodi', 'sepolia', ...]
-
-cl_clients = loki.get_label_values("ethpandaops", "ethereum_cl")
-print(cl_clients)  # e.g. ['lighthouse', 'prysm', 'teku', 'nimbus', 'lodestar', 'grandine']
-
-# Step 4: Query logs with label filters
-logs = loki.query(
-    "ethpandaops",
-    '{testnet="hoodi", ethereum_cl="lighthouse"} |= "error"',
-    start="now-1h",
-    limit=100
-)
+# Devnet logs are keyed by ResourceAttributes['network'] and ResourceAttributes['host.name'].
+# ALWAYS filter on Timestamp (the partition key) and network.
+df = clickhouse.query("clickhouse-raw", """
+    SELECT Timestamp, ResourceAttributes['host.name'] AS host, Body
+    FROM external.otel_logs
+    WHERE ResourceAttributes['network'] = {network:String}
+      AND match(Body, '(?i)(crit|err|error|fatal)')
+      AND Timestamp >= now() - INTERVAL 1 HOUR
+    ORDER BY Timestamp DESC
+    LIMIT 200
+""", parameters={"network": "fusaka-devnet-0"})
 ```
 
-**Key labels for Ethereum log queries:**
-- `testnet` — network/devnet name (e.g. `hoodi`, `fusaka-devnet-3`)
-- `ethereum_cl` — consensus layer client (e.g. `lighthouse`, `prysm`, `teku`)
-- `ethereum_el` — execution layer client (e.g. `geth`, `nethermind`, `besu`)
-- `ethereum_network` — Ethereum network name
-- `instance` — specific node instance
-- `validator_client` — validator client name
+**Schema (key fields):**
+- `Timestamp DateTime64(9)` — partition key; always filter on it.
+- `Body String` — the raw log line. The level is usually embedded here.
+- `SeverityText` — often EMPTY for raw Docker logs; do not rely on it. Match severity on `Body` instead.
+- `ServiceName` — empty for VM/Docker devnet logs (the `k8s.*` materialized columns apply only to Kubernetes platform logs).
+- `ResourceAttributes Map(String, String)` — node identity: `network` (devnet name), `host.name` (the node, e.g. `lighthouse-geth-super-1`), `ingress_user`, `deployment.environment`.
+- `LogAttributes Map(String, String)` — per-line attributes: `log.file.name` / `log.file.path` (one json-log file per container on the node), `container_id`, plus structured fields the client emits (`level`, `msg`, ...).
 
-**Log level formats vary by client.** When filtering logs by severity, be aware that Ethereum clients format log levels differently:
-- Keywords: `CRIT`, `ERR`, `ERROR`, `WARN`, `INFO`, `DEBUG`
-- Structured fields: `level=error`, `"level":"error"`, `"severity":"ERROR"`
-- Shorthand: `E`, `W`, `C`
+**Discover what to filter on:**
+```python
+# Networks currently shipping logs
+clickhouse.query("clickhouse-raw", """
+    SELECT DISTINCT ResourceAttributes['network'] AS network
+    FROM external.otel_logs
+    WHERE Timestamp >= now() - INTERVAL 1 HOUR
+""")
 
-Start with `|~ "(?i)(CRIT|ERR)"` as a default filter. If it returns no results, fetch a few unfiltered log lines to identify the client's format, then adapt the regex (e.g. `|~ "level=(error|fatal)"`).
+# Nodes (host.name) in a network
+clickhouse.query("clickhouse-raw", """
+    SELECT DISTINCT ResourceAttributes['host.name'] AS host
+    FROM external.otel_logs
+    WHERE ResourceAttributes['network'] = {network:String}
+      AND Timestamp >= now() - INTERVAL 1 HOUR
+    ORDER BY host
+""", parameters={"network": "fusaka-devnet-0"})
+```
+
+**Node naming:** `host.name` is `<cl>-<el>-<tier>-<n>` (e.g. `lighthouse-geth-super-1` → CL lighthouse, EL geth); bootnodes and MEV relays don't follow it. There is **no `ethereum_cl` / `ethereum_el` field** — a node runs the CL, EL, validator and sidecar containers together, separated only by `LogAttributes['log.file.name']`. Filter `host.name LIKE 'lighthouse-%'` to sweep lighthouse-CL nodes, or isolate one client by discovering its `log.file.name` (and a sample of its `Body`) and filtering on it.
+
+**Log level formats vary by client.** `SeverityText` is unreliable here, so triage on `Body`:
+- Start with `match(Body, '(?i)(crit|err|error|fatal)')`.
+- Broaden to include `warn`, then drop the severity filter for INFO/DEBUG (verbose — keep a tight time window and a `LIMIT`).
+- Client formats differ — lighthouse `MMM DD HH:MM:SS.mmm LEVEL`, geth `LEVEL [MM-DD|HH:MM:SS.mmm]`, prysm `level=... msg=...`. Sample a few unfiltered lines to confirm a client's format before crafting a precise regex.
+
+For a full devnet debugging procedure, run `panda search runbooks "debug devnet"`.
 
 ### Dora - Beacon Chain Explorer
 

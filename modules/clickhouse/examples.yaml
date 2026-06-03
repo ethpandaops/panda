@@ -62,6 +62,53 @@ devnet_logs:
         ORDER BY Timestamp DESC
         LIMIT 200
 
+production_devnet_logs:
+  name: Production Devnet OTel Logs
+  description: Queries for hosted (multi-VM) devnet and testnet container logs in the clickhouse-raw cluster, table external.otel_logs. Logs are keyed by ResourceAttributes['network'] (devnet name) and ResourceAttributes['host.name'] (node, e.g. lighthouse-geth-super-1). SeverityText is usually empty for raw Docker logs, so match severity on Body. This is NOT for local Kurtosis devnets — use the local-kurtosis datasource for those.
+  examples:
+    - name: List devnet nodes shipping logs
+      description: List the nodes (host.name) currently shipping container logs for a hosted devnet. Run this to discover the node topology before drilling into a specific node.
+      cluster: clickhouse-raw
+      query: |
+        SELECT DISTINCT ResourceAttributes['host.name'] AS host
+        FROM external.otel_logs
+        WHERE ResourceAttributes['network'] = {network:String}
+          AND Timestamp >= now() - INTERVAL 1 HOUR
+        ORDER BY host
+
+    - name: Recent node errors
+      description: Fetch recent error-class logs for one devnet node by matching the raw log body. A node VM mixes its CL, EL, validator and sidecar containers — use LogAttributes['log.file.name'] to tell them apart.
+      cluster: clickhouse-raw
+      query: |
+        SELECT
+          Timestamp,
+          ResourceAttributes['host.name'] AS host,
+          LogAttributes['log.file.name'] AS container_log,
+          Body
+        FROM external.otel_logs
+        WHERE ResourceAttributes['network'] = {network:String}
+          AND ResourceAttributes['host.name'] = {host:String}
+          AND match(Body, '(?i)(crit|err|error|fatal)')
+          AND Timestamp >= now() - INTERVAL 1 HOUR
+        ORDER BY Timestamp DESC
+        LIMIT 200
+
+    - name: Errors across a consensus client type
+      description: Sweep error-class logs across all nodes running a given CL client. host.name is <cl>-<el>-<tier>-<n>, so a 'lighthouse-%' prefix matches lighthouse-CL nodes. Results still mix each node's EL/sidecar lines.
+      cluster: clickhouse-raw
+      query: |
+        SELECT
+          Timestamp,
+          ResourceAttributes['host.name'] AS host,
+          Body
+        FROM external.otel_logs
+        WHERE ResourceAttributes['network'] = {network:String}
+          AND ResourceAttributes['host.name'] LIKE {cl_prefix:String}
+          AND match(Body, '(?i)(crit|err|error|fatal)')
+          AND Timestamp >= now() - INTERVAL 1 HOUR
+        ORDER BY Timestamp DESC
+        LIMIT 500
+
 block_timing:
   name: Block Timing Analysis
   description: Queries for analyzing block arrival and propagation times using clickhouse-refined aggregated data
