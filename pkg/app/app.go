@@ -35,6 +35,12 @@ const refreshActivationTimeout = 30 * time.Second
 
 const embeddedLocalProxyName = "local"
 
+// localProxyDiscoveryInterval is how often the server re-discovers datasources
+// from the in-process local proxy. It is short (vs the 60s default for external
+// proxies) because the local proxy is loopback and cheap to poll, so
+// autodiscovered local datasources surface within a few seconds.
+const localProxyDiscoveryInterval = 5 * time.Second
+
 // App contains the shared core components used by both the MCP server and CLI.
 type App struct {
 	log logrus.FieldLogger
@@ -305,9 +311,10 @@ func (a *App) startLocalProxyRoute(ctx context.Context, onDiscover func()) (*pro
 		Name:  embeddedLocalProxyName,
 		Local: true,
 		Client: proxy.NewClient(a.log, proxy.ClientConfig{
-			Name:       embeddedLocalProxyName,
-			URL:        localProxy.URL(),
-			OnDiscover: onDiscover,
+			Name:              embeddedLocalProxyName,
+			URL:               localProxy.URL(),
+			OnDiscover:        onDiscover,
+			DiscoveryInterval: localProxyDiscoveryInterval,
 		}),
 	}, nil
 }
