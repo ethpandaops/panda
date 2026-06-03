@@ -1,17 +1,21 @@
 ---
 name: Debug Local Devnet
-description: Collect information about a local Kurtosis devnet or systematically debug issues using Dora, Loki, and direct node API access to diagnose network splits, offline nodes, finality delays, and client bugs
+description: Collect information about a local Kurtosis devnet or systematically debug issues using Dora, OTel ClickHouse logs, and direct node API access to diagnose network splits, offline nodes, finality delays, and client bugs
 tags: [devnet, debugging, network-split, forks, logs, consensus, validators, status, info, kurtosis, local, local devnet, enclave]
 prerequisites: []
 ---
 
-The first step in debugging a local devnet is discovering what tooling is available in the Kurtosis enclave, then gathering information from whatever is present. Not all local devnets have Dora or Loki — it depends on how the user configured their Kurtosis run. Phase 0 determines the data profile so the debug flow adapts accordingly.
+The first step in debugging a local devnet is discovering what tooling is available in the Kurtosis enclave, then gathering information from whatever is present. Not all local devnets have Dora or an OTel ClickHouse datasource — it depends on how the user configured their Kurtosis run and whether the local OTel stack is running. Phase 0 determines the data profile so the debug flow adapts accordingly.
 
 **The user MUST specify which enclave to debug.** Do NOT assume an enclave — if the user hasn't specified one, ask them before proceeding. You can discover running enclaves with `kurtosis enclave ls`.
 
-**Local devnets do NOT have xatu.** Do not attempt to use `clickhouse.query()` or any xatu-related datasources — these only exist on remote deployments.
+**Local devnets do NOT use the hosted ClickHouse datasources.** For logs, only use `clickhouse.query("local-kurtosis", ...)` when the `local-kurtosis` ClickHouse datasource is discovered. Do not use the hosted `clickhouse-raw`/`clickhouse-refined` datasources for local Kurtosis logs.
 
-Refer to the query skill for general API usage patterns (Dora overview, Loki label discovery, direct HTTP calls, Dora link generation, etc.). This runbook only covers the debugging-specific procedure and API calls not in the skill.
+Refer to the query skill for general API usage patterns (Dora overview, ClickHouse queries, direct HTTP calls, Dora link generation, etc.). This runbook only covers the debugging-specific procedure and API calls not in the skill.
+
+## How OTel Logs Flow
+
+Kurtosis devnet services emit logs to the devnet's `otel-collector`. The collector writes them into the Kurtosis ClickHouse service on HTTP port `18123`, database `otel`, table `otel_logs`. Panda starts an in-process local proxy that autodiscovers this ClickHouse when `/ping` returns `Ok.` and the `otel` database exists, then exposes it as the `local-kurtosis` ClickHouse datasource. Query it with SQL, always filtering by `EnclaveName` because one local ClickHouse can hold logs from multiple devnets.
 
 ## Debug Report
 
@@ -53,7 +57,7 @@ Use the `search` tool to find relevant patterns, related procedures, and protoco
 - **Runbooks** — If you hit a sub-problem during debugging that feels like it deserves its own procedure (e.g., "finality stalled but no split", "single client type failing"), check whether a dedicated runbook exists: `search(type="runbooks", query="<sub-problem>")`
 - **EIPs** — When investigating protocol-level behavior, fork boundary issues, or suspected consensus rule edge cases, look up the relevant specification: `search(type="eips", query="<EIP topic or number>")`
 
-This does NOT replace the hardcoded patterns in this runbook — those encode debug-specific knowledge (error-level filtering, Kurtosis label schema, log field fallbacks, etc.) that generic examples won't have. Use search to fill gaps, not to replace what's already here.
+This does NOT replace the hardcoded patterns in this runbook — those encode debug-specific knowledge (OTel table schema, error-level filtering, Kurtosis enclave/service fields, log field fallbacks, etc.) that generic examples won't have. Use search to fill gaps, not to replace what's already here.
 
 ## Phase 0: Network Discovery
 
@@ -72,15 +76,28 @@ Before collecting data, determine what tooling is available in the Kurtosis encl
 
    **Available tooling** — check whether these services exist:
    - **Dora** (block explorer): look for services containing `dora` in the enclave inspect output. If present, `has_dora = true` — note its `http` port.
-   - **Loki** (logs): Loki does NOT appear in `kurtosis enclave inspect`. Instead, check if Loki is running by calling `curl -s http://localhost:3100/ready` — Kurtosis always runs Loki on port 3100 when enabled. If it responds, `has_loki = true`.
+   - **OTel ClickHouse** (logs): check panda's discovered ClickHouse datasources for a datasource named `local-kurtosis`. If present, `has_otel_clickhouse = true`. Do NOT probe local logging ports for this flow.
    - **Prometheus** (metrics): look for services containing `prometheus` in the enclave inspect output. If present, note its port.
    - Any other observability or debugging services the user may have included.
+
+   Example datasource check:
+   ```python
+   from ethpandaops import clickhouse
+
+   clickhouse_datasources = clickhouse.list_datasources()
+   clickhouse_names = [
+       ds.get("name") if isinstance(ds, dict) else ds
+       for ds in clickhouse_datasources
+   ]
+   has_otel_clickhouse = "local-kurtosis" in clickhouse_names
+   print(clickhouse_datasources)
+   ```
 
    **Service status:** confirm all services are RUNNING. Services not in RUNNING state are already a finding — note them in the debug report.
 
    Record the **data profile** in the debug report:
    - `has_dora: true/false`
-   - `has_loki: true/false`
+   - `has_otel_clickhouse: true/false`
    - Enclave name
    - List of CL/EL/VC services with their localhost ports
    - List of tooling services with their ports
@@ -88,8 +105,8 @@ Before collecting data, determine what tooling is available in the Kurtosis encl
    **Routing rules:**
    - `has_dora = true` → Phase 1 (Dora) runs normally.
    - `has_dora = false` → Use direct CL/EL API queries to build a baseline instead (see Phase 1 fallback below).
-   - `has_loki = true` → Phase 2 uses local Loki for log investigation.
-   - `has_loki = false` → Phase 2 falls back to `kurtosis service logs`.
+   - `has_otel_clickhouse = true` → Phase 2 uses the `local-kurtosis` ClickHouse datasource for OTel log investigation.
+   - `has_otel_clickhouse = false` → Phase 2 falls back to `kurtosis service logs`.
 
 ## Phase 1: Data Collection with Dora
 
@@ -123,43 +140,121 @@ Before collecting data, determine what tooling is available in the Kurtosis encl
 
 ## Phase 2: Log Investigation
 
-### If Loki is available (`has_loki = true`)
+### If OTel ClickHouse is available (`has_otel_clickhouse = true`)
 
-Local Kurtosis Loki has a different label schema than remote ethpandaops Loki.
+Use the autodiscovered `local-kurtosis` ClickHouse datasource. The local OTel tables are shared by all active Kurtosis devnets, so **the first query MUST discover available enclaves** before querying logs for a specific devnet.
 
-**Stream labels** (for `{}` selectors): `job`, `service_name`, `detected_level` — all services share `job="kurtosis"` and `service_name="kurtosis"`, so these cannot distinguish between nodes.
+Useful schema fields:
+- `otel.otel_logs`: `Timestamp DateTime64(9)`, `ServiceName LowCardinality(String)`, `Body String`, `SeverityText LowCardinality(String)`, `SeverityNumber UInt8`, `EnclaveName LowCardinality(String)`, `EnclaveUuid`, `ResourceAttributes Map(LowCardinality(String), String)`, `LogAttributes Map(LowCardinality(String), String)`
 
-**JSON fields** (accessible via `| json`): The log body is JSON containing fields like `kurtosis_service_name`, `kurtosis_enclave_uuid`, `container_name`, `source`, and `log` (the actual log content). Use `| json` to parse these and filter by service.
+**Always filter by `EnclaveName` once you know it.** For service-level log queries, also filter by `ServiceName`. The Kurtosis OTel collector may leave `SeverityText` and `SeverityNumber` empty, so severity triage must use `match(Body, ...)` on the raw log line. Use the same active timeframe established in the Timeframe Rules section above.
 
-**Trimming log payloads with `line_format`:** Loki returns full stream metadata (labels, container info, timestamps) for every log entry. This is verbose and wastes context window space. For local Kurtosis Loki, the actual log content is in the `log` JSON field. **Always** append `| json | line_format "{{.log}}"` to extract only the log message. Applied in all queries below.
+**FIRST: discover enclaves present in the OTel logs table**
+```python
+from ethpandaops import clickhouse
 
-**Example LogQL queries for local Kurtosis Loki:**
-
-For all CL errors (using JSON parsing):
-```
-{job="kurtosis"} | json | kurtosis_service_name=~"cl-.*" | log=~"(?i)(CRIT|ERR|error)" | line_format "{{.log}}"
-```
-
-For a specific node:
-```
-{job="kurtosis"} | json | kurtosis_service_name="cl-2-prysm-geth" | log=~"(?i)(CRIT|ERR|error)" | line_format "{{.log}}"
-```
-
-For all EL errors:
-```
-{job="kurtosis"} | json | kurtosis_service_name=~"el-.*" | log=~"(?i)(ERR|error|WARN)" | line_format "{{.log}}"
+enclaves = clickhouse.query("local-kurtosis", """
+    SELECT DISTINCT EnclaveName
+    FROM otel.otel_logs
+    WHERE EnclaveName != ''
+    ORDER BY EnclaveName
+""")
+print(enclaves)
 ```
 
-You can also use simpler raw line matches if JSON parsing is slow (no `line_format` needed since there's no JSON parsing):
+If the requested enclave is not listed, the OTel datasource is not currently receiving logs for that devnet. Fall back to `kurtosis service logs`.
+
+**Discover services for the selected enclave**
+```python
+from ethpandaops import clickhouse
+
+enclave = "<enclave-name>"
+
+services = clickhouse.query("local-kurtosis", """
+    SELECT
+      ServiceName,
+      count() AS log_count,
+      min(Timestamp) AS first_seen,
+      max(Timestamp) AS last_seen
+    FROM otel.otel_logs
+    WHERE EnclaveName = {enclave:String}
+      AND Timestamp >= now() - INTERVAL 1 HOUR
+    GROUP BY ServiceName
+    ORDER BY ServiceName
+""", parameters={"enclave": enclave})
+print(services)
 ```
-{job="kurtosis"} |~ "cl-2-prysm-geth" |~ "(?i)(CRIT|ERR|error)"
+
+**Fetch recent CL errors for the selected enclave**
+```python
+from ethpandaops import clickhouse
+
+enclave = "<enclave-name>"
+
+cl_errors = clickhouse.query("local-kurtosis", """
+    SELECT
+      Timestamp,
+      ServiceName,
+      Body
+    FROM otel.otel_logs
+    WHERE EnclaveName = {enclave:String}
+      AND ServiceName LIKE 'cl-%'
+      AND match(Body, '(?i)(crit|err|error|fatal)')
+      AND Timestamp >= now() - INTERVAL 1 HOUR
+    ORDER BY Timestamp DESC
+    LIMIT 200
+""", parameters={"enclave": enclave})
+print(cl_errors)
 ```
 
-**Use the same active timeframe** established in the Timeframe Rules section above.
+**Fetch recent error-class logs for a specific service**
+```python
+from ethpandaops import clickhouse
 
-### If Loki is not available — fallback to kurtosis service logs
+enclave = "<enclave-name>"
+service = "<service-name>"
 
-Use `kurtosis service logs` only when no Loki instance exists in the enclave:
+service_logs = clickhouse.query("local-kurtosis", """
+    SELECT
+      Timestamp,
+      ServiceName,
+      Body
+    FROM otel.otel_logs
+    WHERE EnclaveName = {enclave:String}
+      AND ServiceName = {service:String}
+      AND match(Body, '(?i)(crit|err|error|fatal)')
+      AND Timestamp >= now() - INTERVAL 1 HOUR
+    ORDER BY Timestamp DESC
+    LIMIT 200
+""", parameters={"enclave": enclave, "service": service})
+print(service_logs)
+```
+
+**Fetch EL warnings/errors when CL logs point to execution issues**
+```python
+from ethpandaops import clickhouse
+
+enclave = "<enclave-name>"
+
+el_logs = clickhouse.query("local-kurtosis", """
+    SELECT
+      Timestamp,
+      ServiceName,
+      Body
+    FROM otel.otel_logs
+    WHERE EnclaveName = {enclave:String}
+      AND ServiceName LIKE 'el-%'
+      AND match(Body, '(?i)(crit|err|error|fatal|warn)')
+      AND Timestamp >= now() - INTERVAL 1 HOUR
+    ORDER BY Timestamp DESC
+    LIMIT 200
+""", parameters={"enclave": enclave})
+print(el_logs)
+```
+
+### If OTel ClickHouse is not available — fallback to kurtosis service logs
+
+Use `kurtosis service logs` only when the `local-kurtosis` ClickHouse datasource is unavailable or does not contain the selected enclave:
 - `kurtosis service logs <enclave> <service>` — logs for a specific service (default: last 200 lines)
 - `kurtosis service logs <enclave> -x` — logs for **all** services
 - `--regex-match "<pattern>"` — filter lines matching a regex (re2 syntax)
@@ -174,11 +269,11 @@ Regardless of which log source is used, follow this procedure:
 
 **You SHOULD start with the consensus layer (CL).** Most devnet issues originate at the CL level. Only investigate EL logs if CL logs point to execution-side problems (e.g. payload validation errors, engine API failures).
 
-3. **Discover Loki labels** - If using Loki, fetch available labels and values to understand the topology. Append to debug report.
+3. **Discover OTel enclave and service coverage** - If using OTel ClickHouse, first query `SELECT DISTINCT EnclaveName FROM otel.otel_logs`, then query service coverage for the selected enclave. Append results to the debug report.
 
 4. **Fetch CL logs first (CRIT/ERR)** - For each problematic node (or all CL clients if no specific targets), query CL logs at the most severe log levels.
 
-   Log level formats vary by client — see the query skill's Loki section for format details and fallback strategies.
+   Log level formats vary by client. In OTel logs, start with `match(Body, '(?i)(crit|err|error|fatal)')`; if needed, broaden the Body pattern to include `warn`, then INFO-level terms.
 
    If multiple nodes are offline, you MUST query each one. Look for common error patterns across nodes — the same error on multiple CL nodes likely points to a shared cause (CL client bug, consensus rule issue).
 

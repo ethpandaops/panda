@@ -116,7 +116,7 @@ func (s *service) handleLokiQuery(w http.ResponseWriter, r *http.Request, rangeQ
 		params.Set("time", parsedTime)
 	}
 
-	s.proxyPassthroughGet(w, r, path, params, datasource)
+	s.proxyPassthroughGet(w, r, "loki", path, params, datasource)
 }
 
 func (s *service) handleLokiLabels(w http.ResponseWriter, r *http.Request) {
@@ -138,7 +138,7 @@ func (s *service) handleLokiLabels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.proxyPassthroughGet(w, r, "/loki/loki/api/v1/labels", params, datasource)
+	s.proxyPassthroughGet(w, r, "loki", "/loki/loki/api/v1/labels", params, datasource)
 }
 
 func (s *service) handleLokiLabelValues(w http.ResponseWriter, r *http.Request) {
@@ -166,7 +166,7 @@ func (s *service) handleLokiLabelValues(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	s.proxyPassthroughGet(w, r, "/loki/loki/api/v1/label/"+url.PathEscape(label)+"/values", params, datasource)
+	s.proxyPassthroughGet(w, r, "loki", "/loki/loki/api/v1/label/"+url.PathEscape(label)+"/values", params, datasource)
 }
 
 func buildLokiLabelParams(args map[string]any) (url.Values, error) {

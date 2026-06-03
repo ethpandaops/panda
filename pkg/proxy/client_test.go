@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/sirupsen/logrus"
+
+	"github.com/ethpandaops/panda/pkg/types"
 )
 
 // TestDiscoverFiresOnDiscoverHook verifies the OnDiscover callback fires after
@@ -90,5 +92,33 @@ func TestDiscoverNilOnDiscoverIsSafe(t *testing.T) {
 
 	if err := client.Discover(context.Background()); err != nil {
 		t.Fatalf("Discover error = %v", err)
+	}
+}
+
+func TestDatasourceInfoIncludesProxyName(t *testing.T) {
+	t.Parallel()
+
+	client := &proxyClient{
+		cfg: ClientConfig{Name: "hosted"},
+		datasources: &DatasourcesResponse{
+			ClickHouseInfo: []types.DatasourceInfo{{Name: "xatu"}},
+			Prometheus:     []string{"metrics"},
+		},
+	}
+
+	clickhouse := client.ClickHouseDatasourceInfo()
+	if len(clickhouse) != 1 {
+		t.Fatalf("ClickHouseDatasourceInfo() length = %d, want 1", len(clickhouse))
+	}
+	if clickhouse[0].ProxyName != "hosted" {
+		t.Fatalf("ClickHouseDatasourceInfo()[0].ProxyName = %q, want hosted", clickhouse[0].ProxyName)
+	}
+
+	prometheus := client.PrometheusDatasourceInfo()
+	if len(prometheus) != 1 {
+		t.Fatalf("PrometheusDatasourceInfo() length = %d, want 1", len(prometheus))
+	}
+	if prometheus[0].ProxyName != "hosted" {
+		t.Fatalf("PrometheusDatasourceInfo()[0].ProxyName = %q, want hosted", prometheus[0].ProxyName)
 	}
 }

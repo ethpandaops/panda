@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/sirupsen/logrus"
@@ -69,4 +70,89 @@ func TestClickHouseHandlerProxiesViaRewrite(t *testing.T) {
 	assert.NotEqual(t, "Bearer sandbox-token", got.auth) // inbound bearer stripped
 	assert.True(t, strings.HasPrefix(got.auth, "Basic "), "expected basic auth, got %q", got.auth)
 	assert.Equal(t, "203.0.113.9", got.xff) // SetXForwarded
+}
+
+func TestClickHouseHandlerMutableClusters(t *testing.T) {
+	t.Parallel()
+
+	handler := NewClickHouseHandler(logrus.New(), nil)
+
+	if handler.HasCluster("local-kurtosis") {
+		t.Fatal("expected local-kurtosis to be absent")
+	}
+
+	handler.AddCluster(ClickHouseConfig{
+		Name:     "local-kurtosis",
+		Host:     "127.0.0.1",
+		Port:     18123,
+		Database: "otel",
+	})
+
+	if !handler.HasCluster("local-kurtosis") {
+		t.Fatal("expected local-kurtosis to be present")
+	}
+
+	if got := handler.Clusters(); len(got) != 1 || got[0] != "local-kurtosis" {
+		t.Fatalf("Clusters() = %v, want [local-kurtosis]", got)
+	}
+
+	cfg, ok := handler.ClusterConfig("local-kurtosis")
+	if !ok {
+		t.Fatal("expected ClusterConfig(local-kurtosis) to exist")
+	}
+	if cfg.Database != "otel" {
+		t.Fatalf("ClusterConfig(local-kurtosis).Database = %q, want otel", cfg.Database)
+	}
+
+	handler.RemoveCluster("local-kurtosis")
+
+	if handler.HasCluster("local-kurtosis") {
+		t.Fatal("expected local-kurtosis to be removed")
+	}
+
+	if got := handler.Clusters(); len(got) != 0 {
+		t.Fatalf("Clusters() after removal = %v, want empty", got)
+	}
+}
+
+func TestClickHouseHandlerConcurrentMutationAndServe(t *testing.T) {
+	t.Parallel()
+
+	handler := NewClickHouseHandler(logrus.New(), nil)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			for j := 0; j < 100; j++ {
+				handler.AddCluster(ClickHouseConfig{
+					Name: "local-kurtosis",
+					Host: "127.0.0.1",
+					Port: 18123,
+				})
+				_ = handler.HasCluster("local-kurtosis")
+				_ = handler.Clusters()
+				handler.RemoveCluster("local-kurtosis")
+			}
+		}()
+	}
+
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			for j := 0; j < 100; j++ {
+				req := httptest.NewRequest(http.MethodGet, "/clickhouse", nil)
+				req.Header.Set(DatasourceHeader, "missing")
+				rec := httptest.NewRecorder()
+
+				handler.ServeHTTP(rec, req)
+			}
+		}()
+	}
+
+	wg.Wait()
 }

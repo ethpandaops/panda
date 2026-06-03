@@ -119,6 +119,10 @@ func TestBuildComposeTemplate(t *testing.T) {
 			assert.Equal(t, tt.serverImage, svc["image"])
 			assert.Equal(t, "panda-server", svc["container_name"])
 
+			extraHosts, ok := svc["extra_hosts"].([]any)
+			require.True(t, ok, "service must have extra_hosts")
+			require.Contains(t, extraHosts, "host.docker.internal:host-gateway")
+
 			// Verify port mapping.
 			ports, ok := svc["ports"].([]any)
 			require.True(t, ok, "service must have ports")

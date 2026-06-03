@@ -1,4 +1,4 @@
-# Query Examples for Xatu ClickHouse Data
+# Query Examples for ClickHouse Data
 #
 # Format:
 #
@@ -15,7 +15,52 @@
 #         WHERE slot_start_date_time >= now() - INTERVAL 1 HOUR
 #           AND meta_network_name = 'mainnet'
 #
-# IMPORTANT: Always filter on partition key (slot_start_date_time) and meta_network_name
+# IMPORTANT: For Xatu examples, always filter on partition key (slot_start_date_time) and meta_network_name.
+
+devnet_logs:
+  name: Local Devnet OTel Logs
+  description: Queries for local Kurtosis devnet OTel logs exposed through the autodiscovered local-kurtosis ClickHouse datasource
+  examples:
+    - name: List local devnet enclaves
+      description: List Kurtosis enclave names currently present in the shared local OTel logs table. Run this before filtering logs because multiple devnets can share one table.
+      cluster: local-kurtosis
+      query: |
+        SELECT DISTINCT EnclaveName
+        FROM otel.otel_logs
+        WHERE EnclaveName != ''
+        ORDER BY EnclaveName
+
+    - name: Recent service errors
+      description: Fetch recent error-class logs for a specific service in a specific local Kurtosis enclave by matching the raw log body.
+      cluster: local-kurtosis
+      query: |
+        SELECT
+          Timestamp,
+          ServiceName,
+          Body
+        FROM otel.otel_logs
+        WHERE EnclaveName = {enclave:String}
+          AND ServiceName = {service:String}
+          AND match(Body, '(?i)(crit|err|error|fatal)')
+          AND Timestamp >= now() - INTERVAL 1 HOUR
+        ORDER BY Timestamp DESC
+        LIMIT 200
+
+    - name: EL warnings and errors
+      description: Fetch recent EL warning/error logs for a local Kurtosis enclave by matching the raw log body.
+      cluster: local-kurtosis
+      query: |
+        SELECT
+          Timestamp,
+          ServiceName,
+          Body
+        FROM otel.otel_logs
+        WHERE EnclaveName = {enclave:String}
+          AND ServiceName LIKE 'el-%'
+          AND match(Body, '(?i)(crit|err|error|fatal|warn)')
+          AND Timestamp >= now() - INTERVAL 1 HOUR
+        ORDER BY Timestamp DESC
+        LIMIT 200
 
 block_timing:
   name: Block Timing Analysis

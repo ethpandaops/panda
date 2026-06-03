@@ -34,20 +34,36 @@ sandbox:
 # storage:
 #   base_dir: "~/.panda/data/storage"  # Default location
 
-# Proxy connection configuration.
-# The server always connects to a running proxy over HTTP.
-# In local dev this is typically the docker compose proxy service.
-# For external users this can point at a hosted credential proxy.
-proxy:
-  url: "http://ethpandaops-panda-proxy:18081"
+# Proxies the server connects to over HTTP. Each holds upstream credentials and
+# advertises datasources; queries are routed to the proxy that advertised the
+# datasource. The first entry is primary (auth, embedding, GitHub builds, ethnode).
+proxies:
+  - name: "hosted"
+    url: "https://panda-proxy.ethpandaops.io"
+    # auth:                  # for hosted proxies; users run `ep auth login`
+    #   mode: "oidc"         # "oidc" or "oauth"
+    #   issuer_url: "https://panda-proxy.ethpandaops.io"
+    #   client_id: "panda"
 
-  # Auth configuration (optional, for remote hosted proxies).
-  # Users run `ep auth login` and the local server reuses those credentials.
-  # auth:
-  #   mode: "oidc"   # "oidc" for Dex/authentik/etc, "oauth" for the legacy embedded proxy issuer
-  #   issuer_url: "https://proxy.ethpandaops.io"
-  #   client_id: "panda-proxy"
-  #   # resource: "https://proxy.ethpandaops.io"   # only for providers that require RFC 8707 resource params
+# Deprecated: the old single-proxy form. Use `proxies:` above. If set it is promoted
+# to proxies[0]; setting both `proxy:` and `proxies:` is an error.
+# proxy:
+#   url: "https://panda-proxy.ethpandaops.io"
+
+# In-process proxy for datasources that run on the host instead of behind a remote
+# proxy. On by default; runs unauthenticated on loopback.
+# local_proxy:
+#   enabled: true
+#   clickhouse:
+#     # Local Kurtosis OTel ClickHouse, exposed as `local-kurtosis` only
+#     # while reachable. Use host: "localhost" when panda-server runs natively.
+#     - name: "local-kurtosis"
+#       description: "Local Kurtosis devnet logs (OpenTelemetry, autodiscovered). ClickHouse db `otel`, table `otel_logs` (per-service devnet logs; level is in Body, not SeverityText). Filter by EnclaveName (one per devnet) and ServiceName."
+#       host: "host.docker.internal"
+#       port: 18123
+#       database: "otel"
+#       autodiscover: true
+#       autodiscover_interval: 10s
 
 # Consensus specs configuration (optional).
 # By default, fetches the latest release from ethereum/consensus-specs.

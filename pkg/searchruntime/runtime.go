@@ -42,12 +42,24 @@ func Build(
 	cacheDir string,
 	specsCfg config.ConsensusSpecsConfig,
 ) (*Runtime, error) {
+	runtime := &Runtime{}
+
 	if proxyService == nil {
-		return nil, fmt.Errorf("proxy service is required for semantic search")
+		log.Warn("Proxy service unavailable; semantic search disabled")
+
+		return runtime, nil
+	}
+
+	if router, ok := proxyService.(proxy.Router); ok && router.Primary() == nil {
+		log.Warn("No external proxy configured; semantic search disabled")
+
+		return runtime, nil
 	}
 
 	if !proxyService.EmbeddingAvailable() {
-		return nil, fmt.Errorf("proxy embedding not available: ensure the proxy has embedding configured")
+		log.Warn("Proxy embedding not available; semantic search disabled")
+
+		return runtime, nil
 	}
 
 	model := proxyService.EmbeddingModel()
@@ -76,7 +88,7 @@ func Build(
 		model,
 	)
 
-	runtime := &Runtime{embedder: embedder}
+	runtime.embedder = embedder
 
 	examples := resource.GetQueryExamples(moduleRegistry)
 	exampleCount := 0

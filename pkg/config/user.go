@@ -99,6 +99,10 @@ func LoadWithUserOverrides(path string) (*Config, error) {
 		return nil, fmt.Errorf("parsing merged config: %w", err)
 	}
 
+	if err := rejectSingularAndPluralProxies(cfg.Proxy, cfg.Proxies); err != nil {
+		return nil, fmt.Errorf("validating merged config: %w", err)
+	}
+
 	applyDefaults(&cfg)
 
 	if err := cfg.Validate(); err != nil {
@@ -151,6 +155,10 @@ func ValidateMergedConfig(basePath string, overrides map[string]any) error {
 
 	if err := decoder.Decode(&cfg); err != nil {
 		return fmt.Errorf("parsing merged config: %w", err)
+	}
+
+	if err := rejectSingularAndPluralProxies(cfg.Proxy, cfg.Proxies); err != nil {
+		return fmt.Errorf("validating merged config: %w", err)
 	}
 
 	applyDefaults(&cfg)

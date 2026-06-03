@@ -3,11 +3,14 @@ package app
 import (
 	"context"
 	"io"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/ethpandaops/panda/pkg/config"
 	"github.com/ethpandaops/panda/pkg/module"
 	"github.com/ethpandaops/panda/pkg/proxy"
 	"github.com/ethpandaops/panda/pkg/types"
@@ -57,6 +60,97 @@ func TestRefreshModulesActivatesNewlyDiscoverable(t *testing.T) {
 	if mod.reloadCalls.Load() != 0 {
 		t.Fatalf("OnDiscoveryReloaded was called %d times for a newly-activated module, want 0",
 			mod.reloadCalls.Load())
+	}
+}
+
+func TestLocalProxyServerConfigMapsAutodiscover(t *testing.T) {
+	t.Parallel()
+
+	enabled := true
+	app := New(logrus.New(), &config.Config{
+		LocalProxy: config.LocalProxyConfig{
+			Enabled: &enabled,
+			ClickHouse: []config.LocalProxyClickHouseConfig{
+				{
+					Name:                 "local-kurtosis",
+					Description:          "Custom local Kurtosis datasource",
+					Host:                 "localhost",
+					Port:                 18123,
+					Database:             "otel",
+					Username:             "default",
+					Password:             "secret",
+					Secure:               true,
+					Autodiscover:         true,
+					AutodiscoverInterval: 15 * time.Second,
+				},
+			},
+		},
+	})
+
+	cfg := app.localProxyServerConfig()
+
+	if got := cfg.Server.ListenAddr; got != "127.0.0.1:0" {
+		t.Fatalf("ListenAddr = %q, want 127.0.0.1:0", got)
+	}
+	if got := cfg.Auth.Mode; got != proxy.AuthModeNone {
+		t.Fatalf("Auth mode = %q, want none", got)
+	}
+	if len(cfg.ClickHouse) != 1 {
+		t.Fatalf("ClickHouse length = %d, want 1", len(cfg.ClickHouse))
+	}
+
+	got := cfg.ClickHouse[0]
+	if got.Name != "local-kurtosis" || got.Host != "localhost" || got.Port != 18123 ||
+		got.Description != "Custom local Kurtosis datasource" || got.Database != "otel" ||
+		got.Username != "default" || got.Password != "secret" || !got.Secure ||
+		!got.Autodiscover || got.AutodiscoverInterval != 15*time.Second {
+		t.Fatalf("ClickHouse config = %#v, want mapped local proxy config", got)
+	}
+}
+
+func TestRefreshModulesFromDiscoverySerializesConcurrentCallbacks(t *testing.T) {
+	t.Parallel()
+
+	log := logrus.New()
+	log.SetOutput(io.Discard)
+
+	reg := module.NewRegistry(log)
+	mod := &fakeDiscoverableModule{
+		name:       "fake",
+		startDelay: 10 * time.Millisecond,
+	}
+	reg.Add(mod)
+
+	client := &fakeProxyClient{
+		clickhouse: []types.DatasourceInfo{{Type: "clickhouse", Name: "xatu"}},
+	}
+
+	a := &App{
+		log:            log,
+		ModuleRegistry: reg,
+		ProxyClient:    client,
+	}
+
+	const refreshes = 8
+	var wg sync.WaitGroup
+	for i := 0; i < refreshes; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			a.refreshModulesFromDiscovery()
+		}()
+	}
+	wg.Wait()
+
+	if mod.startCalls.Load() != 1 {
+		t.Fatalf("module.Start was called %d times, want 1", mod.startCalls.Load())
+	}
+	if mod.maxActiveStarts.Load() > 1 {
+		t.Fatalf("module.Start ran concurrently %d times, want serialized starts", mod.maxActiveStarts.Load())
+	}
+	if mod.reloadCalls.Load() != refreshes-1 {
+		t.Fatalf("OnDiscoveryReloaded was called %d times, want %d",
+			mod.reloadCalls.Load(), refreshes-1)
 	}
 }
 
@@ -159,15 +253,36 @@ type fakeDiscoverableModule struct {
 	reloadCalls   atomic.Int32
 	proxyInjected atomic.Bool
 
+	activeStarts    atomic.Int32
+	maxActiveStarts atomic.Int32
+	startDelay      time.Duration
+
 	lastInit []types.DatasourceInfo
 }
 
-func (m *fakeDiscoverableModule) Name() string                  { return m.name }
-func (m *fakeDiscoverableModule) Init(_ []byte) error           { return nil }
-func (m *fakeDiscoverableModule) ApplyDefaults()                {}
-func (m *fakeDiscoverableModule) Validate() error               { return nil }
-func (m *fakeDiscoverableModule) Stop(_ context.Context) error  { return nil }
-func (m *fakeDiscoverableModule) Start(_ context.Context) error { m.startCalls.Add(1); return nil }
+func (m *fakeDiscoverableModule) Name() string                 { return m.name }
+func (m *fakeDiscoverableModule) Init(_ []byte) error          { return nil }
+func (m *fakeDiscoverableModule) ApplyDefaults()               {}
+func (m *fakeDiscoverableModule) Validate() error              { return nil }
+func (m *fakeDiscoverableModule) Stop(_ context.Context) error { return nil }
+func (m *fakeDiscoverableModule) Start(_ context.Context) error {
+	active := m.activeStarts.Add(1)
+	defer m.activeStarts.Add(-1)
+
+	for {
+		maxActive := m.maxActiveStarts.Load()
+		if active <= maxActive || m.maxActiveStarts.CompareAndSwap(maxActive, active) {
+			break
+		}
+	}
+
+	m.startCalls.Add(1)
+	if m.startDelay > 0 {
+		time.Sleep(m.startDelay)
+	}
+
+	return nil
+}
 
 func (m *fakeDiscoverableModule) InitFromDiscovery(datasources []types.DatasourceInfo) error {
 	filtered := make([]types.DatasourceInfo, 0, len(datasources))

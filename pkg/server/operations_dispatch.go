@@ -30,6 +30,7 @@ func (s *service) dispatchOperation(operationID string, w http.ResponseWriter, r
 func (s *service) proxyPassthroughGet(
 	w http.ResponseWriter,
 	r *http.Request,
+	datasourceType string,
 	path string,
 	params url.Values,
 	datasource string,
@@ -39,15 +40,17 @@ func (s *service) proxyPassthroughGet(
 		requestPath += "?" + params.Encode()
 	}
 
-	body, status, headers, err := s.proxyRequest(
+	body, status, headers, err := s.proxyDatasourceRequest(
 		r.Context(),
+		datasourceType,
+		datasource,
 		http.MethodGet,
 		requestPath,
 		nil,
 		http.Header{proxyDatasourceHeader: []string{datasource}},
 	)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		http.Error(w, err.Error(), status)
 		return
 	}
 

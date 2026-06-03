@@ -300,6 +300,8 @@ services:
       - "%s"
     ports:
       - "127.0.0.1:2480:2480"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /tmp/ethpandaops-panda-sandbox:/tmp/ethpandaops-panda-sandbox

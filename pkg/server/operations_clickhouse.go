@@ -62,8 +62,10 @@ func (s *service) handleClickHouseQuery(w http.ResponseWriter, r *http.Request) 
 		params.Set("param_"+key, formatClickHouseParamValue(value))
 	}
 
-	body, status, headers, err := s.proxyRequest(
+	body, status, headers, err := s.proxyDatasourceRequest(
 		r.Context(),
+		"clickhouse",
+		clusterName,
 		http.MethodPost,
 		"/clickhouse/?"+params.Encode(),
 		strings.NewReader(sql),
@@ -73,7 +75,7 @@ func (s *service) handleClickHouseQuery(w http.ResponseWriter, r *http.Request) 
 		},
 	)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		http.Error(w, err.Error(), status)
 		return
 	}
 

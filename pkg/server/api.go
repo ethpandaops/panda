@@ -16,6 +16,7 @@ import (
 	"github.com/ethpandaops/panda/pkg/auth"
 	"github.com/ethpandaops/panda/pkg/execsvc"
 	"github.com/ethpandaops/panda/pkg/module"
+	"github.com/ethpandaops/panda/pkg/proxy"
 	"github.com/ethpandaops/panda/pkg/serverapi"
 	"github.com/ethpandaops/panda/pkg/types"
 )
@@ -701,11 +702,53 @@ func (s *service) proxyRequest(
 	body io.Reader,
 	headers http.Header,
 ) ([]byte, int, http.Header, error) {
+	proxySvc, err := s.primaryProxyService()
+	if err != nil {
+		return nil, http.StatusServiceUnavailable, nil, err
+	}
+
+	return s.proxyRequestWithService(ctx, proxySvc, method, requestPath, body, headers)
+}
+
+func (s *service) proxyDatasourceRequest(
+	ctx context.Context,
+	datasourceType string,
+	datasourceName string,
+	method string,
+	requestPath string,
+	body io.Reader,
+	headers http.Header,
+) ([]byte, int, http.Header, error) {
+	proxySvc, status, err := s.proxyServiceForDatasource(datasourceType, datasourceName)
+	if err != nil {
+		return nil, status, nil, err
+	}
+
+	return s.proxyRequestWithService(ctx, proxySvc, method, requestPath, body, headers)
+}
+
+func (s *service) proxyRequestWithService(
+	ctx context.Context,
+	proxySvc proxy.Service,
+	method string,
+	requestPath string,
+	body io.Reader,
+	headers http.Header,
+) ([]byte, int, http.Header, error) {
 	if s.proxyService == nil {
 		return nil, http.StatusServiceUnavailable, nil, fmt.Errorf("proxy service is unavailable")
 	}
 
-	targetURL := strings.TrimRight(s.proxyService.URL(), "/") + requestPath
+	if proxySvc == nil {
+		return nil, http.StatusServiceUnavailable, nil, fmt.Errorf("proxy service is unavailable")
+	}
+
+	baseURL := strings.TrimRight(proxySvc.URL(), "/")
+	if baseURL == "" {
+		return nil, http.StatusServiceUnavailable, nil, fmt.Errorf("proxy URL is unavailable")
+	}
+
+	targetURL := baseURL + requestPath
 	req, err := http.NewRequestWithContext(ctx, method, targetURL, body)
 	if err != nil {
 		return nil, http.StatusInternalServerError, nil, fmt.Errorf("creating proxy request: %w", err)
@@ -719,8 +762,8 @@ func (s *service) proxyRequest(
 	req.Header.Del("Authorization")
 
 	tokenID := fmt.Sprintf("server-api-%d", time.Now().UnixNano())
-	token := s.proxyService.RegisterToken(tokenID)
-	defer s.proxyService.RevokeToken(tokenID)
+	token := proxySvc.RegisterToken(tokenID)
+	defer proxySvc.RevokeToken(tokenID)
 
 	if token != "" && token != "none" {
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -738,6 +781,46 @@ func (s *service) proxyRequest(
 	}
 
 	return data, resp.StatusCode, resp.Header.Clone(), nil
+}
+
+func (s *service) primaryProxyService() (proxy.Service, error) {
+	if s.proxyService == nil {
+		return nil, fmt.Errorf("proxy service is unavailable")
+	}
+
+	if router, ok := s.proxyService.(proxy.Router); ok {
+		primary := router.Primary()
+		if primary == nil {
+			return nil, fmt.Errorf("primary proxy is unavailable")
+		}
+
+		return primary, nil
+	}
+
+	return s.proxyService, nil
+}
+
+func (s *service) proxyServiceForDatasource(datasourceType, datasourceName string) (proxy.Service, int, error) {
+	if s.proxyService == nil {
+		return nil, http.StatusServiceUnavailable, fmt.Errorf("proxy service is unavailable")
+	}
+
+	datasourceType = strings.TrimSpace(datasourceType)
+	datasourceName = strings.TrimSpace(datasourceName)
+	if datasourceType == "" || datasourceName == "" {
+		return nil, http.StatusBadRequest, fmt.Errorf("datasource type and name are required")
+	}
+
+	if router, ok := s.proxyService.(proxy.Router); ok {
+		client, found := router.ClientForDatasource(datasourceType, datasourceName)
+		if !found {
+			return nil, http.StatusNotFound, fmt.Errorf("%s datasource %q not found", datasourceType, datasourceName)
+		}
+
+		return client, http.StatusOK, nil
+	}
+
+	return s.proxyService, http.StatusOK, nil
 }
 
 func runtimeExecutionID(ctx context.Context) string {

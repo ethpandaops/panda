@@ -61,8 +61,17 @@ type server struct {
 	embeddingService  *EmbeddingService
 	githubHandler     *handlers.GitHubHandler
 
-	mu      sync.RWMutex
-	started bool
+	autodiscoverHTTPClient  *http.Client
+	autodiscoverCancel      context.CancelFunc
+	autodiscoverWG          sync.WaitGroup
+	autodiscoverMu          sync.Mutex
+	staticClickHouseNames   map[string]struct{}
+	dynamicClickHouseNames  map[string]struct{}
+	staticAutodiscoverWarns map[string]struct{}
+
+	mu        sync.RWMutex
+	started   bool
+	serveDone chan struct{}
 }
 
 // Compile-time interface check.
@@ -89,6 +98,9 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 		cfg: cfg,
 		mux: chi.NewRouter(),
 		url: hostURL,
+		autodiscoverHTTPClient: &http.Client{
+			Timeout: 5 * time.Second,
+		},
 	}
 
 	// Create authenticator based on mode.
@@ -146,8 +158,11 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 
 	// Create handlers from config.
 	chConfigs, promConfigs, lokiConfigs, ethNodeConfig := cfg.ToHandlerConfigs()
+	s.staticClickHouseNames = clickHouseConfigNameSet(chConfigs)
+	s.dynamicClickHouseNames = make(map[string]struct{})
+	s.staticAutodiscoverWarns = make(map[string]struct{})
 
-	if len(chConfigs) > 0 {
+	if len(chConfigs) > 0 || hasClickHouseAutodiscover(cfg.ClickHouse) {
 		s.clickhouseHandler = handlers.NewClickHouseHandler(log, chConfigs)
 	}
 
@@ -460,6 +475,9 @@ func (s *server) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("binding to %s: %w", s.cfg.Server.ListenAddr, err)
 	}
+	if listenPortIsEphemeral(s.cfg.Server.ListenAddr) {
+		s.url = urlFromListenerAddr(listener.Addr(), s.url)
+	}
 
 	s.httpSrv = &http.Server{
 		Handler:           s.mux,
@@ -471,14 +489,17 @@ func (s *server) Start(ctx context.Context) error {
 	}
 
 	s.log.WithField("addr", s.cfg.Server.ListenAddr).Info("Starting proxy server")
+	s.serveDone = make(chan struct{})
 
 	// Start server in background with the already-bound listener.
 	go func() {
+		defer close(s.serveDone)
 		if err := s.httpSrv.Serve(listener); err != nil && err != http.ErrServerClosed {
 			s.log.WithError(err).Error("Proxy server error")
 		}
 	}()
 
+	s.startAutodiscoveryLocked(ctx)
 	s.started = true
 
 	return nil
@@ -492,6 +513,8 @@ func (s *server) Stop(ctx context.Context) error {
 	if !s.started {
 		return nil
 	}
+
+	s.stopAutodiscoveryLocked()
 
 	// Stop authenticator.
 	if err := s.authenticator.Stop(); err != nil {
@@ -516,6 +539,13 @@ func (s *server) Stop(ctx context.Context) error {
 			return fmt.Errorf("shutting down proxy server: %w", err)
 		}
 	}
+	if s.serveDone != nil {
+		select {
+		case <-s.serveDone:
+		case <-ctx.Done():
+			return fmt.Errorf("waiting for proxy server shutdown: %w", ctx.Err())
+		}
+	}
 
 	s.started = false
 	s.log.Info("Proxy server stopped")
@@ -525,6 +555,9 @@ func (s *server) Stop(ctx context.Context) error {
 
 // URL returns the proxy URL.
 func (s *server) URL() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	return s.url
 }
 
@@ -537,26 +570,27 @@ func (s *server) RevokeToken(executionID string) {
 
 // ClickHouseDatasources returns the list of ClickHouse datasource names.
 func (s *server) ClickHouseDatasources() []string {
-	if len(s.cfg.ClickHouse) == 0 {
+	if s.clickhouseHandler == nil {
 		return nil
 	}
 
-	names := make([]string, 0, len(s.cfg.ClickHouse))
-	for _, cfg := range s.cfg.ClickHouse {
-		names = append(names, cfg.Name)
-	}
-
-	return names
+	return s.clickhouseHandler.Clusters()
 }
 
 // ClickHouseDatasourceInfo returns detailed ClickHouse datasource info.
 func (s *server) ClickHouseDatasourceInfo() []types.DatasourceInfo {
-	if len(s.cfg.ClickHouse) == 0 {
+	if s.clickhouseHandler == nil {
 		return nil
 	}
 
-	result := make([]types.DatasourceInfo, 0, len(s.cfg.ClickHouse))
+	result := make([]types.DatasourceInfo, 0, len(s.clickhouseHandler.Clusters()))
+	seen := make(map[string]struct{}, len(s.cfg.ClickHouse))
+
 	for _, ch := range s.cfg.ClickHouse {
+		if ch.Autodiscover {
+			continue
+		}
+
 		info := types.DatasourceInfo{
 			Type:        "clickhouse",
 			Name:        ch.Name,
@@ -567,6 +601,25 @@ func (s *server) ClickHouseDatasourceInfo() []types.DatasourceInfo {
 			info.Metadata = metadataValue("database", ch.Variants[0].Database)
 		}
 		result = append(result, info)
+		seen[ch.Name] = struct{}{}
+	}
+
+	for _, name := range s.clickhouseHandler.Clusters() {
+		if _, ok := seen[name]; ok {
+			continue
+		}
+
+		cfg, ok := s.clickhouseHandler.ClusterConfig(name)
+		if !ok {
+			continue
+		}
+
+		result = append(result, types.DatasourceInfo{
+			Type:        "clickhouse",
+			Name:        cfg.Name,
+			Description: cfg.Description,
+			Metadata:    metadataValue("database", cfg.Database),
+		})
 	}
 
 	return result
@@ -674,4 +727,26 @@ func advertisedURLs(listenAddr string) (string, string) {
 	url := fmt.Sprintf("http://localhost:%s", port)
 
 	return url, port
+}
+
+func listenPortIsEphemeral(listenAddr string) bool {
+	_, port, err := net.SplitHostPort(listenAddr)
+	return err == nil && port == "0"
+}
+
+func urlFromListenerAddr(addr net.Addr, fallback string) string {
+	if addr == nil {
+		return fallback
+	}
+
+	host, port, err := net.SplitHostPort(addr.String())
+	if err != nil || port == "" {
+		return fallback
+	}
+
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "localhost"
+	}
+
+	return "http://" + net.JoinHostPort(host, port)
 }

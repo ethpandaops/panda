@@ -86,6 +86,16 @@ clickhouse:
     # allowed_orgs:
     #   - ethpandaops
 
+  # Optional dynamic local datasource. The prober adds it only while /ping
+  # returns "Ok." and the configured database exists.
+  # - name: local-kurtosis
+  #   description: "Local Kurtosis devnet logs (OpenTelemetry, autodiscovered). ClickHouse db `otel`, table `otel_logs` (per-service devnet logs; level is in Body, not SeverityText). Filter by EnclaveName (one per devnet) and ServiceName."
+  #   host: localhost
+  #   port: 18123
+  #   database: otel
+  #   autodiscover: true
+  #   autodiscover_interval: 10s
+
 # Prometheus instances
 prometheus:
   - name: primary

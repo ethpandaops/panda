@@ -69,6 +69,9 @@ type Client interface {
 
 // ClientConfig configures the proxy client.
 type ClientConfig struct {
+	// Name is the configured proxy identifier used to tag datasource ownership.
+	Name string
+
 	// URL is the base URL of the proxy server (e.g., http://localhost:18081).
 	URL string
 
@@ -88,7 +91,7 @@ type ClientConfig struct {
 	// to keep the refresh token alive via provider rotation.
 	RefreshTokenTTL time.Duration
 
-	// DiscoveryInterval is how often to refresh datasource info (default: 5 minutes).
+	// DiscoveryInterval is how often to refresh datasource info (default: 60 seconds).
 	// Set to 0 to disable background refresh.
 	DiscoveryInterval time.Duration
 
@@ -104,8 +107,12 @@ type ClientConfig struct {
 
 // ApplyDefaults sets default values for the client config.
 func (c *ClientConfig) ApplyDefaults() {
+	if c.Name == "" {
+		c.Name = "primary"
+	}
+
 	if c.DiscoveryInterval == 0 {
-		c.DiscoveryInterval = 5 * time.Minute
+		c.DiscoveryInterval = 60 * time.Second
 	}
 
 	if c.HTTPTimeout == 0 {
@@ -186,7 +193,7 @@ func (c *proxyClient) Start(ctx context.Context) error {
 		if errors.Is(err, ErrAuthenticationRequired) {
 			c.log.WithError(err).Warn("Proxy discovery skipped until authentication is configured")
 		} else {
-			return fmt.Errorf("initial discovery failed: %w", err)
+			c.log.WithError(err).Warn("Initial proxy discovery failed; continuing with background refresh")
 		}
 	}
 
@@ -258,7 +265,7 @@ func namesFromInfo(infos []types.DatasourceInfo) []string {
 	return names
 }
 
-func namesToInfo(kind string, names []string) []types.DatasourceInfo {
+func namesToInfo(kind string, names []string, proxyName string) []types.DatasourceInfo {
 	if len(names) == 0 {
 		return nil
 	}
@@ -269,15 +276,16 @@ func namesToInfo(kind string, names []string) []types.DatasourceInfo {
 			continue
 		}
 		infos = append(infos, types.DatasourceInfo{
-			Type: kind,
-			Name: name,
+			Type:      kind,
+			Name:      name,
+			ProxyName: proxyName,
 		})
 	}
 
 	return infos
 }
 
-func normalizeInfo(kind string, infos []types.DatasourceInfo) []types.DatasourceInfo {
+func normalizeInfo(kind string, infos []types.DatasourceInfo, proxyName string) []types.DatasourceInfo {
 	if len(infos) == 0 {
 		return nil
 	}
@@ -289,6 +297,9 @@ func normalizeInfo(kind string, infos []types.DatasourceInfo) []types.Datasource
 		}
 		if info.Type == "" {
 			info.Type = kind
+		}
+		if info.ProxyName == "" {
+			info.ProxyName = proxyName
 		}
 		result = append(result, info)
 	}
@@ -314,10 +325,10 @@ func (c *proxyClient) ClickHouseDatasourceInfo() []types.DatasourceInfo {
 	defer c.mu.RUnlock()
 
 	if len(c.datasources.ClickHouseInfo) > 0 {
-		return normalizeInfo("clickhouse", c.datasources.ClickHouseInfo)
+		return normalizeInfo("clickhouse", c.datasources.ClickHouseInfo, c.cfg.Name)
 	}
 
-	return namesToInfo("clickhouse", c.datasources.ClickHouse)
+	return namesToInfo("clickhouse", c.datasources.ClickHouse, c.cfg.Name)
 }
 
 // PrometheusDatasources returns the discovered Prometheus datasource names.
@@ -338,10 +349,10 @@ func (c *proxyClient) PrometheusDatasourceInfo() []types.DatasourceInfo {
 	defer c.mu.RUnlock()
 
 	if len(c.datasources.PrometheusInfo) > 0 {
-		return normalizeInfo("prometheus", c.datasources.PrometheusInfo)
+		return normalizeInfo("prometheus", c.datasources.PrometheusInfo, c.cfg.Name)
 	}
 
-	return namesToInfo("prometheus", c.datasources.Prometheus)
+	return namesToInfo("prometheus", c.datasources.Prometheus, c.cfg.Name)
 }
 
 // LokiDatasources returns the discovered Loki datasource names.
@@ -362,10 +373,10 @@ func (c *proxyClient) LokiDatasourceInfo() []types.DatasourceInfo {
 	defer c.mu.RUnlock()
 
 	if len(c.datasources.LokiInfo) > 0 {
-		return normalizeInfo("loki", c.datasources.LokiInfo)
+		return normalizeInfo("loki", c.datasources.LokiInfo, c.cfg.Name)
 	}
 
-	return namesToInfo("loki", c.datasources.Loki)
+	return namesToInfo("loki", c.datasources.Loki, c.cfg.Name)
 }
 
 // EthNodeAvailable returns true if the proxy has ethnode credentials configured.

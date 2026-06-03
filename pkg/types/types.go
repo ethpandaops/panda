@@ -9,6 +9,8 @@ type DatasourceInfo struct {
 	Type string `json:"type"`
 	// Name is the logical name of the datasource.
 	Name string `json:"name"`
+	// ProxyName is the configured proxy that owns this datasource.
+	ProxyName string `json:"proxy_name,omitempty"`
 	// Description is a human-readable description.
 	Description string `json:"description,omitempty"`
 	// Metadata contains type-specific metadata (e.g. database, url).

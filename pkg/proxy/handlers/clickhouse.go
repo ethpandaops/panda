@@ -8,6 +8,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -47,9 +48,13 @@ type ClickHouseConfig struct {
 	Timeout     int
 }
 
-// ClickHouseHandler handles requests to ClickHouse clusters.
+// ClickHouseHandler handles requests to ClickHouse clusters. Clusters may be
+// added or removed at runtime (e.g. by autodiscovery), so all access to the
+// cluster map and name list is guarded by mu.
 type ClickHouseHandler struct {
-	log      logrus.FieldLogger
+	log logrus.FieldLogger
+
+	mu       sync.RWMutex
 	clusters map[string]*clickhouseCluster
 	names    []string
 }
@@ -140,7 +145,10 @@ func (h *ClickHouseHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.mu.RLock()
 	cluster, ok := h.clusters[datasourceRoute(r, clusterName)]
+	h.mu.RUnlock()
+
 	if !ok {
 		http.Error(w, fmt.Sprintf("unknown cluster: %s", clusterName), http.StatusNotFound)
 
@@ -173,7 +181,69 @@ func (h *ClickHouseHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // Clusters returns the list of configured cluster names.
 func (h *ClickHouseHandler) Clusters() []string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
 	return append([]string(nil), h.names...)
+}
+
+// ClusterConfig returns the current configuration for a cluster name.
+func (h *ClickHouseHandler) ClusterConfig(name string) (ClickHouseConfig, bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	if cluster, ok := h.clusters[name]; ok {
+		return cluster.cfg, true
+	}
+
+	for _, cluster := range h.clusters {
+		if cluster.cfg.Name == name {
+			return cluster.cfg, true
+		}
+	}
+
+	return ClickHouseConfig{}, false
+}
+
+// AddCluster adds or replaces a ClickHouse cluster at runtime.
+func (h *ClickHouseHandler) AddCluster(cfg ClickHouseConfig) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	h.names = appendUniqueName(h.names, cfg.Name)
+	h.clusters[handlerRouteName(cfg.Name, cfg.RouteName)] = h.createCluster(cfg)
+}
+
+// RemoveCluster removes a ClickHouse cluster at runtime.
+func (h *ClickHouseHandler) RemoveCluster(name string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	for routeName, cluster := range h.clusters {
+		if cluster.cfg.Name == name {
+			delete(h.clusters, routeName)
+		}
+	}
+
+	h.names = removeName(h.names, name)
+}
+
+// HasCluster reports whether a cluster is currently configured.
+func (h *ClickHouseHandler) HasCluster(name string) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	if _, ok := h.clusters[name]; ok {
+		return true
+	}
+
+	for _, cluster := range h.clusters {
+		if cluster.cfg.Name == name {
+			return true
+		}
+	}
+
+	return false
 }
 
 func handlerRouteName(name, routeName string) string {
@@ -192,4 +262,14 @@ func appendUniqueName(names []string, name string) []string {
 	}
 
 	return append(names, name)
+}
+
+func removeName(names []string, name string) []string {
+	for i, existing := range names {
+		if existing == name {
+			return append(names[:i], names[i+1:]...)
+		}
+	}
+
+	return names
 }

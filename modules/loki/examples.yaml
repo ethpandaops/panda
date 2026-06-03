@@ -12,8 +12,3 @@ loki_basics:
       cluster: loki
       query: |
         {app="beacon-node"} |= "warn" |= "consensus" | json | line_format "{{.message}}"
-    - name: Kurtosis local devnet CL errors
-      description: Get CL error logs from a local Kurtosis devnet with trimmed output
-      cluster: loki
-      query: |
-        {job="kurtosis"} | json | kurtosis_service_name=~"cl-.*" | log=~"(?i)(CRIT|ERR|error)" | line_format "{{.log}}"

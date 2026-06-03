@@ -19,7 +19,7 @@ Run both checks in parallel:
 # Check for local Kurtosis enclaves
 kurtosis enclave ls 2>/dev/null
 
-# Check for remote datasources via panda
+# Check for remote datasources and the local-kurtosis ClickHouse datasource via panda
 panda datasources --json 2>/dev/null
 ```
 
@@ -29,7 +29,7 @@ panda datasources --json 2>/dev/null
   ```bash
   panda search runbooks "debug local devnet"
   ```
-  Then follow that runbook. It covers Kurtosis service discovery, local Dora/Loki detection (localhost:3100), direct CL/EL API queries, Kurtosis-specific Loki label schema, and `kurtosis service logs` fallback.
+  Then follow that runbook. It covers Kurtosis service discovery, local Dora detection, `local-kurtosis` ClickHouse datasource detection for OTel logs/traces, direct CL/EL API queries, and `kurtosis service logs` fallback.
 
 - If the target network is found in **panda datasources** (Dora networks, Loki instances) → **remote deployment**. Load the remote debugging procedure:
   ```bash

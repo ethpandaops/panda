@@ -459,17 +459,27 @@ func (c *clickhouseSchemaClient) refresh(ctx context.Context) error {
 		return nil
 	}
 
-	token := c.proxySvc.RegisterToken("clickhouse-schema")
-	defer c.proxySvc.RevokeToken("clickhouse-schema")
-
-	if token == "" {
-		c.log.Warn("Proxy token is empty; schema discovery requests may fail if auth is required")
-	}
-
 	newClusters := make(map[string]*ClusterTables, len(datasources))
 
 	for clusterName, datasourceName := range datasources {
-		tables, err := c.discoverClusterSchema(ctx, clusterName, datasourceName, token)
+		datasourceProxy, err := c.proxyForDatasource(datasourceName)
+		if err != nil {
+			c.log.WithError(err).WithFields(logrus.Fields{
+				"cluster":    clusterName,
+				"datasource": datasourceName,
+			}).Warn("Failed to resolve ClickHouse schema datasource owner")
+
+			continue
+		}
+
+		tokenID := "clickhouse-schema-" + datasourceName
+		token := datasourceProxy.RegisterToken(tokenID)
+		if token == "" {
+			c.log.WithField("datasource", datasourceName).Warn("Proxy token is empty; schema discovery requests may fail if auth is required")
+		}
+
+		tables, err := c.discoverClusterSchema(ctx, clusterName, datasourceName, datasourceProxy, token)
+		datasourceProxy.RevokeToken(tokenID)
 		if err != nil {
 			c.log.WithError(err).WithField("cluster", clusterName).Warn("Failed to discover cluster schema")
 
@@ -487,14 +497,32 @@ func (c *clickhouseSchemaClient) refresh(ctx context.Context) error {
 	return nil
 }
 
+func (c *clickhouseSchemaClient) proxyForDatasource(datasourceName string) (proxy.Service, error) {
+	if c.proxySvc == nil {
+		return nil, fmt.Errorf("proxy service is required for schema discovery")
+	}
+
+	if router, ok := c.proxySvc.(proxy.Router); ok {
+		client, found := router.ClientForDatasource("clickhouse", datasourceName)
+		if !found {
+			return nil, fmt.Errorf("clickhouse datasource %q not found", datasourceName)
+		}
+
+		return client, nil
+	}
+
+	return c.proxySvc, nil
+}
+
 // discoverClusterSchema discovers schema for a single cluster.
 func (c *clickhouseSchemaClient) discoverClusterSchema(
 	ctx context.Context,
 	clusterName string,
 	datasourceName string,
+	proxySvc proxy.Service,
 	token string,
 ) (*ClusterTables, error) {
-	discovered, err := c.fetchTableList(ctx, datasourceName, token)
+	discovered, err := c.fetchTableList(ctx, proxySvc, datasourceName, token)
 	if err != nil {
 		return nil, fmt.Errorf("fetching table list: %w", err)
 	}
@@ -529,7 +557,7 @@ func (c *clickhouseSchemaClient) discoverClusterSchema(
 				return
 			}
 
-			schema, err := c.fetchTableSchema(ctx, datasourceName, token, dt.Name, dt.Database)
+			schema, err := c.fetchTableSchema(ctx, proxySvc, datasourceName, token, dt.Name, dt.Database)
 			if err != nil {
 				c.log.WithError(err).WithFields(logrus.Fields{
 					"database": dt.Database,
@@ -593,12 +621,22 @@ func asString(value any) string {
 	}
 }
 
-func (c *clickhouseSchemaClient) queryJSON(ctx context.Context, datasourceName, token, sql string) (*clickhouseJSONResponse, error) {
+func (c *clickhouseSchemaClient) queryJSON(
+	ctx context.Context,
+	proxySvc proxy.Service,
+	datasourceName string,
+	token string,
+	sql string,
+) (*clickhouseJSONResponse, error) {
 	if datasourceName == "" {
 		return nil, fmt.Errorf("datasource name is required")
 	}
 
-	baseURL := strings.TrimRight(c.proxySvc.URL(), "/")
+	if proxySvc == nil {
+		return nil, fmt.Errorf("proxy service is required")
+	}
+
+	baseURL := strings.TrimRight(proxySvc.URL(), "/")
 	if baseURL == "" {
 		return nil, fmt.Errorf("proxy URL is empty")
 	}
@@ -612,7 +650,7 @@ func (c *clickhouseSchemaClient) queryJSON(ctx context.Context, datasourceName, 
 	}
 
 	req.Header.Set(handlers.DatasourceHeader, datasourceName)
-	if token != "" {
+	if token != "" && token != "none" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	req.Header.Set("Content-Type", "text/plain")
@@ -648,8 +686,13 @@ func (c *clickhouseSchemaClient) queryJSON(ctx context.Context, datasourceName, 
 // First tries SHOW TABLES (works for clusters with a default database like clickhouse-raw).
 // If that returns 0 rows, falls back to querying system.tables to discover
 // tables across per-network databases (like clickhouse-refined).
-func (c *clickhouseSchemaClient) fetchTableList(ctx context.Context, datasourceName, token string) ([]discoveredTable, error) {
-	tables, err := c.fetchTableListDefault(ctx, datasourceName, token)
+func (c *clickhouseSchemaClient) fetchTableList(
+	ctx context.Context,
+	proxySvc proxy.Service,
+	datasourceName string,
+	token string,
+) ([]discoveredTable, error) {
+	tables, err := c.fetchTableListDefault(ctx, proxySvc, datasourceName, token)
 	if err != nil {
 		return nil, err
 	}
@@ -661,14 +704,19 @@ func (c *clickhouseSchemaClient) fetchTableList(ctx context.Context, datasourceN
 	// Default database is empty — try per-network-database discovery.
 	c.log.WithField("datasource", datasourceName).Info("SHOW TABLES returned 0 rows, trying per-database discovery fallback")
 
-	return c.fetchTableListFromSystemTables(ctx, datasourceName, token)
+	return c.fetchTableListFromSystemTables(ctx, proxySvc, datasourceName, token)
 }
 
 // fetchTableListDefault fetches tables from the cluster's default database via
 // SHOW TABLES, resolving the database name via currentDatabase() so each entry
 // carries an explicit Database.
-func (c *clickhouseSchemaClient) fetchTableListDefault(ctx context.Context, datasourceName, token string) ([]discoveredTable, error) {
-	dbResult, err := c.queryJSON(ctx, datasourceName, token, "SELECT currentDatabase() AS db")
+func (c *clickhouseSchemaClient) fetchTableListDefault(
+	ctx context.Context,
+	proxySvc proxy.Service,
+	datasourceName string,
+	token string,
+) ([]discoveredTable, error) {
+	dbResult, err := c.queryJSON(ctx, proxySvc, datasourceName, token, "SELECT currentDatabase() AS db")
 	if err != nil {
 		return nil, fmt.Errorf("resolving current database: %w", err)
 	}
@@ -679,7 +727,7 @@ func (c *clickhouseSchemaClient) fetchTableListDefault(ctx context.Context, data
 		currentDB = strings.TrimSpace(asString(dbResult.Data[0][col]))
 	}
 
-	result, err := c.queryJSON(ctx, datasourceName, token, "SHOW TABLES")
+	result, err := c.queryJSON(ctx, proxySvc, datasourceName, token, "SHOW TABLES")
 	if err != nil {
 		return nil, fmt.Errorf("executing SHOW TABLES: %w", err)
 	}
@@ -718,8 +766,13 @@ var systemDatabaseBlacklist = map[string]bool{
 // fetchTableListFromSystemTables emits one discoveredTable per (database, table)
 // for every non-system database. Used when the cluster's default database is
 // empty (clickhouse-refined, observability tier-scoped clusters).
-func (c *clickhouseSchemaClient) fetchTableListFromSystemTables(ctx context.Context, datasourceName, token string) ([]discoveredTable, error) {
-	databases, err := c.fetchDatabases(ctx, datasourceName, token)
+func (c *clickhouseSchemaClient) fetchTableListFromSystemTables(
+	ctx context.Context,
+	proxySvc proxy.Service,
+	datasourceName string,
+	token string,
+) ([]discoveredTable, error) {
+	databases, err := c.fetchDatabases(ctx, proxySvc, datasourceName, token)
 	if err != nil {
 		return nil, fmt.Errorf("discovering databases: %w", err)
 	}
@@ -731,7 +784,7 @@ func (c *clickhouseSchemaClient) fetchTableListFromSystemTables(ctx context.Cont
 	tables := make([]discoveredTable, 0, 256)
 
 	for _, db := range databases {
-		dbTables, err := c.fetchTablesFromDatabase(ctx, datasourceName, token, db)
+		dbTables, err := c.fetchTablesFromDatabase(ctx, proxySvc, datasourceName, token, db)
 		if err != nil {
 			c.log.WithError(err).WithField("database", db).Debug("Failed to list tables from database")
 
@@ -747,8 +800,13 @@ func (c *clickhouseSchemaClient) fetchTableListFromSystemTables(ctx context.Cont
 }
 
 // fetchDatabases returns non-system database names from a ClickHouse cluster.
-func (c *clickhouseSchemaClient) fetchDatabases(ctx context.Context, datasourceName, token string) ([]string, error) {
-	result, err := c.queryJSON(ctx, datasourceName, token, "SHOW DATABASES")
+func (c *clickhouseSchemaClient) fetchDatabases(
+	ctx context.Context,
+	proxySvc proxy.Service,
+	datasourceName string,
+	token string,
+) ([]string, error) {
+	result, err := c.queryJSON(ctx, proxySvc, datasourceName, token, "SHOW DATABASES")
 	if err != nil {
 		return nil, fmt.Errorf("executing SHOW DATABASES: %w", err)
 	}
@@ -772,14 +830,20 @@ func (c *clickhouseSchemaClient) fetchDatabases(ctx context.Context, datasourceN
 }
 
 // fetchTablesFromDatabase lists tables in a specific database.
-func (c *clickhouseSchemaClient) fetchTablesFromDatabase(ctx context.Context, datasourceName, token, database string) ([]string, error) {
+func (c *clickhouseSchemaClient) fetchTablesFromDatabase(
+	ctx context.Context,
+	proxySvc proxy.Service,
+	datasourceName string,
+	token string,
+	database string,
+) ([]string, error) {
 	if err := validateIdentifier(database); err != nil {
 		return nil, fmt.Errorf("validating database name: %w", err)
 	}
 
 	query := fmt.Sprintf("SHOW TABLES FROM `%s`", database)
 
-	result, err := c.queryJSON(ctx, datasourceName, token, query)
+	result, err := c.queryJSON(ctx, proxySvc, datasourceName, token, query)
 	if err != nil {
 		return nil, fmt.Errorf("executing SHOW TABLES FROM %s: %w", database, err)
 	}
@@ -819,6 +883,7 @@ func validateIdentifier(name string) error {
 // When database is non-empty, the query is qualified as `database`.`table`.
 func (c *clickhouseSchemaClient) fetchTableSchema(
 	ctx context.Context,
+	proxySvc proxy.Service,
 	datasourceName string,
 	token string,
 	tableName string,
@@ -837,7 +902,7 @@ func (c *clickhouseSchemaClient) fetchTableSchema(
 		query = fmt.Sprintf("SHOW CREATE TABLE `%s`.`%s`", database, tableName)
 	}
 
-	result, err := c.queryJSON(ctx, datasourceName, token, query)
+	result, err := c.queryJSON(ctx, proxySvc, datasourceName, token, query)
 	if err != nil {
 		return nil, fmt.Errorf("executing SHOW CREATE TABLE: %w", err)
 	}

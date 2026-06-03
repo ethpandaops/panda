@@ -13,8 +13,9 @@ import (
 
 // ClientConfig is the subset of configuration needed by the CLI when operating as a server client.
 type ClientConfig struct {
-	Server ServerConfig `yaml:"server"`
-	Proxy  ProxyConfig  `yaml:"proxy"`
+	Server  ServerConfig  `yaml:"server"`
+	Proxy   ProxyConfig   `yaml:"proxy"`
+	Proxies []ProxyConfig `yaml:"proxies,omitempty"`
 
 	path string `yaml:"-"`
 }
@@ -39,6 +40,10 @@ func LoadClient(path string) (*ClientConfig, error) {
 	var cfg ClientConfig
 	if err := yaml.Unmarshal([]byte(substituted), &cfg); err != nil {
 		return nil, fmt.Errorf("parsing config: %w", err)
+	}
+
+	if err := rejectSingularAndPluralProxies(cfg.Proxy, cfg.Proxies); err != nil {
+		return nil, err
 	}
 
 	cfg.applyDefaults()
@@ -94,4 +99,6 @@ func (c *ClientConfig) applyDefaults() {
 	if c.Server.Port == 0 {
 		c.Server.Port = 2480
 	}
+
+	normalizeProxyConfigs(&c.Proxy, &c.Proxies, "")
 }

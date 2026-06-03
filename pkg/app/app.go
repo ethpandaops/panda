@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -32,6 +33,8 @@ import (
 // discovery goroutine.
 const refreshActivationTimeout = 30 * time.Second
 
+const embeddedLocalProxyName = "local"
+
 // App contains the shared core components used by both the MCP server and CLI.
 type App struct {
 	log logrus.FieldLogger
@@ -40,7 +43,10 @@ type App struct {
 	ModuleRegistry *module.Registry
 	Sandbox        sandbox.Service
 	ProxyClient    proxy.Client
+	LocalProxy     proxy.Server
 	Cartographoor  cartographoor.CartographoorClient
+
+	refreshMu sync.Mutex
 }
 
 // New creates a new App.
@@ -84,7 +90,13 @@ func (a *App) Build(ctx context.Context) error {
 	// datasources show up without a server restart. During the initial
 	// Discover (before step 4) no modules are initialized yet, so the hook is
 	// a no-op until the first background tick.
-	proxyClient := a.buildProxyClient(a.refreshModulesFromDiscovery)
+	proxyClient, err := a.buildProxyClient(ctx, a.refreshModulesFromDiscovery)
+	if err != nil {
+		a.stop(ctx)
+
+		return fmt.Errorf("building proxy client: %w", err)
+	}
+
 	if err := proxyClient.Start(ctx); err != nil {
 		a.stop(ctx)
 
@@ -154,6 +166,10 @@ func (a *App) stop(ctx context.Context) {
 		_ = a.ProxyClient.Stop(ctx)
 	}
 
+	if a.LocalProxy != nil {
+		_ = a.LocalProxy.Stop(ctx)
+	}
+
 	if a.Sandbox != nil {
 		_ = a.Sandbox.Stop(ctx)
 	}
@@ -216,24 +232,114 @@ func (a *App) initModules(proxyClient proxy.Client) error {
 	return nil
 }
 
-func (a *App) buildProxyClient(onDiscover func()) proxy.Client {
+func (a *App) buildProxyClient(ctx context.Context, onDiscover func()) (proxy.Client, error) {
+	proxyConfigs := a.cfg.Proxies
+	if len(proxyConfigs) == 0 && strings.TrimSpace(a.cfg.Proxy.URL) != "" {
+		proxyConfigs = []config.ProxyConfig{a.cfg.Proxy}
+	}
+
+	routes := make([]proxy.ClientRoute, 0, len(proxyConfigs)+1)
+	for _, proxyCfg := range proxyConfigs {
+		clientCfg := a.proxyClientConfig(proxyCfg, onDiscover)
+		routes = append(routes, proxy.ClientRoute{
+			Name:   proxyCfg.Name,
+			Client: proxy.NewClient(a.log, clientCfg),
+		})
+	}
+
+	localRoute, err := a.startLocalProxyRoute(ctx, onDiscover)
+	if err != nil {
+		return nil, err
+	}
+	if localRoute != nil {
+		routes = append(routes, *localRoute)
+	}
+
+	return proxy.NewRouter(a.log, routes), nil
+}
+
+func (a *App) proxyClientConfig(proxyCfg config.ProxyConfig, onDiscover func()) proxy.ClientConfig {
 	cfg := proxy.ClientConfig{
-		URL:        a.cfg.Proxy.URL,
+		Name:       proxyCfg.Name,
+		URL:        proxyCfg.URL,
 		OnDiscover: onDiscover,
 	}
 
-	if a.cfg.Proxy.Auth != nil {
-		cfg.IssuerURL = a.cfg.Proxy.Auth.IssuerURL
-		cfg.ClientID = a.cfg.Proxy.Auth.ClientID
-		cfg.Resource = strings.TrimSpace(a.cfg.Proxy.Auth.Resource)
-		cfg.RefreshTokenTTL = a.cfg.Proxy.Auth.RefreshTokenTTL
-
-		if cfg.Resource == "" && strings.TrimSpace(a.cfg.Proxy.Auth.Mode) != "oidc" {
-			cfg.Resource = a.cfg.Proxy.URL
-		}
+	if proxyCfg.Auth == nil {
+		return cfg
 	}
 
-	return proxy.NewClient(a.log, cfg)
+	cfg.IssuerURL = proxyCfg.Auth.IssuerURL
+	cfg.ClientID = proxyCfg.Auth.ClientID
+	cfg.Resource = strings.TrimSpace(proxyCfg.Auth.Resource)
+	cfg.RefreshTokenTTL = proxyCfg.Auth.RefreshTokenTTL
+
+	if cfg.Resource == "" && strings.TrimSpace(proxyCfg.Auth.Mode) != "oidc" {
+		cfg.Resource = proxyCfg.URL
+	}
+
+	return cfg
+}
+
+func (a *App) startLocalProxyRoute(ctx context.Context, onDiscover func()) (*proxy.ClientRoute, error) {
+	if !a.cfg.LocalProxy.IsEnabled() {
+		a.log.Debug("Embedded local proxy disabled")
+
+		return nil, nil
+	}
+
+	cfg := a.localProxyServerConfig()
+	localProxy, err := proxy.NewServer(a.log, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("creating embedded local proxy: %w", err)
+	}
+
+	if err := localProxy.Start(ctx); err != nil {
+		return nil, fmt.Errorf("starting embedded local proxy: %w", err)
+	}
+
+	a.LocalProxy = localProxy
+	a.log.WithField("url", localProxy.URL()).Info("Embedded local proxy started")
+
+	return &proxy.ClientRoute{
+		Name:  embeddedLocalProxyName,
+		Local: true,
+		Client: proxy.NewClient(a.log, proxy.ClientConfig{
+			Name:       embeddedLocalProxyName,
+			URL:        localProxy.URL(),
+			OnDiscover: onDiscover,
+		}),
+	}, nil
+}
+
+func (a *App) localProxyServerConfig() proxy.ServerConfig {
+	clickhouse := make([]proxy.ClickHouseClusterConfig, 0, len(a.cfg.LocalProxy.ClickHouse))
+	for _, item := range a.cfg.LocalProxy.ClickHouse {
+		clickhouse = append(clickhouse, proxy.ClickHouseClusterConfig{
+			BaseDatasourceConfig: proxy.BaseDatasourceConfig{
+				Name:        item.Name,
+				Description: item.Description,
+			},
+			Host:                 item.Host,
+			Port:                 item.Port,
+			Database:             item.Database,
+			Username:             item.Username,
+			Password:             item.Password,
+			Secure:               item.Secure,
+			Autodiscover:         item.Autodiscover,
+			AutodiscoverInterval: item.AutodiscoverInterval,
+		})
+	}
+
+	return proxy.ServerConfig{
+		Server: proxy.HTTPServerConfig{
+			ListenAddr: "127.0.0.1:0",
+		},
+		Auth: proxy.AuthConfig{
+			Mode: proxy.AuthModeNone,
+		},
+		ClickHouse: clickhouse,
+	}
 }
 
 // refreshModulesFromDiscovery re-applies the proxy client's current datasource
@@ -250,6 +356,9 @@ func (a *App) buildProxyClient(onDiscover func()) proxy.Client {
 //   - Modules whose datasources have disappeared keep their last-seen state;
 //     deactivating a running module isn't supported here.
 func (a *App) refreshModulesFromDiscovery() {
+	a.refreshMu.Lock()
+	defer a.refreshMu.Unlock()
+
 	if a.ModuleRegistry == nil || a.ProxyClient == nil {
 		return
 	}

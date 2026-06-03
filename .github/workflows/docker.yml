@@ -74,26 +74,42 @@ jobs:
             url: "http://localhost:19999"
           CONFIG
 
-          # Run the server and capture logs. It will fail at proxy connection,
-          # but we check that sandbox initialization completed successfully.
-          LOGS=$(docker run --rm \
+          # Run the server detached and poll its logs for sandbox initialization.
+          # The server keeps running when the proxy is unreachable (initial
+          # discovery is non-fatal), so we must not wait for it to exit.
+          CID=$(docker run -d \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v /tmp/smoke-config.yaml:/app/config.yaml:ro \
             --group-add "$(stat -c '%g' /var/run/docker.sock)" \
             panda-server-smoke \
-            panda-server serve --config /app/config.yaml 2>&1 || true)
+            panda-server serve --config /app/config.yaml)
 
-          echo "$LOGS"
+          ok=false
+          for _ in $(seq 1 30); do
+            if docker logs "$CID" 2>&1 | grep -q "Sandbox service started"; then
+              ok=true
+              break
+            fi
+            # Stop early if the server exited before initializing the sandbox.
+            if [ "$(docker inspect -f '{{.State.Running}}' "$CID" 2>/dev/null)" != "true" ]; then
+              break
+            fi
+            sleep 2
+          done
 
-          if echo "$LOGS" | grep -q "Sandbox service started"; then
+          echo "---- server logs ----"
+          docker logs "$CID" 2>&1 || true
+
+          # Clean up the container and the network created by the server.
+          docker rm -f "$CID" >/dev/null 2>&1 || true
+          docker network rm panda-smoke-test 2>/dev/null || true
+
+          if [ "$ok" = "true" ]; then
             echo "Smoke test passed: sandbox initialized successfully"
           else
             echo "Smoke test failed: sandbox did not initialize"
             exit 1
           fi
-
-          # Clean up the network created by the server.
-          docker network rm panda-smoke-test 2>/dev/null || true
 
   build-sandbox:
     runs-on: ubuntu-latest

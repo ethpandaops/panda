@@ -148,6 +148,8 @@ type ClickHouseClusterConfig struct {
 	Secure               bool                             `yaml:"secure"`
 	SkipVerify           bool                             `yaml:"skip_verify,omitempty"`
 	Timeout              int                              `yaml:"timeout,omitempty"`
+	Autodiscover         bool                             `yaml:"autodiscover,omitempty"`
+	AutodiscoverInterval time.Duration                    `yaml:"autodiscover_interval,omitempty"`
 	Variants             []ClickHouseClusterVariantConfig `yaml:"variants,omitempty"`
 }
 
@@ -341,6 +343,10 @@ func (c *ServerConfig) ApplyDefaults() {
 		if c.ClickHouse[i].Port == 0 {
 			c.ClickHouse[i].Port = defaultClickHousePort(c.ClickHouse[i].Secure)
 		}
+
+		if c.ClickHouse[i].Autodiscover && c.ClickHouse[i].AutodiscoverInterval == 0 {
+			c.ClickHouse[i].AutodiscoverInterval = defaultAutodiscoverInterval
+		}
 	}
 }
 
@@ -400,7 +406,15 @@ func (c *ServerConfig) Validate() error {
 			return fmt.Errorf("clickhouse[%d].name is required", i)
 		}
 
+		if ch.AutodiscoverInterval < 0 {
+			return fmt.Errorf("clickhouse[%d].autodiscover_interval cannot be negative", i)
+		}
+
 		if len(ch.Variants) > 0 {
+			if ch.Autodiscover {
+				return fmt.Errorf("clickhouse[%d] %q cannot use autodiscover with variants", i, ch.Name)
+			}
+
 			if len(ch.AllowedOrgs) > 0 {
 				return fmt.Errorf("clickhouse[%d] %q cannot set top-level allowed_orgs with variants", i, ch.Name)
 			}
@@ -421,6 +435,10 @@ func (c *ServerConfig) Validate() error {
 
 		if ch.Host == "" {
 			return fmt.Errorf("clickhouse[%d].host is required", i)
+		}
+
+		if ch.Autodiscover && strings.TrimSpace(ch.Database) == "" {
+			return fmt.Errorf("clickhouse[%d].database is required when autodiscover is enabled", i)
 		}
 	}
 
@@ -490,6 +508,10 @@ func (c *ServerConfig) ToHandlerConfigs() ([]handlers.ClickHouseConfig, []handle
 	// Convert ClickHouse configs.
 	chConfigs := make([]handlers.ClickHouseConfig, 0, len(c.ClickHouse))
 	for _, ch := range c.ClickHouse {
+		if ch.Autodiscover {
+			continue
+		}
+
 		if len(ch.Variants) > 0 {
 			for i, variant := range ch.Variants {
 				chConfigs = append(chConfigs, handlers.ClickHouseConfig{

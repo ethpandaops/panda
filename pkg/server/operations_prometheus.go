@@ -106,7 +106,7 @@ func (s *service) handlePrometheusQuery(w http.ResponseWriter, r *http.Request, 
 		params.Set("time", parsedTime)
 	}
 
-	s.proxyPassthroughGet(w, r, path, params, datasource)
+	s.proxyPassthroughGet(w, r, "prometheus", path, params, datasource)
 }
 
 func (s *service) handlePrometheusLabels(w http.ResponseWriter, r *http.Request) {
@@ -122,7 +122,7 @@ func (s *service) handlePrometheusLabels(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	s.proxyPassthroughGet(w, r, "/prometheus/api/v1/labels", nil, datasource)
+	s.proxyPassthroughGet(w, r, "prometheus", "/prometheus/api/v1/labels", nil, datasource)
 }
 
 func (s *service) handlePrometheusLabelValues(w http.ResponseWriter, r *http.Request) {
@@ -144,5 +144,5 @@ func (s *service) handlePrometheusLabelValues(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	s.proxyPassthroughGet(w, r, "/prometheus/api/v1/label/"+url.PathEscape(label)+"/values", nil, datasource)
+	s.proxyPassthroughGet(w, r, "prometheus", "/prometheus/api/v1/label/"+url.PathEscape(label)+"/values", nil, datasource)
 }

@@ -229,6 +229,61 @@ sandbox:
 	})
 }
 
+func TestLoadWithUserOverridesRejectsMergedSingularAndPluralProxyConfig(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	baseConfig := `
+server:
+  base_url: "http://localhost:2480"
+sandbox:
+  image: "test-image:latest"
+proxy:
+  url: "http://localhost:18081"
+`
+	basePath := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(basePath, []byte(baseConfig), 0o644))
+
+	userConfig := `
+proxies:
+  - name: hosted
+    url: "https://proxy.example"
+`
+	userPath := filepath.Join(dir, "config.user.yaml")
+	require.NoError(t, os.WriteFile(userPath, []byte(userConfig), 0o644))
+
+	_, err := LoadWithUserOverrides(basePath)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `cannot set both "proxy" and "proxies"; use one or the other`)
+}
+
+func TestValidateMergedConfigRejectsMergedSingularAndPluralProxyConfig(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	baseConfig := `
+server:
+  base_url: "http://localhost:2480"
+sandbox:
+  image: "test-image:latest"
+proxy:
+  url: "http://localhost:18081"
+`
+	basePath := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(basePath, []byte(baseConfig), 0o644))
+
+	err := ValidateMergedConfig(basePath, map[string]any{
+		"proxies": []map[string]any{
+			{
+				"name": "hosted",
+				"url":  "https://proxy.example",
+			},
+		},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `cannot set both "proxy" and "proxies"; use one or the other`)
+}
+
 func TestUserConfigPath(t *testing.T) {
 	path := UserConfigPath("/home/user/.config/panda/config.yaml")
 	assert.Equal(t, "/home/user/.config/panda/config.user.yaml", path)

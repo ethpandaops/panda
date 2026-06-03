@@ -16,11 +16,26 @@ import (
 	"github.com/ethpandaops/panda/pkg/configpath"
 )
 
+const (
+	defaultProxyName                    = "primary"
+	defaultProxyURL                     = "http://localhost:18081"
+	defaultLocalProxyClickHouseName     = "local-kurtosis"
+	defaultLocalProxyClickHouseDesc     = "Local Kurtosis devnet logs (OpenTelemetry, autodiscovered). ClickHouse db `otel`, table `otel_logs` (per-service devnet logs; level is in Body, not SeverityText). Filter by EnclaveName (one per devnet) and ServiceName."
+	defaultLocalProxyClickHouseHost     = "host.docker.internal"
+	defaultLocalProxyClickHousePort     = 18123
+	defaultLocalProxyClickHouseDatabase = "otel"
+	defaultLocalProxyClickHouseInterval = 10 * time.Second
+)
+
 // Config is the main configuration structure.
 type Config struct {
-	Server         ServerConfig         `yaml:"server"`
-	Sandbox        SandboxConfig        `yaml:"sandbox"`
+	Server  ServerConfig  `yaml:"server"`
+	Sandbox SandboxConfig `yaml:"sandbox"`
+	// Proxy is the legacy single-proxy form, promoted to Proxies[0] for
+	// back-compat. Prefer Proxies (see config.example.yaml).
 	Proxy          ProxyConfig          `yaml:"proxy"`
+	Proxies        []ProxyConfig        `yaml:"proxies,omitempty"`
+	LocalProxy     LocalProxyConfig     `yaml:"local_proxy,omitempty"`
 	Storage        StorageConfig        `yaml:"storage"`
 	Observability  ObservabilityConfig  `yaml:"observability"`
 	ConsensusSpecs ConsensusSpecsConfig `yaml:"consensus_specs,omitempty"`
@@ -126,6 +141,9 @@ type ObservabilityConfig struct {
 // ProxyConfig holds proxy connection configuration.
 // The MCP server always connects to a proxy server via this config.
 type ProxyConfig struct {
+	// Name is the configured proxy identifier used to tag datasource ownership.
+	Name string `yaml:"name,omitempty"`
+
 	// URL is the base URL of the proxy server (e.g., http://localhost:18081).
 	URL string `yaml:"url"`
 
@@ -156,6 +174,50 @@ type ProxyAuthConfig struct {
 	RefreshTokenTTL time.Duration `yaml:"refresh_token_ttl,omitempty"`
 }
 
+// LocalProxyConfig configures the embedded local proxy used for local
+// datasource autodiscovery.
+type LocalProxyConfig struct {
+	// Enabled controls whether the server starts an in-process local proxy.
+	// Defaults to true.
+	Enabled *bool `yaml:"enabled,omitempty"`
+
+	// ClickHouse configures local ClickHouse datasources for the embedded proxy.
+	ClickHouse []LocalProxyClickHouseConfig `yaml:"clickhouse,omitempty"`
+}
+
+// IsEnabled returns whether the embedded local proxy is enabled.
+func (c *LocalProxyConfig) IsEnabled() bool {
+	if c.Enabled == nil {
+		return true
+	}
+
+	return *c.Enabled
+}
+
+// LocalProxyClickHouseConfig configures a ClickHouse datasource for the embedded proxy.
+type LocalProxyClickHouseConfig struct {
+	// Name is the datasource name to expose when the probe is live.
+	Name string `yaml:"name"`
+	// Description is the human-readable datasource description.
+	Description string `yaml:"description,omitempty"`
+	// Host is the ClickHouse host to proxy.
+	Host string `yaml:"host"`
+	// Port is the ClickHouse HTTP port to proxy.
+	Port int `yaml:"port"`
+	// Database is the default database for proxied queries.
+	Database string `yaml:"database,omitempty"`
+	// Username is the optional datasource username.
+	Username string `yaml:"username,omitempty"`
+	// Password is the optional datasource password.
+	Password string `yaml:"password,omitempty"`
+	// Secure switches the proxied ClickHouse target to HTTPS.
+	Secure bool `yaml:"secure,omitempty"`
+	// Autodiscover probes this datasource and only exposes it while live.
+	Autodiscover bool `yaml:"autodiscover,omitempty"`
+	// AutodiscoverInterval is how often to check liveness.
+	AutodiscoverInterval time.Duration `yaml:"autodiscover_interval,omitempty"`
+}
+
 // Load loads configuration from a YAML file with environment variable substitution.
 func Load(path string) (*Config, error) {
 	resolvedPath, err := configpath.ResolveAppConfigPath(path)
@@ -180,6 +242,10 @@ func Load(path string) (*Config, error) {
 
 	if err := decoder.Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("parsing config: %w", err)
+	}
+
+	if err := rejectSingularAndPluralProxies(cfg.Proxy, cfg.Proxies); err != nil {
+		return nil, err
 	}
 
 	// Apply defaults
@@ -278,10 +344,8 @@ func applyDefaults(cfg *Config) {
 		cfg.Observability.MetricsPort = 2490
 	}
 
-	// Proxy defaults.
-	if cfg.Proxy.URL == "" {
-		cfg.Proxy.URL = "http://localhost:18081"
-	}
+	normalizeProxyConfigs(&cfg.Proxy, &cfg.Proxies, defaultProxyURL)
+	applyLocalProxyDefaults(&cfg.LocalProxy)
 
 	// Consensus specs defaults.
 	if cfg.ConsensusSpecs.Repository == "" {
@@ -296,6 +360,101 @@ func applyDefaults(cfg *Config) {
 	if cfg.Storage.CacheDir == "" {
 		cfg.Storage.CacheDir = filepath.Join(filepath.Dir(cfg.Storage.BaseDir), "cache")
 	}
+}
+
+func normalizeProxyConfigs(primary *ProxyConfig, proxies *[]ProxyConfig, defaultURL string) {
+	if len(*proxies) > 0 {
+		normalizeProxyList(*proxies)
+		*primary = (*proxies)[0]
+
+		return
+	}
+
+	if *proxies != nil && !primary.isConfigured() {
+		return
+	}
+
+	if !primary.isConfigured() && defaultURL == "" {
+		return
+	}
+
+	if strings.TrimSpace(primary.Name) == "" {
+		primary.Name = defaultProxyName
+	}
+
+	if strings.TrimSpace(primary.URL) == "" {
+		primary.URL = defaultURL
+	}
+
+	primary.URL = strings.TrimRight(strings.TrimSpace(primary.URL), "/")
+	*proxies = []ProxyConfig{*primary}
+}
+
+func rejectSingularAndPluralProxies(primary ProxyConfig, proxies []ProxyConfig) error {
+	if primary.isConfigured() && len(proxies) > 0 {
+		return fmt.Errorf(`cannot set both "proxy" and "proxies"; use one or the other`)
+	}
+
+	return nil
+}
+
+func normalizeProxyList(proxies []ProxyConfig) {
+	for i := range proxies {
+		if strings.TrimSpace(proxies[i].Name) == "" {
+			proxies[i].Name = defaultProxyName
+			if i > 0 {
+				proxies[i].Name = fmt.Sprintf("proxy-%d", i+1)
+			}
+		}
+
+		proxies[i].URL = strings.TrimRight(strings.TrimSpace(proxies[i].URL), "/")
+	}
+}
+
+func (c ProxyConfig) isConfigured() bool {
+	return strings.TrimSpace(c.Name) != "" ||
+		strings.TrimSpace(c.URL) != "" ||
+		c.Auth != nil
+}
+
+func applyLocalProxyDefaults(cfg *LocalProxyConfig) {
+	if cfg.Enabled == nil {
+		enabled := true
+		cfg.Enabled = &enabled
+	}
+
+	if len(cfg.ClickHouse) == 0 {
+		cfg.ClickHouse = []LocalProxyClickHouseConfig{defaultLocalProxyClickHouseConfig()}
+
+		return
+	}
+
+	for i := range cfg.ClickHouse {
+		applyLocalProxyClickHouseDefaults(&cfg.ClickHouse[i])
+	}
+}
+
+func defaultLocalProxyClickHouseConfig() LocalProxyClickHouseConfig {
+	return LocalProxyClickHouseConfig{
+		Name:                 defaultLocalProxyClickHouseName,
+		Description:          defaultLocalProxyClickHouseDesc,
+		Host:                 defaultLocalProxyClickHouseHost,
+		Port:                 defaultLocalProxyClickHousePort,
+		Database:             defaultLocalProxyClickHouseDatabase,
+		Autodiscover:         true,
+		AutodiscoverInterval: defaultLocalProxyClickHouseInterval,
+	}
+}
+
+func applyLocalProxyClickHouseDefaults(cfg *LocalProxyClickHouseConfig) {
+	if cfg.Autodiscover && cfg.AutodiscoverInterval == 0 {
+		cfg.AutodiscoverInterval = defaultLocalProxyClickHouseInterval
+	}
+
+	cfg.Name = strings.TrimSpace(cfg.Name)
+	cfg.Description = strings.TrimSpace(cfg.Description)
+	cfg.Host = strings.TrimSpace(cfg.Host)
+	cfg.Database = strings.TrimSpace(cfg.Database)
 }
 
 func pandaDataDir(subdir string) string {
@@ -321,8 +480,39 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("sandbox.timeout cannot exceed %d seconds", MaxSandboxTimeout)
 	}
 
-	if c.Proxy.URL == "" {
-		return errors.New("proxy.url is required")
+	seenProxyNames := make(map[string]struct{}, len(c.Proxies))
+	for i, proxy := range c.Proxies {
+		if strings.TrimSpace(proxy.Name) == "" {
+			return fmt.Errorf("proxies[%d].name is required", i)
+		}
+
+		if strings.TrimSpace(proxy.URL) == "" {
+			return fmt.Errorf("proxies[%d].url is required", i)
+		}
+
+		if _, exists := seenProxyNames[proxy.Name]; exists {
+			return fmt.Errorf("proxies[%d].name duplicates %q", i, proxy.Name)
+		}
+
+		seenProxyNames[proxy.Name] = struct{}{}
+	}
+
+	for i, clickhouse := range c.LocalProxy.ClickHouse {
+		if strings.TrimSpace(clickhouse.Name) == "" {
+			return fmt.Errorf("local_proxy.clickhouse[%d].name is required", i)
+		}
+
+		if strings.TrimSpace(clickhouse.Host) == "" {
+			return fmt.Errorf("local_proxy.clickhouse[%d].host is required", i)
+		}
+
+		if strings.TrimSpace(clickhouse.Database) == "" {
+			return fmt.Errorf("local_proxy.clickhouse[%d].database is required", i)
+		}
+
+		if clickhouse.AutodiscoverInterval < 0 {
+			return fmt.Errorf("local_proxy.clickhouse[%d].autodiscover_interval cannot be negative", i)
+		}
 	}
 
 	return nil
