@@ -244,6 +244,67 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 					},
 					Returns: "(rows, column_names)",
 				},
+				"log_sources": {
+					Signature:   "clickhouse.log_sources() -> list[dict]",
+					Description: "List built-in log source presets for hosted devnet logs (clickhouse-raw.external.otel_logs) and local Kurtosis logs (local-kurtosis.otel.otel_logs).",
+					Returns:     "List of dicts with source name, datasource, table, field aliases, compact fields, and required scope fields.",
+				},
+				"log_coverage": {
+					Signature:   "clickhouse.log_coverage(source: str, filters: dict, *, since='1h', until=None, include_sql=False) -> dict",
+					Description: "Measure severity field coverage for a scoped log slice. Use before error triage to prove whether structured severity fields are populated.",
+					Parameters: map[string]string{
+						"source":      "'hosted_devnet' or 'local_kurtosis'",
+						"filters":     "Exact field filters using source field aliases; hosted_devnet requires 'network', local_kurtosis requires 'enclave'",
+						"since/until": "Relative duration like '1h' or absolute timestamp string. Queries are always time-bounded.",
+						"include_sql": "When true, include reproducible SQL and parameters in result['query']; default keeps output compact.",
+					},
+					Returns: "dict with counts, coverage ratios, first_seen, last_seen, and optional query metadata.",
+				},
+				"log_values": {
+					Signature:   "clickhouse.log_values(source: str, field: str, filters: dict | None = None, *, since='1h', limit=20) -> pandas.DataFrame",
+					Description: "Return top values for a log field using validated source field aliases and bounded time filters.",
+					Parameters: map[string]string{
+						"source":  "'hosted_devnet' or 'local_kurtosis'",
+						"field":   "Field alias such as 'network', 'host', 'enclave', 'service', 'container', 'severity_text'",
+						"filters": "Exact field filters. Drilling into non-scope fields requires the source's scope filter.",
+						"limit":   "Maximum value rows, capped at 500.",
+					},
+					Returns: "pandas.DataFrame with value, lines, first_seen, and last_seen.",
+				},
+				"log_samples": {
+					Signature:   "clickhouse.log_samples(source: str, field: str, filters: dict, *, since='1h', limit=20, body_chars=160, include_sql=False) -> dict",
+					Description: "Return top field values with counts and one compact sample log line. Use this to identify containers or services before drilling into errors.",
+					Parameters: map[string]string{
+						"source":     "'hosted_devnet' or 'local_kurtosis'",
+						"field":      "Field alias such as 'container', 'service', or 'host'",
+						"filters":    "Exact source-scoped filters. hosted_devnet requires 'network'; local_kurtosis requires 'enclave'.",
+						"body_chars": "Per-sample body truncation length. Defaults to 160.",
+					},
+					Returns: "dict with compact value/count/sample rows, row limit metadata, and optional query metadata.",
+				},
+				"log_errors": {
+					Signature:   "clickhouse.log_errors(source: str, filters: dict, *, since='1h', min_severity='error', limit=50, body_chars=240, include_sql=False) -> dict",
+					Description: "Fetch compact warning/error-class logs. Generated SQL prefers OTel severity fields and uses a bounded ANSI-stripped Body fallback for raw Docker logs.",
+					Parameters: map[string]string{
+						"source":          "'hosted_devnet' or 'local_kurtosis'",
+						"filters":         "Exact field filters using aliases; source scope filter is required.",
+						"like_filters":    "Optional LIKE filters, e.g. {'host': 'lighthouse-%'}",
+						"exclude_filters": "Optional exclusion filters, e.g. {'host': 'bootnode-1'}",
+						"min_severity":    "'error' by default; use 'warn' to include WARN/WRN rows as well.",
+						"body_chars":      "Per-row body truncation length. Defaults to 240 for token-efficient output.",
+						"include_sql":     "When true, include reproducible SQL and parameters in result['query']; default keeps output compact.",
+					},
+					Returns: "dict with compact rows, row limit metadata, filters, and optional query metadata.",
+				},
+				"log_context": {
+					Signature:   "clickhouse.log_context(source: str, filters: dict, timestamp: str, *, before=20, after=20, window='1h', body_chars=240, include_sql=False) -> dict",
+					Description: "Fetch compact before/after log context around a timestamp while keeping the query scoped and time-windowed.",
+					Parameters: map[string]string{
+						"timestamp": "Center timestamp from a log row.",
+						"window":    "Relative duration bounding the context search around the center timestamp; default '1h'.",
+					},
+					Returns: "dict with compact context rows and optional query metadata.",
+				},
 			},
 		},
 	}
@@ -261,6 +322,17 @@ Xatu data is split across **TWO datasources** with **DIFFERENT syntax**:
 | **clickhouse-refined** | Pre-aggregated | ` + "`FROM mainnet.table_name`" + ` | Database prefix IS the filter |
 
 **Always filter by partition column** (usually ` + "`slot_start_date_time`" + `) to avoid timeouts.
+
+## OTel Log Helper Sources
+
+For devnet logs, prefer the Python log helpers over hand-written SQL:
+
+| Helper source | Datasource/table | Required scope |
+|---------------|------------------|----------------|
+| ` + "`hosted_devnet`" + ` | ` + "`clickhouse-raw.external.otel_logs`" + ` | ` + "`filters={'network': '<network>'}`" + ` |
+| ` + "`local_kurtosis`" + ` | ` + "`local-kurtosis.otel.otel_logs`" + ` | ` + "`filters={'enclave': '<enclave>'}`" + ` |
+
+Use ` + "`clickhouse.log_values()`" + ` for field counts, ` + "`clickhouse.log_samples()`" + ` for counts plus sample lines, ` + "`clickhouse.log_coverage()`" + ` for severity coverage, ` + "`clickhouse.log_errors()`" + ` for compact warning/error rows, and ` + "`clickhouse.log_context()`" + ` for bounded before/after context.
 
 ## Canonical vs Head Data
 
