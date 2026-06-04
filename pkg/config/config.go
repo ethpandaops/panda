@@ -368,7 +368,7 @@ func applyDefaults(cfg *Config) {
 	}
 
 	if cfg.Sandbox.Sessions.MaxSessions == 0 {
-		cfg.Sandbox.Sessions.MaxSessions = 10
+		cfg.Sandbox.Sessions.MaxSessions = 50
 	}
 
 	if cfg.Observability.MetricsPort == 0 {
