@@ -86,10 +86,15 @@ jobs:
           print("configured opencode-go auth")
           PY
 
-      - name: Warm up opencode (run its one-time DB migration before parallel workers)
-        env:
-          OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
-        run: timeout 60 opencode run --model opencode-go/deepseek-v4-flash "ok" >/dev/null 2>&1 || true
+      - name: Warm up opencode (run its one-time DB migration; no model call)
+        run: |
+          opencode serve --port 4099 >/dev/null 2>&1 &
+          PID=$!
+          for i in $(seq 1 20); do
+            curl -sf http://localhost:4099/app >/dev/null 2>&1 && break
+            sleep 1
+          done
+          kill "$PID" 2>/dev/null || true
 
       - name: Log in to GHCR (sandbox image cache)
         run: echo "${{ github.token }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
