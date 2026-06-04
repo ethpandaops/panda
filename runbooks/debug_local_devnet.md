@@ -9,7 +9,7 @@ The first step in debugging a local devnet is discovering what tooling is availa
 
 **The user MUST specify which enclave to debug.** Do NOT assume an enclave — if the user hasn't specified one, ask them before proceeding. You can discover running enclaves with `kurtosis enclave ls`.
 
-**Local devnets do NOT use the hosted ClickHouse datasources.** Start by capturing `panda datasources list`, then only use `clickhouse.query("local-kurtosis", ...)` for logs when the `local-kurtosis` ClickHouse datasource is discovered. Do not use the hosted `clickhouse-raw`/`clickhouse-refined` datasources for local Kurtosis logs.
+**Local devnets do NOT use the hosted ClickHouse datasources.** Start by capturing `panda datasources`, then only use `clickhouse.query("local-kurtosis", ...)` for logs when the `local-kurtosis` ClickHouse datasource is discovered. Do not use the hosted `clickhouse-raw`/`clickhouse-refined` datasources for local Kurtosis logs.
 
 Refer to the query skill for general API usage patterns (Dora overview, ClickHouse queries, direct HTTP calls, Dora link generation, etc.). This runbook only covers the debugging-specific procedure and API calls not in the skill.
 
@@ -89,7 +89,7 @@ Before collecting data, determine what tooling is available in the Kurtosis encl
    - **Prometheus** (metrics): look for services containing `prometheus` in the enclave inspect output. If present, note its port.
    - Any other observability or debugging services the user may have included.
 
-   Example datasource check. Also capture `panda datasources list` outside the sandbox and append that raw output to the debug report so the user can verify which datasource names were advertised:
+   Example datasource check. Also capture `panda datasources` outside the sandbox and append that raw output to the debug report so the user can verify which datasource names were advertised:
    ```python
    from ethpandaops import clickhouse
 

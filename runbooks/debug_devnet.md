@@ -15,7 +15,7 @@ Refer to the query skill for general API usage patterns (Dora overview, ClickHou
 
 ## Current Datasource Surface
 
-Start by capturing `panda datasources list` in the debug report. Hosted devnet logs are exposed through the `clickhouse-raw` ClickHouse datasource, not through a separate log datasource. If `clickhouse-raw` is not advertised, ClickHouse log investigation is unavailable and you must skip or limit Phase 2.
+Start by capturing `panda datasources` in the debug report. Hosted devnet logs are exposed through the `clickhouse-raw` ClickHouse datasource, not through a separate log datasource. If `clickhouse-raw` is not advertised, ClickHouse log investigation is unavailable and you must skip or limit Phase 2.
 
 ## How Devnet Logs Flow
 
@@ -76,7 +76,7 @@ If two sources disagree (e.g. Dora says 16 nodes, the logs show 30 hosts), surfa
 
 A *citation* is a `panda` command that re-derives the cited evidence. Every finding you record — both in the debug report and in chat output — MUST be followed by the citation(s) that produce it, so the user can run them and verify independently. Citations are claim-anchored, not exhaustive: cite the calls that support a finding, not every probe along the way.
 
-Place each citation directly under the finding, in a fenced shell block, with a one-line `#` comment saying what it fetches. Discover the current command surface with `panda --help` (and subcommand `--help`) — do not hardcode flags or subcommands from memory. For datasource availability, cite the `panda datasources list` output captured at the start. For log-derived claims, cite a `panda execute --code ...` command that re-runs the relevant `clickhouse.query("clickhouse-raw", ...)` SQL.
+Place each citation directly under the finding, in a fenced shell block, with a one-line `#` comment saying what it fetches. Discover the current command surface with `panda --help` (and subcommand `--help`) — do not hardcode flags or subcommands from memory. For datasource availability, cite the `panda datasources` output captured at the start. For log-derived claims, cite a `panda execute --code ...` command that re-runs the relevant `clickhouse.query("clickhouse-raw", ...)` SQL.
 
 ## Timeframe Rules
 

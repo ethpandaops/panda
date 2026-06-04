@@ -11,27 +11,42 @@ dora_network_health:
         networks = dora.list_networks()
         print(f"Available networks: {[n['name'] for n in networks]}")
 
-        # Get network overview for a specific network
+        # Get network overview for a specific network.
+        # Keys: current_epoch, current_slot, finalized (bool), participation_rate (%).
         network = "sepolia"
         overview = dora.get_network_overview(network)
         print(f"Current epoch: {overview['current_epoch']}")
         print(f"Current slot: {overview['current_slot']}")
-        print(f"Active validators: {overview['active_validator_count']}")
+        print(f"Participation: {overview['participation_rate']}%  (>66.7% needed to finalize)")
 
     - name: Check network finality
       description: Check if the network is finalizing properly
       query: |
         from ethpandaops import dora
 
-        overview = dora.get_network_overview("sepolia")
-        finalized_epoch = overview.get("finalized_epoch", 0)
-        current_epoch = overview.get("current_epoch", 0)
+        # get_network_overview's `finalized` is a bool, not an epoch. To measure the
+        # finality lag, scan recent epochs (get_epoch has `epoch` + `finalized`) and
+        # find the most recent finalized one.
+        network = "sepolia"
+        overview = dora.get_network_overview(network)
+        current_epoch = overview["current_epoch"]
 
-        epochs_behind = current_epoch - finalized_epoch
-        if epochs_behind <= 2:
-            print(f"Network is finalizing normally (finalized epoch: {finalized_epoch})")
+        finalized_epoch = None
+        for e in range(current_epoch - 2, current_epoch - 12, -1):
+            try:
+                if dora.get_epoch(network, e).get("finalized"):
+                    finalized_epoch = e
+                    break
+            except Exception:
+                continue
+
+        if finalized_epoch is None:
+            print(f"No finalized epoch in the last 10 — finality may be stalled (head epoch {current_epoch})")
         else:
-            print(f"Warning: Network is {epochs_behind} epochs behind finality")
+            behind = current_epoch - finalized_epoch
+            note = "normal" if behind <= 3 else "LAGGING"
+            print(f"Finalized epoch {finalized_epoch}, {behind} behind head ({note})")
+        print(f"Participation: {overview['participation_rate']}%  (>66.7% needed to finalize)")
 
     - name: Detect network splits
       description: Check if the network has split into multiple forks, detect consensus splits and fork detection
@@ -74,7 +89,7 @@ dora_validator_queries:
         print(f"Validator 12345:")
         print(f"  Status: {validator['status']}")
         print(f"  Balance: {validator['balance']} gwei")
-        print(f"  Activation epoch: {validator.get('activation_epoch', 'N/A')}")
+        print(f"  Activation epoch: {validator.get('activationepoch', 'N/A')}")
 
         # Generate a link to view in Dora
         link = dora.link_validator("sepolia", "12345")
@@ -152,7 +167,7 @@ dora_slot_epoch_queries:
         # Get epoch details (previous epoch for complete data)
         epoch_info = dora.get_epoch("sepolia", current_epoch - 1)
         print(f"Epoch {current_epoch - 1}:")
-        print(f"  Participation rate: {epoch_info.get('validator_participation', 'N/A')}")
+        print(f"  Participation rate: {epoch_info.get('globalparticipationrate', 'N/A')}")
         print(f"  Finalized: {epoch_info.get('finalized', False)}")
 
         print(f"  View in Dora: {dora.link_epoch('sepolia', current_epoch - 1)}")
@@ -228,7 +243,7 @@ dora_combined_workflows:
         print(f"=== {network.upper()} Network Status ===")
         print(f"Current slot: {overview['current_slot']}")
         print(f"Current epoch: {overview['current_epoch']}")
-        print(f"Active validators: {overview['active_validator_count']}")
+        print(f"Participation: {overview['participation_rate']}%")
 
         # Get recent blocks from Xatu for deeper analysis
         df = clickhouse.query("clickhouse-raw", f'''
