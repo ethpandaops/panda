@@ -17,9 +17,176 @@
 #
 # IMPORTANT: For Xatu examples, always filter on partition key (slot_start_date_time) and meta_network_name.
 
+log_helpers:
+  name: Token-Efficient Log Helpers
+  description: Python helper calls for scoped ClickHouse OTel log exploration. Prefer these before hand-writing SQL for devnet logs; they enforce source presets, time bounds, severity fallback, and compact row output.
+  examples:
+    - name: List log source presets
+      description: Show the built-in log source presets, field aliases, and required scope fields.
+      target: clickhouse-raw
+      query: |
+        from ethpandaops import clickhouse
+
+        for source in clickhouse.log_sources():
+            print(source["name"], source["datasource"], source["table"])
+            print("fields:", ", ".join(source["fields"]))
+            print("required scope:", source["required_scope_fields"])
+
+    - name: Hosted devnet nodes shipping logs
+      description: List node host names currently shipping logs for a hosted devnet without writing raw SQL.
+      target: clickhouse-raw
+      query: |
+        from ethpandaops import clickhouse
+
+        network = "<network>"
+        hosts = clickhouse.log_values(
+            "hosted_devnet",
+            "host",
+            filters={"network": network},
+            since="1h",
+            limit=100,
+        )
+        print(hosts)
+
+    - name: Hosted devnet severity coverage
+      description: Check whether structured OTel severity fields are populated for a hosted devnet node.
+      target: clickhouse-raw
+      query: |
+        from ethpandaops import clickhouse
+
+        network = "<network>"
+        host = "<host.name>"
+
+        coverage = clickhouse.log_coverage(
+            "hosted_devnet",
+            filters={"network": network, "host": host},
+            since="1h",
+        )
+        print(coverage)
+
+    - name: Hosted devnet compact node errors
+      description: Fetch compact error-class logs for one hosted devnet node. The helper prefers structured severity and uses the bounded Body fallback automatically.
+      target: clickhouse-raw
+      query: |
+        from ethpandaops import clickhouse
+
+        network = "<network>"
+        host = "<host.name>"
+
+        errors = clickhouse.log_errors(
+            "hosted_devnet",
+            filters={"network": network, "host": host},
+            since="1h",
+            limit=50,
+            body_chars=240,
+        )
+        for row in errors["rows"]:
+            print(row)
+
+    - name: Hosted devnet node containers with samples
+      description: List container log files on one hosted devnet node with a representative sample line from each.
+      target: clickhouse-raw
+      query: |
+        from ethpandaops import clickhouse
+
+        network = "<network>"
+        host = "<host.name>"
+
+        containers = clickhouse.log_samples(
+            "hosted_devnet",
+            "container",
+            filters={"network": network, "host": host},
+            since="1h",
+            limit=20,
+            body_chars=160,
+        )
+        for row in containers["rows"]:
+            print(row)
+
+    - name: Hosted consensus-client error sweep
+      description: Sweep compact error-class logs across a consensus client type while excluding bootnode noise.
+      target: clickhouse-raw
+      query: |
+        from ethpandaops import clickhouse
+
+        network = "<network>"
+
+        errors = clickhouse.log_errors(
+            "hosted_devnet",
+            filters={"network": network},
+            like_filters={"host": "lighthouse-%"},
+            exclude_filters={"host": "bootnode-1"},
+            since="1h",
+            limit=100,
+            body_chars=240,
+        )
+        for row in errors["rows"]:
+            print(row)
+
+    - name: Local Kurtosis service errors
+      description: Fetch compact error-class logs for one local Kurtosis service without writing raw SQL.
+      target: local-kurtosis
+      query: |
+        from ethpandaops import clickhouse
+
+        enclave = "<enclave-name>"
+        service = "<service-name>"
+
+        errors = clickhouse.log_errors(
+            "local_kurtosis",
+            filters={"enclave": enclave, "service": service},
+            since="1h",
+            limit=50,
+            body_chars=240,
+        )
+        for row in errors["rows"]:
+            print(row)
+
+    - name: Local Kurtosis EL warnings and errors
+      description: Fetch compact warning/error logs for local Kurtosis execution-layer services.
+      target: local-kurtosis
+      query: |
+        from ethpandaops import clickhouse
+
+        enclave = "<enclave-name>"
+
+        logs = clickhouse.log_errors(
+            "local_kurtosis",
+            filters={"enclave": enclave},
+            like_filters={"service": "el-%"},
+            min_severity="warn",
+            since="1h",
+            limit=100,
+            body_chars=240,
+        )
+        for row in logs["rows"]:
+            print(row)
+
+    - name: Log context around an error
+      description: Fetch a small before/after context window around a timestamp returned by log_errors.
+      target: clickhouse-raw
+      query: |
+        from ethpandaops import clickhouse
+
+        network = "<network>"
+        host = "<host.name>"
+        timestamp = "<timestamp-from-error-row>"
+
+        context = clickhouse.log_context(
+            "hosted_devnet",
+            filters={"network": network, "host": host},
+            timestamp=timestamp,
+            before=20,
+            after=20,
+            window="1h",
+            body_chars=240,
+        )
+        for row in context["rows"]:
+            print(row)
+
 devnet_logs:
   name: Local Devnet OTel Logs
-  description: Queries for local Kurtosis devnet OTel logs exposed through the autodiscovered local-kurtosis ClickHouse datasource
+  description: Raw SQL fallback queries for local Kurtosis devnet OTel logs exposed through the autodiscovered local-kurtosis ClickHouse datasource. Prefer the log_helpers examples for normal investigation.
   examples:
     - name: List local devnet enclaves
       description: List Kurtosis enclave names currently present in the shared local OTel logs table. Run this before filtering logs because multiple devnets can share one table.
@@ -31,40 +198,58 @@ devnet_logs:
         ORDER BY EnclaveName
 
     - name: Recent service errors
-      description: Fetch recent error-class logs for a specific service in a specific local Kurtosis enclave by matching the raw log body.
+      description: Fetch recent error-class logs for a specific service in a local Kurtosis enclave. Prefer OTel severity fields; parse Body only when structured severity is empty.
       target: local-kurtosis
       query: |
+        WITH replaceRegexpAll(Body, '\x1b\[[0-9;?]*[A-Za-z]', '') AS clean
         SELECT
           Timestamp,
           ServiceName,
-          Body
+          clean AS Body
         FROM otel.otel_logs
         WHERE EnclaveName = {enclave:String}
           AND ServiceName = {service:String}
-          AND match(Body, '(?i)(crit|err|error|fatal)')
+          AND (
+            SeverityNumber >= 17
+            OR upper(SeverityText) IN ('CRIT', 'CRITICAL', 'ERRO', 'ERROR', 'FATAL', 'PANIC')
+            OR lower(LogAttributes['level']) IN ('crit', 'critical', 'erro', 'error', 'fatal', 'panic')
+            OR (
+              match(clean, '(^|[][ |])(CRIT|ERRO|ERROR|FATAL|PANIC)($|[][ |:])|^(ERR|FAT)\b|\blevel=(crit|error|fatal|panic)\b')
+              AND NOT match(clean, '(^|[][ |])(DEBUG|DBG|TRACE|TRC)($|[][ |:])|\blevel=(debug|trace)\b')
+            )
+          )
           AND Timestamp >= now() - INTERVAL 1 HOUR
         ORDER BY Timestamp DESC
         LIMIT 200
 
     - name: EL warnings and errors
-      description: Fetch recent EL warning/error logs for a local Kurtosis enclave by matching the raw log body.
+      description: Fetch recent EL warning/error logs for a local Kurtosis enclave. Prefer OTel severity fields; parse Body only when structured severity is empty.
       target: local-kurtosis
       query: |
+        WITH replaceRegexpAll(Body, '\x1b\[[0-9;?]*[A-Za-z]', '') AS clean
         SELECT
           Timestamp,
           ServiceName,
-          Body
+          clean AS Body
         FROM otel.otel_logs
         WHERE EnclaveName = {enclave:String}
           AND ServiceName LIKE 'el-%'
-          AND match(Body, '(?i)(crit|err|error|fatal|warn)')
+          AND (
+            SeverityNumber >= 13
+            OR upper(SeverityText) IN ('WARN', 'WARNING', 'WRN', 'CRIT', 'CRITICAL', 'ERRO', 'ERROR', 'FATAL', 'PANIC')
+            OR lower(LogAttributes['level']) IN ('warn', 'warning', 'wrn', 'crit', 'critical', 'erro', 'error', 'fatal', 'panic')
+            OR (
+              match(clean, '(^|[][ |])(CRIT|ERRO|ERROR|FATAL|PANIC|WARN|WRN)($|[][ |:])|^(ERR|FAT|WRN)\b|\blevel=(crit|error|fatal|panic|warn|warning)\b')
+              AND NOT match(clean, '(^|[][ |])(DEBUG|DBG|TRACE|TRC)($|[][ |:])|\blevel=(debug|trace)\b')
+            )
+          )
           AND Timestamp >= now() - INTERVAL 1 HOUR
         ORDER BY Timestamp DESC
         LIMIT 200
 
 production_devnet_logs:
   name: Production Devnet OTel Logs
-  description: Queries for hosted (multi-VM) devnet and testnet container logs in the clickhouse-raw datasource, table external.otel_logs. Logs are keyed by ResourceAttributes['network'] (devnet name) and ResourceAttributes['host.name'] (node, e.g. lighthouse-geth-super-1). SeverityText is usually empty for raw Docker logs, so match severity on Body. This is NOT for local Kurtosis devnets — use the local-kurtosis datasource for those.
+  description: Raw SQL fallback queries for hosted (multi-VM) devnet and testnet container logs in the clickhouse-raw datasource, table external.otel_logs. Prefer the log_helpers examples for normal investigation. Logs are keyed by ResourceAttributes['network'] (devnet name) and ResourceAttributes['host.name'] (node, e.g. lighthouse-geth-super-1). Prefer OTel severity fields when populated; parse Body only for rows where structured severity is empty. This is NOT for local Kurtosis devnets — use the local-kurtosis datasource for those.
   examples:
     - name: List devnet nodes shipping logs
       description: List the nodes (host.name) currently shipping container logs for a hosted devnet. Run this to discover the node topology before drilling into a specific node.
@@ -77,18 +262,27 @@ production_devnet_logs:
         ORDER BY host
 
     - name: Recent node errors
-      description: Fetch recent error-class logs for one devnet node by matching the raw log body. A node VM mixes its CL, EL, validator and sidecar containers — use LogAttributes['log.file.name'] to tell them apart.
+      description: Fetch recent error-class logs for one devnet node. Prefer OTel severity fields; parse Body only when structured severity is empty. A node VM mixes its CL, EL, validator and sidecar containers — use LogAttributes['log.file.name'] to tell them apart.
       target: clickhouse-raw
       query: |
+        WITH replaceRegexpAll(Body, '\x1b\[[0-9;?]*[A-Za-z]', '') AS clean
         SELECT
           Timestamp,
           ResourceAttributes['host.name'] AS host,
           LogAttributes['log.file.name'] AS container_log,
-          Body
+          clean AS Body
         FROM external.otel_logs
         WHERE ResourceAttributes['network'] = {network:String}
           AND ResourceAttributes['host.name'] = {host:String}
-          AND match(Body, '(?i)(crit|err|error|fatal)')
+          AND (
+            SeverityNumber >= 17
+            OR upper(SeverityText) IN ('CRIT', 'CRITICAL', 'ERRO', 'ERROR', 'FATAL', 'PANIC')
+            OR lower(LogAttributes['level']) IN ('crit', 'critical', 'erro', 'error', 'fatal', 'panic')
+            OR (
+              match(clean, '(^|[][ |])(CRIT|ERRO|ERROR|FATAL|PANIC)($|[][ |:])|^(ERR|FAT)\b|\blevel=(crit|error|fatal|panic)\b')
+              AND NOT match(clean, '(^|[][ |])(DEBUG|DBG|TRACE|TRC)($|[][ |:])|\blevel=(debug|trace)\b')
+            )
+          )
           AND Timestamp >= now() - INTERVAL 1 HOUR
         ORDER BY Timestamp DESC
         LIMIT 200
@@ -97,14 +291,24 @@ production_devnet_logs:
       description: Sweep error-class logs across all nodes running a given CL client. host.name is <cl>-<el>-<tier>-<n>, so a 'lighthouse-%' prefix matches lighthouse-CL nodes. Results still mix each node's EL/sidecar lines.
       target: clickhouse-raw
       query: |
+        WITH replaceRegexpAll(Body, '\x1b\[[0-9;?]*[A-Za-z]', '') AS clean
         SELECT
           Timestamp,
           ResourceAttributes['host.name'] AS host,
-          Body
+          clean AS Body
         FROM external.otel_logs
         WHERE ResourceAttributes['network'] = {network:String}
           AND ResourceAttributes['host.name'] LIKE {cl_prefix:String}
-          AND match(Body, '(?i)(crit|err|error|fatal)')
+          AND ResourceAttributes['host.name'] != 'bootnode-1'
+          AND (
+            SeverityNumber >= 17
+            OR upper(SeverityText) IN ('CRIT', 'CRITICAL', 'ERRO', 'ERROR', 'FATAL', 'PANIC')
+            OR lower(LogAttributes['level']) IN ('crit', 'critical', 'erro', 'error', 'fatal', 'panic')
+            OR (
+              match(clean, '(^|[][ |])(CRIT|ERRO|ERROR|FATAL|PANIC)($|[][ |:])|^(ERR|FAT)\b|\blevel=(crit|error|fatal|panic)\b')
+              AND NOT match(clean, '(^|[][ |])(DEBUG|DBG|TRACE|TRC)($|[][ |:])|\blevel=(debug|trace)\b')
+            )
+          )
           AND Timestamp >= now() - INTERVAL 1 HOUR
         ORDER BY Timestamp DESC
         LIMIT 500

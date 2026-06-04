@@ -19,15 +19,15 @@ Start by capturing `panda datasources` in the debug report. Hosted devnet logs a
 
 ## How Devnet Logs Flow
 
-Hosted devnets run as Docker containers on bare-metal VMs (managed by Ansible). Each container's logs are scraped and shipped via OpenTelemetry into the `clickhouse-raw` ClickHouse cluster, database `external`, table `external.otel_logs`. Query them with SQL via `clickhouse.query("clickhouse-raw", ...)`, always filtering by `ResourceAttributes['network']` (the devnet) and `Timestamp`. Do not query a separate log datasource for hosted devnets; devnet container logs live in ClickHouse.
+Hosted devnets run as Docker containers on bare-metal VMs (managed by Ansible). Each container's logs are scraped and shipped via OpenTelemetry into the `clickhouse-raw` ClickHouse cluster, database `external`, table `external.otel_logs`. Use the `clickhouse.log_*` helpers with source `hosted_devnet` for normal investigation; they generate SQL that filters by `ResourceAttributes['network']` (the devnet) and `Timestamp`. Use raw `clickhouse.query("clickhouse-raw", ...)` only as a fallback. Do not query a separate log datasource for hosted devnets; devnet container logs live in ClickHouse. LogQL only applies to Loki datasources, and these hosted devnet container logs are not exposed through Loki.
 
 Key fields on `external.otel_logs`:
 - `Timestamp DateTime64(9)` — always filter on this (it is the partition key).
-- `Body String` — the raw log line. The level is usually embedded here, not in `SeverityText`. **Lines are terminal-coloured — the level token is wrapped in ANSI escape codes** (`\x1b[31mERROR\x1b[0m`); strip them with a `clean` CTE on bounded queries before matching (see step 4).
-- `SeverityText LowCardinality(String)` — often EMPTY for raw Docker logs; do not rely on it. Triage severity by stripping ANSI then matching the **LEVEL token** in the cleaned line, not the bare word "error" (see step 4 below — a substring match returns tens of thousands of benign DEBUG lines on a healthy network).
+- `SeverityNumber UInt8` / `SeverityText LowCardinality(String)` — use these first when populated (`SeverityNumber >= 17` is OTel error/fatal).
+- `Body String` — the raw log line. For raw Docker logs, structured severity is often empty and the level is embedded here instead. **Lines are terminal-coloured — the level token can be wrapped in ANSI escape codes** (`\x1b[31mERROR\x1b[0m`); strip them with a `clean` CTE only in bounded fallback queries (see step 4).
 - `ServiceName` — empty for these VM/Docker logs (the `k8s.*` materialized columns are also empty — those only apply to Kubernetes platform logs).
 - `ResourceAttributes Map(String, String)` — node identity. Keys: `network` (devnet name), `host.name` (the node, e.g. `lighthouse-geth-super-1`), `ingress_user`, `deployment.environment`.
-- `LogAttributes Map(String, String)` — per-line attributes. Keys include `log.file.name` / `log.file.path` (the Docker container json-log file — one per container on the node), `container_id`, plus any structured fields the client emits (`level`, `msg`, `component`, ...).
+- `LogAttributes Map(String, String)` — per-line attributes. Keys include `log.file.name` / `log.file.path` (the Docker container json-log file — one per container on the node), `container_id`, plus any structured fields the client emits (`level`, `msg`, `component`, ...). Use `LogAttributes['level']` before falling back to parsing `Body`.
 
 **Node naming:** `host.name` encodes the client pair as `<cl>-<el>-<tier>-<index>` (e.g. `lighthouse-geth-super-1` → CL lighthouse, EL geth). Non-paired nodes exist too (`bootnode-1`, `mev-relay-1`). The current OTel records do not provide `ethereum_cl` / `ethereum_el` labels. A node VM runs the CL, EL, validator, and sidecar containers together, distinguished only by `LogAttributes['log.file.name']` (a container hash). To isolate one client's logs on a node, discover its containers first (see Phase 2) or identify the client by its log-line format in `Body`.
 
@@ -76,7 +76,7 @@ If two sources disagree (e.g. Dora says 16 nodes, the logs show 30 hosts), surfa
 
 A *citation* is a `panda` command that re-derives the cited evidence. Every finding you record — both in the debug report and in chat output — MUST be followed by the citation(s) that produce it, so the user can run them and verify independently. Citations are claim-anchored, not exhaustive: cite the calls that support a finding, not every probe along the way.
 
-Place each citation directly under the finding, in a fenced shell block, with a one-line `#` comment saying what it fetches. Discover the current command surface with `panda --help` (and subcommand `--help`) — do not hardcode flags or subcommands from memory. For datasource availability, cite the `panda datasources` output captured at the start. For log-derived claims, cite a `panda execute --code ...` command that re-runs the relevant `clickhouse.query("clickhouse-raw", ...)` SQL.
+Place each citation directly under the finding, in a fenced shell block, with a one-line `#` comment saying what it fetches. Discover the current command surface with `panda --help` (and subcommand `--help`) — do not hardcode flags or subcommands from memory. For datasource availability, cite the `panda datasources` output captured at the start. For log-derived claims, cite a `panda execute --code ...` command that re-runs the relevant `clickhouse.log_*` helper call (or raw `clickhouse.query("clickhouse-raw", ...)` SQL if you used the raw fallback). Use `include_sql=True` when writing the debug report if the user needs the generated SQL.
 
 ## Timeframe Rules
 
@@ -214,17 +214,35 @@ Append the table and your read of it, then proceed to Phase 2.
 
 ## Phase 2: Log Investigation with ClickHouse (`external.otel_logs`)
 
-Use Dora findings (if available) to target specific nodes. With logs only (no Dora), start from the `hosts` list discovered in Phase 0 to identify which nodes have issues. **Always filter by `ResourceAttributes['network']` and `Timestamp`** — unfiltered queries scan everything and may time out. All queries go through `clickhouse.query("clickhouse-raw", ...)` against `external.otel_logs`; see **How Devnet Logs Flow** above for the full schema and severity-matching details.
+Use Dora findings (if available) to target specific nodes. With logs only (no Dora), start from the `hosts` list discovered in Phase 0 to identify which nodes have issues. **Prefer the ClickHouse log helpers** — they expand validated field aliases into the correct ClickHouse expressions, keep queries time-bounded, prefer structured severity, and return compact rows. Use raw SQL only as an escape hatch.
 
 **Use the same active timeframe** established in the Timeframe Rules section above.
 
-**⚠️ ANSI stripping is for bounded queries only.** Log lines are terminal-coloured, so severity matching strips ANSI in a `clean` CTE first (`replaceRegexpAll(Body, '\x1b\[[0-9;?]*[A-Za-z]', '')`). But wrapping `Body` disables the `idx_body` skip-index and rewrites every scanned row, and (primary key led by `IngressUser`, data >7d on S3) a stripped-`Body` regex over a wide/multi-day window becomes a full scan. **Always pair the strip with a `host.name` filter + tight `Timestamp` window + `LIMIT`** — narrow to the suspect host/time first, then strip within that slice. Pass SQL as a raw string (`r"""`) so `\b`/`\x1b` survive.
+**Severity filters:** These logs are in ClickHouse, not Loki, so LogQL is not available here. `clickhouse.log_errors()` uses `SeverityNumber`, `SeverityText`, and `LogAttributes['level']` first, then falls back to a bounded ANSI-stripped `Body` regex for raw Docker logs. Keep the source scope exact (`network`, and usually `host`) and keep `since`/`until` aligned with the active timeframe.
+
+Run this once for the target host and append it to the debug report:
+
+```python
+from ethpandaops import clickhouse
+
+network = "<network>"
+host = "<host.name>"
+timeframe = {"since": "1h"}  # replace with the active timeframe if different
+
+coverage = clickhouse.log_coverage(
+    "hosted_devnet",
+    filters={"network": network, "host": host},
+    include_sql=True,
+    **timeframe,
+)
+print(coverage)
+```
 
 **Node naming:** Most nodes follow `<cl>-<el>-<tier>-<n>` (e.g. `lighthouse-geth-super-1` → CL lighthouse, EL geth), but devnets also include bootnodes, MEV relays, and other non-paired nodes (`bootnode-1`, `mev-relay-1`) that do NOT match this pattern. Never derive node names from the convention — always use the `hosts` list discovered in Phase 0 (or Dora's `/v1/clients/consensus`).
 
 **Exclude `bootnode-1` from cross-host triage by default.** Bootnodes flood multi-host sweeps with p2p noise (`Ping` deserialization, `ENR missing IP`, connection churn) that's never the root cause — add `AND ResourceAttributes['host.name'] != 'bootnode-1'` to any multi-host query (per-host queries below pin one `host.name`, so they're unaffected). Investigate the bootnode directly only if discovery/peering is the suspected problem.
 
-**CL vs EL in ClickHouse OTel logs:** there is no `ethereum_cl` / `ethereum_el` label. A node VM runs the CL, EL, validator, and sidecar containers together; their logs are separated only by `LogAttributes['log.file.name']` (a per-container json-log file, named by hash). To investigate one client on a node, first discover its containers (step 3) and identify the CL/EL container by its log-line format, then filter on that log file. To sweep a client type across the network, filter on `host.name` (e.g. `host.name LIKE 'lighthouse-%'` for lighthouse-CL nodes, or `host.name LIKE '%-geth-%'` for geth-EL nodes) — but remember the result still mixes that node's CL/EL/sidecar lines.
+**CL vs EL in ClickHouse OTel logs:** there is no `ethereum_cl` / `ethereum_el` label. A node VM runs the CL, EL, validator, and sidecar containers together; their logs are separated only by `LogAttributes['log.file.name']` (field alias: `container`). To investigate one client on a node, first discover containers with `log_samples()`, identify the CL/EL container by sample log format, then filter error queries on `container`.
 
 **You SHOULD start with the consensus layer (CL).** Most devnet issues originate at the CL level. Only investigate EL logs if CL logs point to execution-side problems (e.g. payload validation errors, engine API failures).
 
@@ -235,56 +253,71 @@ Use Dora findings (if available) to target specific nodes. With logs only (no Do
 
    network = "<network>"
    host = "<host.name>"
+   timeframe = {"since": "1h"}
 
-   df = clickhouse.query("clickhouse-raw", r"""
-       WITH replaceRegexpAll(Body, '\x1b\[[0-9;?]*[A-Za-z]', '') AS clean
-       SELECT
-         LogAttributes['log.file.name'] AS container_log,
-         count() AS lines,
-         any(substring(clean, 1, 120)) AS sample
-       FROM external.otel_logs
-       WHERE ResourceAttributes['network'] = {network:String}
-         AND ResourceAttributes['host.name'] = {host:String}
-         AND Timestamp >= now() - INTERVAL 1 HOUR
-       GROUP BY container_log
-       ORDER BY lines DESC
-   """, parameters={"network": network, "host": host})
-   print(df)
+   containers = clickhouse.log_samples(
+       "hosted_devnet",
+       "container",
+       filters={"network": network, "host": host},
+       limit=20,
+       body_chars=160,
+       include_sql=True,
+       **timeframe,
+   )
+   for row in containers["rows"]:
+       print(row)
    ```
 
    Identify the client from each `sample` log format (e.g. lighthouse `MMM DD HH:MM:SS.mmm LEVEL ...`, geth `LEVEL [MM-DD|HH:MM:SS.mmm] ...`, prysm `level=... msg=...`). Append the node→container map to the debug report.
 
-4. **Fetch CL errors first (CRIT/ERR)** - For each problematic node (or all CL nodes when there is no Dora target), fetch the most severe lines. `SeverityText` is usually empty for these Docker logs, so match severity on the raw `Body` — but **anchor on the LEVEL token, do not substring-match "error"** (a bare `(?i)error` returns tens of thousands of benign DEBUG lines on a healthy network). Match the uppercase level token (case-sensitively) or logfmt `level=error`, and exclude DEBUG/TRACE. Per-client LEVEL tokens: lighthouse `ERROR`; geth/nethermind/erigon/reth/besu `ERROR [..]` or `|ERROR|`; prysm `[ts] ERROR` / `level=error`; nimbus `ERR`/`FAT` at line start; lodestar `level=error`:
+4. **Fetch CL errors first (CRIT/ERR)** - For each problematic node, fetch the most severe compact rows. Keep the query bounded by `network`, `host`, active timeframe, and `LIMIT`; do not use a bare `error` substring.
 
    ```python
    from ethpandaops import clickhouse
 
    network = "<network>"
    host = "<host.name>"
+   timeframe = {"since": "1h"}
 
-   df = clickhouse.query("clickhouse-raw", r"""
-       WITH replaceRegexpAll(Body, '\x1b\[[0-9;?]*[A-Za-z]', '') AS clean
-       SELECT
-         Timestamp,
-         ResourceAttributes['host.name'] AS host,
-         LogAttributes['log.file.name'] AS container_log,
-         clean AS Body
-       FROM external.otel_logs
-       WHERE ResourceAttributes['network'] = {network:String}
-         AND ResourceAttributes['host.name'] = {host:String}
-         -- error-class LEVEL token only, matched on the ANSI-stripped line (uppercase token, nimbus 3-letter, or logfmt level=)
-         AND match(clean, '(^|[][ |])(CRIT|ERRO|ERROR|FATAL|PANIC)($|[][ |:])|^(ERR|FAT)\b|\blevel=(crit|error|fatal|panic)\b')
-         AND NOT match(clean, '(^|[][ |])(DEBUG|DBG|TRACE|TRC)($|[][ |:])|\blevel=(debug|trace)\b')
-         AND Timestamp >= now() - INTERVAL 1 HOUR
-       ORDER BY Timestamp DESC
-       LIMIT 200
-   """, parameters={"network": network, "host": host})
-   print(df)
+   errors = clickhouse.log_errors(
+       "hosted_devnet",
+       filters={"network": network, "host": host},
+       limit=100,
+       body_chars=240,
+       include_sql=True,
+       **timeframe,
+   )
+   for row in errors["rows"]:
+       print(row)
    ```
 
-   Once you have identified the CL container's log file (step 3), add `AND LogAttributes['log.file.name'] = {container:String}` to isolate the CL client's lines from the EL and sidecars on the same node.
+   Once you have identified the CL container's log file (step 3), add `container` to the filters to isolate the CL client's lines from the EL and sidecars on the same node:
 
-   To sweep a CL client type across the whole network instead of one node, replace the host filter with `AND ResourceAttributes['host.name'] LIKE {cl_prefix:String}` (and add `AND ResourceAttributes['host.name'] != 'bootnode-1'` per the bootnode-exclusion note above) and pass e.g. `{"cl_prefix": "lighthouse-%"}`. This is a wider scan with the ANSI strip in play — keep the `Timestamp` window short (≤1h) and the `LIMIT` tight, and prefer drilling into individual hosts once you have a target. Do not widen this to all hosts over a multi-day range.
+   ```python
+   errors = clickhouse.log_errors(
+       "hosted_devnet",
+       filters={"network": network, "host": host, "container": "<container-log-file>"},
+       limit=100,
+       body_chars=240,
+       include_sql=True,
+       **timeframe,
+   )
+   ```
+
+   To sweep a CL client type across the whole network instead of one node, use `like_filters={"host": "lighthouse-%"}` and `exclude_filters={"host": "bootnode-1"}`. This is a wider scan with the ANSI-stripped Body fallback in play — keep the timeframe short (≤1h) and the `limit` tight, then drill into individual hosts once you have a target:
+
+   ```python
+   errors = clickhouse.log_errors(
+       "hosted_devnet",
+       filters={"network": network},
+       like_filters={"host": "lighthouse-%"},
+       exclude_filters={"host": "bootnode-1"},
+       limit=100,
+       body_chars=240,
+       include_sql=True,
+       **timeframe,
+   )
+   ```
 
    If multiple nodes are erroring, query each one. Look for common error patterns across nodes — the same error across nodes of one client type points to a client bug.
 

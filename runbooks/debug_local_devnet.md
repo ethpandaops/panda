@@ -9,13 +9,13 @@ The first step in debugging a local devnet is discovering what tooling is availa
 
 **The user MUST specify which enclave to debug.** Do NOT assume an enclave — if the user hasn't specified one, ask them before proceeding. You can discover running enclaves with `kurtosis enclave ls`.
 
-**Local devnets do NOT use the hosted ClickHouse datasources.** Start by capturing `panda datasources`, then only use `clickhouse.query("local-kurtosis", ...)` for logs when the `local-kurtosis` ClickHouse datasource is discovered. Do not use the hosted `clickhouse-raw`/`clickhouse-refined` datasources for local Kurtosis logs.
+**Local devnets do NOT use the hosted ClickHouse datasources.** Start by capturing `panda datasources`, then only use the `local_kurtosis` ClickHouse log helper source (backed by the `local-kurtosis` datasource) when it is discovered. Do not use the hosted `clickhouse-raw`/`clickhouse-refined` datasources for local Kurtosis logs.
 
 Refer to the query skill for general API usage patterns (Dora overview, ClickHouse queries, direct HTTP calls, Dora link generation, etc.). This runbook only covers the debugging-specific procedure and API calls not in the skill.
 
 ## How OTel Logs Flow
 
-Kurtosis devnet services emit logs to the devnet's `otel-collector`. The collector writes them into the Kurtosis ClickHouse service on HTTP port `18123`, database `otel`, table `otel_logs`. Panda starts an in-process local proxy that autodiscovers this ClickHouse when `/ping` returns `Ok.` and the `otel` database exists, then exposes it as the `local-kurtosis` ClickHouse datasource. Query it with SQL, always filtering by `EnclaveName` because one local ClickHouse can hold logs from multiple devnets. If `local-kurtosis` is absent from the advertised datasources, treat ClickHouse logs as unavailable and use the `kurtosis service logs` fallback.
+Kurtosis devnet services emit logs to the devnet's `otel-collector`. The collector writes them into the Kurtosis ClickHouse service on HTTP port `18123`, database `otel`, table `otel_logs`. Panda starts an in-process local proxy that autodiscovers this ClickHouse when `/ping` returns `Ok.` and the `otel` database exists, then exposes it as the `local-kurtosis` ClickHouse datasource. Use the `clickhouse.log_*` helpers with source `local_kurtosis` for normal investigation; they generate SQL that filters by `EnclaveName` because one local ClickHouse can hold logs from multiple devnets. If `local-kurtosis` is absent from the advertised datasources, treat ClickHouse logs as unavailable and use the `kurtosis service logs` fallback.
 
 ## Sandbox Session
 
@@ -166,29 +166,38 @@ Use the autodiscovered `local-kurtosis` ClickHouse datasource. The local OTel ta
 Useful schema fields:
 - `otel.otel_logs`: `Timestamp DateTime64(9)`, `ServiceName LowCardinality(String)`, `Body String`, `SeverityText LowCardinality(String)`, `SeverityNumber UInt8`, `EnclaveName LowCardinality(String)`, `EnclaveUuid`, `ResourceAttributes Map(LowCardinality(String), String)`, `LogAttributes Map(LowCardinality(String), String)`
 
-**Always filter by `EnclaveName`** (and `ServiceName` for service-level queries). The Kurtosis collector may leave `SeverityText`/`SeverityNumber` empty, so severity comes from `Body` — which is terminal-coloured. **Strip ANSI in a `clean` CTE, then anchor on the LEVEL token — don't substring-match "error"** (a bare `(?i)error` matches tens of thousands of benign DEBUG lines; an un-stripped colour-wrapped `ERROR` defeats the anchors). Match the uppercase token (case-sensitively) or `level=error` on `clean`, excluding DEBUG/TRACE (per-client tokens: lighthouse `ERROR`, geth-style `ERROR [..]`, prysm `level=error`, nimbus `ERR`/`FAT`):
+**Severity filters:** Always filter by `enclave` and usually `service`. This is ClickHouse SQL under the hood, not LogQL. Prefer the log helpers; `clickhouse.log_errors()` uses `SeverityNumber`, `SeverityText`, and `LogAttributes['level']` first, then falls back to a bounded ANSI-stripped `Body` regex for raw logs. Use `min_severity="warn"` only when you intentionally need WARN/WRN rows.
 
-```sql
--- strip ANSI first, then match the error-class LEVEL token on the cleaned line
-WITH replaceRegexpAll(Body, '\x1b\[[0-9;?]*[A-Za-z]', '') AS clean
-... WHERE <enclave> AND <service> AND <tight time window>
-  AND match(clean, '(^|[][ |])(CRIT|ERRO|ERROR|FATAL|PANIC)($|[][ |:])|^(ERR|FAT)\b|\blevel=(crit|error|fatal|panic)\b')
-  AND NOT match(clean, '(^|[][ |])(DEBUG|DBG|TRACE|TRC)($|[][ |:])|\blevel=(debug|trace)\b')
-... LIMIT 200
+Run this once for the target service and append it to the debug report:
+
+```python
+from ethpandaops import clickhouse
+
+enclave = "<enclave-name>"
+service = "<service-name>"
+timeframe = {"since": "1h"}  # replace with the active timeframe if different
+
+coverage = clickhouse.log_coverage(
+    "local_kurtosis",
+    filters={"enclave": enclave, "service": service},
+    include_sql=True,
+    **timeframe,
+)
+print(coverage)
 ```
 
-Pass SQL as a raw string (`r"""`) so `\b`/`\x1b` survive (a normal string turns `\b` into a backspace byte). The strip wraps `Body`, so keep queries bounded — `EnclaveName` + `ServiceName` + tight `Timestamp` window + `LIMIT`; don't run a stripped-`Body` regex over a wide/multi-day range. Use the active timeframe from Timeframe Rules.
+Use the active timeframe from Timeframe Rules. If you need raw SQL, search examples for the raw ClickHouse fallback and keep it bounded by `EnclaveName` + `ServiceName` + tight `Timestamp` window + `LIMIT`.
 
 **FIRST: discover enclaves present in the OTel logs table**
 ```python
 from ethpandaops import clickhouse
 
-enclaves = clickhouse.query("local-kurtosis", """
-    SELECT DISTINCT EnclaveName
-    FROM otel.otel_logs
-    WHERE EnclaveName != ''
-    ORDER BY EnclaveName
-""")
+enclaves = clickhouse.log_values(
+    "local_kurtosis",
+    "enclave",
+    since="1h",
+    limit=50,
+)
 print(enclaves)
 ```
 
@@ -199,19 +208,15 @@ If the requested enclave is not listed, the OTel datasource is not currently rec
 from ethpandaops import clickhouse
 
 enclave = "<enclave-name>"
+timeframe = {"since": "1h"}
 
-services = clickhouse.query("local-kurtosis", """
-    SELECT
-      ServiceName,
-      count() AS log_count,
-      min(Timestamp) AS first_seen,
-      max(Timestamp) AS last_seen
-    FROM otel.otel_logs
-    WHERE EnclaveName = {enclave:String}
-      AND Timestamp >= now() - INTERVAL 1 HOUR
-    GROUP BY ServiceName
-    ORDER BY ServiceName
-""", parameters={"enclave": enclave})
+services = clickhouse.log_values(
+    "local_kurtosis",
+    "service",
+    filters={"enclave": enclave},
+    limit=100,
+    **timeframe,
+)
 print(services)
 ```
 
@@ -220,23 +225,19 @@ print(services)
 from ethpandaops import clickhouse
 
 enclave = "<enclave-name>"
+timeframe = {"since": "1h"}
 
-cl_errors = clickhouse.query("local-kurtosis", r"""
-    WITH replaceRegexpAll(Body, '\x1b\[[0-9;?]*[A-Za-z]', '') AS clean
-    SELECT
-      Timestamp,
-      ServiceName,
-      clean AS Body
-    FROM otel.otel_logs
-    WHERE EnclaveName = {enclave:String}
-      AND ServiceName LIKE 'cl-%'
-      AND match(clean, '(^|[][ |])(CRIT|ERRO|ERROR|FATAL|PANIC)($|[][ |:])|^(ERR|FAT)\b|\blevel=(crit|error|fatal|panic)\b')
-      AND NOT match(clean, '(^|[][ |])(DEBUG|DBG|TRACE|TRC)($|[][ |:])|\blevel=(debug|trace)\b')
-      AND Timestamp >= now() - INTERVAL 1 HOUR
-    ORDER BY Timestamp DESC
-    LIMIT 200
-""", parameters={"enclave": enclave})
-print(cl_errors)
+cl_errors = clickhouse.log_errors(
+    "local_kurtosis",
+    filters={"enclave": enclave},
+    like_filters={"service": "cl-%"},
+    limit=100,
+    body_chars=240,
+    include_sql=True,
+    **timeframe,
+)
+for row in cl_errors["rows"]:
+    print(row)
 ```
 
 **Fetch recent error-class logs for a specific service**
@@ -245,23 +246,18 @@ from ethpandaops import clickhouse
 
 enclave = "<enclave-name>"
 service = "<service-name>"
+timeframe = {"since": "1h"}
 
-service_logs = clickhouse.query("local-kurtosis", r"""
-    WITH replaceRegexpAll(Body, '\x1b\[[0-9;?]*[A-Za-z]', '') AS clean
-    SELECT
-      Timestamp,
-      ServiceName,
-      clean AS Body
-    FROM otel.otel_logs
-    WHERE EnclaveName = {enclave:String}
-      AND ServiceName = {service:String}
-      AND match(clean, '(^|[][ |])(CRIT|ERRO|ERROR|FATAL|PANIC)($|[][ |:])|^(ERR|FAT)\b|\blevel=(crit|error|fatal|panic)\b')
-      AND NOT match(clean, '(^|[][ |])(DEBUG|DBG|TRACE|TRC)($|[][ |:])|\blevel=(debug|trace)\b')
-      AND Timestamp >= now() - INTERVAL 1 HOUR
-    ORDER BY Timestamp DESC
-    LIMIT 200
-""", parameters={"enclave": enclave, "service": service})
-print(service_logs)
+service_logs = clickhouse.log_errors(
+    "local_kurtosis",
+    filters={"enclave": enclave, "service": service},
+    limit=100,
+    body_chars=240,
+    include_sql=True,
+    **timeframe,
+)
+for row in service_logs["rows"]:
+    print(row)
 ```
 
 **Fetch EL warnings/errors when CL logs point to execution issues**
@@ -269,24 +265,20 @@ print(service_logs)
 from ethpandaops import clickhouse
 
 enclave = "<enclave-name>"
+timeframe = {"since": "1h"}
 
-el_logs = clickhouse.query("local-kurtosis", r"""
-    WITH replaceRegexpAll(Body, '\x1b\[[0-9;?]*[A-Za-z]', '') AS clean
-    SELECT
-      Timestamp,
-      ServiceName,
-      clean AS Body
-    FROM otel.otel_logs
-    WHERE EnclaveName = {enclave:String}
-      AND ServiceName LIKE 'el-%'
-      -- error-class + WARN level token (EL triage includes warnings); excludes debug/trace
-      AND match(clean, '(^|[][ |])(CRIT|ERRO|ERROR|FATAL|PANIC|WARN|WRN)($|[][ |:])|^(ERR|FAT|WRN)\b|\blevel=(crit|error|fatal|panic|warn|warning)\b')
-      AND NOT match(clean, '(^|[][ |])(DEBUG|DBG|TRACE|TRC)($|[][ |:])|\blevel=(debug|trace)\b')
-      AND Timestamp >= now() - INTERVAL 1 HOUR
-    ORDER BY Timestamp DESC
-    LIMIT 200
-""", parameters={"enclave": enclave})
-print(el_logs)
+el_logs = clickhouse.log_errors(
+    "local_kurtosis",
+    filters={"enclave": enclave},
+    like_filters={"service": "el-%"},
+    min_severity="warn",
+    limit=100,
+    body_chars=240,
+    include_sql=True,
+    **timeframe,
+)
+for row in el_logs["rows"]:
+    print(row)
 ```
 
 ### If OTel ClickHouse is not available — fallback to kurtosis service logs
