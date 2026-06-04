@@ -171,7 +171,7 @@ Before collecting data, determine which datasources have the target network.
 
 ## Phase 2: Log Investigation with ClickHouse (`external.otel_logs`)
 
-Use Dora findings (if available) to target specific nodes. With logs only (no Dora), start from the `hosts` list discovered in Phase 0 to identify which nodes have issues. **Always filter by `ResourceAttributes['network']` and `Timestamp`** — unfiltered queries scan everything and may time out. All queries go through `clickhouse.query("clickhouse-raw", ...)` against `external.otel_logs`; see the query skill's log section for the full schema and severity-matching details.
+Use Dora findings (if available) to target specific nodes. With logs only (no Dora), start from the `hosts` list discovered in Phase 0 to identify which nodes have issues. **Always filter by `ResourceAttributes['network']` and `Timestamp`** — unfiltered queries scan everything and may time out. All queries go through `clickhouse.query("clickhouse-raw", ...)` against `external.otel_logs`; see **How Devnet Logs Flow** above for the full schema and severity-matching details.
 
 **Use the same active timeframe** established in the Timeframe Rules section above.
 
