@@ -164,7 +164,7 @@ panda execute --code 'print("hello")'      # Run Python in the sandbox
 
 ### Skills
 
-Install [agent skills](https://github.com/anthropics/skills) for AI coding assistants:
+Install [agent skills](https://github.com/vercel-labs/skills) for AI coding assistants:
 
 ```bash
 npx skills add ethpandaops/panda              # the user-facing skills
