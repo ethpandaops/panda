@@ -15,7 +15,9 @@ concurrency:
 
 permissions:
   contents: read
-  packages: write   # push/pull the content-addressed sandbox image to GHCR
+  packages: write        # push/pull the content-addressed sandbox image to GHCR
+  checks: write          # publish-unit-test-result-action creates a check run
+  pull-requests: write   # ...and posts the smoke results comment on PRs
 
 env:
   # Hosted staging proxy + its Authentik issuer (multi-issuer: Dex humans + Authentik CI).
@@ -58,6 +60,14 @@ jobs:
       - name: Install eval deps
         working-directory: tests/eval
         run: uv sync
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install opencode
+        run: npm install -g opencode-ai@1.15.0
 
       - name: Log in to GHCR (sandbox image cache)
         run: echo "${{ github.token }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
