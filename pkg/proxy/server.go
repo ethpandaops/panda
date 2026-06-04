@@ -128,8 +128,7 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 		s.authenticator = NewSimpleServiceAuthenticator(authSvc)
 	case AuthModeOIDC:
 		oidcAuth, err := NewOIDCAuthenticator(log, OIDCAuthenticatorConfig{
-			IssuerURL: cfg.Auth.IssuerURL,
-			ClientID:  cfg.Auth.ClientID,
+			Issuers: cfg.Auth.Issuers,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("creating OIDC authenticator: %w", err)
@@ -446,6 +445,13 @@ func (s *server) handleAuthMetadata(w http.ResponseWriter, _ *http.Request) {
 	if resp.Enabled {
 		resp.IssuerURL = s.cfg.Auth.IssuerURL
 		resp.ClientID = s.cfg.Auth.ClientID
+
+		// In oidc mode the trusted issuers live in Auth.Issuers; advertise the
+		// first (interactive) one so clients know where to log in.
+		if s.cfg.Auth.Mode == AuthModeOIDC && len(s.cfg.Auth.Issuers) > 0 {
+			resp.IssuerURL = s.cfg.Auth.Issuers[0].IssuerURL
+			resp.ClientID = s.cfg.Auth.Issuers[0].ClientID
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

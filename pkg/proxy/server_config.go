@@ -77,11 +77,18 @@ type AuthConfig struct {
 	// Mode is the authentication mode.
 	Mode AuthMode `yaml:"mode"`
 
-	// IssuerURL is the external URL clients should use for auth and token validation.
+	// IssuerURL is the proxy's own issuer URL (mode 'oauth'), advertised to
+	// clients for login discovery.
 	IssuerURL string `yaml:"issuer_url,omitempty"`
 
-	// ClientID is the OIDC client identifier expected in bearer token audiences.
+	// ClientID is the client identifier advertised to clients (mode 'oauth').
 	ClientID string `yaml:"client_id,omitempty"`
+
+	// Issuers are the trusted external OIDC issuers (mode 'oidc'). A bearer token
+	// is accepted if it verifies against ANY of them, letting the proxy trust
+	// e.g. humans on one IdP and CI service accounts on another. The first issuer
+	// is advertised to clients for interactive login.
+	Issuers []OIDCIssuerConfig `yaml:"issuers,omitempty"`
 
 	// GitHub configures the GitHub OAuth app used for user authentication.
 	GitHub *simpleauth.GitHubConfig `yaml:"github,omitempty"`
@@ -375,12 +382,18 @@ func (c *ServerConfig) Validate() error {
 	}
 
 	if c.Auth.Mode == AuthModeOIDC {
-		if strings.TrimSpace(c.Auth.IssuerURL) == "" {
-			return fmt.Errorf("auth.issuer_url is required when auth.mode is 'oidc'")
+		if len(c.Auth.Issuers) == 0 {
+			return fmt.Errorf("auth.issuers must contain at least one issuer when auth.mode is 'oidc'")
 		}
 
-		if strings.TrimSpace(c.Auth.ClientID) == "" {
-			return fmt.Errorf("auth.client_id is required when auth.mode is 'oidc'")
+		for i, issuer := range c.Auth.Issuers {
+			if strings.TrimSpace(issuer.IssuerURL) == "" {
+				return fmt.Errorf("auth.issuers[%d].issuer_url is required", i)
+			}
+
+			if strings.TrimSpace(issuer.ClientID) == "" {
+				return fmt.Errorf("auth.issuers[%d].client_id is required", i)
+			}
 		}
 	}
 

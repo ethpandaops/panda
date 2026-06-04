@@ -424,9 +424,10 @@ func TestAuthMetadataEndpointReturnsConfig(t *testing.T) {
 
 	cfg := ServerConfig{
 		Auth: AuthConfig{
-			Mode:      AuthModeOIDC,
-			IssuerURL: "https://dex.example.com",
-			ClientID:  "panda-proxy",
+			Mode: AuthModeOIDC,
+			Issuers: []OIDCIssuerConfig{
+				{IssuerURL: "https://dex.example.com", ClientID: "panda-proxy"},
+			},
 		},
 		ClickHouse: []ClickHouseClusterConfig{
 			{BaseDatasourceConfig: BaseDatasourceConfig{Name: "clickhouse-raw"}, Host: "example.com", Port: 8123, Username: "user", Password: "pass"},

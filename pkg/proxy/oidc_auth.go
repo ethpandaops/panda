@@ -14,18 +14,38 @@ import (
 	"github.com/ethpandaops/panda/internal/version"
 )
 
+// OIDCIssuerConfig identifies a trusted OIDC issuer and the audience (client ID)
+// expected in the tokens it issues.
+type OIDCIssuerConfig struct {
+	IssuerURL string `yaml:"issuer_url"`
+	ClientID  string `yaml:"client_id"`
+}
+
+// OIDCAuthenticatorConfig configures the external OIDC authenticator. A token is
+// accepted if it verifies against ANY configured issuer, which lets the proxy
+// trust (for example) humans on one IdP and machine identities on another
+// simultaneously. At least one issuer is required.
 type OIDCAuthenticatorConfig struct {
-	IssuerURL string
-	ClientID  string
+	Issuers []OIDCIssuerConfig
+}
+
+type oidcIssuer struct {
+	issuerURL string
+	clientID  string
+}
+
+type oidcVerifier struct {
+	issuerURL string
+	verifier  *oidc.IDTokenVerifier
 }
 
 type oidcAuthenticator struct {
 	log        logrus.FieldLogger
-	cfg        OIDCAuthenticatorConfig
+	issuers    []oidcIssuer
 	httpClient *http.Client
 
-	mu       sync.RWMutex
-	verifier *oidc.IDTokenVerifier
+	mu        sync.RWMutex
+	verifiers []oidcVerifier
 }
 
 type oidcTokenClaims struct {
@@ -40,22 +60,29 @@ type oidcTokenClaims struct {
 var _ Authenticator = (*oidcAuthenticator)(nil)
 
 func NewOIDCAuthenticator(log logrus.FieldLogger, cfg OIDCAuthenticatorConfig) (Authenticator, error) {
-	cfg.IssuerURL = strings.TrimRight(strings.TrimSpace(cfg.IssuerURL), "/")
-	cfg.ClientID = strings.TrimSpace(cfg.ClientID)
-	if cfg.IssuerURL == "" {
-		return nil, fmt.Errorf("issuer URL is required")
+	if len(cfg.Issuers) == 0 {
+		return nil, fmt.Errorf("at least one issuer is required")
 	}
-	if cfg.ClientID == "" {
-		return nil, fmt.Errorf("client ID is required")
+
+	issuers := make([]oidcIssuer, 0, len(cfg.Issuers))
+	for i, candidate := range cfg.Issuers {
+		issuerURL := strings.TrimRight(strings.TrimSpace(candidate.IssuerURL), "/")
+		clientID := strings.TrimSpace(candidate.ClientID)
+		if issuerURL == "" {
+			return nil, fmt.Errorf("issuer URL is required (issuer index %d)", i)
+		}
+		if clientID == "" {
+			return nil, fmt.Errorf("client ID is required for issuer %q", issuerURL)
+		}
+		issuers = append(issuers, oidcIssuer{issuerURL: issuerURL, clientID: clientID})
 	}
 
 	return &oidcAuthenticator{
 		log: log.WithFields(logrus.Fields{
 			"auth_mode": AuthModeOIDC,
-			"issuer":    cfg.IssuerURL,
-			"client_id": cfg.ClientID,
+			"issuers":   issuerURLs(issuers),
 		}),
-		cfg: cfg,
+		issuers: issuers,
 		httpClient: &http.Client{
 			Transport: &version.Transport{},
 			Timeout:   15 * time.Second,
@@ -66,16 +93,24 @@ func NewOIDCAuthenticator(log logrus.FieldLogger, cfg OIDCAuthenticatorConfig) (
 func (a *oidcAuthenticator) Start(ctx context.Context) error {
 	ctx = oidc.ClientContext(ctx, a.httpClient)
 
-	provider, err := oidc.NewProvider(ctx, a.cfg.IssuerURL)
-	if err != nil {
-		return fmt.Errorf("discovering OIDC provider: %w", err)
+	verifiers := make([]oidcVerifier, 0, len(a.issuers))
+	for _, issuer := range a.issuers {
+		provider, err := oidc.NewProvider(ctx, issuer.issuerURL)
+		if err != nil {
+			return fmt.Errorf("discovering OIDC provider %q: %w", issuer.issuerURL, err)
+		}
+
+		verifiers = append(verifiers, oidcVerifier{
+			issuerURL: issuer.issuerURL,
+			verifier:  provider.Verifier(&oidc.Config{ClientID: issuer.clientID}),
+		})
 	}
 
 	a.mu.Lock()
-	a.verifier = provider.Verifier(&oidc.Config{ClientID: a.cfg.ClientID})
+	a.verifiers = verifiers
 	a.mu.Unlock()
 
-	a.log.Info("External OIDC authenticator initialized")
+	a.log.WithField("issuer_count", len(verifiers)).Info("External OIDC authenticator initialized")
 
 	return nil
 }
@@ -100,16 +135,27 @@ func (a *oidcAuthenticator) Middleware() func(http.Handler) http.Handler {
 			}
 
 			a.mu.RLock()
-			verifier := a.verifier
+			verifiers := a.verifiers
 			a.mu.RUnlock()
-			if verifier == nil {
+			if len(verifiers) == 0 {
 				http.Error(w, "authenticator not initialized", http.StatusServiceUnavailable)
 				return
 			}
 
-			token, err := verifier.Verify(oidc.ClientContext(r.Context(), a.httpClient), rawToken)
-			if err != nil {
-				a.log.WithError(err).Debug("OIDC token verification failed")
+			// Accept the token if it verifies against any trusted issuer. Each
+			// verifier checks issuer, signature, and audience, so a token only
+			// passes for the issuer that actually minted it.
+			verifyCtx := oidc.ClientContext(r.Context(), a.httpClient)
+			var token *oidc.IDToken
+			var verifyErr error
+			for _, v := range verifiers {
+				token, verifyErr = v.verifier.Verify(verifyCtx, rawToken)
+				if verifyErr == nil {
+					break
+				}
+			}
+			if verifyErr != nil {
+				a.log.WithError(verifyErr).Debug("OIDC token verification failed")
 				writeBearerError(w, http.StatusUnauthorized, "invalid token")
 				return
 			}
@@ -146,6 +192,15 @@ func (a *oidcAuthenticator) Middleware() func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+func issuerURLs(issuers []oidcIssuer) []string {
+	urls := make([]string, 0, len(issuers))
+	for _, issuer := range issuers {
+		urls = append(urls, issuer.issuerURL)
+	}
+
+	return urls
 }
 
 func firstNonEmpty(values ...string) string {

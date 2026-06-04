@@ -23,13 +23,22 @@ auth:
   # - "oidc": External OpenID Connect issuer (Dex, authentik, Keycloak, ...)
   mode: none  # Use 'oauth' or 'oidc' for hosted remote access
 
-  # External URL used for OAuth metadata, callbacks, and token validation.
-  # Required when mode is "oauth" or "oidc".
+  # External URL of the proxy's own issuer, used for OAuth metadata and callbacks.
+  # Required (and only used) when mode is "oauth".
   # issuer_url: "https://proxy.example.com"
 
-  # OIDC client identifier expected in bearer token audiences.
-  # Required when mode is "oidc".
+  # Client identifier advertised to clients for login (mode "oauth").
   # client_id: "panda-proxy"
+
+  # Trusted external OIDC issuers (required when mode is "oidc"). A bearer token
+  # is accepted if it verifies against ANY of them, so you can trust e.g. humans
+  # on one IdP and CI service accounts on another. The first issuer is advertised
+  # to clients for interactive login.
+  # issuers:
+  #   - issuer_url: "https://dex.example.com"
+  #     client_id: "panda-proxy"
+  #   - issuer_url: "https://authentik.example.com/application/o/panda-proxy/"
+  #     client_id: "panda-eval"
 
   # GitHub OAuth app config (required when mode is "oauth")
   # github:
