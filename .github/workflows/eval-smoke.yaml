@@ -149,10 +149,16 @@ jobs:
       - name: Start server
         run: |
           ./panda-server serve --config config.ci.yaml > server.log 2>&1 &
-          for i in $(seq 1 30); do
-            if curl -sf http://localhost:2480/health >/dev/null 2>&1; then echo "server ready"; break; fi
-            echo "waiting for server... ($i/30)"; sleep 2
+          # Cold runners (no embedding cache) build the semantic-search indexes via
+          # the proxy at startup (~2-3 min) before /health is ready, so wait up to 4m
+          # and fail fast (don't let the eval run against a not-ready server).
+          for i in $(seq 1 120); do
+            if curl -sf http://localhost:2480/health >/dev/null 2>&1; then echo "server ready after $((i*2))s"; break; fi
+            echo "waiting for server... ($i/120)"; sleep 2
           done
+          if ! curl -sf http://localhost:2480/health >/dev/null 2>&1; then
+            echo "ERROR: server not ready after 240s; last 60 log lines:"; tail -60 server.log; exit 1
+          fi
 
       - name: Run smoke evals (opencode-go, panda CLI route)
         working-directory: tests/eval
