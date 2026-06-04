@@ -237,6 +237,38 @@ def trace_recorder(eval_settings: EvalSettings) -> Generator[TraceRecorder, None
     yield recorder
 
 
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    """Emit one clean line per question as it finishes (xdist-safe: this runs on
+    the controller and reads the summary the test stashed via record_property)."""
+    if report.when != "call":
+        return
+    summary = None
+    for name, value in report.user_properties:
+        if name == "smoke":
+            try:
+                summary = json.loads(value)
+            except (TypeError, ValueError):
+                summary = None
+            break
+    if summary is not None:
+        status = "PASS" if summary.get("passed") else "FAIL"
+        print(
+            f"\n[smoke] {summary.get('id', ''):<22} {status}  "
+            f"{summary.get('duration_s', 0):>5.1f}s  "
+            f"${summary.get('cost_usd', 0):.4f}  "
+            f"tools={summary.get('tools', 0):<2} "
+            f"score={summary.get('score', 0):.2f}  "
+            f"| {summary.get('answer', '')}",
+            flush=True,
+        )
+    elif report.failed:
+        # Errored before producing a summary (e.g. opencode serve crash).
+        test_id = report.nodeid.split("[")[-1].rstrip("]")
+        last = (report.longreprtext or "").strip().splitlines()
+        reason = last[-1][:90] if last else "error"
+        print(f"\n[smoke] {test_id:<22} FAIL  {report.duration:>5.1f}s  (error: {reason})", flush=True)
+
+
 def pytest_terminal_summary(
     terminalreporter: Any,
     exitstatus: int,

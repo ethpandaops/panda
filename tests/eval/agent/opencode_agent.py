@@ -23,6 +23,7 @@ import socket
 import subprocess
 import tempfile
 import time
+import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -103,17 +104,33 @@ class OpenCodeAgent:
         self._base_url: str | None = None
         self._client: Any = None
 
-    # --- compatibility shims so the shared pytest harness treats backends alike ---
-    @property
-    def langfuse(self) -> None:
-        return None
+        # Langfuse trace export (optional; same wiring as the Claude SDK backend so
+        # traces from any agent backend look identical in Langfuse).
+        self._langfuse: Any = None
+        self._current_trace_id: str | None = None
+        if settings.langfuse_enabled and settings.langfuse_public_key:
+            from langfuse import Langfuse
+
+            self._langfuse = Langfuse(
+                public_key=settings.langfuse_public_key,
+                secret_key=settings.langfuse_secret_key,
+                host=settings.langfuse_host,
+            )
 
     @property
-    def current_trace_id(self) -> None:
-        return None
+    def langfuse(self) -> Any:
+        """Return the Langfuse client (or None) for external score recording."""
+        return self._langfuse
+
+    @property
+    def current_trace_id(self) -> str | None:
+        """Return the current Langfuse trace id for external score recording."""
+        return self._current_trace_id
 
     def flush(self) -> None:
-        return None
+        """Flush pending Langfuse events so they're sent before the process exits."""
+        if self._langfuse is not None:
+            self._langfuse.flush()
 
     # --- server lifecycle ---
     def _opencode_config(self) -> dict[str, Any]:
@@ -151,12 +168,22 @@ class OpenCodeAgent:
             (workdir / "opencode.json").write_text(
                 json.dumps(self._opencode_config(), indent=2)
             )
+            # Isolate this serve's opencode data dir. opencode runs one server per
+            # user, all sharing ~/.local/share/opencode/opencode.db; under parallel
+            # pytest-xdist workers, N servers race the DB's first-time migration and
+            # all but one crash ("exited before ready: Performing one time database
+            # migration"). A per-serve XDG_DATA_HOME gives each its own fresh DB to
+            # migrate uncontended; auth is seeded in from the real data dir.
+            datadir = workdir / "share"
+            self._seed_auth(datadir)
+            env = os.environ.copy()
+            env["XDG_DATA_HOME"] = str(datadir)
             log_path = workdir / "serve.log"
             port = _free_port()
             proc = subprocess.Popen(
                 ["opencode", "serve", "--port", str(port)],
                 cwd=str(workdir),
-                env=os.environ.copy(),
+                env=env,
                 stdout=open(log_path, "wb"),
                 stderr=subprocess.STDOUT,
             )
@@ -176,6 +203,22 @@ class OpenCodeAgent:
         self._client = AsyncOpencode(base_url=base, timeout=float(self.settings.opencode_timeout))
 
     @staticmethod
+    def _seed_auth(datadir: Path) -> None:
+        """Copy opencode provider auth into an isolated XDG_DATA_HOME so a serve
+        spawned with that data dir can authenticate. Source is the real opencode
+        data dir, where `opencode auth login` (or CI) writes auth.json."""
+        src_base = Path(os.environ.get("XDG_DATA_HOME") or (Path.home() / ".local" / "share"))
+        src = src_base / "opencode" / "auth.json"
+        dst = datadir / "opencode" / "auth.json"
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        if src.exists():
+            dst.write_bytes(src.read_bytes())
+            try:
+                dst.chmod(0o600)
+            except OSError:
+                pass
+
+    @staticmethod
     async def _wait_ready(proc: "subprocess.Popen[bytes]", base: str, log_path: Path) -> None:
         import httpx
 
@@ -185,7 +228,7 @@ class OpenCodeAgent:
             except Exception:  # noqa: BLE001
                 return "(no serve log)"
 
-        deadline = time.time() + 30
+        deadline = time.time() + 45
         async with httpx.AsyncClient() as probe:
             while time.time() < deadline:
                 if proc.poll() is not None:
@@ -199,7 +242,7 @@ class OpenCodeAgent:
                 except Exception:
                     pass
                 await asyncio.sleep(0.5)
-        raise RuntimeError(f"opencode serve not ready within 60s:\n{_tail()}")
+        raise RuntimeError(f"opencode serve not ready within 45s:\n{_tail()}")
 
     def close(self) -> None:
         key = self._server_key
@@ -248,6 +291,8 @@ class OpenCodeAgent:
         """Run one question through opencode; return an ExecutionResult for this turn."""
         await self._ensure_server()
         start = time.time()
+        # Langfuse trace ids are 32 lowercase hex chars (not UUID-dashed).
+        self._current_trace_id = uuid.uuid4().hex if self._langfuse else None
         result = ExecutionResult(output="", session_id=session_id)
         client = self._client
 
@@ -327,7 +372,89 @@ class OpenCodeAgent:
             result.error_message = str(exc)
 
         result.duration_ms = int((time.time() - start) * 1000)
+
+        if self._langfuse is not None and self._current_trace_id:
+            self._record_langfuse_trace(
+                trace_id=self._current_trace_id,
+                test_id=test_id,
+                prompt=self._prompt(prompt),
+                session_id=result.session_id,
+                result=result,
+            )
+
         return result
+
+    def _record_langfuse_trace(
+        self,
+        trace_id: str,
+        test_id: str | None,
+        prompt: str,
+        session_id: str | None,
+        result: ExecutionResult,
+    ) -> None:
+        """Export one execution to Langfuse (root span + tool spans + generation)."""
+        if self._langfuse is None:
+            return
+
+        # A clickable link back to the CI run, so a failing trace is one hop from its
+        # GitHub Actions log. Absent locally (these env vars are GitHub-only).
+        ci_run_url = None
+        server, repo, run_id = (
+            os.environ.get("GITHUB_SERVER_URL"),
+            os.environ.get("GITHUB_REPOSITORY"),
+            os.environ.get("GITHUB_RUN_ID"),
+        )
+        if server and repo and run_id:
+            ci_run_url = f"{server}/{repo}/actions/runs/{run_id}"
+
+        # Tracing is best-effort: a Langfuse hiccup must never fail the eval itself.
+        try:
+            with self._langfuse.start_as_current_observation(
+                trace_context={"trace_id": trace_id},
+                name=test_id or "panda-eval",
+                as_type="span",
+                input={"prompt": prompt},
+                metadata={
+                    "model": self.settings.model,
+                    "route": self.route,
+                    "test_id": test_id,
+                    "session_id": session_id,
+                    "is_error": result.is_error,
+                    "error_message": result.error_message,
+                    "num_turns": result.num_turns,
+                    "ci_run_url": ci_run_url,
+                },
+            ) as root_span:
+                for tc in result.tool_calls:
+                    with self._langfuse.start_as_current_observation(
+                        name=tc.name or "tool",
+                        as_type="tool",
+                        input=tc.input,
+                        output=tc.result,
+                        metadata={"is_error": tc.is_error},
+                    ):
+                        pass
+
+                if result.input_tokens or result.output_tokens:
+                    with self._langfuse.start_as_current_observation(
+                        name=f"{self.provider_id}-completion",
+                        as_type="generation",
+                        model=self.model_id,
+                        usage_details={
+                            "input": result.input_tokens,
+                            "output": result.output_tokens,
+                        },
+                        output={"response": result.output},
+                    ):
+                        pass
+
+                root_span.update(output={"response": result.output})
+                root_span.set_trace_io(
+                    input={"prompt": prompt}, output={"response": result.output}
+                )
+        except Exception as exc:  # noqa: BLE001 - tracing is best-effort
+            if self.settings.verbose:
+                print(f"  [langfuse] trace export skipped: {exc}")
 
     async def execute_multi_turn(
         self,

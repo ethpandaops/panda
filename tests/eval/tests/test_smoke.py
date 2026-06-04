@@ -7,19 +7,16 @@ Run with ``pytest -m smoke`` (or ``panda-eval --category smoke``) on every commi
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import json
+from typing import TYPE_CHECKING, Callable
 
 import pytest
-from deepeval import evaluate
-from deepeval.metrics import TaskCompletionMetric, ToolCorrectnessMetric
+from deepeval.metrics import TaskCompletionMetric
 from deepeval.test_case import LLMTestCase, ToolCall
 
 from cases.loader import load_test_cases
 from config.evaluator import get_evaluator_model
 from conftest import CostTracker, TraceRecorder
-from metrics.data_quality import create_data_plausibility_metric
-from metrics.datasource import DataSourceMetric
-from metrics.resource_discovery import ResourceDiscoveryMetric
 
 if TYPE_CHECKING:
     from config.settings import EvalSettings
@@ -48,19 +45,12 @@ async def test_smoke(
     eval_settings: EvalSettings,
     cost_tracker: CostTracker,
     trace_recorder: TraceRecorder,
+    record_property: Callable[[str, object], None],
 ) -> None:
     """Run one smoke question and assert its metrics pass."""
     test_case = _get_test_case(test_id)
 
     result = await agent.execute(test_case.input, test_id=test_id)
-
-    if eval_settings.verbose:
-        print(f"\n  Smoke: {test_id}")
-        print(f"  Cost: ${result.total_cost_usd or 0:.6f}  "
-              f"Tokens: {result.input_tokens} in / {result.output_tokens} out  "
-              f"Duration: {result.duration_ms}ms")
-        print(f"  Tools: {[tc.name for tc in result.tool_calls]}")
-        print(f"  Answer: {(result.output or '')[:200]}")
 
     if result.is_error:
         pytest.fail(f"Agent execution failed: {result.error_message}")
@@ -95,16 +85,31 @@ async def test_smoke(
     # Smoke gate is route-agnostic: just "did the agent answer the question?".
     # The CLI route uses opencode's `bash` tool rather than the panda MCP tools, so
     # MCP-tool-name metrics don't apply here — those live in the full suite.
-    metrics = [
-        TaskCompletionMetric(
-            threshold=test_case.metrics.get(
-                "task_completion", eval_settings.task_completion_threshold
-            ),
-            model=evaluator,
+    # a_measure (vs deepeval's evaluate()) keeps the terminal quiet; the per-question
+    # one-liner is emitted by conftest's pytest_runtest_logreport from record_property.
+    metric = TaskCompletionMetric(
+        threshold=test_case.metrics.get(
+            "task_completion", eval_settings.task_completion_threshold
         ),
-    ]
+        model=evaluator,
+    )
+    await metric.a_measure(llm_test_case, _show_indicator=False)
+    metrics_data = [{
+        "name": getattr(metric, "__name__", "Task Completion"),
+        "score": float(metric.score or 0.0),
+        "passed": bool(metric.success),
+        "reason": metric.reason,
+    }]
 
-    eval_results = evaluate(test_cases=[llm_test_case], metrics=metrics)
+    record_property("smoke", json.dumps({
+        "id": test_id,
+        "passed": all(m["passed"] for m in metrics_data),
+        "score": metrics_data[0]["score"],
+        "duration_s": round(result.duration_ms / 1000, 1),
+        "cost_usd": result.total_cost_usd or 0.0,
+        "tools": len(result.tool_calls),
+        "answer": (result.output or "")[:80],
+    }))
 
     if eval_settings.track_costs:
         cost_tracker.record(
@@ -127,10 +132,7 @@ async def test_smoke(
             {"name": tc.name, "input": tc.input, "result": tc.result}
             for tc in result.tool_calls
         ],
-        metrics=[
-            {"name": m.name, "score": m.score, "passed": m.success, "reason": m.reason}
-            for m in eval_results.test_results[0].metrics_data
-        ],
+        metrics=metrics_data,
         cost_usd=result.total_cost_usd,
         duration_ms=result.duration_ms,
         input_tokens=result.input_tokens,
@@ -142,11 +144,9 @@ async def test_smoke(
     )
     agent.flush()
 
-    failed = [
-        (r.name, r.score, r.reason)
-        for r in eval_results.test_results[0].metrics_data
-        if not r.success
-    ]
+    failed = [m for m in metrics_data if not m["passed"]]
     if failed:
-        msg = "\n".join(f"  - {n}: score={s:.2f}, reason={r}" for n, s, r in failed)
+        msg = "\n".join(
+            f"  - {m['name']}: score={m['score']:.2f}, reason={m['reason']}" for m in failed
+        )
         pytest.fail(f"Metrics failed for {test_id}:\n{msg}")

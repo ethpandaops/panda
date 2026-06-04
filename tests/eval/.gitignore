@@ -16,6 +16,9 @@ build/
 # Local traces
 traces/
 
+# JUnit / eval reports (CI artifacts)
+reports/
+
 # Environment
 .env
 
