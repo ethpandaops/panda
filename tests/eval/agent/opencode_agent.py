@@ -151,16 +151,17 @@ class OpenCodeAgent:
             (workdir / "opencode.json").write_text(
                 json.dumps(self._opencode_config(), indent=2)
             )
+            log_path = workdir / "serve.log"
             port = _free_port()
             proc = subprocess.Popen(
                 ["opencode", "serve", "--port", str(port)],
                 cwd=str(workdir),
                 env=os.environ.copy(),
-                stdout=None if self.settings.verbose else subprocess.DEVNULL,
-                stderr=subprocess.STDOUT if self.settings.verbose else subprocess.DEVNULL,
+                stdout=open(log_path, "wb"),
+                stderr=subprocess.STDOUT,
             )
             base = f"http://127.0.0.1:{port}"
-            await self._wait_ready(proc, base)
+            await self._wait_ready(proc, base, log_path)
             _SHARED_SERVERS[key] = proc
             _SHARED_URLS[key] = base
             global _ATEXIT_REGISTERED
@@ -175,14 +176,22 @@ class OpenCodeAgent:
         self._client = AsyncOpencode(base_url=base, timeout=float(self.settings.opencode_timeout))
 
     @staticmethod
-    async def _wait_ready(proc: "subprocess.Popen[bytes]", base: str) -> None:
+    async def _wait_ready(proc: "subprocess.Popen[bytes]", base: str, log_path: Path) -> None:
         import httpx
+
+        def _tail() -> str:
+            try:
+                return log_path.read_text(errors="replace")[-2000:].strip() or "(empty serve log)"
+            except Exception:  # noqa: BLE001
+                return "(no serve log)"
 
         deadline = time.time() + 60
         async with httpx.AsyncClient() as probe:
             while time.time() < deadline:
                 if proc.poll() is not None:
-                    raise RuntimeError("opencode serve exited before becoming ready")
+                    raise RuntimeError(
+                        f"opencode serve exited (code {proc.returncode}) before ready:\n{_tail()}"
+                    )
                 try:
                     r = await probe.get(base + "/app", timeout=2)
                     if r.status_code == 200:
@@ -190,7 +199,7 @@ class OpenCodeAgent:
                 except Exception:
                     pass
                 await asyncio.sleep(0.5)
-        raise RuntimeError("opencode serve did not become ready within 60s")
+        raise RuntimeError(f"opencode serve not ready within 60s:\n{_tail()}")
 
     def close(self) -> None:
         key = self._server_key

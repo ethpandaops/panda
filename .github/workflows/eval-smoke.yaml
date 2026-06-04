@@ -69,6 +69,21 @@ jobs:
       - name: Install opencode
         run: npm install -g opencode-ai@1.15.0
 
+      - name: Configure opencode auth (opencode-go)
+        env:
+          OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib
+          p = pathlib.Path.home() / ".local/share/opencode/auth.json"
+          p.parent.mkdir(parents=True, exist_ok=True)
+          auth = json.loads(p.read_text()) if p.exists() else {}
+          auth["opencode-go"] = {"type": "api", "key": os.environ["OPENCODE_GO_API_KEY"]}
+          p.write_text(json.dumps(auth))
+          p.chmod(0o600)
+          print("configured opencode-go auth")
+          PY
+
       - name: Log in to GHCR (sandbox image cache)
         run: echo "${{ github.token }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
@@ -137,7 +152,7 @@ jobs:
           MCP_EVAL_REASONING_EFFORT: high
         run: |
           uv run python -m pytest tests/test_smoke.py -m smoke \
-            -n 4 \
+            -n 2 \
             --junitxml=reports/junit.xml --tb=short || true
 
       - name: Upload results
