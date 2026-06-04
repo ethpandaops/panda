@@ -141,6 +141,22 @@ jobs:
             echo "waiting for server... ($i/30)"; sleep 2
           done
 
+      - name: opencode sanity (model, then model+panda MCP, with logs)
+        env:
+          OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
+        run: |
+          set +e
+          echo "===== 1) opencode-go model only ====="
+          timeout 70 opencode run --model opencode-go/deepseek-v4-flash --print-logs --log-level INFO \
+            "reply with exactly one word: PONG"
+          echo "===== model test exit: $? ====="
+          echo "===== 2) opencode + panda MCP (the suspected hang) ====="
+          d=$(mktemp -d); cd "$d"
+          printf '{"model":"opencode-go/deepseek-v4-flash","mcp":{"panda":{"type":"remote","url":"http://localhost:2480/mcp","enabled":true}}}' > opencode.json
+          timeout 110 opencode run --model opencode-go/deepseek-v4-flash --print-logs --log-level INFO --dangerously-skip-permissions \
+            "use the panda tools to list the available datasources, then stop"
+          echo "===== mcp test exit: $? ====="
+
       - name: Run smoke evals (opencode-go, parallel)
         working-directory: tests/eval
         env:
@@ -150,6 +166,8 @@ jobs:
           MCP_EVAL_AGENT_API: opencode
           MCP_EVAL_MODEL: opencode-go/deepseek-v4-flash
           MCP_EVAL_REASONING_EFFORT: high
+          MCP_EVAL_OPENCODE_TIMEOUT: "90"
+          MCP_EVAL_VERBOSE: "true"
         run: |
           uv run python -m pytest tests/test_smoke.py -m smoke \
             -n 2 \
