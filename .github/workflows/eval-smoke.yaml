@@ -135,7 +135,7 @@ jobs:
 
       - name: Start server
         run: |
-          ./panda-server serve --config config.ci.yaml &
+          ./panda-server serve --config config.ci.yaml > server.log 2>&1 &
           for i in $(seq 1 30); do
             if curl -sf http://localhost:2480/health >/dev/null 2>&1; then echo "server ready"; break; fi
             echo "waiting for server... ($i/30)"; sleep 2
@@ -172,6 +172,14 @@ jobs:
           uv run python -m pytest tests/test_smoke.py -m smoke \
             -n 2 \
             --junitxml=reports/junit.xml --tb=short || true
+
+      - name: Server log (sandbox / proxy activity)
+        if: always()
+        run: |
+          echo "===== panda-server log (last 150 lines) ====="
+          tail -150 server.log 2>/dev/null || echo "(no server.log)"
+          echo "===== docker ps (sandbox containers?) ====="
+          docker ps -a --format '{{.Image}} {{.Status}} {{.Names}}' 2>/dev/null | head || true
 
       - name: Upload results
         uses: actions/upload-artifact@v4
