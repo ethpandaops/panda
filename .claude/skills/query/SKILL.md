@@ -136,23 +136,19 @@ On ethpandaops infra, container logs from hosted devnets and platform services a
 ```python
 from ethpandaops import clickhouse
 
-# Devnet logs are keyed by ResourceAttributes['network'] and ResourceAttributes['host.name'].
-# ALWAYS filter on Timestamp (the partition key) and network. Use a RAW string (r""")
-# so regex escapes (\b, \x1b) reach ClickHouse intact instead of becoming Python control chars.
-# `clean` strips ANSI colour codes so the severity anchors below see the real LEVEL token.
+# Basic recent-lines fetch. Discover the live network name from the query below first.
+# ALWAYS filter on network + Timestamp (the partition key). Use a RAW string (r""") so the
+# \x1b escape reaches ClickHouse intact; `clean` strips ANSI colour codes for readable output.
 df = clickhouse.query("clickhouse-raw", r"""
     WITH replaceRegexpAll(Body, '\x1b\[[0-9;?]*[A-Za-z]', '') AS clean
     SELECT Timestamp, ResourceAttributes['host.name'] AS host, clean AS Body
     FROM external.otel_logs
     WHERE ResourceAttributes['network'] = {network:String}
-      AND ResourceAttributes['host.name'] = {host:String}   -- keep the strip query bounded (see warning below)
-      -- error-class LEVEL token only (see "Severity triage" below) — never a bare substring
-      AND match(clean, '(^|[][ |])(CRIT|ERRO|ERROR|FATAL|PANIC)($|[][ |:])|^(ERR|FAT)\b|\blevel=(crit|error|fatal|panic)\b')
-      AND NOT match(clean, '(^|[][ |])(DEBUG|DBG|TRACE|TRC)($|[][ |:])|\blevel=(debug|trace)\b')
       AND Timestamp >= now() - INTERVAL 1 HOUR
     ORDER BY Timestamp DESC
     LIMIT 200
-""", parameters={"network": "fusaka-devnet-0", "host": "lighthouse-geth-super-1"})
+""", parameters={"network": "<network>"})
+# To triage by severity (and the bounded-query rules), see "Severity triage" below.
 ```
 
 **Schema (key fields):**
@@ -179,7 +175,7 @@ clickhouse.query("clickhouse-raw", """
     WHERE ResourceAttributes['network'] = {network:String}
       AND Timestamp >= now() - INTERVAL 1 HOUR
     ORDER BY host
-""", parameters={"network": "fusaka-devnet-0"})
+""", parameters={"network": "<network>"})
 ```
 
 **Node naming:** `host.name` is `<cl>-<el>-<tier>-<n>` (e.g. `lighthouse-geth-super-1` → CL lighthouse, EL geth); bootnodes and MEV relays don't follow it. There is **no `ethereum_cl` / `ethereum_el` field** — a node runs the CL, EL, validator and sidecar containers together, separated only by `LogAttributes['log.file.name']`. Filter `host.name LIKE 'lighthouse-%'` to sweep lighthouse-CL nodes, or isolate one client by discovering its `log.file.name` (and a sample of its `Body`) and filtering on it.
