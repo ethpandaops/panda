@@ -66,14 +66,35 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 		return nil, fmt.Errorf("building search runtime: %w", err)
 	}
 
+	// searchruntime returns concrete typed pointers that are nil when semantic
+	// search is disabled (e.g. the proxy's embedding service is unavailable).
+	// Pass true nil interfaces so searchsvc's nil-guards return a clean
+	// "not available" error instead of panicking on a typed-nil receiver.
+	var exampleIdx searchsvc.ExampleSearcher
+	if searchRuntime.ExampleIndex != nil {
+		exampleIdx = searchRuntime.ExampleIndex
+	}
+	var runbookIdx searchsvc.RunbookSearcher
+	if searchRuntime.RunbookIndex != nil {
+		runbookIdx = searchRuntime.RunbookIndex
+	}
+	var eipIdx searchsvc.EIPSearcher
+	if searchRuntime.EIPIndex != nil {
+		eipIdx = searchRuntime.EIPIndex
+	}
+	var specsIdx searchsvc.SpecsSearcher
+	if searchRuntime.SpecsIndex != nil {
+		specsIdx = searchRuntime.SpecsIndex
+	}
+
 	searchSvc := searchsvc.New(
-		searchRuntime.ExampleIndex,
+		exampleIdx,
 		application.ModuleRegistry,
-		searchRuntime.RunbookIndex,
+		runbookIdx,
 		searchRuntime.RunbookRegistry,
-		searchRuntime.EIPIndex,
+		eipIdx,
 		searchRuntime.EIPRegistry,
-		searchRuntime.SpecsIndex,
+		specsIdx,
 		searchRuntime.SpecsRegistry,
 	)
 
