@@ -185,7 +185,7 @@ class OpenCodeAgent:
             except Exception:  # noqa: BLE001
                 return "(no serve log)"
 
-        deadline = time.time() + 60
+        deadline = time.time() + 30
         async with httpx.AsyncClient() as probe:
             while time.time() < deadline:
                 if proc.poll() is not None:
@@ -262,13 +262,21 @@ class OpenCodeAgent:
             before = await client.session.messages(id=sid)
             seen = {m.get("id") for m in (self._as_dict(x).get("info", {}) for x in before)}
 
-            await client.session.chat(
-                id=sid,
-                provider_id=self.provider_id,
-                model_id=self.model_id,
-                parts=[{"type": "text", "text": self._prompt(prompt)}],
-                system=self._system_prompt(),
-            )
+            try:
+                await asyncio.wait_for(
+                    client.session.chat(
+                        id=sid,
+                        provider_id=self.provider_id,
+                        model_id=self.model_id,
+                        parts=[{"type": "text", "text": self._prompt(prompt)}],
+                        system=self._system_prompt(),
+                    ),
+                    timeout=self.settings.opencode_timeout,
+                )
+            except (asyncio.TimeoutError, TimeoutError):
+                raise RuntimeError(
+                    f"opencode timed out after {self.settings.opencode_timeout:.0f}s"
+                ) from None
 
             after = await client.session.messages(id=sid)
 

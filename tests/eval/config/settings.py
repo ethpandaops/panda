@@ -45,8 +45,8 @@ class EvalSettings(BaseSettings):
         "'cli' gives it a shell + the built `panda` binary and steers it through the CLI.",
     )
     opencode_timeout: float = Field(
-        default=300.0,
-        description="Per-request timeout (seconds) for the opencode SDK client.",
+        default=90.0,
+        description="Per-question timeout (seconds) for the opencode SDK client.",
     )
     reasoning_effort: str = Field(
         default="high",

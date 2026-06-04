@@ -1,140 +1,43 @@
 # Smoke test cases for ethpandaops-panda CI.
 #
 # Fast, simple, single-turn questions that verify nothing is fundamentally broken:
-# the agent can reach each datasource, run a query, and return a plausible answer.
-# These intentionally only touch EXTERNAL data (ClickHouse default/external dbs,
-# devnet Prometheus, Dora) so they run as the external-scoped panda-ci identity.
-
-# ---- ClickHouse (raw beacon/execution events + refined fct_* on external dbs) ----
+# the agent reaches each datasource, runs a query, and returns a plausible answer.
+# Deliberately simple (counts / current values / lists), external-data-only (so they
+# run as the external-scoped panda-ci identity), and quick. Heavier analytics
+# (p50 arrival, client breakdowns) belong in the full suite, not the smoke gate.
 
 - id: mainnet_block_count_1h
   description: Block production count on mainnet in the last hour
   input: "How many blocks were produced on Ethereum mainnet in the last 1 hour?"
-  expected_tools:
-    - execute_python
   metrics:
-    tool_correctness: 0.5
     task_completion: 0.5
   network: mainnet
   tags: [smoke, clickhouse, blocks]
 
-- id: mainnet_p50_block_arrival_24h
-  description: Median block arrival time on mainnet over the last 24h
-  input: "What is the p50 (median) block arrival time, in seconds into the slot, over the last 24 hours on mainnet?"
-  expected_tools:
-    - execute_python
+- id: list_datasources
+  description: Discover available datasources
+  input: "What datasources are available for me to query? List them."
   metrics:
-    tool_correctness: 0.5
     task_completion: 0.5
-  network: mainnet
-  tags: [smoke, clickhouse, timing]
-
-- id: mainnet_blob_count_1h
-  description: Blob sidecar count on mainnet in the last hour
-  input: "How many blob sidecars were seen on Ethereum mainnet in the last 1 hour?"
-  expected_tools:
-    - execute_python
-  metrics:
-    tool_correctness: 0.5
-    task_completion: 0.5
-  network: mainnet
-  tags: [smoke, clickhouse, blobs]
-
-- id: mainnet_missed_slots_1h
-  description: Missed slots on mainnet in the last hour
-  input: "How many slots were missed on Ethereum mainnet in the last 1 hour?"
-  expected_tools:
-    - execute_python
-  metrics:
-    tool_correctness: 0.5
-    task_completion: 0.5
-  network: mainnet
-  tags: [smoke, clickhouse, missed_slots]
-
-- id: mainnet_top_cl_client_24h
-  description: Most-seen consensus client on mainnet in the last 24h
-  input: "Which consensus-layer client implementation has reported the most beacon blocks on Ethereum mainnet in the last 24 hours?"
-  expected_tools:
-    - execute_python
-  metrics:
-    tool_correctness: 0.5
-    task_completion: 0.5
-  network: mainnet
-  tags: [smoke, clickhouse, clients]
-
-- id: mainnet_avg_block_arrival_100slots
-  description: Average block arrival time over the last 100 slots on mainnet
-  input: "What is the average block arrival time (seconds into the slot) for the last 100 slots on Ethereum mainnet?"
-  expected_tools:
-    - execute_python
-  metrics:
-    tool_correctness: 0.5
-    task_completion: 0.5
-  network: mainnet
-  tags: [smoke, clickhouse, timing]
-
-# ---- Dora (devnet beacon explorer) ----
+  tags: [smoke, discovery]
 
 - id: devnets_running
   description: List currently running devnets
   input: "What devnets are currently running?"
-  expected_tools:
-    - execute_python
   metrics:
-    tool_correctness: 0.5
     task_completion: 0.5
   tags: [smoke, dora, devnets]
-
-- id: devnet_latest_epoch
-  description: Latest finalized epoch on a running devnet
-  input: "Pick one currently-running devnet and tell me its latest finalized epoch."
-  expected_tools:
-    - execute_python
-  metrics:
-    tool_correctness: 0.5
-    task_completion: 0.5
-  tags: [smoke, dora, devnets]
-
-# ---- Prometheus (devnet metrics) ----
 
 - id: devnet_beacon_cpu
   description: Beacon node CPU usage on a devnet
   input: "How much CPU is a beacon node using on a devnet right now?"
-  expected_tools:
-    - execute_python
   metrics:
-    tool_correctness: 0.5
-    task_completion: 0.5
-  tags: [smoke, prometheus, devnets]
-
-- id: devnet_el_memory
-  description: Execution client memory usage on a devnet
-  input: "How much memory is an execution-layer client using on a devnet right now?"
-  expected_tools:
-    - execute_python
-  metrics:
-    tool_correctness: 0.5
     task_completion: 0.5
   tags: [smoke, prometheus, devnets]
 
 - id: devnet_beacon_peers
   description: Beacon node peer count on a devnet
   input: "What is the peer count of a beacon node on a devnet right now?"
-  expected_tools:
-    - execute_python
   metrics:
-    tool_correctness: 0.5
     task_completion: 0.5
   tags: [smoke, prometheus, devnets]
-
-# ---- Connectivity / discovery ----
-
-- id: list_datasources
-  description: Discover available datasources
-  input: "What datasources are available for me to query? List them."
-  expected_tools:
-    - execute_python
-  metrics:
-    tool_correctness: 0.5
-    task_completion: 0.5
-  tags: [smoke, discovery]

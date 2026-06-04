@@ -87,13 +87,15 @@ async def test_smoke(
     judge_in_before = getattr(evaluator, "total_input_tokens", 0)
     judge_out_before = getattr(evaluator, "total_output_tokens", 0)
 
+    # The agent must have actually used a tool (any tool — bash for the CLI route,
+    # execute_python/search for the MCP route), not just hallucinated an answer.
+    if not result.tool_calls:
+        pytest.fail(f"{test_id}: agent answered without using any tools")
+
+    # Smoke gate is route-agnostic: just "did the agent answer the question?".
+    # The CLI route uses opencode's `bash` tool rather than the panda MCP tools, so
+    # MCP-tool-name metrics don't apply here — those live in the full suite.
     metrics = [
-        ToolCorrectnessMetric(
-            threshold=test_case.metrics.get(
-                "tool_correctness", eval_settings.tool_correctness_threshold
-            ),
-            model=evaluator,
-        ),
         TaskCompletionMetric(
             threshold=test_case.metrics.get(
                 "task_completion", eval_settings.task_completion_threshold
@@ -101,23 +103,6 @@ async def test_smoke(
             model=evaluator,
         ),
     ]
-    if "data_plausibility" in test_case.metrics:
-        metrics.append(
-            create_data_plausibility_metric(network=test_case.network, model=evaluator)
-        )
-    metrics.append(
-        ResourceDiscoveryMetric(threshold=eval_settings.resource_discovery_threshold)
-    )
-    if test_case.expected_tables:
-        metrics.append(
-            DataSourceMetric(
-                expected_tables=test_case.expected_tables,
-                expected_datasource=test_case.expected_datasource,
-                expected_columns=test_case.expected_columns,
-                require_all_tables=test_case.require_all_tables,
-                threshold=1.0,
-            )
-        )
 
     eval_results = evaluate(test_cases=[llm_test_case], metrics=metrics)
 
