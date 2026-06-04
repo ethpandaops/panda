@@ -66,7 +66,11 @@ func NewOIDCAuthenticator(log logrus.FieldLogger, cfg OIDCAuthenticatorConfig) (
 
 	issuers := make([]oidcIssuer, 0, len(cfg.Issuers))
 	for i, candidate := range cfg.Issuers {
-		issuerURL := strings.TrimRight(strings.TrimSpace(candidate.IssuerURL), "/")
+		// Pass the issuer through as-is (no trailing-slash trimming): go-oidc
+		// requires the configured issuer to match the IdP's advertised issuer
+		// exactly, and some IdPs advertise a path with a trailing slash (e.g.
+		// Authentik's ".../application/o/<app>/").
+		issuerURL := strings.TrimSpace(candidate.IssuerURL)
 		clientID := strings.TrimSpace(candidate.ClientID)
 		if issuerURL == "" {
 			return nil, fmt.Errorf("issuer URL is required (issuer index %d)", i)

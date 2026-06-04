@@ -276,3 +276,65 @@ func newTestOIDCProvider(t *testing.T) (*httptest.Server, *rsa.PrivateKey) {
 
 	return server, privateKey
 }
+
+func TestOIDCAuthenticatorAcceptsTrailingSlashIssuer(t *testing.T) {
+	t.Parallel()
+
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("GenerateKey failed: %v", err)
+	}
+
+	mux := http.NewServeMux()
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+
+	// Issuer with a path and a trailing slash, like Authentik's
+	// ".../application/o/<app>/". go-oidc requires the configured issuer to
+	// match the advertised issuer exactly, so the trailing slash must survive.
+	issuer := server.URL + "/application/o/panda-proxy/"
+
+	mux.HandleFunc("/application/o/panda-proxy/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"issuer":   issuer,
+			"jwks_uri": server.URL + "/keys",
+		})
+	})
+	mux.HandleFunc("/keys", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"keys": []map[string]string{
+				{
+					"kty": "RSA",
+					"kid": "test-key",
+					"alg": "RS256",
+					"use": "sig",
+					"n":   base64.RawURLEncoding.EncodeToString(privateKey.N.Bytes()),
+					"e":   base64.RawURLEncoding.EncodeToString(big.NewInt(int64(privateKey.E)).Bytes()),
+				},
+			},
+		})
+	})
+
+	authenticator, err := NewOIDCAuthenticator(logrus.New(), OIDCAuthenticatorConfig{
+		Issuers: []OIDCIssuerConfig{{IssuerURL: issuer, ClientID: "panda-proxy"}},
+	})
+	if err != nil {
+		t.Fatalf("NewOIDCAuthenticator failed: %v", err)
+	}
+	if err := authenticator.Start(context.Background()); err != nil {
+		t.Fatalf("Start failed for trailing-slash issuer: %v", err)
+	}
+
+	rawToken := signedRSAToken(t, privateKey, issuer, "panda-proxy", "ci-bot")
+	handler := authenticator.Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/clickhouse/query", nil)
+	req.Header.Set("Authorization", "Bearer "+rawToken)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected %d, got %d: %s", http.StatusNoContent, rec.Code, rec.Body.String())
+	}
+}
