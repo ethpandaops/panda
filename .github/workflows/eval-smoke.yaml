@@ -173,7 +173,7 @@ jobs:
           MCP_EVAL_OPENCODE_TIMEOUT: "90"
         run: |
           uv run python -m pytest tests/test_smoke.py -m smoke \
-            -n 4 \
+            -n 2 \
             --junitxml=reports/junit.xml --tb=short || true
 
       - name: Server log (sandbox / proxy activity)
