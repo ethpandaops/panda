@@ -2,7 +2,7 @@ name: Eval Smoke
 
 # Fast per-commit smoke evals: ~10-15 simple questions that verify nothing is
 # fundamentally broken (agent reaches each datasource, queries, answers). Runs as
-# the external-scoped `panda-ci` service account against the hosted staging proxy.
+# the external-scoped `panda-ci` service account against the hosted production proxy.
 on:
   push:
     branches: ['**']
@@ -20,9 +20,9 @@ permissions:
   pull-requests: write   # ...and posts the smoke results comment on PRs
 
 env:
-  # Hosted staging proxy + its Authentik issuer (multi-issuer: Dex humans + Authentik CI).
-  PANDA_PROXY_URL: ${{ vars.PANDA_PROXY_URL || 'https://panda-proxy.analytics.staging.platform.ethpandaops.io' }}
-  PANDA_PROXY_OIDC_ISSUER: ${{ vars.PANDA_PROXY_OIDC_ISSUER || 'https://authentik.analytics.staging.platform.ethpandaops.io/application/o/panda-proxy/' }}
+  # Hosted production proxy + its Authentik issuer (dual-issuer: Dex humans + Authentik CI).
+  PANDA_PROXY_URL: ${{ vars.PANDA_PROXY_URL || 'https://panda-proxy.ethpandaops.io' }}
+  PANDA_PROXY_OIDC_ISSUER: ${{ vars.PANDA_PROXY_OIDC_ISSUER || 'https://authentik.analytics.production.platform.ethpandaops.io/application/o/panda-proxy/' }}
   # Sandbox image is content-addressed (tag = hash of its build inputs); only built
   # when those inputs change, and cached in GHCR. See sandbox-image-cleanup.yaml.
   SANDBOX_IMAGE: ${{ vars.SANDBOX_IMAGE || 'ghcr.io/ethpandaops/panda-sandbox' }}
@@ -32,7 +32,7 @@ jobs:
     runs-on:
       - self-hosted-ghr
       - size-m-x64
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -43,8 +43,10 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Build server
-        run: make build-server
+      - name: Build binaries (server + panda CLI)
+        run: |
+          make build
+          echo "$GITHUB_WORKSPACE" >> "$GITHUB_PATH"   # put `panda` on PATH for the CLI route
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -112,7 +114,7 @@ jobs:
           PANDA_CI_SVC_TOKEN: ${{ secrets.PANDA_CI_SVC_TOKEN }}
         run: uv run python -m scripts.ci_auth
 
-      - name: Write server config (talks to the hosted staging proxy as panda-ci)
+      - name: Write server config (talks to the hosted production proxy as panda-ci)
         run: |
           cat > config.ci.yaml << EOF
           server:
@@ -133,6 +135,14 @@ jobs:
               client_id: "panda-proxy"
           EOF
 
+      - name: Configure panda CLI (CLI route shells out to `panda` -> local server)
+        run: |
+          mkdir -p "$HOME/.config/panda"
+          cat > "$HOME/.config/panda/config.yaml" << 'EOF'
+          server:
+            base_url: "http://localhost:2480"
+          EOF
+
       - name: Start server
         run: |
           ./panda-server serve --config config.ci.yaml > server.log 2>&1 &
@@ -141,36 +151,19 @@ jobs:
             echo "waiting for server... ($i/30)"; sleep 2
           done
 
-      - name: opencode sanity (model, then model+panda MCP, with logs)
-        env:
-          OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
-        run: |
-          set +e
-          echo "===== 1) opencode-go model only ====="
-          timeout 70 opencode run --model opencode-go/deepseek-v4-flash --print-logs --log-level INFO \
-            "reply with exactly one word: PONG"
-          echo "===== model test exit: $? ====="
-          echo "===== 2) opencode + panda MCP (the suspected hang) ====="
-          d=$(mktemp -d); cd "$d"
-          printf '{"model":"opencode-go/deepseek-v4-flash","mcp":{"panda":{"type":"remote","url":"http://localhost:2480/mcp","enabled":true}}}' > opencode.json
-          timeout 110 opencode run --model opencode-go/deepseek-v4-flash --print-logs --log-level INFO --dangerously-skip-permissions \
-            "use the panda tools to list the available datasources, then stop"
-          echo "===== mcp test exit: $? ====="
-
-      - name: Run smoke evals (opencode-go, parallel)
+      - name: Run smoke evals (opencode-go, panda CLI route)
         working-directory: tests/eval
         env:
           OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          MCP_EVAL_MCP_URL: http://localhost:2480
           MCP_EVAL_AGENT_API: opencode
+          MCP_EVAL_OPENCODE_ROUTE: cli
           MCP_EVAL_MODEL: opencode-go/deepseek-v4-flash
           MCP_EVAL_REASONING_EFFORT: high
-          MCP_EVAL_OPENCODE_TIMEOUT: "90"
-          MCP_EVAL_VERBOSE: "true"
+          MCP_EVAL_OPENCODE_TIMEOUT: "120"
         run: |
           uv run python -m pytest tests/test_smoke.py -m smoke \
-            -n 2 \
+            -n 4 \
             --junitxml=reports/junit.xml --tb=short || true
 
       - name: Server log (sandbox / proxy activity)
