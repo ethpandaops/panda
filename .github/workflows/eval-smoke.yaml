@@ -115,35 +115,6 @@ jobs:
           PANDA_CI_SVC_TOKEN: ${{ secrets.PANDA_CI_SVC_TOKEN }}
         run: uv run python -m scripts.ci_auth
 
-      - name: DEBUG inspect panda-ci token vs proxy
-        run: |
-          set +e
-          CRED=$(ls "$HOME"/.config/panda/credentials/*.json 2>/dev/null | head -1)
-          echo "cred file: $CRED"
-          TOKEN=$(python3 -c "import json,sys;print(json.load(open('$CRED'))['access_token'])")
-          python3 - "$TOKEN" <<'PY'
-          import sys, json, base64
-          t = sys.argv[1]
-          parts = t.split('.')
-          print("token parts:", len(parts), "(3=JWT, else opaque)")
-          if len(parts) == 3:
-              def d(s): return json.loads(base64.urlsafe_b64decode(s + '='*(-len(s)%4)))
-              hdr, pl = d(parts[0]), d(parts[1])
-              print("header:", json.dumps(hdr))
-              print("iss :", pl.get('iss'))
-              print("aud :", pl.get('aud'))
-              print("azp :", pl.get('azp'))
-              print("exp :", pl.get('exp'))
-              print("scope:", pl.get('scope'))
-              print("groups:", pl.get('groups'))
-              print("all claim keys:", sorted(pl.keys()))
-          PY
-          echo "=== curl proxy /datasources with the token ==="
-          curl -s -o /tmp/dsbody -w "HTTP %{http_code}\n" -H "Authorization: Bearer $TOKEN" "${PANDA_PROXY_URL}/datasources"
-          echo "--- body (first 400 bytes) ---"; head -c 400 /tmp/dsbody; echo
-          echo "=== Authentik discovery: advertised issuer (must equal configured, trailing slash) ==="
-          curl -s "${PANDA_PROXY_OIDC_ISSUER}.well-known/openid-configuration" | python3 -c "import sys,json;d=json.load(sys.stdin);print('advertised issuer:',d.get('issuer'))" 2>/dev/null || echo "(discovery fetch failed)"
-
       - name: Write server config (talks to the hosted production proxy as panda-ci)
         run: |
           cat > config.ci.yaml << EOF
@@ -161,6 +132,10 @@ jobs:
           proxy:
             url: "${PANDA_PROXY_URL}"
             auth:
+              # oidc mode = externally-minted token (ci_auth), empty resource. Without
+              # this the server defaults resource to the proxy URL, changing the
+              # credential-store digest so it never finds the token ci_auth wrote.
+              mode: "oidc"
               issuer_url: "${PANDA_PROXY_OIDC_ISSUER}"
               client_id: "panda-proxy"
           EOF
