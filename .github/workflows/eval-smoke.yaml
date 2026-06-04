@@ -1,0 +1,147 @@
+name: Eval Smoke
+
+# Fast per-commit smoke evals: ~10-15 simple questions that verify nothing is
+# fundamentally broken (agent reaches each datasource, queries, answers). Runs as
+# the external-scoped `panda-ci` service account against the hosted staging proxy.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: eval-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write   # push/pull the content-addressed sandbox image to GHCR
+
+env:
+  # Hosted staging proxy + its Authentik issuer (multi-issuer: Dex humans + Authentik CI).
+  PANDA_PROXY_URL: ${{ vars.PANDA_PROXY_URL || 'https://panda-proxy.analytics.staging.platform.ethpandaops.io' }}
+  PANDA_PROXY_OIDC_ISSUER: ${{ vars.PANDA_PROXY_OIDC_ISSUER || 'https://authentik.analytics.staging.platform.ethpandaops.io/application/o/panda-proxy/' }}
+  # Sandbox image is content-addressed (tag = hash of its build inputs); only built
+  # when those inputs change, and cached in GHCR. See sandbox-image-cleanup.yaml.
+  SANDBOX_IMAGE: ${{ vars.SANDBOX_IMAGE || 'ghcr.io/ethpandaops/panda-sandbox' }}
+
+jobs:
+  smoke:
+    runs-on:
+      - self-hosted-ghr
+      - size-m-x64
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go (module + build cache)
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build server
+        run: make build-server
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: latest
+          enable-cache: true
+
+      - name: Install eval deps
+        working-directory: tests/eval
+        run: uv sync
+
+      - name: Log in to GHCR (sandbox image cache)
+        run: echo "${{ github.token }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Sandbox image (build only if its inputs changed)
+        run: |
+          set -euo pipefail
+          HASH=$(make sandbox-hash)
+          IMG="${SANDBOX_IMAGE}:${HASH}"
+          echo "Sandbox image: $IMG"
+          if docker image inspect "$IMG" >/dev/null 2>&1; then
+            echo "Already present on this runner — no build, no pull."
+          elif docker manifest inspect "$IMG" >/dev/null 2>&1; then
+            echo "In registry — pulling."
+            docker pull "$IMG"
+          else
+            echo "Sandbox inputs changed — building $IMG and publishing it."
+            docker build -t "$IMG" -f sandbox/Dockerfile .
+            docker push "$IMG" || echo "WARNING: push failed (registry creds?); using local image."
+          fi
+          # Name the eval config references.
+          docker tag "$IMG" ethpandaops-panda-sandbox:latest
+
+      - name: Mint panda-ci service-account credential
+        working-directory: tests/eval
+        env:
+          PANDA_CI_SVC_TOKEN: ${{ secrets.PANDA_CI_SVC_TOKEN }}
+        run: uv run python -m scripts.ci_auth
+
+      - name: Write server config (talks to the hosted staging proxy as panda-ci)
+        run: |
+          cat > config.ci.yaml << EOF
+          server:
+            host: "0.0.0.0"
+            port: 2480
+            base_url: "http://127.0.0.1:2480"
+            sandbox_url: "http://127.0.0.1:2480"
+
+          sandbox:
+            backend: docker
+            image: "ethpandaops-panda-sandbox:latest"
+            network: "host"
+
+          proxy:
+            url: "${PANDA_PROXY_URL}"
+            auth:
+              issuer_url: "${PANDA_PROXY_OIDC_ISSUER}"
+              client_id: "panda-proxy"
+          EOF
+
+      - name: Start server
+        run: |
+          ./panda-server serve --config config.ci.yaml &
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:2480/health >/dev/null 2>&1; then echo "server ready"; break; fi
+            echo "waiting for server... ($i/30)"; sleep 2
+          done
+
+      - name: Run smoke evals (opencode-go, parallel)
+        working-directory: tests/eval
+        env:
+          OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          MCP_EVAL_MCP_URL: http://localhost:2480
+          MCP_EVAL_AGENT_API: opencode
+          MCP_EVAL_MODEL: opencode-go/deepseek-v4-flash
+          MCP_EVAL_REASONING_EFFORT: high
+        run: |
+          uv run python -m pytest tests/test_smoke.py -m smoke \
+            -n 4 \
+            --junitxml=reports/junit.xml --tb=short || true
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-smoke-${{ github.run_id }}
+          path: tests/eval/reports/
+          retention-days: 14
+
+      - name: Publish smoke results
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always()
+        with:
+          files: tests/eval/reports/junit.xml
+          check_name: "Eval Smoke (opencode-go/deepseek-v4-flash)"
+          comment_mode: ${{ github.event_name == 'pull_request' && 'always' || 'off' }}

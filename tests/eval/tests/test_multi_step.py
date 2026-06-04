@@ -63,8 +63,12 @@ async def test_multi_step_session(
     total_output_tokens = 0
     total_duration_ms = 0
 
-    # Get evaluator model for LLM-judged metrics
+    # Get evaluator model for LLM-judged metrics; snapshot its running cost so we
+    # can attribute the judge spend for this whole session (instance is shared/cached).
     evaluator = get_evaluator_model(eval_settings.evaluator_model)
+    judge_cost_before = getattr(evaluator, "total_cost_usd", 0.0)
+    judge_in_before = getattr(evaluator, "total_input_tokens", 0)
+    judge_out_before = getattr(evaluator, "total_output_tokens", 0)
 
     for step_idx, step in enumerate(test_case.steps):
         # Use previous session if specified
@@ -146,7 +150,7 @@ async def test_multi_step_session(
                         f"Step {step_idx + 1} metrics failed for {test_id}:\n{failure_msg}"
                     )
 
-    # Record aggregate cost for the whole session
+    # Record aggregate agent + judge cost for the whole session
     cost_tracker.record(
         test_id=test_id,
         model=eval_settings.model,
@@ -154,6 +158,9 @@ async def test_multi_step_session(
         output_tokens=total_output_tokens,
         cost_usd=total_cost,
         duration_ms=total_duration_ms,
+        judge_cost_usd=getattr(evaluator, "total_cost_usd", 0.0) - judge_cost_before,
+        judge_input_tokens=getattr(evaluator, "total_input_tokens", 0) - judge_in_before,
+        judge_output_tokens=getattr(evaluator, "total_output_tokens", 0) - judge_out_before,
     )
 
     # Flush Langfuse to ensure traces are sent

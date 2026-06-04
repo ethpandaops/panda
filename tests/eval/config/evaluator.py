@@ -59,9 +59,25 @@ class OpenRouterModel(DeepEvalBaseLLM):
             base_url=self.base_url,
         )
 
+        # Running totals across every judge call on this (lru_cached, shared) instance.
+        # Tests snapshot these before/after evaluate() to attribute judge cost per case.
+        self.total_cost_usd: float = 0.0
+        self.total_input_tokens: int = 0
+        self.total_output_tokens: int = 0
+
     def load_model(self) -> str:
         """Load the model - required by DeepEvalBaseLLM."""
         return self._model_name
+
+    def _record_usage(self, response: Any) -> None:
+        """Accumulate token usage and OpenRouter's reported cost from a response."""
+        usage = getattr(response, "usage", None)
+        if not usage:
+            return
+        data = usage.model_dump() if hasattr(usage, "model_dump") else dict(usage)
+        self.total_input_tokens += data.get("prompt_tokens") or 0
+        self.total_output_tokens += data.get("completion_tokens") or 0
+        self.total_cost_usd += data.get("cost") or 0.0
 
     def generate(self, prompt: str, schema: Any = None) -> str:
         """Generate a response from the model.
@@ -76,11 +92,13 @@ class OpenRouterModel(DeepEvalBaseLLM):
         response = self._client.chat.completions.create(
             model=self._model_name,
             messages=[{"role": "user", "content": prompt}],
+            extra_body={"usage": {"include": True}},
             extra_headers={
                 "HTTP-Referer": "https://github.com/ethpandaops/panda",
                 "X-Title": "panda-eval",
             },
         )
+        self._record_usage(response)
         return response.choices[0].message.content or ""
 
     async def a_generate(self, prompt: str, schema: Any = None) -> str:
@@ -96,11 +114,13 @@ class OpenRouterModel(DeepEvalBaseLLM):
         response = await self._async_client.chat.completions.create(
             model=self._model_name,
             messages=[{"role": "user", "content": prompt}],
+            extra_body={"usage": {"include": True}},
             extra_headers={
                 "HTTP-Referer": "https://github.com/ethpandaops/panda",
                 "X-Title": "panda-eval",
             },
         )
+        self._record_usage(response)
         return response.choices[0].message.content or ""
 
     def get_model_name(self) -> str:

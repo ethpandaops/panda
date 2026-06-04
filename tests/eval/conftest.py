@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, Generator
 
 import pytest
 
-from agent.wrapper import MCPAgent
+from agent import make_agent
 from config.settings import EvalSettings
 
 if TYPE_CHECKING:
@@ -23,9 +23,9 @@ def eval_settings() -> EvalSettings:
 
 
 @pytest.fixture
-def agent(eval_settings: EvalSettings) -> MCPAgent:
-    """Create a fresh agent instance for each test."""
-    return MCPAgent(eval_settings)
+def agent(eval_settings: EvalSettings):
+    """Create a fresh agent instance (backend selected by settings.agent_api)."""
+    return make_agent(eval_settings)
 
 
 class CostTracker:
@@ -42,43 +42,58 @@ class CostTracker:
         output_tokens: int,
         cost_usd: float | None,
         duration_ms: int,
+        judge_cost_usd: float | None = 0.0,
+        judge_input_tokens: int = 0,
+        judge_output_tokens: int = 0,
     ) -> None:
-        """Record cost information for a test run."""
+        """Record agent + judge cost for a test run."""
         self.costs.append({
             "test_id": test_id,
             "model": model,
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-            "cost_usd": cost_usd or 0.0,
+            "agent_cost_usd": cost_usd or 0.0,
+            "agent_input_tokens": input_tokens,
+            "agent_output_tokens": output_tokens,
+            "judge_cost_usd": judge_cost_usd or 0.0,
+            "judge_input_tokens": judge_input_tokens,
+            "judge_output_tokens": judge_output_tokens,
             "duration_ms": duration_ms,
         })
 
-    def total_cost(self) -> float:
-        """Get total cost across all recorded tests."""
-        return sum(c["cost_usd"] for c in self.costs)
+    def total_agent_cost(self) -> float:
+        """Total cost of the model under test."""
+        return sum(c["agent_cost_usd"] for c in self.costs)
 
-    def total_tokens(self) -> tuple[int, int]:
-        """Get total input and output tokens."""
-        input_total = sum(c["input_tokens"] for c in self.costs)
-        output_total = sum(c["output_tokens"] for c in self.costs)
-        return input_total, output_total
+    def total_judge_cost(self) -> float:
+        """Total cost of the LLM judge (evaluator metrics)."""
+        return sum(c["judge_cost_usd"] for c in self.costs)
+
+    def total_cost(self) -> float:
+        """Get total cost (agent + judge) across all recorded tests."""
+        return self.total_agent_cost() + self.total_judge_cost()
 
     def summary(self) -> str:
         """Generate a summary report."""
         if not self.costs:
             return "No costs recorded"
 
-        input_tokens, output_tokens = self.total_tokens()
-        total_cost = self.total_cost()
+        agent_cost = self.total_agent_cost()
+        judge_cost = self.total_judge_cost()
+        total_cost = agent_cost + judge_cost
+        agent_in = sum(c["agent_input_tokens"] for c in self.costs)
+        agent_out = sum(c["agent_output_tokens"] for c in self.costs)
+        judge_in = sum(c["judge_input_tokens"] for c in self.costs)
+        judge_out = sum(c["judge_output_tokens"] for c in self.costs)
         total_duration = sum(c["duration_ms"] for c in self.costs)
+        n = len(self.costs)
 
         return (
             f"Cost Summary:\n"
-            f"  Tests: {len(self.costs)}\n"
+            f"  Tests: {n}\n"
+            f"  Agent Cost: ${agent_cost:.6f} ({agent_in:,} in / {agent_out:,} out)\n"
+            f"  Judge Cost: ${judge_cost:.6f} ({judge_in:,} in / {judge_out:,} out)\n"
             f"  Total Cost: ${total_cost:.6f}\n"
-            f"  Total Tokens: {input_tokens:,} in / {output_tokens:,} out\n"
             f"  Total Duration: {total_duration:,}ms\n"
-            f"  Avg Cost/Test: ${total_cost / len(self.costs):.6f}"
+            f"  Avg Cost/Test: ${total_cost / n:.6f}"
         )
 
 
@@ -254,6 +269,9 @@ def pytest_configure(config: pytest.Config) -> None:
     )
     config.addinivalue_line(
         "markers", "multi_step: marks multi-step session tests"
+    )
+    config.addinivalue_line(
+        "markers", "smoke: marks fast CI smoke tests (select with '-m smoke')"
     )
 
 

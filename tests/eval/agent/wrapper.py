@@ -41,6 +41,16 @@ DISALLOWED_TOOLS = [
     "WebSearch",
 ]
 
+# Friendly reasoning_effort levels mapped to Claude extended-thinking token budgets.
+# For gateway-routed (non-Claude) models, the gateway is responsible for translating
+# this budget into that provider's own reasoning controls.
+THINKING_TOKEN_BUDGETS: dict[str, int | None] = {
+    "none": None,
+    "low": 4_096,
+    "medium": 12_000,
+    "high": 32_000,
+}
+
 
 @dataclass
 class ToolCallRecord:
@@ -120,7 +130,7 @@ class MCPAgent:
         self._current_tool_start = time.time()
 
         record = ToolCallRecord(
-            name=tool_name,
+            name=tool_name.removeprefix("mcp__ethpandaops__"),
             input=tool_input,
         )
         self._tool_calls.append(record)
@@ -218,10 +228,22 @@ class MCPAgent:
         # The agent will get context from the mcp://getting-started resource and tool descriptions
         disallowed = DISALLOWED_TOOLS if self.settings.restrict_to_mcp_tools else []
 
+        thinking_tokens = THINKING_TOKEN_BUDGETS.get(
+            self.settings.reasoning_effort.lower(), THINKING_TOKEN_BUDGETS["high"]
+        )
+
+        # Route the model under test through an Anthropic-compatible gateway when a
+        # base URL is configured — this is what lets a non-Claude model be evaluated.
+        agent_env: dict[str, str] = {}
+        if self.settings.agent_base_url:
+            agent_env["ANTHROPIC_BASE_URL"] = self.settings.agent_base_url
+
         options = ClaudeAgentOptions(
             model=self.settings.model,
             permission_mode=self.settings.permission_mode,
             max_turns=self.settings.max_turns,
+            max_thinking_tokens=thinking_tokens,
+            env=agent_env,
             disallowed_tools=disallowed,
             mcp_servers={
                 "ethpandaops": {

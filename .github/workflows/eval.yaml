@@ -1,17 +1,33 @@
 name: LLM Evaluation
 
 on:
+  # Run on every release (tag push, matching goreleaser).
+  push:
+    tags:
+      - '*'
+
+  # Opt-in per PR: add the `run-evals` label. The job-level `if` below ensures
+  # labeled/synchronize events only proceed while that label is present.
+  pull_request:
+    types: [labeled, synchronize]
+
   workflow_dispatch:
     inputs:
       model:
-        description: 'Claude model to evaluate'
-        required: true
-        default: 'claude-sonnet-4-5'
-        type: choice
-        options:
-          - claude-sonnet-4-5
-          - claude-opus-4-5
-          - claude-haiku-4-5
+        description: 'Model under test (e.g. deepseek/deepseek-v4-flash, anthropic/claude-sonnet-4-5)'
+        required: false
+        default: 'deepseek/deepseek-v4-flash'
+        type: string
+      agent_api:
+        description: 'Agent backend: openai | anthropic'
+        required: false
+        default: 'openai'
+        type: string
+      reasoning:
+        description: 'Reasoning effort: none | low | medium | high'
+        required: false
+        default: 'high'
+        type: string
       category:
         description: 'Test category (empty for all)'
         required: false
@@ -31,11 +47,16 @@ on:
     inputs:
       model:
         required: false
-        default: 'claude-sonnet-4-5'
+        default: 'deepseek/deepseek-v4-flash'
         type: string
 
 jobs:
   evaluate:
+    # On a PR, only run when the `run-evals` label is present. Releases
+    # (tag push), manual dispatch, and workflow_call always run.
+    if: >-
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'run-evals')
     runs-on:
       - self-hosted-ghr
       - size-m-x64
@@ -151,9 +172,12 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           MCP_EVAL_MCP_URL: http://localhost:2480
-          MCP_EVAL_MODEL: ${{ inputs.model || 'claude-sonnet-4-5' }}
+          MCP_EVAL_MODEL: ${{ inputs.model || 'deepseek/deepseek-v4-flash' }}
+          MCP_EVAL_AGENT_API: ${{ inputs.agent_api || 'openai' }}
+          MCP_EVAL_REASONING_EFFORT: ${{ inputs.reasoning || 'high' }}
           MCP_EVAL_VERBOSE: ${{ inputs.verbose || 'false' }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}  # For DeepEval metrics
+          # Agent (default deepseek via OpenRouter) and judge (gemini via OpenRouter)
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           PYTEST_ARGS="tests/"
 
@@ -184,7 +208,7 @@ jobs:
           if [ -f reports/junit.xml ]; then
             echo "# Evaluation Results" > reports/summary.md
             echo "" >> reports/summary.md
-            echo "**Model:** ${{ inputs.model || 'claude-sonnet-4-5' }}" >> reports/summary.md
+            echo "**Model:** ${{ inputs.model || 'deepseek/deepseek-v4-flash' }}" >> reports/summary.md
             echo "**Date:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> reports/summary.md
             echo "" >> reports/summary.md
           fi
@@ -193,7 +217,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: eval-results-${{ inputs.model || 'claude-sonnet-4-5' }}-${{ github.run_id }}
+          name: eval-results-${{ github.run_id }}
           path: |
             tests/eval/reports/
             tests/eval/snapshots/
@@ -204,30 +228,5 @@ jobs:
         if: always()
         with:
           files: tests/eval/reports/junit.xml
-          check_name: "LLM Evaluation Results (${{ inputs.model || 'claude-sonnet-4-5' }})"
+          check_name: "LLM Evaluation Results (${{ inputs.model || 'deepseek/deepseek-v4-flash' }})"
           comment_mode: always
-
-  compare-models:
-    runs-on:
-      - self-hosted-ghr
-      - size-m-x64
-    needs: evaluate
-    if: github.event_name == 'workflow_dispatch' && inputs.model == 'claude-sonnet-4-5'
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Download Sonnet results
-        uses: actions/download-artifact@v4
-        with:
-          name: eval-results-claude-sonnet-4-5-${{ github.run_id }}
-          path: results/sonnet
-
-      - name: Summary
-        run: |
-          echo "## Model Comparison" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Results from evaluation run:" >> $GITHUB_STEP_SUMMARY
-          echo "- Model: ${{ inputs.model || 'claude-sonnet-4-5' }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Run ID: ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY

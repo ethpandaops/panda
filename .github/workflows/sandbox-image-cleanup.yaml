@@ -1,0 +1,44 @@
+name: Sandbox Image Cleanup
+
+# The sandbox image cache (ghcr.io/ethpandaops/panda-sandbox) is content-addressed:
+# a new tag is pushed only when the sandbox build inputs change (Dockerfile,
+# requirements, sandbox/ethpandaops, modules/*/python). This prunes the cache so it
+# can't grow unbounded — deletes versions older than 30 days while always keeping
+# the 5 most recent (so the currently-referenced image is never removed).
+on:
+  schedule:
+    - cron: '0 3 1 * *'   # 03:00 UTC on the 1st of each month
+  workflow_dispatch:
+
+permissions:
+  packages: write
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prune sandbox image versions older than 30d (keep newest 5)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ORG: ethpandaops
+          PKG: panda-sandbox
+        run: |
+          set -euo pipefail
+          cutoff=$(date -u -d '30 days ago' +%s)
+          mapfile -t versions < <(gh api --paginate \
+            "/orgs/$ORG/packages/container/$PKG/versions" \
+            --jq '.[] | [.id, .created_at] | @tsv' || true)
+          i=0
+          deleted=0
+          for line in "${versions[@]}"; do
+            i=$((i + 1))
+            [ "$i" -le 5 ] && continue   # always keep the 5 most recent
+            id=$(printf '%s' "$line" | cut -f1)
+            created=$(printf '%s' "$line" | cut -f2)
+            ts=$(date -u -d "$created" +%s)
+            if [ "$ts" -lt "$cutoff" ]; then
+              echo "deleting version $id (created $created)"
+              gh api -X DELETE "/orgs/$ORG/packages/container/$PKG/versions/$id" && deleted=$((deleted + 1)) || true
+            fi
+          done
+          echo "pruned $deleted old sandbox image version(s)"

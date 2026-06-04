@@ -17,8 +17,8 @@ This evaluation harness tests end-to-end task completion against the ethpandaops
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) installed
 - Running ethpandaops-panda server (with auth disabled for testing)
-- `ANTHROPIC_API_KEY` environment variable set
-- `OPENAI_API_KEY` environment variable set (for DeepEval LLM-based metrics)
+- `ANTHROPIC_API_KEY` environment variable set (for the agent under test)
+- `OPENROUTER_API_KEY` environment variable set (for the LLM judge — defaults to Gemini Flash 3 via OpenRouter)
 
 ### Installation
 
@@ -245,11 +245,12 @@ Add to `cases/multi_step.yaml`:
 
 ## CI/CD
 
-GitHub Actions workflow runs:
-- **Scheduled**: Daily at 6am UTC with Sonnet 4.5
-- **On-demand**: Via workflow_dispatch with model selection
+The `LLM Evaluation` GitHub Actions workflow is opt-in, not time-based. It runs:
+- **On release**: every tag push (matching goreleaser)
+- **Per PR**: only when the `run-evals` label is on the PR (re-runs on new commits while labelled)
+- **On-demand**: via `workflow_dispatch` with model selection
 
-See `.github/workflows/eval.yaml` for configuration.
+It does **not** run on every commit or on a daily schedule. See `.github/workflows/eval.yaml` for configuration.
 
 ## Langfuse (Trace Visualization)
 

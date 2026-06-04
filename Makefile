@@ -77,6 +77,15 @@ docker-push: docker ## Push Docker image
 docker-sandbox: ## Build sandbox Docker image
 	docker build -t ethpandaops-panda-sandbox:latest -f sandbox/Dockerfile .
 
+sandbox-hash: ## Print the content hash of the sandbox image build inputs
+	@./scripts/sandbox-hash.sh
+
+docker-sandbox-tagged: ## Build sandbox image tagged with its content hash (+ latest)
+	docker build \
+		-t ethpandaops-panda-sandbox:$(shell ./scripts/sandbox-hash.sh) \
+		-t ethpandaops-panda-sandbox:latest \
+		-f sandbox/Dockerfile .
+
 test-sandbox: ## Run sandbox package tests
 	go test -race -v ./pkg/sandbox/...
 

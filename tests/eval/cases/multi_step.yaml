@@ -11,7 +11,7 @@
   steps:
     - prompt: "Query the last 1000 blocks on mainnet and save the data to a CSV file."
       expected_tools:
-        - mcp__ethpandaops__execute_python
+        - execute_python
       expect_session_id: true
       metrics:
         task_completion: 0.7
@@ -19,14 +19,14 @@
     - prompt: "Now load that CSV and calculate the average gas used per block."
       use_previous_session: true
       expected_tools:
-        - mcp__ethpandaops__execute_python
+        - execute_python
       metrics:
         task_completion: 0.8
 
     - prompt: "Create a histogram of gas usage from the data."
       use_previous_session: true
       expected_tools:
-        - mcp__ethpandaops__execute_python
+        - execute_python
       metrics:
         visualization_url: 0.8
 
@@ -40,7 +40,7 @@
   steps:
     - prompt: "Query block arrival times for the last 10000 slots on mainnet."
       expected_tools:
-        - mcp__ethpandaops__execute_python
+        - execute_python
       expect_session_id: true
       metrics:
         task_completion: 0.7
@@ -54,13 +54,13 @@
     - prompt: "Group the data by observer consensus client and calculate the mean and p95 arrival time for each."
       use_previous_session: true
       expected_tools:
-        - mcp__ethpandaops__execute_python
+        - execute_python
       metrics:
         task_completion: 0.8
 
     - prompt: "Create a box plot comparing the arrival time distributions across clients."
       use_previous_session: true
       expected_tools:
-        - mcp__ethpandaops__execute_python
+        - execute_python
       metrics:
         visualization_url: 0.8

@@ -5,7 +5,7 @@
   description: Generate a histogram of block times
   input: "Create a histogram showing the distribution of block arrival times for the last 1000 blocks on mainnet."
   expected_tools:
-    - mcp__ethpandaops__execute_python
+    - execute_python
   metrics:
     tool_correctness: 0.8
     task_completion: 0.7

@@ -60,23 +60,13 @@ async def test_visualization(
     # Execute agent (pass test_id for Langfuse trace naming)
     result = await agent.execute(test_case.input, test_id=test_id)
 
-    # Log costs if tracking enabled
-    if eval_settings.track_costs:
-        cost_tracker.record(
-            test_id=test_id,
-            model=eval_settings.model,
-            input_tokens=result.input_tokens,
-            output_tokens=result.output_tokens,
-            cost_usd=result.total_cost_usd,
-            duration_ms=result.duration_ms,
-        )
-
-        if eval_settings.verbose:
-            print(f"\n  Test: {test_id}")
-            print(f"  Cost: ${result.total_cost_usd or 0:.6f}")
-            print(f"  Tokens: {result.input_tokens} in / {result.output_tokens} out")
-            print(f"  Duration: {result.duration_ms}ms")
-            print(f"  Tools: {[tc.name for tc in result.tool_calls]}")
+    # Verbose cost logging (cost is recorded after evaluation, including judge cost)
+    if eval_settings.track_costs and eval_settings.verbose:
+        print(f"\n  Test: {test_id}")
+        print(f"  Cost: ${result.total_cost_usd or 0:.6f}")
+        print(f"  Tokens: {result.input_tokens} in / {result.output_tokens} out")
+        print(f"  Duration: {result.duration_ms}ms")
+        print(f"  Tools: {[tc.name for tc in result.tool_calls]}")
 
     # Check for execution errors
     if result.is_error:
@@ -103,8 +93,12 @@ async def test_visualization(
     # Build metrics list
     metrics = []
 
-    # Get evaluator model for LLM-judged metrics
+    # Get evaluator model for LLM-judged metrics; snapshot its running cost so we
+    # can attribute the judge spend for this test (the instance is shared/cached).
     evaluator = get_evaluator_model(eval_settings.evaluator_model)
+    judge_cost_before = getattr(evaluator, "total_cost_usd", 0.0)
+    judge_in_before = getattr(evaluator, "total_input_tokens", 0)
+    judge_out_before = getattr(evaluator, "total_output_tokens", 0)
 
     # Tool correctness metric
     tool_threshold = test_case.metrics.get(
@@ -125,6 +119,20 @@ async def test_visualization(
 
     # Run evaluation
     eval_results = evaluate(test_cases=[llm_test_case], metrics=metrics)
+
+    # Record agent + judge cost for this test
+    if eval_settings.track_costs:
+        cost_tracker.record(
+            test_id=test_id,
+            model=eval_settings.model,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            cost_usd=result.total_cost_usd,
+            duration_ms=result.duration_ms,
+            judge_cost_usd=getattr(evaluator, "total_cost_usd", 0.0) - judge_cost_before,
+            judge_input_tokens=getattr(evaluator, "total_input_tokens", 0) - judge_in_before,
+            judge_output_tokens=getattr(evaluator, "total_output_tokens", 0) - judge_out_before,
+        )
 
     # Record trace (with Langfuse score recording if enabled)
     trace_recorder.record(

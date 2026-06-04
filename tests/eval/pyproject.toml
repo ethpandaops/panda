@@ -15,7 +15,7 @@ dependencies = [
     "rich>=13.0.0",
     "openai>=1.0.0", # For OpenRouter evaluator support
     "langfuse>=2.0.0", # LLM observability and trace viewing
-    "matplotlib>=3.10.8",
+    "opencode-ai",
 ]
 
 [project.optional-dependencies]
@@ -52,3 +52,11 @@ ignore = ["E501"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
+
+[tool.uv.sources]
+opencode-ai = { git = "https://github.com/anomalyco/opencode-sdk-python" }
+
+[dependency-groups]
+dev = [
+    "pytest-xdist>=3.8.0",
+]

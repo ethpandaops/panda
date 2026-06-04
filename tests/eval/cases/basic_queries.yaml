@@ -5,7 +5,7 @@
   description: Query block production count for last 24 hours
   input: "How many blocks were produced on mainnet in the last 24 hours?"
   expected_tools:
-    - mcp__ethpandaops__execute_python
+    - execute_python
   metrics:
     tool_correctness: 0.8
     task_completion: 0.7
@@ -25,7 +25,7 @@
   description: Query slot timing statistics
   input: "What is the average block arrival time for the last 1000 slots on mainnet?"
   expected_tools:
-    - mcp__ethpandaops__execute_python
+    - execute_python
   metrics:
     tool_correctness: 0.8
     task_completion: 0.7
@@ -44,7 +44,7 @@
   description: Query total validator count
   input: "How many active validators are there on mainnet right now?"
   expected_tools:
-    - mcp__ethpandaops__execute_python
+    - execute_python
   metrics:
     tool_correctness: 0.8
     task_completion: 0.7
@@ -60,7 +60,7 @@
   description: Query missed slots in last 24 hours
   input: "How many slots were missed in the last 24 hours on mainnet?"
   expected_tools:
-    - mcp__ethpandaops__execute_python
+    - execute_python
   metrics:
     tool_correctness: 0.8
     task_completion: 0.7
