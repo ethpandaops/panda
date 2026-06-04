@@ -3,6 +3,8 @@ name: create-module
 description: "Add a new datasource module to ethpandaops/panda. Triggers on: add module, new module, create module, add plugin, new plugin, create plugin, add datasource."
 argument-hint: <module-name>
 disable-model-invocation: true
+metadata:
+  internal: true
 ---
 
 # Create New Module

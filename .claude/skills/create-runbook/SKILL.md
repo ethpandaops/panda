@@ -2,6 +2,8 @@
 name: create-runbook
 description: Extract a reusable runbook from a successful investigation or troubleshooting session. Use after completing a multi-step diagnosis that could help future investigations.
 disable-model-invocation: true
+metadata:
+  internal: true
 ---
 
 # Create Runbook

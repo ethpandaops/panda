@@ -1,6 +1,8 @@
 ---
 name: self-play
 description: Run schema probing self-play loop to find and fix ClickHouse schema ambiguity in the panda repo. Use when the user wants to improve query reliability by finding where the agent picks different tables for the same question.
+metadata:
+  internal: true
 ---
 
 # Self-Play Schema Probing
