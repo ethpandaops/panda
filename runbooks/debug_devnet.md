@@ -33,12 +33,12 @@ Key fields on `external.otel_logs`:
 
 ## Sandbox Session
 
-Every `execute_python` / `panda execute` call spins up a **fresh** sandbox unless you pin one session and reuse it. A new sandbox per step means `/workspace` is empty (the debug report below is lost) and you can exhaust the sandbox session limit (10) partway through a single investigation. So **establish one session at the very start of the run and reuse it for every step**, then destroy it at the end:
+Each `execute_python` / `panda execute` call spins up a **fresh** sandbox unless you pin one session — so `/workspace` (and the debug report) is empty each step, and you can hit the 10-session limit mid-investigation. **Create one session at the start, reuse it for every step, destroy it at the end:**
 
-- **CLI:** create once with `panda session create`, capture the returned id, and pass `--session <id>` to every `panda execute` call. Tear it down with `panda session destroy <id>` when finished.
-- **MCP:** create/select a session with `manage_session` and pass that session to every `execute_python` call.
+- **CLI:** `panda session create`, then pass `--session <id>` to every `panda execute`; `panda session destroy <id>` when done.
+- **MCP:** create/select a session with `manage_session` and pass it to every `execute_python` call.
 
-Reusing one session is also what makes the `/workspace/<network>-debug-*.md` report and `/workspace/debug_file_path.txt` (next section) persist across steps — without it, each step starts from an empty workspace.
+This is also what makes the `/workspace` debug report (next section) persist across steps.
 
 ## Debug Report
 
@@ -159,26 +159,23 @@ Before collecting data, determine which datasources have the target network.
    **Routing rules:**
    - If the network is not found in **any** datasource → report to the user that the network doesn't exist in any known datasource and **stop**.
    - `has_clickhouse_raw = false` → Phase 2 cannot use hosted OTel logs; note the missing datasource and rely on Dora/Prometheus/ethnode only.
-   - `has_dora = true` → Phase 1 (Dora) runs normally. If Dora's calls then panic/500 on the recent epochs (common on a badly degraded network), apply Dora-tolerance: keep what succeeded and fall through to the Phase 1 RPC baseline (see Phase 1).
+   - `has_dora = true` → Phase 1 runs normally; if Dora calls panic/500 on recent epochs, apply Dora-tolerance (see Phase 1).
    - `has_dora = false` → **Skip Phase 1 entirely.** Note in the debug report that Dora is unavailable. If `has_ethnode = true`, use ethnode to build a basic network baseline before proceeding to Phase 2 — query head slots, finality checkpoints, and sync status across discovered nodes to approximate what Dora would have provided (see Phase 1 fallback below).
    - `has_logs = false` → Phase 2 is limited; note that log investigation is unavailable.
    - `has_ethnode = true` → Direct node RPC queries are available in Phase 3 for hypothesis validation.
 
 ## Phase 1: Data Collection with Dora
 
-**Dora is the primary starting point** — it scales to large networks and years of operational practice back it. Start here whenever `has_dora = true`.
+**Dora is the primary starting point** (it scales to large networks). Start here whenever `has_dora = true`. **Skip this phase if `has_dora = false`** — if `has_ethnode = true`, build a partial baseline from the ethnode module (`search(type="examples", query="ethnode")`) instead, then go to Phase 2.
 
-**Skip this phase if Phase 0 determined `has_dora = false`.** If `has_ethnode = true`, use the ethnode module (`search(type="examples", query="ethnode")` for patterns) to build a partial baseline instead. Then proceed to Phase 2.
-
-**Dora-tolerance — a Dora call that errors is itself a signal, not a dead end.** Dora's epoch/overview endpoints can return `HTTP 500: PANIC: ... integer divide by zero` precisely when a network is badly degraded — non-finalizing or zero-participation epochs hit a divide-by-zero in Dora's participation math. **Wrap every Dora call in try/except.** If `get_network_overview` / `get_epoch` panic or error for the recent epochs, do NOT abort the investigation: note the failure (and the panic message — it corroborates "near-zero participation / no finality") in the debug report, then **fall through to the RPC baseline below** (treat it like `has_dora = false` for the failing calls) while still using any Dora calls that did succeed. Keep Dora as the default first move; only fall back on the calls that actually fail.
+**Dora-tolerance:** Dora's epoch/overview endpoints can return `HTTP 500: PANIC: ... integer divide by zero` exactly when a network is degraded (non-finalizing / zero-participation epochs hit a divide-by-zero in Dora's math). **Wrap every Dora call in try/except.** On a panic, note it (the panic itself corroborates near-zero participation / no finality) and fall through to the RPC baseline below for the failing calls, while keeping any Dora calls that succeeded.
 
 1. **Collect all Dora data** - In a single step, gather all network data and append raw responses to the debug report. You MAY combine these into one `execute_python` call:
 
    - **Network overview** — use `search(type="examples", query="network overview")` for the pattern. Note: `current_slot` is `epoch * 32` (epoch's first slot), not actual head slot.
-   - **Network forks (split detection)** — two complementary checks:
-     - **Dora `/forks`** gives Dora's authoritative fork list in one call. The `search(type="examples", query="network splits")` httpx pattern works from the sandbox **but you must send a browser `User-Agent`** — hosted Dora is behind Cloudflare, which returns `403 Error 1010` (browser-integrity) to default Python/`httpx`/`urllib` UAs, even though the URL opens fine in a browser. Add `headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0 ..."}` (see the query skill's Dora "Direct HTTP calls" note). The `dora.*` module functions need no UA — they route through the server.
-     - **ethnode head-root sweep** (the Phase 1 RPC baseline below) is the cross-check, and works without internet egress: compare `get_beacon_headers` roots across all nodes — divergent roots at the same slot, or clusters stuck on different roots, mean a split.
-     A healthy network has one fork / one head root.
+   - **Network forks (split detection)** — two checks (healthy = one fork / one head root):
+     - **Dora `/forks`** — authoritative fork list in one call. The `search(type="examples", query="network splits")` httpx pattern needs a browser `User-Agent` (hosted Dora is behind Cloudflare, which 403s default Python UAs with `Error 1010`); add `headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0 ..."}`. The `dora.*` module functions need no UA.
+     - **ethnode head-root sweep** (Phase 1 RPC baseline below) — cross-check, no internet egress needed: compare `get_beacon_headers` roots across nodes; divergent roots at the same slot mean a split.
    - **Epoch details** — use `search(type="examples", query="epoch summary")`. Iterate through ~9 epochs per hour across the active timeframe. **Always start from head epoch - 1** (the most recent completed epoch) — the head epoch is still in progress and will show artificially low participation. You SHOULD also check the head epoch, but treat its data as preliminary. Use try/except per epoch.
    - **Missing proposers** — use `search(type="examples", query="missing proposers")`. Adjust `slot_lookback` to match the active timeframe (~300 slots per hour).
    - **Offline attesters** — use `search(type="examples", query="offline attesters")`.
@@ -203,17 +200,17 @@ Before collecting data, determine which datasources have the target network.
 
 ### Phase 1 fallback — RPC baseline (no Dora, or Dora calls failed)
 
-When `has_dora = false`, or when Dora-tolerance kicked in and the Dora epoch/overview calls panicked, build the baseline directly from the nodes (requires `has_ethnode = true`; use `search(type="examples", query="ethnode")` for patterns). Sweep every discovered host and compare:
-- `get_beacon_headers` → head slot + head root (do the roots agree? → split detection)
-- `get_finality_checkpoints` → finalized / justified epoch (is finality advancing, and is it the same across nodes?)
+When `has_dora = false`, or Dora calls panicked, build the baseline from the nodes (requires `has_ethnode = true`; `search(type="examples", query="ethnode")`). Sweep every host and compare:
+- `get_beacon_headers` → head slot + root (roots agree? → split detection)
+- `get_finality_checkpoints` → finalized / justified epoch (advancing? same across nodes?)
 - `get_node_syncing` → `is_syncing` + `sync_distance`
 
-**Interpreting `sync_distance` (do this explicitly — it is the difference between a split and a healthy spread):** a node's estimated wall-clock slot is `head_slot + sync_distance`. Compute it for every node and take the max as the network's wall-clock slot.
-- All nodes `is_syncing = false`, `sync_distance ≈ 0`, head slots within 1–2 of each other → **healthy** (the small spread is just block propagation, not a split).
-- Most nodes stuck tens of thousands of slots back with large `sync_distance` while one or few keep up → those nodes **cannot follow the chain** (wedged at a divergence block); this is the signature of a split / stalled network, not normal lag.
-- `finalized` epoch identical and far behind the wall-clock epoch on **all** nodes (including any that are at the tip) → **finality is stalled** network-wide; the stall epoch (`finalized * 32`) is your divergence-centred timeframe (see Timeframe Rules).
+**Read `sync_distance` explicitly** — it separates a split from a healthy spread. A node's wall-clock slot ≈ `head_slot + sync_distance`; take the max across nodes as the network's wall-clock slot.
+- All `is_syncing = false`, `sync_distance ≈ 0`, head slots within 1–2 → **healthy** (propagation spread, not a split).
+- Most nodes stuck far back with large `sync_distance` while a few keep up → those nodes **can't follow the chain** (wedged at a divergence block) → split / stalled, not normal lag.
+- `finalized` identical and far behind wall-clock on **all** nodes → **finality stalled** network-wide; the stall epoch (`finalized * 32`) is your divergence-centred timeframe.
 
-Append the table and your read of it to the debug report, then proceed to Phase 2.
+Append the table and your read of it, then proceed to Phase 2.
 
 ## Phase 2: Log Investigation with ClickHouse (`external.otel_logs`)
 
@@ -221,11 +218,11 @@ Use Dora findings (if available) to target specific nodes. With logs only (no Do
 
 **Use the same active timeframe** established in the Timeframe Rules section above.
 
-**⚠️ ANSI stripping is for bounded queries only.** These log lines are terminal-coloured, so severity matching must strip ANSI escapes in a `clean` CTE first (`replaceRegexpAll(Body, '\x1b\[[0-9;?]*[A-Za-z]', '')`). But wrapping `Body` in a function disables the `idx_body` skip-index and forces a per-row regex rewrite, the table's primary key is led by `IngressUser` (not network/host), and data older than 7 days is on S3 — so a stripped-`Body` regex over a wide or multi-day window degrades to a full scan over object storage. **Always pair the strip with a `host.name` filter, a tight `Timestamp` window, and a `LIMIT`.** Never run a stripped-`Body` regex across all hosts or a multi-day range — narrow to the suspect host/time first (from the RPC/Dora baseline), then strip within that slice. Pass the SQL as a raw string (`r"""`) so `\b`/`\x1b` reach ClickHouse intact.
+**⚠️ ANSI stripping is for bounded queries only.** Log lines are terminal-coloured, so severity matching strips ANSI in a `clean` CTE first (`replaceRegexpAll(Body, '\x1b\[[0-9;?]*[A-Za-z]', '')`). But wrapping `Body` disables the `idx_body` skip-index and rewrites every scanned row, and (primary key led by `IngressUser`, data >7d on S3) a stripped-`Body` regex over a wide/multi-day window becomes a full scan. **Always pair the strip with a `host.name` filter + tight `Timestamp` window + `LIMIT`** — narrow to the suspect host/time first, then strip within that slice. Pass SQL as a raw string (`r"""`) so `\b`/`\x1b` survive.
 
 **Node naming:** Most nodes follow `<cl>-<el>-<tier>-<n>` (e.g. `lighthouse-geth-super-1` → CL lighthouse, EL geth), but devnets also include bootnodes, MEV relays, and other non-paired nodes (`bootnode-1`, `mev-relay-1`) that do NOT match this pattern. Never derive node names from the convention — always use the `hosts` list discovered in Phase 0 (or Dora's `/v1/clients/consensus`).
 
-**Exclude `bootnode-1` from cross-host error triage by default.** Bootnodes dominate any multi-host severity sweep with p2p noise — `Ping` deserialization errors, `ENR missing IP`, connection-refused/timeout churn — that is essentially never the root cause and crowds out the real client errors. Add `AND ResourceAttributes['host.name'] != 'bootnode-1'` to any query that spans more than one host (the per-host queries below already pin a single `host.name`, so they are unaffected). Only investigate the bootnode directly if discovery/peering itself is the suspected problem.
+**Exclude `bootnode-1` from cross-host triage by default.** Bootnodes flood multi-host sweeps with p2p noise (`Ping` deserialization, `ENR missing IP`, connection churn) that's never the root cause — add `AND ResourceAttributes['host.name'] != 'bootnode-1'` to any multi-host query (per-host queries below pin one `host.name`, so they're unaffected). Investigate the bootnode directly only if discovery/peering is the suspected problem.
 
 **CL vs EL in ClickHouse OTel logs:** there is no `ethereum_cl` / `ethereum_el` label. A node VM runs the CL, EL, validator, and sidecar containers together; their logs are separated only by `LogAttributes['log.file.name']` (a per-container json-log file, named by hash). To investigate one client on a node, first discover its containers (step 3) and identify the CL/EL container by its log-line format, then filter on that log file. To sweep a client type across the network, filter on `host.name` (e.g. `host.name LIKE 'lighthouse-%'` for lighthouse-CL nodes, or `host.name LIKE '%-geth-%'` for geth-EL nodes) — but remember the result still mixes that node's CL/EL/sidecar lines.
 

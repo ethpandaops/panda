@@ -42,8 +42,7 @@ dora_network_health:
         network = "sepolia"
         base_url = dora.get_base_url(network)
 
-        # Hosted Dora sits behind Cloudflare, which 403s (Error 1010, browser-integrity)
-        # on default Python User-Agents — always send a browser UA for direct HTTP calls.
+        # Hosted Dora sits behind Cloudflare — send a browser User-Agent or it 403s (Error 1010).
         headers = {
             "Accept": "application/json",
             "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
