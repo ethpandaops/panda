@@ -19,16 +19,19 @@ partition-key filters, sessions, and storage — so it never goes stale. Use
 `panda docs <module>` for a module's full API and `panda search examples "<topic>"` for
 worked queries. Everything below is the durable context that guide does not carry.
 
-## Discover names — never hardcode them
+## Discover names — don't hardcode them
 
-Datasource, cluster, and table names are owned by the proxy and discovered at runtime;
-they change. Do not trust any name written in prose (older examples, screenshots,
-memory) — resolve them every time:
+Datasource, cluster, and table names are owned by the proxy and change over time, so
+enumerate them from the live tooling rather than pasting a name from memory, an old
+chat, or a screenshot:
 
 ```bash
 panda datasources                                 # datasources and their types
 panda schema [<cluster> [<database> [<table>]]]   # clusters → tables → schema
 ```
+
+The embedded examples and docs (`panda search examples`, `panda docs`) are compiled from
+the current binary, so the names in their output are current too — trust those.
 
 ## Search before writing queries
 
