@@ -452,9 +452,12 @@ class OpenCodeAgent:
                 root_span.set_trace_io(
                     input={"prompt": prompt}, output={"response": result.output}
                 )
+            # Force the OTEL batch out now; the eval process is short-lived and may
+            # exit before a background flush completes.
+            self._langfuse.flush()
         except Exception as exc:  # noqa: BLE001 - tracing is best-effort
-            if self.settings.verbose:
-                print(f"  [langfuse] trace export skipped: {exc}")
+            # Visible (not verbose-gated) so a CI export failure isn't silent.
+            print(f"  [langfuse] trace export failed: {type(exc).__name__}: {exc}")
 
     async def execute_multi_turn(
         self,
