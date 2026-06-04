@@ -96,9 +96,17 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 	}
 
 	if doServer {
-		fmt.Printf("  Server container:  pull %s\n", defaultServerImage)
-		fmt.Printf("  Sandbox container: pull %s\n", defaultSandboxImage)
-		fmt.Println("  Docker Compose:    regenerate (picks up latest fixes)")
+		// A full upgrade pins containers to the new release: the freshly
+		// installed binary does the pinning when it execs "server update".
+		// --server-only keeps containers in lockstep with the current CLI.
+		targetVersion := version.Version
+		if doCLI {
+			targetVersion = release.TagName
+		}
+
+		fmt.Printf("  Server container:  pull %s\n", serverImageForVersion(targetVersion))
+		fmt.Printf("  Sandbox container: pull %s\n", sandboxImageForVersion(targetVersion))
+		fmt.Println("  Docker Compose:    regenerate (pinned to this version)")
 	}
 
 	fmt.Println()
@@ -249,7 +257,7 @@ func regenerateComposeFile() error {
 		}
 	}
 
-	content := buildComposeTemplate(defaultServerImage, absConfigDir)
+	content := buildComposeTemplate(serverImageForVersion(version.Version), absConfigDir)
 
 	if err := os.WriteFile(composePath, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("writing compose file: %w", err)
@@ -285,7 +293,8 @@ func execNewBinary(ctx context.Context, args ...string) error {
 	return cmd.Run()
 }
 
-// pullSandboxImage pulls the default sandbox container image.
+// pullSandboxImage pulls the sandbox container image pinned to the running
+// binary's version.
 func pullSandboxImage(ctx context.Context) error {
 	cli, err := newDockerClient()
 	if err != nil {
@@ -293,7 +302,7 @@ func pullSandboxImage(ctx context.Context) error {
 	}
 	defer func() { _ = cli.Close() }()
 
-	return pullImage(ctx, cli, defaultSandboxImage)
+	return pullImage(ctx, cli, sandboxImageForVersion(version.Version))
 }
 
 // promptConfirm prints a prompt and waits for Y/n input.
