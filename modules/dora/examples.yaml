@@ -42,8 +42,14 @@ dora_network_health:
         network = "sepolia"
         base_url = dora.get_base_url(network)
 
-        with httpx.Client(timeout=30) as client:
-            resp = client.get(f"{base_url}/forks", headers={"Accept": "application/json"})
+        # Hosted Dora sits behind Cloudflare, which 403s (Error 1010, browser-integrity)
+        # on default Python User-Agents — always send a browser UA for direct HTTP calls.
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+        }
+        with httpx.Client(timeout=30, headers=headers) as client:
+            resp = client.get(f"{base_url}/forks")
             resp.raise_for_status()
             forks = resp.json()
 
@@ -95,8 +101,13 @@ dora_validator_queries:
         network = "sepolia"
         base_url = dora.get_base_url(network)
 
+        # Hosted Dora sits behind Cloudflare — send a browser User-Agent or it 403s (Error 1010).
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+        }
         # group=3 groups by node name, order=offline-d sorts by offline count descending
-        with httpx.Client(timeout=30) as client:
+        with httpx.Client(timeout=30, headers=headers) as client:
             resp = client.get(f"{base_url}/api/v1/validators/activity", params={
                 "group": 3,
                 "order": "offline-d",
@@ -158,9 +169,14 @@ dora_slot_epoch_queries:
         overview = dora.get_network_overview(network)
         current_slot = overview["current_slot"]
 
+        # Hosted Dora sits behind Cloudflare — send a browser User-Agent or it 403s (Error 1010).
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+        }
         # with_missing=2 returns only missing/orphaned slots
         slot_lookback = 300  # ~1 hour
-        with httpx.Client(timeout=30) as client:
+        with httpx.Client(timeout=30, headers=headers) as client:
             resp = client.get(f"{base_url}/api/v1/slots", params={
                 "with_missing": 2,
                 "min_slot": current_slot - slot_lookback,

@@ -131,28 +131,34 @@ result = prometheus.query_range(
 
 ### Logs — OTel ClickHouse (`external.otel_logs`)
 
-Container logs from hosted devnets and platform services are shipped via OpenTelemetry into the `clickhouse-raw` ClickHouse cluster, database `external`, table `external.otel_logs`. Query them with SQL through the `clickhouse` module — **there is no Loki datasource**. (Local Kurtosis devnet logs are separate: query the autodiscovered `local-kurtosis` datasource / `otel.otel_logs` instead.)
+On ethpandaops infra, container logs from hosted devnets and platform services are shipped via OpenTelemetry into the `clickhouse-raw` ClickHouse cluster, database `external`, table `external.otel_logs`. Query them with SQL through the `clickhouse` module. **For devnets, expect ClickHouse logs (`external.otel_logs`), not Loki.** A `loki` module does exist and other deployments may advertise a Loki datasource — check `panda datasources` / `loki.list_datasources()` to see what's actually present — but on ethpandaops infra devnet/platform logs are in ClickHouse, so don't reach for Loki here. (Local Kurtosis devnet logs are separate again: query the autodiscovered `local-kurtosis` datasource / `otel.otel_logs` instead.)
 
 ```python
 from ethpandaops import clickhouse
 
 # Devnet logs are keyed by ResourceAttributes['network'] and ResourceAttributes['host.name'].
-# ALWAYS filter on Timestamp (the partition key) and network.
-df = clickhouse.query("clickhouse-raw", """
-    SELECT Timestamp, ResourceAttributes['host.name'] AS host, Body
+# ALWAYS filter on Timestamp (the partition key) and network. Use a RAW string (r""")
+# so regex escapes (\b, \x1b) reach ClickHouse intact instead of becoming Python control chars.
+# `clean` strips ANSI colour codes so the severity anchors below see the real LEVEL token.
+df = clickhouse.query("clickhouse-raw", r"""
+    WITH replaceRegexpAll(Body, '\x1b\[[0-9;?]*[A-Za-z]', '') AS clean
+    SELECT Timestamp, ResourceAttributes['host.name'] AS host, clean AS Body
     FROM external.otel_logs
     WHERE ResourceAttributes['network'] = {network:String}
-      AND match(Body, '(?i)(crit|err|error|fatal)')
+      AND ResourceAttributes['host.name'] = {host:String}   -- keep the strip query bounded (see warning below)
+      -- error-class LEVEL token only (see "Severity triage" below) — never a bare substring
+      AND match(clean, '(^|[][ |])(CRIT|ERRO|ERROR|FATAL|PANIC)($|[][ |:])|^(ERR|FAT)\b|\blevel=(crit|error|fatal|panic)\b')
+      AND NOT match(clean, '(^|[][ |])(DEBUG|DBG|TRACE|TRC)($|[][ |:])|\blevel=(debug|trace)\b')
       AND Timestamp >= now() - INTERVAL 1 HOUR
     ORDER BY Timestamp DESC
     LIMIT 200
-""", parameters={"network": "fusaka-devnet-0"})
+""", parameters={"network": "fusaka-devnet-0", "host": "lighthouse-geth-super-1"})
 ```
 
 **Schema (key fields):**
 - `Timestamp DateTime64(9)` — partition key; always filter on it.
-- `Body String` — the raw log line. The level is usually embedded here.
-- `SeverityText` — often EMPTY for raw Docker logs; do not rely on it. Match severity on `Body` instead.
+- `Body String` — the raw log line. The level is usually embedded here. **Lines are terminal-coloured: the level token is wrapped in ANSI escape codes** (`\x1b[31mERROR\x1b[0m`), which defeat severity anchoring and corrupt the `idx_body` token index — strip them with a `clean` CTE on *bounded* queries (see "Severity triage").
+- `SeverityText` — often EMPTY for raw Docker logs; do not rely on it. Match severity on the ANSI-stripped `Body` instead (see "Severity triage").
 - `ServiceName` — empty for VM/Docker devnet logs (the `k8s.*` materialized columns apply only to Kubernetes platform logs).
 - `ResourceAttributes Map(String, String)` — node identity: `network` (devnet name), `host.name` (the node, e.g. `lighthouse-geth-super-1`), `ingress_user`, `deployment.environment`.
 - `LogAttributes Map(String, String)` — per-line attributes: `log.file.name` / `log.file.path` (one json-log file per container on the node), `container_id`, plus structured fields the client emits (`level`, `msg`, ...).
@@ -178,10 +184,24 @@ clickhouse.query("clickhouse-raw", """
 
 **Node naming:** `host.name` is `<cl>-<el>-<tier>-<n>` (e.g. `lighthouse-geth-super-1` → CL lighthouse, EL geth); bootnodes and MEV relays don't follow it. There is **no `ethereum_cl` / `ethereum_el` field** — a node runs the CL, EL, validator and sidecar containers together, separated only by `LogAttributes['log.file.name']`. Filter `host.name LIKE 'lighthouse-%'` to sweep lighthouse-CL nodes, or isolate one client by discovering its `log.file.name` (and a sample of its `Body`) and filtering on it.
 
-**Log level formats vary by client.** `SeverityText` is unreliable here, so triage on `Body`:
-- Start with `match(Body, '(?i)(crit|err|error|fatal)')`.
-- Broaden to include `warn`, then drop the severity filter for INFO/DEBUG (verbose — keep a tight time window and a `LIMIT`).
-- Client formats differ — lighthouse `MMM DD HH:MM:SS.mmm LEVEL`, geth `LEVEL [MM-DD|HH:MM:SS.mmm]`, prysm `level=... msg=...`. Sample a few unfiltered lines to confirm a client's format before crafting a precise regex.
+**Severity triage — strip ANSI, then anchor on the LEVEL token, never on a bare substring.** `SeverityText` is empty, so severity must come from `Body` — but `Body` is terminal-coloured, so first strip the escape codes in a `clean` CTE, then match the level token on `clean`. Two traps this avoids: (1) a bare `(?i)error` returns tens of thousands of benign DEBUG lines on a *healthy* network (`DEBUG Failed incoming connection ... error: ...`, `DBG ... err=txErrorAlreadyKnown`, light-client `NotImplemented` stubs); (2) without the strip, a coloured `\x1b[31mERROR\x1b[0m` sits flush against the escape bytes and the delimiter anchors miss it — measured at ~49% of real ERROR lines lost on a broken network.
+
+```sql
+-- bounded query only: always pair with a host filter + tight Timestamp window + LIMIT (see warning)
+WITH replaceRegexpAll(Body, '\x1b\[[0-9;?]*[A-Za-z]', '') AS clean
+... WHERE <network> AND <host> AND <tight time window>
+  -- error-class level token (uppercase token, nimbus 3-letter, or logfmt level=)
+  AND match(clean, '(^|[][ |])(CRIT|ERRO|ERROR|FATAL|PANIC)($|[][ |:])|^(ERR|FAT)\b|\blevel=(crit|error|fatal|panic)\b')
+  -- never count a debug/trace line, even when it carries an err= field
+  AND NOT match(clean, '(^|[][ |])(DEBUG|DBG|TRACE|TRC)($|[][ |:])|\blevel=(debug|trace)\b')
+... LIMIT 200
+```
+
+- **⚠️ Strip only on bounded queries — never sweep wide/historical with a `Body` regex.** Wrapping `Body` in `replaceRegexpAll` produces a computed expression, so the `idx_body` token skip-index can no longer prune granules, and every scanned row gets a fresh regex rewrite. The table's primary key is led by `IngressUser` (not network/host) and data older than 7 days lives on S3, so an ANSI-stripped regex over a wide or multi-day window degrades to a full scan over object storage. **Narrow first** — pick the suspect host and a tight window from the RPC/Dora baseline — then strip within that slice. Do not run a stripped-`Body` regex across all hosts or a multi-day range.
+- **Use raw strings.** Pass the SQL as a Python raw string (`r"""..."""`) so `\b` and `\x1b` reach ClickHouse intact; in a normal string Python turns `\b` into a backspace byte and the regex breaks.
+- **Case matters.** Clients print the level uppercase (`ERROR`, `CRIT`, `ERR`, `FAT`); English prose writes "error" lowercase. Case-sensitive matching of the uppercase token is what separates a real error level from the word "error" in a message. logfmt clients use lowercase `level=error` — matched explicitly above.
+- **Level vocab by client** (sample a few lines to confirm, then tighten): lighthouse `MMM DD HH:MM:SS.mmm ERROR …`; geth/nethermind/erigon/reth/besu `ERROR [MM-DD|…]` or pipe-delimited `…|ERROR|…`; prysm `[ts] ERROR component:` and logfmt `level=error`; nimbus 3-letter `ERR`/`FAT`/`WRN` at line start; lodestar `level=error` / `LEVEL` token.
+- **Escalate only after the error-class pass.** If it comes back empty or inconclusive, add `WARN`/`WRN` (and `level=warn`) to the first pattern, then drop the severity filter entirely for INFO/DEBUG (verbose — keep a tight time window and a `LIMIT`).
 
 For a full devnet debugging procedure, run `panda search runbooks "debug devnet"`.
 
@@ -206,14 +226,21 @@ Use `search(type="examples", query="network overview")` and `search(type="exampl
 
 **Direct HTTP calls for endpoints not in the Python module:**
 
+**⚠️ Send a browser `User-Agent`.** Hosted Dora instances sit behind Cloudflare, which blocks default Python/`httpx`/`urllib` User-Agents with `403 Error 1010` (browser-integrity) — the URL opens fine in a browser but a bare sandbox request fails. Always pass a browser UA. (The `dora.*` module functions are unaffected — they route through the panda server, not direct from the sandbox.)
+
 ```python
 from ethpandaops import dora
 import httpx
 
 base_url = dora.get_base_url("mainnet")
-# Call any endpoint discovered from swagger
-with httpx.Client(timeout=30) as client:
+headers = {
+    "Accept": "application/json",
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+}
+# Call any endpoint discovered from swagger (e.g. /forks for split detection)
+with httpx.Client(timeout=30, headers=headers) as client:
     resp = client.get(f"{base_url}/api/v1/<endpoint>")
+    resp.raise_for_status()
     data = resp.json()
 ```
 

@@ -13,19 +13,32 @@ The first step in debugging a devnet is discovering which datasources have the n
 
 Refer to the query skill for general API usage patterns (Dora overview, ClickHouse queries, direct HTTP calls, Dora link generation, etc.). This runbook only covers the debugging-specific procedure and API calls not in the skill.
 
+## Current Datasource Surface
+
+Start by capturing `panda datasources list` in the debug report. Hosted devnet logs are exposed through the `clickhouse-raw` ClickHouse datasource, not through a separate log datasource. If `clickhouse-raw` is not advertised, ClickHouse log investigation is unavailable and you must skip or limit Phase 2.
+
 ## How Devnet Logs Flow
 
-Hosted devnets run as Docker containers on bare-metal VMs (managed by Ansible). Each container's logs are scraped and shipped via OpenTelemetry into the `clickhouse-raw` ClickHouse cluster, database `external`, table `external.otel_logs`. Query them with SQL via `clickhouse.query("clickhouse-raw", ...)`, always filtering by `ResourceAttributes['network']` (the devnet) and `Timestamp`. **There is no hosted Loki — devnet container logs live only in ClickHouse.**
+Hosted devnets run as Docker containers on bare-metal VMs (managed by Ansible). Each container's logs are scraped and shipped via OpenTelemetry into the `clickhouse-raw` ClickHouse cluster, database `external`, table `external.otel_logs`. Query them with SQL via `clickhouse.query("clickhouse-raw", ...)`, always filtering by `ResourceAttributes['network']` (the devnet) and `Timestamp`. Do not query a separate log datasource for hosted devnets; devnet container logs live in ClickHouse.
 
 Key fields on `external.otel_logs`:
 - `Timestamp DateTime64(9)` — always filter on this (it is the partition key).
-- `Body String` — the raw log line. The level is usually embedded here, not in `SeverityText`.
-- `SeverityText LowCardinality(String)` — often EMPTY for raw Docker logs; do not rely on it. Use `match(Body, ...)` for severity triage.
+- `Body String` — the raw log line. The level is usually embedded here, not in `SeverityText`. **Lines are terminal-coloured — the level token is wrapped in ANSI escape codes** (`\x1b[31mERROR\x1b[0m`); strip them with a `clean` CTE on bounded queries before matching (see step 4).
+- `SeverityText LowCardinality(String)` — often EMPTY for raw Docker logs; do not rely on it. Triage severity by stripping ANSI then matching the **LEVEL token** in the cleaned line, not the bare word "error" (see the query skill's "Severity triage" section and step 4 below — a substring match returns tens of thousands of benign DEBUG lines on a healthy network).
 - `ServiceName` — empty for these VM/Docker logs (the `k8s.*` materialized columns are also empty — those only apply to Kubernetes platform logs).
 - `ResourceAttributes Map(String, String)` — node identity. Keys: `network` (devnet name), `host.name` (the node, e.g. `lighthouse-geth-super-1`), `ingress_user`, `deployment.environment`.
 - `LogAttributes Map(String, String)` — per-line attributes. Keys include `log.file.name` / `log.file.path` (the Docker container json-log file — one per container on the node), `container_id`, plus any structured fields the client emits (`level`, `msg`, `component`, ...).
 
-**Node naming:** `host.name` encodes the client pair as `<cl>-<el>-<tier>-<index>` (e.g. `lighthouse-geth-super-1` → CL lighthouse, EL geth). Non-paired nodes exist too (`bootnode-1`, `mev-relay-1`). **There is no `ethereum_cl` / `ethereum_el` label like Loki had** — a node VM runs the CL, EL, validator, and sidecar containers together, distinguished only by `LogAttributes['log.file.name']` (a container hash). To isolate one client's logs on a node, discover its containers first (see Phase 2) or identify the client by its log-line format in `Body`.
+**Node naming:** `host.name` encodes the client pair as `<cl>-<el>-<tier>-<index>` (e.g. `lighthouse-geth-super-1` → CL lighthouse, EL geth). Non-paired nodes exist too (`bootnode-1`, `mev-relay-1`). The current OTel records do not provide `ethereum_cl` / `ethereum_el` labels. A node VM runs the CL, EL, validator, and sidecar containers together, distinguished only by `LogAttributes['log.file.name']` (a container hash). To isolate one client's logs on a node, discover its containers first (see Phase 2) or identify the client by its log-line format in `Body`.
+
+## Sandbox Session
+
+Every `execute_python` / `panda execute` call spins up a **fresh** sandbox unless you pin one session and reuse it. A new sandbox per step means `/workspace` is empty (the debug report below is lost) and you can exhaust the sandbox session limit (10) partway through a single investigation. So **establish one session at the very start of the run and reuse it for every step**, then destroy it at the end:
+
+- **CLI:** create once with `panda session create`, capture the returned id, and pass `--session <id>` to every `panda execute` call. Tear it down with `panda session destroy <id>` when finished.
+- **MCP:** create/select a session with `manage_session` and pass that session to every `execute_python` call.
+
+Reusing one session is also what makes the `/workspace/<network>-debug-*.md` report and `/workspace/debug_file_path.txt` (next section) persist across steps — without it, each step starts from an empty workspace.
 
 ## Debug Report
 
@@ -53,7 +66,7 @@ with open("/workspace/debug_file_path.txt", "w") as f:
 
 ## Verbatim Tool Output
 
-When reporting label values, instance names, counts, or log lines: paste the raw tool response in a fenced code block. Do NOT paraphrase, reformat, infer, or "reconstruct" output. If the tool returns structured data that cannot be pasted as-is, say so explicitly — never invent entries to fill the gap.
+When reporting attribute values, instance names, counts, or log lines: paste the raw tool response in a fenced code block. Do NOT paraphrase, reformat, infer, or "reconstruct" output. If the tool returns structured data that cannot be pasted as-is, say so explicitly — never invent entries to fill the gap.
 
 If the user states a fact (e.g. "we have 16 nodes"), do not let it bias tool output. Report what the tool returned, even if it contradicts the user.
 
@@ -63,7 +76,7 @@ If two sources disagree (e.g. Dora says 16 nodes, the logs show 30 hosts), surfa
 
 A *citation* is a `panda` command that re-derives the cited evidence. Every finding you record — both in the debug report and in chat output — MUST be followed by the citation(s) that produce it, so the user can run them and verify independently. Citations are claim-anchored, not exhaustive: cite the calls that support a finding, not every probe along the way.
 
-Place each citation directly under the finding, in a fenced shell block, with a one-line `#` comment saying what it fetches. Discover the current command surface with `panda --help` (and subcommand `--help`) — do not hardcode flags or subcommands from memory.
+Place each citation directly under the finding, in a fenced shell block, with a one-line `#` comment saying what it fetches. Discover the current command surface with `panda --help` (and subcommand `--help`) — do not hardcode flags or subcommands from memory. For datasource availability, cite the `panda datasources list` output captured at the start. For log-derived claims, cite a `panda execute --code ...` command that re-runs the relevant `clickhouse.query("clickhouse-raw", ...)` SQL.
 
 ## Timeframe Rules
 
@@ -95,6 +108,14 @@ Before collecting data, determine which datasources have the target network.
 
    network = "<network>"
 
+   # Check currently advertised ClickHouse datasources.
+   clickhouse_datasources = clickhouse.list_datasources()
+   clickhouse_names = [
+       ds.get("name") if isinstance(ds, dict) else ds
+       for ds in clickhouse_datasources
+   ]
+   has_clickhouse_raw = "clickhouse-raw" in clickhouse_names
+
    # Check Dora
    try:
        networks = dora.list_networks()
@@ -106,27 +127,30 @@ Before collecting data, determine which datasources have the target network.
    # The same query also discovers the node (host.name) list for later use.
    has_logs = False
    hosts = []
-   try:
-       df = clickhouse.query("clickhouse-raw", """
-           SELECT DISTINCT ResourceAttributes['host.name'] AS host
-           FROM external.otel_logs
-           WHERE ResourceAttributes['network'] = {network:String}
-             AND Timestamp >= now() - INTERVAL 1 HOUR
-           ORDER BY host
-       """, {"network": network})
-       hosts = [h for h in df["host"].tolist() if h]
-       has_logs = len(hosts) > 0
-   except Exception:
-       pass
+   if has_clickhouse_raw:
+       try:
+           df = clickhouse.query("clickhouse-raw", """
+               SELECT DISTINCT ResourceAttributes['host.name'] AS host
+               FROM external.otel_logs
+               WHERE ResourceAttributes['network'] = {network:String}
+                 AND Timestamp >= now() - INTERVAL 1 HOUR
+               ORDER BY host
+           """, parameters={"network": network})
+           hosts = [h for h in df["host"].tolist() if h]
+           has_logs = len(hosts) > 0
+       except Exception as exc:
+           print(f"ClickHouse log discovery failed: {exc}")
 
    # Check ethnode (direct node API access)
    has_ethnode = os.environ.get("ETHPANDAOPS_ETHNODE_AVAILABLE") == "true"
 
-   print(f"has_dora={has_dora}, has_logs={has_logs}, has_ethnode={has_ethnode}")
+   print(f"clickhouse_datasources={clickhouse_datasources}")
+   print(f"has_clickhouse_raw={has_clickhouse_raw}, has_dora={has_dora}, has_logs={has_logs}, has_ethnode={has_ethnode}")
    print(f"hosts={hosts}")
    ```
 
    Record the **data profile** in the debug report:
+   - `has_clickhouse_raw: true/false`
    - `has_dora: true/false`
    - `has_logs: true/false`
    - `has_ethnode: true/false`
@@ -134,19 +158,27 @@ Before collecting data, determine which datasources have the target network.
 
    **Routing rules:**
    - If the network is not found in **any** datasource → report to the user that the network doesn't exist in any known datasource and **stop**.
-   - `has_dora = true` → Phase 1 (Dora) runs normally.
+   - `has_clickhouse_raw = false` → Phase 2 cannot use hosted OTel logs; note the missing datasource and rely on Dora/Prometheus/ethnode only.
+   - `has_dora = true` → Phase 1 (Dora) runs normally. If Dora's calls then panic/500 on the recent epochs (common on a badly degraded network), apply Dora-tolerance: keep what succeeded and fall through to the Phase 1 RPC baseline (see Phase 1).
    - `has_dora = false` → **Skip Phase 1 entirely.** Note in the debug report that Dora is unavailable. If `has_ethnode = true`, use ethnode to build a basic network baseline before proceeding to Phase 2 — query head slots, finality checkpoints, and sync status across discovered nodes to approximate what Dora would have provided (see Phase 1 fallback below).
    - `has_logs = false` → Phase 2 is limited; note that log investigation is unavailable.
    - `has_ethnode = true` → Direct node RPC queries are available in Phase 3 for hypothesis validation.
 
 ## Phase 1: Data Collection with Dora
 
+**Dora is the primary starting point** — it scales to large networks and years of operational practice back it. Start here whenever `has_dora = true`.
+
 **Skip this phase if Phase 0 determined `has_dora = false`.** If `has_ethnode = true`, use the ethnode module (`search(type="examples", query="ethnode")` for patterns) to build a partial baseline instead. Then proceed to Phase 2.
+
+**Dora-tolerance — a Dora call that errors is itself a signal, not a dead end.** Dora's epoch/overview endpoints can return `HTTP 500: PANIC: ... integer divide by zero` precisely when a network is badly degraded — non-finalizing or zero-participation epochs hit a divide-by-zero in Dora's participation math. **Wrap every Dora call in try/except.** If `get_network_overview` / `get_epoch` panic or error for the recent epochs, do NOT abort the investigation: note the failure (and the panic message — it corroborates "near-zero participation / no finality") in the debug report, then **fall through to the RPC baseline below** (treat it like `has_dora = false` for the failing calls) while still using any Dora calls that did succeed. Keep Dora as the default first move; only fall back on the calls that actually fail.
 
 1. **Collect all Dora data** - In a single step, gather all network data and append raw responses to the debug report. You MAY combine these into one `execute_python` call:
 
    - **Network overview** — use `search(type="examples", query="network overview")` for the pattern. Note: `current_slot` is `epoch * 32` (epoch's first slot), not actual head slot.
-   - **Network forks** — use `search(type="examples", query="network splits")`. Query the Dora `/forks` endpoint (with `Accept: application/json` header) to detect splits. A healthy network has one fork.
+   - **Network forks (split detection)** — two complementary checks:
+     - **Dora `/forks`** gives Dora's authoritative fork list in one call. The `search(type="examples", query="network splits")` httpx pattern works from the sandbox **but you must send a browser `User-Agent`** — hosted Dora is behind Cloudflare, which returns `403 Error 1010` (browser-integrity) to default Python/`httpx`/`urllib` UAs, even though the URL opens fine in a browser. Add `headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0 ..."}` (see the query skill's Dora "Direct HTTP calls" note). The `dora.*` module functions need no UA — they route through the server.
+     - **ethnode head-root sweep** (the Phase 1 RPC baseline below) is the cross-check, and works without internet egress: compare `get_beacon_headers` roots across all nodes — divergent roots at the same slot, or clusters stuck on different roots, mean a split.
+     A healthy network has one fork / one head root.
    - **Epoch details** — use `search(type="examples", query="epoch summary")`. Iterate through ~9 epochs per hour across the active timeframe. **Always start from head epoch - 1** (the most recent completed epoch) — the head epoch is still in progress and will show artificially low participation. You SHOULD also check the head epoch, but treat its data as preliminary. Use try/except per epoch.
    - **Missing proposers** — use `search(type="examples", query="missing proposers")`. Adjust `slot_lookback` to match the active timeframe (~300 slots per hour).
    - **Offline attesters** — use `search(type="examples", query="offline attesters")`.
@@ -169,15 +201,33 @@ Before collecting data, determine which datasources have the target network.
 
    **If Dora shows a healthy network** (no splits, finality on track, high participation, no offline nodes) but the user reports issues, present the healthy baseline to the user and ask them for more details about what they're observing. You MAY proceed to log investigation only if you have a specific target — otherwise let the user guide the next step.
 
+### Phase 1 fallback — RPC baseline (no Dora, or Dora calls failed)
+
+When `has_dora = false`, or when Dora-tolerance kicked in and the Dora epoch/overview calls panicked, build the baseline directly from the nodes (requires `has_ethnode = true`; use `search(type="examples", query="ethnode")` for patterns). Sweep every discovered host and compare:
+- `get_beacon_headers` → head slot + head root (do the roots agree? → split detection)
+- `get_finality_checkpoints` → finalized / justified epoch (is finality advancing, and is it the same across nodes?)
+- `get_node_syncing` → `is_syncing` + `sync_distance`
+
+**Interpreting `sync_distance` (do this explicitly — it is the difference between a split and a healthy spread):** a node's estimated wall-clock slot is `head_slot + sync_distance`. Compute it for every node and take the max as the network's wall-clock slot.
+- All nodes `is_syncing = false`, `sync_distance ≈ 0`, head slots within 1–2 of each other → **healthy** (the small spread is just block propagation, not a split).
+- Most nodes stuck tens of thousands of slots back with large `sync_distance` while one or few keep up → those nodes **cannot follow the chain** (wedged at a divergence block); this is the signature of a split / stalled network, not normal lag.
+- `finalized` epoch identical and far behind the wall-clock epoch on **all** nodes (including any that are at the tip) → **finality is stalled** network-wide; the stall epoch (`finalized * 32`) is your divergence-centred timeframe (see Timeframe Rules).
+
+Append the table and your read of it to the debug report, then proceed to Phase 2.
+
 ## Phase 2: Log Investigation with ClickHouse (`external.otel_logs`)
 
 Use Dora findings (if available) to target specific nodes. With logs only (no Dora), start from the `hosts` list discovered in Phase 0 to identify which nodes have issues. **Always filter by `ResourceAttributes['network']` and `Timestamp`** — unfiltered queries scan everything and may time out. All queries go through `clickhouse.query("clickhouse-raw", ...)` against `external.otel_logs`; see the query skill's log section for the full schema and severity-matching details.
 
 **Use the same active timeframe** established in the Timeframe Rules section above.
 
+**⚠️ ANSI stripping is for bounded queries only.** These log lines are terminal-coloured, so severity matching must strip ANSI escapes in a `clean` CTE first (`replaceRegexpAll(Body, '\x1b\[[0-9;?]*[A-Za-z]', '')`). But wrapping `Body` in a function disables the `idx_body` skip-index and forces a per-row regex rewrite, the table's primary key is led by `IngressUser` (not network/host), and data older than 7 days is on S3 — so a stripped-`Body` regex over a wide or multi-day window degrades to a full scan over object storage. **Always pair the strip with a `host.name` filter, a tight `Timestamp` window, and a `LIMIT`.** Never run a stripped-`Body` regex across all hosts or a multi-day range — narrow to the suspect host/time first (from the RPC/Dora baseline), then strip within that slice. Pass the SQL as a raw string (`r"""`) so `\b`/`\x1b` reach ClickHouse intact.
+
 **Node naming:** Most nodes follow `<cl>-<el>-<tier>-<n>` (e.g. `lighthouse-geth-super-1` → CL lighthouse, EL geth), but devnets also include bootnodes, MEV relays, and other non-paired nodes (`bootnode-1`, `mev-relay-1`) that do NOT match this pattern. Never derive node names from the convention — always use the `hosts` list discovered in Phase 0 (or Dora's `/v1/clients/consensus`).
 
-**CL vs EL — important difference from Loki:** there is no `ethereum_cl` / `ethereum_el` label. A node VM runs the CL, EL, validator, and sidecar containers together; their logs are separated only by `LogAttributes['log.file.name']` (a per-container json-log file, named by hash). To investigate one client on a node, first discover its containers (step 3) and identify the CL/EL container by its log-line format, then filter on that log file. To sweep a client type across the network, filter on `host.name` (e.g. `host.name LIKE 'lighthouse-%'` for lighthouse-CL nodes, or `host.name LIKE '%-geth-%'` for geth-EL nodes) — but remember the result still mixes that node's CL/EL/sidecar lines.
+**Exclude `bootnode-1` from cross-host error triage by default.** Bootnodes dominate any multi-host severity sweep with p2p noise — `Ping` deserialization errors, `ENR missing IP`, connection-refused/timeout churn — that is essentially never the root cause and crowds out the real client errors. Add `AND ResourceAttributes['host.name'] != 'bootnode-1'` to any query that spans more than one host (the per-host queries below already pin a single `host.name`, so they are unaffected). Only investigate the bootnode directly if discovery/peering itself is the suspected problem.
+
+**CL vs EL in ClickHouse OTel logs:** there is no `ethereum_cl` / `ethereum_el` label. A node VM runs the CL, EL, validator, and sidecar containers together; their logs are separated only by `LogAttributes['log.file.name']` (a per-container json-log file, named by hash). To investigate one client on a node, first discover its containers (step 3) and identify the CL/EL container by its log-line format, then filter on that log file. To sweep a client type across the network, filter on `host.name` (e.g. `host.name LIKE 'lighthouse-%'` for lighthouse-CL nodes, or `host.name LIKE '%-geth-%'` for geth-EL nodes) — but remember the result still mixes that node's CL/EL/sidecar lines.
 
 **You SHOULD start with the consensus layer (CL).** Most devnet issues originate at the CL level. Only investigate EL logs if CL logs point to execution-side problems (e.g. payload validation errors, engine API failures).
 
@@ -189,11 +239,12 @@ Use Dora findings (if available) to target specific nodes. With logs only (no Do
    network = "<network>"
    host = "<host.name>"
 
-   df = clickhouse.query("clickhouse-raw", """
+   df = clickhouse.query("clickhouse-raw", r"""
+       WITH replaceRegexpAll(Body, '\x1b\[[0-9;?]*[A-Za-z]', '') AS clean
        SELECT
          LogAttributes['log.file.name'] AS container_log,
          count() AS lines,
-         any(substring(Body, 1, 120)) AS sample
+         any(substring(clean, 1, 120)) AS sample
        FROM external.otel_logs
        WHERE ResourceAttributes['network'] = {network:String}
          AND ResourceAttributes['host.name'] = {host:String}
@@ -206,7 +257,7 @@ Use Dora findings (if available) to target specific nodes. With logs only (no Do
 
    Identify the client from each `sample` log format (e.g. lighthouse `MMM DD HH:MM:SS.mmm LEVEL ...`, geth `LEVEL [MM-DD|HH:MM:SS.mmm] ...`, prysm `level=... msg=...`). Append the node→container map to the debug report.
 
-4. **Fetch CL errors first (CRIT/ERR)** - For each problematic node (or all CL nodes when there is no Dora target), fetch the most severe lines. `SeverityText` is usually empty for these Docker logs, so match severity on the raw `Body`:
+4. **Fetch CL errors first (CRIT/ERR)** - For each problematic node (or all CL nodes when there is no Dora target), fetch the most severe lines. `SeverityText` is usually empty for these Docker logs, so match severity on the raw `Body` — but **anchor on the LEVEL token, do not substring-match "error"** (a bare `(?i)error` returns tens of thousands of benign DEBUG lines on a healthy network). Match the uppercase level token (case-sensitively) or logfmt `level=error`, and exclude DEBUG/TRACE. See the query skill's "Severity triage" section for the full per-client level vocab:
 
    ```python
    from ethpandaops import clickhouse
@@ -214,16 +265,19 @@ Use Dora findings (if available) to target specific nodes. With logs only (no Do
    network = "<network>"
    host = "<host.name>"
 
-   df = clickhouse.query("clickhouse-raw", """
+   df = clickhouse.query("clickhouse-raw", r"""
+       WITH replaceRegexpAll(Body, '\x1b\[[0-9;?]*[A-Za-z]', '') AS clean
        SELECT
          Timestamp,
          ResourceAttributes['host.name'] AS host,
          LogAttributes['log.file.name'] AS container_log,
-         Body
+         clean AS Body
        FROM external.otel_logs
        WHERE ResourceAttributes['network'] = {network:String}
          AND ResourceAttributes['host.name'] = {host:String}
-         AND match(Body, '(?i)(crit|err|error|fatal)')
+         -- error-class LEVEL token only, matched on the ANSI-stripped line (uppercase token, nimbus 3-letter, or logfmt level=)
+         AND match(clean, '(^|[][ |])(CRIT|ERRO|ERROR|FATAL|PANIC)($|[][ |:])|^(ERR|FAT)\b|\blevel=(crit|error|fatal|panic)\b')
+         AND NOT match(clean, '(^|[][ |])(DEBUG|DBG|TRACE|TRC)($|[][ |:])|\blevel=(debug|trace)\b')
          AND Timestamp >= now() - INTERVAL 1 HOUR
        ORDER BY Timestamp DESC
        LIMIT 200
@@ -233,7 +287,7 @@ Use Dora findings (if available) to target specific nodes. With logs only (no Do
 
    Once you have identified the CL container's log file (step 3), add `AND LogAttributes['log.file.name'] = {container:String}` to isolate the CL client's lines from the EL and sidecars on the same node.
 
-   To sweep a CL client type across the whole network instead of one node, replace the host filter with `AND ResourceAttributes['host.name'] LIKE {cl_prefix:String}` and pass e.g. `{"cl_prefix": "lighthouse-%"}`.
+   To sweep a CL client type across the whole network instead of one node, replace the host filter with `AND ResourceAttributes['host.name'] LIKE {cl_prefix:String}` (and add `AND ResourceAttributes['host.name'] != 'bootnode-1'` per the bootnode-exclusion note above) and pass e.g. `{"cl_prefix": "lighthouse-%"}`. This is a wider scan with the ANSI strip in play — keep the `Timestamp` window short (≤1h) and the `LIMIT` tight, and prefer drilling into individual hosts once you have a target. Do not widen this to all hosts over a multi-day range.
 
    If multiple nodes are erroring, query each one. Look for common error patterns across nodes — the same error across nodes of one client type points to a client bug.
 
@@ -253,7 +307,7 @@ Use Dora findings (if available) to target specific nodes. With logs only (no Do
    - **CL clean but EL errors** → EL struggling but CL compensating; monitor but may not be primary cause
    - **Both layers erroring** → shared dependency (disk, memory, network) or cascading failure
 
-6. **Escalate to WARN/INFO if needed** - If CRIT/ERR lines are empty or inconclusive at both CL and EL, broaden the `Body` pattern to include `warn`, then drop the severity filter entirely for INFO/DEBUG. Unfiltered-severity queries are verbose — keep a tight `Timestamp` window and a `LIMIT`, and they may still time out.
+6. **Escalate to WARN/INFO if needed** - If CRIT/ERR lines are empty or inconclusive at both CL and EL, add the WARN level token to the anchored pattern (`WARN`/`WRN` and `level=warn`), then drop the severity filter entirely for INFO/DEBUG. Unfiltered-severity queries are verbose — keep a tight `Timestamp` window and a `LIMIT`, and they may still time out.
 
 7. **Correlate logs with Dora timeline** - **Only applicable when Dora data exists (Phase 1 ran).** You SHOULD match log timestamps against the Dora data:
    - When did errors start relative to missed slots or participation drops?
@@ -288,8 +342,8 @@ Use Dora findings (if available) to target specific nodes. With logs only (no Do
 **If the ethnode module is available**, use direct node RPC queries via `from ethpandaops import ethnode` to validate hypotheses and gather concrete proof. Use `search(type="examples", query="ethnode")` for API patterns. Target the instances discovered in Phase 0 or identified as problematic in Phases 1–2.
 
 **When to use RPC:**
-- **Network split suspected** → compare head slots/roots and finality checkpoints across nodes
-- **Node offline/stuck** → check sync status and peer counts
+- **Network split suspected** → compare head slots/roots and finality checkpoints across nodes (same sweep as the Phase 1 RPC baseline; read `sync_distance` per its interpretation there — `head_slot + sync_distance ≈ wall-clock slot`)
+- **Node offline/stuck** → check sync status and peer counts; a large `sync_distance` that is not shrinking means the node is wedged, not merely catching up
 - **Verifying a hypothesis** → query nodes directly via `beacon_get` / `execution_rpc`
 - **Finality stalled** → compare finality checkpoints across all nodes
 
