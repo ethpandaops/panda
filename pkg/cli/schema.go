@@ -27,9 +27,9 @@ to see the available cluster names.
 
 Examples:
   panda schema
-  panda schema xatu
-  panda schema xatu mainnet
-  panda schema xatu mainnet fct_block_head
+  panda schema clickhouse-raw
+  panda schema clickhouse-raw mainnet
+  panda schema clickhouse-refined mainnet fct_block_head
   panda schema --json`,
 	Args: cobra.MaximumNArgs(3),
 	RunE: runSchema,

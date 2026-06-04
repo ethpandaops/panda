@@ -166,7 +166,7 @@ Use the autodiscovered `local-kurtosis` ClickHouse datasource. The local OTel ta
 Useful schema fields:
 - `otel.otel_logs`: `Timestamp DateTime64(9)`, `ServiceName LowCardinality(String)`, `Body String`, `SeverityText LowCardinality(String)`, `SeverityNumber UInt8`, `EnclaveName LowCardinality(String)`, `EnclaveUuid`, `ResourceAttributes Map(LowCardinality(String), String)`, `LogAttributes Map(LowCardinality(String), String)`
 
-**Always filter by `EnclaveName`** (and `ServiceName` for service-level queries). The Kurtosis collector may leave `SeverityText`/`SeverityNumber` empty, so severity comes from `Body` — which is terminal-coloured. **Strip ANSI in a `clean` CTE, then anchor on the LEVEL token — don't substring-match "error"** (a bare `(?i)error` matches tens of thousands of benign DEBUG lines; an un-stripped colour-wrapped `ERROR` defeats the anchors). Match the uppercase token (case-sensitively) or `level=error` on `clean`, excluding DEBUG/TRACE (see the query skill's "Severity triage" for per-client vocab):
+**Always filter by `EnclaveName`** (and `ServiceName` for service-level queries). The Kurtosis collector may leave `SeverityText`/`SeverityNumber` empty, so severity comes from `Body` — which is terminal-coloured. **Strip ANSI in a `clean` CTE, then anchor on the LEVEL token — don't substring-match "error"** (a bare `(?i)error` matches tens of thousands of benign DEBUG lines; an un-stripped colour-wrapped `ERROR` defeats the anchors). Match the uppercase token (case-sensitively) or `level=error` on `clean`, excluding DEBUG/TRACE (per-client tokens: lighthouse `ERROR`, geth-style `ERROR [..]`, prysm `level=error`, nimbus `ERR`/`FAT`):
 
 ```sql
 -- strip ANSI first, then match the error-class LEVEL token on the cleaned line

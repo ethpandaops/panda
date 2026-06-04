@@ -1,6 +1,8 @@
 ---
 name: self-play
 description: Run schema probing self-play loop to find and fix ClickHouse schema ambiguity in the panda repo. Use when the user wants to improve query reliability by finding where the agent picks different tables for the same question.
+metadata:
+  internal: true
 ---
 
 # Self-Play Schema Probing
@@ -46,7 +48,7 @@ For each probe where `all_agreed` is false, **resolve it yourself using the actu
 3. Compare the schemas against the probe question — which table(s) actually have the columns needed to answer it?
 4. Determine the correct table set based on schema evidence
 5. If a persona chose a table that doesn't exist in `./panda schema`, it hallucinated — discard it
-6. If multiple real tables could work, prefer: fact tables (`fct_`) over canonical tables, pre-aggregated over raw, xatu-cbt over xatu for performance
+6. If multiple real tables could work, prefer: fact tables (`fct_`) over canonical tables, pre-aggregated (refined) over raw, `clickhouse-refined` over `clickhouse-raw` for performance
 
 **Only escalate to the user if** the schema genuinely doesn't disambiguate — e.g., two tables have overlapping columns and it's unclear which is the right source of truth for the question.
 
@@ -63,13 +65,13 @@ Possible fixes, in rough order of impact:
 - **Examples** (`modules/clickhouse/examples.yaml`) — add a query example showing the correct table and pattern. Best for "which table do I use for X?" ambiguities.
 - **Runbooks** (`runbooks/*.md`) — add or update a runbook with procedural guidance. Best for multi-step cross-cluster workflows.
 - **Search tool / Python API docs** — if the model can't discover the right content, the platform itself might need changes (search behavior, tool descriptions, etc).
-- **Schema comments** — if a table's purpose is unclear, the fix might be upstream in xatu-cbt, not here. Flag it.
+- **Schema comments** — if a table's purpose is unclear, the fix might be upstream in the CBT/`clickhouse-refined` pipeline, not here. Flag it.
 
 For examples specifically:
 - Put them in the appropriate category (create a new one if needed)
-- Be clear about which cluster to use (`xatu` vs `xatu-cbt`)
+- Be clear about which cluster to use (`clickhouse-raw` vs `clickhouse-refined`)
 - Include the partition key filter (`slot_start_date_time`) and network filter
-- Use `{network}` placeholder for network name in CBT tables, or `meta_network_name` filter for xatu tables
+- Use `{network}` placeholder for network name in refined/CBT tables, or `meta_network_name` filter for `clickhouse-raw` tables
 - Use hardcoded literal values (block numbers, slots) in examples — never subqueries like `SELECT max(block_number) FROM ...` that cause full table scans
 
 Read existing files before modifying them.

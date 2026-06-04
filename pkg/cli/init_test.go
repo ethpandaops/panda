@@ -169,6 +169,63 @@ func TestBuildComposeTemplate(t *testing.T) {
 	}
 }
 
+func TestImageForVersion(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		version     string
+		wantServer  string
+		wantSandbox string
+	}{
+		{
+			name:        "release version",
+			version:     "0.31.0",
+			wantServer:  "ethpandaops/panda:server-0.31.0",
+			wantSandbox: "ethpandaops/panda:sandbox-0.31.0",
+		},
+		{
+			name:        "release version with v prefix",
+			version:     "v0.31.0",
+			wantServer:  "ethpandaops/panda:server-0.31.0",
+			wantSandbox: "ethpandaops/panda:sandbox-0.31.0",
+		},
+		{
+			name:        "pre-release keeps the suffix",
+			version:     "v0.31.0-rc1",
+			wantServer:  "ethpandaops/panda:server-0.31.0-rc1",
+			wantSandbox: "ethpandaops/panda:sandbox-0.31.0-rc1",
+		},
+		{
+			name:        "dev build falls back to latest",
+			version:     "dev",
+			wantServer:  defaultServerImage,
+			wantSandbox: defaultSandboxImage,
+		},
+		{
+			name:        "unknown falls back to latest",
+			version:     "unknown",
+			wantServer:  defaultServerImage,
+			wantSandbox: defaultSandboxImage,
+		},
+		{
+			name:        "empty falls back to latest",
+			version:     "",
+			wantServer:  defaultServerImage,
+			wantSandbox: defaultSandboxImage,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tt.wantServer, serverImageForVersion(tt.version))
+			assert.Equal(t, tt.wantSandbox, sandboxImageForVersion(tt.version))
+		})
+	}
+}
+
 func TestWriteConfigFile(t *testing.T) {
 	t.Parallel()
 

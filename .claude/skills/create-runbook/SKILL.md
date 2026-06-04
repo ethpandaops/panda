@@ -2,6 +2,8 @@
 name: create-runbook
 description: Extract a reusable runbook from a successful investigation or troubleshooting session. Use after completing a multi-step diagnosis that could help future investigations.
 disable-model-invocation: true
+metadata:
+  internal: true
 ---
 
 # Create Runbook
@@ -11,7 +13,7 @@ Extract procedural knowledge from this conversation into a reusable runbook.
 ## When to use this
 
 After completing a multi-step investigation that:
-- Spanned multiple datasources (Xatu, Prometheus, Loki, Dora)
+- Spanned multiple datasources (ClickHouse, Prometheus, Dora)
 - Followed a diagnostic pattern others could reuse
 - Discovered insights that would help future investigations
 
@@ -24,7 +26,7 @@ Create a markdown file with YAML frontmatter in the `runbooks/` directory:
 name: [Imperative title, e.g., "Investigate Finality Delay"]
 description: [1-2 sentence summary for semantic search matching]
 tags: [keywords for search, 3-6 tags]
-prerequisites: [datasources needed, e.g., xatu, prometheus, dora]
+prerequisites: [datasources needed, e.g., clickhouse-raw, prometheus, dora]
 ---
 
 [Opening paragraph explaining WHEN this runbook applies and WHAT problem it solves.

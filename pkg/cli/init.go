@@ -18,15 +18,23 @@ import (
 	dockerclient "github.com/docker/docker/client"
 	"github.com/spf13/cobra"
 
+	"github.com/ethpandaops/panda/internal/version"
 	"github.com/ethpandaops/panda/pkg/config"
 	"github.com/ethpandaops/panda/pkg/configpath"
 	"github.com/ethpandaops/panda/pkg/proxy"
 )
 
 const (
-	defaultProxyURL     = "https://panda-proxy.ethpandaops.io"
-	defaultSandboxImage = "ethpandaops/panda:sandbox-latest"
-	defaultServerImage  = "ethpandaops/panda:server-latest"
+	defaultProxyURL = "https://panda-proxy.ethpandaops.io"
+
+	// imageRepo is the Docker repository for all published panda images.
+	imageRepo = "ethpandaops/panda"
+
+	// defaultSandboxImage and defaultServerImage are the floating tags used
+	// as a fallback when the running binary has no concrete release version
+	// (e.g. local dev builds).
+	defaultSandboxImage = imageRepo + ":sandbox-latest"
+	defaultServerImage  = imageRepo + ":server-latest"
 )
 
 var (
@@ -64,8 +72,8 @@ func init() {
 	initCmd.Flags().StringVar(&initDir, "dir", initDir, "target config directory")
 	initCmd.Flags().BoolVar(&initForce, "force", false, "overwrite existing config files")
 	initCmd.Flags().StringVar(&initProxyURL, "proxy-url", defaultProxyURL, "proxy URL for remote datasource access")
-	initCmd.Flags().StringVar(&initSandboxImage, "sandbox-image", defaultSandboxImage, "sandbox container image to pull")
-	initCmd.Flags().StringVar(&initServerImage, "server-image", defaultServerImage, "server container image to pull")
+	initCmd.Flags().StringVar(&initSandboxImage, "sandbox-image", sandboxImageForVersion(version.Version), "sandbox container image to pull")
+	initCmd.Flags().StringVar(&initServerImage, "server-image", serverImageForVersion(version.Version), "server container image to pull")
 	initCmd.Flags().BoolVar(&initSkipDocker, "skip-docker", false, "skip Docker check and image pull")
 	initCmd.Flags().BoolVar(&initSkipAuth, "skip-auth", false, "skip authentication step")
 	initCmd.Flags().BoolVar(&initSkipStart, "skip-start", false, "skip starting the server")
@@ -208,6 +216,39 @@ type initAuthConfig struct {
 	Mode      string
 	IssuerURL string
 	ClientID  string
+}
+
+// serverImageForVersion returns the published server image reference pinned to
+// the given release version, falling back to server-latest for dev/unknown
+// builds that have no corresponding published image.
+func serverImageForVersion(v string) string {
+	return pinnedImage("server", v, defaultServerImage)
+}
+
+// sandboxImageForVersion returns the published sandbox image reference pinned
+// to the given release version, falling back to sandbox-latest for dev/unknown
+// builds that have no corresponding published image.
+func sandboxImageForVersion(v string) string {
+	return pinnedImage("sandbox", v, defaultSandboxImage)
+}
+
+// pinnedImage builds a "<repo>:<component>-<version>" reference using the
+// published tag convention (semver without a leading "v"). It returns the
+// supplied fallback when v is not a concrete release version.
+func pinnedImage(component, v, fallback string) string {
+	tag := version.Clean(v)
+	if !isReleaseVersion(tag) {
+		return fallback
+	}
+
+	return fmt.Sprintf("%s:%s-%s", imageRepo, component, tag)
+}
+
+// isReleaseVersion reports whether v is a concrete published release version
+// (e.g. "0.31.0") rather than a "dev"/"unknown" placeholder. Published release
+// tags are semver and start with a digit.
+func isReleaseVersion(v string) bool {
+	return v != "" && v[0] >= '0' && v[0] <= '9'
 }
 
 func buildConfigTemplate(proxyURL, sandboxImage string, auth initAuthConfig) string {

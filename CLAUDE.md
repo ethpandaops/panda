@@ -209,7 +209,7 @@ sandbox:
   sessions:
     enabled: true
     ttl: 30m
-    max_sessions: 10
+    max_sessions: 50
 ```
 
 Environment variables are substituted using `${VAR_NAME}` or `${VAR_NAME:-default}` syntax.

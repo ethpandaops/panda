@@ -24,7 +24,7 @@ Hosted devnets run as Docker containers on bare-metal VMs (managed by Ansible). 
 Key fields on `external.otel_logs`:
 - `Timestamp DateTime64(9)` — always filter on this (it is the partition key).
 - `Body String` — the raw log line. The level is usually embedded here, not in `SeverityText`. **Lines are terminal-coloured — the level token is wrapped in ANSI escape codes** (`\x1b[31mERROR\x1b[0m`); strip them with a `clean` CTE on bounded queries before matching (see step 4).
-- `SeverityText LowCardinality(String)` — often EMPTY for raw Docker logs; do not rely on it. Triage severity by stripping ANSI then matching the **LEVEL token** in the cleaned line, not the bare word "error" (see the query skill's "Severity triage" section and step 4 below — a substring match returns tens of thousands of benign DEBUG lines on a healthy network).
+- `SeverityText LowCardinality(String)` — often EMPTY for raw Docker logs; do not rely on it. Triage severity by stripping ANSI then matching the **LEVEL token** in the cleaned line, not the bare word "error" (see step 4 below — a substring match returns tens of thousands of benign DEBUG lines on a healthy network).
 - `ServiceName` — empty for these VM/Docker logs (the `k8s.*` materialized columns are also empty — those only apply to Kubernetes platform logs).
 - `ResourceAttributes Map(String, String)` — node identity. Keys: `network` (devnet name), `host.name` (the node, e.g. `lighthouse-geth-super-1`), `ingress_user`, `deployment.environment`.
 - `LogAttributes Map(String, String)` — per-line attributes. Keys include `log.file.name` / `log.file.path` (the Docker container json-log file — one per container on the node), `container_id`, plus any structured fields the client emits (`level`, `msg`, `component`, ...).
@@ -214,7 +214,7 @@ Append the table and your read of it, then proceed to Phase 2.
 
 ## Phase 2: Log Investigation with ClickHouse (`external.otel_logs`)
 
-Use Dora findings (if available) to target specific nodes. With logs only (no Dora), start from the `hosts` list discovered in Phase 0 to identify which nodes have issues. **Always filter by `ResourceAttributes['network']` and `Timestamp`** — unfiltered queries scan everything and may time out. All queries go through `clickhouse.query("clickhouse-raw", ...)` against `external.otel_logs`; see the query skill's log section for the full schema and severity-matching details.
+Use Dora findings (if available) to target specific nodes. With logs only (no Dora), start from the `hosts` list discovered in Phase 0 to identify which nodes have issues. **Always filter by `ResourceAttributes['network']` and `Timestamp`** — unfiltered queries scan everything and may time out. All queries go through `clickhouse.query("clickhouse-raw", ...)` against `external.otel_logs`; see **How Devnet Logs Flow** above for the full schema and severity-matching details.
 
 **Use the same active timeframe** established in the Timeframe Rules section above.
 
@@ -254,7 +254,7 @@ Use Dora findings (if available) to target specific nodes. With logs only (no Do
 
    Identify the client from each `sample` log format (e.g. lighthouse `MMM DD HH:MM:SS.mmm LEVEL ...`, geth `LEVEL [MM-DD|HH:MM:SS.mmm] ...`, prysm `level=... msg=...`). Append the node→container map to the debug report.
 
-4. **Fetch CL errors first (CRIT/ERR)** - For each problematic node (or all CL nodes when there is no Dora target), fetch the most severe lines. `SeverityText` is usually empty for these Docker logs, so match severity on the raw `Body` — but **anchor on the LEVEL token, do not substring-match "error"** (a bare `(?i)error` returns tens of thousands of benign DEBUG lines on a healthy network). Match the uppercase level token (case-sensitively) or logfmt `level=error`, and exclude DEBUG/TRACE. See the query skill's "Severity triage" section for the full per-client level vocab:
+4. **Fetch CL errors first (CRIT/ERR)** - For each problematic node (or all CL nodes when there is no Dora target), fetch the most severe lines. `SeverityText` is usually empty for these Docker logs, so match severity on the raw `Body` — but **anchor on the LEVEL token, do not substring-match "error"** (a bare `(?i)error` returns tens of thousands of benign DEBUG lines on a healthy network). Match the uppercase level token (case-sensitively) or logfmt `level=error`, and exclude DEBUG/TRACE. Per-client LEVEL tokens: lighthouse `ERROR`; geth/nethermind/erigon/reth/besu `ERROR [..]` or `|ERROR|`; prysm `[ts] ERROR` / `level=error`; nimbus `ERR`/`FAT` at line start; lodestar `level=error`:
 
    ```python
    from ethpandaops import clickhouse

@@ -164,13 +164,18 @@ panda execute --code 'print("hello")'      # Run Python in the sandbox
 
 ### Skills
 
-Install [agent skills](https://github.com/anthropics/skills) for AI coding assistants:
+Install [agent skills](https://github.com/vercel-labs/skills) for AI coding assistants:
 
 ```bash
-npx skills add ethpandaops/panda              # all skills
+npx skills add ethpandaops/panda              # the user-facing skills
 npx skills add ethpandaops/panda --skill install-mcp    # register panda as an MCP server
 npx skills add ethpandaops/panda --skill install-panda  # installation guide
 ```
+
+The user-facing skills are `install-panda`, `install-mcp`, `query`, and `investigate`.
+The repo-contributor skills (`self-play`, `create-runbook`, `create-module`) are marked
+`metadata.internal: true`, so they stay in this repo for development and are excluded
+from `npx skills add` unless you set `INSTALL_INTERNAL_SKILLS=1`.
 
 ### Auth
 

@@ -27,7 +27,7 @@ sandbox:
   #   enabled: true
   #   ttl: 30m          # idle timeout (default: 30m)
   #   max_duration: 4h  # absolute max session lifetime (default: 4h)
-  #   max_sessions: 10  # max concurrent sessions (default: 10)
+  #   max_sessions: 50  # max concurrent sessions (default: 50)
 
 # Local file storage for sandbox outputs (charts, CSVs, etc.).
 # Files persist on disk and are served by the server's HTTP API.

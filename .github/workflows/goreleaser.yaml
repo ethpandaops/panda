@@ -55,13 +55,17 @@ jobs:
       - name: Build and push sandbox image
         run: |
           TAG=${GITHUB_REF#refs/tags/}
+          # Strip the leading "v" so sandbox tags match goreleaser's
+          # {{ .Version }} convention used for the server and proxy images
+          # (e.g. sandbox-0.31.0, not sandbox-v0.31.0).
+          VERSION=${TAG#v}
           SHORT_SHA=${GITHUB_SHA::7}
           LATEST_TAG=${{ steps.meta.outputs.latest_tag }}
 
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --file sandbox/Dockerfile \
-            --tag "ethpandaops/panda:sandbox-${TAG}" \
-            --tag "ethpandaops/panda:sandbox-${TAG}-${SHORT_SHA}" \
+            --tag "ethpandaops/panda:sandbox-${VERSION}" \
+            --tag "ethpandaops/panda:sandbox-${VERSION}-${SHORT_SHA}" \
             --tag "ethpandaops/panda:sandbox-${LATEST_TAG}" \
             --push .
