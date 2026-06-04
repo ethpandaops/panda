@@ -1,16 +1,20 @@
 """ethpandaops data access library for Ethereum network analytics.
 
 This library provides direct access to Ethereum network data:
-- ClickHouse: Raw and aggregated blockchain data
+- ClickHouse: Raw and aggregated blockchain data — including container logs
+  (hosted devnet / platform logs live in external.otel_logs)
 - Prometheus: Infrastructure metrics
-- Loki: Log data
+- Ethnode: Direct Ethereum node RPC (beacon + execution)
 - Storage: S3-compatible file storage for outputs
+- Loki: log datasource, present only when a deployment advertises one
+  (on ethpandaops infra, devnet logs are in ClickHouse external.otel_logs, not Loki —
+  check list_datasources() to see what's actually available)
 
 Use list_datasources() on each module to discover available datasources or
 check the datasources://list MCP resource.
 
 Example usage:
-    from ethpandaops import clickhouse, prometheus, loki, storage
+    from ethpandaops import clickhouse, prometheus, ethnode, storage
 
     # List available ClickHouse clusters
     clusters = clickhouse.list_datasources()

@@ -9,13 +9,22 @@ The first step in debugging a local devnet is discovering what tooling is availa
 
 **The user MUST specify which enclave to debug.** Do NOT assume an enclave — if the user hasn't specified one, ask them before proceeding. You can discover running enclaves with `kurtosis enclave ls`.
 
-**Local devnets do NOT use the hosted ClickHouse datasources.** For logs, only use `clickhouse.query("local-kurtosis", ...)` when the `local-kurtosis` ClickHouse datasource is discovered. Do not use the hosted `clickhouse-raw`/`clickhouse-refined` datasources for local Kurtosis logs.
+**Local devnets do NOT use the hosted ClickHouse datasources.** Start by capturing `panda datasources`, then only use `clickhouse.query("local-kurtosis", ...)` for logs when the `local-kurtosis` ClickHouse datasource is discovered. Do not use the hosted `clickhouse-raw`/`clickhouse-refined` datasources for local Kurtosis logs.
 
 Refer to the query skill for general API usage patterns (Dora overview, ClickHouse queries, direct HTTP calls, Dora link generation, etc.). This runbook only covers the debugging-specific procedure and API calls not in the skill.
 
 ## How OTel Logs Flow
 
-Kurtosis devnet services emit logs to the devnet's `otel-collector`. The collector writes them into the Kurtosis ClickHouse service on HTTP port `18123`, database `otel`, table `otel_logs`. Panda starts an in-process local proxy that autodiscovers this ClickHouse when `/ping` returns `Ok.` and the `otel` database exists, then exposes it as the `local-kurtosis` ClickHouse datasource. Query it with SQL, always filtering by `EnclaveName` because one local ClickHouse can hold logs from multiple devnets.
+Kurtosis devnet services emit logs to the devnet's `otel-collector`. The collector writes them into the Kurtosis ClickHouse service on HTTP port `18123`, database `otel`, table `otel_logs`. Panda starts an in-process local proxy that autodiscovers this ClickHouse when `/ping` returns `Ok.` and the `otel` database exists, then exposes it as the `local-kurtosis` ClickHouse datasource. Query it with SQL, always filtering by `EnclaveName` because one local ClickHouse can hold logs from multiple devnets. If `local-kurtosis` is absent from the advertised datasources, treat ClickHouse logs as unavailable and use the `kurtosis service logs` fallback.
+
+## Sandbox Session
+
+Each `execute_python` / `panda execute` call spins up a **fresh** sandbox unless you pin one session — so `/workspace` (and the debug report) is empty each step, and you can hit the 10-session limit mid-investigation. **Create one session at the start, reuse it for every step, destroy it at the end:**
+
+- **CLI:** `panda session create`, then pass `--session <id>` to every `panda execute`; `panda session destroy <id>` when done.
+- **MCP:** create/select a session with `manage_session` and pass it to every `execute_python` call.
+
+This is also what makes the `/workspace` debug report (next section) persist across steps.
 
 ## Debug Report
 
@@ -80,7 +89,7 @@ Before collecting data, determine what tooling is available in the Kurtosis encl
    - **Prometheus** (metrics): look for services containing `prometheus` in the enclave inspect output. If present, note its port.
    - Any other observability or debugging services the user may have included.
 
-   Example datasource check:
+   Example datasource check. Also capture `panda datasources` outside the sandbox and append that raw output to the debug report so the user can verify which datasource names were advertised:
    ```python
    from ethpandaops import clickhouse
 
@@ -90,6 +99,7 @@ Before collecting data, determine what tooling is available in the Kurtosis encl
        for ds in clickhouse_datasources
    ]
    has_otel_clickhouse = "local-kurtosis" in clickhouse_names
+   print(f"has_otel_clickhouse={has_otel_clickhouse}")
    print(clickhouse_datasources)
    ```
 
@@ -110,12 +120,21 @@ Before collecting data, determine what tooling is available in the Kurtosis encl
 
 ## Phase 1: Data Collection with Dora
 
-**Skip this phase if Phase 0 determined `has_dora = false`.** Instead, build a baseline by querying the CL and EL nodes directly via their localhost ports from enclave inspect. For each CL node, fetch `/eth/v1/node/syncing`, `/eth/v1/beacon/headers/head`, and `/eth/v1/beacon/states/head/finality_checkpoints`. For each EL node, call `eth_blockNumber` and `eth_syncing` via JSON-RPC. Compare head slots/roots across nodes to detect splits, and check finality checkpoints. Append results to the debug report, then proceed to Phase 2.
+**Dora is the primary starting point** when present in the enclave — start there whenever `has_dora = true`.
+
+**Skip this phase if `has_dora = false`.** Instead, build a baseline from the nodes directly via their localhost ports: per CL node fetch `/eth/v1/node/syncing`, `/eth/v1/beacon/headers/head`, `/eth/v1/beacon/states/head/finality_checkpoints`; per EL node call `eth_blockNumber` + `eth_syncing`. Compare head slots/roots (splits) and finality, append to the report, then go to Phase 2.
+
+**Dora-tolerance:** Dora's epoch/overview endpoints can return `HTTP 500: PANIC: ... integer divide by zero` exactly when a network is degraded (non-finalizing / zero-participation epochs hit a divide-by-zero). **Wrap every Dora call in try/except.** On a panic, note it (it corroborates near-zero participation / no finality) and fall through to the direct CL/EL baseline above for the failing calls, keeping any that succeeded.
+
+**Read `sync_distance` explicitly** — it separates a split from a healthy spread. Wall-clock slot ≈ `head_slot + sync_distance`; take the max across nodes as the network wall-clock slot.
+- All `is_syncing = false`, `sync_distance ≈ 0`, head slots within 1–2 → **healthy** (propagation spread, not a split).
+- Most nodes stuck far back with large `sync_distance` while a few keep up → those nodes **can't follow the chain** (wedged at a divergence block) → split / stalled, not normal lag.
+- `finalized` identical and far behind wall-clock on **all** nodes → **finality stalled** network-wide; the stall epoch (`finalized * 32`) is your divergence-centred timeframe.
 
 1. **Collect all Dora data** - If Dora is available in the enclave, query it via its localhost port. In a single step, gather all network data and append raw responses to the debug report. You MAY combine these into one `execute_python` call:
 
    - **Network overview** — use `search(type="examples", query="network overview")` for the pattern. Note: `current_slot` is `epoch * 32` (epoch's first slot), not actual head slot.
-   - **Network forks** — use `search(type="examples", query="network splits")`. Query the Dora `/forks` endpoint (with `Accept: application/json` header) to detect splits. A healthy network has one fork.
+   - **Network forks (split detection)** — **the reliable check is the node head-root sweep** (Phase 1 fallback below): compare `/eth/v1/beacon/headers/head` roots across CL nodes; divergent roots at the same slot mean a split. Dora `/forks` also reports forks, but the `search(type="examples", query="network splits")` httpx pattern only works if the local Dora port is reachable from your execution context — if it errors, fall back to the head-root sweep rather than assuming "no split." Healthy = one fork / one head root.
    - **Epoch details** — use `search(type="examples", query="epoch summary")`. Iterate through ~9 epochs per hour across the active timeframe. **Always start from head epoch - 1** (the most recent completed epoch) — the head epoch is still in progress and will show artificially low participation. You SHOULD also check the head epoch, but treat its data as preliminary since the epoch may not be finished — it is still useful for identifying offline proposers in recent slots. You SHOULD use try/except per epoch to handle failures without crashing.
    - **Missing proposers** — use `search(type="examples", query="missing proposers")`. Adjust `slot_lookback` to match the active timeframe (~300 slots per hour).
    - **Offline attesters** — use `search(type="examples", query="offline attesters")`.
@@ -147,7 +166,18 @@ Use the autodiscovered `local-kurtosis` ClickHouse datasource. The local OTel ta
 Useful schema fields:
 - `otel.otel_logs`: `Timestamp DateTime64(9)`, `ServiceName LowCardinality(String)`, `Body String`, `SeverityText LowCardinality(String)`, `SeverityNumber UInt8`, `EnclaveName LowCardinality(String)`, `EnclaveUuid`, `ResourceAttributes Map(LowCardinality(String), String)`, `LogAttributes Map(LowCardinality(String), String)`
 
-**Always filter by `EnclaveName` once you know it.** For service-level log queries, also filter by `ServiceName`. The Kurtosis OTel collector may leave `SeverityText` and `SeverityNumber` empty, so severity triage must use `match(Body, ...)` on the raw log line. Use the same active timeframe established in the Timeframe Rules section above.
+**Always filter by `EnclaveName`** (and `ServiceName` for service-level queries). The Kurtosis collector may leave `SeverityText`/`SeverityNumber` empty, so severity comes from `Body` — which is terminal-coloured. **Strip ANSI in a `clean` CTE, then anchor on the LEVEL token — don't substring-match "error"** (a bare `(?i)error` matches tens of thousands of benign DEBUG lines; an un-stripped colour-wrapped `ERROR` defeats the anchors). Match the uppercase token (case-sensitively) or `level=error` on `clean`, excluding DEBUG/TRACE (per-client tokens: lighthouse `ERROR`, geth-style `ERROR [..]`, prysm `level=error`, nimbus `ERR`/`FAT`):
+
+```sql
+-- strip ANSI first, then match the error-class LEVEL token on the cleaned line
+WITH replaceRegexpAll(Body, '\x1b\[[0-9;?]*[A-Za-z]', '') AS clean
+... WHERE <enclave> AND <service> AND <tight time window>
+  AND match(clean, '(^|[][ |])(CRIT|ERRO|ERROR|FATAL|PANIC)($|[][ |:])|^(ERR|FAT)\b|\blevel=(crit|error|fatal|panic)\b')
+  AND NOT match(clean, '(^|[][ |])(DEBUG|DBG|TRACE|TRC)($|[][ |:])|\blevel=(debug|trace)\b')
+... LIMIT 200
+```
+
+Pass SQL as a raw string (`r"""`) so `\b`/`\x1b` survive (a normal string turns `\b` into a backspace byte). The strip wraps `Body`, so keep queries bounded — `EnclaveName` + `ServiceName` + tight `Timestamp` window + `LIMIT`; don't run a stripped-`Body` regex over a wide/multi-day range. Use the active timeframe from Timeframe Rules.
 
 **FIRST: discover enclaves present in the OTel logs table**
 ```python
@@ -191,15 +221,17 @@ from ethpandaops import clickhouse
 
 enclave = "<enclave-name>"
 
-cl_errors = clickhouse.query("local-kurtosis", """
+cl_errors = clickhouse.query("local-kurtosis", r"""
+    WITH replaceRegexpAll(Body, '\x1b\[[0-9;?]*[A-Za-z]', '') AS clean
     SELECT
       Timestamp,
       ServiceName,
-      Body
+      clean AS Body
     FROM otel.otel_logs
     WHERE EnclaveName = {enclave:String}
       AND ServiceName LIKE 'cl-%'
-      AND match(Body, '(?i)(crit|err|error|fatal)')
+      AND match(clean, '(^|[][ |])(CRIT|ERRO|ERROR|FATAL|PANIC)($|[][ |:])|^(ERR|FAT)\b|\blevel=(crit|error|fatal|panic)\b')
+      AND NOT match(clean, '(^|[][ |])(DEBUG|DBG|TRACE|TRC)($|[][ |:])|\blevel=(debug|trace)\b')
       AND Timestamp >= now() - INTERVAL 1 HOUR
     ORDER BY Timestamp DESC
     LIMIT 200
@@ -214,15 +246,17 @@ from ethpandaops import clickhouse
 enclave = "<enclave-name>"
 service = "<service-name>"
 
-service_logs = clickhouse.query("local-kurtosis", """
+service_logs = clickhouse.query("local-kurtosis", r"""
+    WITH replaceRegexpAll(Body, '\x1b\[[0-9;?]*[A-Za-z]', '') AS clean
     SELECT
       Timestamp,
       ServiceName,
-      Body
+      clean AS Body
     FROM otel.otel_logs
     WHERE EnclaveName = {enclave:String}
       AND ServiceName = {service:String}
-      AND match(Body, '(?i)(crit|err|error|fatal)')
+      AND match(clean, '(^|[][ |])(CRIT|ERRO|ERROR|FATAL|PANIC)($|[][ |:])|^(ERR|FAT)\b|\blevel=(crit|error|fatal|panic)\b')
+      AND NOT match(clean, '(^|[][ |])(DEBUG|DBG|TRACE|TRC)($|[][ |:])|\blevel=(debug|trace)\b')
       AND Timestamp >= now() - INTERVAL 1 HOUR
     ORDER BY Timestamp DESC
     LIMIT 200
@@ -236,15 +270,18 @@ from ethpandaops import clickhouse
 
 enclave = "<enclave-name>"
 
-el_logs = clickhouse.query("local-kurtosis", """
+el_logs = clickhouse.query("local-kurtosis", r"""
+    WITH replaceRegexpAll(Body, '\x1b\[[0-9;?]*[A-Za-z]', '') AS clean
     SELECT
       Timestamp,
       ServiceName,
-      Body
+      clean AS Body
     FROM otel.otel_logs
     WHERE EnclaveName = {enclave:String}
       AND ServiceName LIKE 'el-%'
-      AND match(Body, '(?i)(crit|err|error|fatal|warn)')
+      -- error-class + WARN level token (EL triage includes warnings); excludes debug/trace
+      AND match(clean, '(^|[][ |])(CRIT|ERRO|ERROR|FATAL|PANIC|WARN|WRN)($|[][ |:])|^(ERR|FAT|WRN)\b|\blevel=(crit|error|fatal|panic|warn|warning)\b')
+      AND NOT match(clean, '(^|[][ |])(DEBUG|DBG|TRACE|TRC)($|[][ |:])|\blevel=(debug|trace)\b')
       AND Timestamp >= now() - INTERVAL 1 HOUR
     ORDER BY Timestamp DESC
     LIMIT 200
@@ -273,7 +310,7 @@ Regardless of which log source is used, follow this procedure:
 
 4. **Fetch CL logs first (CRIT/ERR)** - For each problematic node (or all CL clients if no specific targets), query CL logs at the most severe log levels.
 
-   Log level formats vary by client. In OTel logs, start with `match(Body, '(?i)(crit|err|error|fatal)')`; if needed, broaden the Body pattern to include `warn`, then INFO-level terms.
+   Log level formats vary by client. In OTel logs, anchor on the LEVEL token (uppercase token or logfmt `level=error`) and exclude DEBUG/TRACE — use the anchored pattern shown above, not a bare `(?i)error` substring. If needed, add the WARN token to the pattern, then drop the severity filter for INFO-level terms.
 
    If multiple nodes are offline, you MUST query each one. Look for common error patterns across nodes — the same error on multiple CL nodes likely points to a shared cause (CL client bug, consensus rule issue).
 
