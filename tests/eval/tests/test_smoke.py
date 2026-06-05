@@ -129,7 +129,7 @@ async def test_smoke(
         input_prompt=test_case.input,
         output=result.output,
         tool_calls=[
-            {"name": tc.name, "input": tc.input, "result": tc.result}
+            {"name": tc.name, "input": tc.input, "result": tc.result, "is_error": tc.is_error}
             for tc in result.tool_calls
         ],
         metrics=metrics_data,

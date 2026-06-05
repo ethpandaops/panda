@@ -183,6 +183,19 @@ class TraceRecorder:
                     value=metric["score"],
                     comment=f"passed={metric['passed']}",
                 )
+            # Generic agent-behavior scores as native Langfuse scores — aggregate,
+            # compare across dataset runs, and chart over commits in the UI, no custom
+            # reporting. Deliberately failure-mode-agnostic (efficiency + thrash), not a
+            # baked-in hypothesis: the "why" behind a high count is a discovery you make
+            # from the traces, not a metric we pre-encode.
+            langfuse.create_score(
+                trace_id=trace_id, name="tool_count", value=float(len(tool_calls))
+            )
+            langfuse.create_score(
+                trace_id=trace_id,
+                name="tool_errors",
+                value=float(sum(1 for tc in tool_calls if tc.get("is_error"))),
+            )
             # Collect a deep-link to this trace so CI can post it on the PR.
             try:
                 url = langfuse.get_trace_url(trace_id=trace_id)
