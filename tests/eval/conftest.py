@@ -115,6 +115,9 @@ class TraceRecorder:
         self.dataset_branch = eval_branch()
         self.dataset_run_name = eval_run_name()
         self._synced_datasets: set[str] = set()
+        # Held for the end-of-session dataset read-back (verify links actually landed).
+        self._langfuse: Langfuse | None = None
+        self._dataset_expected: dict[str, int] = {}
 
     def record(
         self,
@@ -192,6 +195,8 @@ class TraceRecorder:
             # the run. Strictly best-effort: a dataset API hiccup must never fail
             # the eval (it gates commits in CI).
             if category:
+                self._langfuse = langfuse
+                self._dataset_expected[category] = self._dataset_expected.get(category, 0) + 1
                 try:
                     from langfuse_dataset import link_run, upsert_item
 
@@ -246,6 +251,42 @@ class TraceRecorder:
                 f"`{self.dataset_run_name}` on {names}\n"
             )
         path.write_text(body)
+
+    def verify_dataset_runs(self) -> None:
+        """Read each dataset run back from Langfuse and log how many traces linked.
+
+        Dataset run items land in ClickHouse asynchronously, so poll briefly before
+        reporting. Strictly best-effort — never affects the eval outcome; it just
+        turns a silent failure into a visible "INCOMPLETE" line in CI.
+        """
+        if self._langfuse is None or not self._synced_datasets:
+            return
+        import time
+
+        from langfuse_dataset import dataset_name
+
+        for category in sorted(self._synced_datasets):
+            name = dataset_name(category, self.dataset_branch)
+            expected = self._dataset_expected.get(category, 0)
+            linked = 0
+            for attempt in range(5):
+                try:
+                    run = self._langfuse.get_dataset_run(
+                        dataset_name=name, run_name=self.dataset_run_name
+                    )
+                    linked = len(run.dataset_run_items or [])
+                except Exception:  # noqa: BLE001 - read-back is best-effort
+                    linked = 0
+                if expected and linked >= expected:
+                    break
+                if attempt < 4:
+                    time.sleep(3)
+            ok = bool(expected) and linked >= expected
+            print(
+                f"  [langfuse] dataset run {self.dataset_run_name} on {name}: "
+                f"{linked}/{expected} traces linked [{'OK' if ok else 'INCOMPLETE'}]",
+                flush=True,
+            )
 
     def save(self) -> Path | None:
         """Save all traces to disk."""
@@ -373,6 +414,9 @@ def pytest_terminal_summary(
             terminalreporter.write_line(f"  Location: {trace_dir}")
             terminalreporter.write_line(f"  Tests: {len(_trace_recorder_instance.traces)}")
             terminalreporter.write_sep("=", "")
+
+        # Read the dataset runs back from Langfuse and log how many traces linked.
+        _trace_recorder_instance.verify_dataset_runs()
 
         # Drop a markdown list of Langfuse trace links for CI to post on the PR.
         _trace_recorder_instance.write_langfuse_links(Path("reports") / "langfuse_links.md")
