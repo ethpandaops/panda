@@ -146,6 +146,19 @@ jobs:
             base_url: "http://localhost:2480"
           EOF
 
+      - name: Cache embedding vectors (server's local vector cache)
+        # The server pulls ~9k embedding vectors from the proxy at startup to build
+        # its search indexes (~140s on a cold runner). The vectors are content-addressed
+        # ({model}:{sha256(text)}), so persisting this dir across runs lets the server
+        # read them off disk instead — server start drops to seconds. Rolling snapshot:
+        # run_id key always saves; restore-keys pulls the latest (incl. master's, which
+        # every branch can read), so only genuinely-new chunks re-fetch.
+        uses: actions/cache@v4
+        with:
+          path: ~/.panda/data/cache
+          key: panda-embed-cache-${{ github.run_id }}
+          restore-keys: panda-embed-cache-
+
       - name: Start server
         run: |
           ./panda-server serve --config config.ci.yaml > server.log 2>&1 &
