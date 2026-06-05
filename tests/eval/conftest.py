@@ -108,6 +108,13 @@ class TraceRecorder:
         self.langfuse_links: list[tuple[str, str]] = []
         # Shared Langfuse session id for this run (all traces group under it).
         self.langfuse_session_id: str | None = None
+        # Per-branch Langfuse dataset run: cases/*.yaml projected into a dataset
+        # scoped to this git branch; traces link to a run named by commit sha.
+        from langfuse_dataset import eval_branch, eval_run_name
+
+        self.dataset_branch = eval_branch()
+        self.dataset_run_name = eval_run_name()
+        self._synced_datasets: set[str] = set()
 
     def record(
         self,
@@ -125,6 +132,9 @@ class TraceRecorder:
         langfuse: Langfuse | None = None,
         trace_id: str | None = None,
         session_id: str | None = None,
+        category: str | None = None,
+        expected_output: str | None = None,
+        dataset_metadata: dict[str, Any] | None = None,
     ) -> None:
         """Record a test trace.
 
@@ -178,6 +188,34 @@ class TraceRecorder:
             except Exception:  # noqa: BLE001 - best-effort; never fail a test over a link
                 pass
 
+            # Project this case into its per-branch dataset and link the trace to
+            # the run. Strictly best-effort: a dataset API hiccup must never fail
+            # the eval (it gates commits in CI).
+            if category:
+                try:
+                    from langfuse_dataset import link_run, upsert_item
+
+                    upsert_item(
+                        langfuse,
+                        category=category,
+                        branch=self.dataset_branch,
+                        case_id=test_id,
+                        input_text=input_prompt,
+                        expected_output=expected_output,
+                        metadata=dataset_metadata,
+                    )
+                    self._synced_datasets.add(category)
+                    link_run(
+                        langfuse,
+                        category=category,
+                        branch=self.dataset_branch,
+                        case_id=test_id,
+                        run_name=self.dataset_run_name,
+                        trace_id=trace_id,
+                    )
+                except Exception as exc:  # noqa: BLE001 - dataset linking is best-effort
+                    print(f"  [langfuse] dataset link failed: {type(exc).__name__}: {exc}")
+
     def write_langfuse_links(self, path: Path) -> None:
         """Write a single link to this run's Langfuse session (for a PR comment).
 
@@ -190,12 +228,24 @@ class TraceRecorder:
         session_url = f"{base}/sessions/{self.langfuse_session_id}"
         n = len(self.langfuse_links)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
+        body = (
             "### 🔭 Langfuse\n\n"
             f'<a href="{session_url}" target="_blank" rel="noopener noreferrer">'
             f"View this run&rsquo;s session</a> "
             f"({n} trace{'s' if n != 1 else ''})\n"
         )
+        if self._synced_datasets:
+            from langfuse_dataset import dataset_name
+
+            names = ", ".join(
+                f"`{dataset_name(c, self.dataset_branch)}`" for c in sorted(self._synced_datasets)
+            )
+            body += (
+                f'\n📊 <a href="{base}/datasets" target="_blank" rel="noopener noreferrer">'
+                f"Dataset run</a> "
+                f"`{self.dataset_run_name}` on {names}\n"
+            )
+        path.write_text(body)
 
     def save(self) -> Path | None:
         """Save all traces to disk."""

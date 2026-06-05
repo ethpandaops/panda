@@ -142,6 +142,13 @@ async def test_smoke(
         langfuse=agent.langfuse,
         trace_id=agent.current_trace_id,
         session_id=agent.langfuse_session_id,
+        category="smoke",
+        expected_output=getattr(test_case, "description", None),
+        dataset_metadata={
+            "network": test_case.network,
+            "tags": getattr(test_case, "tags", []),
+            "metrics": test_case.metrics,
+        },
     )
     agent.flush()
 
