@@ -1,12 +1,17 @@
 name: Eval Smoke
 
-# Fast per-commit smoke eval: one real question (mainnet p50 block arrival, last 1d)
-# that verifies the whole pipeline end to end — the agent drives the panda CLI,
-# reaches the data, queries, and returns a plausible answer. Runs as the
-# external-scoped `panda-ci` service account against the hosted production proxy.
+# Fast smoke eval: a couple of real questions that verify the whole pipeline end to
+# end — the agent drives the panda CLI, reaches the data, queries, and returns a
+# plausible answer. Runs as the external-scoped `panda-ci` service account against
+# the hosted production proxy.
+#
+# Triggers: `pull_request` covers PR branches (checks + the results/Langfuse-trace
+# comments); `push` is master-only so we don't double-run every PR commit (a push to
+# a PR branch already fires pull_request) — the master run also populates the embedding
+# cache that PR runs restore.
 on:
   push:
-    branches: ['**']
+    branches: [master]
   pull_request:
   workflow_dispatch:
 
