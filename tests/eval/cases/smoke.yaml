@@ -1,13 +1,20 @@
 # Smoke test cases for ethpandaops-panda CI.
 #
-# A single fast, real question that verifies the whole pipeline works end to end:
+# A couple of fast, simple questions that verify the whole pipeline works end to end:
 # the agent reaches the data, runs a query, and returns a plausible answer. Runs as
 # the external-scoped panda-ci identity against the hosted production proxy.
 
-- id: mainnet_block_arrival_p50_1d
-  description: Median (p50) block arrival time on mainnet over the last day
-  input: "What is the p50 (median) block arrival time on Ethereum mainnet over the last 1 day?"
+- id: mainnet_block_arrival_p50
+  description: p50 block arrival of the most recent mainnet block
+  input: "What's the p50 block arrival of the most recent mainnet block?"
   metrics:
     task_completion: 0.5
   network: mainnet
   tags: [smoke, clickhouse, blocks, timing]
+
+- id: list_datasources
+  description: Discover available datasources
+  input: "What datasources are available for me to query? List them."
+  metrics:
+    task_completion: 0.5
+  tags: [smoke, discovery]

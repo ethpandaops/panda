@@ -141,9 +141,8 @@ class EvalSettings(BaseSettings):
         description="Enable Langfuse tracing for eval runs",
     )
     langfuse_host: str = Field(
-        default="http://localhost:31700",
-        description="Langfuse server URL (self-hosted; docker-compose.langfuse.yaml "
-        "publishes the web UI/API on 31700). Override with MCP_EVAL_LANGFUSE_HOST.",
+        default="http://localhost:3000",
+        description="Langfuse server URL (self-hosted)",
     )
     langfuse_public_key: str = Field(
         default="pk-lf-mcp-eval-local",

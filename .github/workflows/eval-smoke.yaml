@@ -170,13 +170,6 @@ jobs:
           MCP_EVAL_MODEL: opencode-go/deepseek-v4-flash
           MCP_EVAL_REASONING_EFFORT: high
           MCP_EVAL_OPENCODE_TIMEOUT: "120"
-          # Langfuse trace export auto-enables once a host + keys are configured as
-          # repo settings (prod Langfuse not yet deployed). GitHub auto-sets the
-          # GITHUB_* vars the agent turns into the trace's ci_run_url link.
-          MCP_EVAL_LANGFUSE_ENABLED: ${{ vars.LANGFUSE_HOST != '' && 'true' || 'false' }}
-          MCP_EVAL_LANGFUSE_HOST: ${{ vars.LANGFUSE_HOST }}
-          MCP_EVAL_LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
-          MCP_EVAL_LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
         run: |
           uv run python -m pytest tests/test_smoke.py -m smoke \
             -n 0 \

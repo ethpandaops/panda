@@ -23,7 +23,6 @@ import socket
 import subprocess
 import tempfile
 import time
-import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -38,23 +37,9 @@ if TYPE_CHECKING:
 # execute_python / search / manage_session regardless of the opencode server key.
 _PANDA_TOOLS = ("execute_python", "manage_session", "search")
 
-SYSTEM_PROMPT_MCP = (
-    "You are a data analyst for the ethpandaops 'panda' server, which exposes "
-    "Ethereum network data (ClickHouse, Prometheus, Loki, Dora, ethnode) through "
-    "MCP tools. Use the panda tools to answer the question: search for examples and "
-    "schemas first, then run Python via execute_python to query the data. Do not "
-    "fabricate numbers — every figure must come from a tool result. When you have "
-    "the answer, state it concisely in plain text."
-)
+SYSTEM_PROMPT_MCP = "You are an ethpandaops agent. You have access to panda via its MCP tools."
 
-SYSTEM_PROMPT_CLI = (
-    "You are a data analyst answering questions about Ethereum network data using "
-    "the 'panda' command-line tool, which is installed on PATH. Use your shell tool "
-    "to run panda commands (e.g. `panda search examples ...`, `panda execute --code "
-    "...`, `panda datasources`) to discover and query the data. Do not fabricate "
-    "numbers — every figure must come from a panda command's output. When you have "
-    "the answer, state it concisely in plain text."
-)
+SYSTEM_PROMPT_CLI = "You are an ethpandaops agent. You have access to the panda CLI."
 
 
 def _free_port() -> int:
@@ -104,33 +89,17 @@ class OpenCodeAgent:
         self._base_url: str | None = None
         self._client: Any = None
 
-        # Langfuse trace export (optional; same wiring as the Claude SDK backend so
-        # traces from any agent backend look identical in Langfuse).
-        self._langfuse: Any = None
-        self._current_trace_id: str | None = None
-        if settings.langfuse_enabled and settings.langfuse_public_key:
-            from langfuse import Langfuse
-
-            self._langfuse = Langfuse(
-                public_key=settings.langfuse_public_key,
-                secret_key=settings.langfuse_secret_key,
-                host=settings.langfuse_host,
-            )
+    # --- compatibility shims so the shared pytest harness treats backends alike ---
+    @property
+    def langfuse(self) -> None:
+        return None
 
     @property
-    def langfuse(self) -> Any:
-        """Return the Langfuse client (or None) for external score recording."""
-        return self._langfuse
-
-    @property
-    def current_trace_id(self) -> str | None:
-        """Return the current Langfuse trace id for external score recording."""
-        return self._current_trace_id
+    def current_trace_id(self) -> None:
+        return None
 
     def flush(self) -> None:
-        """Flush pending Langfuse events so they're sent before the process exits."""
-        if self._langfuse is not None:
-            self._langfuse.flush()
+        return None
 
     # --- server lifecycle ---
     def _opencode_config(self) -> dict[str, Any]:
@@ -291,8 +260,6 @@ class OpenCodeAgent:
         """Run one question through opencode; return an ExecutionResult for this turn."""
         await self._ensure_server()
         start = time.time()
-        # Langfuse trace ids are 32 lowercase hex chars (not UUID-dashed).
-        self._current_trace_id = uuid.uuid4().hex if self._langfuse else None
         result = ExecutionResult(output="", session_id=session_id)
         client = self._client
 
@@ -372,92 +339,7 @@ class OpenCodeAgent:
             result.error_message = str(exc)
 
         result.duration_ms = int((time.time() - start) * 1000)
-
-        if self._langfuse is not None and self._current_trace_id:
-            self._record_langfuse_trace(
-                trace_id=self._current_trace_id,
-                test_id=test_id,
-                prompt=self._prompt(prompt),
-                session_id=result.session_id,
-                result=result,
-            )
-
         return result
-
-    def _record_langfuse_trace(
-        self,
-        trace_id: str,
-        test_id: str | None,
-        prompt: str,
-        session_id: str | None,
-        result: ExecutionResult,
-    ) -> None:
-        """Export one execution to Langfuse (root span + tool spans + generation)."""
-        if self._langfuse is None:
-            return
-
-        # A clickable link back to the CI run, so a failing trace is one hop from its
-        # GitHub Actions log. Absent locally (these env vars are GitHub-only).
-        ci_run_url = None
-        server, repo, run_id = (
-            os.environ.get("GITHUB_SERVER_URL"),
-            os.environ.get("GITHUB_REPOSITORY"),
-            os.environ.get("GITHUB_RUN_ID"),
-        )
-        if server and repo and run_id:
-            ci_run_url = f"{server}/{repo}/actions/runs/{run_id}"
-
-        # Tracing is best-effort: a Langfuse hiccup must never fail the eval itself.
-        try:
-            with self._langfuse.start_as_current_observation(
-                trace_context={"trace_id": trace_id},
-                name=test_id or "panda-eval",
-                as_type="span",
-                input={"prompt": prompt},
-                metadata={
-                    "model": self.settings.model,
-                    "route": self.route,
-                    "test_id": test_id,
-                    "session_id": session_id,
-                    "is_error": result.is_error,
-                    "error_message": result.error_message,
-                    "num_turns": result.num_turns,
-                    "ci_run_url": ci_run_url,
-                },
-            ) as root_span:
-                for tc in result.tool_calls:
-                    with self._langfuse.start_as_current_observation(
-                        name=tc.name or "tool",
-                        as_type="tool",
-                        input=tc.input,
-                        output=tc.result,
-                        metadata={"is_error": tc.is_error},
-                    ):
-                        pass
-
-                if result.input_tokens or result.output_tokens:
-                    with self._langfuse.start_as_current_observation(
-                        name=f"{self.provider_id}-completion",
-                        as_type="generation",
-                        model=self.model_id,
-                        usage_details={
-                            "input": result.input_tokens,
-                            "output": result.output_tokens,
-                        },
-                        output={"response": result.output},
-                    ):
-                        pass
-
-                root_span.update(output={"response": result.output})
-                root_span.set_trace_io(
-                    input={"prompt": prompt}, output={"response": result.output}
-                )
-            # Force the OTEL batch out now; the eval process is short-lived and may
-            # exit before a background flush completes.
-            self._langfuse.flush()
-        except Exception as exc:  # noqa: BLE001 - tracing is best-effort
-            # Visible (not verbose-gated) so a CI export failure isn't silent.
-            print(f"  [langfuse] trace export failed: {type(exc).__name__}: {exc}")
 
     async def execute_multi_turn(
         self,
