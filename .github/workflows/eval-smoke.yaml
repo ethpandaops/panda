@@ -182,8 +182,9 @@ jobs:
         working-directory: tests/eval
         env:
           OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
+          # LLM-as-judge (deepeval) routes the evaluator model through OpenRouter.
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          MCP_EVAL_AGENT_API: opencode
+          MCP_EVAL_EVALUATOR_MODEL: google/gemini-3.1-flash-lite
           MCP_EVAL_OPENCODE_ROUTE: cli
           MCP_EVAL_MODEL: opencode-go/deepseek-v4-flash
           MCP_EVAL_REASONING_EFFORT: high

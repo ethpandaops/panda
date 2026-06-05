@@ -105,7 +105,8 @@ async def repl_loop(
         mcp_url: URL of the ethpandaops-panda server.
     """
     # Import here to avoid circular imports and allow settings override
-    from agent.wrapper import ExecutionResult, MCPAgent
+    from agent.opencode_agent import OpenCodeAgent
+    from agent.wrapper import ExecutionResult
     from config.settings import EvalSettings
 
     settings = EvalSettings(
@@ -114,7 +115,7 @@ async def repl_loop(
         mcp_url=mcp_url,
     )
 
-    agent = MCPAgent(settings)
+    agent = OpenCodeAgent(settings)
     session_id: str | None = None
     conversation_history: list[ExecutionResult] = []
 

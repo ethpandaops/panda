@@ -24,7 +24,7 @@ def eval_settings() -> EvalSettings:
 
 @pytest.fixture
 def agent(eval_settings: EvalSettings):
-    """Create a fresh agent instance (backend selected by settings.agent_api)."""
+    """Create a fresh opencode agent instance."""
     return make_agent(eval_settings)
 
 

@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Default values - single source of truth
 DEFAULT_AGENT_MODEL = "opencode-go/deepseek-v4-flash"
-DEFAULT_EVALUATOR_MODEL = "google/gemini-3-flash-preview"
+DEFAULT_EVALUATOR_MODEL = "google/gemini-3.1-flash-lite"
 
 
 class EvalSettings(BaseSettings):
@@ -23,26 +23,13 @@ class EvalSettings(BaseSettings):
     # Model under test
     model: str = Field(
         default=DEFAULT_AGENT_MODEL,
-        description="Model under test, as '<provider>/<model>'. With agent_api='opencode', "
-        "an opencode provider/model (e.g. opencode-go/deepseek-v4-flash); with "
-        "agent_api='openai', an OpenAI-class id (e.g. deepseek/deepseek-v4-flash via "
-        "OpenRouter); with agent_api='anthropic', any Claude id.",
-    )
-    agent_api: str = Field(
-        default="opencode",
-        description="Agent backend: 'opencode' (drives `opencode serve` via the opencode "
-        "SDK against panda's MCP or CLI), 'openai' (OpenAI-compatible chat-completions with "
-        "a native MCP tool loop, e.g. OpenRouter), or 'anthropic' (Claude Agent SDK).",
-    )
-    agent_api_key_env: str = Field(
-        default="OPENROUTER_API_KEY",
-        description="Name of the env var holding the API key for the OpenAI-class "
-        "agent backend. (The opencode backend reads OPENCODE_GO_API_KEY directly.)",
+        description="Model under test as an opencode '<provider>/<model>' "
+        "(e.g. opencode-go/deepseek-v4-flash).",
     )
     opencode_route: str = Field(
         default="mcp",
-        description="For agent_api='opencode': 'mcp' gives opencode panda's MCP server; "
-        "'cli' gives it a shell + the built `panda` binary and steers it through the CLI.",
+        description="'mcp' gives opencode panda's MCP server; 'cli' gives it a shell "
+        "+ the built `panda` binary and steers it through the CLI.",
     )
     opencode_timeout: float = Field(
         default=90.0,
@@ -52,12 +39,6 @@ class EvalSettings(BaseSettings):
         default="high",
         description="Reasoning/thinking effort for the model under test "
         "(none, low, medium, high). Maps to the agent's thinking-token budget.",
-    )
-    agent_base_url: str = Field(
-        default="",
-        description="If set, injected as ANTHROPIC_BASE_URL for the model under test. "
-        "Point at an Anthropic-compatible gateway (e.g. LiteLLM in front of OpenRouter) "
-        "to evaluate non-Claude models. Empty = talk to Anthropic directly (Claude only).",
     )
 
     # ethpandaops-panda connection (external server, auth disabled)
@@ -130,11 +111,6 @@ class EvalSettings(BaseSettings):
     )
 
     # Agent behavior restriction
-    restrict_to_mcp_tools: bool = Field(
-        default=True,
-        description="Restrict agent to only use MCP tools (disable Bash, Glob, etc.)",
-    )
-
     # Langfuse tracing (self-hosted, pre-configured keys work out of the box)
     langfuse_enabled: bool = Field(
         default=False,

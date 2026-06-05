@@ -17,7 +17,7 @@ from metrics.datasource import DataSourceMetric
 from metrics.resource_discovery import ResourceDiscoveryMetric
 
 if TYPE_CHECKING:
-    from agent.wrapper import MCPAgent
+    from agent.opencode_agent import OpenCodeAgent
     from config.settings import EvalSettings
 
 
@@ -42,7 +42,7 @@ def _get_test_case(test_id: str):
 @pytest.mark.parametrize("test_id", _get_test_ids())
 async def test_basic_query(
     test_id: str,
-    agent: MCPAgent,
+    agent: OpenCodeAgent,
     eval_settings: EvalSettings,
     cost_tracker: CostTracker,
     trace_recorder: TraceRecorder,
@@ -51,7 +51,7 @@ async def test_basic_query(
 
     Args:
         test_id: ID of the test case to run.
-        agent: The MCPAgent instance.
+        agent: The OpenCodeAgent instance.
         eval_settings: Evaluation settings.
         cost_tracker: Cost tracker for aggregating costs.
         trace_recorder: Trace recorder for saving detailed traces.
@@ -201,7 +201,7 @@ async def test_basic_query(
 
 @pytest.mark.asyncio
 async def test_basic_query_with_examples_search(
-    agent: MCPAgent,
+    agent: OpenCodeAgent,
     eval_settings: EvalSettings,
 ) -> None:
     """Test that agent can use the unified search tool effectively."""
