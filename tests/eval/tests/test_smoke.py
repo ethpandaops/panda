@@ -141,6 +141,7 @@ async def test_smoke(
         error_message=result.error_message,
         langfuse=agent.langfuse,
         trace_id=agent.current_trace_id,
+        session_id=agent.langfuse_session_id,
     )
     agent.flush()
 

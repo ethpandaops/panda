@@ -38,6 +38,10 @@ if TYPE_CHECKING:
 # execute_python / search / manage_session regardless of the opencode server key.
 _PANDA_TOOLS = ("execute_python", "manage_session", "search")
 
+# A stable per-run session id so every trace from this eval run groups into one
+# Langfuse session. In CI that's the GitHub run id; locally a per-process uuid.
+_LANGFUSE_SESSION_ID = os.environ.get("GITHUB_RUN_ID") or uuid.uuid4().hex
+
 SYSTEM_PROMPT_MCP = "You are an ethpandaops agent. You have access to panda via its MCP tools."
 
 SYSTEM_PROMPT_CLI = "You are an ethpandaops agent. You have access to the panda CLI."
@@ -111,6 +115,11 @@ class OpenCodeAgent:
     def current_trace_id(self) -> str | None:
         """Return the current Langfuse trace id for external score recording."""
         return self._current_trace_id
+
+    @property
+    def langfuse_session_id(self) -> str | None:
+        """Return the shared Langfuse session id grouping this run's traces."""
+        return _LANGFUSE_SESSION_ID if self._langfuse is not None else None
 
     def flush(self) -> None:
         """Flush pending Langfuse events so they're sent before the process exits."""
@@ -393,49 +402,53 @@ class OpenCodeAgent:
 
         # Tracing is best-effort: a Langfuse hiccup must never fail the eval itself.
         try:
-            with self._langfuse.start_as_current_observation(
-                trace_context={"trace_id": trace_id},
-                name=test_id or "panda-eval",
-                as_type="span",
-                input={"prompt": prompt},
-                metadata={
-                    "model": self.settings.model,
-                    "route": self.route,
-                    "test_id": test_id,
-                    "session_id": session_id,
-                    "is_error": result.is_error,
-                    "error_message": result.error_message,
-                    "num_turns": result.num_turns,
-                    "ci_run_url": ci_run_url,
-                },
-            ) as root_span:
-                for tc in result.tool_calls:
-                    with self._langfuse.start_as_current_observation(
-                        name=tc.name or "tool",
-                        as_type="tool",
-                        input=tc.input,
-                        output=tc.result,
-                        metadata={"is_error": tc.is_error},
-                    ):
-                        pass
+            from langfuse import propagate_attributes
 
-                if result.input_tokens or result.output_tokens:
-                    with self._langfuse.start_as_current_observation(
-                        name=f"{self.provider_id}-completion",
-                        as_type="generation",
-                        model=self.model_id,
-                        usage_details={
-                            "input": result.input_tokens,
-                            "output": result.output_tokens,
-                        },
-                        output={"response": result.output},
-                    ):
-                        pass
+            # Group every trace from this eval run under one Langfuse session.
+            with propagate_attributes(session_id=_LANGFUSE_SESSION_ID):
+                with self._langfuse.start_as_current_observation(
+                    trace_context={"trace_id": trace_id},
+                    name=test_id or "panda-eval",
+                    as_type="span",
+                    input={"prompt": prompt},
+                    metadata={
+                        "model": self.settings.model,
+                        "route": self.route,
+                        "test_id": test_id,
+                        "session_id": session_id,
+                        "is_error": result.is_error,
+                        "error_message": result.error_message,
+                        "num_turns": result.num_turns,
+                        "ci_run_url": ci_run_url,
+                    },
+                ) as root_span:
+                    for tc in result.tool_calls:
+                        with self._langfuse.start_as_current_observation(
+                            name=tc.name or "tool",
+                            as_type="tool",
+                            input=tc.input,
+                            output=tc.result,
+                            metadata={"is_error": tc.is_error},
+                        ):
+                            pass
 
-                root_span.update(output={"response": result.output})
-                root_span.set_trace_io(
-                    input={"prompt": prompt}, output={"response": result.output}
-                )
+                    if result.input_tokens or result.output_tokens:
+                        with self._langfuse.start_as_current_observation(
+                            name=f"{self.provider_id}-completion",
+                            as_type="generation",
+                            model=self.model_id,
+                            usage_details={
+                                "input": result.input_tokens,
+                                "output": result.output_tokens,
+                            },
+                            output={"response": result.output},
+                        ):
+                            pass
+
+                    root_span.update(output={"response": result.output})
+                    root_span.set_trace_io(
+                        input={"prompt": prompt}, output={"response": result.output}
+                    )
             # Force the OTEL batch out now; the eval process is short-lived.
             self._langfuse.flush()
         except Exception as exc:  # noqa: BLE001 - tracing is best-effort

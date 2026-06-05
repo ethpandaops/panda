@@ -106,6 +106,8 @@ class TraceRecorder:
         self.run_id = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
         # (test_id, langfuse trace deep-link) for each recorded trace, for CI to surface.
         self.langfuse_links: list[tuple[str, str]] = []
+        # Shared Langfuse session id for this run (all traces group under it).
+        self.langfuse_session_id: str | None = None
 
     def record(
         self,
@@ -122,6 +124,7 @@ class TraceRecorder:
         error_message: str | None = None,
         langfuse: Langfuse | None = None,
         trace_id: str | None = None,
+        session_id: str | None = None,
     ) -> None:
         """Record a test trace.
 
@@ -155,6 +158,9 @@ class TraceRecorder:
             "error_message": error_message,
         })
 
+        if session_id:
+            self.langfuse_session_id = session_id
+
         # Record scores to Langfuse if enabled (using SDK v3 create_score method)
         if langfuse and trace_id:
             for metric in metrics:
@@ -173,13 +179,23 @@ class TraceRecorder:
                 pass
 
     def write_langfuse_links(self, path: Path) -> None:
-        """Write a markdown list of this run's Langfuse trace links (for a PR comment)."""
-        if not self.langfuse_links:
+        """Write a single link to this run's Langfuse session (for a PR comment).
+
+        The session groups every trace from the run; we derive its URL from any
+        trace URL (same host/project, swapping /traces/<id> for /sessions/<id>).
+        """
+        if not self.langfuse_links or not self.langfuse_session_id:
             return
+        base = self.langfuse_links[0][1].split("/traces/")[0]
+        session_url = f"{base}/sessions/{self.langfuse_session_id}"
+        n = len(self.langfuse_links)
         path.parent.mkdir(parents=True, exist_ok=True)
-        lines = ["### 🔭 Langfuse traces", ""]
-        lines += [f"- [`{tid}`]({url})" for tid, url in self.langfuse_links]
-        path.write_text("\n".join(lines) + "\n")
+        path.write_text(
+            "### 🔭 Langfuse\n\n"
+            f'<a href="{session_url}" target="_blank" rel="noopener noreferrer">'
+            f"View this run&rsquo;s session</a> "
+            f"({n} trace{'s' if n != 1 else ''})\n"
+        )
 
     def save(self) -> Path | None:
         """Save all traces to disk."""
