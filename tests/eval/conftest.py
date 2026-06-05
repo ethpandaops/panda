@@ -104,6 +104,8 @@ class TraceRecorder:
         self.settings = settings
         self.traces: list[dict[str, Any]] = []
         self.run_id = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
+        # (test_id, langfuse trace deep-link) for each recorded trace, for CI to surface.
+        self.langfuse_links: list[tuple[str, str]] = []
 
     def record(
         self,
@@ -162,6 +164,22 @@ class TraceRecorder:
                     value=metric["score"],
                     comment=f"passed={metric['passed']}",
                 )
+            # Collect a deep-link to this trace so CI can post it on the PR.
+            try:
+                url = langfuse.get_trace_url(trace_id=trace_id)
+                if url:
+                    self.langfuse_links.append((test_id, url))
+            except Exception:  # noqa: BLE001 - best-effort; never fail a test over a link
+                pass
+
+    def write_langfuse_links(self, path: Path) -> None:
+        """Write a markdown list of this run's Langfuse trace links (for a PR comment)."""
+        if not self.langfuse_links:
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        lines = ["### 🔭 Langfuse traces", ""]
+        lines += [f"- [`{tid}`]({url})" for tid, url in self.langfuse_links]
+        path.write_text("\n".join(lines) + "\n")
 
     def save(self) -> Path | None:
         """Save all traces to disk."""
@@ -289,6 +307,9 @@ def pytest_terminal_summary(
             terminalreporter.write_line(f"  Location: {trace_dir}")
             terminalreporter.write_line(f"  Tests: {len(_trace_recorder_instance.traces)}")
             terminalreporter.write_sep("=", "")
+
+        # Drop a markdown list of Langfuse trace links for CI to post on the PR.
+        _trace_recorder_instance.write_langfuse_links(Path("reports") / "langfuse_links.md")
 
 
 def pytest_configure(config: pytest.Config) -> None:
