@@ -20,8 +20,13 @@ var (
 var lokiCmd = &cobra.Command{
 	GroupID: groupDirect,
 	Use:     "loki",
-	Short:   "Query Loki logs",
+	Short:   "Query Loki logs (deprecated: use ClickHouse logs)",
 	Long: `Query Loki for log data.
+
+DEPRECATED: Loki is being retired for container logs. Query the ClickHouse OTel
+log tables instead via 'panda clickhouse query':
+  • Hosted (multi-VM) devnets/testnets → external.otel_logs  (filter ResourceAttributes['network'])
+  • Local Kurtosis devnets            → otel.otel_logs       (filter EnclaveName)
 
 Examples:
   panda loki list-datasources
