@@ -26,6 +26,7 @@ import time
 
 from cases.loader import load_test_cases
 from config.settings import DEFAULT_EVALUATOR_MODEL
+from harden.auditor import CodexAuditor
 from harden.judge import Judge
 from harden.loop import optimize
 from harden.proposer import CodexProposer
@@ -62,6 +63,12 @@ def main() -> None:
     )
     ap.add_argument("--proposer-model", default="gpt-5.5")
     ap.add_argument("--reasoning-effort", default="xhigh")
+    ap.add_argument(
+        "--auditor-model",
+        default="gpt-5.5",
+        help="model for the adversarial diff auditor (fresh context; xhigh reasoning)",
+    )
+    ap.add_argument("--no-audit", action="store_true", help="disable the adversarial auditor stage")
     ap.add_argument("--judge-model", default=DEFAULT_EVALUATOR_MODEL)
     ap.add_argument("--rounds", type=int, default=3)
     ap.add_argument(
@@ -127,6 +134,16 @@ def main() -> None:
         timeout=args.proposer_timeout,
         log=log,
     )
+    auditor = (
+        None
+        if args.no_audit
+        else CodexAuditor(
+            repo_dir,
+            model=args.auditor_model,
+            reasoning_effort=args.reasoning_effort,
+            log=log,
+        )
+    )
 
     run_dir = HARDEN_HOME / "runs" / time.strftime("%Y-%m-%dT%H-%M-%S")
     print(
@@ -145,6 +162,7 @@ def main() -> None:
                 repo_dir=repo_dir,
                 apply=apply,
                 budget=args.budget,
+                auditor=auditor,
                 k=args.k,
                 rounds=args.rounds,
                 show=args.show,

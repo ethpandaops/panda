@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from harden.auditor import AuditVerdict
 from harden.judge import Verdict
 from harden.loop import optimize
 from harden.proposer import ProposalResult
@@ -222,3 +223,56 @@ async def test_held_out_accepts_generalizing_improvement(repo):
     )
     assert result.accepted == 1
     assert result.rounds[0].reason == "accepted"
+
+
+class _StubAuditor:
+    def __init__(self, blocked):
+        self.blocked = blocked
+
+    def audit(self, diff, questions) -> AuditVerdict:
+        findings = [{"severity": "block", "kind": "answer_leakage", "file": "x", "issue": "y"}]
+        return AuditVerdict(
+            blocked=self.blocked, summary="stub", findings=findings if self.blocked else []
+        )
+
+
+@pytest.mark.asyncio
+async def test_auditor_blocks_a_would_be_accept(repo):
+    # a proposal that WOULD pass measurement is blocked by the auditor first -> reject, no commit
+    state = {"improved": False}
+    result = await optimize(
+        _QS,
+        [_StubSubject(state)],
+        _StubJudge(),
+        _StubProposer(repo, state),
+        repo_dir=str(repo),
+        apply=_apply_factory(repo, state),
+        auditor=_StubAuditor(blocked=True),
+        budget=10000,
+        k=2,
+        rounds=1,
+        log=lambda *_: None,
+    )
+    assert result.accepted == 0
+    assert result.rounds[0].reason == "audit-blocked"
+    assert not (repo / "proposal.txt").exists()  # reverted
+    assert "harden round" not in _git(repo, "log", "--oneline")
+
+
+@pytest.mark.asyncio
+async def test_clean_audit_does_not_block_accept(repo):
+    state = {"improved": False}
+    result = await optimize(
+        _QS,
+        [_StubSubject(state)],
+        _StubJudge(),
+        _StubProposer(repo, state),
+        repo_dir=str(repo),
+        apply=_apply_factory(repo, state),
+        auditor=_StubAuditor(blocked=False),
+        budget=10000,
+        k=2,
+        rounds=1,
+        log=lambda *_: None,
+    )
+    assert result.accepted == 1

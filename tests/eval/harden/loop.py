@@ -25,6 +25,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from harden.auditor import Auditor
 from harden.judge import Judge
 from harden.proposer import Proposer
 from harden.report import build_proposal_prompt, format_record
@@ -94,6 +95,25 @@ def _commit(repo: str, message: str) -> None:
     _git(repo, "commit", "-m", message, "--no-verify")
 
 
+def _proposal_diff(repo: str) -> str:
+    """The proposal's full diff vs HEAD, including untracked new files — what the auditor
+    reviews. Does not stage anything (so revert stays a plain checkout + clean)."""
+    parts = []
+    tracked = _git(repo, "diff", "HEAD")
+    if tracked:
+        parts.append(tracked)
+    for path in _git(repo, "ls-files", "--others", "--exclude-standard").splitlines():
+        path = path.strip()
+        if not path:
+            continue
+        try:
+            content = Path(repo, path).read_text(errors="replace")
+        except OSError:
+            continue
+        parts.append(f"--- /dev/null\n+++ b/{path}\n{content}")
+    return "\n".join(parts)
+
+
 async def optimize(
     questions: list[Question],
     subjects: list[Subject],
@@ -103,6 +123,7 @@ async def optimize(
     repo_dir: str,
     apply: Callable[[], None],
     budget: int,
+    auditor: Auditor | None = None,
     k: int = 3,
     rounds: int = 5,
     show: int = 12,
@@ -181,6 +202,25 @@ async def optimize(
             log(f"round {n}: proposer made no edits")
             result.rounds.append(_round(n, False, "no-edits", baseline, baseline, proposal.summary))
             continue
+
+        # Adversarial audit BEFORE the expensive build+measure: a fresh-context reviewer
+        # tries to refuse the diff for answer-leakage / misplacement / eval-infra gaming —
+        # the cheats the held-out gate can't see. Blocked -> revert without measuring.
+        if auditor is not None:
+            log(f"round {n}: auditing the proposed diff...")
+            verdict = auditor.audit(_proposal_diff(repo_dir), [q.text for q in questions])
+            _dump(save_dir, f"round{n}_audit.txt", verdict.text())
+            if verdict.blocked:
+                log(f"round {n}: AUDIT BLOCKED — {verdict.summary[:200]}")
+                _revert(repo_dir)
+                result.rounds.append(
+                    _round(n, False, "audit-blocked", baseline, baseline, verdict.text())
+                )
+                continue
+            if verdict.findings:
+                log(
+                    f"round {n}: audit passed with {len(verdict.findings)} warning(s) (see artifacts)"
+                )
 
         log(f"round {n}: proposal made edits; rebuilding + restarting harness...")
         try:
