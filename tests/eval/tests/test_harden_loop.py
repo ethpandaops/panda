@@ -1,0 +1,154 @@
+"""Integration test for harden.loop — the accept/commit + reject/revert + clean-tree
+guard, exercised end to end on a throwaway git repo with stub subject/judge/proposer.
+
+No LLM, no network, no panda build: the stubs make a "proposal" flip a shared flag via
+``apply`` so we can assert the loop commits an improvement and git-reverts a regression.
+"""
+
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+
+import pytest
+
+from harden.judge import Verdict
+from harden.loop import optimize
+from harden.proposer import ProposalResult
+from harden.runner import Question
+from harden.trace import RunTrace, ToolCall
+
+
+def _git(repo, *args):
+    return subprocess.run(
+        ["git", "-C", str(repo), *args], text=True, capture_output=True, check=True
+    ).stdout
+
+
+@pytest.fixture
+def repo(tmp_path):
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.email", "t@t.t")
+    _git(tmp_path, "config", "user.name", "t")
+    (tmp_path / "src.txt").write_text("baseline\n")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-qm", "init")
+    return tmp_path
+
+
+class _StubSubject:
+    """Returns a good or bad trace depending on a shared mutable state flag."""
+
+    def __init__(self, state):
+        self.name = "stub:m:cli"
+        self.state = state
+
+    async def run(self, question: str) -> RunTrace:
+        improved = self.state["improved"]
+        tokens = 5000 if improved else 40000
+        correct = self.state.get("correct_when_improved", True) if improved else True
+        return RunTrace(
+            question=question,
+            subject=self.name,
+            output="answer" if correct else "",
+            tool_calls=[ToolCall("bash", "cmd", "out")],
+            input_tokens=tokens,
+            output_tokens=0,
+            crashed=False,
+        )
+
+
+class _StubJudge:
+    async def judge(self, trace: RunTrace) -> Verdict:
+        ok = bool(trace.output)
+        return Verdict(correct=ok, correctness=1.0 if ok else 0.0, reason="stub")
+
+
+class _StubProposer:
+    """Writes a file so the tree goes dirty (a 'proposal'). apply() reads it."""
+
+    def __init__(self, repo, state):
+        self.repo = repo
+        self.state = state
+
+    def propose(self, prompt: str) -> ProposalResult:
+        (Path(self.repo) / "proposal.txt").write_text("edit\n")
+        return ProposalResult(ok=True, summary="wrote proposal.txt")
+
+
+def _apply_factory(repo, state):
+    def apply():
+        # a "built" proposal is live iff the proposed file is present
+        state["improved"] = (Path(repo) / "proposal.txt").exists()
+
+    return apply
+
+
+_QS = [Question(id=f"q{i}", text=f"question {i}") for i in range(3)]
+
+
+@pytest.mark.asyncio
+async def test_accepts_and_commits_improvement(repo):
+    state = {"improved": False}
+    subject = _StubSubject(state)
+    result = await optimize(
+        _QS,
+        [subject],
+        _StubJudge(),
+        _StubProposer(repo, state),
+        repo_dir=str(repo),
+        apply=_apply_factory(repo, state),
+        budget=10000,
+        k=2,
+        rounds=1,
+        log=lambda *_: None,
+    )
+    assert result.accepted == 1
+    assert result.rounds[0].reason == "accepted"
+    # change was committed, tree is clean, the proposed file persists
+    assert _git(repo, "status", "--porcelain").strip() == ""
+    assert (repo / "proposal.txt").exists()
+    assert "harden round 1" in _git(repo, "log", "--oneline")
+
+
+@pytest.mark.asyncio
+async def test_rejects_and_reverts_regression(repo):
+    # proposal makes runs WRONG when "improved" -> correctness regresses -> reject + revert
+    state = {"improved": False, "correct_when_improved": False}
+    subject = _StubSubject(state)
+    result = await optimize(
+        _QS,
+        [subject],
+        _StubJudge(),
+        _StubProposer(repo, state),
+        repo_dir=str(repo),
+        apply=_apply_factory(repo, state),
+        budget=10000,
+        k=2,
+        rounds=1,
+        log=lambda *_: None,
+    )
+    assert result.accepted == 0
+    assert result.rounds[0].reason == "regressed-correctness"
+    # the proposed file was reverted away, tree clean, no harden commit
+    assert _git(repo, "status", "--porcelain").strip() == ""
+    assert not (repo / "proposal.txt").exists()
+    assert "harden round" not in _git(repo, "log", "--oneline")
+
+
+@pytest.mark.asyncio
+async def test_refuses_dirty_tree(repo):
+    (repo / "src.txt").write_text("uncommitted change\n")
+    with pytest.raises(RuntimeError, match="uncommitted changes"):
+        await optimize(
+            _QS,
+            [_StubSubject({"improved": False})],
+            _StubJudge(),
+            _StubProposer(repo, {}),
+            repo_dir=str(repo),
+            apply=lambda: None,
+            budget=10000,
+            k=1,
+            rounds=1,
+            log=lambda *_: None,
+        )

@@ -159,9 +159,7 @@ class OpenCodeAgent:
         base = _SHARED_URLS.get(key)
         if proc is None or proc.poll() is not None or not base:
             workdir = Path(tempfile.mkdtemp(prefix="panda-opencode-"))
-            (workdir / "opencode.json").write_text(
-                json.dumps(self._opencode_config(), indent=2)
-            )
+            (workdir / "opencode.json").write_text(json.dumps(self._opencode_config(), indent=2))
             # Isolate this serve's opencode data dir. opencode runs one server per
             # user, all sharing ~/.local/share/opencode/opencode.db; under parallel
             # pytest-xdist workers, N servers race the DB's first-time migration and
@@ -268,6 +266,16 @@ class OpenCodeAgent:
             return obj.model_dump(warnings=False)
         return obj if isinstance(obj, dict) else {}
 
+    @staticmethod
+    def _tool_duration_ms(state: dict[str, Any]) -> int:
+        """Per-tool wall time from opencode's tool-state ``time: {start, end}`` (ms)."""
+        t = state.get("time") or {}
+        start, end = t.get("start"), t.get("end")
+        if isinstance(start, (int, float)) and isinstance(end, (int, float)) and end >= start:
+            return int(end - start)
+        return 0
+
+
     def _prompt(self, prompt: str) -> str:
         if self.route == "cli":
             return f"Using the panda CLI, {prompt}"
@@ -283,11 +291,17 @@ class OpenCodeAgent:
         test_id: str | None = None,
     ) -> ExecutionResult:
         """Run one question through opencode; return an ExecutionResult for this turn."""
+        # Clear first: if _ensure_server() raises, current_trace_id must not retain the
+        # PREVIOUS run's id (else a caller would attach this failed run's scores there).
+        self._current_trace_id = None
         await self._ensure_server()
         start = time.time()
         # Langfuse trace ids are 32 lowercase hex chars (not UUID-dashed).
         self._current_trace_id = uuid.uuid4().hex if self._langfuse else None
         result = ExecutionResult(output="", session_id=session_id)
+        # Stamp the identity onto the result NOW so callers don't read it back off the
+        # mutable agent property after later awaits (race-safe across runs).
+        result.trace_id = self._current_trace_id
         client = self._client
 
         try:
@@ -348,6 +362,7 @@ class OpenCodeAgent:
                         )
                         rec.result = st.get("output")
                         rec.is_error = st.get("status") == "error"
+                        rec.duration_ms = self._tool_duration_ms(st)
                         tool_calls.append(rec)
                         if self.settings.verbose:
                             print(f"  [Tool] {rec.name}({json.dumps(rec.input)[:120]})")
@@ -420,15 +435,19 @@ class OpenCodeAgent:
                         "error_message": result.error_message,
                         "num_turns": result.num_turns,
                         "ci_run_url": ci_run_url,
+                        "n_tools": len(result.tool_calls),
+                        "n_tool_errors": sum(1 for tc in result.tool_calls if tc.is_error),
                     },
                 ) as root_span:
+                    # One span per step with the FULL raw input + output — the reasoning
+                    # surface is the raw content of each step, not pre-digested fields.
                     for tc in result.tool_calls:
                         with self._langfuse.start_as_current_observation(
                             name=tc.name or "tool",
                             as_type="tool",
                             input=tc.input,
                             output=tc.result,
-                            metadata={"is_error": tc.is_error},
+                            metadata={"is_error": tc.is_error, "duration_ms": tc.duration_ms},
                         ):
                             pass
 

@@ -32,3 +32,6 @@ class ExecutionResult:
     session_id: str | None = None
     is_error: bool = False
     error_message: str | None = None
+    # Langfuse trace identity for THIS run, stamped on the result so callers read it
+    # off the returned object rather than a mutable agent property after later awaits.
+    trace_id: str | None = None
