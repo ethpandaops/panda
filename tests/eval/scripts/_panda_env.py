@@ -89,7 +89,7 @@ class ScratchServer:
         self._proc = subprocess.Popen(
             [binary, "serve", "--config", str(self.config_path)],
             cwd=self.repo_dir,
-            stdout=open(self._log, "wb"),
+            stdout=open(self._log, "ab"),  # append so restarts keep history, not truncate
             stderr=subprocess.STDOUT,
         )
         self._wait_ready()

@@ -23,13 +23,30 @@ from __future__ import annotations
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from harden.judge import Judge
 from harden.proposer import Proposer
-from harden.report import build_proposal_prompt
+from harden.report import build_proposal_prompt, format_record
 from harden.runner import CandidateResult, Question, run_candidate
 from harden.scoring import is_confident, no_correctness_regression
 from harden.subject import Subject
+
+
+def _dump(save_dir: str | None, name: str, text: str) -> None:
+    """Write a debugging artifact (raw traces / proposal prompt) if save_dir is set."""
+    if not save_dir:
+        return
+    d = Path(save_dir)
+    d.mkdir(parents=True, exist_ok=True)
+    (d / name).write_text(text)
+
+
+def _dump_records(save_dir: str | None, name: str, result: CandidateResult) -> None:
+    if not save_dir:
+        return
+    body = "\n".join(format_record(r) for r in result.records)
+    _dump(save_dir, name, f"score={result.score:.3f} pass={result.pass_rate:.2f}\n\n{body}")
 
 
 @dataclass
@@ -91,6 +108,7 @@ async def optimize(
     show: int = 12,
     steepness: float = 2.0,
     min_cells: int = 3,
+    save_dir: str | None = None,
     log: Callable[[str], None] = print,
 ) -> OptimizeResult:
     """Run the optimization loop. ``apply`` rebuilds+restarts the harness so a fresh
@@ -109,12 +127,15 @@ async def optimize(
     apply()
     baseline = await measure()
     log(f"baseline: score={baseline.score:.3f} pass={baseline.pass_rate:.2f}")
+    _dump_records(save_dir, "baseline.txt", baseline)
     result = OptimizeResult(baseline=baseline)
 
     for n in range(1, rounds + 1):
         log(f"--- round {n}/{rounds} ---")
         prompt = build_proposal_prompt(baseline.records, limit=show)
+        _dump(save_dir, f"round{n}_proposal_prompt.txt", prompt)
         proposal = proposer.propose(prompt)
+        _dump(save_dir, f"round{n}_proposal_summary.txt", proposal.summary)
         if not proposal.ok:
             log(f"round {n}: proposer failed: {proposal.summary[:200]}")
             _revert(repo_dir)
@@ -139,6 +160,7 @@ async def optimize(
             continue
 
         candidate = await measure()
+        _dump_records(save_dir, f"round{n}_candidate.txt", candidate)
         regressed = not no_correctness_regression(baseline.runs, candidate.runs)
         confident = is_confident(baseline.runs, candidate.runs, min_cells=min_cells)
         if not regressed and confident:

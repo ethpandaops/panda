@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import subprocess
+import time
 
 from cases.loader import load_test_cases
 from config.settings import DEFAULT_EVALUATOR_MODEL
@@ -31,6 +32,7 @@ from harden.proposer import CodexProposer
 from harden.runner import Question
 from harden.subject import OpencodeSubject
 from scripts._panda_env import (
+    HARDEN_HOME,
     ScratchServer,
     make_apply,
     point_cli_at_scratch,
@@ -114,10 +116,12 @@ def main() -> None:
         timeout=args.proposer_timeout,
     )
 
+    run_dir = HARDEN_HOME / "runs" / time.strftime("%Y-%m-%dT%H-%M-%S")
     print(
         f"harden: {len(questions)} questions x {len(subjects)} subjects x k={args.k} "
         f"| proposer={args.proposer_model}@{args.reasoning_effort} | rounds={args.rounds} "
-        f"| scratch server :{args.port}"
+        f"| scratch server :{args.port}\nartifacts: {run_dir}",
+        flush=True,
     )
     try:
         result = asyncio.run(
@@ -133,6 +137,8 @@ def main() -> None:
                 rounds=args.rounds,
                 show=args.show,
                 min_cells=args.min_cells,
+                save_dir=str(run_dir),
+                log=lambda m: print(m, flush=True),
             )
         )
     finally:
