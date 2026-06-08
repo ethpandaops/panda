@@ -69,7 +69,7 @@ jobs:
       # SLSA build provenance linking the release artifacts back to this
       # workflow run and source commit. Verify with `gh attestation verify`.
       - name: Attest release artifacts
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: |
             dist/checksums.txt
