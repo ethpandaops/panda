@@ -18,6 +18,7 @@ in-process scores, so the loop is correct with telemetry entirely absent.
 
 from __future__ import annotations
 
+import asyncio
 import statistics
 from dataclasses import dataclass, field
 
@@ -64,6 +65,7 @@ async def run_candidate(
     k: int = 3,
     budget: int,
     steepness: float = 2.0,
+    concurrency: int = 6,
     run_name: str | None = None,
     category: str | None = None,
     branch: str | None = None,
@@ -71,50 +73,55 @@ async def run_candidate(
 ) -> CandidateResult:
     """Measure the current harness state over every (question, subject) K times.
 
-    ``budget`` is the token cost of a "good" run (the efficiency knee). ``on_run`` is an
-    optional callback ``(question, RunScore, RunTrace) -> None`` for live progress.
+    The (question, subject, k) runs are independent, so they fan out concurrently up to
+    ``concurrency`` at a time (agent runs dominate wall-clock; K-averaging needs many of
+    them). ``budget`` is the token cost of a "good" run (the efficiency knee). ``on_run``
+    is an optional callback ``(question, RunScore, RunTrace) -> None`` for live progress.
     """
     runs: list[RunScore] = []
     records: list[RunRecord] = []
     by_subject: dict[str, list[float]] = {}
+    sem = asyncio.Semaphore(concurrency)
 
-    for question in questions:
-        for subject in subjects:
-            for _ in range(k):
-                trace = await subject.run(question.text)
-                verdict = await judge.judge(trace)
-                rs = score_run(
-                    trace,
-                    correct=verdict.correct,
-                    correctness=verdict.correctness,
-                    budget=budget,
-                    steepness=steepness,
-                    question_id=question.id,
-                )
-                runs.append(rs)
-                records.append(RunRecord(question=question, trace=trace, score=rs))
-                by_subject.setdefault(subject.name, []).append(rs.score)
+    async def one(question: Question, subject: Subject) -> None:
+        async with sem:
+            trace = await subject.run(question.text)
+        verdict = await judge.judge(trace)
+        rs = score_run(
+            trace,
+            correct=verdict.correct,
+            correctness=verdict.correctness,
+            budget=budget,
+            steepness=steepness,
+            question_id=question.id,
+        )
+        # asyncio is single-threaded, so these appends never interleave mid-statement.
+        runs.append(rs)
+        records.append(RunRecord(question=question, trace=trace, score=rs))
+        by_subject.setdefault(subject.name, []).append(rs.score)
 
-                record = getattr(subject, "record", None)
-                if record is not None:
-                    record(
-                        trace,
-                        {
-                            "harden_score": rs.score,
-                            "correct": 1.0 if rs.correct else 0.0,
-                            "correctness": rs.correctness,
-                            "tokens": float(rs.tokens),
-                            "tool_count": float(rs.n_tools),
-                        },
-                        comment=verdict.reason,
-                        category=category,
-                        branch=branch,
-                        run_name=run_name,
-                        question_id=question.id,
-                        question_text=question.text,
-                    )
-                if on_run is not None:
-                    on_run(question, rs, trace)
+        record = getattr(subject, "record", None)
+        if record is not None:
+            record(
+                trace,
+                {
+                    "harden_score": rs.score,
+                    "correct": 1.0 if rs.correct else 0.0,
+                    "correctness": rs.correctness,
+                    "tokens": float(rs.tokens),
+                    "tool_count": float(rs.n_tools),
+                },
+                comment=verdict.reason,
+                category=category,
+                branch=branch,
+                run_name=run_name,
+                question_id=question.id,
+                question_text=question.text,
+            )
+        if on_run is not None:
+            on_run(question, rs, trace)
+
+    await asyncio.gather(*(one(q, s) for q in questions for s in subjects for _ in range(k)))
 
     for subject in subjects:
         flush = getattr(subject, "flush", None)

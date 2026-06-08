@@ -77,6 +77,7 @@ def main() -> None:
     ap.add_argument("--subject-timeout", type=float, default=180.0)
     ap.add_argument("--proposer-timeout", type=float, default=1800.0)
     ap.add_argument("--port", type=int, default=2481, help="scratch panda-server port")
+    ap.add_argument("--concurrency", type=int, default=6, help="max agent runs in flight at once")
     ap.add_argument(
         "--question-id",
         action="append",
@@ -141,6 +142,7 @@ def main() -> None:
                 rounds=args.rounds,
                 show=args.show,
                 min_cells=args.min_cells,
+                concurrency=args.concurrency,
                 save_dir=str(run_dir),
                 log=log,
             )

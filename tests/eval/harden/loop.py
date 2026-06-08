@@ -108,6 +108,7 @@ async def optimize(
     show: int = 12,
     steepness: float = 2.0,
     min_cells: int = 3,
+    concurrency: int = 6,
     save_dir: str | None = None,
     log: Callable[[str], None] = print,
 ) -> OptimizeResult:
@@ -126,9 +127,19 @@ async def optimize(
         )
 
     async def measure(label: str) -> CandidateResult:
-        log(f"  measuring {label}: {len(questions)}q x {len(subjects)}subj x k={k} runs...")
+        n = len(questions) * len(subjects) * k
+        log(
+            f"  measuring {label}: {n} runs ({len(subjects)} subj x k={k}), up to {concurrency} at once..."
+        )
         return await run_candidate(
-            questions, subjects, judge, k=k, budget=budget, steepness=steepness, on_run=_on_run
+            questions,
+            subjects,
+            judge,
+            k=k,
+            budget=budget,
+            steepness=steepness,
+            concurrency=concurrency,
+            on_run=_on_run,
         )
 
     log("rebuilding harness (baseline)...")

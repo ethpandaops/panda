@@ -93,6 +93,9 @@ class OpenCodeAgent:
         self._proc: subprocess.Popen[bytes] | None = None
         self._base_url: str | None = None
         self._client: Any = None
+        # Serializes server spawn so concurrent first-runs on one agent don't race to
+        # start duplicate `opencode serve` processes.
+        self._ensure_lock = asyncio.Lock()
 
         # Langfuse trace export (optional; gated on langfuse_enabled + keys).
         self._langfuse: Any = None
@@ -140,7 +143,16 @@ class OpenCodeAgent:
         return cfg
 
     async def _ensure_server(self) -> None:
-        # Reuse a live shared server for this exact config if we already have one.
+        # Fast path (lock-free): reuse a live shared server for this exact config.
+        if self._client is not None and self._server_key:
+            proc = _SHARED_SERVERS.get(self._server_key)
+            if proc is not None and proc.poll() is None:
+                return
+        async with self._ensure_lock:
+            await self._ensure_server_locked()
+
+    async def _ensure_server_locked(self) -> None:
+        # Re-check under the lock: a concurrent run may have already spawned the server.
         if self._client is not None and self._server_key:
             proc = _SHARED_SERVERS.get(self._server_key)
             if proc is not None and proc.poll() is None:
