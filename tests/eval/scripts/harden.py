@@ -75,10 +75,25 @@ def main() -> None:
     ap.add_argument("--subject-timeout", type=float, default=180.0)
     ap.add_argument("--proposer-timeout", type=float, default=1800.0)
     ap.add_argument("--port", type=int, default=2481, help="scratch panda-server port")
+    ap.add_argument(
+        "--question-id",
+        action="append",
+        default=[],
+        help="restrict to specific case id(s) (repeatable); default = all in --cases",
+    )
+    ap.add_argument(
+        "--min-cells",
+        type=int,
+        default=3,
+        help="min (question, subject) cells for the confidence gate; set 1 for a single-question smoke",
+    )
     args = ap.parse_args()
 
     repo_dir = _repo_root()
     questions = [Question(id=c.id, text=c.input) for c in load_test_cases(args.cases)]
+    if args.question_id:
+        wanted = set(args.question_id)
+        questions = [q for q in questions if q.id in wanted]
     if not questions:
         raise SystemExit(f"no questions loaded from cases/{args.cases}")
 
@@ -117,6 +132,7 @@ def main() -> None:
                 k=args.k,
                 rounds=args.rounds,
                 show=args.show,
+                min_cells=args.min_cells,
             )
         )
     finally:

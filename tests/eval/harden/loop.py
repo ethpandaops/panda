@@ -90,6 +90,7 @@ async def optimize(
     rounds: int = 5,
     show: int = 12,
     steepness: float = 2.0,
+    min_cells: int = 3,
     log: Callable[[str], None] = print,
 ) -> OptimizeResult:
     """Run the optimization loop. ``apply`` rebuilds+restarts the harness so a fresh
@@ -139,7 +140,7 @@ async def optimize(
 
         candidate = await measure()
         regressed = not no_correctness_regression(baseline.runs, candidate.runs)
-        confident = is_confident(baseline.runs, candidate.runs)
+        confident = is_confident(baseline.runs, candidate.runs, min_cells=min_cells)
         if not regressed and confident:
             _commit(repo_dir, f"harden round {n}: {baseline.score:.3f} -> {candidate.score:.3f}")
             log(
