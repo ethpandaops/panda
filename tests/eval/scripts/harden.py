@@ -106,6 +106,9 @@ def main() -> None:
     server = ScratchServer(repo_dir, config_path, args.port)
     apply = make_apply(server)
 
+    def log(m: str) -> None:
+        print(m, flush=True)
+
     subject_specs = args.subject or ["opencode-go/deepseek-v4-flash:cli"]
     subjects = [_subject(s, args.subject_timeout) for s in subject_specs]
     judge = Judge(args.judge_model)
@@ -114,6 +117,7 @@ def main() -> None:
         model=args.proposer_model,
         reasoning_effort=args.reasoning_effort,
         timeout=args.proposer_timeout,
+        log=log,
     )
 
     run_dir = HARDEN_HOME / "runs" / time.strftime("%Y-%m-%dT%H-%M-%S")
@@ -138,7 +142,7 @@ def main() -> None:
                 show=args.show,
                 min_cells=args.min_cells,
                 save_dir=str(run_dir),
-                log=lambda m: print(m, flush=True),
+                log=log,
             )
         )
     finally:

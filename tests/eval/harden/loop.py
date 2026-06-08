@@ -119,13 +119,21 @@ async def optimize(
             "clobber them. Commit or stash first (run on a throwaway worktree/branch)."
         )
 
-    async def measure() -> CandidateResult:
-        return await run_candidate(
-            questions, subjects, judge, k=k, budget=budget, steepness=steepness
+    def _on_run(q: Question, rs, _trace) -> None:
+        log(
+            f"    · {rs.subject} q={q.id} correct={rs.correct} "
+            f"tokens={rs.tokens} tools={rs.n_tools} score={rs.score:.2f}"
         )
 
+    async def measure(label: str) -> CandidateResult:
+        log(f"  measuring {label}: {len(questions)}q x {len(subjects)}subj x k={k} runs...")
+        return await run_candidate(
+            questions, subjects, judge, k=k, budget=budget, steepness=steepness, on_run=_on_run
+        )
+
+    log("rebuilding harness (baseline)...")
     apply()
-    baseline = await measure()
+    baseline = await measure("baseline")
     log(f"baseline: score={baseline.score:.3f} pass={baseline.pass_rate:.2f}")
     _dump_records(save_dir, "baseline.txt", baseline)
     result = OptimizeResult(baseline=baseline)
@@ -134,6 +142,7 @@ async def optimize(
         log(f"--- round {n}/{rounds} ---")
         prompt = build_proposal_prompt(baseline.records, limit=show)
         _dump(save_dir, f"round{n}_proposal_prompt.txt", prompt)
+        log(f"round {n}: proposing harness edits (this can take several minutes)...")
         proposal = proposer.propose(prompt)
         _dump(save_dir, f"round{n}_proposal_summary.txt", proposal.summary)
         if not proposal.ok:
@@ -148,6 +157,7 @@ async def optimize(
             result.rounds.append(_round(n, False, "no-edits", baseline, baseline, proposal.summary))
             continue
 
+        log(f"round {n}: proposal made edits; rebuilding + restarting harness...")
         try:
             apply()
         except Exception as exc:  # noqa: BLE001 - a broken build is a rejected proposal
@@ -159,7 +169,7 @@ async def optimize(
             )
             continue
 
-        candidate = await measure()
+        candidate = await measure("candidate")
         _dump_records(save_dir, f"round{n}_candidate.txt", candidate)
         regressed = not no_correctness_regression(baseline.runs, candidate.runs)
         confident = is_confident(baseline.runs, candidate.runs, min_cells=min_cells)
