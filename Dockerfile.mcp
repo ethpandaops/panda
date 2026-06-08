@@ -29,7 +29,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -o /ethpandaops-panda-server ./cmd/server
 
 # Runtime stage
-FROM alpine:3.20
+FROM alpine:3.23
 
 WORKDIR /app
 
