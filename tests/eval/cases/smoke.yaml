@@ -11,6 +11,10 @@
     task_completion: 0.5
   network: mainnet
   tags: [smoke, clickhouse, blocks, timing]
+  # ground truth: the canonical query is run at grade time and the agent's answer is
+  # checked against its result (~1700ms), so a wrong number fails instead of passing.
+  reference_query: "SELECT round(quantile(0.50)(seen_slot_start_diff)) AS p50_arrival_ms FROM mainnet.fct_block_first_seen_by_node FINAL WHERE slot_start_date_time >= now() - INTERVAL 1 DAY"
+  reference_query_datasource: clickhouse-refined
 
 - id: list_datasources
   description: Discover available datasources

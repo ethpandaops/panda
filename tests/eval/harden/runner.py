@@ -30,10 +30,16 @@ from harden.trace import RunTrace
 
 @dataclass
 class Question:
-    """A question to measure, with a stable id for paired scoring / dataset linking."""
+    """A question to measure, with a stable id for paired scoring / dataset linking.
+
+    ``reference`` / ``reference_query`` carry optional ground truth so the judge can grade
+    correctness against it rather than mere task completion (see harden.judge)."""
 
     id: str
     text: str
+    reference: str = ""
+    reference_query: str = ""
+    reference_query_datasource: str = "clickhouse-refined"
 
 
 @dataclass
@@ -86,7 +92,12 @@ async def run_candidate(
     async def one(question: Question, subject: Subject) -> None:
         async with sem:
             trace = await subject.run(question.text)
-        verdict = await judge.judge(trace)
+        verdict = await judge.judge(
+            trace,
+            reference=question.reference,
+            reference_query=question.reference_query,
+            reference_query_datasource=question.reference_query_datasource,
+        )
         rs = score_run(
             trace,
             correct=verdict.correct,

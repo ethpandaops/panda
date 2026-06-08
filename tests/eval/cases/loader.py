@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 import yaml
 
@@ -27,6 +26,13 @@ class TestCase:
     expected_datasource: str = "clickhouse"
     expected_columns: list[str] = field(default_factory=list)
     require_all_tables: bool = False
+    # Ground truth for correctness grading (optional). ``reference`` is a literal expected
+    # answer for static facts; ``reference_query`` is canonical SQL the eval RUNS at grade
+    # time to get the current ground truth (no drift) and compares the agent's answer
+    # against. Without either, grading falls back to plausibility (task completion).
+    reference: str = ""
+    reference_query: str = ""
+    reference_query_datasource: str = "clickhouse-refined"
 
 
 @dataclass
@@ -107,6 +113,11 @@ def load_test_cases(
                 expected_datasource=item.get("expected_datasource", "clickhouse"),
                 expected_columns=item.get("expected_columns", []),
                 require_all_tables=item.get("require_all_tables", False),
+                reference=item.get("reference", ""),
+                reference_query=item.get("reference_query", ""),
+                reference_query_datasource=item.get(
+                    "reference_query_datasource", "clickhouse-refined"
+                ),
             )
         )
 

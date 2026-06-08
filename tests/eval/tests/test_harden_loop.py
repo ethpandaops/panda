@@ -60,7 +60,7 @@ class _StubSubject:
 
 
 class _StubJudge:
-    async def judge(self, trace: RunTrace) -> Verdict:
+    async def judge(self, trace: RunTrace, **_kwargs) -> Verdict:
         ok = bool(trace.output)
         return Verdict(correct=ok, correctness=1.0 if ok else 0.0, reason="stub")
 

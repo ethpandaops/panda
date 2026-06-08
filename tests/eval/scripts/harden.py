@@ -107,7 +107,16 @@ def main() -> None:
     args = ap.parse_args()
 
     repo_dir = _repo_root()
-    questions = [Question(id=c.id, text=c.input) for c in load_test_cases(args.cases)]
+    questions = [
+        Question(
+            id=c.id,
+            text=c.input,
+            reference=c.reference,
+            reference_query=c.reference_query,
+            reference_query_datasource=c.reference_query_datasource,
+        )
+        for c in load_test_cases(args.cases)
+    ]
     if args.question_id:
         wanted = set(args.question_id)
         questions = [q for q in questions if q.id in wanted]

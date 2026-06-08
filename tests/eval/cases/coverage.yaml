@@ -1,0 +1,94 @@
+# Datasource/skill coverage cases for the harden loop.
+#
+# Deliberately diverse — these pressure-test DIFFERENT parts of the harness, not more
+# mainnet block-timing variants. That breadth is what makes the held-out gate and the
+# token-bloat penalty bite: a change that stuffs the always-loaded clickhouse docs costs
+# the unrelated questions tokens, and overfitting one datasource won't help the others.
+#
+# Provenance is real, not invented:
+#   ✓ = verbatim from a passing trace this session
+#   💬 = verbatim-ish from ~/.claude ethpandaops-MCP history
+#   📓 = the question a real ethpandaops/notebooks investigation answers
+#
+# Suggested held-out split for the gate (proposer never sees these):
+#   --held-out head_vote_accuracy_by_entity --held-out precompile_usage --held-out mev_relay_share
+# i.e. hold out attestations / EVM-execution / MEV — distinct datasources the proposer
+# can't have optimized for from the train questions.
+
+# ---- verified answerable (passing traces this session) ----
+
+- id: devnets_running                                    # ✓
+  description: which devnets are currently active (network discovery)
+  input: "What devnets are currently running?"
+  metrics: {task_completion: 0.5}
+  tags: [discovery, cartographoor, devnets]
+
+- id: devnet_beacon_cpu                                   # ✓
+  description: beacon node CPU usage on a devnet (prometheus)
+  input: "How much CPU is a beacon node using on a devnet right now?"
+  metrics: {task_completion: 0.5}
+  expected_datasource: prometheus
+  tags: [prometheus, devnets, resources]
+
+- id: devnet_beacon_peers                                 # ✓
+  description: beacon node peer count on a devnet (prometheus)
+  input: "What is the peer count of a beacon node on a devnet right now?"
+  metrics: {task_completion: 0.5}
+  expected_datasource: prometheus
+  tags: [prometheus, devnets, peers]
+
+# ---- clickhouse: blocks × entity × timing / mev ----
+
+- id: mev_timing_games                                    # 📓 timing-games
+  description: which entities delay block proposals to extract MEV
+  input: "Which entities delay their block proposals the most to extract MEV on mainnet?"
+  metrics: {task_completion: 0.5}
+  tags: [clickhouse, blocks, mev, timing, entity]
+
+- id: high_peer_count_advantage                           # 📓 high-peer-count
+  description: do high-peer-count nodes see blocks faster
+  input: "Do nodes with very high peer counts see blocks faster than the rest of the network on mainnet?"
+  metrics: {task_completion: 0.5}
+  tags: [clickhouse, blocks, timing, peers]
+
+- id: block_size_vs_propagation                           # 📓 block-size-vs-propagation
+  description: effect of payload size on propagation time
+  input: "How much does block payload size affect block propagation time on mainnet?"
+  metrics: {task_completion: 0.5}
+  tags: [clickhouse, blocks, propagation, size]
+
+# ---- reorgs / canonical vs non-canonical ----
+
+- id: parent_distance_orphans                             # 📓 parent-distance
+  description: non-direct parent proposals and resulting orphan rate
+  input: "How often do mainnet proposers build on a non-direct parent block, and how often do those blocks get orphaned?"
+  metrics: {task_completion: 0.5}
+  tags: [clickhouse, reorgs, orphans, canonical]
+
+# ---- blobs / execution-layer ----
+
+- id: empty_blob_submitters                               # 📓 empty-blobs
+  description: who submits blob txs containing empty (zero-data) blobs
+  input: "Which entities submit blob transactions containing empty (zero-data) blobs on mainnet?"
+  metrics: {task_completion: 0.5}
+  tags: [clickhouse, blobs, execution, entity]
+
+- id: precompile_usage                                    # 📓 precompile-usage
+  description: most-used EVM precompiles on mainnet
+  input: "Which EVM precompiles are used most on mainnet?"
+  metrics: {task_completion: 0.5}
+  tags: [clickhouse, execution, evm, precompiles]
+
+# ---- clickhouse-raw volume / mev relay ----
+
+- id: attestation_volume_raw                              # 💬 your verbatim ask
+  description: how much attestation data is in clickhouse-raw
+  input: "How much attestation data is in clickhouse-raw for mainnet?"
+  metrics: {task_completion: 0.5}
+  tags: [clickhouse, raw, attestations, volume]
+
+- id: mev_relay_share                                     # 💬 builder/relay asks
+  description: share of recent blocks delivered via an MEV relay
+  input: "What share of recent mainnet blocks were delivered via an MEV relay?"
+  metrics: {task_completion: 0.5}
+  tags: [clickhouse, blocks, mev, relay]
