@@ -123,6 +123,32 @@ release:
 checksum:
   name_template: "checksums.txt"
 
+# CycloneDX SBOM per release archive (syft must be on PATH).
+sboms:
+  - id: archives
+    artifacts: archive
+
+# Keyless cosign signature over checksums.txt. Because every artifact is
+# listed in checksums.txt, one signature transitively covers them all.
+# Verify: cosign verify-blob --certificate checksums.txt.pem \
+#   --signature checksums.txt.sig \
+#   --certificate-identity-regexp 'https://github.com/ethpandaops/panda/.*' \
+#   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+#   checksums.txt
+signs:
+  - cmd: cosign
+    artifacts: checksum
+    signature: "${artifact}.sig"
+    certificate: "${artifact}.pem"
+    args:
+      - sign-blob
+      - "--yes"
+      - "--output-signature"
+      - "${signature}"
+      - "--output-certificate"
+      - "${certificate}"
+      - "${artifact}"
+
 changelog:
   sort: asc
   filters:

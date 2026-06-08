@@ -4,6 +4,9 @@ on:
   pull_request:
     types: [labeled, synchronize]
 
+permissions:
+  contents: read
+
 jobs:
   meta:
     if: contains(github.event.pull_request.labels.*.name, 'build') && github.event.pull_request.head.repo.full_name == github.repository
@@ -33,12 +36,14 @@ jobs:
   comment:
     needs: [meta, build]
     if: contains(github.event.pull_request.labels.*.name, 'build') && github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      pull-requests: write   # post/update the image-tags comment
     runs-on:
       - self-hosted-ghr
       - size-m-x64
     steps:
       - name: Comment PR with image tags
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           script: |
             const pr = ${{ github.event.pull_request.number }};
