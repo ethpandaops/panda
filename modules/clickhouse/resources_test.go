@@ -124,6 +124,16 @@ func TestClusterTablesHandler(t *testing.T) {
 	assert.Contains(t, err.Error(), "available clusters are clickhouse-raw, clickhouse-refined")
 }
 
+func TestClusterTablesHandlerEmptyCacheError(t *testing.T) {
+	client := &stubSchemaClient{clusters: map[string]*ClusterTables{}}
+	handler := createClusterTablesHandler(client)
+
+	_, err := handler(context.Background(), "clickhouse://tables/clickhouse-refined")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "schema discovery has no cached clusters yet")
+	assert.Contains(t, err.Error(), "DESCRIBE TABLE")
+}
+
 func TestDatabaseTablesHandler(t *testing.T) {
 	client := newStubSchemaClient()
 	handler := createDatabaseTablesHandler(client)

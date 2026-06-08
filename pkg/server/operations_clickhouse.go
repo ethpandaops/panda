@@ -86,11 +86,39 @@ func (s *service) handleClickHouseQuery(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if status < 200 || status >= 300 {
-		writeAPIError(w, status, strings.TrimSpace(string(body)))
+		writeAPIError(w, status, clickHouseErrorWithHint(strings.TrimSpace(string(body))))
 		return
 	}
 
 	writePassthroughResponse(w, http.StatusOK, headers.Get("Content-Type"), body)
+}
+
+func clickHouseErrorWithHint(message string) string {
+	if message == "" || strings.Contains(strings.ToLower(message), "\nhint:") {
+		return message
+	}
+
+	hint := clickHouseErrorHint(message)
+	if hint == "" {
+		return message
+	}
+
+	return message + "\n\nhint: " + hint
+}
+
+func clickHouseErrorHint(message string) string {
+	switch {
+	case strings.Contains(message, "INDEX_NOT_USED") || strings.Contains(message, "force_primary_key"):
+		return "ClickHouse requires the query to use the table's primary/partition key. Add a bounded time filter such as slot_start_date_time >= now() - INTERVAL 1 HOUR on slot-based tables. For latest-value questions, group within that recent window and ORDER BY slot DESC LIMIT 1 instead of using an unbounded max(slot) subquery."
+	case strings.Contains(message, "DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED"):
+		return "ClickHouse denied a join or IN against distributed subqueries. Prefer one grouped query over a recent partition window, split the lookup into two queries, or use GLOBAL JOIN/IN when a distributed join is really required."
+	case strings.Contains(message, "UNKNOWN_IDENTIFIER"):
+		return "ClickHouse does not recognize one of the selected columns, aliases, or functions. Inspect the table with panda schema <cluster> <database> <table> or DESCRIBE TABLE before retrying."
+	case strings.Contains(message, "SYNTAX_ERROR") && strings.Contains(message, "toDateTime"):
+		return "String and DateTime literals must be quoted. In Python, prefer ClickHouse parameters or repr(value) when interpolating timestamps and hex strings."
+	default:
+		return ""
+	}
 }
 
 func formatClickHouseParamValue(value any) string {

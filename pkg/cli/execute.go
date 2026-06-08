@@ -37,12 +37,15 @@ the ethpandaops library for Ethereum data analysis. All data access
 flows through the credential proxy.
 
 Code can be provided via --code, --file, or stdin.
+Use stdin for multi-line code or SQL strings that contain quotes; it avoids
+shell quoting problems.
 
 Examples:
   panda execute --code 'print("hello")'
   panda execute --file script.py
   panda execute --file script.py --session abc123
   echo 'print("hello")' | panda execute
+  panda execute < script.py
   panda execute --json --code 'import pandas; print(pandas.__version__)'`,
 	RunE: runExecute,
 }

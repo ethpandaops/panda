@@ -396,9 +396,20 @@ func (b *DockerBackend) executeWithNewSession(ctx context.Context, req ExecuteRe
 	}
 
 	// Populate session info.
+	sessionFiles := b.collectSessionFiles(ctx, containerID)
+	if result.ExitCode != 0 && len(sessionFiles) == 0 {
+		if removeErr := b.forceRemoveContainer(context.Background(), containerID); removeErr != nil {
+			log.WithError(removeErr).Warn("Failed to remove empty session container after failed first execution")
+		}
+
+		b.sessionManager.removeSession(sessionID)
+
+		return result, nil
+	}
+
 	result.SessionID = sessionID
 	result.SessionTTLRemaining = b.sessionManager.TTLRemaining(sessionID)
-	result.SessionFiles = b.collectSessionFiles(ctx, containerID)
+	result.SessionFiles = sessionFiles
 
 	return result, nil
 }

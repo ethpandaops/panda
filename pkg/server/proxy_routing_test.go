@@ -68,6 +68,31 @@ func TestClickHouseQueryRoutesToDatasourceOwnerProxy(t *testing.T) {
 	}
 }
 
+func TestClickHouseErrorWithHintForPrimaryKeyFailure(t *testing.T) {
+	t.Parallel()
+
+	msg := `Code: 277. DB::Exception: Primary key (slot_start_date_time, block_root) is not used and setting 'force_primary_key' is set. (INDEX_NOT_USED)`
+
+	got := clickHouseErrorWithHint(msg)
+	if !strings.Contains(got, "hint: ClickHouse requires the query to use the table's primary/partition key") {
+		t.Fatalf("hinted error = %q", got)
+	}
+	if !strings.Contains(got, "ORDER BY slot DESC LIMIT 1") {
+		t.Fatalf("hinted error missing latest-query guidance: %q", got)
+	}
+}
+
+func TestClickHouseErrorWithHintForUnknownIdentifier(t *testing.T) {
+	t.Parallel()
+
+	msg := "Code: 47. DB::Exception: Unknown expression identifier `slot` in scope SELECT slot. (UNKNOWN_IDENTIFIER)"
+
+	got := clickHouseErrorWithHint(msg)
+	if !strings.Contains(got, "Inspect the table with panda schema") {
+		t.Fatalf("hinted error = %q", got)
+	}
+}
+
 func TestDatasourceProxyRequestRoutesByTypeAndName(t *testing.T) {
 	t.Parallel()
 

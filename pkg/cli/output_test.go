@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -112,6 +113,16 @@ func TestPrintExampleResultsUsesNeutralTargetLabel(t *testing.T) {
 
 	assert.Contains(t, output, "  Target: prometheus")
 	assert.NotContains(t, output, "Cluster:")
+}
+
+func TestServerErrorHintUnknownIdentifier(t *testing.T) {
+	hint := serverErrorHint(
+		http.StatusNotFound,
+		"Code: 47. DB::Exception: Unknown expression identifier `slot`. (UNKNOWN_IDENTIFIER)",
+	)
+
+	require.Contains(t, hint, "ClickHouse does not recognize")
+	require.Contains(t, hint, "panda schema")
 }
 
 func TestIntFromAny(t *testing.T) {

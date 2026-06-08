@@ -53,7 +53,7 @@ that module commands cannot provide.
 ### Quick Start
 
 ` + "```" + `
-panda execute --code '
+cat <<'PY' | panda execute
 from ethpandaops import clickhouse
 df = clickhouse.query("clickhouse-refined", """
     SELECT slot, proposer_index
@@ -63,8 +63,11 @@ df = clickhouse.query("clickhouse-refined", """
     LIMIT 5
 """)
 print(df)
-'
+PY
 ` + "```" + `
+
+For one-line Python, ` + "`panda execute --code 'print(\"hello\")'`" + ` is fine. For multi-line
+code or SQL containing quotes, pipe code on stdin as above to avoid shell quoting errors.
 
 ### Discovery
 
@@ -114,21 +117,22 @@ const gettingStartedFooterCLI = `
 
 **Example — Multi-step workflow:**
 ` + "```" + `
-panda execute --code '
+cat <<'PY' | panda execute
+from ethpandaops import clickhouse
 df = clickhouse.query("clickhouse-refined", "SELECT ...")
 df.to_parquet("/workspace/data.parquet")
-'
+PY
 ` + "```" + `
 
 ` + "```" + `
-panda execute --code '
+cat <<'PY' | panda execute --session "$SESSION_ID"
 import pandas as pd
 df = pd.read_parquet("/workspace/data.parquet")
 plt.plot(df["time"], df["value"])
 plt.savefig("/workspace/chart.png")
 url = storage.upload("/workspace/chart.png")
 print(url)
-'
+PY
 ` + "```" + `
 
 Use ` + "`storage.upload()`" + ` for permanent public URLs (see ` + "`panda docs storage`" + ` for API details).
