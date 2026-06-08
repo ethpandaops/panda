@@ -70,8 +70,9 @@ def test_crashed_record_is_legible():
     assert "CRASHED: Timeout" in format_record(rec)
 
 
-def test_prompt_has_objective_and_no_hardcoding_clause():
+def test_prompt_has_objective_and_anti_overfit_rules():
     prompt = build_proposal_prompt([_record("q1", correct=False, score=0.0)])
-    assert "Do NOT hardcode" in prompt
-    assert "generaliz" in prompt.lower()
+    assert "encode the ANSWER" in prompt  # anti-leakage
+    assert "PLACEMENT" in prompt  # separation of concerns
+    assert "relieve pressure the TEST creates" in prompt  # no eval-infra gaming
     assert "text-q1" in prompt  # the question is included

@@ -29,7 +29,7 @@ from harden.judge import Judge
 from harden.proposer import Proposer
 from harden.report import build_proposal_prompt, format_record
 from harden.runner import CandidateResult, Question, run_candidate
-from harden.scoring import is_confident, no_correctness_regression
+from harden.scoring import filter_runs, is_confident, no_correctness_regression
 from harden.subject import Subject
 
 
@@ -109,16 +109,28 @@ async def optimize(
     steepness: float = 2.0,
     min_cells: int = 3,
     concurrency: int = 6,
+    held_out_ids: set[str] | None = None,
     save_dir: str | None = None,
     log: Callable[[str], None] = print,
 ) -> OptimizeResult:
     """Run the optimization loop. ``apply`` rebuilds+restarts the harness so a fresh
-    build is live; it must raise on failure. ``budget`` is the token-efficiency knee."""
+    build is live; it must raise on failure. ``budget`` is the token-efficiency knee.
+
+    ``held_out_ids`` is the anti-overfit gate: questions in this set are NEVER shown to the
+    proposer (the prompt is built from train traces only), and the confidence gate is
+    computed on these held-out questions. A change that just memorizes the train questions
+    produces no held-out gain and is rejected. The no-correctness-regression floor still
+    applies to ALL questions. With no held_out_ids the loop gates on everything (fine for a
+    single-question smoke, but it CAN be gamed by encoding that question's answer)."""
     if not _is_clean(repo_dir):
         raise RuntimeError(
             f"{repo_dir} has uncommitted changes; the loop reverts with git and would "
             "clobber them. Commit or stash first (run on a throwaway worktree/branch)."
         )
+    held_out_ids = held_out_ids or set()
+    train_ids = {q.id for q in questions} - held_out_ids
+    if held_out_ids:
+        log(f"train questions: {sorted(train_ids)} | held-out (gate): {sorted(held_out_ids)}")
 
     def _on_run(q: Question, rs, _trace) -> None:
         log(
@@ -151,7 +163,9 @@ async def optimize(
 
     for n in range(1, rounds + 1):
         log(f"--- round {n}/{rounds} ---")
-        prompt = build_proposal_prompt(baseline.records, limit=show)
+        # The proposer only ever sees TRAIN traces — never the held-out questions.
+        train_records = [r for r in baseline.records if r.question.id in train_ids]
+        prompt = build_proposal_prompt(train_records, limit=show)
         _dump(save_dir, f"round{n}_proposal_prompt.txt", prompt)
         log(f"round {n}: proposing harness edits (this can take several minutes)...")
         proposal = proposer.propose(prompt)
@@ -182,8 +196,14 @@ async def optimize(
 
         candidate = await measure("candidate")
         _dump_records(save_dir, f"round{n}_candidate.txt", candidate)
+        # Correctness must not regress ANYWHERE; the improvement must show on the HELD-OUT
+        # questions the proposer never saw (so memorizing the train questions can't pass).
+        gate_base = filter_runs(baseline.runs, held_out_ids) if held_out_ids else baseline.runs
+        gate_cand = filter_runs(candidate.runs, held_out_ids) if held_out_ids else candidate.runs
+        gate_label = "held-out" if held_out_ids else "all"
         regressed = not no_correctness_regression(baseline.runs, candidate.runs)
-        confident = is_confident(baseline.runs, candidate.runs, min_cells=min_cells)
+        confident = is_confident(gate_base, gate_cand, min_cells=min_cells)
+        log(f"round {n}: gate on {gate_label} — regressed={regressed} confident={confident}")
         if not regressed and confident:
             _commit(repo_dir, f"harden round {n}: {baseline.score:.3f} -> {candidate.score:.3f}")
             log(

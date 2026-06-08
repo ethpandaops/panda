@@ -152,3 +152,73 @@ async def test_refuses_dirty_tree(repo):
             rounds=1,
             log=lambda *_: None,
         )
+
+
+class _SelectiveSubject:
+    """Improves only the questions in ``improves`` once a proposal is applied — used to
+    simulate a change that helps the train questions but not the held-out one."""
+
+    def __init__(self, state, improves: set[str]):
+        self.name = "stub:m:cli"
+        self.state = state
+        self.improves = improves
+
+    async def run(self, question: str) -> RunTrace:
+        good = self.state["improved"] and question in self.improves
+        return RunTrace(
+            question=question,
+            subject=self.name,
+            output="answer",  # always correct, so the gate hinges on efficiency only
+            tool_calls=[ToolCall("bash", "cmd", "out")],
+            input_tokens=4000 if good else 40000,
+            output_tokens=0,
+        )
+
+
+# questions whose text == id so the stub can key on the text it receives
+_SPLIT_QS = [Question(id=q, text=q) for q in ("q0", "q1", "q2")]
+
+
+@pytest.mark.asyncio
+async def test_held_out_rejects_train_only_improvement(repo):
+    # proposal improves only the TRAIN questions (q0, q1), not the held-out q2 -> reject
+    state = {"improved": False}
+    result = await optimize(
+        _SPLIT_QS,
+        [_SelectiveSubject(state, improves={"q0", "q1"})],
+        _StubJudge(),
+        _StubProposer(repo, state),
+        repo_dir=str(repo),
+        apply=_apply_factory(repo, state),
+        budget=8000,
+        k=2,
+        rounds=1,
+        min_cells=1,
+        held_out_ids={"q2"},
+        log=lambda *_: None,
+    )
+    assert result.accepted == 0
+    assert result.rounds[0].reason == "not-confident"
+    assert not (repo / "proposal.txt").exists()  # reverted
+
+
+@pytest.mark.asyncio
+async def test_held_out_accepts_generalizing_improvement(repo):
+    # proposal improves ALL questions incl. the held-out q2 -> accept
+    state = {"improved": False}
+    result = await optimize(
+        _SPLIT_QS,
+        [_SelectiveSubject(state, improves={"q0", "q1", "q2"})],
+        _StubJudge(),
+        _StubProposer(repo, state),
+        repo_dir=str(repo),
+        apply=_apply_factory(repo, state),
+        budget=8000,
+        k=2,
+        rounds=1,
+        min_cells=1,
+        held_out_ids={"q2"},
+        log=lambda *_: None,
+    )
+    assert result.accepted == 1
+    assert result.rounds[0].reason == "accepted"

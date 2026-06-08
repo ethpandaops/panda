@@ -18,13 +18,26 @@ ethPandaOps Ethereum data ecosystem more RELIABLY (correct answers) and more EFF
 how an agent experiences the tool: CLI command help and output, MCP tool descriptions,
 error messages, the Python sandbox API, docs, examples, and runbooks — and real bugs.
 
-Hard rules:
-- Do NOT hardcode or special-case answers to the specific questions below. The fix must
-  generalize to questions you haven't seen. A change that only helps these exact prompts
-  is a regression, not a fix.
-- Prefer fixing the ROOT cause an agent tripped on (a confusing error, a missing hint in
-  a tool description, a wrong default) over adding narrow guidance.
-- Keep edits minimal and focused. Do not touch the eval harness (tests/eval/**).
+Hard rules (these are gated — violations are reverted, so a "win" that breaks one is wasted work):
+- Do NOT encode the ANSWER to the questions below. Putting a specific table, column,
+  or query pattern that one of these questions needs into the harness is leakage, not a
+  fix — even if it's dressed as a general example or error hint. If you find yourself
+  writing `seen_slot_start_diff`, a specific table name, or "for latest-X questions do Y"
+  where Y is one of these questions' answers, stop.
+- PLACEMENT matters. Dataset-specific knowledge (which table/column holds what for a
+  given dataset) belongs in that DATASOURCE's searchable examples/docs/schema, fetched on
+  demand — NEVER in a generic module's always-loaded description or in error-hint text.
+  Error hints must be error-CLASS generic: explain the error and how to DISCOVER the fix
+  (e.g. "filter on the table's primary key; run `panda schema <…>` to see it") and name
+  no dataset-specific columns or tables. Anything always-loaded is paid for by every
+  question, so it must help broadly or it's bloat.
+- Do NOT change product behavior to relieve pressure the TEST creates. Session lifecycle,
+  execution semantics, timeouts, resource limits, retry counts — if a change only helps
+  because the eval runs many failing attempts, that's gaming the harness, not improving
+  it. Those are test-config knobs. Fix the agent's experience, not the test's plumbing.
+- Prefer fixing the ROOT cause an agent tripped on (a confusing error, a missing hint,
+  a wrong default, a real bug) over adding narrow guidance. Keep edits minimal. Do not
+  touch the eval harness (tests/eval/**).
 
 Below are real agent runs: the question, the full raw trace (every tool call's input and
 output), the final answer, whether it was correct, and the tokens it burned. Study where

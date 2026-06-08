@@ -90,6 +90,13 @@ def main() -> None:
         default=3,
         help="min (question, subject) cells for the confidence gate; set 1 for a single-question smoke",
     )
+    ap.add_argument(
+        "--held-out",
+        action="append",
+        default=[],
+        help="case id(s) the proposer never sees; the confidence gate is computed on these "
+        "(anti-overfit). Repeatable. Without it, the gate runs on all questions and can be gamed.",
+    )
     args = ap.parse_args()
 
     repo_dir = _repo_root()
@@ -143,6 +150,7 @@ def main() -> None:
                 show=args.show,
                 min_cells=args.min_cells,
                 concurrency=args.concurrency,
+                held_out_ids=set(args.held_out) or None,
                 save_dir=str(run_dir),
                 log=log,
             )

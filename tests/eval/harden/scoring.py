@@ -89,6 +89,12 @@ def pass_rate(runs: list[RunScore]) -> float:
     return statistics.mean(1.0 if rs.correct else 0.0 for rs in runs) if runs else 0.0
 
 
+def filter_runs(runs: list[RunScore], question_ids: set[str]) -> list[RunScore]:
+    """Runs whose question is in ``question_ids`` — used to gate on held-out questions
+    the proposer never saw, so a change that only memorizes the train questions can't pass."""
+    return [rs for rs in runs if rs.question_id in question_ids]
+
+
 def _cell(rs: RunScore) -> tuple[str, str]:
     return (rs.question_id, rs.subject)
 
