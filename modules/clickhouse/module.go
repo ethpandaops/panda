@@ -68,14 +68,22 @@ func (m *Module) KnownTables(datasource string) (map[string]bool, bool) {
 }
 
 // WaitForSchemaReady implements module.SchemaReadyWaiter: it blocks until the
-// initial schema fetch has completed or ctx is done. Returns immediately when
-// schema discovery is disabled.
+// initial schema fetch has completed, ctx is done, or the configured
+// ready_timeout elapses. Returns immediately when schema discovery is disabled.
 func (m *Module) WaitForSchemaReady(ctx context.Context) error {
 	if m.schemaClient == nil {
 		return nil
 	}
 
-	return m.schemaClient.WaitReady(ctx)
+	timeout := m.cfg.SchemaDiscovery.ReadyTimeout
+	if timeout <= 0 {
+		timeout = DefaultSchemaReadyTimeout
+	}
+
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	return m.schemaClient.WaitReady(waitCtx)
 }
 
 // SetProxyClient injects the proxy service for schema discovery.
@@ -171,6 +179,10 @@ func (m *Module) Init(rawConfig []byte) error {
 func (m *Module) ApplyDefaults() {
 	if m.cfg.SchemaDiscovery.RefreshInterval == 0 {
 		m.cfg.SchemaDiscovery.RefreshInterval = DefaultSchemaRefreshInterval
+	}
+
+	if m.cfg.SchemaDiscovery.ReadyTimeout == 0 {
+		m.cfg.SchemaDiscovery.ReadyTimeout = DefaultSchemaReadyTimeout
 	}
 }
 

@@ -43,6 +43,11 @@ const (
 	// DefaultSchemaQueryTimeout is the timeout for individual schema queries.
 	DefaultSchemaQueryTimeout = 60 * time.Second
 
+	// DefaultSchemaReadyTimeout bounds how long server startup waits for the
+	// initial schema fetch before proceeding (and letting the background refresh
+	// catch up).
+	DefaultSchemaReadyTimeout = 2 * time.Minute
+
 	// schemaQueryConcurrency limits concurrent schema queries per cluster.
 	schemaQueryConcurrency = 5
 )
