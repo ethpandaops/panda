@@ -68,21 +68,21 @@ func TestRuntimeCloseEmpty(t *testing.T) {
 	assert.NoError(t, r.Close())
 }
 
-func TestRuntimeCloseExampleIndexTakesPrecedence(t *testing.T) {
+func TestRuntimeCloseClosesSharedEmbedderWithIndex(t *testing.T) {
 	t.Parallel()
 
-	indexEmbedder := &fakeEmbedder{}
-	runtimeEmbedder := &fakeEmbedder{}
+	// In production the example index and the runtime share one embedder; the
+	// runtime owns it and closes it once. Swapping indices must not close it.
+	embedder := &fakeEmbedder{}
 
 	r := &Runtime{
-		ExampleIndex: newExampleIndex(t, indexEmbedder),
-		embedder:     runtimeEmbedder,
+		ExampleIndex: resource.NewRefreshableExampleIndex(newExampleIndex(t, embedder)),
+		embedder:     embedder,
 	}
 
 	require.NoError(t, r.Close())
 
-	assert.True(t, indexEmbedder.closed, "ExampleIndex embedder should be closed")
-	assert.False(t, runtimeEmbedder.closed, "runtime embedder should not be closed when ExampleIndex is set")
+	assert.True(t, embedder.closed, "runtime should close the shared embedder")
 }
 
 func TestRuntimeCloseEmbedderOnly(t *testing.T) {

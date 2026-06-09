@@ -46,6 +46,14 @@ type SchemaResolverAware interface {
 	SetSchemaResolver(resolver SchemaResolver)
 }
 
+// SchemaReadyWaiter is implemented by modules whose asynchronous startup (e.g.
+// schema discovery) must complete before dependent state is built. The server
+// waits on this before building the search index so it indexes a schema-valid
+// example set rather than a conservative everything-set.
+type SchemaReadyWaiter interface {
+	WaitForSchemaReady(ctx context.Context) error
+}
+
 // ProxyDiscoverable modules initialize from datasources discovered via the proxy.
 type ProxyDiscoverable interface {
 	// InitFromDiscovery initializes the module from discovered datasources.

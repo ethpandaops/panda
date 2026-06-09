@@ -21,6 +21,7 @@ var (
 	_ module.DiscoveryReloadable    = (*Module)(nil)
 	_ module.ProxyAware             = (*Module)(nil)
 	_ module.SchemaResolver         = (*Module)(nil)
+	_ module.SchemaReadyWaiter      = (*Module)(nil)
 	_ module.ResourceProvider       = (*Module)(nil)
 	_ module.SandboxEnvProvider     = (*Module)(nil)
 	_ module.DatasourceInfoProvider = (*Module)(nil)
@@ -64,6 +65,17 @@ func (m *Module) KnownTables(datasource string) (map[string]bool, bool) {
 	}
 
 	return names, true
+}
+
+// WaitForSchemaReady implements module.SchemaReadyWaiter: it blocks until the
+// initial schema fetch has completed or ctx is done. Returns immediately when
+// schema discovery is disabled.
+func (m *Module) WaitForSchemaReady(ctx context.Context) error {
+	if m.schemaClient == nil {
+		return nil
+	}
+
+	return m.schemaClient.WaitReady(ctx)
 }
 
 // SetProxyClient injects the proxy service for schema discovery.

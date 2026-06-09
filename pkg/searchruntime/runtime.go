@@ -3,7 +3,10 @@ package searchruntime
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
+	"sort"
 	"sync"
+	"time"
 
 	"github.com/sirupsen/logrus"
 
@@ -15,12 +18,13 @@ import (
 	"github.com/ethpandaops/panda/pkg/module"
 	"github.com/ethpandaops/panda/pkg/proxy"
 	"github.com/ethpandaops/panda/pkg/resource"
+	"github.com/ethpandaops/panda/pkg/types"
 	"github.com/ethpandaops/panda/runbooks"
 )
 
 // Runtime holds the semantic search indices and embedder.
 type Runtime struct {
-	ExampleIndex    *resource.ExampleIndex
+	ExampleIndex    *resource.RefreshableExampleIndex
 	RunbookRegistry *runbooks.Registry
 	RunbookIndex    *resource.RunbookIndex
 	EIPRegistry     *eips.Registry
@@ -28,7 +32,16 @@ type Runtime struct {
 	SpecsRegistry   *consensusspecs.Registry
 	SpecsIndex      *resource.ConsensusSpecIndex
 	embedder        embedding.Embedder
+
+	stop chan struct{}
+	wg   sync.WaitGroup
 }
+
+// exampleRefreshInterval is how often the example search index is rebuilt to
+// track changes in the validated example set (e.g. after the live schema
+// changes which examples are valid). Rebuilds are skipped when the example set
+// is unchanged, so polling this often is cheap.
+const exampleRefreshInterval = 5 * time.Minute
 
 // Build creates a new search runtime with example, runbook, EIP, and
 // consensus spec indices.
@@ -42,7 +55,7 @@ func Build(
 	cacheDir string,
 	specsCfg config.ConsensusSpecsConfig,
 ) (*Runtime, error) {
-	runtime := &Runtime{}
+	runtime := &Runtime{stop: make(chan struct{})}
 
 	if proxyService == nil {
 		log.Warn("Proxy service unavailable; semantic search disabled")
@@ -104,7 +117,8 @@ func Build(
 		return nil, fmt.Errorf("building example index: %w", err)
 	}
 
-	runtime.ExampleIndex = exampleIndex
+	runtime.ExampleIndex = resource.NewRefreshableExampleIndex(exampleIndex)
+	runtime.startExampleRefresh(log, moduleRegistry, exampleSignature(examples))
 
 	runbookReg, err := runbooks.NewRegistry(log)
 	if err != nil {
@@ -201,19 +215,99 @@ func Build(
 	return runtime, nil
 }
 
-// Close releases resources held by the runtime.
+// Close stops the background refresher and releases the shared embedder.
 func (r *Runtime) Close() error {
 	if r == nil {
 		return nil
 	}
 
-	if r.ExampleIndex != nil {
-		return r.ExampleIndex.Close()
+	if r.stop != nil {
+		select {
+		case <-r.stop:
+		default:
+			close(r.stop)
+		}
 	}
+
+	r.wg.Wait()
 
 	if r.embedder != nil {
 		return r.embedder.Close()
 	}
 
 	return nil
+}
+
+// startExampleRefresh rebuilds the example search index when the validated
+// example set changes (e.g. after live schema changes which examples are valid).
+// Rebuilds are skipped while the set is unchanged, so the poll is cheap.
+func (r *Runtime) startExampleRefresh(log logrus.FieldLogger, moduleRegistry *module.Registry, initialSig uint64) {
+	r.wg.Add(1)
+
+	go func() {
+		defer r.wg.Done()
+
+		ticker := time.NewTicker(exampleRefreshInterval)
+		defer ticker.Stop()
+
+		lastSig := initialSig
+
+		for {
+			select {
+			case <-r.stop:
+				return
+			case <-ticker.C:
+				examples := resource.GetQueryExamples(moduleRegistry)
+
+				sig := exampleSignature(examples)
+				if sig == lastSig {
+					continue
+				}
+
+				index, err := resource.NewExampleIndex(log, r.embedder, examples)
+				if err != nil {
+					log.WithError(err).Warn("Example index refresh failed; keeping previous index")
+
+					continue
+				}
+
+				r.ExampleIndex.Swap(index)
+				lastSig = sig
+
+				log.Info("Example search index refreshed after example set change")
+			}
+		}
+	}()
+}
+
+// exampleSignature is a cheap fingerprint of the example set (category, name and
+// target of every example). It changes whenever an example is added, removed, or
+// re-targeted — the cases that warrant rebuilding the index.
+func exampleSignature(categories map[string]types.ExampleCategory) uint64 {
+	keys := make([]string, 0, len(categories))
+	for key := range categories {
+		keys = append(keys, key)
+	}
+
+	sort.Strings(keys)
+
+	h := fnv.New64a()
+
+	for _, key := range keys {
+		entries := make([]string, 0, len(categories[key].Examples))
+		for _, ex := range categories[key].Examples {
+			entries = append(entries, ex.Name+"\x00"+ex.Target)
+		}
+
+		sort.Strings(entries)
+
+		_, _ = h.Write([]byte(key))
+
+		for _, e := range entries {
+			_, _ = h.Write([]byte{0})
+			_, _ = h.Write([]byte(e))
+		}
+	}
+
+	return h.Sum64()
 }

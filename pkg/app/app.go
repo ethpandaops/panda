@@ -34,6 +34,11 @@ import (
 // discovery goroutine.
 const refreshActivationTimeout = 30 * time.Second
 
+// schemaReadyTimeout bounds how long server startup waits for the initial schema
+// fetch before building the search index. On timeout the index is built from the
+// conservative everything-set and corrected by the background refresh.
+const schemaReadyTimeout = 60 * time.Second
+
 const embeddedLocalProxyName = "local"
 
 // localProxyDiscoveryInterval is how often the server re-discovers datasources
@@ -488,6 +493,30 @@ func (a *App) discoveredDatasources(proxyClient proxy.Client) []types.Datasource
 func (a *App) injectProxyClient() {
 	for _, ext := range a.ModuleRegistry.Initialized() {
 		a.injectProxyClientInto(ext)
+	}
+}
+
+// WaitForSchemaReady blocks (bounded by schemaReadyTimeout) until every module
+// whose async startup feeds derived state has completed its initial fetch, so
+// callers that build derived state (e.g. the search index) read a populated,
+// schema-validated view. On timeout it logs and returns; the background refresh
+// recovers once the schema arrives.
+func (a *App) WaitForSchemaReady(ctx context.Context) {
+	waitCtx, cancel := context.WithTimeout(ctx, schemaReadyTimeout)
+	defer cancel()
+
+	for _, ext := range a.ModuleRegistry.Initialized() {
+		waiter, ok := ext.(module.SchemaReadyWaiter)
+		if !ok {
+			continue
+		}
+
+		if err := waiter.WaitForSchemaReady(waitCtx); err != nil {
+			a.log.WithField("module", ext.Name()).WithError(err).
+				Warn("Timed out waiting for schema readiness; proceeding (background refresh will catch up)")
+
+			return
+		}
 	}
 }
 

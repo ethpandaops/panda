@@ -212,6 +212,7 @@ type fakeSchemaClient struct {
 
 func (f *fakeSchemaClient) Start(_ context.Context) error           { return nil }
 func (f *fakeSchemaClient) Stop() error                             { return nil }
+func (f *fakeSchemaClient) WaitReady(_ context.Context) error       { return nil }
 func (f *fakeSchemaClient) GetAllTables() map[string]*ClusterTables { return nil }
 func (f *fakeSchemaClient) GetClusterTables(_ string) (*ClusterTables, bool) {
 	return nil, false
