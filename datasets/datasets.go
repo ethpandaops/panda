@@ -24,6 +24,7 @@ var (
 	_ module.Module                        = (*Module)(nil)
 	_ module.DefaultEnabled                = (*Module)(nil)
 	_ module.ProxyDiscoverable             = (*Module)(nil)
+	_ module.SchemaResolverAware           = (*Module)(nil)
 	_ module.ExamplesProvider              = (*Module)(nil)
 	_ module.GettingStartedSnippetProvider = (*Module)(nil)
 )
@@ -56,6 +57,9 @@ type Module struct {
 	// active is the set of dataset names declared by discovered datasources. A
 	// nil/empty set means "show all packs".
 	active map[string]bool
+	// resolver validates example table references against the live schema.
+	// When nil, examples are not schema-validated.
+	resolver module.SchemaResolver
 }
 
 // New creates a new datasets module.
@@ -82,6 +86,14 @@ func (m *Module) Stop(_ context.Context) error { return nil }
 // DefaultEnabled activates the module without configuration: packs ship with the
 // release and are always available.
 func (m *Module) DefaultEnabled() bool { return true }
+
+// SetSchemaResolver injects the live-schema resolver used to validate example
+// table references. Safe to call before or after the schema is populated.
+func (m *Module) SetSchemaResolver(resolver module.SchemaResolver) {
+	m.mu.Lock()
+	m.resolver = resolver
+	m.mu.Unlock()
+}
 
 // InitFromDiscovery scopes the exposed packs to the datasets declared by
 // discovered datasources (via their Contents bindings). Always returns nil: the
@@ -206,25 +218,80 @@ func (m *Module) activePacks() []pack {
 
 // Examples aggregates query examples across the active packs. Categories that
 // appear in more than one pack (e.g. a category split across xatu-raw and
-// xatu-cbt) are merged so no examples are dropped.
+// xatu-cbt) are merged so no examples are dropped. When a live-schema resolver
+// is available, examples that reference tables absent from the live schema are
+// dropped so stale guidance is never surfaced.
 func (m *Module) Examples() map[string]types.ExampleCategory {
+	validate := m.exampleValidator()
+
 	result := make(map[string]types.ExampleCategory)
 
 	for _, p := range m.activePacks() {
 		for key, cat := range p.examples {
+			kept := cat.Examples
+			if validate != nil {
+				kept = make([]types.Example, 0, len(cat.Examples))
+				for _, ex := range cat.Examples {
+					if validate(ex) {
+						kept = append(kept, ex)
+					}
+				}
+			}
+
+			if len(kept) == 0 {
+				continue
+			}
+
 			existing, ok := result[key]
 			if !ok {
+				cat.Examples = kept
 				result[key] = cat
 
 				continue
 			}
 
-			existing.Examples = append(existing.Examples, cat.Examples...)
+			existing.Examples = append(existing.Examples, kept...)
 			result[key] = existing
 		}
 	}
 
 	return result
+}
+
+// exampleValidator returns a predicate that reports whether an example's table
+// references all exist in the live schema. It returns nil when no resolver is
+// set (validation disabled). Per-target known-table sets are cached for the
+// duration of the call; a target with no schema yet (ok=false) is not validated.
+func (m *Module) exampleValidator() func(types.Example) bool {
+	m.mu.RLock()
+	resolver := m.resolver
+	m.mu.RUnlock()
+
+	if resolver == nil {
+		return nil
+	}
+
+	type lookup struct {
+		known   map[string]bool
+		present bool
+	}
+
+	cache := make(map[string]lookup)
+
+	return func(ex types.Example) bool {
+		l, ok := cache[ex.Target]
+		if !ok {
+			known, present := resolver.KnownTables(ex.Target)
+			l = lookup{known: known, present: present}
+			cache[ex.Target] = l
+		}
+
+		if !l.present {
+			return true
+		}
+
+		return queryReferencesOnlyKnownTables(ex.Query, l.known)
+	}
 }
 
 // GettingStartedSnippet concatenates the per-pack getting-started guidance for

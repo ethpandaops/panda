@@ -131,6 +131,10 @@ func (a *App) Build(ctx context.Context) error {
 
 	a.log.Info("All modules started")
 
+	// Wire the live-schema resolver into content modules so they can validate
+	// examples against the real schema (drift gate).
+	a.injectSchemaResolver()
+
 	// 6. Create and start cartographoor client.
 	cartographoorClient := cartographoor.NewCartographoorClient(a.log, cartographoor.CartographoorConfig{
 		URL:      cartographoor.DefaultCartographoorURL,
@@ -484,6 +488,32 @@ func (a *App) discoveredDatasources(proxyClient proxy.Client) []types.Datasource
 func (a *App) injectProxyClient() {
 	for _, ext := range a.ModuleRegistry.Initialized() {
 		a.injectProxyClientInto(ext)
+	}
+}
+
+// injectSchemaResolver wires the first module that resolves live schema (the
+// ClickHouse module) into every SchemaResolverAware module so content can be
+// validated against the real schema.
+func (a *App) injectSchemaResolver() {
+	var resolver module.SchemaResolver
+
+	for _, ext := range a.ModuleRegistry.Initialized() {
+		if r, ok := ext.(module.SchemaResolver); ok {
+			resolver = r
+
+			break
+		}
+	}
+
+	if resolver == nil {
+		return
+	}
+
+	for _, ext := range a.ModuleRegistry.Initialized() {
+		if aware, ok := ext.(module.SchemaResolverAware); ok {
+			aware.SetSchemaResolver(resolver)
+			a.log.WithField("module", ext.Name()).Debug("Injected schema resolver into module")
+		}
 	}
 }
 

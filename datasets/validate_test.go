@@ -1,0 +1,80 @@
+package datasets
+
+import (
+	"reflect"
+	"sort"
+	"testing"
+)
+
+func TestExtractTableRefs(t *testing.T) {
+	cases := []struct {
+		name string
+		sql  string
+		want []string
+	}{
+		{
+			name: "templated network db",
+			sql:  "SELECT avg(x) FROM {network}.fct_block_first_seen_by_node FINAL WHERE slot_start_date_time >= now()",
+			want: []string{"fct_block_first_seen_by_node"},
+		},
+		{
+			name: "db-qualified otel",
+			sql:  "SELECT Timestamp FROM external.otel_logs WHERE ResourceAttributes['network'] = {n:String}",
+			want: []string{"otel_logs"},
+		},
+		{
+			name: "bare raw table",
+			sql:  "SELECT * FROM canonical_beacon_validators WHERE meta_network_name = 'mainnet'",
+			want: []string{"canonical_beacon_validators"},
+		},
+		{
+			name: "cte excluded, join included",
+			sql: `WITH seen AS (SELECT slot FROM {network}.fct_block_head)
+			      SELECT b.slot FROM {network}.fct_block_head b
+			      JOIN seen s ON s.slot = b.slot
+			      LEFT JOIN {network}.fct_attestation a ON a.slot = b.slot`,
+			want: []string{"fct_attestation", "fct_block_head"},
+		},
+		{
+			name: "subquery not captured as table",
+			sql:  "SELECT * FROM (SELECT slot FROM {network}.fct_block) GROUP BY slot",
+			want: []string{"fct_block"},
+		},
+		{
+			name: "no from",
+			sql:  "SELECT 1",
+			want: nil,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := extractTableRefs(tc.sql)
+			sort.Strings(got)
+
+			want := append([]string(nil), tc.want...)
+			sort.Strings(want)
+
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("extractTableRefs() = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+func TestQueryReferencesOnlyKnownTables(t *testing.T) {
+	known := map[string]bool{"fct_block_head": true, "fct_attestation": true}
+
+	if !queryReferencesOnlyKnownTables("SELECT * FROM {network}.fct_block_head FINAL", known) {
+		t.Error("expected known table query to be valid")
+	}
+
+	if queryReferencesOnlyKnownTables("SELECT * FROM {network}.fct_block_removed", known) {
+		t.Error("expected query referencing unknown table to be invalid")
+	}
+
+	// No extractable refs => valid (conservative).
+	if !queryReferencesOnlyKnownTables("SELECT 1", known) {
+		t.Error("expected query with no table refs to be valid")
+	}
+}

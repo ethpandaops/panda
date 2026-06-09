@@ -114,6 +114,67 @@ func TestInitFromDiscoveryNoBindingsShowsAll(t *testing.T) {
 	}
 }
 
+type fakeResolver struct {
+	tables map[string]map[string]bool // datasource -> table set
+}
+
+func (f fakeResolver) KnownTables(datasource string) (map[string]bool, bool) {
+	t, ok := f.tables[datasource]
+
+	return t, ok
+}
+
+func TestExamplesDropStaleAgainstLiveSchema(t *testing.T) {
+	m := newLoaded(t)
+
+	// Live schema for clickhouse-refined knows every xatu-cbt table EXCEPT
+	// fct_block_first_seen_by_node (simulate a renamed/removed table). Other
+	// targets (clickhouse-raw, local-kurtosis) have no schema => not validated.
+	known := map[string]bool{}
+	for _, cat := range m.Examples() {
+		for _, ex := range cat.Examples {
+			for _, ref := range extractTableRefs(ex.Query) {
+				known[ref] = true
+			}
+		}
+	}
+	delete(known, "fct_block_first_seen_by_node")
+
+	m.SetSchemaResolver(fakeResolver{tables: map[string]map[string]bool{
+		"clickhouse-refined": known,
+	}})
+
+	for key, cat := range m.Examples() {
+		for _, ex := range cat.Examples {
+			if ex.Target != "clickhouse-refined" {
+				continue
+			}
+
+			for _, ref := range extractTableRefs(ex.Query) {
+				if ref == "fct_block_first_seen_by_node" {
+					t.Fatalf("category %q kept example %q referencing a table absent from live schema", key, ex.Name)
+				}
+			}
+		}
+	}
+}
+
+func TestExamplesKeptWhenNoLiveSchema(t *testing.T) {
+	m := newLoaded(t)
+
+	// Resolver present but knows nothing (ok=false for all targets) => keep all.
+	m.SetSchemaResolver(fakeResolver{tables: map[string]map[string]bool{}})
+
+	total := 0
+	for _, cat := range m.Examples() {
+		total += len(cat.Examples)
+	}
+
+	if total != 164 {
+		t.Fatalf("no live schema: total examples = %d, want 164 (conservative keep-all)", total)
+	}
+}
+
 func TestGettingStartedCoversAllPacks(t *testing.T) {
 	m := newLoaded(t)
 	gs := m.GettingStartedSnippet()

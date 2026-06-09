@@ -20,6 +20,7 @@ var (
 	_ module.ProxyDiscoverable      = (*Module)(nil)
 	_ module.DiscoveryReloadable    = (*Module)(nil)
 	_ module.ProxyAware             = (*Module)(nil)
+	_ module.SchemaResolver         = (*Module)(nil)
 	_ module.ResourceProvider       = (*Module)(nil)
 	_ module.SandboxEnvProvider     = (*Module)(nil)
 	_ module.DatasourceInfoProvider = (*Module)(nil)
@@ -42,6 +43,28 @@ func New() *Module {
 }
 
 func (m *Module) Name() string { return "clickhouse" }
+
+// KnownTables implements module.SchemaResolver: it returns the set of bare table
+// names discovered live for a datasource (across all of its databases) and
+// whether any schema is available yet. ok=false until schema discovery has
+// populated the datasource, so callers treat unknown datasources conservatively.
+func (m *Module) KnownTables(datasource string) (map[string]bool, bool) {
+	if m.schemaClient == nil {
+		return nil, false
+	}
+
+	cluster, ok := m.schemaClient.GetClusterTables(datasource)
+	if !ok || len(cluster.Tables) == 0 {
+		return nil, false
+	}
+
+	names := make(map[string]bool, len(cluster.Tables))
+	for _, table := range cluster.Tables {
+		names[table.Name] = true
+	}
+
+	return names, true
+}
 
 // SetProxyClient injects the proxy service for schema discovery.
 func (m *Module) SetProxyClient(client proxy.Service) {
