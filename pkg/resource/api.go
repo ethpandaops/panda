@@ -24,7 +24,7 @@ func RegisterAPIResources(log logrus.FieldLogger, reg Registry, moduleReg *modul
 			"ethpandaops Python Library API",
 			mcp.WithResourceDescription("API documentation for the ethpandaops Python library"),
 			mcp.WithMIMEType("application/json"),
-			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.9),
+			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.9, ""),
 		),
 		Handler: createAPIHandler(moduleReg),
 	})

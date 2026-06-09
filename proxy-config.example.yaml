@@ -192,6 +192,15 @@ rate_limiting:
 # Audit logging
 audit:
   enabled: true
+  # Capture the upstream request payload (e.g. the ClickHouse SQL) in each audit
+  # entry. The full body is always forwarded upstream; only the audited copy is
+  # truncated to max_body_bytes.
+  log_request_body: true
+  # Capture the upstream response payload. Response bodies can be large (full
+  # result sets), so leave this off unless you need it.
+  log_response_body: false
+  # Cap on stored bytes per captured body (0 = 64KiB default).
+  max_body_bytes: 65536
 
 # Prometheus metrics
 metrics:

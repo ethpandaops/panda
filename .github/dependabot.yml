@@ -1,0 +1,43 @@
+version: 2
+updates:
+  # Go modules.
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    # Only open a PR once a new version has been published for 14 days, to dodge
+    # yanked releases and same-day supply-chain compromises.
+    cooldown:
+      default-days: 14
+    groups:
+      go-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  # GitHub Actions — keeps the SHA-pinned actions current (Dependabot
+  # understands pinned-SHA + version-comment refs and bumps both).
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    cooldown:
+      default-days: 14
+    # One grouped PR for all action updates (including majors) instead of a
+    # separate PR per action.
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  # Base images in the Dockerfiles.
+  - package-ecosystem: docker
+    directories:
+      - "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    cooldown:
+      default-days: 14

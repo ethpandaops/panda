@@ -22,7 +22,7 @@ func RegisterExamplesResources(log logrus.FieldLogger, reg Registry, moduleReg *
 			"Query Examples",
 			mcp.WithResourceDescription("Example queries for ClickHouse, Prometheus, and Loki data"),
 			mcp.WithMIMEType("application/json"),
-			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.6),
+			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.6, ""),
 		),
 		Handler: createExamplesHandler(moduleReg),
 	})

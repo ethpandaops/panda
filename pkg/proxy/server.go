@@ -161,7 +161,7 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 
 	// Create auditor if enabled.
 	if cfg.Audit.Enabled {
-		s.auditor = NewAuditor(log)
+		s.auditor = NewAuditor(log, cfg.Audit)
 	}
 
 	// Create authorizer for per-datasource access control.
