@@ -14,4 +14,4 @@
         Produces a histogram visualization (a returned chart URL or saved image) of
         block arrival times for recent mainnet blocks, built from real queried data.
         A textual summary with no chart artifact, or one not grounded in a real query,
-        fails.
+        fails. Must provide the storage URL of the image it uploaded.

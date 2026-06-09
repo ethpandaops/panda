@@ -28,7 +28,7 @@ import time
 from pathlib import Path
 
 from cases.loader import load_test_cases
-from config.settings import DEFAULT_EVALUATOR_MODEL
+from config.settings import DEFAULT_EVALUATOR_MODEL, DEFAULT_SUBJECT
 from harden.auditor import CodexAuditor
 from harden.loop import optimize
 from harden.proposer import CodexProposer
@@ -135,7 +135,7 @@ def main() -> None:
     def log(m: str) -> None:
         print(m, flush=True)
 
-    subject_specs = args.subject or ["opencode-go/deepseek-v4-flash:cli"]
+    subject_specs = args.subject or [DEFAULT_SUBJECT]
     grader = args.grader or f"openrouter:{args.judge_model}"
     proposer = CodexProposer(
         repo_dir,

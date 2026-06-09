@@ -182,11 +182,9 @@ jobs:
         working-directory: tests/eval
         env:
           OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
-          # LLM-as-judge (deepeval) routes the evaluator model through OpenRouter.
+          # promptfoo grades each case's llm-rubric asserts via the judge model, routed
+          # through OpenRouter (--judge-model below -> openrouter:<model>).
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          MCP_EVAL_EVALUATOR_MODEL: google/gemini-3.1-flash-lite
-          MCP_EVAL_OPENCODE_ROUTE: cli
-          MCP_EVAL_MODEL: opencode-go/deepseek-v4-flash
           MCP_EVAL_REASONING_EFFORT: high
           MCP_EVAL_OPENCODE_TIMEOUT: "120"
           # Ship traces to the dedicated prod Langfuse (shitpit-backed). Enables when
@@ -197,9 +195,11 @@ jobs:
           MCP_EVAL_LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           MCP_EVAL_LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
         run: |
-          uv run python -m pytest tests/test_smoke.py -m smoke \
-            -n 0 \
-            --junitxml=reports/junit.xml --tb=short
+          # subject + judge default to the harness defaults (config/settings.py) — don't
+          # restate them here.
+          uv run python -m scripts.eval \
+            --cases smoke.yaml \
+            --junit reports/junit.xml --json reports/eval.json
 
       - name: Server log (sandbox / proxy activity)
         if: always()
@@ -222,14 +222,5 @@ jobs:
         if: always()
         with:
           files: tests/eval/reports/junit.xml
-          check_name: "Eval Smoke (opencode-go/deepseek-v4-flash)"
+          check_name: "Eval Smoke"
           comment_mode: ${{ github.event_name == 'pull_request' && 'always' || 'off' }}
-
-      - name: Comment Langfuse trace links
-        # The eval writes reports/langfuse_links.md (one deep-link per question) when
-        # Langfuse is enabled; surface it as a sticky PR comment.
-        if: ${{ always() && github.event_name == 'pull_request' && hashFiles('tests/eval/reports/langfuse_links.md') != '' }}
-        uses: marocchino/sticky-pull-request-comment@v2
-        with:
-          header: langfuse-traces
-          path: tests/eval/reports/langfuse_links.md

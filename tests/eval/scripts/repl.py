@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 console = Console()
 
 
-def print_result(result: "ExecutionResult", verbose: bool = False) -> None:
+def print_result(result: ExecutionResult, verbose: bool = False) -> None:
     """Pretty print an execution result."""
     # Print the output
     if result.output:
@@ -106,7 +106,6 @@ async def repl_loop(
     """
     # Import here to avoid circular imports and allow settings override
     from agent.opencode_agent import OpenCodeAgent
-    from agent.wrapper import ExecutionResult
     from config.settings import EvalSettings
 
     settings = EvalSettings(

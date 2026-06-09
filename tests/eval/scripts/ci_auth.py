@@ -26,7 +26,7 @@ import os
 import sys
 import urllib.parse
 import urllib.request
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 TOKEN_EXCHANGE_GRANT = "urn:ietf:params:oauth:grant-type:token-exchange"
@@ -125,7 +125,7 @@ def write_credential(path: Path, access_token: str, expires_in: int) -> None:
     """Write a credential file the panda server reads (no refresh token)."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.parent.chmod(0o700)
-    expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+    expires_at = datetime.now(UTC) + timedelta(seconds=expires_in)
     path.write_text(json.dumps({
         "access_token": access_token,
         "token_type": "Bearer",

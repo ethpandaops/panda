@@ -5,9 +5,15 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Default values - single source of truth
+# Default values - single source of truth. Everything else references these; don't
+# re-hardcode the strings at call sites.
 DEFAULT_AGENT_MODEL = "opencode-go/deepseek-v4-flash"
+DEFAULT_AGENT_ROUTE = "cli"
+# A subject spec is "<provider>/<model>:<route>".
+DEFAULT_SUBJECT = f"{DEFAULT_AGENT_MODEL}:{DEFAULT_AGENT_ROUTE}"
 DEFAULT_EVALUATOR_MODEL = "google/gemini-3.1-flash-lite"
+# The promptfoo grading provider: the evaluator model via OpenRouter.
+DEFAULT_GRADER = f"openrouter:{DEFAULT_EVALUATOR_MODEL}"
 
 
 class EvalSettings(BaseSettings):
@@ -97,10 +103,10 @@ class EvalSettings(BaseSettings):
         description="Directory for saving trace files",
     )
 
-    # DeepEval / Evaluator LLM settings
+    # Grader / evaluator LLM settings (the promptfoo llm-rubric judge default)
     evaluator_model: str = Field(
         default=DEFAULT_EVALUATOR_MODEL,
-        description="Model to use for LLM-based evaluation metrics. "
+        description="Default model for grading llm-rubric asserts. "
         "Supports OpenRouter models, OpenAI models, or Claude models.",
     )
 

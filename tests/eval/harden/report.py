@@ -44,6 +44,11 @@ Hard rules (these are gated — violations are reverted, so a "win" that breaks 
 Below are real agent runs: the question, the full raw trace (every tool call's input and
 output), the final answer, whether it was correct, and the tokens it burned. Study where
 agents flailed, then make targeted harness edits.
+
+An auditor will be checking your changes for multiple criteria, like if the solution is
+overfit, or if it is placed in the wrong location, or if it's going to sacrifice
+effectiveness and efficiency in general. "Cheating" won't work, your solution MUST
+generalize and be sustainable for the long term. Concerns need to be seperated.
 """
 
 

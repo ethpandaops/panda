@@ -16,8 +16,7 @@
     - type: llm-rubric
       value: >
         Reports a p50 (median) block arrival time for recent mainnet blocks,
-        derived from a real ClickHouse query against block-timing data. The value
-        should be roughly 1.4-2 seconds (about 1400-1900 ms). An answer with no
+        derived from a real ClickHouse query against block-timing data. An answer with no
         number, a hallucinated figure, or one wildly outside that range fails.
 
 - id: list_datasources
@@ -28,5 +27,29 @@
     - type: llm-rubric
       value: >
         Lists the datasources the harness actually exposes (discovered live, not
-        guessed). Must include ClickHouse (e.g. clickhouse-raw / clickhouse-refined)
-        and Prometheus at minimum. A vague non-answer or an invented list fails.
+        guessed). A vague non-answer or an invented list fails.
+
+- id: block_count_24h
+  description: Block production count for the last 24 hours
+  input: "How many blocks were produced on mainnet in the last 24 hours?"
+  network: mainnet
+  tags: [smoke, basic, blocks]
+  assert:
+    - type: llm-rubric
+      value: >
+        Reports a count of mainnet blocks produced in the last 24 hours, from a real
+        query. A missing or hallucinated figure fails - the data must be sourced from 
+        a datasource.
+
+
+- id: missed_slots_24h
+  description: Missed slots in the last 24 hours
+  input: "How many slots were missed in the last 24 hours on mainnet?"
+  network: mainnet
+  tags: [smoke, basic, missed_slots]
+  assert:
+    - type: llm-rubric
+      value: >
+        Reports a count of missed (skipped) mainnet slots over the last 24 hours,
+        from a real query. This is normally a small fraction of slots (order of tens),
+        so a low count passes; a missing answer or an implausibly huge number fails.

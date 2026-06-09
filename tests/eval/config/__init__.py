@@ -1,16 +1,19 @@
 """Configuration module for ethpandaops-panda evaluation."""
 
-from config.evaluator import get_evaluator_model, get_evaluator_model_name
 from config.settings import (
     DEFAULT_AGENT_MODEL,
+    DEFAULT_AGENT_ROUTE,
     DEFAULT_EVALUATOR_MODEL,
+    DEFAULT_GRADER,
+    DEFAULT_SUBJECT,
     EvalSettings,
 )
 
 __all__ = [
     "DEFAULT_AGENT_MODEL",
+    "DEFAULT_AGENT_ROUTE",
     "DEFAULT_EVALUATOR_MODEL",
+    "DEFAULT_GRADER",
+    "DEFAULT_SUBJECT",
     "EvalSettings",
-    "get_evaluator_model",
-    "get_evaluator_model_name",
 ]

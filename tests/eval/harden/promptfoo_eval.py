@@ -17,6 +17,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from config.settings import DEFAULT_AGENT_ROUTE, DEFAULT_GRADER
 from harden.runner import CandidateResult, Question, RunRecord
 from harden.scoring import candidate_score, pass_rate, score_run
 from harden.trace import RunTrace, ToolCall
@@ -59,15 +60,19 @@ def build_config(
                 "label": spec,
                 "config": {
                     "model": model,
-                    "route": route or "cli",
+                    "route": route or DEFAULT_AGENT_ROUTE,
                     "timeout": worker_timeout_ms,  # promptfoo worker timeout (ms)
                     "subject_timeout": subject_timeout,  # our subject timeout (s)
                 },
             }
         )
+    # followups is JSON-encoded, NOT a raw list: promptfoo expands an array-valued var into
+    # a test matrix (one case per element), which would split a multi-turn question into
+    # bogus single-followup runs. A string var is passed through untouched; the provider
+    # decodes it back into the turn list.
     tests = [
         {
-            "vars": {"question": q.text, "followups": q.followups, "qid": q.id},
+            "vars": {"question": q.text, "followups": json.dumps(q.followups), "qid": q.id},
             "assert": q.asserts or [_DEFAULT_ASSERT],
         }
         for q in questions
@@ -87,7 +92,7 @@ async def measure(
     *,
     k: int,
     run_dir: str,
-    grader: str = "openrouter:google/gemini-3.1-flash-lite",
+    grader: str = DEFAULT_GRADER,
     concurrency: int = 6,
     worker_timeout_ms: int = 600000,
     subject_timeout: int = 300,
@@ -166,7 +171,7 @@ async def measure_candidate(
     budget: int,
     run_dir: str,
     steepness: float = 2.0,
-    grader: str = "openrouter:google/gemini-3.1-flash-lite",
+    grader: str = DEFAULT_GRADER,
     concurrency: int = 6,
     subject_timeout: int = 300,
     cwd: str | None = None,

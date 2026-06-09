@@ -26,6 +26,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from config.settings import DEFAULT_GRADER
 from harden.auditor import Auditor
 from harden.promptfoo_eval import measure_candidate
 from harden.proposer import Proposer
@@ -122,7 +123,7 @@ async def optimize(
     steepness: float = 2.0,
     min_cells: int = 3,
     concurrency: int = 6,
-    grader: str = "openrouter:google/gemini-3.1-flash-lite",
+    grader: str = DEFAULT_GRADER,
     subject_timeout: int = 300,
     cwd: str | None = None,
     held_out_ids: set[str] | None = None,

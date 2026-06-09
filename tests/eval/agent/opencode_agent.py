@@ -4,8 +4,7 @@ Drives the model under test through an ``opencode serve`` instance using the
 opencode Python SDK, against panda's MCP tools. opencode runs the agentic
 tool-calling loop; this backend spawns/owns the server, sends each question as
 a session prompt, and maps the resulting transcript into the harness's
-``ExecutionResult`` so the DeepEval metrics, cost tracking, and traces stay
-backend-agnostic.
+``ExecutionResult`` so grading, cost tracking, and traces stay backend-agnostic.
 
 Two routes are supported via ``settings.opencode_route``:
 - ``mcp``: opencode is given panda's MCP server (execute_python/search/...).
@@ -58,7 +57,7 @@ def _free_port() -> int:
 # A single `opencode serve` is shared across all OpenCodeAgent instances with the
 # same config (keyed by the rendered opencode.json), so a pytest run with a
 # function-scoped agent fixture pays the server cold-start once, not per test.
-_SHARED_SERVERS: dict[str, "subprocess.Popen[bytes]"] = {}
+_SHARED_SERVERS: dict[str, subprocess.Popen[bytes]] = {}
 _SHARED_URLS: dict[str, str] = {}
 _ATEXIT_REGISTERED = False
 
@@ -223,7 +222,7 @@ class OpenCodeAgent:
                 pass
 
     @staticmethod
-    async def _wait_ready(proc: "subprocess.Popen[bytes]", base: str, log_path: Path) -> None:
+    async def _wait_ready(proc: subprocess.Popen[bytes], base: str, log_path: Path) -> None:
         import httpx
 
         def _tail() -> str:
@@ -338,7 +337,7 @@ class OpenCodeAgent:
                     ),
                     timeout=self.settings.opencode_timeout,
                 )
-            except (asyncio.TimeoutError, TimeoutError):
+            except TimeoutError:
                 raise RuntimeError(
                     f"opencode timed out after {self.settings.opencode_timeout:.0f}s"
                 ) from None

@@ -1,59 +1,56 @@
 name: LLM Evaluation
 
+# Full eval: run a whole cases/*.yaml through the unified harness (scripts.eval) against
+# the opencode-go agent over the panda CLI route, graded by promptfoo llm-rubric asserts.
+# Builds server + proxy locally (proxy fronts the raw/refined ClickHouse clusters). Opt-in
+# per PR via the `run-evals` label; also runs on release tags + manual dispatch.
+
 on:
-  # Run on every release (tag push, matching goreleaser).
   push:
     tags:
       - '*'
 
-  # Opt-in per PR: add the `run-evals` label. The job-level `if` below ensures
-  # labeled/synchronize events only proceed while that label is present.
   pull_request:
     types: [labeled, synchronize]
 
   workflow_dispatch:
     inputs:
-      model:
-        description: 'Model under test (e.g. deepseek/deepseek-v4-flash, anthropic/claude-sonnet-4-5)'
+      cases:
+        description: 'cases/*.yaml file to run'
         required: false
-        default: 'deepseek/deepseek-v4-flash'
+        default: 'coverage.yaml'
         type: string
-      agent_api:
-        description: 'Agent backend: openai | anthropic'
+      subject:
+        description: 'agent subject provider/model:route (blank = harness default)'
         required: false
-        default: 'openai'
+        default: ''
         type: string
-      reasoning:
-        description: 'Reasoning effort: none | low | medium | high'
+      repeat:
+        description: 'runs per (case, subject)'
         required: false
-        default: 'high'
+        default: '1'
         type: string
-      category:
-        description: 'Test category (empty for all)'
-        required: false
-        type: string
-      markers:
-        description: 'pytest markers (e.g., "visualization" or "not slow")'
-        required: false
-        type: string
-      verbose:
-        description: 'Enable verbose output'
-        required: false
-        default: false
-        type: boolean
 
-  # Allow triggering from other workflows
   workflow_call:
     inputs:
-      model:
+      cases:
         required: false
-        default: 'deepseek/deepseek-v4-flash'
+        default: 'coverage.yaml'
         type: string
+      subject:
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
 
 jobs:
   evaluate:
-    # On a PR, only run when the `run-evals` label is present. Releases
-    # (tag push), manual dispatch, and workflow_call always run.
+    # On a PR, only run when the `run-evals` label is present. Releases (tag push),
+    # manual dispatch, and workflow_call always run.
     if: >-
       github.event_name != 'pull_request' ||
       contains(github.event.pull_request.labels.*.name, 'run-evals')
@@ -71,6 +68,14 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Build binaries (server + panda CLI)
+        run: |
+          make build
+          echo "$GITHUB_WORKSPACE" >> "$GITHUB_PATH"   # put `panda` on PATH for the CLI route
+
+      - name: Build proxy
+        run: make build-proxy
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -85,11 +90,28 @@ jobs:
         working-directory: tests/eval
         run: uv sync
 
-      - name: Build server
-        run: make build-server
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
 
-      - name: Build proxy
-        run: make build-proxy
+      - name: Install opencode
+        run: npm install -g opencode-ai@1.15.0
+
+      - name: Configure opencode auth (opencode-go)
+        env:
+          OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib
+          p = pathlib.Path.home() / ".local/share/opencode/auth.json"
+          p.parent.mkdir(parents=True, exist_ok=True)
+          auth = json.loads(p.read_text()) if p.exists() else {}
+          auth["opencode-go"] = {"type": "api", "key": os.environ["OPENCODE_GO_API_KEY"]}
+          p.write_text(json.dumps(auth))
+          p.chmod(0o600)
+          print("configured opencode-go auth")
+          PY
 
       - name: Create CI configs
         run: |
@@ -142,6 +164,14 @@ jobs:
             url: "http://127.0.0.1:18081"
           EOF
 
+      - name: Configure panda CLI (CLI route shells out to `panda` -> local server)
+        run: |
+          mkdir -p "$HOME/.config/panda"
+          cat > "$HOME/.config/panda/config.yaml" << 'EOF'
+          server:
+            base_url: "http://localhost:2480"
+          EOF
+
       - name: Start proxy
         run: |
           ./panda-proxy --config proxy-config.ci.yaml &
@@ -156,71 +186,50 @@ jobs:
 
       - name: Start server
         run: |
-          ./panda-server serve --config config.ci.yaml &
-          # Wait for server to be ready
-          for i in {1..30}; do
-            if curl -s http://localhost:2480/health > /dev/null 2>&1; then
-              echo "Server is ready"
-              break
-            fi
-            echo "Waiting for server... ($i/30)"
-            sleep 2
+          ./panda-server serve --config config.ci.yaml > server.log 2>&1 &
+          # Cold start builds the semantic-search indexes before /health is ready; wait
+          # up to 4m and fail fast (don't run the eval against a not-ready server).
+          for i in $(seq 1 120); do
+            if curl -sf http://localhost:2480/health >/dev/null 2>&1; then echo "server ready after $((i*2))s"; break; fi
+            echo "waiting for server... ($i/120)"; sleep 2
           done
+          if ! curl -sf http://localhost:2480/health >/dev/null 2>&1; then
+            echo "ERROR: server not ready after 240s; last 60 log lines:"; tail -60 server.log; exit 1
+          fi
 
       - name: Run evaluation
         working-directory: tests/eval
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          MCP_EVAL_MCP_URL: http://localhost:2480
-          MCP_EVAL_MODEL: ${{ inputs.model || 'deepseek/deepseek-v4-flash' }}
-          MCP_EVAL_AGENT_API: ${{ inputs.agent_api || 'openai' }}
-          MCP_EVAL_REASONING_EFFORT: ${{ inputs.reasoning || 'high' }}
-          MCP_EVAL_VERBOSE: ${{ inputs.verbose || 'false' }}
-          # Agent (default deepseek via OpenRouter) and judge (gemini via OpenRouter)
+          OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
+          # promptfoo grades each case's llm-rubric asserts via the judge model (OpenRouter).
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          MCP_EVAL_REASONING_EFFORT: high
+          MCP_EVAL_OPENCODE_TIMEOUT: "180"
+          MCP_EVAL_LANGFUSE_ENABLED: ${{ vars.LANGFUSE_HOST != '' && 'true' || 'false' }}
+          MCP_EVAL_LANGFUSE_HOST: ${{ vars.LANGFUSE_HOST }}
+          MCP_EVAL_LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          MCP_EVAL_LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
         run: |
-          PYTEST_ARGS="tests/"
+          # --subject + --judge-model default to the harness defaults (config/settings.py);
+          # only override --subject when the dispatch input is set.
+          ARGS=(--cases "${{ inputs.cases || 'coverage.yaml' }}" --repeat "${{ inputs.repeat || '1' }}")
+          [ -n "${{ inputs.subject }}" ] && ARGS+=(--subject "${{ inputs.subject }}")
+          uv run python -m scripts.eval "${ARGS[@]}" \
+            --junit reports/junit.xml --json reports/eval.json \
+            || true   # don't fail the job before uploading results
 
-          if [ -n "${{ inputs.category }}" ]; then
-            PYTEST_ARGS="$PYTEST_ARGS -k '${{ inputs.category }}'"
-          fi
-
-          if [ -n "${{ inputs.markers }}" ]; then
-            PYTEST_ARGS="$PYTEST_ARGS -m '${{ inputs.markers }}'"
-          fi
-
-          if [ "${{ inputs.verbose }}" = "true" ]; then
-            PYTEST_ARGS="$PYTEST_ARGS -v -s"
-          fi
-
-          # Run pytest with JUnit XML output for GitHub Actions
-          uv run python -m pytest $PYTEST_ARGS \
-            --junitxml=reports/junit.xml \
-            --tb=short \
-            || true  # Don't fail immediately, we want to upload results
-
-      - name: Generate report
+      - name: Server log
         if: always()
-        working-directory: tests/eval
         run: |
-          mkdir -p reports
-          # Generate summary if we have results
-          if [ -f reports/junit.xml ]; then
-            echo "# Evaluation Results" > reports/summary.md
-            echo "" >> reports/summary.md
-            echo "**Model:** ${{ inputs.model || 'deepseek/deepseek-v4-flash' }}" >> reports/summary.md
-            echo "**Date:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> reports/summary.md
-            echo "" >> reports/summary.md
-          fi
+          echo "===== panda-server log (last 150 lines) ====="
+          tail -150 server.log 2>/dev/null || echo "(no server.log)"
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: eval-results-${{ github.run_id }}
-          path: |
-            tests/eval/reports/
-            tests/eval/snapshots/
+          path: tests/eval/reports/
           retention-days: 30
 
       - name: Publish Test Results
@@ -228,5 +237,5 @@ jobs:
         if: always()
         with:
           files: tests/eval/reports/junit.xml
-          check_name: "LLM Evaluation Results (${{ inputs.model || 'deepseek/deepseek-v4-flash' }})"
+          check_name: "LLM Evaluation"
           comment_mode: always

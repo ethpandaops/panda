@@ -11,18 +11,20 @@ timeout is ``config.subject_timeout`` (seconds), kept separate to avoid the clas
 """
 
 import asyncio
+import json
 import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))  # tests/eval on path
 
+from config.settings import DEFAULT_AGENT_MODEL, DEFAULT_AGENT_ROUTE
 from harden.subject import OpencodeSubject
 
 _SUBJECTS: dict[tuple, OpencodeSubject] = {}
 
 
 def _subject(cfg: dict) -> OpencodeSubject:
-    key = (cfg.get("model", "opencode-go/deepseek-v4-flash"), cfg.get("route", "cli"))
+    key = (cfg.get("model", DEFAULT_AGENT_MODEL), cfg.get("route", DEFAULT_AGENT_ROUTE))
     if key not in _SUBJECTS:
         _SUBJECTS[key] = OpencodeSubject(
             model=key[0], route=key[1], timeout=cfg.get("subject_timeout", 300)
@@ -30,14 +32,24 @@ def _subject(cfg: dict) -> OpencodeSubject:
     return _SUBJECTS[key]
 
 
+def _followups(vars_: dict) -> list:
+    """Decode the `followups` var. It's JSON-encoded by the config (so promptfoo doesn't
+    expand a raw list into a test matrix); tolerate a raw list too, for safety."""
+    raw = vars_.get("followups")
+    if isinstance(raw, str):
+        raw = json.loads(raw) if raw.strip() else []
+    return list(raw or [])
+
+
 def call_api(prompt, options, context):
     cfg = (options or {}).get("config", {}) or {}
     # The first turn is the rendered prompt; extra turns come from the `followups` var
     # (run in one session). Single-turn questions have no followups.
-    followups = ((context or {}).get("vars") or {}).get("followups") or []
+    followups = _followups((context or {}).get("vars") or {})
     prompts = [prompt, *[str(f) for f in followups]]
     subject = _subject(cfg)
     trace = asyncio.run(subject.run(prompts))
+    subject.flush()  # push the run's Langfuse trace before promptfoo moves to the next
     return {
         "output": trace.output or "",
         "tokenUsage": {

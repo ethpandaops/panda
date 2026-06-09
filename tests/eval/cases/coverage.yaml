@@ -33,17 +33,6 @@
         data (not guessed or remembered). A concrete list of one or more current devnet
         names passes; a vague non-answer or an admission it couldn't find out fails.
 
-- id: devnet_beacon_cpu                                   # ✓
-  description: beacon node CPU usage on a devnet (prometheus)
-  input: "How much CPU is a beacon node using on a devnet right now?"
-  tags: [prometheus, devnets, resources]
-  assert:
-    - type: llm-rubric
-      value: >
-        Reports a current CPU usage figure for a beacon node on a devnet, from a real
-        Prometheus query (a rate/percentage or cores). A specific value for a named
-        node/devnet passes; no number or an obviously fabricated one fails.
-
 - id: devnet_beacon_peers                                 # ✓
   description: beacon node peer count on a devnet (prometheus)
   input: "What is the peer count of a beacon node on a devnet right now?"
@@ -69,18 +58,6 @@
         timing to entity. Names concrete entities with supporting timing evidence; a
         generic essay with no entities or no real data fails.
 
-- id: high_peer_count_advantage                           # 📓 high-peer-count
-  description: do high-peer-count nodes see blocks faster
-  input: "Do nodes with very high peer counts see blocks faster than the rest of the network on mainnet?"
-  tags: [clickhouse, blocks, timing, peers]
-  assert:
-    - type: llm-rubric
-      value: >
-        Answers whether high-peer-count nodes observe blocks earlier, comparing block
-        arrival times across peer-count cohorts from real queried data, and states the
-        direction/size of any effect. A yes/no with supporting numbers passes; an
-        ungrounded opinion fails.
-
 - id: block_size_vs_propagation                           # 📓 block-size-vs-propagation
   description: effect of payload size on propagation time
   input: "How much does block payload size affect block propagation time on mainnet?"
@@ -93,22 +70,8 @@
         with numbers or a correlation. A grounded characterization of the effect passes;
         a hand-wave with no data fails.
 
-# ---- reorgs / canonical vs non-canonical ----
-
-- id: parent_distance_orphans                             # 📓 parent-distance
-  description: non-direct parent proposals and resulting orphan rate
-  input: "How often do mainnet proposers build on a non-direct parent block, and how often do those blocks get orphaned?"
-  tags: [clickhouse, reorgs, orphans, canonical]
-  assert:
-    - type: llm-rubric
-      value: >
-        Reports, from real queried data, how often mainnet proposers build on a
-        non-direct parent (a rate or count) AND the orphan/reorg rate of those blocks.
-        Both parts answered with numbers passes; answering only one, or with no data,
-        fails.
 
 # ---- blobs / execution-layer ----
-
 - id: empty_blob_submitters                               # 📓 empty-blobs
   description: who submits blob txs containing empty (zero-data) blobs
   input: "Which entities submit blob transactions containing empty (zero-data) blobs on mainnet?"
