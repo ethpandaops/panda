@@ -15,16 +15,39 @@ from collections.abc import Callable
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
 _MARKERS = {"exec", "codex", "user", "thinking"}
+# A diff/patch body line — suppressed wherever it appears. codex repeats whole patches in
+# its messages, which is the real firehose when the proposer edits many files.
+_DIFF_BODY = re.compile(r"^(diff --git |index [0-9a-f]|--- |\+\+\+ |@@ |[+\- ]|/)")
 
 
 def _summarize(line: str, state: dict) -> str | None:
-    """One filtered log line (or None to suppress) for a raw codex output line."""
+    """One filtered log line (or None to suppress) for a raw codex output line.
+
+    Shows: one ``ran: <cmd>`` per command, one ``edited <file>`` per patched file, and the
+    assistant's prose messages. Suppresses command output, diff/patch bodies (deduped per
+    file), and header/prompt noise.
+    """
     clean = _ANSI.sub("", line).rstrip()
     bare = clean.strip()
     if bare in _MARKERS:
-        state["mode"] = bare
-        state["await_cmd"] = bare == "exec"
+        state.update(mode=bare, await_cmd=(bare == "exec"), in_diff=False)
         return None  # the marker itself isn't shown
+    # File-edit blocks: announce one "edited <file>" (deduped) and swallow the diff body.
+    if bare == "apply patch" or clean.startswith("patch:"):
+        state["in_diff"] = True
+        return None
+    m = re.match(r"diff --git a/(\S+)", clean)
+    if m:
+        state["in_diff"] = True
+        f = m.group(1)
+        if f not in state.setdefault("edited", set()):
+            state["edited"].add(f)
+            return f"edited {f}"
+        return None
+    if state.get("in_diff"):
+        if not bare or _DIFF_BODY.match(clean):
+            return None  # still inside the diff
+        state["in_diff"] = False  # diff ended — fall through to normal handling
     if state.get("mode") == "exec":
         if state.get("await_cmd") and bare:
             state["await_cmd"] = False
