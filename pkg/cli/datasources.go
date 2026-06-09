@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -51,6 +52,10 @@ func runDatasources(cmd *cobra.Command, _ []string) error {
 	rows := make([][]string, 0, len(response.Datasources))
 	hasClickHouse := false
 
+	type noteLine struct{ source, dataset, note string }
+
+	var notes []noteLine
+
 	for _, info := range response.Datasources {
 		if info.Type == "clickhouse" {
 			hasClickHouse = true
@@ -61,7 +66,17 @@ func runDatasources(cmd *cobra.Command, _ []string) error {
 			desc = info.Name
 		}
 
-		rows = append(rows, []string{info.Type, info.Name, desc})
+		datasets := make([]string, 0, len(info.Contents))
+
+		for _, b := range info.Contents {
+			datasets = append(datasets, b.Dataset)
+
+			if b.Notes != "" {
+				notes = append(notes, noteLine{source: info.Name, dataset: b.Dataset, note: b.Notes})
+			}
+		}
+
+		rows = append(rows, []string{info.Type, info.Name, desc, strings.Join(datasets, ", ")})
 	}
 
 	sort.Slice(rows, func(i, j int) bool {
@@ -72,9 +87,14 @@ func runDatasources(cmd *cobra.Command, _ []string) error {
 		return rows[i][1] < rows[j][1]
 	})
 
-	printTable([]string{"TYPE", "NAME", "DESCRIPTION"}, rows)
-	if hasClickHouse {
-		fmt.Println("\nClickHouse schemas: use 'panda schema <cluster> [database] [table]' or 'panda resources clickhouse://tables/<cluster>/<database>/<table>'.")
+	printTable([]string{"TYPE", "NAME", "DESCRIPTION", "DATASETS"}, rows)
+
+	if len(notes) > 0 {
+		fmt.Println("\nNotes:")
+
+		for _, n := range notes {
+			fmt.Printf("  %s/%s: %s\n", n.source, n.dataset, n.note)
+		}
 	}
 
 	return nil

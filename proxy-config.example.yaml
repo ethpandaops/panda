@@ -93,6 +93,17 @@ clickhouse:
     secure: true
     skip_verify: false
     timeout: 300
+    # Declare the datasets stored in this cluster. `dataset` must match a
+    # knowledge pack shipped with the release (see datasets/). `params` are
+    # opaque hints the pack interprets; `notes` are freeform deployment context
+    # surfaced to operators (panda datasources) and the assistant. The proxy
+    # never interprets params or notes.
+    contains:
+      - dataset: xatu-raw
+        params: { database: default }
+      - dataset: otel-logs
+        params: { database: external }
+        notes: "Hosted devnet container logs. SeverityText is often empty for raw Docker logs; match severity on Body."
     # Restrict access to members of specific GitHub orgs.
     # Omit or leave empty to allow all authenticated users.
     # allowed_orgs:
@@ -108,6 +119,9 @@ clickhouse:
     secure: true
     skip_verify: false
     timeout: 300
+    contains:
+      - dataset: xatu-cbt
+        params: { database_pattern: "*" } # per-network databases (mainnet, holesky, …)
     # allowed_orgs:
     #   - ethpandaops
 
@@ -133,6 +147,10 @@ clickhouse:
   #   database: otel
   #   autodiscover: true
   #   autodiscover_interval: 10s
+  #   contains:
+  #     - dataset: otel-logs
+  #       params: { database: otel }
+  #       notes: "Local Kurtosis devnet logs. Filter by EnclaveName (one per devnet)."
 
 # Prometheus instances
 prometheus:

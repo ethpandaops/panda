@@ -12,6 +12,7 @@ import (
 	"github.com/ethpandaops/panda/pkg/auth"
 	"github.com/ethpandaops/panda/pkg/configpath"
 	"github.com/ethpandaops/panda/pkg/proxy/handlers"
+	"github.com/ethpandaops/panda/pkg/types"
 )
 
 // ServerConfig is the configuration for the proxy server.
@@ -158,6 +159,40 @@ type ClickHouseClusterConfig struct {
 	Autodiscover         bool                             `yaml:"autodiscover,omitempty"`
 	AutodiscoverInterval time.Duration                    `yaml:"autodiscover_interval,omitempty"`
 	Variants             []ClickHouseClusterVariantConfig `yaml:"variants,omitempty"`
+	// Contains declares the datasets stored in this cluster. Passed through to
+	// discovery verbatim; the proxy never interprets Params or Notes.
+	Contains []DatasetBindingConfig `yaml:"contains,omitempty"`
+}
+
+// DatasetBindingConfig declares a dataset stored in a datasource. The dataset
+// name matches a knowledge pack in the release; Params are opaque placement
+// hints interpreted by that pack (e.g. database: default); Notes are freeform
+// deployment context surfaced to operators and the LLM.
+type DatasetBindingConfig struct {
+	Dataset string            `yaml:"dataset"`
+	Params  map[string]string `yaml:"params,omitempty"`
+	Notes   string            `yaml:"notes,omitempty"`
+}
+
+func (c DatasetBindingConfig) toBinding() types.DatasetBinding {
+	return types.DatasetBinding{Dataset: c.Dataset, Params: c.Params, Notes: c.Notes}
+}
+
+func bindingsToInfo(bindings []DatasetBindingConfig) []types.DatasetBinding {
+	if len(bindings) == 0 {
+		return nil
+	}
+
+	out := make([]types.DatasetBinding, 0, len(bindings))
+	for _, b := range bindings {
+		if b.Dataset == "" {
+			continue
+		}
+
+		out = append(out, b.toBinding())
+	}
+
+	return out
 }
 
 // ClickHouseClusterVariantConfig holds one selectable ClickHouse backend.
@@ -436,6 +471,12 @@ func (c *ServerConfig) Validate() error {
 	for i, ch := range c.ClickHouse {
 		if ch.Name == "" {
 			return fmt.Errorf("clickhouse[%d].name is required", i)
+		}
+
+		for j, b := range ch.Contains {
+			if b.Dataset == "" {
+				return fmt.Errorf("clickhouse[%d].contains[%d].dataset is required", i, j)
+			}
 		}
 
 		if ch.AutodiscoverInterval < 0 {

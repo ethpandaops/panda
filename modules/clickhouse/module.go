@@ -166,18 +166,31 @@ func (m *Module) SandboxEnv() (map[string]string, error) {
 		return nil, nil
 	}
 
+	type datasetInfo struct {
+		Dataset string            `json:"dataset"`
+		Params  map[string]string `json:"params,omitempty"`
+		Notes   string            `json:"notes,omitempty"`
+	}
+
 	type datasourceInfo struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-		Database    string `json:"database"`
+		Name        string        `json:"name"`
+		Description string        `json:"description"`
+		Database    string        `json:"database"`
+		Datasets    []datasetInfo `json:"datasets,omitempty"`
 	}
 
 	infos := make([]datasourceInfo, 0, len(m.datasources))
 	for _, ds := range m.datasources {
+		var datasets []datasetInfo
+		for _, b := range ds.Contents {
+			datasets = append(datasets, datasetInfo{Dataset: b.Dataset, Params: b.Params, Notes: b.Notes})
+		}
+
 		infos = append(infos, datasourceInfo{
 			Name:        ds.Name,
 			Description: ds.Description,
 			Database:    ds.Metadata["database"],
+			Datasets:    datasets,
 		})
 	}
 

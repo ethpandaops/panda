@@ -15,6 +15,22 @@ type DatasourceInfo struct {
 	Description string `json:"description,omitempty"`
 	// Metadata contains type-specific metadata (e.g. database, url).
 	Metadata map[string]string `json:"metadata,omitempty"`
+	// Contents declares the datasets stored in this datasource. It is authored
+	// by the proxy owner and passed through opaquely: the proxy never interprets
+	// Params or Notes. A datasource may hold multiple datasets (and the same
+	// dataset may appear more than once, e.g. in different databases).
+	Contents []DatasetBinding `json:"contents,omitempty"`
+}
+
+// DatasetBinding declares that a named dataset lives in a datasource, with
+// opaque placement params and freeform operator notes. The dataset name matches
+// a knowledge pack shipped in the release; Params are interpreted by that pack
+// (e.g. {"database": "default"}); Notes are deployment-specific context surfaced
+// to operators and the LLM (e.g. "slow cluster, filter the partition").
+type DatasetBinding struct {
+	Dataset string            `json:"dataset" yaml:"dataset"`
+	Params  map[string]string `json:"params,omitempty" yaml:"params,omitempty"`
+	Notes   string            `json:"notes,omitempty" yaml:"notes,omitempty"`
 }
 
 // ExampleCategory represents a category of query examples.

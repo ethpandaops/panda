@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 
@@ -22,6 +23,7 @@ import (
 var (
 	_ module.Module                        = (*Module)(nil)
 	_ module.DefaultEnabled                = (*Module)(nil)
+	_ module.ProxyDiscoverable             = (*Module)(nil)
 	_ module.ExamplesProvider              = (*Module)(nil)
 	_ module.GettingStartedSnippetProvider = (*Module)(nil)
 )
@@ -43,9 +45,17 @@ type pack struct {
 
 // Module contributes dataset knowledge packs (examples + getting-started) to the
 // registry. It owns no transport; the generic ClickHouse module executes the
-// queries these packs describe.
+// queries these packs describe. Packs are scoped to the datasets a deployment
+// declares via proxy `contains`; when no deployment declares any, all packs are
+// shown (back-compatible).
 type Module struct {
 	packs []pack
+
+	mu     sync.RWMutex
+	loaded bool
+	// active is the set of dataset names declared by discovered datasources. A
+	// nil/empty set means "show all packs".
+	active map[string]bool
 }
 
 // New creates a new datasets module.
@@ -53,8 +63,9 @@ func New() *Module { return &Module{} }
 
 func (m *Module) Name() string { return "datasets" }
 
-// Init loads the embedded packs. The module takes no configuration.
-func (m *Module) Init(_ []byte) error { return m.load() }
+// Init loads the embedded packs. The module takes no configuration. With no
+// proxy discovery, all packs are exposed.
+func (m *Module) Init(_ []byte) error { return m.ensureLoaded() }
 
 // ApplyDefaults is a no-op; packs are static content.
 func (m *Module) ApplyDefaults() {}
@@ -72,7 +83,41 @@ func (m *Module) Stop(_ context.Context) error { return nil }
 // release and are always available.
 func (m *Module) DefaultEnabled() bool { return true }
 
-func (m *Module) load() error {
+// InitFromDiscovery scopes the exposed packs to the datasets declared by
+// discovered datasources (via their Contents bindings). Always returns nil: the
+// packs ship with the release, so the module is always active. When no
+// datasource declares any dataset, the active set stays empty and all packs are
+// shown.
+func (m *Module) InitFromDiscovery(datasources []types.DatasourceInfo) error {
+	if err := m.ensureLoaded(); err != nil {
+		return err
+	}
+
+	active := make(map[string]bool)
+
+	for _, ds := range datasources {
+		for _, b := range ds.Contents {
+			if b.Dataset != "" {
+				active[b.Dataset] = true
+			}
+		}
+	}
+
+	m.mu.Lock()
+	m.active = active
+	m.mu.Unlock()
+
+	return nil
+}
+
+func (m *Module) ensureLoaded() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.loaded {
+		return nil
+	}
+
 	entries, err := packFS.ReadDir(".")
 	if err != nil {
 		return fmt.Errorf("reading dataset packs: %w", err)
@@ -96,6 +141,7 @@ func (m *Module) load() error {
 	sort.Slice(packs, func(i, j int) bool { return packs[i].name < packs[j].name })
 
 	m.packs = packs
+	m.loaded = true
 
 	return nil
 }
@@ -138,13 +184,33 @@ func loadPack(dir string) (pack, error) {
 	return p, nil
 }
 
-// Examples aggregates query examples across all packs. Categories that appear in
-// more than one pack (e.g. a category split across xatu-raw and xatu-cbt) are
-// merged so no examples are dropped.
+// activePacks returns the packs to expose, scoped to the discovered active set
+// (or all packs when the set is empty).
+func (m *Module) activePacks() []pack {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if len(m.active) == 0 {
+		return m.packs
+	}
+
+	out := make([]pack, 0, len(m.packs))
+	for _, p := range m.packs {
+		if m.active[p.name] {
+			out = append(out, p)
+		}
+	}
+
+	return out
+}
+
+// Examples aggregates query examples across the active packs. Categories that
+// appear in more than one pack (e.g. a category split across xatu-raw and
+// xatu-cbt) are merged so no examples are dropped.
 func (m *Module) Examples() map[string]types.ExampleCategory {
 	result := make(map[string]types.ExampleCategory)
 
-	for _, p := range m.packs {
+	for _, p := range m.activePacks() {
 		for key, cat := range p.examples {
 			existing, ok := result[key]
 			if !ok {
@@ -161,11 +227,12 @@ func (m *Module) Examples() map[string]types.ExampleCategory {
 	return result
 }
 
-// GettingStartedSnippet concatenates the per-pack getting-started guidance.
+// GettingStartedSnippet concatenates the per-pack getting-started guidance for
+// the active packs.
 func (m *Module) GettingStartedSnippet() string {
 	var b strings.Builder
 
-	for _, p := range m.packs {
+	for _, p := range m.activePacks() {
 		if p.gettingStarted == "" {
 			continue
 		}

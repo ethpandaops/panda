@@ -695,6 +695,7 @@ func (s *server) ClickHouseDatasourceInfo() []types.DatasourceInfo {
 			Type:        "clickhouse",
 			Name:        ch.Name,
 			Description: ch.Description,
+			Contents:    bindingsToInfo(ch.Contains),
 		}
 		info.Metadata = metadataValue("database", ch.Database)
 		if len(ch.Variants) > 0 {
