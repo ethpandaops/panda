@@ -12,7 +12,10 @@ name: Eval Smoke
 on:
   push:
     branches: [master]
+  # `labeled` lets a maintainer trigger the gated run on a Dependabot PR (see the
+  # smoke job's `if`).
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
 
 concurrency:
@@ -35,6 +38,19 @@ env:
 
 jobs:
   smoke:
+    # The smoke test needs the proxy + model secrets, but a Dependabot PR runs
+    # the freshly-bumped (untrusted) dependency code — and GitHub correctly
+    # withholds Actions secrets from Dependabot-triggered runs. So gate it: a
+    # Dependabot PR only runs smoke once a maintainer who has eyeballed the bump
+    # adds the `run-smoke` label. That `labeled` event runs with the maintainer
+    # as actor, so it gets the real secrets. Non-Dependabot PRs, master pushes,
+    # and manual dispatches run unconditionally. The actor guard skips the
+    # secret-less re-run when Dependabot then force-pushes the labelled branch.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.user.login != 'dependabot[bot]' ||
+      (github.actor != 'dependabot[bot]' &&
+      contains(github.event.pull_request.labels.*.name, 'run-smoke'))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

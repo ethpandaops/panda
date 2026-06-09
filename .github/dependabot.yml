@@ -6,6 +6,10 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    # Only open a PR once a new version has been published for 14 days, to dodge
+    # yanked releases and same-day supply-chain compromises.
+    cooldown:
+      default-days: 14
     groups:
       go-minor-patch:
         update-types:
@@ -19,11 +23,14 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    cooldown:
+      default-days: 14
+    # One grouped PR for all action updates (including majors) instead of a
+    # separate PR per action.
     groups:
       actions:
-        update-types:
-          - minor
-          - patch
+        patterns:
+          - "*"
 
   # Base images in the Dockerfiles.
   - package-ecosystem: docker
@@ -32,3 +39,5 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    cooldown:
+      default-days: 14
