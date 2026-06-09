@@ -13,15 +13,21 @@ from __future__ import annotations
 import asyncio
 import collections
 import json
+import os
 import statistics
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from rich.markup import escape
+
 from config.settings import DEFAULT_AGENT_ROUTE, DEFAULT_GRADER
+from harden.logsetup import get_logger
 from harden.runner import CandidateResult, Question, RunRecord
 from harden.scoring import candidate_score, pass_rate, score_run
 from harden.trace import RunTrace, ToolCall
+
+_log = get_logger("promptfoo")
 
 _PROVIDER = str(Path(__file__).resolve().parents[1] / "promptfoo" / "provider.py")
 
@@ -134,14 +140,17 @@ async def measure(
     # Stream promptfoo's progress live (prefixed) instead of swallowing minutes of silence;
     # keep a tail of the output for the error message if it produces no results.
     def run() -> tuple[int, str]:
+        env = {**os.environ, "NO_COLOR": "1", "FORCE_COLOR": "0"}  # plain output, no ANSI
         proc = subprocess.Popen(
-            cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1
+            cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1,
         )
         tail: collections.deque[str] = collections.deque(maxlen=50)
         assert proc.stdout is not None
         for line in proc.stdout:
             line = line.rstrip("\n")
-            print(f"    promptfoo| {line}", flush=True)
+            if line.strip():
+                _log.info(f"[dim]promptfoo[/dim] {escape(line)}")
             tail.append(line)
         proc.wait()
         return proc.returncode, "\n".join(tail)

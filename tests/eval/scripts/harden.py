@@ -31,6 +31,7 @@ from pathlib import Path
 from cases.loader import load_test_cases
 from config.settings import DEFAULT_EVALUATOR_MODEL, DEFAULT_SUBJECTS
 from harden.auditor import CodexAuditor
+from harden.logsetup import setup_logging
 from harden.loop import optimize
 from harden.proposer import CodexProposer
 from harden.runner import Question
@@ -141,8 +142,7 @@ def main() -> None:
     os.environ.setdefault("PROMPTFOO_PYTHON", sys.executable)
     eval_dir = str(Path(__file__).resolve().parents[1])
 
-    def log(m: str) -> None:
-        print(m, flush=True)
+    log = setup_logging().info
 
     subject_specs = args.subject or DEFAULT_SUBJECTS
     grader = args.grader or f"openrouter:{args.judge_model}"
@@ -182,7 +182,7 @@ def main() -> None:
         f"  artifacts:        {run_dir}",
         "=====================",
     ]
-    print("\n".join(banner), flush=True)
+    log("[bold cyan]" + "\n".join(banner) + "[/bold cyan]")
     try:
         result = asyncio.run(
             optimize(
@@ -207,10 +207,10 @@ def main() -> None:
         )
     finally:
         server.stop()
-    print(f"\n=== {result.accepted}/{len(result.rounds)} rounds accepted ===")
+    log(f"[bold]=== {result.accepted}/{len(result.rounds)} rounds accepted ===[/bold]")
     for r in result.rounds:
-        flag = "ACCEPT" if r.accepted else f"reject:{r.reason}"
-        print(f"  round {r.n}: {flag}  score {r.score_before:.3f} -> {r.score_after:.3f}")
+        flag = "[green]ACCEPT[/green]" if r.accepted else f"[yellow]reject:{r.reason}[/yellow]"
+        log(f"  round {r.n}: {flag}  score {r.score_before:.3f} -> {r.score_after:.3f}")
 
 
 if __name__ == "__main__":

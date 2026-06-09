@@ -13,6 +13,8 @@ import re
 import subprocess
 from collections.abc import Callable
 
+from rich.markup import escape
+
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
 _MARKERS = {"exec", "codex", "user", "thinking"}
 # A diff/patch body line — suppressed wherever it appears. codex repeats whole patches in
@@ -92,7 +94,7 @@ def run_codex(
             raw.append(line.rstrip("\n"))
             shown = _summarize(line, state)
             if shown and log:
-                log(f"{prefix}{shown}")
+                log(f"[dim]{prefix}{escape(shown)}[/dim]")
         code = proc.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
         proc.kill()

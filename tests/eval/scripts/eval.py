@@ -33,6 +33,7 @@ from rich.table import Table
 
 from cases.loader import load_test_cases
 from config.settings import DEFAULT_EVALUATOR_MODEL, DEFAULT_SUBJECTS
+from harden.logsetup import setup_logging
 from harden.promptfoo_eval import measure_candidate
 from harden.runner import CandidateResult, Question
 
@@ -174,6 +175,7 @@ def _write_langfuse_links(path: Path, result: CandidateResult) -> None:
 
 def main() -> None:
     args = _parse_args()
+    setup_logging()  # configure the rich logger so build/promptfoo sub-loggers render
 
     questions = [
         Question(

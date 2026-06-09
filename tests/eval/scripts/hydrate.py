@@ -23,7 +23,10 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from rich.markup import escape
 from ruamel.yaml import YAML
+
+from harden.logsetup import setup_logging
 
 _SCHEMA = {
     "type": "object",
@@ -93,6 +96,7 @@ def main() -> None:
     )
     ap.add_argument("--dry-run", action="store_true", help="print proposed variations, don't write")
     args = ap.parse_args()
+    log = setup_logging().info
 
     path = Path(__file__).resolve().parents[1] / "cases" / args.cases
     yaml = YAML()  # round-trip: preserves comments + formatting on dump
@@ -107,14 +111,14 @@ def main() -> None:
         if wanted and qid not in wanted:
             continue
         if item.get("variations") and not args.overwrite:
-            print(f"  {qid}: already has variations — skipping (use --overwrite)")
+            log(f"{qid}: already has variations — skipping (use --overwrite)")
             continue
         steps = item.get("steps")
         question = item.get("input") or (steps[0].get("prompt", "") if steps else "")
         if not question:
-            print(f"  {qid}: no input/steps — skipping")
+            log(f"{qid}: no input/steps — skipping")
             continue
-        print(f"  {qid}: generating {args.n} variations via codex ({args.model})...", flush=True)
+        log(f"[cyan]{qid}[/cyan] generating {args.n} variations via codex ({args.model})...")
         variations = generate(
             str(question),
             n=args.n,
@@ -122,22 +126,22 @@ def main() -> None:
             reasoning=args.reasoning_effort,
             timeout=args.timeout,
         )
-        print(f"  {qid}: +{len(variations)} variation(s)")
+        log(f"[green]{qid}[/green] +{len(variations)} variation(s)")
         for v in variations:
-            print(f"      - {v}")
+            log(f"[dim]    - {escape(v)}[/dim]")
         if variations and not args.dry_run:
             item["variations"] = variations
             changed += 1
 
     if args.dry_run:
-        print("\n(dry run — nothing written)")
+        log("[yellow](dry run — nothing written)[/yellow]")
         return
     if not changed:
-        print("\nnothing to write")
+        log("nothing to write")
         return
     with path.open("w") as f:
         yaml.dump(data, f)
-    print(f"\nwrote variations for {changed} question(s) to {path} — review the git diff")
+    log(f"[green]wrote variations for {changed} question(s)[/green] to {path} — review the git diff")
 
 
 if __name__ == "__main__":

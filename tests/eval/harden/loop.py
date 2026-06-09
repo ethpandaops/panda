@@ -27,6 +27,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from rich.markup import escape
+
 from config.settings import DEFAULT_GRADER
 from harden.auditor import Auditor
 from harden.promptfoo_eval import measure_candidate
@@ -204,7 +206,7 @@ async def optimize(
     result = OptimizeResult(baseline=baseline)
 
     for n in range(1, rounds + 1):
-        log(f"--- round {n}/{rounds} ---")
+        log(f"[bold cyan]--- round {n}/{rounds} ---[/bold cyan]")
         # The proposer only ever sees TRAIN traces — never the held-out questions. The
         # prompt is a lean summary; the FULL traces live in baseline_traces for it to read.
         train_records = [r for r in baseline.records if r.question.id in train_ids]
@@ -214,7 +216,7 @@ async def optimize(
         proposal = proposer.propose(prompt)
         _dump(save_dir, f"round{n}_proposal_summary.txt", proposal.summary)
         if not proposal.ok:
-            log(f"round {n}: proposer failed: {proposal.summary[:200]}")
+            log(f"round {n}: [red]proposer failed[/red]: {escape(proposal.summary[:200])}")
             _revert(repo_dir)
             result.rounds.append(
                 _round(n, False, "proposer-failed", baseline, baseline, proposal.summary)
@@ -226,7 +228,7 @@ async def optimize(
             continue
         changed = _git(repo_dir, "diff", "HEAD", "--name-only").splitlines()
         untracked = _git(repo_dir, "ls-files", "--others", "--exclude-standard").splitlines()
-        log(f"round {n}: proposal summary: {' '.join(proposal.summary.split())[:280]}")
+        log(f"round {n}: proposal summary: {escape(' '.join(proposal.summary.split())[:280])}")
         log(f"round {n}: edited {len(changed) + len(untracked)} file(s): {', '.join(changed + untracked)[:300]}")
 
         # Adversarial audit BEFORE the expensive build+measure: a fresh-context reviewer
@@ -236,9 +238,9 @@ async def optimize(
             log(f"round {n}: auditing the proposed diff...")
             verdict = auditor.audit(_proposal_diff(repo_dir), [q.text for q in questions])
             _dump(save_dir, f"round{n}_audit.txt", verdict.text())
-            log(f"round {n}: audit verdict: {' '.join(verdict.summary.split())[:240]}")
+            log(f"round {n}: audit verdict: {escape(' '.join(verdict.summary.split())[:240])}")
             if verdict.blocked:
-                log(f"round {n}: AUDIT BLOCKED ({len(verdict.findings)} finding(s)) — reverting")
+                log(f"round {n}: [bold red]AUDIT BLOCKED[/bold red] ({len(verdict.findings)} finding(s)) — reverting")
                 _revert(repo_dir)
                 result.rounds.append(
                     _round(n, False, "audit-blocked", baseline, baseline, verdict.text())
@@ -253,7 +255,7 @@ async def optimize(
         try:
             apply()
         except Exception as exc:  # noqa: BLE001 - a broken build is a rejected proposal
-            log(f"round {n}: build failed, reverting: {type(exc).__name__}: {exc}")
+            log(f"round {n}: [red]build failed[/red], reverting: {type(exc).__name__}: {escape(str(exc))}")
             _revert(repo_dir)
             apply()
             result.rounds.append(
@@ -274,16 +276,17 @@ async def optimize(
         if not regressed and confident:
             _commit(repo_dir, f"harden round {n}: {baseline.score:.3f} -> {candidate.score:.3f}")
             log(
-                f"round {n}: ACCEPT score {baseline.score:.3f} -> {candidate.score:.3f} "
-                f"pass {baseline.pass_rate:.2f} -> {candidate.pass_rate:.2f}"
+                f"round {n}: [bold green]ACCEPT[/bold green] score {baseline.score:.3f} -> "
+                f"{candidate.score:.3f} pass {baseline.pass_rate:.2f} -> {candidate.pass_rate:.2f}"
             )
             result.rounds.append(_round(n, True, "accepted", baseline, candidate, proposal.summary))
             baseline = candidate
         else:
             reason = "regressed-correctness" if regressed else "not-confident"
             log(
-                f"round {n}: REJECT ({reason}) score {baseline.score:.3f} -> "
-                f"{candidate.score:.3f} pass {baseline.pass_rate:.2f} -> {candidate.pass_rate:.2f}"
+                f"round {n}: [bold yellow]REJECT[/bold yellow] ({reason}) score "
+                f"{baseline.score:.3f} -> {candidate.score:.3f} "
+                f"pass {baseline.pass_rate:.2f} -> {candidate.pass_rate:.2f}"
             )
             _revert(repo_dir)
             apply()

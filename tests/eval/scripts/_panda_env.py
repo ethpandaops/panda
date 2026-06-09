@@ -27,6 +27,10 @@ from pathlib import Path
 
 import yaml
 
+from harden.logsetup import get_logger
+
+_log = get_logger("env")
+
 HARDEN_HOME = Path.home() / ".panda" / "harden"  # outside any repo -> survives git clean
 
 
@@ -134,21 +138,21 @@ def make_apply(server: ScratchServer, *, sandbox: bool = False):
     state = {"sandbox_hash": None}
 
     def apply() -> None:
-        print("  [build] go build panda-server...", flush=True)
+        _log.info("[cyan]build[/cyan] go build panda-server")
         _run(["go", "build", "-o", "panda-server", "./cmd/server"], repo)
-        print("  [build] go build panda (CLI)...", flush=True)
+        _log.info("[cyan]build[/cyan] go build panda (CLI)")
         _run(["go", "build", "-o", "panda", "./cmd/panda"], repo)
         if sandbox:
-            print("  [build] cross-compiling linux panda (sandbox)...", flush=True)
+            _log.info("[cyan]build[/cyan] cross-compiling linux panda (sandbox)")
             cross_build_panda_linux(repo)
         h = _sandbox_hash(repo)
         if h != state["sandbox_hash"]:
-            print("  [build] make docker-sandbox (slow on first build)...", flush=True)
+            _log.info("[cyan]build[/cyan] make docker-sandbox (slow on first build)")
             _run(["make", "docker-sandbox"], repo)
             state["sandbox_hash"] = h
-        print(f"  [server] starting on :{server.port} (waiting for /health)...", flush=True)
+        _log.info(f"[cyan]server[/cyan] starting on :{server.port} (waiting for /health)")
         server.start()
-        print(f"  [server] ready on :{server.port}", flush=True)
+        _log.info(f"[green]server[/green] ready on :{server.port}")
 
     return apply
 
@@ -189,9 +193,9 @@ def cross_build_panda_linux(repo: str) -> Path:
 def ensure_opencode_image(image: str = OPENCODE_IMAGE) -> None:
     """Build the sandbox opencode image if it isn't already present locally."""
     if subprocess.run(["docker", "image", "inspect", image], capture_output=True).returncode == 0:
-        print(f"  [sandbox] image {image} present", flush=True)
+        _log.info(f"[cyan]sandbox[/cyan] image {image} present")
         return
-    print(f"  [sandbox] building image {image} (slow, one-time)...", flush=True)
+    _log.info(f"[cyan]sandbox[/cyan] building image {image} (slow, one-time)")
     eval_dir = str(Path(__file__).resolve().parents[1])
     _run(["docker", "build", "-f", "sandbox/opencode.Dockerfile", "-t", image, "sandbox/"], eval_dir)
 
