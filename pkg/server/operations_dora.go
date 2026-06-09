@@ -336,7 +336,7 @@ func (s *service) doraAPIGet(
 		return nil, http.StatusBadGateway, fmt.Errorf("invalid Dora JSON response: %w", err)
 	}
 	if status, ok := payload["status"].(string); ok && status != "" && !strings.EqualFold(status, "OK") {
-		return nil, http.StatusBadGateway, fmt.Errorf("Dora API error: %s", status)
+		return nil, http.StatusBadGateway, fmt.Errorf("dora API error: %s", status)
 	}
 
 	return payload, http.StatusOK, nil

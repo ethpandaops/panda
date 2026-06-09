@@ -79,7 +79,7 @@ func TestDoraNetworkOverviewRejectsDoraErrorEnvelope(t *testing.T) {
 	handled := svc.handleDoraOperation("dora.get_network_overview", rec, newDoraOpRequest(t, "testnet"))
 	require.True(t, handled)
 	assert.Equal(t, http.StatusBadGateway, rec.Code)
-	assert.Contains(t, rec.Body.String(), "Dora API error")
+	assert.Contains(t, rec.Body.String(), "dora API error")
 }
 
 func TestDoraDataPassthroughEscapesIdentifier(t *testing.T) {
