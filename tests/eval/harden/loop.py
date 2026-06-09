@@ -20,6 +20,7 @@ no chance of clobbering uncommitted work. Run it on a throwaway worktree/branch.
 
 from __future__ import annotations
 
+import statistics
 import subprocess
 import tempfile
 from collections.abc import Callable
@@ -42,6 +43,24 @@ def _dump(save_dir: str | None, name: str, text: str) -> None:
     d = Path(save_dir)
     d.mkdir(parents=True, exist_ok=True)
     (d / name).write_text(text)
+
+
+def _log_breakdown(log: Callable[[str], None], label: str, result: CandidateResult) -> None:
+    """Per-question detail under an aggregate measure: correct/total, mean tokens, mean
+    score, mean tools — so a run is legible without digging into the trace files."""
+    by_q: dict[str, list] = {}
+    for r in result.records:
+        by_q.setdefault(r.score.question_id, []).append(r.score)
+    log(f"  {label}: score={result.score:.3f} pass={result.pass_rate:.2f} ({len(result.records)} runs)")
+    for qid, scores in sorted(by_q.items()):
+        passed = sum(1 for s in scores if s.correct)
+        tok = int(statistics.mean(s.tokens for s in scores))
+        tools = statistics.mean(s.n_tools for s in scores)
+        sc = statistics.mean(s.score for s in scores)
+        log(
+            f"    {qid:34} {passed}/{len(scores)} correct | ~{tok:>6} tok | "
+            f"{tools:.1f} tools | score {sc:.2f}"
+        )
 
 
 @dataclass
@@ -170,7 +189,7 @@ async def optimize(
     log("rebuilding harness (baseline)...")
     apply()
     baseline = await measure("baseline")
-    log(f"baseline: score={baseline.score:.3f} pass={baseline.pass_rate:.2f}")
+    _log_breakdown(log, "baseline", baseline)
     baseline_traces = run_root / "baseline" / "traces"
     result = OptimizeResult(baseline=baseline)
 
@@ -195,6 +214,10 @@ async def optimize(
             log(f"round {n}: proposer made no edits")
             result.rounds.append(_round(n, False, "no-edits", baseline, baseline, proposal.summary))
             continue
+        changed = _git(repo_dir, "diff", "HEAD", "--name-only").splitlines()
+        untracked = _git(repo_dir, "ls-files", "--others", "--exclude-standard").splitlines()
+        log(f"round {n}: proposal summary: {' '.join(proposal.summary.split())[:280]}")
+        log(f"round {n}: edited {len(changed) + len(untracked)} file(s): {', '.join(changed + untracked)[:300]}")
 
         # Adversarial audit BEFORE the expensive build+measure: a fresh-context reviewer
         # tries to refuse the diff for answer-leakage / misplacement / eval-infra gaming —
@@ -203,8 +226,9 @@ async def optimize(
             log(f"round {n}: auditing the proposed diff...")
             verdict = auditor.audit(_proposal_diff(repo_dir), [q.text for q in questions])
             _dump(save_dir, f"round{n}_audit.txt", verdict.text())
+            log(f"round {n}: audit verdict: {' '.join(verdict.summary.split())[:240]}")
             if verdict.blocked:
-                log(f"round {n}: AUDIT BLOCKED — {verdict.summary[:200]}")
+                log(f"round {n}: AUDIT BLOCKED ({len(verdict.findings)} finding(s)) — reverting")
                 _revert(repo_dir)
                 result.rounds.append(
                     _round(n, False, "audit-blocked", baseline, baseline, verdict.text())
@@ -228,6 +252,7 @@ async def optimize(
             continue
 
         candidate = await measure(f"round{n}_candidate")
+        _log_breakdown(log, f"round{n} candidate", candidate)
         # Correctness must not regress ANYWHERE; the improvement must show on the HELD-OUT
         # questions the proposer never saw (so memorizing the train questions can't pass).
         gate_base = filter_runs(baseline.runs, held_out_ids) if held_out_ids else baseline.runs
