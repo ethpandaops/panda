@@ -11,6 +11,9 @@ DEFAULT_AGENT_MODEL = "opencode-go/deepseek-v4-flash"
 DEFAULT_AGENT_ROUTE = "cli"
 # A subject spec is "<provider>/<model>:<route>".
 DEFAULT_SUBJECT = f"{DEFAULT_AGENT_MODEL}:{DEFAULT_AGENT_ROUTE}"
+# The loop optimizes across TWO agent models by default, so a harness improvement has to
+# help BOTH (it can't overfit to one) — and two subjects double the confidence gate's cells.
+DEFAULT_SUBJECTS = [DEFAULT_SUBJECT, f"openai/gpt-5.4-mini:{DEFAULT_AGENT_ROUTE}"]
 DEFAULT_EVALUATOR_MODEL = "google/gemini-3.1-flash-lite"
 # The promptfoo grading provider: the evaluator model via OpenRouter.
 DEFAULT_GRADER = f"openrouter:{DEFAULT_EVALUATOR_MODEL}"

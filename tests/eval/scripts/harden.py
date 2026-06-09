@@ -1,9 +1,10 @@
 """Run the harden optimization loop against the panda harness.
 
-    uv run python -m scripts.harden \
-        --cases smoke.yaml --rounds 3 --k 3 --sandbox \
-        --subject opencode-go/deepseek-v4-flash:cli \
-        --subject opencode/gpt-5.4-mini:cli
+    uv run python -m scripts.harden --cases smoke.yaml --rounds 3 --k 3 --sandbox
+
+By default it runs TWO agent subjects — opencode-go/deepseek-v4-flash + openai/gpt-5.4-mini
+(over the CLI route) — so an accepted change has to help both, not overfit to one. Override
+with one or more --subject provider/model:route.
 
 The loop measures the current harness, lets Codex (GPT-5.5 @ xhigh) edit panda from the
 RAW agent traces, rebuilds + re-measures, and keeps the change only if it doesn't regress
@@ -28,7 +29,7 @@ import time
 from pathlib import Path
 
 from cases.loader import load_test_cases
-from config.settings import DEFAULT_EVALUATOR_MODEL, DEFAULT_SUBJECT
+from config.settings import DEFAULT_EVALUATOR_MODEL, DEFAULT_SUBJECTS
 from harden.auditor import CodexAuditor
 from harden.loop import optimize
 from harden.proposer import CodexProposer
@@ -143,7 +144,7 @@ def main() -> None:
     def log(m: str) -> None:
         print(m, flush=True)
 
-    subject_specs = args.subject or [DEFAULT_SUBJECT]
+    subject_specs = args.subject or DEFAULT_SUBJECTS
     grader = args.grader or f"openrouter:{args.judge_model}"
     proposer = CodexProposer(
         repo_dir,

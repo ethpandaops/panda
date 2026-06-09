@@ -245,9 +245,9 @@ class OpenCodeAgent:
         self, workdir: Path, port: int
     ) -> tuple[list[str], None, dict[str, str], str]:
         """Run opencode inside a container with NO repo mount — only a cross-compiled linux
-        `panda` binary + a panda config + a minimal opencode auth are mounted in, and the
-        panda server is reached over host.docker.internal. The subject's bash sees the
-        container's filesystem, never the host's, so it cannot read the eval cases.
+        `panda` binary + a panda config + the opencode auth are mounted in, and the panda
+        server is reached over host.docker.internal. The subject's bash sees the container's
+        filesystem, never the host's, so it cannot read the eval cases.
 
         Foreground ``docker run`` (not -d) so the Popen tracks liveness/teardown exactly like
         the host serve; ``--rm`` + an explicit name (force-removed on close) handle cleanup."""
@@ -261,8 +261,13 @@ class OpenCodeAgent:
             "OPENCODE_SANDBOX_SERVER_URL", "http://host.docker.internal:2481"
         )
         image = os.environ.get("OPENCODE_SANDBOX_IMAGE", "panda-opencode-eval:latest")
-        key = os.environ.get("OPENCODE_GO_API_KEY") or os.environ.get("OPENCODE_API_KEY") or ""
-        (workdir / "auth.json").write_text(json.dumps({"opencode-go": {"type": "api", "key": key}}))
+        # Seed the FULL host opencode auth (a COPY of its content — the host file is never
+        # mounted) so every configured provider works in the sandbox: the opencode-go api key
+        # AND the openai oauth used by gpt-5.4-mini, etc. Mounted WRITABLE so opencode can
+        # refresh an oauth token in-container; the copy is discarded with the workdir.
+        src_base = Path(os.environ.get("XDG_DATA_HOME") or (Path.home() / ".local" / "share"))
+        src_auth = src_base / "opencode" / "auth.json"
+        (workdir / "auth.json").write_text(src_auth.read_text() if src_auth.exists() else "{}")
         (workdir / "panda-config.yaml").write_text(f'server:\n  base_url: "{server_url}"\n')
         # Mount the binary's DIRECTORY (image symlinks /usr/local/bin/panda -> it) so a
         # rebuilt panda is picked up live; the dir holds only `panda`.
@@ -276,7 +281,7 @@ class OpenCodeAgent:
             "-e", "OPENCODE_GO_API_KEY",  # pass through (value stays out of the arg list)
             "-v", f"{panda_dir}:/opt/pandabin:ro",
             "-v", f"{workdir / 'opencode.json'}:/work/opencode.json:ro",
-            "-v", f"{workdir / 'auth.json'}:/root/.local/share/opencode/auth.json:ro",
+            "-v", f"{workdir / 'auth.json'}:/root/.local/share/opencode/auth.json",
             "-v", f"{workdir / 'panda-config.yaml'}:/root/.config/panda/config.yaml:ro",
             image,
             "opencode", "serve", "--hostname", "0.0.0.0", "--port", str(port),

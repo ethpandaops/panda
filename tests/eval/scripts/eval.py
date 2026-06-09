@@ -32,7 +32,7 @@ from rich.console import Console
 from rich.table import Table
 
 from cases.loader import load_test_cases
-from config.settings import DEFAULT_EVALUATOR_MODEL, DEFAULT_SUBJECT
+from config.settings import DEFAULT_EVALUATOR_MODEL, DEFAULT_SUBJECTS
 from harden.promptfoo_eval import measure_candidate
 from harden.runner import CandidateResult, Question
 
@@ -187,7 +187,7 @@ def main() -> None:
     if not questions:
         raise SystemExit(f"no questions loaded from cases/{args.cases}")
 
-    subject_specs = args.subject or [DEFAULT_SUBJECT]
+    subject_specs = args.subject or DEFAULT_SUBJECTS
     grader = args.grader or f"openrouter:{args.judge_model}"
     os.environ.setdefault("PROMPTFOO_PYTHON", sys.executable)
     eval_dir = str(Path(__file__).resolve().parents[1])

@@ -6,6 +6,7 @@ from config.settings import (
     DEFAULT_EVALUATOR_MODEL,
     DEFAULT_GRADER,
     DEFAULT_SUBJECT,
+    DEFAULT_SUBJECTS,
     EvalSettings,
 )
 
@@ -15,5 +16,6 @@ __all__ = [
     "DEFAULT_EVALUATOR_MODEL",
     "DEFAULT_GRADER",
     "DEFAULT_SUBJECT",
+    "DEFAULT_SUBJECTS",
     "EvalSettings",
 ]
