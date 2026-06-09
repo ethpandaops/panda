@@ -32,10 +32,9 @@ type ClusterTablesSummary struct {
 
 // TableSummary is a compact overview of a table for the list view.
 type TableSummary struct {
-	Database      string `json:"database"`
-	Name          string `json:"name"`
-	ColumnCount   int    `json:"column_count"`
-	HasNetworkCol bool   `json:"has_network_column"`
+	Database    string `json:"database"`
+	Name        string `json:"name"`
+	ColumnCount int    `json:"column_count"`
 }
 
 // TableDetailResponse is the response for
@@ -216,10 +215,9 @@ func buildClusterSummary(cluster *ClusterTables, databaseFilter string) *Cluster
 		}
 
 		summary.Tables = append(summary.Tables, &TableSummary{
-			Database:      schema.Database,
-			Name:          schema.Name,
-			ColumnCount:   len(schema.Columns),
-			HasNetworkCol: schema.HasNetworkCol,
+			Database:    schema.Database,
+			Name:        schema.Name,
+			ColumnCount: len(schema.Columns),
 		})
 	}
 

@@ -74,7 +74,6 @@ type TableSchema struct {
 	Name            string        `json:"name"`
 	Engine          string        `json:"engine,omitempty"`
 	Columns         []TableColumn `json:"columns"`
-	HasNetworkCol   bool          `json:"has_network_column"`
 	CreateStatement string        `json:"create_statement,omitempty"`
 	Comment         string        `json:"comment,omitempty"`
 }
@@ -598,9 +597,9 @@ func (c *clickhouseSchemaClient) queryJSON(ctx context.Context, datasourceName, 
 }
 
 // fetchTableList fetches the list of tables from a ClickHouse datasource.
-// First tries SHOW TABLES (works for clusters with a default database like clickhouse-raw).
+// First tries SHOW TABLES (works for clusters with a default database).
 // If that returns 0 rows, falls back to querying system.tables to discover
-// tables across per-network databases (like clickhouse-refined).
+// tables across all databases (clusters with no default database).
 func (c *clickhouseSchemaClient) fetchTableList(ctx context.Context, datasourceName string) ([]discoveredTable, error) {
 	tables, err := c.fetchTableListDefault(ctx, datasourceName)
 	if err != nil {
@@ -669,8 +668,7 @@ var systemDatabaseBlacklist = map[string]bool{
 }
 
 // fetchTableListFromSystemTables emits one discoveredTable per (database, table)
-// for every non-system database. Used when the cluster's default database is
-// empty (clickhouse-refined, observability tier-scoped clusters).
+// for every non-system database. Used when the cluster has no default database.
 func (c *clickhouseSchemaClient) fetchTableListFromSystemTables(ctx context.Context, datasourceName string) ([]discoveredTable, error) {
 	databases, err := c.fetchDatabases(ctx, datasourceName)
 	if err != nil {
@@ -898,11 +896,6 @@ outerLoop:
 		if defaultMatches := defaultPattern.FindStringSubmatch(line); len(defaultMatches) > 2 {
 			col.DefaultType = defaultMatches[1]
 			col.DefaultValue = strings.TrimSpace(defaultMatches[2])
-		}
-
-		// Check for meta_network_name column.
-		if col.Name == "meta_network_name" {
-			schema.HasNetworkCol = true
 		}
 
 		schema.Columns = append(schema.Columns, col)

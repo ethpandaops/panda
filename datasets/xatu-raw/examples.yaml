@@ -1,0 +1,631 @@
+# Query examples for the xatu-raw dataset.
+# Each example's `target` is the ClickHouse datasource (cluster) it runs against.
+
+validators:
+  name: Validator Analysis
+  description: Queries for analyzing validator counts, status distribution, and balances. Use canonical_beacon_validators
+    on the clickhouse-raw datasource — it has one row per validator per epoch with status and balance.
+    This single table is sufficient for validator count, status distribution, and balance queries. Do
+    not join to dim_validator_status or fct_validator_balance for simple count/status queries.
+  examples:
+  - name: Active validator count for most recent finalized epoch
+    description: Get total count of active validators using canonical_beacon_validators on the clickhouse-raw
+      datasource. Filter on status = 'active_ongoing' and the latest epoch. This single table has everything
+      needed for validator counts.
+    target: clickhouse-raw
+    query: |
+      SELECT
+        count() as active_validators
+      FROM canonical_beacon_validators
+      WHERE meta_network_name = 'mainnet'
+        AND status = 'active_ongoing'
+        AND epoch = (SELECT max(epoch) FROM canonical_beacon_validators WHERE meta_network_name = 'mainnet')
+  - name: Validator status distribution for most recent finalized epoch
+    description: Count validators grouped by status (active_ongoing, pending_queued, exited_slashed, etc.)
+      using canonical_beacon_validators on the clickhouse-raw datasource. This table has one row per validator
+      per epoch with the current status — no need to join dim_validator_status which tracks lifecycle
+      transitions, not current state.
+    target: clickhouse-raw
+    query: |
+      SELECT
+        status,
+        count() as validator_count
+      FROM canonical_beacon_validators
+      WHERE meta_network_name = 'mainnet'
+        AND epoch = (SELECT max(epoch) FROM canonical_beacon_validators WHERE meta_network_name = 'mainnet')
+      GROUP BY status
+      ORDER BY validator_count DESC
+  - name: Validator balance statistics for most recent finalized epoch
+    description: Get balance distribution of active validators using canonical_beacon_validators. The
+      balance column is in Gwei — divide by 1e9 for ETH.
+    target: clickhouse-raw
+    query: |
+      SELECT
+        avg(balance) / 1e9 as avg_balance_eth,
+        min(balance) / 1e9 as min_balance_eth,
+        max(balance) / 1e9 as max_balance_eth,
+        sum(balance) / 1e9 as total_staked_eth
+      FROM canonical_beacon_validators
+      WHERE meta_network_name = 'mainnet'
+        AND status = 'active_ongoing'
+        AND epoch = (SELECT max(epoch) FROM canonical_beacon_validators WHERE meta_network_name = 'mainnet')
+attestations:
+  name: Attestation Analysis
+  description: Queries for analyzing attestation behavior
+  examples:
+  - name: Attestation count
+    description: Count attestations in the last hour
+    target: clickhouse-raw
+    query: |
+      SELECT
+        count() as attestation_count,
+        count(DISTINCT slot) as slots_with_attestations
+      FROM beacon_api_eth_v1_events_attestation
+      WHERE meta_network_name = 'mainnet'
+        AND slot_start_date_time >= now() - INTERVAL 1 HOUR
+  - name: Attestation propagation time
+    description: Analyze attestation propagation delays
+    target: clickhouse-raw
+    query: |
+      SELECT
+        avg(propagation_slot_start_diff) as avg_propagation_ms,
+        quantile(0.50)(propagation_slot_start_diff) as p50_ms,
+        quantile(0.95)(propagation_slot_start_diff) as p95_ms
+      FROM beacon_api_eth_v1_events_attestation
+      WHERE meta_network_name = 'mainnet'
+        AND slot_start_date_time >= now() - INTERVAL 1 HOUR
+  - name: Average validators per included attestation
+    description: Count the average number of validators per included attestation using canonical_beacon_elaborated_attestation.
+      This table has a validators array column — use length(validators) to count participants per attestation.
+    target: clickhouse-raw
+    query: |
+      SELECT
+        AVG(length(validators)) AS avg_validators_per_attestation,
+        MIN(length(validators)) AS min_validators,
+        MAX(length(validators)) AS max_validators,
+        COUNT() AS total_attestations
+      FROM canonical_beacon_elaborated_attestation
+      WHERE meta_network_name = 'mainnet'
+        AND block_slot_start_date_time >= now() - INTERVAL 1 HOUR
+network_health:
+  name: Network Health Monitoring
+  description: Queries used for monitoring Ethereum network health, derived from production alerting rules
+  examples:
+  - name: Attestation participation rate (raw events)
+    description: Calculate the ratio of attesting validators to total validators per slot using raw event
+      data from clickhouse-raw. For a simpler pre-aggregated approach, use fct_attestation_correctness_head
+      on clickhouse-refined instead.
+    target: clickhouse-raw
+    query: |
+      WITH total_validators AS (
+        SELECT
+          slot_start_date_time,
+          sum(length(validators)) AS total_validators
+        FROM (
+          SELECT
+            slot_start_date_time,
+            committee_index,
+            validators
+          FROM beacon_api_eth_v1_beacon_committee
+          WHERE slot_start_date_time >= now() - INTERVAL 5 MINUTE
+            AND meta_network_name = 'mainnet'
+          LIMIT 1 BY slot_start_date_time, committee_index
+        )
+        GROUP BY slot_start_date_time
+      ),
+      attesting_validators AS (
+        SELECT
+          slot_start_date_time,
+          COUNT(DISTINCT attesting_validator_index) AS attesting_validators
+        FROM beacon_api_eth_v1_events_attestation
+        WHERE slot_start_date_time >= now() - INTERVAL 5 MINUTE
+          AND meta_network_name = 'mainnet'
+        GROUP BY slot_start_date_time
+      )
+      SELECT
+        t.slot_start_date_time,
+        t.total_validators,
+        a.attesting_validators,
+        a.attesting_validators / t.total_validators AS participation_rate
+      FROM total_validators t
+      JOIN attesting_validators a ON t.slot_start_date_time = a.slot_start_date_time
+      ORDER BY t.slot_start_date_time
+  - name: Finalized epoch distance
+    description: Calculate the gap between the current head epoch and the finalized epoch. Use beacon_api_eth_v1_events_finalized_checkpoint
+      for the finalized epoch and beacon_api_eth_v1_events_head for the current head epoch.
+    target: clickhouse-raw
+    query: |
+      WITH latest_finalized AS (
+        SELECT MAX(epoch) AS finalized_epoch
+        FROM beacon_api_eth_v1_events_finalized_checkpoint
+        WHERE meta_network_name = 'mainnet'
+          AND epoch_start_date_time >= now() - INTERVAL 1 DAY
+      ),
+      latest_head AS (
+        SELECT MAX(intDiv(slot, 32)) AS head_epoch
+        FROM beacon_api_eth_v1_events_head
+        WHERE meta_network_name = 'mainnet'
+          AND slot_start_date_time >= now() - INTERVAL 5 MINUTE
+      )
+      SELECT
+        h.head_epoch,
+        f.finalized_epoch,
+        h.head_epoch - f.finalized_epoch AS epoch_distance
+      FROM latest_head h, latest_finalized f
+  - name: Data pipeline health check
+    description: Verify the data pipeline is healthy by checking for sufficient client diversity and event
+      volume. Used as a guard condition before other alerts fire.
+    target: clickhouse-raw
+    query: |
+      SELECT
+        COUNT(DISTINCT meta_client_name) AS distinct_clients,
+        COUNT(*) AS total_events,
+        if(COUNT(DISTINCT meta_client_name) > 3 AND COUNT(*) > 500, 'healthy', 'unhealthy') AS pipeline_status
+      FROM beacon_api_eth_v1_events_attestation
+      WHERE slot_start_date_time >= now() - INTERVAL 5 MINUTE
+        AND meta_network_name = 'mainnet'
+mev_analysis:
+  name: MEV Analysis
+  description: Queries for analyzing MEV (Maximal Extractable Value) activity including relays, builders,
+    and block values. For relay-level market share use fct_block_mev_head (clickhouse-refined). For individual
+    bid data (values, builder pubkeys, bid traces) use mev_relay_bid_trace (clickhouse-raw) — the value
+    column is in wei (UInt256). For validator registrations use mev_relay_validator_registration (clickhouse-raw).
+    For bid count trends use fct_mev_bid_count_by_relay and fct_mev_bid_count_by_builder (clickhouse-refined).
+    For highest bid value timing use fct_mev_bid_highest_value_by_builder_chunked_50ms (clickhouse-refined).
+  examples:
+  - name: Top MEV builders by total bid value
+    description: Rank builders by total bid value in ETH. Use mev_relay_bid_trace which has the actual
+      bid values per builder.
+    target: clickhouse-raw
+    query: |
+      SELECT
+        builder_pub_key,
+        SUM(value) / 1e18 AS total_bid_value_eth,
+        COUNT() AS total_bids,
+        AVG(value) / 1e18 AS avg_bid_value_eth,
+        MAX(value) / 1e18 AS max_bid_value_eth
+      FROM mev_relay_bid_trace
+      WHERE meta_network_name = 'mainnet'
+        AND slot_start_date_time >= now() - INTERVAL 1 DAY
+      GROUP BY builder_pub_key
+      ORDER BY total_bid_value_eth DESC
+      LIMIT 10
+  - name: MEV validator registrations per relay
+    description: Count unique validators registered with each MEV relay using mev_relay_validator_registration.
+    target: clickhouse-raw
+    query: |
+      SELECT
+        relay_name,
+        COUNT(DISTINCT validator_index) AS unique_validators,
+        COUNT() AS total_registrations
+      FROM mev_relay_validator_registration
+      WHERE meta_network_name = 'mainnet'
+        AND slot_start_date_time >= now() - INTERVAL 1 DAY
+      GROUP BY relay_name
+      ORDER BY unique_validators DESC
+  - name: MEV bid value distribution
+    description: Distribution of MEV bid values to understand the value spectrum. Uses mev_relay_bid_trace
+      on the clickhouse-raw datasource which contains individual bid data with value (in wei).
+    target: clickhouse-raw
+    query: |
+      SELECT
+        CASE
+          WHEN value / 1e18 < 0.01 THEN '<0.01 ETH'
+          WHEN value / 1e18 < 0.05 THEN '0.01-0.05 ETH'
+          WHEN value / 1e18 < 0.1 THEN '0.05-0.1 ETH'
+          WHEN value / 1e18 < 0.5 THEN '0.1-0.5 ETH'
+          ELSE '>0.5 ETH'
+        END AS value_bucket,
+        count() AS bid_count,
+        avg(value / 1e18) AS avg_value_eth
+      FROM mev_relay_bid_trace
+      WHERE meta_network_name = 'mainnet'
+        AND slot_start_date_time >= now() - INTERVAL 1 HOUR
+      GROUP BY value_bucket
+      ORDER BY avg_value_eth
+blob_analysis:
+  name: Blob Analysis
+  description: Queries for analyzing EIP-4844 blob data including blob counts, submitters, and L2 rollup
+    activity. For blob counts and submitter identity, use dim_block_blob_submitter (clickhouse-refined).
+    For blob content analysis (empty blobs, blob sizes), use canonical_beacon_blob_sidecar (clickhouse-raw)
+    which has blob_size and blob_empty_size columns. Cross-datasource joins require two separate queries.
+  examples:
+  - name: Empty blob detection
+    description: Find blobs with zero useful data using canonical_beacon_blob_sidecar (clickhouse-raw
+      datasource). The blob_empty_size column shows how many bytes are empty — when blob_empty_size equals
+      blob_size, the blob is entirely empty. To identify submitters, join these slots to dim_block_blob_submitter
+      on clickhouse-refined (separate query, different datasource).
+    target: clickhouse-raw
+    query: |
+      SELECT
+        slot,
+        proposer_index,
+        blob_index,
+        blob_size,
+        blob_empty_size,
+        versioned_hash
+      FROM canonical_beacon_blob_sidecar
+      WHERE slot_start_date_time >= now() - INTERVAL 24 HOUR
+        AND meta_network_name = 'mainnet'
+        AND blob_empty_size = blob_size
+      ORDER BY slot DESC
+      LIMIT 50
+libp2p_gossipsub:
+  name: libp2p GossipSub
+  description: Queries for analyzing libp2p gossipsub message propagation and peer behavior
+  examples:
+  - name: Block gossip propagation timing
+    description: Block message propagation times across the gossipsub network.
+    target: clickhouse-raw
+    query: |
+      SELECT
+        slot,
+        block,
+        proposer_index,
+        MIN(propagation_slot_start_diff) AS first_seen_ms,
+        AVG(propagation_slot_start_diff) AS avg_propagation_ms,
+        MAX(propagation_slot_start_diff) AS last_seen_ms,
+        COUNT() AS message_count,
+        countDistinct(peer_id_unique_key) AS unique_peers
+      FROM libp2p_gossipsub_beacon_block
+      WHERE meta_network_name = 'mainnet'
+        AND slot_start_date_time >= now() - INTERVAL 1 HOUR
+      GROUP BY slot, block, proposer_index
+      ORDER BY slot DESC
+      LIMIT 50
+  - name: Block gossip by consensus client
+    description: Compare block propagation across consensus client implementations.
+    target: clickhouse-raw
+    query: |
+      SELECT
+        meta_client_implementation AS client,
+        AVG(propagation_slot_start_diff) AS avg_propagation_ms,
+        quantile(0.50)(propagation_slot_start_diff) AS p50_ms,
+        quantile(0.95)(propagation_slot_start_diff) AS p95_ms,
+        COUNT() AS messages,
+        countDistinct(peer_id_unique_key) AS unique_peers
+      FROM libp2p_gossipsub_beacon_block
+      WHERE meta_network_name = 'mainnet'
+        AND slot_start_date_time >= now() - INTERVAL 1 HOUR
+      GROUP BY client
+      ORDER BY avg_propagation_ms
+  - name: Block gossip by country
+    description: Geographic distribution of block propagation timing.
+    target: clickhouse-raw
+    query: |
+      SELECT
+        meta_client_geo_country AS country,
+        AVG(propagation_slot_start_diff) AS avg_propagation_ms,
+        quantile(0.95)(propagation_slot_start_diff) AS p95_ms,
+        COUNT() AS messages,
+        countDistinct(peer_id_unique_key) AS unique_peers
+      FROM libp2p_gossipsub_beacon_block
+      WHERE meta_network_name = 'mainnet'
+        AND slot_start_date_time >= now() - INTERVAL 1 HOUR
+      GROUP BY country
+      ORDER BY messages DESC
+      LIMIT 20
+  - name: Aggregate and proof gossip propagation timing
+    description: Analyze aggregate and proof propagation timing using libp2p_gossipsub_aggregate_and_proof.
+    target: clickhouse-raw
+    query: |
+      SELECT
+        slot,
+        MIN(propagation_slot_start_diff) AS first_seen_ms,
+        AVG(propagation_slot_start_diff) AS avg_propagation_ms,
+        quantile(0.95)(propagation_slot_start_diff) AS p95_ms,
+        COUNT() AS message_count,
+        countDistinct(peer_id_unique_key) AS unique_peers
+      FROM libp2p_gossipsub_aggregate_and_proof
+      WHERE meta_network_name = 'mainnet'
+        AND slot_start_date_time >= now() - INTERVAL 1 HOUR
+      GROUP BY slot
+      ORDER BY slot DESC
+      LIMIT 50
+  - name: Attestation gossip propagation
+    description: Attestation propagation times per slot.
+    target: clickhouse-raw
+    query: |
+      SELECT
+        slot,
+        MIN(propagation_slot_start_diff) AS first_seen_ms,
+        AVG(propagation_slot_start_diff) AS avg_propagation_ms,
+        quantile(0.95)(propagation_slot_start_diff) AS p95_ms,
+        COUNT() AS message_count,
+        countDistinct(peer_id_unique_key) AS unique_peers
+      FROM libp2p_gossipsub_beacon_attestation
+      WHERE meta_network_name = 'mainnet'
+        AND slot_start_date_time >= now() - INTERVAL 1 HOUR
+      GROUP BY slot
+      ORDER BY slot DESC
+      LIMIT 50
+  - name: Attestation gossip by committee
+    description: Attestation propagation breakdown by committee index.
+    target: clickhouse-raw
+    query: |
+      SELECT
+        committee_index,
+        AVG(propagation_slot_start_diff) AS avg_propagation_ms,
+        quantile(0.95)(propagation_slot_start_diff) AS p95_ms,
+        COUNT() AS message_count
+      FROM libp2p_gossipsub_beacon_attestation
+      WHERE meta_network_name = 'mainnet'
+        AND slot_start_date_time >= now() - INTERVAL 1 HOUR
+      GROUP BY committee_index
+      ORDER BY committee_index
+  - name: Blob sidecar gossip propagation
+    description: Blob sidecar propagation times by slot and blob index.
+    target: clickhouse-raw
+    query: |
+      SELECT
+        slot,
+        blob_index,
+        MIN(propagation_slot_start_diff) AS first_seen_ms,
+        AVG(propagation_slot_start_diff) AS avg_propagation_ms,
+        MAX(propagation_slot_start_diff) AS last_seen_ms,
+        COUNT() AS message_count,
+        AVG(message_size) AS avg_message_size
+      FROM libp2p_gossipsub_blob_sidecar
+      WHERE meta_network_name = 'mainnet'
+        AND slot_start_date_time >= now() - INTERVAL 1 HOUR
+      GROUP BY slot, blob_index
+      ORDER BY slot DESC, blob_index
+      LIMIT 100
+  - name: Data column sidecar gossip propagation
+    description: Data column sidecar (PeerDAS) propagation times.
+    target: clickhouse-raw
+    query: |
+      SELECT
+        slot,
+        column_index,
+        MIN(propagation_slot_start_diff) AS first_seen_ms,
+        AVG(propagation_slot_start_diff) AS avg_propagation_ms,
+        MAX(propagation_slot_start_diff) AS last_seen_ms,
+        COUNT() AS message_count,
+        AVG(message_size) AS avg_message_size
+      FROM libp2p_gossipsub_data_column_sidecar
+      WHERE meta_network_name = 'mainnet'
+        AND slot_start_date_time >= now() - INTERVAL 1 HOUR
+      GROUP BY slot, column_index
+      ORDER BY slot DESC, column_index
+      LIMIT 100
+  - name: Message size by topic
+    description: Average message sizes across different gossipsub topics.
+    target: clickhouse-raw
+    query: |
+      SELECT
+        topic_name,
+        AVG(message_size) AS avg_size_bytes,
+        MIN(message_size) AS min_size,
+        MAX(message_size) AS max_size,
+        COUNT() AS message_count
+      FROM libp2p_gossipsub_beacon_block
+      WHERE meta_network_name = 'mainnet'
+        AND slot_start_date_time >= now() - INTERVAL 1 HOUR
+      GROUP BY topic_name
+      ORDER BY message_count DESC
+libp2p_peers:
+  name: libp2p Peer Connections
+  description: Queries for analyzing libp2p peer connections and network topology
+  examples:
+  - name: Peer connections by client
+    description: Distribution of connected peers by client implementation.
+    target: clickhouse-raw
+    query: |
+      SELECT
+        remote_agent_implementation AS peer_client,
+        COUNT() AS connection_count,
+        countDistinct(remote_peer_id_unique_key) AS unique_peers
+      FROM libp2p_connected
+      WHERE meta_network_name = 'mainnet'
+        AND event_date_time >= now() - INTERVAL 1 HOUR
+      GROUP BY peer_client
+      ORDER BY connection_count DESC
+  - name: Peer connections by country
+    description: Geographic distribution of peer connections.
+    target: clickhouse-raw
+    query: |
+      SELECT
+        remote_geo_country AS country,
+        COUNT() AS connection_count,
+        countDistinct(remote_peer_id_unique_key) AS unique_peers
+      FROM libp2p_connected
+      WHERE meta_network_name = 'mainnet'
+        AND event_date_time >= now() - INTERVAL 1 HOUR
+      GROUP BY country
+      ORDER BY connection_count DESC
+      LIMIT 20
+  - name: Peer connections by ASN
+    description: Distribution of peer connections by hosting provider.
+    target: clickhouse-raw
+    query: |
+      SELECT
+        remote_geo_autonomous_system_organization AS asn_org,
+        COUNT() AS connection_count,
+        countDistinct(remote_peer_id_unique_key) AS unique_peers
+      FROM libp2p_connected
+      WHERE meta_network_name = 'mainnet'
+        AND event_date_time >= now() - INTERVAL 1 HOUR
+        AND remote_geo_autonomous_system_organization IS NOT NULL
+      GROUP BY asn_org
+      ORDER BY connection_count DESC
+      LIMIT 20
+  - name: Connection direction breakdown
+    description: Inbound vs outbound peer connections.
+    target: clickhouse-raw
+    query: |
+      SELECT
+        direction,
+        COUNT() AS connection_count,
+        countDistinct(remote_peer_id_unique_key) AS unique_peers
+      FROM libp2p_connected
+      WHERE meta_network_name = 'mainnet'
+        AND event_date_time >= now() - INTERVAL 1 HOUR
+      GROUP BY direction
+  - name: Client version distribution
+    description: Distribution of peer client versions.
+    target: clickhouse-raw
+    query: |
+      SELECT
+        remote_agent_implementation AS client,
+        remote_agent_version_major AS major_version,
+        COUNT() AS connection_count,
+        countDistinct(remote_peer_id_unique_key) AS unique_peers
+      FROM libp2p_connected
+      WHERE meta_network_name = 'mainnet'
+        AND event_date_time >= now() - INTERVAL 1 HOUR
+      GROUP BY client, major_version
+      ORDER BY client, connection_count DESC
+  - name: Disconnection events
+    description: Recent peer disconnection events.
+    target: clickhouse-raw
+    query: |
+      SELECT
+        remote_agent_implementation AS peer_client,
+        remote_geo_country AS country,
+        direction,
+        COUNT() AS disconnect_count,
+        countDistinct(remote_peer_id_unique_key) AS unique_peers
+      FROM libp2p_disconnected
+      WHERE meta_network_name = 'mainnet'
+        AND event_date_time >= now() - INTERVAL 1 HOUR
+      GROUP BY peer_client, country, direction
+      ORDER BY disconnect_count DESC
+      LIMIT 30
+  - name: Connection churn rate
+    description: Compare connection vs disconnection rates over time.
+    target: clickhouse-raw
+    query: |
+      SELECT
+        toStartOfMinute(event_date_time) AS minute,
+        countIf(1) AS connections
+      FROM libp2p_connected
+      WHERE meta_network_name = 'mainnet'
+        AND event_date_time >= now() - INTERVAL 1 HOUR
+      GROUP BY minute
+      ORDER BY minute DESC
+  - name: Per-node peer count estimate
+    description: Estimate the number of connected peers per node by counting connection events in libp2p_connected.
+      Use this to derive peer counts for correlation analysis (e.g., does high peer count improve block
+      arrival time). Join to fct_block_first_seen_by_node on meta_client_name for block timing.
+    target: clickhouse-raw
+    query: |
+      SELECT
+        meta_client_name,
+        countDistinct(remote_peer_id_unique_key) AS estimated_peer_count
+      FROM libp2p_connected
+      WHERE meta_network_name = 'mainnet'
+        AND event_date_time >= now() - INTERVAL 1 HOUR
+      GROUP BY meta_client_name
+      ORDER BY estimated_peer_count DESC
+libp2p_messages:
+  name: libp2p Message Handling
+  description: Queries for analyzing message delivery, rejection, and duplication
+  examples:
+  - name: Message delivery by topic
+    description: Message delivery statistics by gossipsub topic.
+    target: clickhouse-raw
+    query: |
+      SELECT
+        topic_name,
+        COUNT() AS delivered_count,
+        countIf(local_delivery = true) AS local_deliveries,
+        AVG(message_size) AS avg_message_size,
+        SUM(message_size) AS total_bytes
+      FROM libp2p_deliver_message
+      WHERE meta_network_name = 'mainnet'
+        AND event_date_time >= now() - INTERVAL 1 HOUR
+      GROUP BY topic_name
+      ORDER BY delivered_count DESC
+  - name: Rejected messages by reason
+    description: Message rejection reasons and counts.
+    target: clickhouse-raw
+    query: |
+      SELECT
+        reason,
+        topic_name,
+        COUNT() AS reject_count,
+        countDistinct(peer_id_unique_key) AS unique_peers
+      FROM libp2p_reject_message
+      WHERE meta_network_name = 'mainnet'
+        AND event_date_time >= now() - INTERVAL 1 HOUR
+      GROUP BY reason, topic_name
+      ORDER BY reject_count DESC
+      LIMIT 30
+  - name: Gossipsub duplication factor for aggregates
+    description: Calculate the duplication factor for aggregate attestation messages using libp2p_duplicate_message.
+      Filter by topic to isolate aggregate messages.
+    target: clickhouse-raw
+    query: |
+      SELECT
+        COUNT() AS total_duplicates,
+        countDistinct(message_id) AS unique_messages,
+        COUNT() * 1.0 / countDistinct(message_id) AS duplication_factor
+      FROM libp2p_duplicate_message
+      WHERE meta_network_name = 'mainnet'
+        AND event_date_time >= now() - INTERVAL 1 HOUR
+        AND topic_name LIKE '%beacon_aggregate_and_proof%'
+  - name: Duplicate messages by topic
+    description: Duplicate message statistics by gossipsub topic.
+    target: clickhouse-raw
+    query: |
+      SELECT
+        topic_name,
+        COUNT() AS duplicate_count,
+        countDistinct(message_id) AS unique_messages,
+        AVG(message_size) AS avg_message_size
+      FROM libp2p_duplicate_message
+      WHERE meta_network_name = 'mainnet'
+        AND event_date_time >= now() - INTERVAL 1 HOUR
+      GROUP BY topic_name
+      ORDER BY duplicate_count DESC
+  - name: Duplication ratio by topic
+    description: Calculate message duplication ratio (duplicates vs deliveries).
+    target: clickhouse-raw
+    query: |
+      SELECT
+        d.topic_name,
+        d.delivered AS delivered,
+        dup.duplicates AS duplicates,
+        dup.duplicates * 100.0 / (d.delivered + dup.duplicates) AS duplication_pct
+      FROM (
+        SELECT topic_name, COUNT() AS delivered
+        FROM libp2p_deliver_message
+        WHERE meta_network_name = 'mainnet'
+          AND event_date_time >= now() - INTERVAL 1 HOUR
+        GROUP BY topic_name
+      ) d
+      LEFT JOIN (
+        SELECT topic_name, COUNT() AS duplicates
+        FROM libp2p_duplicate_message
+        WHERE meta_network_name = 'mainnet'
+          AND event_date_time >= now() - INTERVAL 1 HOUR
+        GROUP BY topic_name
+      ) dup ON d.topic_name = dup.topic_name
+      ORDER BY duplication_pct DESC
+  - name: Topic join/leave activity
+    description: Peer topic subscription changes.
+    target: clickhouse-raw
+    query: |
+      SELECT
+        topic_name,
+        countIf(1) AS joins
+      FROM libp2p_join
+      WHERE meta_network_name = 'mainnet'
+        AND event_date_time >= now() - INTERVAL 1 HOUR
+      GROUP BY topic_name
+      ORDER BY joins DESC
+  - name: Message rejection rate by client
+    description: Which clients are rejecting the most messages.
+    target: clickhouse-raw
+    query: |
+      SELECT
+        meta_client_implementation AS client,
+        COUNT() AS reject_count,
+        countDistinct(message_id) AS unique_messages,
+        groupArray(10)(reason) AS sample_reasons
+      FROM libp2p_reject_message
+      WHERE meta_network_name = 'mainnet'
+        AND event_date_time >= now() - INTERVAL 1 HOUR
+      GROUP BY client
+      ORDER BY reject_count DESC

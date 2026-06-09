@@ -19,6 +19,7 @@ import (
 	"github.com/ethpandaops/panda/pkg/sandbox"
 	"github.com/ethpandaops/panda/pkg/types"
 
+	datasetsmodule "github.com/ethpandaops/panda/datasets"
 	blockarchivemodule "github.com/ethpandaops/panda/modules/block_archive"
 	cbtmodule "github.com/ethpandaops/panda/modules/cbt"
 	clickhousemodule "github.com/ethpandaops/panda/modules/clickhouse"
@@ -198,6 +199,7 @@ func (a *App) registerModules() *module.Registry {
 	reg.Add(blockarchivemodule.New())
 	reg.Add(cbtmodule.New())
 	reg.Add(clickhousemodule.New())
+	reg.Add(datasetsmodule.New())
 	reg.Add(doramodule.New())
 	reg.Add(ethnodemodule.New())
 	reg.Add(lokimodule.New())

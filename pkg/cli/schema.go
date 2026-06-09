@@ -82,12 +82,7 @@ func renderTablesList(response *clickhousemodule.TablesListResponse) error {
 		fmt.Printf("Cluster: %s (%d tables, updated %s)\n", clusterName, cluster.TableCount, cluster.LastUpdated)
 
 		for _, table := range cluster.Tables {
-			net := ""
-			if table.HasNetworkCol {
-				net = " (network-filtered)"
-			}
-
-			fmt.Printf("  %-60s  %d cols%s\n", table.Database+"."+table.Name, table.ColumnCount, net)
+			fmt.Printf("  %-60s  %d cols\n", table.Database+"."+table.Name, table.ColumnCount)
 		}
 
 		fmt.Println()

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"sync"
 
 	"github.com/sirupsen/logrus"
@@ -17,16 +16,14 @@ import (
 
 // Compile-time interface checks.
 var (
-	_ module.Module                        = (*Module)(nil)
-	_ module.ProxyDiscoverable             = (*Module)(nil)
-	_ module.DiscoveryReloadable           = (*Module)(nil)
-	_ module.ProxyAware                    = (*Module)(nil)
-	_ module.ResourceProvider              = (*Module)(nil)
-	_ module.SandboxEnvProvider            = (*Module)(nil)
-	_ module.DatasourceInfoProvider        = (*Module)(nil)
-	_ module.ExamplesProvider              = (*Module)(nil)
-	_ module.PythonAPIDocsProvider         = (*Module)(nil)
-	_ module.GettingStartedSnippetProvider = (*Module)(nil)
+	_ module.Module                 = (*Module)(nil)
+	_ module.ProxyDiscoverable      = (*Module)(nil)
+	_ module.DiscoveryReloadable    = (*Module)(nil)
+	_ module.ProxyAware             = (*Module)(nil)
+	_ module.ResourceProvider       = (*Module)(nil)
+	_ module.SandboxEnvProvider     = (*Module)(nil)
+	_ module.DatasourceInfoProvider = (*Module)(nil)
+	_ module.PythonAPIDocsProvider  = (*Module)(nil)
 )
 
 // Module implements the module.Module interface for ClickHouse.
@@ -205,19 +202,13 @@ func (m *Module) DatasourceInfo() []types.DatasourceInfo {
 	return result
 }
 
-// Examples returns query examples for the ClickHouse module.
-func (m *Module) Examples() map[string]types.ExampleCategory {
-	result := make(map[string]types.ExampleCategory, len(queryExamples))
-	maps.Copy(result, queryExamples)
-
-	return result
-}
-
-// PythonAPIDocs returns the ClickHouse module documentation.
+// PythonAPIDocs returns the ClickHouse module documentation. It describes the
+// generic transport only; dataset-specific guidance (table syntax, conventions)
+// lives in the dataset knowledge packs surfaced via search and getting-started.
 func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 	return map[string]types.ModuleDoc{
 		"clickhouse": {
-			Description: "Query ClickHouse databases for Ethereum blockchain data. Use the search tool for query patterns and investigation procedures.",
+			Description: "Execute SQL against a discovered ClickHouse datasource. Use the search tool for query examples and read datasources://clickhouse for available datasources.",
 			Functions: map[string]types.FunctionDoc{
 				"list_datasources": {
 					Signature:   "clickhouse.list_datasources() -> list[dict]",
@@ -228,8 +219,8 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 					Signature:   "clickhouse.query(datasource: str, sql: str, parameters: dict | None = None) -> pandas.DataFrame",
 					Description: "Execute SQL query, return DataFrame",
 					Parameters: map[string]string{
-						"datasource": "'clickhouse-raw' or 'clickhouse-refined' - see panda://getting-started for syntax differences",
-						"sql":        "SQL query string",
+						"datasource": "a ClickHouse datasource name from clickhouse.list_datasources() or datasources://clickhouse",
+						"sql":        "SQL query string; reference tables as database.table and inspect schemas via clickhouse://tables",
 						"parameters": "Optional ClickHouse query parameters referenced in SQL as {name:Type}",
 					},
 					Returns: "pandas.DataFrame",
@@ -238,7 +229,7 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 					Signature:   "clickhouse.query_raw(datasource: str, sql: str, parameters: dict | None = None) -> tuple[list[tuple], list[str]]",
 					Description: "Execute SQL query, return raw tuples",
 					Parameters: map[string]string{
-						"datasource": "'clickhouse-raw' or 'clickhouse-refined'",
+						"datasource": "a ClickHouse datasource name from clickhouse.list_datasources() or datasources://clickhouse",
 						"sql":        "SQL query string",
 						"parameters": "Optional ClickHouse query parameters referenced in SQL as {name:Type}",
 					},
@@ -247,31 +238,6 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 			},
 		},
 	}
-}
-
-// GettingStartedSnippet returns ClickHouse-specific getting-started content.
-func (m *Module) GettingStartedSnippet() string {
-	return `## ClickHouse Datasource Rules
-
-Xatu data is split across **TWO datasources** with **DIFFERENT syntax**:
-
-| Datasource | Contains | Table Syntax | Network Filter |
-|------------|----------|--------------|----------------|
-| **clickhouse-raw** | Raw events | FROM <database>.<table> | Filter on the table's network column when present |
-| **clickhouse-refined** | Pre-aggregated | FROM <network>.<table> | Network database prefix IS the filter |
-
-Use panda search examples "<topic>" for dataset-specific query patterns and
-panda schema <cluster> <database> <table> for columns, comments, and keys.
-
-**Always filter by the table's partition key** to avoid timeouts. Inspect the
-table schema when you are not sure which column is the partition key.
-
-## Canonical vs Head Data
-
-- **Canonical/finalized** data is appropriate for historical analysis.
-- **Head/latest** data is appropriate for real-time monitoring and may reorg.
-- Use examples and schema comments to choose the table variant for the task.
-`
 }
 
 // RegisterResources registers ClickHouse schema resources.
