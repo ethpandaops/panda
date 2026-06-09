@@ -239,3 +239,10 @@ jobs:
           files: tests/eval/reports/junit.xml
           check_name: "LLM Evaluation"
           comment_mode: always
+
+      - name: Comment Langfuse trace links
+        if: ${{ always() && github.event_name == 'pull_request' && hashFiles('tests/eval/reports/langfuse_links.md') != '' }}
+        uses: marocchino/sticky-pull-request-comment@773744901bac0e8cbb5a0dc842800d45e9b2b405 # v2.9.4
+        with:
+          header: langfuse-traces
+          path: tests/eval/reports/langfuse_links.md

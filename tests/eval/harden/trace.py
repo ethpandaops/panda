@@ -52,9 +52,10 @@ class RunTrace:
     crashed: bool = False  # harness/agent errored before producing an answer
     error: str | None = None
     # Telemetry identity of THIS run, captured immutably at run time (None if no trace
-    # was pushed). Carried here — not read off a mutable subject property — so scores
-    # attach to the right trace even under concurrent runs. See subject.record().
+    # was pushed). Carried here — not read off a mutable subject property — so it attaches
+    # to the right trace even under concurrent runs.
     trace_id: str | None = None
+    trace_url: str | None = None  # deep-link to the Langfuse trace (None if not pushed)
 
     @property
     def n_tools(self) -> int:

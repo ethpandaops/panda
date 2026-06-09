@@ -88,6 +88,8 @@ def call_api(prompt, options, context):
             "crashed": trace.crashed,
             "error": trace.error,
             "trace_id": trace.trace_id,
+            "trace_url": subject.trace_url(trace.trace_id),
+            "session_id": subject.session_id,
             "input_tokens": trace.input_tokens,
             "output_tokens": trace.output_tokens,
             "duration_ms": trace.duration_ms,

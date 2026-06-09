@@ -240,3 +240,12 @@ jobs:
           files: tests/eval/reports/junit.xml
           check_name: "Eval Smoke"
           comment_mode: ${{ github.event_name == 'pull_request' && 'always' || 'off' }}
+
+      - name: Comment Langfuse trace links
+        # scripts.eval writes reports/langfuse_links.md (one deep-link per case) when
+        # Langfuse is enabled; surface it as a sticky PR comment.
+        if: ${{ always() && github.event_name == 'pull_request' && hashFiles('tests/eval/reports/langfuse_links.md') != '' }}
+        uses: marocchino/sticky-pull-request-comment@773744901bac0e8cbb5a0dc842800d45e9b2b405 # v2.9.4
+        with:
+          header: langfuse-traces
+          path: tests/eval/reports/langfuse_links.md

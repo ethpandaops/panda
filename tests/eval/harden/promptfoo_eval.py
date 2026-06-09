@@ -230,6 +230,7 @@ def _parse(results_path: Path, run_dir: Path) -> list[PfRun]:
             crashed=bool(md.get("crashed")),
             error=md.get("error"),
             trace_id=md.get("trace_id"),
+            trace_url=md.get("trace_url"),
         )
         grading = r.get("gradingResult") or {}
         correct = bool(r.get("success"))

@@ -136,6 +136,7 @@ def _write_json(path: str, result: CandidateResult, *, cases: str, subjects: lis
                 "tools": r.score.n_tools,
                 "crashed": r.trace.crashed,
                 "trace_id": r.trace.trace_id,
+                "trace_url": r.trace.trace_url,
             }
             for r in result.records
         ],
@@ -144,6 +145,26 @@ def _write_json(path: str, result: CandidateResult, *, cases: str, subjects: lis
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(payload, indent=2))
     console.print(f"[dim]wrote JSON summary: {p}[/dim]")
+
+
+def _write_langfuse_links(path: Path, result: CandidateResult) -> None:
+    """Write a markdown list of Langfuse trace deep-links (one per run) for a PR comment.
+    No-op when Langfuse is disabled (no trace_urls). Marks failed runs so they're easy to
+    open."""
+    links = [
+        (r.score.question_id, r.trace.trace_url, r.score.correct)
+        for r in result.records
+        if r.trace.trace_url
+    ]
+    if not links:
+        return
+    lines = ["### 🔭 Langfuse traces", ""]
+    for qid, url, ok in links:
+        mark = "" if ok else " ⚠️"
+        lines.append(f"- [`{qid}`{mark}]({url})")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n")
+    console.print(f"[dim]wrote Langfuse links: {path} ({len(links)} traces)[/dim]")
 
 
 def main() -> None:
@@ -214,6 +235,11 @@ def main() -> None:
         _write_junit(args.junit, result, suite=Path(args.cases).stem)
     if args.json_out:
         _write_json(args.json_out, result, cases=args.cases, subjects=subject_specs)
+    # Langfuse links go next to the JUnit/JSON (the reports dir CI uploads + comments from).
+    reports_dir = Path(args.junit).parent if args.junit else (
+        Path(args.json_out).parent if args.json_out else Path("reports")
+    )
+    _write_langfuse_links(reports_dir / "langfuse_links.md", result)
 
     sys.exit(0 if result.pass_rate >= args.min_pass else 1)
 

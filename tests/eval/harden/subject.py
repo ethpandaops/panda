@@ -135,3 +135,18 @@ class OpencodeSubject:
         """Flush the agent's Langfuse client so traces land before the process moves on.
         Best-effort: no client -> no-op. Called by the provider after each run."""
         self._agent.flush()
+
+    @property
+    def session_id(self) -> str | None:
+        """The Langfuse session all of this run's traces group under (None if disabled)."""
+        return self._agent.langfuse_session_id
+
+    def trace_url(self, trace_id: str | None) -> str | None:
+        """Deep-link to a run's Langfuse trace, via the agent's configured client."""
+        lf = self._agent.langfuse
+        if lf is None or not trace_id:
+            return None
+        try:
+            return lf.get_trace_url(trace_id=trace_id)
+        except Exception:  # noqa: BLE001 - a link is best-effort, never fail a run over it
+            return None
