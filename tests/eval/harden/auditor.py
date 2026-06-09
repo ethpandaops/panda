@@ -14,12 +14,13 @@ Use a DIFFERENT model from the proposer when you can — shared model = shared b
 from __future__ import annotations
 
 import json
-import subprocess
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, runtime_checkable
+
+from harden.codex import run_codex
 
 _SCHEMA = {
     "type": "object",
@@ -149,15 +150,14 @@ class CodexAuditor:
                 "-",
             ]
             if self.log:
-                self.log("      [audit] codex reviewing the diff (streaming below)...")
-            try:
-                # Inherit stdout/stderr so codex's review streams live; the structured
-                # verdict is read from the -o file, not from captured stdout.
-                proc = subprocess.run(cmd, input=prompt, text=True, timeout=self.timeout)
-            except subprocess.TimeoutExpired:
+                self.log("      [audit] codex reviewing the diff...")
+            # Filtered stream (one line per command + codex's messages); the structured
+            # verdict is read from the -o file, not from stdout.
+            code, _raw = run_codex(cmd, prompt, timeout=self.timeout, log=self.log)
+            if code == -1:
                 return self._open(f"auditor timed out after {self.timeout:.0f}s")
-            if proc.returncode != 0:
-                return self._open(f"auditor exited {proc.returncode} (see output above)")
+            if code != 0:
+                return self._open(f"auditor exited {code}")
             raw = out_path.read_text() if out_path.exists() else ""
 
         try:

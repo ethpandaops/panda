@@ -9,10 +9,11 @@ internals — it just calls ``propose()`` and then measures the result.
 
 from __future__ import annotations
 
-import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
+
+from harden.codex import run_codex
 
 
 @dataclass
@@ -65,37 +66,12 @@ class CodexProposer:
             "--dangerously-bypass-approvals-and-sandbox",
             "-",  # read the prompt from stdin
         ]
-        # Stream codex's output line-by-line so the (multi-minute) proposal step is
-        # visible instead of a silent black box. Lines are echoed via the log callback
-        # and also kept for the returned summary.
-        try:
-            proc = subprocess.Popen(
-                cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-            )
-        except FileNotFoundError:
-            return ProposalResult(ok=False, summary="codex CLI not found on PATH")
-
-        assert proc.stdin and proc.stdout
-        proc.stdin.write(prompt)
-        proc.stdin.close()
-        lines: list[str] = []
-        try:
-            for raw in proc.stdout:
-                line = raw.rstrip()
-                lines.append(line)
-                if self.log and line.strip():
-                    self.log(f"      codex| {line[:200]}")
-            code = proc.wait(timeout=self.timeout)
-        except subprocess.TimeoutExpired:
-            proc.kill()
+        # Stream a FILTERED view (one line per command + codex's messages, not the tool-output
+        # firehose) so the multi-minute proposal is visible without exploding the terminal.
+        code, out = run_codex(cmd, prompt, timeout=self.timeout, log=self.log)
+        out = out.strip()
+        if code == -1:
             return ProposalResult(ok=False, summary=f"codex timed out after {self.timeout:.0f}s")
-
-        out = "\n".join(lines).strip()
         if code != 0:
             return ProposalResult(ok=False, summary=f"codex exited {code}: {out[-1000:]}")
         return ProposalResult(ok=True, summary=out[-2000:])
