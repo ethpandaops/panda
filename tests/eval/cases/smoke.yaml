@@ -3,22 +3,30 @@
 # A couple of fast, simple questions that verify the whole pipeline works end to end:
 # the agent reaches the data, runs a query, and returns a plausible answer. Runs as
 # the external-scoped panda-ci identity against the hosted production proxy.
+#
+# Grading is promptfoo `assert:` blocks (llm-rubric). The rubric describes what a
+# correct answer looks like — a wrong number fails instead of passing on plausibility.
 
 - id: mainnet_block_arrival_p50
   description: p50 block arrival of the most recent mainnet block
   input: "What's the p50 block arrival of the most recent mainnet block?"
-  metrics:
-    task_completion: 0.5
   network: mainnet
   tags: [smoke, clickhouse, blocks, timing]
-  # ground truth: the canonical query is run at grade time and the agent's answer is
-  # checked against its result (~1700ms), so a wrong number fails instead of passing.
-  reference_query: "SELECT round(quantile(0.50)(seen_slot_start_diff)) AS p50_arrival_ms FROM mainnet.fct_block_first_seen_by_node FINAL WHERE slot_start_date_time >= now() - INTERVAL 1 DAY"
-  reference_query_datasource: clickhouse-refined
+  assert:
+    - type: llm-rubric
+      value: >
+        Reports a p50 (median) block arrival time for recent mainnet blocks,
+        derived from a real ClickHouse query against block-timing data. The value
+        should be roughly 1.4-2 seconds (about 1400-1900 ms). An answer with no
+        number, a hallucinated figure, or one wildly outside that range fails.
 
 - id: list_datasources
   description: Discover available datasources
   input: "What datasources are available for me to query? List them."
-  metrics:
-    task_completion: 0.5
   tags: [smoke, discovery]
+  assert:
+    - type: llm-rubric
+      value: >
+        Lists the datasources the harness actually exposes (discovered live, not
+        guessed). Must include ClickHouse (e.g. clickhouse-raw / clickhouse-refined)
+        and Prometheus at minimum. A vague non-answer or an invented list fails.

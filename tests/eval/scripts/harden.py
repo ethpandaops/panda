@@ -21,17 +21,18 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import subprocess
+import sys
 import time
+from pathlib import Path
 
 from cases.loader import load_test_cases
 from config.settings import DEFAULT_EVALUATOR_MODEL
 from harden.auditor import CodexAuditor
-from harden.judge import Judge
 from harden.loop import optimize
 from harden.proposer import CodexProposer
 from harden.runner import Question
-from harden.subject import OpencodeSubject
 from scripts._panda_env import (
     HARDEN_HOME,
     ScratchServer,
@@ -45,12 +46,6 @@ def _repo_root() -> str:
     return subprocess.run(
         ["git", "rev-parse", "--show-toplevel"], text=True, capture_output=True, check=True
     ).stdout.strip()
-
-
-def _subject(spec: str, timeout: float) -> OpencodeSubject:
-    """``provider/model:route`` -> OpencodeSubject (route defaults to cli)."""
-    model, _, route = spec.partition(":")
-    return OpencodeSubject(model=model, route=route or "cli", timeout=timeout)
 
 
 def main() -> None:
@@ -70,6 +65,11 @@ def main() -> None:
     )
     ap.add_argument("--no-audit", action="store_true", help="disable the adversarial auditor stage")
     ap.add_argument("--judge-model", default=DEFAULT_EVALUATOR_MODEL)
+    ap.add_argument(
+        "--grader",
+        default="",
+        help="promptfoo grading provider for llm-rubric asserts (default openrouter:<judge-model>)",
+    )
     ap.add_argument("--rounds", type=int, default=3)
     ap.add_argument(
         "--k",
@@ -108,13 +108,7 @@ def main() -> None:
 
     repo_dir = _repo_root()
     questions = [
-        Question(
-            id=c.id,
-            text=c.input,
-            reference=c.reference,
-            reference_query=c.reference_query,
-            reference_query_datasource=c.reference_query_datasource,
-        )
+        Question(id=c.id, text=c.input, followups=c.followups, asserts=c.asserts)
         for c in load_test_cases(args.cases)
     ]
     if args.question_id:
@@ -130,12 +124,19 @@ def main() -> None:
     server = ScratchServer(repo_dir, config_path, args.port)
     apply = make_apply(server)
 
+    # promptfoo runs the subjects in a python worker; point it at THIS venv so it can import
+    # the agent stack. Langfuse falls out for free: the worker inherits this process's env,
+    # so if LANGFUSE_ENABLED + keys are set (as in the smoke CI), each run is pushed to
+    # Langfuse production by the agent itself — humans inspect there, the proposer reads the
+    # full traces on disk.
+    os.environ.setdefault("PROMPTFOO_PYTHON", sys.executable)
+    eval_dir = str(Path(__file__).resolve().parents[1])
+
     def log(m: str) -> None:
         print(m, flush=True)
 
     subject_specs = args.subject or ["opencode-go/deepseek-v4-flash:cli"]
-    subjects = [_subject(s, args.subject_timeout) for s in subject_specs]
-    judge = Judge(args.judge_model)
+    grader = args.grader or f"openrouter:{args.judge_model}"
     proposer = CodexProposer(
         repo_dir,
         model=args.proposer_model,
@@ -156,17 +157,16 @@ def main() -> None:
 
     run_dir = HARDEN_HOME / "runs" / time.strftime("%Y-%m-%dT%H-%M-%S")
     print(
-        f"harden: {len(questions)} questions x {len(subjects)} subjects x k={args.k} "
-        f"| proposer={args.proposer_model}@{args.reasoning_effort} | rounds={args.rounds} "
-        f"| scratch server :{args.port}\nartifacts: {run_dir}",
+        f"harden: {len(questions)} questions x {len(subject_specs)} subjects x k={args.k} "
+        f"| proposer={args.proposer_model}@{args.reasoning_effort} | grader={grader} "
+        f"| rounds={args.rounds} | scratch server :{args.port}\nartifacts: {run_dir}",
         flush=True,
     )
     try:
         result = asyncio.run(
             optimize(
                 questions,
-                subjects,
-                judge,
+                subject_specs,
                 proposer,
                 repo_dir=repo_dir,
                 apply=apply,
@@ -177,6 +177,9 @@ def main() -> None:
                 show=args.show,
                 min_cells=args.min_cells,
                 concurrency=args.concurrency,
+                grader=grader,
+                subject_timeout=int(args.subject_timeout),
+                cwd=eval_dir,
                 held_out_ids=set(args.held_out) or None,
                 save_dir=str(run_dir),
                 log=log,

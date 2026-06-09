@@ -21,33 +21,26 @@ no chance of clobbering uncommitted work. Run it on a throwaway worktree/branch.
 from __future__ import annotations
 
 import subprocess
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from harden.auditor import Auditor
-from harden.judge import Judge
+from harden.promptfoo_eval import measure_candidate
 from harden.proposer import Proposer
-from harden.report import build_proposal_prompt, format_record
-from harden.runner import CandidateResult, Question, run_candidate
+from harden.report import build_proposal_prompt
+from harden.runner import CandidateResult, Question
 from harden.scoring import filter_runs, is_confident, no_correctness_regression
-from harden.subject import Subject
 
 
 def _dump(save_dir: str | None, name: str, text: str) -> None:
-    """Write a debugging artifact (raw traces / proposal prompt) if save_dir is set."""
+    """Write a debugging artifact (proposal prompt / summary) if save_dir is set."""
     if not save_dir:
         return
     d = Path(save_dir)
     d.mkdir(parents=True, exist_ok=True)
     (d / name).write_text(text)
-
-
-def _dump_records(save_dir: str | None, name: str, result: CandidateResult) -> None:
-    if not save_dir:
-        return
-    body = "\n".join(format_record(r) for r in result.records)
-    _dump(save_dir, name, f"score={result.score:.3f} pass={result.pass_rate:.2f}\n\n{body}")
 
 
 @dataclass
@@ -116,8 +109,7 @@ def _proposal_diff(repo: str) -> str:
 
 async def optimize(
     questions: list[Question],
-    subjects: list[Subject],
-    judge: Judge,
+    subject_specs: list[str],
     proposer: Proposer,
     *,
     repo_dir: str,
@@ -130,6 +122,9 @@ async def optimize(
     steepness: float = 2.0,
     min_cells: int = 3,
     concurrency: int = 6,
+    grader: str = "openrouter:google/gemini-3.1-flash-lite",
+    subject_timeout: int = 300,
+    cwd: str | None = None,
     held_out_ids: set[str] | None = None,
     save_dir: str | None = None,
     log: Callable[[str], None] = print,
@@ -153,40 +148,37 @@ async def optimize(
     if held_out_ids:
         log(f"train questions: {sorted(train_ids)} | held-out (gate): {sorted(held_out_ids)}")
 
-    def _on_run(q: Question, rs, _trace) -> None:
-        log(
-            f"    · {rs.subject} q={q.id} correct={rs.correct} "
-            f"tokens={rs.tokens} tools={rs.n_tools} score={rs.score:.2f}"
-        )
+    run_root = Path(save_dir) if save_dir else Path(tempfile.mkdtemp(prefix="harden-"))
 
     async def measure(label: str) -> CandidateResult:
-        n = len(questions) * len(subjects) * k
-        log(
-            f"  measuring {label}: {n} runs ({len(subjects)} subj x k={k}), up to {concurrency} at once..."
-        )
-        return await run_candidate(
+        n = len(questions) * len(subject_specs) * k
+        log(f"  measuring {label}: {n} runs ({len(subject_specs)} subj x k={k}) via promptfoo...")
+        return await measure_candidate(
             questions,
-            subjects,
-            judge,
+            subject_specs,
             k=k,
             budget=budget,
+            run_dir=str(run_root / label),
             steepness=steepness,
+            grader=grader,
             concurrency=concurrency,
-            on_run=_on_run,
+            subject_timeout=subject_timeout,
+            cwd=cwd,
         )
 
     log("rebuilding harness (baseline)...")
     apply()
     baseline = await measure("baseline")
     log(f"baseline: score={baseline.score:.3f} pass={baseline.pass_rate:.2f}")
-    _dump_records(save_dir, "baseline.txt", baseline)
+    baseline_traces = run_root / "baseline" / "traces"
     result = OptimizeResult(baseline=baseline)
 
     for n in range(1, rounds + 1):
         log(f"--- round {n}/{rounds} ---")
-        # The proposer only ever sees TRAIN traces — never the held-out questions.
+        # The proposer only ever sees TRAIN traces — never the held-out questions. The
+        # prompt is a lean summary; the FULL traces live in baseline_traces for it to read.
         train_records = [r for r in baseline.records if r.question.id in train_ids]
-        prompt = build_proposal_prompt(train_records, limit=show)
+        prompt = build_proposal_prompt(train_records, traces_dir=str(baseline_traces), limit=show)
         _dump(save_dir, f"round{n}_proposal_prompt.txt", prompt)
         log(f"round {n}: proposing harness edits (this can take several minutes)...")
         proposal = proposer.propose(prompt)
@@ -234,8 +226,7 @@ async def optimize(
             )
             continue
 
-        candidate = await measure("candidate")
-        _dump_records(save_dir, f"round{n}_candidate.txt", candidate)
+        candidate = await measure(f"round{n}_candidate")
         # Correctness must not regress ANYWHERE; the improvement must show on the HELD-OUT
         # questions the proposer never saw (so memorizing the train questions can't pass).
         gate_base = filter_runs(baseline.runs, held_out_ids) if held_out_ids else baseline.runs

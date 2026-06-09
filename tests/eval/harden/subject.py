@@ -22,11 +22,15 @@ from harden.trace import RunTrace, ToolCall
 
 @runtime_checkable
 class Subject(Protocol):
-    """A runnable agent harness under evaluation. Implement ``run`` for a new harness."""
+    """A runnable agent harness under evaluation. Implement ``run`` for a new harness.
+
+    ``run`` takes the full turn sequence (a 1-element list for single-turn questions,
+    longer for multi-turn) and returns one ``RunTrace`` aggregating the whole exchange.
+    """
 
     name: str
 
-    async def run(self, question: str) -> RunTrace: ...
+    async def run(self, prompts: list[str]) -> RunTrace: ...
 
 
 def _stringify_args(tool_call: object) -> str:
@@ -34,6 +38,22 @@ def _stringify_args(tool_call: object) -> str:
     if isinstance(inp, dict):
         return str(inp.get("command") or inp.get("code") or inp)
     return str(inp)
+
+
+def _tool_calls(results) -> list[ToolCall]:
+    # Store the FULL raw output — capture-fidelity principle. The proposer prompt is
+    # bounded downstream by report.py; we don't lose data here.
+    return [
+        ToolCall(
+            name=tc.name,
+            arguments=_stringify_args(tc),
+            output=str(tc.result or ""),
+            is_error=getattr(tc, "is_error", False),
+            duration_ms=getattr(tc, "duration_ms", 0),
+        )
+        for r in results
+        for tc in r.tool_calls
+    ]
 
 
 class OpencodeSubject:
@@ -66,9 +86,14 @@ class OpencodeSubject:
         self.name = f"opencode:{model}:{route}"
         self._agent = OpenCodeAgent(settings)
 
-    async def run(self, question: str) -> RunTrace:
+    async def run(self, prompts: list[str]) -> RunTrace:
+        question = " ⟶ ".join(prompts)
         try:
-            result = await self._agent.execute(question, test_id="harden")
+            if len(prompts) == 1:
+                results = [await self._agent.execute(prompts[0], test_id="harden")]
+            else:
+                # Reuse one session across turns so later prompts see earlier state.
+                results = await self._agent.execute_multi_turn(prompts, test_id="harden")
         except Exception as exc:  # noqa: BLE001 - a crashed run is a 0-score datum, not a loop failure
             return RunTrace(
                 question=question,
@@ -77,28 +102,21 @@ class OpencodeSubject:
                 crashed=True,
                 error=f"{type(exc).__name__}: {exc}",
             )
-        # Capture the trace identity NOW (immutably onto the RunTrace) so a later
-        # record() lands on this run's trace even if the agent has since run again.
+        # Aggregate the turns: tool calls concatenated, tokens summed, the FINAL turn's
+        # output is the answer graded. Trace identity captured from the final turn so a
+        # later record() lands on the right Langfuse trace.
+        final = results[-1]
         return RunTrace(
             question=question,
             subject=self.name,
-            output=result.output or "",
-            tool_calls=[
-                ToolCall(
-                    name=tc.name,
-                    arguments=_stringify_args(tc),
-                    output=str(tc.result or "")[:4000],
-                    is_error=getattr(tc, "is_error", False),
-                    duration_ms=getattr(tc, "duration_ms", 0),
-                )
-                for tc in result.tool_calls
-            ],
-            input_tokens=result.input_tokens,
-            output_tokens=result.output_tokens,
-            duration_ms=result.duration_ms,
-            crashed=result.is_error,
-            error=result.error_message,
-            trace_id=result.trace_id,
+            output=final.output or "",
+            tool_calls=_tool_calls(results),
+            input_tokens=sum(r.input_tokens for r in results),
+            output_tokens=sum(r.output_tokens for r in results),
+            duration_ms=sum(r.duration_ms for r in results),
+            crashed=any(r.is_error for r in results),
+            error=next((r.error_message for r in results if r.is_error), None),
+            trace_id=final.trace_id,
         )
 
     def record(

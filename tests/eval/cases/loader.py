@@ -10,29 +10,31 @@ import yaml
 
 @dataclass
 class TestCase:
-    """A single test case for evaluation."""
+    """A single test case for evaluation.
+
+    A case is single-turn (one ``input``) or multi-turn (``followups`` carries the
+    additional prompts, run in the same session). ``input`` is always the first prompt.
+    """
 
     id: str
     input: str
+    followups: list[str] = field(default_factory=list)
     description: str = ""
-    expected_tools: list[str] = field(default_factory=list)
-    metrics: dict[str, float] = field(default_factory=dict)
     network: str = "mainnet"
     tags: list[str] = field(default_factory=list)
     skip: bool = False
     skip_reason: str = ""
-    # Data source validation
+    # Grading: promptfoo assert blocks, passed through verbatim (llm-rubric / python / ...).
+    # Empty -> a default "did it plausibly answer?" rubric.
+    asserts: list[dict] = field(default_factory=list)
+    # Legacy fields kept only so the older pytest suite still loads; new cases don't set
+    # them and the harden loop ignores them (grading is the asserts above).
+    expected_tools: list[str] = field(default_factory=list)
+    metrics: dict[str, float] = field(default_factory=dict)
     expected_tables: list[str] = field(default_factory=list)
     expected_datasource: str = "clickhouse"
     expected_columns: list[str] = field(default_factory=list)
     require_all_tables: bool = False
-    # Ground truth for correctness grading (optional). ``reference`` is a literal expected
-    # answer for static facts; ``reference_query`` is canonical SQL the eval RUNS at grade
-    # time to get the current ground truth (no drift) and compares the agent's answer
-    # against. Without either, grading falls back to plausibility (task completion).
-    reference: str = ""
-    reference_query: str = ""
-    reference_query_datasource: str = "clickhouse-refined"
 
 
 @dataclass
@@ -98,26 +100,33 @@ def load_test_cases(
         if item.get("skip", False):
             continue
 
+        # Unify single-turn (input) and multi-turn (steps) into input + followups.
+        input_text = item.get("input", "")
+        followups: list[str] = []
+        steps = item.get("steps")
+        if steps:
+            prompts = [(s.get("prompt", "") if isinstance(s, dict) else str(s)) for s in steps]
+            prompts = [p for p in prompts if p]
+            if prompts:
+                input_text, followups = prompts[0], prompts[1:]
+
         test_cases.append(
             TestCase(
                 id=item.get("id", ""),
-                input=item.get("input", ""),
+                input=input_text,
+                followups=followups,
                 description=item.get("description", ""),
-                expected_tools=item.get("expected_tools", []),
-                metrics=item.get("metrics", {}),
                 network=item.get("network", "mainnet"),
                 tags=item.get("tags", []),
                 skip=item.get("skip", False),
                 skip_reason=item.get("skip_reason", ""),
+                asserts=item.get("assert", []),
+                expected_tools=item.get("expected_tools", []),
+                metrics=item.get("metrics", {}),
                 expected_tables=item.get("expected_tables", []),
                 expected_datasource=item.get("expected_datasource", "clickhouse"),
                 expected_columns=item.get("expected_columns", []),
                 require_all_tables=item.get("require_all_tables", False),
-                reference=item.get("reference", ""),
-                reference_query=item.get("reference_query", ""),
-                reference_query_datasource=item.get(
-                    "reference_query_datasource", "clickhouse-refined"
-                ),
             )
         )
 

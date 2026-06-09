@@ -1,8 +1,8 @@
-"""Unit tests for harden.report — the proposer prompt is a RAW dump, ranked by metrics."""
+"""Unit tests for harden.report — a LEAN summary ranked by metrics + a traces-dir pointer."""
 
 from __future__ import annotations
 
-from harden.report import build_proposal_prompt, format_record, worst_records
+from harden.report import build_proposal_prompt, summarize_record, worst_records
 from harden.runner import Question, RunRecord
 from harden.scoring import RunScore
 from harden.trace import RunTrace, ToolCall
@@ -38,41 +38,31 @@ def test_worst_records_ranks_wrong_then_wasteful():
     assert [r.question.id for r in worst] == ["wrong", "wasteful"]
 
 
-def test_format_record_dumps_raw_steps_not_digests():
+def test_summary_is_lean_no_raw_output():
+    # the summary shows the step SHAPE + answer, but NOT the raw tool output (that's on disk)
     rec = _record(
-        "q1",
-        correct=False,
-        score=0.0,
-        tools=[
-            ToolCall(
-                "bash", 'panda clickhouse query ds "SELECT 1"', "Code: 60. Table missing", True
-            ),
-        ],
+        "q1", correct=False, score=0.0,
+        tools=[ToolCall("bash", 'panda clickhouse query ds "SELECT 1"', "Code: 60. Table missing", True)],
     )
-    text = format_record(rec)
-    # raw command + raw output present verbatim; no derived "kind"/"datasource"/"error_code"
-    assert 'panda clickhouse query ds "SELECT 1"' in text
-    assert "Code: 60. Table missing" in text
-    assert "[ERROR]" in text
-    assert "datasource" not in text and "error_code" not in text
-
-
-def test_format_record_truncates_huge_output():
-    big = "x" * 5000
-    rec = _record("q1", correct=True, score=0.5, tools=[ToolCall("bash", "cmd", big)])
-    text = format_record(rec, max_output_chars=100)
-    assert "[+4900 chars]" in text
+    text = summarize_record(rec)
+    assert "q1" in text and "score=0.00" in text
+    assert "bash!" in text  # tool name + error marker (the shape)
+    assert "Code: 60. Table missing" not in text  # raw output stays out of the summary
+    assert "datasource" not in text
 
 
 def test_crashed_record_is_legible():
     rec = _record("q1", correct=False, score=0.0, crashed=True)
     rec.trace.error = "Timeout"
-    assert "CRASHED: Timeout" in format_record(rec)
+    assert "CRASHED: Timeout" in summarize_record(rec)
 
 
-def test_prompt_has_objective_and_anti_overfit_rules():
-    prompt = build_proposal_prompt([_record("q1", correct=False, score=0.0)])
+def test_prompt_has_objective_rules_and_traces_pointer():
+    prompt = build_proposal_prompt(
+        [_record("q1", correct=False, score=0.0)], traces_dir="/runs/abc/traces"
+    )
     assert "encode the ANSWER" in prompt  # anti-leakage
     assert "PLACEMENT" in prompt  # separation of concerns
     assert "relieve pressure the TEST creates" in prompt  # no eval-infra gaming
-    assert "text-q1" in prompt  # the question is included
+    assert "q1" in prompt  # the run is summarized
+    assert "/runs/abc/traces" in prompt  # the proposer is pointed at the full traces on disk

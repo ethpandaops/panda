@@ -5,14 +5,19 @@
 # token-bloat penalty bite: a change that stuffs the always-loaded clickhouse docs costs
 # the unrelated questions tokens, and overfitting one datasource won't help the others.
 #
+# Grading is promptfoo `assert:` blocks (llm-rubric). The rubric is the criteria handed
+# to the grader — it describes what a correct answer looks like, NOT how to get it. The
+# proposer never sees these rubrics (only the question text + traces), so they can be
+# specific about the expected answer without leaking the method into the harness.
+#
 # Provenance is real, not invented:
 #   ✓ = verbatim from a passing trace this session
 #   💬 = verbatim-ish from ~/.claude ethpandaops-MCP history
 #   📓 = the question a real ethpandaops/notebooks investigation answers
 #
 # Suggested held-out split for the gate (proposer never sees these):
-#   --held-out head_vote_accuracy_by_entity --held-out precompile_usage --held-out mev_relay_share
-# i.e. hold out attestations / EVM-execution / MEV — distinct datasources the proposer
+#   --held-out precompile_usage --held-out mev_relay_share --held-out devnet_beacon_peers
+# i.e. hold out EVM-execution / MEV / prometheus — distinct datasources the proposer
 # can't have optimized for from the train questions.
 
 # ---- verified answerable (passing traces this session) ----
@@ -20,75 +25,122 @@
 - id: devnets_running                                    # ✓
   description: which devnets are currently active (network discovery)
   input: "What devnets are currently running?"
-  metrics: {task_completion: 0.5}
   tags: [discovery, cartographoor, devnets]
+  assert:
+    - type: llm-rubric
+      value: >
+        Names the devnets currently active, discovered live from the network-discovery
+        data (not guessed or remembered). A concrete list of one or more current devnet
+        names passes; a vague non-answer or an admission it couldn't find out fails.
 
 - id: devnet_beacon_cpu                                   # ✓
   description: beacon node CPU usage on a devnet (prometheus)
   input: "How much CPU is a beacon node using on a devnet right now?"
-  metrics: {task_completion: 0.5}
-  expected_datasource: prometheus
   tags: [prometheus, devnets, resources]
+  assert:
+    - type: llm-rubric
+      value: >
+        Reports a current CPU usage figure for a beacon node on a devnet, from a real
+        Prometheus query (a rate/percentage or cores). A specific value for a named
+        node/devnet passes; no number or an obviously fabricated one fails.
 
 - id: devnet_beacon_peers                                 # ✓
   description: beacon node peer count on a devnet (prometheus)
   input: "What is the peer count of a beacon node on a devnet right now?"
-  metrics: {task_completion: 0.5}
-  expected_datasource: prometheus
   tags: [prometheus, devnets, peers]
+  assert:
+    - type: llm-rubric
+      value: >
+        Reports a current peer count for a beacon node on a devnet, from a real
+        Prometheus query — a plausible small-network integer (e.g. single digits to
+        low hundreds). A specific number passes; no number or a fabricated one fails.
 
 # ---- clickhouse: blocks × entity × timing / mev ----
 
 - id: mev_timing_games                                    # 📓 timing-games
   description: which entities delay block proposals to extract MEV
   input: "Which entities delay their block proposals the most to extract MEV on mainnet?"
-  metrics: {task_completion: 0.5}
   tags: [clickhouse, blocks, mev, timing, entity]
+  assert:
+    - type: llm-rubric
+      value: >
+        Identifies specific mainnet entities (builders/validators/pools) that propose
+        blocks later in the slot than the field, backed by a real query that ties block
+        timing to entity. Names concrete entities with supporting timing evidence; a
+        generic essay with no entities or no real data fails.
 
 - id: high_peer_count_advantage                           # 📓 high-peer-count
   description: do high-peer-count nodes see blocks faster
   input: "Do nodes with very high peer counts see blocks faster than the rest of the network on mainnet?"
-  metrics: {task_completion: 0.5}
   tags: [clickhouse, blocks, timing, peers]
+  assert:
+    - type: llm-rubric
+      value: >
+        Answers whether high-peer-count nodes observe blocks earlier, comparing block
+        arrival times across peer-count cohorts from real queried data, and states the
+        direction/size of any effect. A yes/no with supporting numbers passes; an
+        ungrounded opinion fails.
 
 - id: block_size_vs_propagation                           # 📓 block-size-vs-propagation
   description: effect of payload size on propagation time
   input: "How much does block payload size affect block propagation time on mainnet?"
-  metrics: {task_completion: 0.5}
   tags: [clickhouse, blocks, propagation, size]
+  assert:
+    - type: llm-rubric
+      value: >
+        Quantifies the relationship between block payload size and propagation/arrival
+        time on mainnet from real queried data — e.g. larger blocks arriving later,
+        with numbers or a correlation. A grounded characterization of the effect passes;
+        a hand-wave with no data fails.
 
 # ---- reorgs / canonical vs non-canonical ----
 
 - id: parent_distance_orphans                             # 📓 parent-distance
   description: non-direct parent proposals and resulting orphan rate
   input: "How often do mainnet proposers build on a non-direct parent block, and how often do those blocks get orphaned?"
-  metrics: {task_completion: 0.5}
   tags: [clickhouse, reorgs, orphans, canonical]
+  assert:
+    - type: llm-rubric
+      value: >
+        Reports, from real queried data, how often mainnet proposers build on a
+        non-direct parent (a rate or count) AND the orphan/reorg rate of those blocks.
+        Both parts answered with numbers passes; answering only one, or with no data,
+        fails.
 
 # ---- blobs / execution-layer ----
 
 - id: empty_blob_submitters                               # 📓 empty-blobs
   description: who submits blob txs containing empty (zero-data) blobs
   input: "Which entities submit blob transactions containing empty (zero-data) blobs on mainnet?"
-  metrics: {task_completion: 0.5}
   tags: [clickhouse, blobs, execution, entity]
+  assert:
+    - type: llm-rubric
+      value: >
+        Names specific entities/senders that submit blob transactions carrying empty
+        (zero-data) blobs on mainnet, from a real query over blob/transaction data.
+        Concrete submitters with supporting counts pass; a generic answer or no data
+        fails.
 
 - id: precompile_usage                                    # 📓 precompile-usage
   description: most-used EVM precompiles on mainnet
   input: "Which EVM precompiles are used most on mainnet?"
-  metrics: {task_completion: 0.5}
   tags: [clickhouse, execution, evm, precompiles]
+  assert:
+    - type: llm-rubric
+      value: >
+        Ranks the most-used EVM precompiles on mainnet (e.g. ecRecover, SHA-256,
+        identity, the BN/KZG precompiles) by real usage counts from a query. A ranked
+        list grounded in data passes; a guess from general knowledge with no query fails.
 
-# ---- clickhouse-raw volume / mev relay ----
-
-- id: attestation_volume_raw                              # 💬 your verbatim ask
-  description: how much attestation data is in clickhouse-raw
-  input: "How much attestation data is in clickhouse-raw for mainnet?"
-  metrics: {task_completion: 0.5}
-  tags: [clickhouse, raw, attestations, volume]
 
 - id: mev_relay_share                                     # 💬 builder/relay asks
   description: share of recent blocks delivered via an MEV relay
-  input: "What share of recent mainnet blocks were delivered via an MEV relay?"
-  metrics: {task_completion: 0.5}
+  input: "What share of mainnet blocks over the last 24h were delivered via an MEV relay?"
   tags: [clickhouse, blocks, mev, relay]
+  assert:
+    - type: llm-rubric
+      value: >
+        Reports the share of recent mainnet blocks delivered via an MEV relay, from a
+        real query (relay-delivered blocks over all blocks). The true figure is high —
+        roughly 85-95% — so an answer in that band passes; a missing percentage or one
+        far outside it fails.
