@@ -49,7 +49,6 @@ def _parse_args() -> argparse.Namespace:
     )
     ap.add_argument("--question-id", action="append", default=[], help="restrict to case id(s)")
     ap.add_argument("-k", "--repeat", type=int, default=1, help="runs per (case, subject)")
-    ap.add_argument("--budget", type=int, default=20000, help="token-efficiency knee for the score")
     ap.add_argument("--judge-model", default=DEFAULT_EVALUATOR_MODEL)
     ap.add_argument(
         "--grader", default="", help="promptfoo grading provider (default openrouter:<judge-model>)"
@@ -231,7 +230,6 @@ def main() -> None:
                 questions,
                 subject_specs,
                 k=args.repeat,
-                budget=args.budget,
                 run_dir=save_dir,
                 grader=grader,
                 concurrency=args.concurrency,

@@ -134,7 +134,6 @@ async def optimize(
     *,
     repo_dir: str,
     apply: Callable[[], None],
-    budget: int,
     auditor: Auditor | None = None,
     k: int = 3,
     rounds: int = 5,
@@ -150,7 +149,9 @@ async def optimize(
     log: Callable[[str], None] = print,
 ) -> OptimizeResult:
     """Run the optimization loop. ``apply`` rebuilds+restarts the harness so a fresh
-    build is live; it must raise on failure. ``budget`` is the token-efficiency knee.
+    build is live; it must raise on failure. Token efficiency self-normalizes: each question
+    is scored against its OWN baseline cost (median tokens of its correct baseline runs),
+    frozen for the run — no budget to pick.
 
     ``held_out_ids`` is the anti-overfit gate: questions in this set are NEVER shown to the
     proposer (the prompt is built from train traces only), and the confidence gate is
@@ -170,15 +171,15 @@ async def optimize(
 
     run_root = Path(save_dir) if save_dir else Path(tempfile.mkdtemp(prefix="harden-"))
 
-    async def measure(label: str) -> CandidateResult:
+    async def measure(label: str, refs: dict[str, float] | None = None) -> CandidateResult:
         n = len(questions) * len(subject_specs) * k
         log(f"  measuring {label}: {n} runs ({len(subject_specs)} subj x k={k}) via promptfoo...")
         return await measure_candidate(
             questions,
             subject_specs,
             k=k,
-            budget=budget,
             run_dir=str(run_root / label),
+            refs=refs,
             steepness=steepness,
             grader=grader,
             concurrency=concurrency,
@@ -190,6 +191,11 @@ async def optimize(
     apply()
     baseline = await measure("baseline")
     _log_breakdown(log, "baseline", baseline)
+    # Freeze the per-question token reference from the baseline; every candidate is scored
+    # against it, so "more efficient" means "fewer tokens than the harness costs today".
+    refs = baseline.refs
+    log(f"  token reference (per question, from baseline): "
+        f"{ {q: int(t) for q, t in sorted(refs.items())} }")
     baseline_traces = run_root / "baseline" / "traces"
     result = OptimizeResult(baseline=baseline)
 
@@ -251,7 +257,7 @@ async def optimize(
             )
             continue
 
-        candidate = await measure(f"round{n}_candidate")
+        candidate = await measure(f"round{n}_candidate", refs=refs)
         _log_breakdown(log, f"round{n} candidate", candidate)
         # Correctness must not regress ANYWHERE; the improvement must show on the HELD-OUT
         # questions the proposer never saw (so memorizing the train questions can't pass).

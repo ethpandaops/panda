@@ -54,3 +54,4 @@ class CandidateResult:
     score: float = 0.0  # mean per-run score (the objective)
     pass_rate: float = 0.0  # correctness rate (the no-regression floor)
     by_subject: dict[str, float] = field(default_factory=dict)  # per-subject mean score
+    refs: dict[str, float] = field(default_factory=dict)  # per-question token reference used

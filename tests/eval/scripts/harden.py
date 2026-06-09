@@ -1,7 +1,7 @@
 """Run the harden optimization loop against the panda harness.
 
     uv run python -m scripts.harden \
-        --cases smoke.yaml --rounds 3 --k 3 --budget 20000 \
+        --cases smoke.yaml --rounds 3 --k 3 --sandbox \
         --subject opencode-go/deepseek-v4-flash:cli \
         --subject opencode/gpt-5.4-mini:cli
 
@@ -77,9 +77,6 @@ def main() -> None:
         type=int,
         default=3,
         help="runs per (question, subject) — averages out effort variance",
-    )
-    ap.add_argument(
-        "--budget", type=int, default=20000, help="token efficiency knee (a 'good' run's cost)"
     )
     ap.add_argument("--show", type=int, default=12, help="how many worst runs to show the proposer")
     ap.add_argument("--subject-timeout", type=float, default=180.0)
@@ -179,7 +176,6 @@ def main() -> None:
                 proposer,
                 repo_dir=repo_dir,
                 apply=apply,
-                budget=args.budget,
                 auditor=auditor,
                 k=args.k,
                 rounds=args.rounds,

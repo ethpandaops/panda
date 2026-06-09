@@ -31,19 +31,18 @@ from dataclasses import dataclass
 from harden.trace import RunTrace
 
 
-def efficiency(tokens: int, budget: int, steepness: float = 2.0) -> float:
+def efficiency(tokens: int, ref: float, steepness: float = 2.0) -> float:
     """Token efficiency in (0, 1], STRICTLY DECREASING — fewer tokens always score higher.
 
-    No flat ceiling: the old ``min(1, budget/tokens)`` capped every sub-budget run at 1.0,
-    so the optimizer was indifferent below ``budget`` (a 3k and an 18k run tied) — exactly
-    the region we want to drive. ``budget`` is now the token SCALE, not a cap: a run costing
-    ``budget`` tokens scores ``0.5**steepness`` (0.25 at steepness 2); leaner runs rise
-    toward 1.0, blow-ups decay smoothly (2x budget -> 0.11, 4x -> 0.04 at steepness 2).
-    ``steepness`` > 1 keeps the tail convex so a blow-up still tanks the mean.
+    No cap and no magic constant: ``ref`` is the question's OWN baseline cost (the median
+    tokens of its correct baseline runs), derived per run, not a number anyone picks. A run
+    at the baseline's cost scores ``0.5**steepness`` (0.25 at steepness 2); a leaner candidate
+    rises toward 1.0, a heavier one decays smoothly (2x ref -> 0.11, 4x -> 0.04 at steepness
+    2). ``steepness`` > 1 keeps the tail convex so a blow-up still tanks the mean.
     """
-    if tokens <= 0:
+    if tokens <= 0 or ref <= 0:
         return 0.0
-    return (budget / (budget + tokens)) ** steepness
+    return (ref / (ref + tokens)) ** steepness
 
 
 @dataclass
@@ -69,12 +68,12 @@ def score_run(
     *,
     correct: bool,
     correctness: float,
-    budget: int,
+    ref: float,
     steepness: float = 2.0,
     question_id: str = "",
 ) -> RunScore:
     ok = correct and not trace.crashed
-    score = efficiency(trace.total_tokens, budget, steepness) if ok else 0.0
+    score = efficiency(trace.total_tokens, ref, steepness) if ok else 0.0
     return RunScore(
         subject=trace.subject,
         question_id=question_id,

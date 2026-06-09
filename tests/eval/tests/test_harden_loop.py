@@ -43,15 +43,22 @@ def _stub_measure(state, *, subjects=("s",), correct_when_improved=True, improve
     ``improves``), runs are lean (high score); otherwise wasteful. Always correct unless
     ``correct_when_improved`` is False."""
 
-    async def _measure(questions, subject_specs, *, k, budget, run_dir, steepness=2.0, **_):
+    async def _measure(questions, subject_specs, *, k, run_dir, refs=None, steepness=2.0, **_):
         specs = subject_specs or list(subjects)
+        # Per-question plan (the stub is uniform within a measure: lean-or-wasteful).
+        plan = {}
+        for q in questions:
+            good = state.get("improved") and (improves is None or q.id in improves)
+            plan[q.id] = (4000 if good else 40000, correct_when_improved if good else True)
+        # Self-normalize from this measure's correct runs unless the loop froze refs (baseline).
+        used = refs or {qid: float(t) for qid, (t, c) in plan.items() if c} or {
+            qid: float(t) for qid, (t, _c) in plan.items()
+        }
         runs, records, by_subject = [], [], {}
         for q in questions:
+            tokens, correct = plan[q.id]
             for subj in specs:
                 for _ in range(k):
-                    good = state.get("improved") and (improves is None or q.id in improves)
-                    tokens = 4000 if good else 40000
-                    correct = (correct_when_improved if good else True) if good else True
                     trace = RunTrace(
                         question=q.text,
                         subject=subj,
@@ -64,7 +71,7 @@ def _stub_measure(state, *, subjects=("s",), correct_when_improved=True, improve
                         trace,
                         correct=correct,
                         correctness=1.0 if correct else 0.0,
-                        budget=budget,
+                        ref=used.get(q.id, 0.0),
                         steepness=steepness,
                         question_id=q.id,
                     )
@@ -77,6 +84,7 @@ def _stub_measure(state, *, subjects=("s",), correct_when_improved=True, improve
             score=candidate_score(runs),
             pass_rate=pass_rate(runs),
             by_subject={s: statistics.mean(v) for s, v in by_subject.items() if v},
+            refs=used,
         )
 
     return _measure
@@ -120,7 +128,7 @@ async def test_accepts_and_commits_improvement(repo, monkeypatch):
     result = await optimize(
         _QS, ["s"], _StubProposer(repo, state),
         repo_dir=str(repo), apply=_apply_factory(repo, state),
-        budget=10000, k=2, rounds=1, log=lambda *_: None,
+        k=2, rounds=1, log=lambda *_: None,
     )
     assert result.accepted == 1
     assert result.rounds[0].reason == "accepted"
@@ -136,7 +144,7 @@ async def test_rejects_and_reverts_regression(repo, monkeypatch):
     result = await optimize(
         _QS, ["s"], _StubProposer(repo, state),
         repo_dir=str(repo), apply=_apply_factory(repo, state),
-        budget=10000, k=2, rounds=1, log=lambda *_: None,
+        k=2, rounds=1, log=lambda *_: None,
     )
     assert result.accepted == 0
     assert result.rounds[0].reason == "regressed-correctness"
@@ -152,7 +160,7 @@ async def test_refuses_dirty_tree(repo, monkeypatch):
     with pytest.raises(RuntimeError, match="uncommitted changes"):
         await optimize(
             _QS, ["s"], _StubProposer(repo, {}),
-            repo_dir=str(repo), apply=lambda: None, budget=10000, k=1, rounds=1,
+            repo_dir=str(repo), apply=lambda: None, k=1, rounds=1,
             log=lambda *_: None,
         )
 
@@ -167,7 +175,7 @@ async def test_held_out_rejects_train_only_improvement(repo, monkeypatch):
     result = await optimize(
         _SPLIT, ["s"], _StubProposer(repo, state),
         repo_dir=str(repo), apply=_apply_factory(repo, state),
-        budget=8000, k=2, rounds=1, min_cells=1, held_out_ids={"q2"}, log=lambda *_: None,
+        k=2, rounds=1, min_cells=1, held_out_ids={"q2"}, log=lambda *_: None,
     )
     assert result.accepted == 0
     assert result.rounds[0].reason == "not-confident"
@@ -181,7 +189,7 @@ async def test_held_out_accepts_generalizing_improvement(repo, monkeypatch):
     result = await optimize(
         _SPLIT, ["s"], _StubProposer(repo, state),
         repo_dir=str(repo), apply=_apply_factory(repo, state),
-        budget=8000, k=2, rounds=1, min_cells=1, held_out_ids={"q2"}, log=lambda *_: None,
+        k=2, rounds=1, min_cells=1, held_out_ids={"q2"}, log=lambda *_: None,
     )
     assert result.accepted == 1
     assert result.rounds[0].reason == "accepted"
@@ -194,7 +202,7 @@ async def test_auditor_blocks_a_would_be_accept(repo, monkeypatch):
     result = await optimize(
         _QS, ["s"], _StubProposer(repo, state),
         repo_dir=str(repo), apply=_apply_factory(repo, state),
-        auditor=_StubAuditor(blocked=True), budget=10000, k=2, rounds=1, log=lambda *_: None,
+        auditor=_StubAuditor(blocked=True), k=2, rounds=1, log=lambda *_: None,
     )
     assert result.accepted == 0
     assert result.rounds[0].reason == "audit-blocked"
@@ -209,7 +217,7 @@ async def test_clean_audit_does_not_block_accept(repo, monkeypatch):
     result = await optimize(
         _QS, ["s"], _StubProposer(repo, state),
         repo_dir=str(repo), apply=_apply_factory(repo, state),
-        auditor=_StubAuditor(blocked=False), budget=10000, k=2, rounds=1, log=lambda *_: None,
+        auditor=_StubAuditor(blocked=False), k=2, rounds=1, log=lambda *_: None,
     )
     assert result.accepted == 1
 

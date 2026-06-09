@@ -135,10 +135,39 @@ async def measure(
     return _parse(results_path, rd)
 
 
+def token_reference(pf_runs: list[PfRun]) -> dict[str, float]:
+    """Per-question token reference: the median tokens of that question's CORRECT runs (the
+    cost the current harness actually pays). This is the self-normalizing replacement for a
+    hand-picked budget — each question is judged against its own baseline. Falls back to all
+    its runs if none were correct; a question with no usable tokens maps to 0 (score 0)."""
+    by_q: dict[str, list[int]] = {}
+    by_q_all: dict[str, list[int]] = {}
+    for pf in pf_runs:
+        t = pf.trace.total_tokens
+        if t <= 0:
+            continue
+        by_q_all.setdefault(pf.question_id, []).append(t)
+        if pf.correct and not pf.trace.crashed:
+            by_q.setdefault(pf.question_id, []).append(t)
+    refs: dict[str, float] = {}
+    for qid, all_toks in by_q_all.items():
+        toks = by_q.get(qid) or all_toks
+        refs[qid] = statistics.median(toks)
+    return refs
+
+
 def score_runs(
-    pf_runs: list[PfRun], questions: list[Question], *, budget: int, steepness: float = 2.0
+    pf_runs: list[PfRun],
+    questions: list[Question],
+    *,
+    refs: dict[str, float] | None = None,
+    steepness: float = 2.0,
 ) -> CandidateResult:
-    """Turn promptfoo's graded runs into the loop's CandidateResult (the gates/objective)."""
+    """Score graded runs into a CandidateResult. ``refs`` is the per-question token reference
+    (see ``token_reference``); when omitted it's computed from THESE runs (self-normalizing —
+    right for a one-shot eval). The loop passes the FROZEN baseline refs so candidate rounds
+    are scored on the same scale."""
+    refs = refs or token_reference(pf_runs)
     by_id = {q.id: q for q in questions}
     runs, records, by_subject = [], [], {}
     for pf in pf_runs:
@@ -146,7 +175,7 @@ def score_runs(
             pf.trace,
             correct=pf.correct,
             correctness=pf.correctness,
-            budget=budget,
+            ref=refs.get(pf.question_id, 0.0),
             steepness=steepness,
             question_id=pf.question_id,
         )
@@ -160,6 +189,7 @@ def score_runs(
         score=candidate_score(runs),
         pass_rate=pass_rate(runs),
         by_subject={n: statistics.mean(s) for n, s in by_subject.items() if s},
+        refs=refs,
     )
 
 
@@ -168,15 +198,16 @@ async def measure_candidate(
     subject_specs: list[str],
     *,
     k: int,
-    budget: int,
     run_dir: str,
+    refs: dict[str, float] | None = None,
     steepness: float = 2.0,
     grader: str = DEFAULT_GRADER,
     concurrency: int = 6,
     subject_timeout: int = 300,
     cwd: str | None = None,
 ) -> CandidateResult:
-    """Measure one harness state via promptfoo and score it — what the loop calls."""
+    """Measure one harness state via promptfoo and score it. ``refs`` freezes the per-question
+    token reference (the loop passes the baseline's); omitted -> self-normalize to these runs."""
     pf_runs = await measure(
         questions,
         subject_specs,
@@ -187,7 +218,7 @@ async def measure_candidate(
         subject_timeout=subject_timeout,
         cwd=cwd,
     )
-    return score_runs(pf_runs, questions, budget=budget, steepness=steepness)
+    return score_runs(pf_runs, questions, refs=refs, steepness=steepness)
 
 
 def _subject_label(provider) -> str:
