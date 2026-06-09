@@ -208,10 +208,12 @@ def _parse(results_path: Path, run_dir: Path) -> list[PfRun]:
         subject = _subject_label(r.get("provider"))
         resp = r.get("response") or {}
         md = resp.get("metadata") or {}
+        # `answer` is the clean answer; `response.output` is answer + tool appendix (what the
+        # grader judged). Store the clean one for reporting; the tools live in tool_calls.
         trace = RunTrace(
             question=vars_.get("question", ""),
             subject=md.get("subject", subject),
-            output=resp.get("output", "") or "",
+            output=md.get("answer", resp.get("output", "")) or "",
             tool_calls=[
                 ToolCall(
                     name=t.get("name", ""),

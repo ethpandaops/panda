@@ -41,6 +41,28 @@ def _followups(vars_: dict) -> list:
     return list(raw or [])
 
 
+def _graded_output(trace) -> str:
+    """What the grader judges: the agent's answer PLUS the tool calls it actually made to
+    reach it. Those calls are harness-captured ground truth (the real query/command + its
+    result), NOT the agent's self-report — so a rubric can verify the answer was sourced
+    from a real query (which datasource, which table) rather than hallucinated, and the
+    agent can't game it by merely claiming it queried. Args/results are truncated to keep
+    the grading prompt bounded; the full untruncated trace is still in `metadata`/on disk."""
+    answer = trace.output or ""
+    if not trace.tool_calls:
+        return answer
+    lines = [answer, "", "--- tool calls the agent made to reach this answer (harness-captured) ---"]
+    for t in trace.tool_calls:
+        arg = " ".join((t.arguments or "").split())[:600]
+        res = " ".join((t.output or "").split())[:240]
+        mark = " [ERROR]" if t.is_error else ""
+        line = f"- {t.name}{mark}: {arg}"
+        if res:
+            line += f"  ->  {res}"
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def call_api(prompt, options, context):
     cfg = (options or {}).get("config", {}) or {}
     # The first turn is the rendered prompt; extra turns come from the `followups` var
@@ -51,14 +73,17 @@ def call_api(prompt, options, context):
     trace = asyncio.run(subject.run(prompts))
     subject.flush()  # push the run's Langfuse trace before promptfoo moves to the next
     return {
-        "output": trace.output or "",
+        "output": _graded_output(trace),
         "tokenUsage": {
             "total": trace.total_tokens,
             "prompt": trace.input_tokens,
             "completion": trace.output_tokens,
         },
         # Full raw trace — every step's complete arguments + output, nothing truncated.
+        # `answer` is the clean answer (no tool appendix) so downstream reporting/disk stay
+        # tidy while the grader still judges the answer-plus-tools `output` above.
         "metadata": {
+            "answer": trace.output or "",
             "subject": trace.subject,
             "crashed": trace.crashed,
             "error": trace.error,
