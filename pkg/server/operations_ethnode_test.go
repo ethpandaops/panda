@@ -49,6 +49,28 @@ func TestEthNodeListNetworksRequiresCartographoorWhenEthNodeAvailable(t *testing
 	assert.Contains(t, rec.Body.String(), "ethnode network discovery is unavailable")
 }
 
+func TestEthNodeCuratedBeaconPathEscapesStateIdentifier(t *testing.T) {
+	t.Parallel()
+
+	transport := &recordingTransport{body: `{}`, contentType: "application/json"}
+	svc := newEthNodeOperationService(true)
+	svc.proxyService.(*ethNodeOperationProxy).url = "https://proxy.example"
+	svc.httpClient = &http.Client{Transport: transport}
+
+	rec := httptest.NewRecorder()
+	handled := svc.handleEthNodeOperation("ethnode.get_finality_checkpoints", rec, newEthNodeOpRequestWithArgs(t, map[string]any{
+		"network":  "testnet",
+		"instance": "node-a",
+		"state_id": "abc/def?x=1",
+	}))
+
+	require.True(t, handled)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NotNil(t, transport.last)
+	assert.Equal(t, "/beacon/testnet/node-a/eth/v1/beacon/states/abc%2Fdef%3Fx=1/finality_checkpoints", transport.last.URL.EscapedPath())
+	assert.Empty(t, transport.last.URL.RawQuery)
+}
+
 func newEthNodeOperationService(ethnodeAvailable bool) *service {
 	log := logrus.New()
 	log.SetOutput(io.Discard)
@@ -62,7 +84,13 @@ func newEthNodeOperationService(ethnodeAvailable bool) *service {
 func newEthNodeOpRequest(t *testing.T) *http.Request {
 	t.Helper()
 
-	body, err := json.Marshal(operations.Request{})
+	return newEthNodeOpRequestWithArgs(t, nil)
+}
+
+func newEthNodeOpRequestWithArgs(t *testing.T, args map[string]any) *http.Request {
+	t.Helper()
+
+	body, err := json.Marshal(operations.Request{Args: args})
 	require.NoError(t, err)
 
 	req := httptest.NewRequest(
@@ -77,11 +105,12 @@ func newEthNodeOpRequest(t *testing.T) *http.Request {
 
 type ethNodeOperationProxy struct {
 	ethnodeAvailable bool
+	url              string
 }
 
 func (p *ethNodeOperationProxy) Start(_ context.Context) error { return nil }
 func (p *ethNodeOperationProxy) Stop(_ context.Context) error  { return nil }
-func (p *ethNodeOperationProxy) URL() string                   { return "" }
+func (p *ethNodeOperationProxy) URL() string                   { return p.url }
 func (p *ethNodeOperationProxy) RegisterToken() string         { return proxy.NoAuthToken }
 func (p *ethNodeOperationProxy) RevokeToken()                  {}
 func (p *ethNodeOperationProxy) ClickHouseDatasources() []string {

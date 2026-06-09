@@ -257,7 +257,7 @@ func (s *service) handleEthNodeBeaconHeaders(w http.ResponseWriter, r *http.Requ
 		slot = "head"
 	}
 
-	s.handleEthNodeCuratedBeaconPath(w, r, req, fmt.Sprintf("/eth/v1/beacon/headers/%s", slot))
+	s.handleEthNodeCuratedBeaconPath(w, r, req, fmt.Sprintf("/eth/v1/beacon/headers/%s", url.PathEscape(slot)))
 }
 
 func (s *service) handleEthNodeFinalityCheckpoints(w http.ResponseWriter, r *http.Request) {
@@ -272,7 +272,7 @@ func (s *service) handleEthNodeFinalityCheckpoints(w http.ResponseWriter, r *htt
 		stateID = "head"
 	}
 
-	s.handleEthNodeCuratedBeaconPath(w, r, req, fmt.Sprintf("/eth/v1/beacon/states/%s/finality_checkpoints", stateID))
+	s.handleEthNodeCuratedBeaconPath(w, r, req, fmt.Sprintf("/eth/v1/beacon/states/%s/finality_checkpoints", url.PathEscape(stateID)))
 }
 
 func (s *service) handleEthNodeCuratedBeaconPath(w http.ResponseWriter, r *http.Request, req operations.Request, path string) {

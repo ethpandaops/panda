@@ -15,7 +15,7 @@ dora_network_health:
         network = "sepolia"
         overview = dora.get_network_overview(network)
         print(f"Current epoch: {overview['current_epoch']}")
-        print(f"Current slot: {overview['current_slot']}")
+        print(f"Current slot: {overview.get('current_slot', 'unavailable')}")
         print(f"Active validators: {overview['active_validator_count']}")
 
     - name: Check network finality
@@ -120,7 +120,9 @@ dora_slot_epoch_queries:
 
         # Get latest slot info from overview
         overview = dora.get_network_overview("sepolia")
-        current_slot = overview["current_slot"]
+        current_slot = overview.get("current_slot")
+        if current_slot is None:
+            raise RuntimeError(f"Current slot unavailable: {overview.get('data_quality_warnings', [])}")
 
         # Get details for a specific slot
         slot_info = dora.get_slot("sepolia", str(current_slot - 10))
@@ -156,7 +158,9 @@ dora_slot_epoch_queries:
         network = "sepolia"
         base_url = dora.get_base_url(network)
         overview = dora.get_network_overview(network)
-        current_slot = overview["current_slot"]
+        current_slot = overview.get("current_slot")
+        if current_slot is None:
+            raise RuntimeError(f"Current slot unavailable: {overview.get('data_quality_warnings', [])}")
 
         # with_missing=2 returns only missing/orphaned slots
         slot_lookback = 300  # ~1 hour
@@ -211,7 +215,7 @@ dora_combined_workflows:
         overview = dora.get_network_overview(network)
 
         print(f"=== {network.upper()} Network Status ===")
-        print(f"Current slot: {overview['current_slot']}")
+        print(f"Current slot: {overview.get('current_slot', 'unavailable')}")
         print(f"Current epoch: {overview['current_epoch']}")
         print(f"Active validators: {overview['active_validator_count']}")
 

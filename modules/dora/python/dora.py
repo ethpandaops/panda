@@ -57,7 +57,12 @@ def get_validators(
     if not isinstance(payload, dict):
         return []
     data = payload.get("data")
-    return data if isinstance(data, list) else []
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        validators = data.get("validators")
+        return validators if isinstance(validators, list) else []
+    return []
 
 
 def get_slot(network: str, slot_or_hash: str) -> dict[str, Any]:

@@ -35,6 +35,8 @@ Initialize the file and a helper for appending:
 ```python
 from datetime import datetime
 import json
+import os
+from ethpandaops import storage
 
 network = "<network>"
 timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
@@ -47,9 +49,38 @@ with open(debug_file, "w") as f:
 # Save the path for subsequent steps
 with open("/workspace/debug_file_path.txt", "w") as f:
     f.write(debug_file)
+
+def append_debug(title, payload):
+    with open("/workspace/debug_file_path.txt") as f:
+        debug_file = f.read().strip()
+    with open(debug_file, "a") as f:
+        f.write(f"\n## {title}\n\n")
+        if hasattr(payload, "to_string"):
+            f.write(payload.to_string(index=False))
+            f.write("\n")
+        elif isinstance(payload, str):
+            f.write(payload)
+            f.write("\n")
+        else:
+            f.write("```json\n")
+            f.write(json.dumps(payload, indent=2, default=str))
+            f.write("\n```\n")
+
+def publish_debug_report():
+    with open("/workspace/debug_file_path.txt") as f:
+        debug_file = f.read().strip()
+    remote_name = os.path.basename(debug_file)
+    url = storage.upload(debug_file, remote_name=remote_name)
+    with open("/workspace/debug_file_url.txt", "w") as f:
+        f.write(url)
+    append_debug("Debug Report URL", url)
+    storage.upload(debug_file, remote_name=remote_name)
+    return url
 ```
 
 **Appending to the debug report:** In every subsequent step, read the path from `/workspace/debug_file_path.txt` and append with `open(debug_file, "a")`. Do this for every piece of data collected — raw API responses, log extracts, summaries, and theories.
+
+**Minimum debug output contract:** Every collection step MUST append the exact query/API path/command used, the raw response or DataFrame before summarizing it, the active timeframe or slot/epoch window, any `data_quality_warnings` or source inconsistencies, and a short interpretation clearly labeled as interpretation.
 
 ## Verbatim Tool Output
 
@@ -145,9 +176,9 @@ Before collecting data, determine which datasources have the target network.
 
 1. **Collect all Dora data** - In a single step, gather all network data and append raw responses to the debug report. You MAY combine these into one `execute_python` call:
 
-   - **Network overview** — use `search(type="examples", query="network overview")` for the pattern. Note: `current_slot` is `epoch * 32` (epoch's first slot), not actual head slot.
+   - **Network overview** — use `search(type="examples", query="network overview")` for the pattern. `current_slot` is the latest slot when Dora's slots endpoint is available; `current_epoch_start_slot` is the epoch boundary (`current_epoch * 32`). Dump the full overview object verbatim, including `finalized_epoch`, `epochs_since_finality`, `finalized`, and any `data_quality_warnings`. Treat checkpoint-derived fields as the finality baseline; do not use Dora vote/participation aggregates to decide finality.
    - **Network forks** — use `search(type="examples", query="network splits")`. Query the Dora `/forks` endpoint (with `Accept: application/json` header) to detect splits. A healthy network has one fork.
-   - **Epoch details** — use `search(type="examples", query="epoch summary")`. Iterate through ~9 epochs per hour across the active timeframe. **Always start from head epoch - 1** (the most recent completed epoch) — the head epoch is still in progress and will show artificially low participation. You SHOULD also check the head epoch, but treat its data as preliminary. Use try/except per epoch.
+   - **Epoch details** — use `search(type="examples", query="epoch summary")`. Iterate through ~9 epochs per hour across the active timeframe. **Always start from head epoch - 1** (the most recent completed epoch) — the head epoch is still in progress and will show artificially low participation. You SHOULD also check the head epoch, but treat its data as preliminary. Use try/except per epoch. Append each raw epoch payload before extracting fields. If an epoch marked finalized reports participation below 66.7%, flag it as a Dora data inconsistency instead of concluding the network finalized below threshold.
    - **Missing proposers** — use `search(type="examples", query="missing proposers")`. Adjust `slot_lookback` to match the active timeframe (~300 slots per hour).
    - **Offline attesters** — use `search(type="examples", query="offline attesters")`.
 
@@ -159,11 +190,12 @@ Before collecting data, determine which datasources have the target network.
 
 2. **Build a baseline summary** - You MUST summarize the network state before proceeding to log investigation:
    - Is the network on a single fork or has it split? (if split, this likely explains most other symptoms)
-   - Is the network finalizing? How many epochs behind?
-   - What is the participation rate? (>66.7% required for finality) **Use the last completed epoch, not the head epoch** — the head epoch is still in progress and will report misleadingly low participation.
+   - Is the network finalizing? Use `finalized_epoch`, `epochs_since_finality`, and checkpoint/RPC evidence where available. How many epochs behind?
+   - What independent participation evidence is available? (>66.7% required for finality) **Use the last completed epoch, not the head epoch**. State the source of the number. If the only available number is a Dora aggregate that contradicts checkpoint finality or has warnings, report it as unreliable instead of using it as the baseline.
    - Are there missed slots or empty epochs?
    - Which specific nodes/validators are offline or underperforming?
    - If there are multiple forks, which nodes are on which fork?
+   - Which sources disagree, if any? For example: finalized checkpoint advancing while Dora epoch participation is below 66.7%, Dora node list vs OTel hosts, or Dora forks vs direct RPC head roots.
 
    Append the baseline summary to the debug report as a readable narrative. You SHOULD generate Dora links for relevant epochs, slots, and validators using the `dora.link_*()` helpers (see query skill). **Cite each named node, validator, slot, or fork-tip block per the Citations section.**
 
@@ -303,7 +335,7 @@ Append all RPC query results and analysis to the debug report. **The `panda ethn
    - Suggested next steps (e.g. restart a node, report a client bug, check infrastructure)
    - **Citations** for every concrete artifact named above (block, transaction, slot, validator, instance) per the Citations section, so the user can independently verify each claim
 
-   Append the summary to the debug report. You MUST provide the user with the file path.
+   Append the summary to the debug report. Then call `publish_debug_report()` and provide the user with the full fetchable URL, for example `http://localhost:2480/api/v1/storage/files/<execution-id>/<network>-debug-<timestamp>.md`. Also include the local `/workspace/...` path as secondary context.
 
 ## Key Thresholds
 

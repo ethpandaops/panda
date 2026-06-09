@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -69,17 +70,26 @@ var doraOverviewCmd = &cobra.Command{
 
 		data, _ := response.Data.(map[string]any)
 
-		// Format participation rate as a percentage.
-		participationStr := fmt.Sprintf("%v", data["participation_rate"])
-		if rate, ok := data["participation_rate"].(float64); ok {
-			participationStr = fmt.Sprintf("%.2f%%", rate)
-		}
-
 		pairs := [][2]string{
 			{"Network", args[0]},
 			{"Current epoch", fmt.Sprintf("%v", data["current_epoch"])},
-			{"Epoch finalized", fmt.Sprintf("%v", data["finalized"])},
-			{"Participation rate", participationStr},
+		}
+
+		for _, kv := range [][2]string{
+			{"Current slot", "current_slot"},
+			{"Current epoch start slot", "current_epoch_start_slot"},
+			{"Finalized epoch", "finalized_epoch"},
+			{"Finalized epoch start slot", "finalized_epoch_start_slot"},
+			{"Epochs since finality", "epochs_since_finality"},
+			{"Finalizing", "finalized"},
+		} {
+			if value, ok := data[kv[1]]; ok {
+				pairs = append(pairs, [2]string{kv[0], fmt.Sprintf("%v", value)})
+			}
+		}
+
+		if rate, ok := data["participation_rate"].(float64); ok {
+			pairs = append(pairs, [2]string{"Participation rate", fmt.Sprintf("%.2f%%", rate)})
 		}
 
 		for _, kv := range [][2]string{
@@ -92,11 +102,29 @@ var doraOverviewCmd = &cobra.Command{
 				pairs = append(pairs, [2]string{kv[0], fmt.Sprintf("%v", value)})
 			}
 		}
+		if warnings, ok := data["data_quality_warnings"]; ok {
+			pairs = append(pairs, [2]string{"Data warning", formatDoraWarnings(warnings)})
+		}
 
 		printKeyValue(pairs)
 
 		return nil
 	},
+}
+
+func formatDoraWarnings(value any) string {
+	switch warnings := value.(type) {
+	case []string:
+		return strings.Join(warnings, "; ")
+	case []any:
+		parts := make([]string, 0, len(warnings))
+		for _, warning := range warnings {
+			parts = append(parts, fmt.Sprintf("%v", warning))
+		}
+		return strings.Join(parts, "; ")
+	default:
+		return fmt.Sprintf("%v", value)
+	}
 }
 
 var doraValidatorCmd = &cobra.Command{

@@ -9,23 +9,35 @@ When the network isn't finalizing, you MUST verify current status before deep di
 
 ## Approach
 
-1. **Check current status first** - Use Dora's network overview. This SHOULD be your starting point since it's fast and authoritative.
+1. **Check current status first** - Use Dora's network overview as a fast checkpoint summary. It is not sufficient by itself for participation analysis; always print the full overview and any data-quality warnings before deciding whether the network is actually delayed.
 
    ```python
    from ethpandaops import dora
+   import json
+
    overview = dora.get_network_overview("mainnet")
-   epochs_behind = overview["current_epoch"] - overview.get("finalized_epoch", 0)
+   print(json.dumps(overview, indent=2, default=str))
+
+   epochs_behind = overview.get("epochs_since_finality")
+   if epochs_behind is None and overview.get("finalized_epoch") is not None:
+       epochs_behind = overview["current_epoch"] - overview["finalized_epoch"]
+
    print(f"Epochs behind: {epochs_behind}")
    print(f"Current epoch: {overview['current_epoch']}")
    print(f"Finalized epoch: {overview.get('finalized_epoch', 'N/A')}")
+   print(f"Data quality warnings: {overview.get('data_quality_warnings', [])}")
    ```
 
-2. **Query attestation participation** - If finality is delayed >2 epochs, check participation rates. You MUST use the clickhouse-refined cluster for participation queries (pre-aggregated, faster). Use `search(type="examples", query="attestation participation")` for the query pattern.
+   If `epochs_behind <= 2`, the network is finalizing normally. Do not continue into participation debugging unless the user has another symptom. If `data_quality_warnings` is present, copy it into the final report and avoid relying on Dora vote/participation aggregates.
+
+2. **Query attestation participation** - If finality is delayed >2 epochs, check participation rates from an independent source. You MUST use the clickhouse-refined cluster for participation queries (pre-aggregated, faster). Use `search(type="examples", query="attestation participation")` for the query pattern. Use the last completed epoch, not the head epoch.
 
    Key metrics to check:
    - Target participation rate (should be >66.7% for finality)
    - Source participation rate
    - Head participation rate
+
+   If a source reports participation below 66.7% for an epoch that also finalized, mark that source as inconsistent and verify with finality checkpoints or another datasource before reporting it as root cause.
 
 3. **Check proposer health** - You MAY skip this if participation looks normal. Look for patterns in missed slots using `search(type="examples", query="missed slots")`.
 

@@ -130,7 +130,7 @@ func (s *service) handleCBTIDPassthrough(
 		return
 	}
 
-	body, contentType, status, err := s.cbtAPIGetRaw(r.Context(), baseURL, fmt.Sprintf(pathTemplate, id), nil)
+	body, contentType, status, err := s.cbtAPIGetRaw(r.Context(), baseURL, fmt.Sprintf(pathTemplate, url.PathEscape(id)), nil)
 	if err != nil {
 		writeAPIError(w, status, err.Error())
 		return
@@ -162,7 +162,7 @@ func (s *service) handleCBTOptionalIDPassthrough(
 	params := url.Values{}
 
 	if id := optionalStringArg(req.Args, "id"); id != "" {
-		path = fmt.Sprintf(idPathTemplate, id)
+		path = fmt.Sprintf(idPathTemplate, url.PathEscape(id))
 	} else if database := optionalStringArg(req.Args, "database"); database != "" {
 		params.Set("database", database)
 	}
@@ -201,9 +201,9 @@ func (s *service) handleCBTLinkModel(w http.ResponseWriter, r *http.Request) {
 
 	var linkPath string
 	if len(parts) == 2 {
-		linkPath = fmt.Sprintf("/models/%s/%s", parts[0], parts[1])
+		linkPath = fmt.Sprintf("/models/%s/%s", url.PathEscape(parts[0]), url.PathEscape(parts[1]))
 	} else {
-		linkPath = fmt.Sprintf("/models/%s", id)
+		linkPath = fmt.Sprintf("/models/%s", url.PathEscape(id))
 	}
 
 	writeOperationResponse(s.log, w, http.StatusOK, operations.Response{
