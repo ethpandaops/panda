@@ -176,7 +176,9 @@ def main() -> None:
     args = _parse_args()
 
     questions = [
-        Question(id=c.id, text=c.input, followups=c.followups, asserts=c.asserts)
+        Question(
+            id=c.id, text=c.input, followups=c.followups, asserts=c.asserts, variations=c.variations
+        )
         for c in load_test_cases(args.cases)
     ]
     if args.question_id:

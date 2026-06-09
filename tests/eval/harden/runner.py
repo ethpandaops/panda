@@ -28,11 +28,20 @@ class Question:
     text: str
     followups: list[str] = field(default_factory=list)
     asserts: list[dict] = field(default_factory=list)
+    # Alternate phrasings of ``text`` (same intent + answer + asserts). Each is measured as
+    # its own run under this id, so the question's score spans wordings — a built-in
+    # generalization test the proposer can't beat by memorizing one phrasing.
+    variations: list[str] = field(default_factory=list)
 
     @property
     def prompts(self) -> list[str]:
         """The full turn sequence; a 1-element list for single-turn questions."""
         return [self.text, *self.followups]
+
+    @property
+    def phrasings(self) -> list[str]:
+        """The canonical text plus every variation — each an opening prompt for one run."""
+        return [self.text, *self.variations]
 
 
 @dataclass

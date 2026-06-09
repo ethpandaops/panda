@@ -31,6 +31,10 @@ class TestCase:
     skip: bool = False
     skip_reason: str = ""
     asserts: list[dict] = field(default_factory=list)
+    # Alternate phrasings of ``input`` with the SAME intent/answer (hydrated once by a
+    # frontier model). Each runs as its own case under the same id + asserts, so the harness
+    # is graded on intent across wordings — and the proposer can't overfit to one phrasing.
+    variations: list[str] = field(default_factory=list)
 
 
 def load_test_cases(filename: str, cases_dir: Path | None = None) -> list[TestCase]:
@@ -79,6 +83,7 @@ def load_test_cases(filename: str, cases_dir: Path | None = None) -> list[TestCa
                 skip=item.get("skip", False),
                 skip_reason=item.get("skip_reason", ""),
                 asserts=item.get("assert", []),
+                variations=item.get("variations", []),
             )
         )
 

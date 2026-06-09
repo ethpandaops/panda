@@ -70,12 +70,18 @@ def build_config(
     # a test matrix (one case per element), which would split a multi-turn question into
     # bogus single-followup runs. A string var is passed through untouched; the provider
     # decodes it back into the turn list.
+    #
+    # Each variation (alternate phrasing) becomes its OWN test under the SAME qid + asserts,
+    # so they pool into the question's measurement (token_reference + the paired gate group
+    # by qid) — the harness is graded on intent across wordings, and memorizing one phrasing
+    # earns nothing.
     tests = [
         {
-            "vars": {"question": q.text, "followups": json.dumps(q.followups), "qid": q.id},
+            "vars": {"question": phrasing, "followups": json.dumps(q.followups), "qid": q.id},
             "assert": q.asserts or [_DEFAULT_ASSERT],
         }
         for q in questions
+        for phrasing in q.phrasings
     ]
     return {
         "description": "harden measurement",
