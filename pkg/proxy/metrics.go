@@ -221,6 +221,9 @@ type responseCapture struct {
 	http.ResponseWriter
 	statusCode   int
 	bytesWritten int
+	// bodyCapture, when non-nil, accumulates a capped copy of the response body
+	// for audit logging.
+	bodyCapture *cappedBuffer
 }
 
 // WriteHeader captures the status code.
@@ -233,6 +236,10 @@ func (w *responseCapture) WriteHeader(code int) {
 func (w *responseCapture) Write(b []byte) (int, error) {
 	n, err := w.ResponseWriter.Write(b)
 	w.bytesWritten += n
+
+	if w.bodyCapture != nil && n > 0 {
+		_, _ = w.bodyCapture.Write(b[:n])
+	}
 
 	return n, err
 }

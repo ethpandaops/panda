@@ -231,6 +231,18 @@ type RateLimitConfig struct {
 type AuditConfig struct {
 	// Enabled controls whether audit logging is active.
 	Enabled bool `yaml:"enabled"`
+	// LogRequestBody captures the upstream request payload (e.g. the ClickHouse
+	// SQL or other POST body) in the audit entry. The full body is always
+	// forwarded upstream; only the audited copy is truncated to MaxBodyBytes.
+	// Defaults to true when unset.
+	LogRequestBody *bool `yaml:"log_request_body"`
+	// LogResponseBody captures the upstream response payload in the audit entry.
+	// Response bodies can be large (full result sets), so this is off by default;
+	// the audited copy is truncated to MaxBodyBytes.
+	LogResponseBody bool `yaml:"log_response_body"`
+	// MaxBodyBytes caps how many bytes of each captured body are stored in the
+	// audit entry. Zero falls back to defaultMaxAuditBodyBytes.
+	MaxBodyBytes int `yaml:"max_body_bytes"`
 }
 
 // EmbeddingConfig holds configuration for the remote embedding API.
@@ -309,6 +321,13 @@ func (c *ServerConfig) ApplyDefaults() {
 
 	if c.RateLimiting.BurstSize == 0 {
 		c.RateLimiting.BurstSize = 10
+	}
+
+	// Audit defaults. Request body logging is on by default; response body
+	// logging is opt-in (zero value false).
+	if c.Audit.LogRequestBody == nil {
+		enabled := true
+		c.Audit.LogRequestBody = &enabled
 	}
 
 	// Metrics defaults.
