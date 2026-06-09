@@ -150,7 +150,7 @@ func RegisterGettingStartedResources(
 			"Getting Started Guide",
 			mcp.WithResourceDescription("Essential guide for querying data - read this first!"),
 			mcp.WithMIMEType("text/markdown"),
-			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 1.0),
+			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 1.0, ""),
 		),
 		Handler: createGettingStartedHandler(reg, toolReg, moduleReg),
 	})

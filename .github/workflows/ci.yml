@@ -73,5 +73,8 @@ jobs:
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
 
+      # Gate on reachable, non-allowlisted vulnerabilities. Known-unfixable
+      # advisories (no fix on a usable import path) are allowlisted in the
+      # script with justification; new reachable vulns fail the build.
       - name: Run govulncheck
-        run: govulncheck ./...
+        run: ./scripts/govulncheck.sh

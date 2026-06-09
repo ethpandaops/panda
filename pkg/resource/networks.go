@@ -66,7 +66,7 @@ func RegisterNetworksResources(log logrus.FieldLogger, reg Registry, client cart
 			"Active Networks",
 			mcp.WithResourceDescription("Compact list of active Ethereum networks and available devnet groups"),
 			mcp.WithMIMEType("application/json"),
-			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.7),
+			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.7, ""),
 		),
 		Handler: createActiveNetworksHandler(client),
 	})
@@ -78,7 +78,7 @@ func RegisterNetworksResources(log logrus.FieldLogger, reg Registry, client cart
 			"All Networks",
 			mcp.WithResourceDescription("All Ethereum networks including inactive ones"),
 			mcp.WithMIMEType("application/json"),
-			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.4),
+			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.4, ""),
 		),
 		Handler: createAllNetworksHandler(client),
 	})
@@ -90,7 +90,7 @@ func RegisterNetworksResources(log logrus.FieldLogger, reg Registry, client cart
 			"Network or Group Details",
 			mcp.WithTemplateDescription("Get details for a specific network or all networks in a devnet group"),
 			mcp.WithTemplateMIMEType("application/json"),
-			mcp.WithTemplateAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.5),
+			mcp.WithTemplateAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.5, ""),
 		),
 		Pattern: networkURIPattern,
 		Handler: createNetworkDetailHandler(log, client),

@@ -55,7 +55,7 @@ func RegisterDatasourcesResources(
 			"All Datasources",
 			mcp.WithResourceDescription("List of all discovered datasources exposed by initialized modules"),
 			mcp.WithMIMEType("application/json"),
-			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.8),
+			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.8, ""),
 		),
 		Handler: createDatasourcesHandler(provider, ""),
 	})
@@ -67,7 +67,7 @@ func RegisterDatasourcesResources(
 			"ClickHouse Datasources",
 			mcp.WithResourceDescription("Discovered ClickHouse datasources for blockchain data queries"),
 			mcp.WithMIMEType("application/json"),
-			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.7),
+			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.7, ""),
 		),
 		Handler: createDatasourcesHandler(provider, "clickhouse"),
 	})
@@ -79,7 +79,7 @@ func RegisterDatasourcesResources(
 			"Prometheus Datasources",
 			mcp.WithResourceDescription("Discovered Prometheus datasources for metrics queries"),
 			mcp.WithMIMEType("application/json"),
-			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.7),
+			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.7, ""),
 		),
 		Handler: createDatasourcesHandler(provider, "prometheus"),
 	})
@@ -91,7 +91,7 @@ func RegisterDatasourcesResources(
 			"Loki Datasources",
 			mcp.WithResourceDescription("Discovered Loki datasources for log queries"),
 			mcp.WithMIMEType("application/json"),
-			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.7),
+			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.7, ""),
 		),
 		Handler: createDatasourcesHandler(provider, "loki"),
 	})

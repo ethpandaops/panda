@@ -1,4 +1,4 @@
-.PHONY: build build-server build-panda build-proxy install install-server install-panda install-proxy test lint clean docker docker-push docker-sandbox test-sandbox run help setup-hooks
+.PHONY: build build-server build-panda build-proxy install install-server install-panda install-proxy test lint clean docker docker-push docker-sandbox test-sandbox run help setup-hooks govulncheck
 
 # Build variables
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -53,6 +53,10 @@ fmt: ## Format code
 
 vet: ## Run go vet
 	go vet ./...
+
+govulncheck: ## Scan for reachable vulnerabilities (allowlist in scripts/govulncheck.sh)
+	@which govulncheck > /dev/null || (echo "Installing govulncheck..." && go install golang.org/x/vuln/cmd/govulncheck@latest)
+	./scripts/govulncheck.sh
 
 tidy: ## Run go mod tidy
 	go mod tidy
