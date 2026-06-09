@@ -37,6 +37,12 @@ class EvalSettings(BaseSettings):
         description="'mcp' gives opencode panda's MCP server; 'cli' gives it a shell "
         "+ the built `panda` binary and steers it through the CLI.",
     )
+    opencode_sandbox: bool = Field(
+        default=False,
+        description="Run opencode inside a container with no repo mount (only a linux "
+        "`panda` binary + config) so the subject's bash can't read the eval cases. The "
+        "harness sets OPENCODE_SANDBOX_PANDA_BIN + OPENCODE_SANDBOX_SERVER_URL.",
+    )
     opencode_timeout: float = Field(
         default=90.0,
         description="Per-question timeout (seconds) for the opencode SDK client.",

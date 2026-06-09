@@ -38,6 +38,7 @@ from scripts._panda_env import (
     ScratchServer,
     make_apply,
     point_cli_at_scratch,
+    prepare_opencode_sandbox,
     write_scratch_config,
 )
 
@@ -104,6 +105,12 @@ def main() -> None:
         help="case id(s) the proposer never sees; the confidence gate is computed on these "
         "(anti-overfit). Repeatable. Without it, the gate runs on all questions and can be gamed.",
     )
+    ap.add_argument(
+        "--sandbox",
+        action="store_true",
+        help="run the subject in a container with no repo access, so it can't read the eval "
+        "cases (it sees only a linux `panda` + the scratch server). Recommended.",
+    )
     args = ap.parse_args()
 
     repo_dir = _repo_root()
@@ -122,7 +129,9 @@ def main() -> None:
     config_path = write_scratch_config(args.port)
     point_cli_at_scratch(repo_dir, config_path)
     server = ScratchServer(repo_dir, config_path, args.port)
-    apply = make_apply(server)
+    if args.sandbox:
+        prepare_opencode_sandbox(repo_dir, args.port)
+    apply = make_apply(server, sandbox=args.sandbox)
 
     # promptfoo runs the subjects in a python worker; point it at THIS venv so it can import
     # the agent stack. Langfuse falls out for free: the worker inherits this process's env,

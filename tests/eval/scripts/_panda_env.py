@@ -117,7 +117,7 @@ def _sandbox_hash(repo: str) -> str:
     ).stdout.strip()
 
 
-def make_apply(server: ScratchServer):
+def make_apply(server: ScratchServer, *, sandbox: bool = False):
     """Build the loop's apply(): make the CURRENT working tree live.
 
     Always rebuilds the Go binaries (incremental, ~instant when unchanged) and restarts
@@ -125,6 +125,10 @@ def make_apply(server: ScratchServer):
     git revert, which a "diff vs HEAD" check would miss. The sandbox image is rebuilt only
     when its content hash changes (the repo's sandbox-hash.sh), since that build is the
     only slow step.
+
+    When ``sandbox`` (the subject runs in a container), each rebuild also re-cross-compiles
+    the candidate linux ``panda`` the container mounts, so the sandboxed agent always uses
+    the current CLI.
     """
     repo = server.repo_dir
     state = {"sandbox_hash": None}
@@ -132,6 +136,8 @@ def make_apply(server: ScratchServer):
     def apply() -> None:
         _run(["go", "build", "-o", "panda-server", "./cmd/server"], repo)
         _run(["go", "build", "-o", "panda", "./cmd/panda"], repo)
+        if sandbox:
+            cross_build_panda_linux(repo)
         h = _sandbox_hash(repo)
         if h != state["sandbox_hash"]:
             _run(["make", "docker-sandbox"], repo)
@@ -139,6 +145,59 @@ def make_apply(server: ScratchServer):
         server.start()
 
     return apply
+
+
+# --- sandboxed subject (opencode in a container, no repo access) ---
+
+OPENCODE_IMAGE = "panda-opencode-eval:latest"
+_SANDBOX_BIN = HARDEN_HOME / "sandbox-bin"  # holds only `panda` (mounted as a dir)
+
+
+def _docker_arch() -> str:
+    """The docker server's arch — docker's names (arm64/amd64) match GOARCH."""
+    out = subprocess.run(
+        ["docker", "version", "--format", "{{.Server.Arch}}"], text=True, capture_output=True
+    )
+    return (out.stdout or "").strip() or "arm64"
+
+
+def cross_build_panda_linux(repo: str) -> Path:
+    """Cross-compile the candidate panda CLI for the docker (linux) arch, statically (no
+    cgo). Output lives OUTSIDE the repo so git-clean never wipes it; the container mounts
+    its directory. Returns the binary path (``OPENCODE_SANDBOX_PANDA_BIN``)."""
+    _SANDBOX_BIN.mkdir(parents=True, exist_ok=True)
+    out = _SANDBOX_BIN / "panda"
+    env = {**os.environ, "GOOS": "linux", "GOARCH": _docker_arch(), "CGO_ENABLED": "0"}
+    proc = subprocess.run(
+        ["go", "build", "-o", str(out), "./cmd/panda"],
+        cwd=repo, env=env, text=True, capture_output=True,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"cross-build linux panda failed ({proc.returncode}):\n{(proc.stderr or '')[-1200:]}"
+        )
+    os.environ["OPENCODE_SANDBOX_PANDA_BIN"] = str(out)
+    return out
+
+
+def ensure_opencode_image(image: str = OPENCODE_IMAGE) -> None:
+    """Build the sandbox opencode image if it isn't already present locally."""
+    if subprocess.run(["docker", "image", "inspect", image], capture_output=True).returncode == 0:
+        return
+    eval_dir = str(Path(__file__).resolve().parents[1])
+    _run(["docker", "build", "-f", "sandbox/opencode.Dockerfile", "-t", image, "sandbox/"], eval_dir)
+
+
+def prepare_opencode_sandbox(repo_dir: str, port: int, *, image: str = OPENCODE_IMAGE) -> None:
+    """Enable the sandboxed subject: ensure the image, cross-build the candidate linux
+    panda, and set the env the agent reads (server URL via host.docker.internal + the
+    MCP_EVAL_OPENCODE_SANDBOX flag). The harden loop re-runs the cross-build each round via
+    ``make_apply(sandbox=True)``."""
+    ensure_opencode_image(image)
+    os.environ["OPENCODE_SANDBOX_IMAGE"] = image
+    os.environ["OPENCODE_SANDBOX_SERVER_URL"] = f"http://host.docker.internal:{port}"
+    os.environ["MCP_EVAL_OPENCODE_SANDBOX"] = "true"
+    cross_build_panda_linux(repo_dir)
 
 
 def _run(cmd: list[str], cwd: str) -> None:

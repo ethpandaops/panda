@@ -66,6 +66,12 @@ def _parse_args() -> argparse.Namespace:
         "--scratch", action="store_true", help="build + run a local scratch server from the source"
     )
     ap.add_argument("--port", type=int, default=2481, help="scratch server port (with --scratch)")
+    ap.add_argument(
+        "--sandbox",
+        action="store_true",
+        help="run the subject in a container with no repo access (can't read the eval cases); "
+        "implies --scratch",
+    )
     return ap.parse_args()
 
 
@@ -185,6 +191,9 @@ def main() -> None:
     os.environ.setdefault("PROMPTFOO_PYTHON", sys.executable)
     eval_dir = str(Path(__file__).resolve().parents[1])
 
+    if args.sandbox and not args.scratch:
+        raise SystemExit("--sandbox needs the scratch server; add --scratch")
+
     server = None
     if args.scratch:
         import subprocess
@@ -193,6 +202,7 @@ def main() -> None:
             ScratchServer,
             make_apply,
             point_cli_at_scratch,
+            prepare_opencode_sandbox,
             write_scratch_config,
         )
 
@@ -202,8 +212,11 @@ def main() -> None:
         config_path = write_scratch_config(args.port)
         point_cli_at_scratch(repo_dir, config_path)
         server = ScratchServer(repo_dir, config_path, args.port)
+        if args.sandbox:
+            console.print("[dim]preparing opencode sandbox (image + linux panda)...[/dim]")
+            prepare_opencode_sandbox(repo_dir, args.port)
         console.print("[dim]building + starting scratch server...[/dim]")
-        make_apply(server)()
+        make_apply(server, sandbox=args.sandbox)()
 
     save_dir = args.save_dir or str(
         Path.home() / ".panda" / "harden" / "runs" / f"eval-{time.strftime('%Y-%m-%dT%H-%M-%S')}"

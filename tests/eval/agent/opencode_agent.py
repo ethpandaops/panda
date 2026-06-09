@@ -59,7 +59,20 @@ def _free_port() -> int:
 # function-scoped agent fixture pays the server cold-start once, not per test.
 _SHARED_SERVERS: dict[str, subprocess.Popen[bytes]] = {}
 _SHARED_URLS: dict[str, str] = {}
+_SHARED_CONTAINERS: dict[str, str] = {}  # server key -> docker container name (sandbox mode)
 _ATEXIT_REGISTERED = False
+
+
+def _docker_rm(name: str | None) -> None:
+    """Force-remove a sandbox container; best-effort (idempotent if already gone)."""
+    if not name:
+        return
+    try:
+        subprocess.run(
+            ["docker", "rm", "-f", name], capture_output=True, timeout=20, check=False
+        )
+    except Exception:  # noqa: BLE001 - teardown is best-effort
+        pass
 
 
 def _cleanup_servers() -> None:
@@ -70,8 +83,11 @@ def _cleanup_servers() -> None:
                 proc.wait(timeout=5)
             except Exception:  # noqa: BLE001
                 proc.kill()
+    for name in list(_SHARED_CONTAINERS.values()):
+        _docker_rm(name)
     _SHARED_SERVERS.clear()
     _SHARED_URLS.clear()
+    _SHARED_CONTAINERS.clear()
 
 
 class OpenCodeAgent:
@@ -133,6 +149,10 @@ class OpenCodeAgent:
         cfg: dict[str, Any] = {
             "$schema": "https://opencode.ai/config.json",
             "model": f"{self.provider_id}/{self.model_id}",
+            # Headless auto-approve, set HERE so the eval doesn't depend on (or inherit) the
+            # user's global ~/.config/opencode permission. Combined with the isolated
+            # XDG_CONFIG_HOME below, opencode runs from this config alone.
+            "permission": {"*": "allow"},
         }
         if self.route == "mcp":
             mcp_url = self.settings.mcp_url.rstrip("/") + "/mcp"
@@ -171,29 +191,26 @@ class OpenCodeAgent:
         if proc is None or proc.poll() is not None or not base:
             workdir = Path(tempfile.mkdtemp(prefix="panda-opencode-"))
             (workdir / "opencode.json").write_text(json.dumps(self._opencode_config(), indent=2))
-            # Isolate this serve's opencode data dir. opencode runs one server per
-            # user, all sharing ~/.local/share/opencode/opencode.db; under parallel
-            # pytest-xdist workers, N servers race the DB's first-time migration and
-            # all but one crash ("exited before ready: Performing one time database
-            # migration"). A per-serve XDG_DATA_HOME gives each its own fresh DB to
-            # migrate uncontended; auth is seeded in from the real data dir.
-            datadir = workdir / "share"
-            self._seed_auth(datadir)
-            env = os.environ.copy()
-            env["XDG_DATA_HOME"] = str(datadir)
             log_path = workdir / "serve.log"
             port = _free_port()
+            container = None
+            if self.settings.opencode_sandbox:
+                cmd, cwd, env, container = self._docker_serve(workdir, port)
+            else:
+                cmd, cwd, env = self._host_serve(workdir, port)
             proc = subprocess.Popen(
-                ["opencode", "serve", "--port", str(port)],
-                cwd=str(workdir),
-                env=env,
-                stdout=open(log_path, "wb"),
-                stderr=subprocess.STDOUT,
+                cmd, cwd=cwd, env=env, stdout=open(log_path, "wb"), stderr=subprocess.STDOUT
             )
             base = f"http://127.0.0.1:{port}"
-            await self._wait_ready(proc, base, log_path)
+            try:
+                await self._wait_ready(proc, base, log_path)
+            except Exception:
+                _docker_rm(container)
+                raise
             _SHARED_SERVERS[key] = proc
             _SHARED_URLS[key] = base
+            if container:
+                _SHARED_CONTAINERS[key] = container
             global _ATEXIT_REGISTERED
             if not _ATEXIT_REGISTERED:
                 atexit.register(_cleanup_servers)
@@ -204,6 +221,67 @@ class OpenCodeAgent:
         from opencode_ai import AsyncOpencode
 
         self._client = AsyncOpencode(base_url=base, timeout=float(self.settings.opencode_timeout))
+
+    def _host_serve(
+        self, workdir: Path, port: int
+    ) -> tuple[list[str], str, dict[str, str]]:
+        """Run opencode on the host. Per-serve XDG dirs isolate it from the user's global
+        ~/.config/opencode (skills, plugins, providers, permissions) AND give each serve its
+        own fresh opencode.db to migrate uncontended (parallel serves otherwise race the
+        one-time DB migration and all but one crash). Auth is seeded into the data dir.
+
+        NOTE: host mode still shares the host filesystem — the agent's bash can read the repo
+        (and thus the eval cases). Use opencode_sandbox for the isolated, repo-blind run."""
+        datadir = workdir / "share"
+        confdir = workdir / "config"
+        confdir.mkdir(parents=True, exist_ok=True)
+        self._seed_auth(datadir)
+        env = os.environ.copy()
+        env["XDG_DATA_HOME"] = str(datadir)
+        env["XDG_CONFIG_HOME"] = str(confdir)
+        return (["opencode", "serve", "--port", str(port)], str(workdir), env)
+
+    def _docker_serve(
+        self, workdir: Path, port: int
+    ) -> tuple[list[str], None, dict[str, str], str]:
+        """Run opencode inside a container with NO repo mount — only a cross-compiled linux
+        `panda` binary + a panda config + a minimal opencode auth are mounted in, and the
+        panda server is reached over host.docker.internal. The subject's bash sees the
+        container's filesystem, never the host's, so it cannot read the eval cases.
+
+        Foreground ``docker run`` (not -d) so the Popen tracks liveness/teardown exactly like
+        the host serve; ``--rm`` + an explicit name (force-removed on close) handle cleanup."""
+        panda_bin = os.environ.get("OPENCODE_SANDBOX_PANDA_BIN")
+        if not panda_bin or not Path(panda_bin).exists():
+            raise RuntimeError(
+                "opencode_sandbox is on but OPENCODE_SANDBOX_PANDA_BIN is unset or missing; "
+                "the harness must cross-build a linux panda binary first."
+            )
+        server_url = os.environ.get(
+            "OPENCODE_SANDBOX_SERVER_URL", "http://host.docker.internal:2481"
+        )
+        image = os.environ.get("OPENCODE_SANDBOX_IMAGE", "panda-opencode-eval:latest")
+        key = os.environ.get("OPENCODE_GO_API_KEY") or os.environ.get("OPENCODE_API_KEY") or ""
+        (workdir / "auth.json").write_text(json.dumps({"opencode-go": {"type": "api", "key": key}}))
+        (workdir / "panda-config.yaml").write_text(f'server:\n  base_url: "{server_url}"\n')
+        # Mount the binary's DIRECTORY (image symlinks /usr/local/bin/panda -> it) so a
+        # rebuilt panda is picked up live; the dir holds only `panda`.
+        panda_dir = Path(panda_bin).resolve().parent
+        name = f"panda-oc-eval-{port}"
+        _docker_rm(name)  # clear any stale container on this port
+        cmd = [
+            "docker", "run", "--rm", "--name", name,
+            "-p", f"127.0.0.1:{port}:{port}",
+            "--add-host=host.docker.internal:host-gateway",
+            "-e", "OPENCODE_GO_API_KEY",  # pass through (value stays out of the arg list)
+            "-v", f"{panda_dir}:/opt/pandabin:ro",
+            "-v", f"{workdir / 'opencode.json'}:/work/opencode.json:ro",
+            "-v", f"{workdir / 'auth.json'}:/root/.local/share/opencode/auth.json:ro",
+            "-v", f"{workdir / 'panda-config.yaml'}:/root/.config/panda/config.yaml:ro",
+            image,
+            "opencode", "serve", "--hostname", "0.0.0.0", "--port", str(port),
+        ]
+        return (cmd, None, os.environ.copy(), name)
 
     @staticmethod
     def _seed_auth(datadir: Path) -> None:
@@ -250,6 +328,7 @@ class OpenCodeAgent:
     def close(self) -> None:
         key = self._server_key
         proc = _SHARED_SERVERS.pop(key, None) if key else None
+        container = _SHARED_CONTAINERS.pop(key, None) if key else None
         if key:
             _SHARED_URLS.pop(key, None)
         target = proc or self._proc
@@ -259,6 +338,7 @@ class OpenCodeAgent:
                 target.wait(timeout=5)
             except Exception:  # noqa: BLE001
                 target.kill()
+        _docker_rm(container)  # no-op unless this was a sandboxed serve
         self._proc = None
         self._client = None
 
