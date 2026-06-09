@@ -27,12 +27,13 @@ def _rs(qid, subject, *, correct, score, tokens=1000):
     )
 
 
-def test_efficiency_curve_is_steep():
-    assert efficiency(1000, 1000) == 1.0
-    assert efficiency(500, 1000) == 1.0  # under budget caps at 1
-    assert efficiency(2000, 1000) == 0.25  # 2x over -> 0.25 (convex)
-    assert efficiency(9000, 1000) < 0.02  # blow-up ~0
+def test_efficiency_is_strictly_decreasing_no_cap():
+    # No flat ceiling: fewer tokens ALWAYS scores higher, even well under budget.
+    assert efficiency(500, 1000) > efficiency(1000, 1000) > efficiency(2000, 1000)
+    assert efficiency(1000, 1000) == 0.25  # a run at `budget` tokens -> 0.5**steepness
+    assert efficiency(9000, 1000) < 0.02  # blow-up still tanks (convex tail)
     assert efficiency(0, 1000) == 0.0
+    assert 0.0 < efficiency(100, 1000) < 1.0  # bounded, never exactly 1
 
 
 def test_paired_regression_catches_swap_that_aggregate_misses():

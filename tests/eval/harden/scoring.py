@@ -9,9 +9,11 @@ Why tokens, not tool-count: tokens is the real cost, and it also catches
 payload/description bloat (the Goodhart failure mode) in a single number — so a
 tool description that balloons to "help" one question pays for itself everywhere.
 
-Why a STEEP (convex) efficiency curve: a single blow-up run then scores ~0 and
-tanks the mean, so the plain mean is already tail-sensitive. That's where we get
-"punish the 37-call disaster" from — not from a basket of p90/p95/variance terms.
+Why a strictly-decreasing efficiency curve (no cap): fewer tokens must ALWAYS score
+higher, or the optimizer has no gradient where it matters. The old "1.0 at/under
+budget" cap made every sub-budget run a tie, so it could never reward leanness. The
+curve stays convex (steepness > 1) so a single blow-up run still scores ~0 and tanks
+the mean — "punish the 37-call disaster" — without a basket of p90/p95/variance terms.
 
 A candidate's score is the MEAN of per-run scores over (variations x K runs x
 subjects). Two acceptance checks live OUTSIDE the score, as gates (not extra
@@ -30,14 +32,18 @@ from harden.trace import RunTrace
 
 
 def efficiency(tokens: int, budget: int, steepness: float = 2.0) -> float:
-    """1.0 at/under ``budget`` tokens, decaying convexly above it.
+    """Token efficiency in (0, 1], STRICTLY DECREASING — fewer tokens always score higher.
 
-    ``budget`` is the token cost of a "good" run; ``steepness`` > 1 makes blow-ups
-    score near zero so the mean feels the tail. budget/2x -> ~0.25, budget/9x -> ~0.01.
+    No flat ceiling: the old ``min(1, budget/tokens)`` capped every sub-budget run at 1.0,
+    so the optimizer was indifferent below ``budget`` (a 3k and an 18k run tied) — exactly
+    the region we want to drive. ``budget`` is now the token SCALE, not a cap: a run costing
+    ``budget`` tokens scores ``0.5**steepness`` (0.25 at steepness 2); leaner runs rise
+    toward 1.0, blow-ups decay smoothly (2x budget -> 0.11, 4x -> 0.04 at steepness 2).
+    ``steepness`` > 1 keeps the tail convex so a blow-up still tanks the mean.
     """
     if tokens <= 0:
         return 0.0
-    return min(1.0, budget / tokens) ** steepness
+    return (budget / (budget + tokens)) ** steepness
 
 
 @dataclass
