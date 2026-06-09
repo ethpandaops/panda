@@ -11,6 +11,8 @@ model reads the raw trace and decides.
 
 from __future__ import annotations
 
+import statistics
+
 from harden.runner import RunRecord
 
 _OBJECTIVE = """\
@@ -52,6 +54,30 @@ generalize and be sustainable for the long term. Concerns need to be seperated.
 """
 
 
+def headroom_summary(records: list[RunRecord]) -> str:
+    """Per-question reliability + token headroom. The leanest CORRECT run is an existence
+    proof of what's achievable on this question, so best-vs-typical is the capturable
+    headroom — where a lean path already exists but isn't the default. That's the gain you
+    can only get by making the harness reliably guide the agent there, not by memorizing a
+    phrasing."""
+    by_q: dict[str, list] = {}
+    for r in records:
+        by_q.setdefault(r.question.id, []).append(r.score)
+    lines = []
+    for qid, scores in sorted(by_q.items()):
+        passed = sum(1 for s in scores if s.correct)
+        ct = sorted(s.tokens for s in scores if s.correct)
+        if ct:
+            best, typ = ct[0], int(statistics.median(ct))
+            lines.append(
+                f"- {qid}: {passed}/{len(scores)} correct | leanest correct run {best} tok, "
+                f"typical {typ} ({typ / best:.1f}x headroom)"
+            )
+        else:
+            lines.append(f"- {qid}: {passed}/{len(scores)} correct | no correct run yet")
+    return "\n".join(lines)
+
+
 def worst_records(records: list[RunRecord], limit: int) -> list[RunRecord]:
     """The runs most worth showing the proposer: wrong ones first, then the most
     wasteful (lowest score) — ranked purely on the top-level metrics."""
@@ -83,6 +109,7 @@ def build_proposal_prompt(
 ) -> str:
     """The prompt handed to the proposer: objective + a lean summary of the worst runs +
     a pointer to the full traces on disk (read on demand)."""
+    head = headroom_summary(records)
     shown = worst_records(records, limit)
     body = "\n".join(summarize_record(r) for r in shown)
     pointer = ""
@@ -93,4 +120,8 @@ def build_proposal_prompt(
             "Read the trace files for the runs above before proposing — that's where you see "
             "exactly what the agent ran and what came back. One file per run."
         )
-    return f"{_OBJECTIVE}\nRuns (worst first):\n{body}{pointer}"
+    return (
+        f"{_OBJECTIVE}\n"
+        f"Per-question reliability + token headroom (leanest correct run = proof of what's "
+        f"achievable):\n{head}\n\nRuns (worst first):\n{body}{pointer}"
+    )

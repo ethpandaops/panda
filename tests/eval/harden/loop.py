@@ -46,21 +46,25 @@ def _dump(save_dir: str | None, name: str, text: str) -> None:
 
 
 def _log_breakdown(log: Callable[[str], None], label: str, result: CandidateResult) -> None:
-    """Per-question detail under an aggregate measure: correct/total, mean tokens, mean
-    score, mean tools — so a run is legible without digging into the trace files."""
+    """Per-question detail under an aggregate measure: correct/total, score, and the token
+    SPREAD of the correct runs (best / typical / worst). The best correct run is an existence
+    proof of what's achievable — best-vs-typical is the proven, capturable headroom (e.g. the
+    agent CAN do it in 9k but typically burns 18k -> make the lean path the default)."""
     by_q: dict[str, list] = {}
     for r in result.records:
         by_q.setdefault(r.score.question_id, []).append(r.score)
     log(f"  {label}: score={result.score:.3f} pass={result.pass_rate:.2f} ({len(result.records)} runs)")
     for qid, scores in sorted(by_q.items()):
         passed = sum(1 for s in scores if s.correct)
-        tok = int(statistics.mean(s.tokens for s in scores))
         tools = statistics.mean(s.n_tools for s in scores)
         sc = statistics.mean(s.score for s in scores)
-        log(
-            f"    {qid:34} {passed}/{len(scores)} correct | ~{tok:>6} tok | "
-            f"{tools:.1f} tools | score {sc:.2f}"
-        )
+        ct = sorted(s.tokens for s in scores if s.correct)
+        if ct:
+            best, typ, worst = ct[0], int(statistics.median(ct)), ct[-1]
+            head = f" | tok best {best} / typ {typ} / worst {worst} (headroom {typ / best:.1f}x)"
+        else:
+            head = " | (no correct runs)"
+        log(f"    {qid:30} {passed}/{len(scores)} ok | {tools:.1f} tools | score {sc:.2f}{head}")
 
 
 @dataclass
