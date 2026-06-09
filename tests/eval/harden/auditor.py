@@ -148,15 +148,17 @@ class CodexAuditor:
                 str(out_path),
                 "-",
             ]
+            if self.log:
+                self.log("      [audit] codex reviewing the diff (streaming below)...")
             try:
-                proc = subprocess.run(
-                    cmd, input=prompt, text=True, capture_output=True, timeout=self.timeout
-                )
+                # Inherit stdout/stderr so codex's review streams live; the structured
+                # verdict is read from the -o file, not from captured stdout.
+                proc = subprocess.run(cmd, input=prompt, text=True, timeout=self.timeout)
             except subprocess.TimeoutExpired:
                 return self._open(f"auditor timed out after {self.timeout:.0f}s")
             if proc.returncode != 0:
-                return self._open(f"auditor exited {proc.returncode}: {(proc.stderr or '')[-300:]}")
-            raw = out_path.read_text() if out_path.exists() else (proc.stdout or "")
+                return self._open(f"auditor exited {proc.returncode} (see output above)")
+            raw = out_path.read_text() if out_path.exists() else ""
 
         try:
             data = json.loads(raw)

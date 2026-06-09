@@ -11,6 +11,7 @@ NOT dump it into anyone's context here.
 from __future__ import annotations
 
 import asyncio
+import collections
 import json
 import statistics
 import subprocess
@@ -130,14 +131,24 @@ async def measure(
         "--repeat", str(k),
     ]
 
-    def run() -> subprocess.CompletedProcess:
-        return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
-
-    proc = await asyncio.to_thread(run)
-    if not results_path.exists():
-        raise RuntimeError(
-            f"promptfoo produced no results:\n{(proc.stderr or proc.stdout or '')[-1500:]}"
+    # Stream promptfoo's progress live (prefixed) instead of swallowing minutes of silence;
+    # keep a tail of the output for the error message if it produces no results.
+    def run() -> tuple[int, str]:
+        proc = subprocess.Popen(
+            cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1
         )
+        tail: collections.deque[str] = collections.deque(maxlen=50)
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            line = line.rstrip("\n")
+            print(f"    promptfoo| {line}", flush=True)
+            tail.append(line)
+        proc.wait()
+        return proc.returncode, "\n".join(tail)
+
+    rc, tail = await asyncio.to_thread(run)
+    if not results_path.exists():
+        raise RuntimeError(f"promptfoo produced no results (exit {rc}):\n{tail[-1500:]}")
     return _parse(results_path, rd)
 
 

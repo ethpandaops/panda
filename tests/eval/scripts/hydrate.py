@@ -114,6 +114,7 @@ def main() -> None:
         if not question:
             print(f"  {qid}: no input/steps — skipping")
             continue
+        print(f"  {qid}: generating {args.n} variations via codex ({args.model})...", flush=True)
         variations = generate(
             str(question),
             n=args.n,
