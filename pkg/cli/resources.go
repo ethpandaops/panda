@@ -9,7 +9,7 @@ import (
 
 var resourcesCmd = &cobra.Command{
 	GroupID: groupDiscovery,
-	Use:     "resources",
+	Use:     "resources [uri]",
 	Short:   "List and read server resources",
 	Long: `List available server resources or read a specific resource by URI.
 
@@ -18,16 +18,19 @@ also available to MCP-connected clients.
 
 Examples:
   panda resources
+  panda resources panda://getting-started
+  panda resources clickhouse://tables
   panda resources read panda://getting-started
   panda resources read python://ethpandaops
-  panda resources read clickhouse://tables
   panda resources -o json`,
-	RunE: runResourcesList,
+	Args: cobra.MaximumNArgs(1),
+	RunE: runResources,
 }
 
 var resourcesReadCmd = &cobra.Command{
-	Use:   "read <uri>",
-	Short: "Read a resource by URI",
+	Use:     "read <uri>",
+	Aliases: []string{"get"},
+	Short:   "Read a resource by URI",
 	Long: `Read a specific resource by its URI and print the content.
 
 Examples:
@@ -38,9 +41,25 @@ Examples:
 	RunE: runResourcesRead,
 }
 
+var resourcesListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List available server resources",
+	Args:  cobra.NoArgs,
+	RunE:  runResourcesList,
+}
+
 func init() {
 	rootCmd.AddCommand(resourcesCmd)
+	resourcesCmd.AddCommand(resourcesListCmd)
 	resourcesCmd.AddCommand(resourcesReadCmd)
+}
+
+func runResources(cmd *cobra.Command, args []string) error {
+	if len(args) == 1 {
+		return runResourcesRead(cmd, args)
+	}
+
+	return runResourcesList(cmd, args)
 }
 
 func runResourcesList(cmd *cobra.Command, _ []string) error {

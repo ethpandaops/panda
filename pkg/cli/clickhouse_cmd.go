@@ -14,10 +14,25 @@ var clickhouseCmd = &cobra.Command{
 	Short:   "Query ClickHouse databases",
 	Long: `Execute SQL queries against ClickHouse datasources.
 
+Use 'panda search examples "<topic>"' to find dataset-specific query patterns.
+Use 'panda schema' to discover table names, columns, and partition keys.
+
 Examples:
   panda clickhouse list-datasources
-  panda clickhouse query clickhouse-raw "SELECT count() FROM beacon_api_eth_v1_events_block WHERE meta_network_name = 'mainnet' AND slot_start_date_time > now() - INTERVAL 1 HOUR"
-  panda clickhouse query clickhouse-raw "SELECT * FROM beacon_api_eth_v1_events_block WHERE meta_network_name = 'mainnet' AND slot_start_date_time > now() - INTERVAL 1 HOUR LIMIT 5" --json`,
+  panda clickhouse query clickhouse-raw "SHOW DATABASES"
+  panda clickhouse query clickhouse-refined "SELECT 1"`,
+	Args: cobra.MaximumNArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return cmd.Help()
+		}
+
+		if len(args) != 2 {
+			return fmt.Errorf("expected <datasource> and <sql>; use 'panda clickhouse query <datasource> <sql>'")
+		}
+
+		return runClickHouseOperation(cmd, "clickhouse.query", args[0], args[1], false)
+	},
 }
 
 func init() {
@@ -52,9 +67,12 @@ var clickhouseQueryCmd = &cobra.Command{
 The datasource name is typically "clickhouse-raw" or "clickhouse-refined". Use 'panda clickhouse list-datasources'
 to see available datasources.
 
+Use 'panda search examples "<topic>"' to find dataset-specific query patterns.
+Use 'panda schema <cluster> <database> <table>' to inspect a table before querying it.
+
 Examples:
-  panda clickhouse query clickhouse-raw "SELECT count() FROM beacon_api_eth_v1_events_block WHERE meta_network_name = 'mainnet' AND slot_start_date_time > now() - INTERVAL 1 HOUR"
-  panda clickhouse query clickhouse-refined "SELECT count() FROM mainnet.fct_block_head FINAL WHERE slot_start_date_time > now() - INTERVAL 1 HOUR"`,
+  panda clickhouse query clickhouse-raw "SHOW DATABASES"
+  panda clickhouse query clickhouse-refined "SELECT 1"`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runClickHouseOperation(cmd, "clickhouse.query", args[0], args[1], false)

@@ -57,7 +57,7 @@ func RegisterSchemaResources(
 		Resource: mcp.NewResource(
 			"clickhouse://tables",
 			"ClickHouse Tables",
-			mcp.WithResourceDescription("List all available ClickHouse tables, grouped by cluster. Each entry is keyed by (database, table)."),
+			mcp.WithResourceDescription("List all available ClickHouse tables, grouped by cluster. This can be large; prefer scoped cluster/database/table resources when you know the target."),
 			mcp.WithMIMEType("application/json"),
 			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.7, ""),
 		),
@@ -108,9 +108,9 @@ func createTablesListHandler(client SchemaClient) types.ReadHandler {
 		allTables := client.GetAllTables()
 
 		response := &TablesListResponse{
-			Description: "Available ClickHouse tables, grouped by cluster. Each entry is keyed by (database, table).",
+			Description: "Available ClickHouse tables, grouped by cluster. This list can be large; prefer a scoped cluster, database, or table schema resource when possible.",
 			Clusters:    make(map[string]*ClusterTablesSummary, len(allTables)),
-			Usage:       "Read clickhouse://tables/{cluster}/{database}/{table_name} for the detailed schema.",
+			Usage:       "Read clickhouse://tables/{cluster}, clickhouse://tables/{cluster}/{database}, or clickhouse://tables/{cluster}/{database}/{table_name} to narrow the result.",
 		}
 
 		for clusterName, cluster := range allTables {
@@ -138,7 +138,7 @@ func createClusterTablesHandler(client SchemaClient) types.ReadHandler {
 		response := &TablesListResponse{
 			Description: fmt.Sprintf("Tables in ClickHouse cluster %q, keyed by (database, table).", clusterName),
 			Clusters:    map[string]*ClusterTablesSummary{clusterName: buildClusterSummary(cluster, "")},
-			Usage:       "Read clickhouse://tables/{cluster}/{database}/{table_name} for the detailed schema.",
+			Usage:       "Read clickhouse://tables/{cluster}/{database} or clickhouse://tables/{cluster}/{database}/{table_name} to narrow the result.",
 		}
 
 		return marshalResource(response, "cluster tables")

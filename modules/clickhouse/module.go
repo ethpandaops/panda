@@ -257,16 +257,21 @@ Xatu data is split across **TWO datasources** with **DIFFERENT syntax**:
 
 | Datasource | Contains | Table Syntax | Network Filter |
 |------------|----------|--------------|----------------|
-| **clickhouse-raw** | Raw events | ` + "`FROM table_name`" + ` | ` + "`WHERE meta_network_name = 'mainnet'`" + ` |
-| **clickhouse-refined** | Pre-aggregated | ` + "`FROM mainnet.table_name`" + ` | Database prefix IS the filter |
+| **clickhouse-raw** | Raw events | FROM <database>.<table> | Filter on the table's network column when present |
+| **clickhouse-refined** | Pre-aggregated | FROM <network>.<table> | Network database prefix IS the filter |
 
-**Always filter by partition column** (usually ` + "`slot_start_date_time`" + `) to avoid timeouts.
+Use panda search examples "<topic>" for dataset-specific query patterns and
+panda schema <cluster> <database> <table> for columns, comments, and keys.
+
+**Always filter by the table's partition key** to avoid timeouts. Inspect the
+table schema when you are not sure which column is the partition key.
 
 ## Canonical vs Head Data
 
-- **Canonical** = finalized (no reorgs) - use for historical analysis
-- **Head** = latest (may reorg) - use for real-time monitoring
-- Tables have variants: ` + "`fct_block_canonical`" + ` vs ` + "`fct_block_head`"
+- **Canonical/finalized** data is appropriate for historical analysis.
+- **Head/latest** data is appropriate for real-time monitoring and may reorg.
+- Use examples and schema comments to choose the table variant for the task.
+`
 }
 
 // RegisterResources registers ClickHouse schema resources.

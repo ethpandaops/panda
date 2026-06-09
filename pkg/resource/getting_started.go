@@ -55,13 +55,7 @@ that module commands cannot provide.
 ` + "```" + `
 panda execute --code '
 from ethpandaops import clickhouse
-df = clickhouse.query("clickhouse-refined", """
-    SELECT slot, proposer_index
-    FROM mainnet.fct_block_head FINAL
-    WHERE slot_start_date_time >= now() - INTERVAL 1 HOUR
-    ORDER BY slot DESC
-    LIMIT 5
-""")
+df = clickhouse.query("clickhouse-refined", "SHOW DATABASES")
 print(df)
 '
 ` + "```" + `

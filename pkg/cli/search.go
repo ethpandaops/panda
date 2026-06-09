@@ -27,15 +27,17 @@ var (
 var searchCmd = &cobra.Command{
 	GroupID: groupWorkflow,
 	Use:     "search [query]",
-	Short:   "Search examples, runbooks, EIPs, and consensus specs",
+	Short:   "Search all indices; use 'search examples' for query patterns",
 	Long: `Semantic search over query examples, investigation runbooks, EIPs, and consensus specs.
 
-When called with a query and no subcommand, searches all indices at once.
+For data queries, start with 'panda search examples "<topic>"' to get SQL/API
+patterns without unrelated protocol results. When called with a query and no
+subcommand, this command searches all indices at once.
 
 Examples:
-  panda search "eip-4844"
   panda search examples "attestation participation"
   panda search runbooks "finality delay"
+  panda search "eip-4844"
   panda search eips "account abstraction"
   panda search consensus-specs "MAX_EFFECTIVE_BALANCE"`,
 	Args: cobra.ArbitraryArgs,

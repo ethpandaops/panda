@@ -457,7 +457,7 @@ func decodeAPIError(status int, data []byte) error {
 func serverErrorHint(status int, _ string) string {
 	switch status {
 	case http.StatusNotFound:
-		return "the requested module, operation, datasource, or resource is not available on this server; check 'panda datasources' and 'panda resources list'"
+		return "the requested module, operation, datasource, or resource is not available on this server; check 'panda datasources' and 'panda resources'"
 	case http.StatusServiceUnavailable:
 		return "the server is running but a required service (e.g. sandbox) is not available — check server logs with 'docker compose logs server'"
 	default:
