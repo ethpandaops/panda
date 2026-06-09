@@ -164,12 +164,24 @@ def main() -> None:
     )
 
     run_dir = HARDEN_HOME / "runs" / time.strftime("%Y-%m-%dT%H-%M-%S")
-    print(
-        f"harden: {len(questions)} questions x {len(subject_specs)} subjects x k={args.k} "
-        f"| proposer={args.proposer_model}@{args.reasoning_effort} | grader={grader} "
-        f"| rounds={args.rounds} | scratch server :{args.port}\nartifacts: {run_dir}",
-        flush=True,
-    )
+    qids = ", ".join(q.id for q in questions)
+    nvar = sum(len(q.variations) for q in questions)
+    auditor_desc = "off" if args.no_audit else f"{args.auditor_model} @ {args.reasoning_effort} (codex)"
+    banner = [
+        "=== harden config ===",
+        f"  subjects (agent): {', '.join(subject_specs)}"
+        + ("   [sandboxed: container, no repo access]" if args.sandbox else "   [host process]"),
+        f"  grader:           {grader}",
+        f"  proposer:         {args.proposer_model} @ {args.reasoning_effort} (codex)",
+        f"  auditor:          {auditor_desc}",
+        f"  questions:        {len(questions)} ({qids}) + {nvar} variations | k={args.k} | "
+        f"rounds={args.rounds} | min-cells={args.min_cells}"
+        + (f" | held-out={sorted(args.held_out)}" if args.held_out else ""),
+        f"  scratch server:   :{args.port}",
+        f"  artifacts:        {run_dir}",
+        "=====================",
+    ]
+    print("\n".join(banner), flush=True)
     try:
         result = asyncio.run(
             optimize(

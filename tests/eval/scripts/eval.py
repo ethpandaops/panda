@@ -195,6 +195,20 @@ def main() -> None:
     if args.sandbox and not args.scratch:
         raise SystemExit("--sandbox needs the scratch server; add --scratch")
 
+    save_dir = args.save_dir or str(
+        Path.home() / ".panda" / "harden" / "runs" / f"eval-{time.strftime('%Y-%m-%dT%H-%M-%S')}"
+    )
+    nvar = sum(len(q.variations) for q in questions)
+    console.print(
+        f"[bold]=== eval config ===[/bold]\n"
+        f"  subjects (agent): {', '.join(subject_specs)}"
+        + ("   [sandboxed: container, no repo access]" if args.sandbox else "   [host process]")
+        + f"\n  grader:           {grader}"
+        f"\n  cases:            {args.cases} | {len(questions)} question(s) + {nvar} variations "
+        f"| k={args.repeat}"
+        f"\n  artifacts:        {save_dir}\n[bold]===================[/bold]"
+    )
+
     server = None
     if args.scratch:
         import subprocess
@@ -219,13 +233,6 @@ def main() -> None:
         console.print("[dim]building + starting scratch server...[/dim]")
         make_apply(server, sandbox=args.sandbox)()
 
-    save_dir = args.save_dir or str(
-        Path.home() / ".panda" / "harden" / "runs" / f"eval-{time.strftime('%Y-%m-%dT%H-%M-%S')}"
-    )
-    console.print(
-        f"eval: {len(questions)} cases x {len(subject_specs)} subjects x k={args.repeat} "
-        f"| grader={grader}\nartifacts: {save_dir}"
-    )
     try:
         result = asyncio.run(
             measure_candidate(
