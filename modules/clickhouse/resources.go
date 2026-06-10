@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -26,9 +27,17 @@ type TablesListResponse struct {
 
 // ClusterTablesSummary is a compact summary of tables in a cluster.
 type ClusterTablesSummary struct {
-	Tables      []*TableSummary `json:"tables"`
-	TableCount  int             `json:"table_count"`
-	LastUpdated string          `json:"last_updated"`
+	Databases     []*DatabaseSummary `json:"databases,omitempty"`
+	Tables        []*TableSummary    `json:"tables,omitempty"`
+	TableCount    int                `json:"table_count"`
+	DatabaseCount int                `json:"database_count,omitempty"`
+	LastUpdated   string             `json:"last_updated"`
+}
+
+// DatabaseSummary is a compact overview of a database/table namespace.
+type DatabaseSummary struct {
+	Name       string `json:"name"`
+	TableCount int    `json:"table_count"`
 }
 
 // TableSummary is a compact overview of a table for the list view.
@@ -56,8 +65,8 @@ func RegisterSchemaResources(
 	reg.RegisterTemplate(types.TemplateResource{
 		Template: mcp.NewResourceTemplate(
 			"clickhouse://tables/{cluster}",
-			"ClickHouse Cluster Tables",
-			mcp.WithTemplateDescription("List the tables in a single ClickHouse cluster, keyed by (database, table)."),
+			"ClickHouse Cluster Databases",
+			mcp.WithTemplateDescription("Compact database/table-namespace summary for a ClickHouse cluster. Read clickhouse://tables/{cluster}/{database} for table names."),
 			mcp.WithTemplateMIMEType("application/json"),
 			mcp.WithTemplateAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.6, ""),
 		),
@@ -93,7 +102,7 @@ func RegisterSchemaResources(
 }
 
 func createClusterTablesHandler(client SchemaClient) types.ReadHandler {
-	return func(_ context.Context, uri string) (string, error) {
+	return func(ctx context.Context, uri string) (string, error) {
 		parts := tableURISegments(uri)
 		if len(parts) != 1 {
 			return "", fmt.Errorf("invalid cluster URI: %s", uri)
@@ -103,13 +112,27 @@ func createClusterTablesHandler(client SchemaClient) types.ReadHandler {
 
 		cluster, ok := client.GetClusterTables(clusterName)
 		if !ok {
-			return "", clusterNotFoundError(client, clusterName)
+			var fetchErr error
+			cluster, fetchErr = client.FetchTablesInCluster(ctx, clusterName, "")
+			if fetchErr != nil {
+				if errors.Is(fetchErr, ErrSchemaClusterNotConfigured) {
+					return "", clusterNotFoundError(client, clusterName)
+				}
+
+				return "", fmt.Errorf("listing live tables in cluster %q: %w", clusterName, fetchErr)
+			}
 		}
 
 		response := &TablesListResponse{
-			Description: fmt.Sprintf("Tables in ClickHouse cluster %q, keyed by (database, table).", clusterName),
-			Clusters:    map[string]*ClusterTablesSummary{clusterName: buildClusterSummary(cluster, "")},
-			Usage:       "Read clickhouse://tables/{cluster}/{database} or clickhouse://tables/{cluster}/{database}/{table_name} to narrow the result.",
+			Description: fmt.Sprintf("Databases in ClickHouse cluster %q.", clusterName),
+			Clusters:    map[string]*ClusterTablesSummary{clusterName: buildClusterDatabaseSummary(cluster)},
+			Usage:       "Read clickhouse://tables/{cluster}/{database} for table names, then clickhouse://tables/{cluster}/{database}/{table_name} for detailed schema. The cluster view intentionally omits table names to keep output bounded.",
+		}
+
+		if clusterTablesIncludeTables(uri) {
+			response.Description = fmt.Sprintf("Tables in ClickHouse cluster %q, keyed by (database, table).", clusterName)
+			response.Clusters[clusterName] = buildClusterSummary(cluster, "")
+			response.Usage = "Read clickhouse://tables/{cluster}/{database}/{table_name} for detailed schema. Prefer the compact cluster URI or database-scoped URI unless you need every table name."
 		}
 
 		return marshalResource(response, "cluster tables")
@@ -117,7 +140,7 @@ func createClusterTablesHandler(client SchemaClient) types.ReadHandler {
 }
 
 func createDatabaseTablesHandler(client SchemaClient) types.ReadHandler {
-	return func(_ context.Context, uri string) (string, error) {
+	return func(ctx context.Context, uri string) (string, error) {
 		parts := tableURISegments(uri)
 		if len(parts) != 2 {
 			return "", fmt.Errorf("invalid database URI: %s", uri)
@@ -127,7 +150,15 @@ func createDatabaseTablesHandler(client SchemaClient) types.ReadHandler {
 
 		cluster, ok := client.GetClusterTables(clusterName)
 		if !ok {
-			return "", clusterNotFoundError(client, clusterName)
+			var fetchErr error
+			cluster, fetchErr = client.FetchTablesInCluster(ctx, clusterName, database)
+			if fetchErr != nil {
+				if errors.Is(fetchErr, ErrSchemaClusterNotConfigured) {
+					return "", clusterNotFoundError(client, clusterName)
+				}
+
+				return "", fmt.Errorf("listing live tables in database %q of cluster %q: %w", database, clusterName, fetchErr)
+			}
 		}
 
 		response := &TablesListResponse{
@@ -213,6 +244,9 @@ func buildClusterSummary(cluster *ClusterTables, databaseFilter string) *Cluster
 	}
 
 	summary.TableCount = len(summary.Tables)
+	if databaseFilter != "" && summary.TableCount > 0 {
+		summary.DatabaseCount = 1
+	}
 
 	sort.Slice(summary.Tables, func(i, j int) bool {
 		if summary.Tables[i].Database != summary.Tables[j].Database {
@@ -221,6 +255,41 @@ func buildClusterSummary(cluster *ClusterTables, databaseFilter string) *Cluster
 
 		return summary.Tables[i].Name < summary.Tables[j].Name
 	})
+
+	return summary
+}
+
+// buildClusterDatabaseSummary returns a compact view that avoids dumping every
+// table in large multi-network clusters.
+func buildClusterDatabaseSummary(cluster *ClusterTables) *ClusterTablesSummary {
+	counts := make(map[string]int)
+	for _, schema := range cluster.Tables {
+		if schema == nil {
+			continue
+		}
+
+		counts[schema.Database]++
+	}
+
+	names := make([]string, 0, len(counts))
+	for name := range counts {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	summary := &ClusterTablesSummary{
+		Databases:     make([]*DatabaseSummary, 0, len(names)),
+		TableCount:    len(cluster.Tables),
+		DatabaseCount: len(names),
+		LastUpdated:   cluster.LastUpdated.Format("2006-01-02T15:04:05Z"),
+	}
+
+	for _, name := range names {
+		summary.Databases = append(summary.Databases, &DatabaseSummary{
+			Name:       name,
+			TableCount: counts[name],
+		})
+	}
 
 	return summary
 }
@@ -260,6 +329,7 @@ func tableURISegments(uri string) []string {
 	}
 
 	rest := strings.TrimPrefix(uri, prefix)
+	rest, _, _ = strings.Cut(rest, "?")
 	if rest == "" {
 		return nil
 	}
@@ -272,4 +342,18 @@ func tableURISegments(uri string) []string {
 	}
 
 	return parts
+}
+
+func clusterTablesIncludeTables(uri string) bool {
+	_, rawQuery, ok := strings.Cut(uri, "?")
+	if !ok {
+		return false
+	}
+
+	values, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		return false
+	}
+
+	return values.Get("include") == "tables" || values.Get("view") == "tables"
 }

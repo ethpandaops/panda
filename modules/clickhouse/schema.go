@@ -100,6 +100,7 @@ type SchemaClient interface {
 	GetAllTables() map[string]*ClusterTables
 	GetClusterTables(clusterName string) (*ClusterTables, bool)
 	GetTableInCluster(clusterName, database, tableName string) (*TableSchema, bool)
+	FetchTablesInCluster(ctx context.Context, clusterName, database string) (*ClusterTables, error)
 	FetchTableInCluster(ctx context.Context, clusterName, database, tableName string) (*TableSchema, error)
 	UpdateDatasources(datasources []SchemaDiscoveryDatasource)
 }
@@ -384,6 +385,56 @@ func (c *clickhouseSchemaClient) GetTableInCluster(clusterName, database, tableN
 // ErrSchemaClusterNotConfigured is returned when a caller asks for a cluster
 // that is neither cached nor known through datasource discovery.
 var ErrSchemaClusterNotConfigured = errors.New("clickhouse schema cluster is not configured")
+
+// FetchTablesInCluster fetches a lightweight live table listing for one cluster.
+// The returned schemas intentionally contain only table identity; callers should
+// use FetchTableInCluster for full details.
+func (c *clickhouseSchemaClient) FetchTablesInCluster(
+	ctx context.Context,
+	clusterName, database string,
+) (*ClusterTables, error) {
+	datasourceName, ok := c.datasourceForCluster(clusterName)
+	if !ok {
+		return nil, ErrSchemaClusterNotConfigured
+	}
+
+	var (
+		discovered []discoveredTable
+		err        error
+	)
+
+	if strings.TrimSpace(database) != "" {
+		names, listErr := c.fetchTablesFromDatabase(ctx, datasourceName, database)
+		if listErr != nil {
+			return nil, listErr
+		}
+
+		discovered = make([]discoveredTable, 0, len(names))
+		for _, name := range names {
+			discovered = append(discovered, discoveredTable{Name: name, Database: database})
+		}
+	} else {
+		discovered, err = c.fetchTableList(ctx, datasourceName)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	cluster := &ClusterTables{
+		ClusterName: clusterName,
+		Tables:      make(map[string]*TableSchema, len(discovered)),
+		LastUpdated: time.Now().UTC(),
+	}
+
+	for _, dt := range discovered {
+		cluster.Tables[tableKey(dt.Database, dt.Name)] = &TableSchema{
+			Database: dt.Database,
+			Name:     dt.Name,
+		}
+	}
+
+	return cluster, nil
+}
 
 // FetchTableInCluster fetches one exact table schema on demand. This keeps the
 // schema resource useful while the background all-table cache is still warming.

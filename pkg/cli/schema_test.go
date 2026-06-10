@@ -45,12 +45,12 @@ func TestRenderTablesListSummarizesClusterDatabases(t *testing.T) {
 		err := renderTablesList(&clickhousemodule.TablesListResponse{
 			Clusters: map[string]*clickhousemodule.ClusterTablesSummary{
 				"warehouse": {
-					TableCount:  3,
-					LastUpdated: "now",
-					Tables: []*clickhousemodule.TableSummary{
-						{Database: "db_b", Name: "blocks"},
-						{Database: "db_a", Name: "blocks"},
-						{Database: "db_a", Name: "validators"},
+					TableCount:    3,
+					DatabaseCount: 2,
+					LastUpdated:   "now",
+					Databases: []*clickhousemodule.DatabaseSummary{
+						{Name: "db_b", TableCount: 1},
+						{Name: "db_a", TableCount: 2},
 					},
 				},
 			},
@@ -108,4 +108,76 @@ func TestRunSchemaAcceptsQualifiedTableAndPrintsKeys(t *testing.T) {
 	assert.Contains(t, output, "Partition by: toYYYYMM(slot_time)")
 	assert.Contains(t, output, "Order by: (slot_time, root)")
 	assert.Contains(t, output, "Primary key: slot_time")
+}
+
+func TestSchemaArgumentErrorExplainsSingleDottedArgument(t *testing.T) {
+	err := schemaArgumentError(testCommand().Context(), []string{"cluster.database.table"}, assert.AnError)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "schema arguments are space-separated")
+}
+
+func TestRunSchemaExplainsDatasetArgument(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/resources/read" {
+			http.NotFound(w, r)
+			return
+		}
+
+		switch r.URL.Query().Get("uri") {
+		case "clickhouse://tables/metrics-pack":
+			http.Error(w, `{"error":"cluster \"metrics-pack\" not found"}`, http.StatusBadRequest)
+		case "datasets://list":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"datasets":[{"name":"metrics-pack","active":true}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	setClientConfig(t, server.URL)
+	setOutputFormat(t, "text")
+
+	err := runSchema(testCommand(), []string{"metrics-pack"})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `schema argument "metrics-pack" is a dataset`)
+	assert.Contains(t, err.Error(), "panda datasets metrics-pack")
+}
+
+func TestSchemaArgsRejectsSQLClausesAndPlaceholders(t *testing.T) {
+	err := schemaArgs(testCommand(), []string{"cluster", "database", "table", "FINAL"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "omit SQL clauses")
+
+	err = schemaArgs(testCommand(), []string{"cluster", "{network}.table"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "concrete ClickHouse identifiers")
+}
+
+func TestSchemaArgumentErrorExplainsDatasetDatabaseArgument(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/resources/read" {
+			http.NotFound(w, r)
+			return
+		}
+
+		switch r.URL.Query().Get("uri") {
+		case "datasets://list":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"datasets":[{"name":"metrics-pack","active":true}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	setClientConfig(t, server.URL)
+
+	err := schemaArgumentError(testCommand().Context(), []string{"cluster", "metrics-pack", "table"}, assert.AnError)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `schema database argument "metrics-pack" is a dataset`)
+	assert.Contains(t, err.Error(), "substitute concrete database and table identifiers")
 }

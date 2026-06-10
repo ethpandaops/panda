@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -164,4 +165,27 @@ func completeDatasetNames(cmd *cobra.Command, args []string, _ string) ([]string
 	}
 
 	return names, cobra.ShellCompDirectiveNoFileComp
+}
+
+func isActiveDatasetName(ctx context.Context, name string) bool {
+	response, err := readResource(ctx, "datasets://list")
+	if err != nil {
+		return false
+	}
+
+	var parsed struct {
+		Datasets []datasetListEntry `json:"datasets"`
+	}
+
+	if err := json.Unmarshal([]byte(response.Content), &parsed); err != nil {
+		return false
+	}
+
+	for _, d := range parsed.Datasets {
+		if d.Active && d.Name == name {
+			return true
+		}
+	}
+
+	return false
 }

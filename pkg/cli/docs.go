@@ -24,7 +24,9 @@ shows detailed function signatures and descriptions.
 Examples:
   panda docs                  # List all modules
   panda docs clickhouse       # Show clickhouse module docs
+  panda docs clickhouse.query # Show one function
   panda docs --json           # Output as JSON`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: runDocs,
 }
 
@@ -62,6 +64,19 @@ func runDocs(cmd *cobra.Command, args []string) error {
 
 	if isJSON() {
 		if len(args) > 0 {
+			if moduleName, functionName, ok := splitDocFunction(args[0]); ok {
+				doc, found := findFunctionDoc(allDocs, moduleName, functionName)
+				if !found {
+					return fmt.Errorf("function %q not found", args[0])
+				}
+
+				return printJSON(map[string]any{
+					moduleName: map[string]any{
+						functionName: doc,
+					},
+				})
+			}
+
 			doc, ok := allDocs[args[0]]
 			if !ok {
 				return fmt.Errorf("module %q not found", args[0])
@@ -77,7 +92,20 @@ func runDocs(cmd *cobra.Command, args []string) error {
 		return listModules(allDocs)
 	}
 
+	if moduleName, functionName, ok := splitDocFunction(args[0]); ok {
+		return showFunction(allDocs, moduleName, functionName)
+	}
+
 	return showModule(allDocs, args[0])
+}
+
+func splitDocFunction(value string) (string, string, bool) {
+	moduleName, functionName, ok := strings.Cut(value, ".")
+	if !ok || moduleName == "" || functionName == "" || strings.Contains(functionName, ".") {
+		return "", "", false
+	}
+
+	return moduleName, functionName, true
 }
 
 func listModules(docs map[string]types.ModuleDoc) error {
@@ -116,37 +144,63 @@ func showModule(docs map[string]types.ModuleDoc, name string) error {
 	sort.Strings(funcNames)
 
 	for _, fn := range funcNames {
-		fd := doc.Functions[fn]
-		fmt.Printf("  %s\n", fd.Signature)
-		fmt.Printf("    %s\n", fd.Description)
-
-		if fd.Returns != "" {
-			fmt.Printf("    Returns: %s\n", fd.Returns)
-		}
-
-		if len(fd.Parameters) > 0 {
-			paramNames := make([]string, 0, len(fd.Parameters))
-			for p := range fd.Parameters {
-				paramNames = append(paramNames, p)
-			}
-
-			sort.Strings(paramNames)
-
-			fmt.Println("    Parameters:")
-
-			for _, p := range paramNames {
-				fmt.Printf("      %-12s  %s\n", p, fd.Parameters[p])
-			}
-		}
-
-		if fd.Example != "" {
-			fmt.Printf("    Example: %s\n", strings.TrimSpace(fd.Example))
-		}
-
-		fmt.Println()
+		printFunctionDoc(doc.Functions[fn])
 	}
 
 	return nil
+}
+
+func showFunction(docs map[string]types.ModuleDoc, moduleName, functionName string) error {
+	fd, ok := findFunctionDoc(docs, moduleName, functionName)
+	if !ok {
+		return fmt.Errorf("function %q not found", moduleName+"."+functionName)
+	}
+
+	fmt.Printf("Function: %s.%s\n\n", moduleName, functionName)
+	printFunctionDoc(fd)
+
+	return nil
+}
+
+func findFunctionDoc(docs map[string]types.ModuleDoc, moduleName, functionName string) (types.FunctionDoc, bool) {
+	doc, ok := docs[moduleName]
+	if !ok {
+		return types.FunctionDoc{}, false
+	}
+
+	fd, ok := doc.Functions[functionName]
+
+	return fd, ok
+}
+
+func printFunctionDoc(fd types.FunctionDoc) {
+	fmt.Printf("  %s\n", fd.Signature)
+	fmt.Printf("    %s\n", fd.Description)
+
+	if fd.Returns != "" {
+		fmt.Printf("    Returns: %s\n", fd.Returns)
+	}
+
+	if len(fd.Parameters) > 0 {
+		paramNames := make([]string, 0, len(fd.Parameters))
+		for p := range fd.Parameters {
+			paramNames = append(paramNames, p)
+		}
+
+		sort.Strings(paramNames)
+
+		fmt.Println("    Parameters:")
+
+		for _, p := range paramNames {
+			fmt.Printf("      %-12s  %s\n", p, fd.Parameters[p])
+		}
+	}
+
+	if fd.Example != "" {
+		fmt.Printf("    Example: %s\n", strings.TrimSpace(fd.Example))
+	}
+
+	fmt.Println()
 }
 
 func getAllPythonAPIDocs(ctx context.Context) (map[string]types.ModuleDoc, error) {

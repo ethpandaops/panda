@@ -38,6 +38,14 @@ flows through the credential proxy.
 
 Code can be provided via --code, --file, or stdin.
 
+For a single SQL or PromQL answer, direct datasource commands are usually
+simpler and avoid Python quoting/session overhead:
+  panda clickhouse query-raw <datasource> "<SQL>"
+  panda prometheus query <datasource> "<promql>"
+
+Use execute when you need Python libraries, files, plots, cross-source joins,
+or multi-step analysis.
+
 Examples:
   panda execute --code 'print("hello")'
   panda execute --file script.py
