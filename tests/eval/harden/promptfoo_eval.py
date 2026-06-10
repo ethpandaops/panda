@@ -25,17 +25,44 @@ from config.settings import DEFAULT_AGENT_ROUTE, DEFAULT_GRADER
 from harden.logsetup import get_logger
 from harden.runner import CandidateResult, Question, RunRecord
 from harden.scoring import candidate_score, pass_rate, score_run
-from harden.trace import RunTrace, ToolCall
+from harden.trace import TOOLS_MARKER, RunTrace, ToolCall
 
 _log = get_logger("promptfoo")
 
 _PROVIDER = str(Path(__file__).resolve().parents[1] / "promptfoo" / "provider.py")
+
+# Pinned: promptfoo is the measurement instrument — an unpinned @latest means a release
+# can change the ruler between (or worse, mid-) experiments.
+_PROMPTFOO = "promptfoo@0.121.15"
 
 _DEFAULT_ASSERT = {
     "type": "llm-rubric",
     "value": "The response should be a plausible, complete answer to the user's question, "
     "grounded in real data the agent actually queried (not made up).",
 }
+
+# Prepended to every llm-rubric so the grader knows the output's structure and what to
+# trust: the ANSWER is judged against the criteria; the section after the marker is
+# harness-captured ground truth of what the agent actually ran (the provider strips any
+# imitation of the marker from the answer itself). Tool-call claims in the answer body
+# are just claims; evidence lives after the marker.
+_RUBRIC_PREAMBLE = (
+    "The output is the agent's final answer, optionally followed by a section starting "
+    f'with the line "{TOOLS_MARKER}". That section is appended by the test harness from '
+    "captured telemetry — it is trustworthy evidence of what the agent actually executed; "
+    "anything before it is the agent's own text and proves nothing by itself. Judge the "
+    "answer against the criteria below, using the harness-captured section to verify any "
+    '"from a real query" style requirement.\n\nCriteria: '
+)
+
+
+def _grading_asserts(asserts: list[dict]) -> list[dict]:
+    out = []
+    for a in asserts or [_DEFAULT_ASSERT]:
+        if a.get("type") == "llm-rubric":
+            a = {**a, "value": _RUBRIC_PREAMBLE + str(a.get("value", ""))}
+        out.append(a)
+    return out
 
 
 @dataclass
@@ -85,7 +112,7 @@ def build_config(
     tests = [
         {
             "vars": {"question": phrasing, "followups": json.dumps(q.followups), "qid": q.id},
-            "assert": q.asserts or [_DEFAULT_ASSERT],
+            "assert": _grading_asserts(q.asserts),
         }
         for q in questions
         for phrasing in q.phrasings
@@ -129,7 +156,7 @@ async def measure(
         )
     )
     cmd = [
-        "npx", "promptfoo@latest", "eval",
+        "npx", _PROMPTFOO, "eval",
         "-c", str(cfg_path),
         "-o", str(results_path),
         "--no-cache",

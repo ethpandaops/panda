@@ -20,10 +20,13 @@ no chance of clobbering uncommitted work. Run it on a throwaway worktree/branch.
 
 from __future__ import annotations
 
+import contextlib
+import re
+import shutil
 import statistics
 import subprocess
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -114,6 +117,73 @@ def _commit(repo: str, message: str) -> None:
     _git(repo, "commit", "-m", message, "--no-verify")
 
 
+def _changed_paths(repo: str) -> list[str]:
+    """Every path the proposal touched: tracked edits + untracked new files."""
+    tracked = _git(repo, "diff", "HEAD", "--name-only").splitlines()
+    untracked = _git(repo, "ls-files", "--others", "--exclude-standard").splitlines()
+    return [p.strip() for p in tracked + untracked if p.strip()]
+
+
+def _protected_violations(repo: str, protected: tuple[str, ...]) -> list[str]:
+    """Touched paths under a protected prefix. The prompt TELLS the proposer to keep out
+    of the eval harness and CI; this enforces it deterministically — an LLM auditor can
+    be argued past, a path prefix can't. Editing the rubrics that grade you, or the
+    workflow that runs you, is never a legitimate proposal."""
+    return [p for p in _changed_paths(repo) if any(p.startswith(pre) for pre in protected)]
+
+
+_IDENT = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b")  # snake_case identifiers
+_NUMBER = re.compile(r"\b\d{2,}(?:-\d{2,})?%?\b")  # multi-digit numbers / ranges (85-95%)
+
+
+def _leak_check(diff: str, questions: list[Question]) -> list[str]:
+    """Mechanical (ungameable) leakage screen: distinctive tokens from the GRADING
+    rubrics — identifiers and numeric ranges, the parts that encode what a correct
+    answer looks like — appearing verbatim in lines the proposal ADDS. The LLM auditor
+    judges intent; this catches the literal cheat regardless of how it's dressed up."""
+    tokens: set[str] = set()
+    for q in questions:
+        for a in q.asserts:
+            text = str(a.get("value", ""))
+            tokens.update(_IDENT.findall(text))
+            tokens.update(_NUMBER.findall(text))
+    tokens.discard("")
+    if not tokens:
+        return []
+    hits = []
+    for line in diff.splitlines():
+        if not line.startswith("+"):
+            continue
+        for t in tokens:
+            if t in line:
+                hits.append(f"rubric token {t!r} in added line: {line[:160]}")
+    return hits
+
+
+@contextlib.contextmanager
+def _hidden(paths: list[Path]) -> Iterator[None]:
+    """Information barrier: move ``paths`` out of the repo while the proposer runs, so
+    it cannot read the eval cases/rubrics (held-out questions, expected-answer ranges)
+    even though it has unrestricted file access. Restored on exit — including when the
+    proposer crashes. Anything the proposer re-creates at a hidden path is discarded on
+    restore (it's a protected path; such an edit would be rejected anyway)."""
+    moved: list[tuple[Path, Path]] = []
+    tmp = Path(tempfile.mkdtemp(prefix="harden-hidden-"))
+    try:
+        for i, p in enumerate(paths):
+            if p.exists():
+                stash = tmp / f"{i}_{p.name}"
+                shutil.move(str(p), str(stash))
+                moved.append((p, stash))
+        yield
+    finally:
+        for orig, stash in moved:
+            if orig.exists():  # proposer re-created it — discard in favor of the original
+                shutil.rmtree(orig, ignore_errors=True) if orig.is_dir() else orig.unlink()
+            shutil.move(str(stash), str(orig))
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def _proposal_diff(repo: str) -> str:
     """The proposal's full diff vs HEAD, including untracked new files — what the auditor
     reviews. Does not stage anything (so revert stays a plain checkout + clean)."""
@@ -152,6 +222,8 @@ async def optimize(
     cwd: str | None = None,
     held_out_ids: set[str] | None = None,
     save_dir: str | None = None,
+    protected_paths: tuple[str, ...] = ("tests/eval/", ".github/"),
+    hide_paths: tuple[str, ...] = ("tests/eval/cases",),
     log: Callable[[str], None] = print,
 ) -> OptimizeResult:
     """Run the optimization loop. ``apply`` rebuilds+restarts the harness so a fresh
@@ -204,32 +276,69 @@ async def optimize(
         f"{ {q: int(t) for q, t in sorted(refs.items())} }")
     baseline_traces = run_root / "baseline" / "traces"
     result = OptimizeResult(baseline=baseline)
+    # What the proposer already tried this run and how it fared — fed into every
+    # subsequent prompt so it explores instead of re-proposing a rejected idea.
+    history: list[str] = []
+
+    def _record(n: int, accepted: bool, reason: str, after: CandidateResult, summary: str) -> None:
+        result.rounds.append(_round(n, accepted, reason, baseline, after, summary))
+        outcome = (
+            f"ACCEPTED (score {baseline.score:.3f} -> {after.score:.3f})"
+            if accepted
+            else f"REJECTED: {reason}"
+            + (
+                f" (score {baseline.score:.3f} -> {after.score:.3f})"
+                if after is not baseline
+                else ""
+            )
+        )
+        history.append(f"- round {n} {outcome}. Proposal: {' '.join(summary.split())[:300]}")
 
     for n in range(1, rounds + 1):
         log(f"[bold cyan]--- round {n}/{rounds} ---[/bold cyan]")
         # The proposer only ever sees TRAIN traces — never the held-out questions. The
         # prompt is a lean summary; the FULL traces live in baseline_traces for it to read.
         train_records = [r for r in baseline.records if r.question.id in train_ids]
-        prompt = build_proposal_prompt(train_records, traces_dir=str(baseline_traces), limit=show)
+        prompt = build_proposal_prompt(
+            train_records, traces_dir=str(baseline_traces), limit=show, history=history
+        )
         _dump(save_dir, f"round{n}_proposal_prompt.txt", prompt)
         log(f"round {n}: proposing harness edits (this can take several minutes)...")
-        proposal = proposer.propose(prompt)
+        # Information barrier: the eval cases (questions, rubrics, held-out split) are
+        # moved out of the tree while the proposer runs — it can't read what grades it.
+        with _hidden([Path(repo_dir) / p for p in hide_paths]):
+            proposal = proposer.propose(prompt)
         _dump(save_dir, f"round{n}_proposal_summary.txt", proposal.summary)
         if not proposal.ok:
             log(f"round {n}: [red]proposer failed[/red]: {escape(proposal.summary[:200])}")
             _revert(repo_dir)
-            result.rounds.append(
-                _round(n, False, "proposer-failed", baseline, baseline, proposal.summary)
-            )
+            _record(n, False, "proposer-failed", baseline, proposal.summary)
             continue
         if _is_clean(repo_dir):
             log(f"round {n}: proposer made no edits")
-            result.rounds.append(_round(n, False, "no-edits", baseline, baseline, proposal.summary))
+            _record(n, False, "no-edits", baseline, proposal.summary)
             continue
-        changed = _git(repo_dir, "diff", "HEAD", "--name-only").splitlines()
-        untracked = _git(repo_dir, "ls-files", "--others", "--exclude-standard").splitlines()
+        touched = _changed_paths(repo_dir)
         log(f"round {n}: proposal summary: {escape(' '.join(proposal.summary.split())[:280])}")
-        log(f"round {n}: edited {len(changed) + len(untracked)} file(s): {', '.join(changed + untracked)[:300]}")
+        log(f"round {n}: edited {len(touched)} file(s): {', '.join(touched)[:300]}")
+
+        # Deterministic guards BEFORE the LLM audit — these can't be argued past.
+        violations = _protected_violations(repo_dir, protected_paths)
+        if violations:
+            log(
+                f"round {n}: [bold red]PROTECTED PATHS[/bold red] touched "
+                f"({', '.join(violations)[:200]}) — reverting"
+            )
+            _revert(repo_dir)
+            _record(n, False, f"protected-paths:{','.join(violations)[:120]}", baseline, proposal.summary)
+            continue
+        leaks = _leak_check(_proposal_diff(repo_dir), questions)
+        if leaks:
+            log(f"round {n}: [bold red]LEAK CHECK[/bold red] ({len(leaks)} hit(s)) — reverting")
+            _dump(save_dir, f"round{n}_leaks.txt", "\n".join(leaks))
+            _revert(repo_dir)
+            _record(n, False, "rubric-leak", baseline, proposal.summary)
+            continue
 
         # Adversarial audit BEFORE the expensive build+measure: a fresh-context reviewer
         # tries to refuse the diff for answer-leakage / misplacement / eval-infra gaming —
@@ -242,9 +351,7 @@ async def optimize(
             if verdict.blocked:
                 log(f"round {n}: [bold red]AUDIT BLOCKED[/bold red] ({len(verdict.findings)} finding(s)) — reverting")
                 _revert(repo_dir)
-                result.rounds.append(
-                    _round(n, False, "audit-blocked", baseline, baseline, verdict.text())
-                )
+                _record(n, False, "audit-blocked", baseline, verdict.text())
                 continue
             if verdict.findings:
                 log(
@@ -258,9 +365,7 @@ async def optimize(
             log(f"round {n}: [red]build failed[/red], reverting: {type(exc).__name__}: {escape(str(exc))}")
             _revert(repo_dir)
             apply()
-            result.rounds.append(
-                _round(n, False, "build-failed", baseline, baseline, proposal.summary)
-            )
+            _record(n, False, "build-failed", baseline, proposal.summary)
             continue
 
         candidate = await measure(f"round{n}_candidate", refs=refs)
@@ -279,7 +384,7 @@ async def optimize(
                 f"round {n}: [bold green]ACCEPT[/bold green] score {baseline.score:.3f} -> "
                 f"{candidate.score:.3f} pass {baseline.pass_rate:.2f} -> {candidate.pass_rate:.2f}"
             )
-            result.rounds.append(_round(n, True, "accepted", baseline, candidate, proposal.summary))
+            _record(n, True, "accepted", candidate, proposal.summary)
             baseline = candidate
         else:
             reason = "regressed-correctness" if regressed else "not-confident"
@@ -290,7 +395,7 @@ async def optimize(
             )
             _revert(repo_dir)
             apply()
-            result.rounds.append(_round(n, False, reason, baseline, candidate, proposal.summary))
+            _record(n, False, reason, candidate, proposal.summary)
 
     log(f"done: {result.accepted}/{rounds} accepted, final score {baseline.score:.3f}")
     return result

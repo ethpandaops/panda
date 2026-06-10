@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))  # tests/eval 
 
 from config.settings import DEFAULT_AGENT_MODEL, DEFAULT_AGENT_ROUTE
 from harden.subject import OpencodeSubject
+from harden.trace import TOOLS_MARKER
 
 _SUBJECTS: dict[tuple, OpencodeSubject] = {}
 
@@ -47,11 +48,16 @@ def _graded_output(trace) -> str:
     result), NOT the agent's self-report — so a rubric can verify the answer was sourced
     from a real query (which datasource, which table) rather than hallucinated, and the
     agent can't game it by merely claiming it queried. Args/results are truncated to keep
-    the grading prompt bounded; the full untruncated trace is still in `metadata`/on disk."""
-    answer = trace.output or ""
+    the grading prompt bounded; the full untruncated trace is still in `metadata`/on disk.
+
+    Anti-forgery: any imitation of the marker inside the agent's own answer is stripped,
+    so the grader can rely on "everything after the marker is harness ground truth" —
+    an answer can't smuggle in fake tool-call evidence (or fake grading instructions
+    formatted as ours)."""
+    answer = (trace.output or "").replace(TOOLS_MARKER, "[stripped: harness marker]")
     if not trace.tool_calls:
         return answer
-    lines = [answer, "", "--- tool calls the agent made to reach this answer (harness-captured) ---"]
+    lines = [answer, "", TOOLS_MARKER]
     for t in trace.tool_calls:
         arg = " ".join((t.arguments or "").split())[:600]
         res = " ".join((t.output or "").split())[:240]

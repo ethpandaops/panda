@@ -49,6 +49,11 @@ def _parse_args() -> argparse.Namespace:
         "--subject", action="append", default=[], help="provider/model:route (repeatable)"
     )
     ap.add_argument("--question-id", action="append", default=[], help="restrict to case id(s)")
+    ap.add_argument(
+        "--no-variations",
+        action="store_true",
+        help="run only each case's canonical phrasing (CI smoke: fast, cheap)",
+    )
     ap.add_argument("-k", "--repeat", type=int, default=1, help="runs per (case, subject)")
     ap.add_argument("--judge-model", default=DEFAULT_EVALUATOR_MODEL)
     ap.add_argument(
@@ -179,7 +184,11 @@ def main() -> None:
 
     questions = [
         Question(
-            id=c.id, text=c.input, followups=c.followups, asserts=c.asserts, variations=c.variations
+            id=c.id,
+            text=c.input,
+            followups=c.followups,
+            asserts=c.asserts,
+            variations=[] if args.no_variations else c.variations,
         )
         for c in load_test_cases(args.cases)
     ]
@@ -194,8 +203,8 @@ def main() -> None:
     os.environ.setdefault("PROMPTFOO_PYTHON", sys.executable)
     eval_dir = str(Path(__file__).resolve().parents[1])
 
-    if args.sandbox and not args.scratch:
-        raise SystemExit("--sandbox needs the scratch server; add --scratch")
+    if args.sandbox:
+        args.scratch = True  # the sandboxed subject needs the scratch server
 
     save_dir = args.save_dir or str(
         Path.home() / ".panda" / "harden" / "runs" / f"eval-{time.strftime('%Y-%m-%dT%H-%M-%S')}"

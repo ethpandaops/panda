@@ -105,10 +105,15 @@ def summarize_record(record: RunRecord) -> str:
 
 
 def build_proposal_prompt(
-    records: list[RunRecord], *, traces_dir: str | None = None, limit: int = 12
+    records: list[RunRecord],
+    *,
+    traces_dir: str | None = None,
+    limit: int = 12,
+    history: list[str] | None = None,
 ) -> str:
     """The prompt handed to the proposer: objective + a lean summary of the worst runs +
-    a pointer to the full traces on disk (read on demand)."""
+    a pointer to the full traces on disk (read on demand) + what was already tried this
+    run and how it fared (so it explores instead of re-proposing a rejected idea)."""
     head = headroom_summary(records)
     shown = worst_records(records, limit)
     body = "\n".join(summarize_record(r) for r in shown)
@@ -120,8 +125,15 @@ def build_proposal_prompt(
             "Read the trace files for the runs above before proposing — that's where you see "
             "exactly what the agent ran and what came back. One file per run."
         )
+    past = ""
+    if history:
+        past = (
+            "\n\nPRIOR PROPOSALS THIS RUN — already measured/judged, with their outcome. "
+            "Do NOT re-propose a rejected approach; reason about WHY it failed and try a "
+            "different angle:\n" + "\n".join(history)
+        )
     return (
         f"{_OBJECTIVE}\n"
         f"Per-question reliability + token headroom (leanest correct run = proof of what's "
-        f"achievable):\n{head}\n\nRuns (worst first):\n{body}{pointer}"
+        f"achievable):\n{head}\n\nRuns (worst first):\n{body}{pointer}{past}"
     )

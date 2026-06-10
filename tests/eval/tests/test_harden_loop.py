@@ -141,10 +141,13 @@ async def test_accepts_and_commits_improvement(repo, monkeypatch):
 async def test_rejects_and_reverts_regression(repo, monkeypatch):
     state = {"improved": False}
     monkeypatch.setattr(loop_mod, "measure_candidate", _stub_measure(state, correct_when_improved=False))
+    # k=3 is the regression gate's power floor: a 1-phrasing cell collapsing k/k -> 0/k
+    # only reaches significance (Fisher one-sided p=0.05) from 3 runs up — at k=2 even a
+    # total collapse is indistinguishable from judge noise (p=0.167).
     result = await optimize(
         _QS, ["s"], _StubProposer(repo, state),
         repo_dir=str(repo), apply=_apply_factory(repo, state),
-        k=2, rounds=1, log=lambda *_: None,
+        k=3, rounds=1, log=lambda *_: None,
     )
     assert result.accepted == 0
     assert result.rounds[0].reason == "regressed-correctness"

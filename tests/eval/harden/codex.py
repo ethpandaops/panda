@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import threading
 from collections.abc import Callable
 
 from rich.markup import escape
@@ -89,14 +90,25 @@ def run_codex(
     proc.stdin.close()
     state: dict = {"mode": None, "await_cmd": False}
     raw: list[str] = []
-    try:
+
+    # Drain stdout on a thread so the timeout below applies to the WHOLE run. Reading
+    # inline would block until codex closes stdout — a hung codex with an open pipe
+    # would make any timeout unreachable.
+    def _drain() -> None:
         for line in proc.stdout:
             raw.append(line.rstrip("\n"))
             shown = _summarize(line, state)
             if shown and log:
                 log(f"[dim]{prefix}{escape(shown)}[/dim]")
+
+    reader = threading.Thread(target=_drain, daemon=True)
+    reader.start()
+    try:
         code = proc.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
         proc.kill()
+        proc.wait()
+        reader.join(timeout=5)
         return (-1, "\n".join(raw))
+    reader.join(timeout=10)
     return (code, "\n".join(raw))

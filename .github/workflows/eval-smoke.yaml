@@ -212,9 +212,10 @@ jobs:
           MCP_EVAL_LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
         run: |
           # subject + judge default to the harness defaults (config/settings.py) — don't
-          # restate them here.
+          # restate them here. --no-variations keeps smoke fast: canonical phrasings only
+          # (questions x subjects runs); the paraphrase sweep belongs to the harden loop.
           uv run python -m scripts.eval \
-            --cases smoke.yaml \
+            --cases smoke.yaml --no-variations \
             --junit reports/junit.xml --json reports/eval.json
 
       - name: Server log (sandbox / proxy activity)

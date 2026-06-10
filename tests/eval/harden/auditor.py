@@ -125,7 +125,23 @@ class CodexAuditor:
 
     def audit(self, diff: str, questions: list[str]) -> AuditVerdict:
         if len(diff) > self.max_diff_chars:
-            diff = diff[: self.max_diff_chars] + "\n… [diff truncated]"
+            # Block, don't truncate: truncation would let leakage hide past the cut, and
+            # a diff this size violates "keep edits minimal" on its own.
+            return AuditVerdict(
+                blocked=True,
+                summary=(
+                    f"diff is {len(diff)} chars (limit {self.max_diff_chars}) — too large "
+                    "to audit; keep proposals minimal"
+                ),
+                findings=[
+                    {
+                        "kind": "other",
+                        "severity": "block",
+                        "file": "(whole diff)",
+                        "issue": "oversized proposal; cannot be reviewed for leakage",
+                    }
+                ],
+            )
         prompt = _PROMPT.format(questions="\n".join(f"- {q}" for q in questions), diff=diff)
 
         with tempfile.TemporaryDirectory() as td:

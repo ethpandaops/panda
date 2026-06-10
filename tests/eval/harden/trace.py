@@ -17,6 +17,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+# Separates the agent's answer from the harness-captured tool calls in the text the
+# grader judges. The provider strips any occurrence of it from the agent's own answer
+# before appending the real section, so an answer can't forge tool-call "evidence" —
+# everything after the (single) marker is ground truth captured by the harness.
+TOOLS_MARKER = "--- tool calls the agent made to reach this answer (harness-captured) ---"
+
 
 @dataclass
 class ToolCall:

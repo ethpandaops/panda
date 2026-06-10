@@ -36,35 +36,59 @@ def test_efficiency_is_strictly_decreasing_no_cap():
     assert 0.0 < efficiency(100, 1000) < 1.0  # bounded, never exactly 1
 
 
-def test_paired_regression_catches_swap_that_aggregate_misses():
-    # baseline: q1 correct, q2 wrong. candidate: q1 wrong, q2 correct.
-    # Same aggregate pass-rate (50%), but q1 regressed -> must be rejected.
-    base = [_rs("q1", "s", correct=True, score=1.0), _rs("q2", "s", correct=False, score=0.0)]
-    cand = [_rs("q1", "s", correct=False, score=0.0), _rs("q2", "s", correct=True, score=1.0)]
+def _cell(qid, *, passed, total, score_ok=1.0):
+    """One cell's runs: `passed` correct out of `total` (k repeats / paraphrases pooled)."""
+    return [
+        _rs(qid, "s", correct=(i < passed), score=score_ok if i < passed else 0.0)
+        for i in range(total)
+    ]
+
+
+def test_paired_regression_catches_collapse_that_aggregate_misses():
+    # baseline: q1 solid (3/3), q2 broken (0/3). candidate: q1 collapses, q2 fixed.
+    # Same aggregate pass-rate (50%), but q1's total collapse is a significant drop
+    # (Fisher one-sided p=0.05 at 3/3 -> 0/3) -> must be rejected.
+    base = _cell("q1", passed=3, total=3) + _cell("q2", passed=0, total=3)
+    cand = _cell("q1", passed=0, total=3) + _cell("q2", passed=3, total=3)
+    assert no_correctness_regression(base, cand) is False
+
+
+def test_one_flaky_run_is_not_a_regression():
+    # A 3/3 -> 2/3 dip in one cell is indistinguishable from judge/agent noise
+    # (Fisher p=0.5): the strict any-drop gate false-rejected ~always on this.
+    base = _cell("q1", passed=3, total=3) + _cell("q2", passed=3, total=3)
+    cand = _cell("q1", passed=2, total=3) + _cell("q2", passed=3, total=3)
+    assert no_correctness_regression(base, cand) is True
+
+
+def test_significant_drop_in_a_large_cell_is_a_regression():
+    # With 18 runs/cell (6 phrasings x k=3), a 18/18 -> 12/18 drop is significant.
+    base = _cell("q1", passed=18, total=18)
+    cand = _cell("q1", passed=12, total=18)
     assert no_correctness_regression(base, cand) is False
 
 
 def test_paired_regression_allows_strict_improvement():
-    base = [_rs("q1", "s", correct=True, score=1.0), _rs("q2", "s", correct=False, score=0.0)]
-    cand = [_rs("q1", "s", correct=True, score=1.0), _rs("q2", "s", correct=True, score=1.0)]
+    base = _cell("q1", passed=3, total=3) + _cell("q2", passed=0, total=3)
+    cand = _cell("q1", passed=3, total=3) + _cell("q2", passed=3, total=3)
     assert no_correctness_regression(base, cand) is True
 
 
 def test_missing_cell_is_a_regression():
-    base = [_rs("q1", "s", correct=True, score=1.0), _rs("q2", "s", correct=True, score=1.0)]
-    cand = [_rs("q1", "s", correct=True, score=1.0)]  # q2 not measured
+    base = _cell("q1", passed=3, total=3) + _cell("q2", passed=3, total=3)
+    cand = _cell("q1", passed=3, total=3)  # q2 not measured
     assert no_correctness_regression(base, cand) is False
 
 
 def test_confidence_requires_consistent_gain_across_cells():
-    # candidate clearly better on every one of several cells -> confident
+    # candidate clearly better on every one of 6 cells -> permutation p = 1/64 -> confident
     base = [_rs(f"q{i}", "s", correct=True, score=0.3) for i in range(6)]
     cand = [_rs(f"q{i}", "s", correct=True, score=0.7) for i in range(6)]
     assert is_confident(base, cand) is True
 
 
 def test_confidence_rejects_noise_and_too_few_cells():
-    # one cell up, one down, rest flat -> CI lower bound not > 0
+    # one cell up, one down, rest flat -> mean delta 0 -> not confident
     base = [_rs(f"q{i}", "s", correct=True, score=0.5) for i in range(6)]
     cand = (
         [_rs("q0", "s", correct=True, score=0.9)]
@@ -72,5 +96,15 @@ def test_confidence_rejects_noise_and_too_few_cells():
         + [_rs("q5", "s", correct=True, score=0.1)]
     )
     assert is_confident(base, cand) is False
-    # too few cells to bootstrap
+    # below min_cells -> never confident
     assert is_confident(base[:2], cand[:2]) is False
+
+
+def test_confidence_small_n_fallback_requires_unanimity():
+    # 4 cells can't reach 95% by permutation (2^-4 > 0.05): unanimous improvement
+    # passes, any single down-cell fails.
+    base = [_rs(f"q{i}", "s", correct=True, score=0.4) for i in range(4)]
+    up = [_rs(f"q{i}", "s", correct=True, score=0.8) for i in range(4)]
+    assert is_confident(base, up) is True
+    mixed = up[:3] + [_rs("q3", "s", correct=True, score=0.3)]
+    assert is_confident(base, mixed) is False
