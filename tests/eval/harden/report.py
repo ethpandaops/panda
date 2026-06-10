@@ -15,13 +15,7 @@ import statistics
 
 from harden.runner import RunRecord
 
-_OBJECTIVE = """\
-You are improving the `panda` CLI + MCP harness so AI agents answer questions about the
-ethPandaOps Ethereum data ecosystem more RELIABLY (correct answers) and more EFFICIENTLY
-(far fewer wasted steps/tokens). You may edit anything in the panda source that shapes
-how an agent experiences the tool: CLI command help and output, MCP tool descriptions,
-error messages, the Python sandbox API, docs, examples, and runbooks — and real bugs.
-
+_RULES = """\
 Hard rules (these are gated — violations are reverted, so a "win" that breaks one is wasted work):
 - Do NOT encode the ANSWER to the questions below. Putting a specific table, column,
   or query pattern that one of these questions needs into the harness is leakage, not a
@@ -42,7 +36,19 @@ Hard rules (these are gated — violations are reverted, so a "win" that breaks 
 - Prefer fixing the ROOT cause an agent tripped on (a confusing error, a missing hint,
   a wrong default, a real bug) over adding narrow guidance. Keep edits minimal. Do not
   touch the eval harness (tests/eval/**).
+"""
 
+_OBJECTIVE = (
+    """\
+You are improving the `panda` CLI + MCP harness so AI agents answer questions about the
+ethPandaOps Ethereum data ecosystem more RELIABLY (correct answers) and more EFFICIENTLY
+(far fewer wasted steps/tokens). You may edit anything in the panda source that shapes
+how an agent experiences the tool: CLI command help and output, MCP tool descriptions,
+error messages, the Python sandbox API, docs, examples, and runbooks — and real bugs.
+
+"""
+    + _RULES
+    + """
 Below are real agent runs: the question, the full raw trace (every tool call's input and
 output), the final answer, whether it was correct, and the tokens it burned. Study where
 agents flailed, then make targeted harness edits.
@@ -50,8 +56,28 @@ agents flailed, then make targeted harness edits.
 An auditor will be checking your changes for multiple criteria, like if the solution is
 overfit, or if it is placed in the wrong location, or if it's going to sacrifice
 effectiveness and efficiency in general. "Cheating" won't work, your solution MUST
-generalize and be sustainable for the long term. Concerns need to be seperated.
+generalize and be sustainable for the long term. Concerns need to be separated.
 """
+)
+
+
+def build_amend_prompt(verdict_text: str) -> str:
+    """The retry prompt after an audit block: the proposer's edits are STILL in the
+    working tree; it must amend them to clear the findings. The usual legitimate fix is
+    moving knowledge to the right surface or deleting it — explicitly NOT rewording it,
+    since an auditor with fresh context re-reads the full diff every time."""
+    return (
+        "Your previously proposed harness edits are still in the working tree (run "
+        "`git diff HEAD` to see them). An adversarial auditor BLOCKED them:\n\n"
+        f"{verdict_text}\n\n"
+        "Amend the diff to resolve EVERY blocking finding while keeping the genuinely "
+        "general improvements. The legitimate fix is usually to MOVE misplaced knowledge "
+        "to the right surface (the datasource's own searchable docs/examples, fetched on "
+        "demand) or to DELETE it — not to reword it: the auditor re-reads the full diff "
+        "with fresh context each time, so disguising the same content just wastes a "
+        "retry. If a finding can only be fixed by removing the edit entirely, remove "
+        "it.\n\n" + _RULES
+    )
 
 
 def headroom_summary(records: list[RunRecord]) -> str:

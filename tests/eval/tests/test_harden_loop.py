@@ -217,6 +217,41 @@ async def test_auditor_blocks_a_would_be_accept(repo, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_audit_block_is_amended_then_accepted(repo, monkeypatch):
+    # First audit blocks; the findings go back to the proposer, whose amendment (a
+    # changed diff) passes the re-audit -> the round proceeds to measure and wins.
+    state = {"improved": False}
+    monkeypatch.setattr(loop_mod, "measure_candidate", _stub_measure(state))
+
+    class AmendingProposer(_StubProposer):
+        calls = 0
+
+        def propose(self, prompt):
+            AmendingProposer.calls += 1
+            (Path(self.repo) / "proposal.txt").write_text(f"edit v{AmendingProposer.calls}\n")
+            return ProposalResult(ok=True, summary=f"attempt {AmendingProposer.calls}")
+
+    class OnceBlockingAuditor:
+        calls = 0
+
+        def audit(self, diff, questions):
+            OnceBlockingAuditor.calls += 1
+            blocked = OnceBlockingAuditor.calls == 1
+            f = [{"severity": "block", "kind": "misplacement", "file": "x", "issue": "move it"}]
+            return AuditVerdict(blocked, "stub", f if blocked else [])
+
+    result = await optimize(
+        _QS, ["s"], AmendingProposer(repo, state),
+        repo_dir=str(repo), apply=_apply_factory(repo, state),
+        auditor=OnceBlockingAuditor(), k=2, rounds=1, log=lambda *_: None,
+    )
+    assert AmendingProposer.calls == 2  # initial proposal + one amendment
+    assert OnceBlockingAuditor.calls == 2  # block, then pass
+    assert result.accepted == 1
+    assert "harden round 1" in _git(repo, "log", "--oneline")
+
+
+@pytest.mark.asyncio
 async def test_clean_audit_does_not_block_accept(repo, monkeypatch):
     state = {"improved": False}
     monkeypatch.setattr(loop_mod, "measure_candidate", _stub_measure(state))

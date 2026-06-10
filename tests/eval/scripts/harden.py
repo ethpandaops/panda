@@ -125,6 +125,13 @@ def main() -> None:
         help="cheap k=1 check on this many of the parent's worst questions before the full "
         "measure (0 disables)",
     )
+    ap.add_argument(
+        "--audit-retries",
+        type=int,
+        default=3,
+        help="how many times a blocked proposal goes back to the proposer with the "
+        "auditor's findings to amend (0 = a block is final)",
+    )
     args = ap.parse_args()
 
     repo_dir = _repo_root()
@@ -219,6 +226,7 @@ def main() -> None:
                 save_dir=str(run_dir),
                 pool_size=args.pool_size,
                 prescreen=args.prescreen,
+                audit_retries=args.audit_retries,
                 log=log,
             )
         )

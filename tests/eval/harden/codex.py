@@ -57,6 +57,13 @@ def _summarize(line: str, state: dict) -> str | None:
             return f"ran: {' '.join(bare.split())[:140]}"  # the command, one line
         return None  # suppress the command's output (the firehose)
     if state.get("mode") == "codex" and bare:
+        # codex repeats its final message (e.g. a structured verdict) as the run's
+        # output — suppress exact repeats of long lines we already showed.
+        if len(bare) > 60:
+            seen = state.setdefault("shown_msgs", set())
+            if bare in seen:
+                return None
+            seen.add(bare)
         return clean  # the assistant message — the summary we want
     return None  # header / prompt echo / pre-first-marker noise
 

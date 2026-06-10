@@ -50,7 +50,7 @@ from config.settings import DEFAULT_GRADER
 from harden.auditor import Auditor
 from harden.promptfoo_eval import measure_candidate
 from harden.proposer import Proposer
-from harden.report import build_proposal_prompt
+from harden.report import build_amend_prompt, build_proposal_prompt
 from harden.runner import CandidateResult, Question
 from harden.scoring import filter_runs, is_confident, no_correctness_regression
 
@@ -292,6 +292,7 @@ async def optimize(
     hide_paths: tuple[str, ...] = ("tests/eval/cases",),
     pool_size: int = 6,
     prescreen: int = 3,
+    audit_retries: int = 3,
     seed: int = 1234,
     log: Callable[[str], None] = print,
 ) -> OptimizeResult:
@@ -310,8 +311,9 @@ async def optimize(
     ``pool_size`` caps the candidate pool (mutation parents beyond the baseline);
     ``prescreen`` is how many of the parent's worst train questions get a cheap k=1
     canonical-phrasing check before the full measure (0 disables; it also auto-disables
-    when it wouldn't be cheaper than the full suite). ``seed`` makes parent selection
-    reproducible."""
+    when it wouldn't be cheaper than the full suite). ``audit_retries`` is how many times
+    a blocked proposal goes back to the proposer with the auditor's findings to amend
+    (0 = a block is final). ``seed`` makes parent selection reproducible."""
     if not _is_clean(repo_dir):
         raise RuntimeError(
             f"{repo_dir} has uncommitted changes; the loop reverts with git and would "
@@ -464,21 +466,57 @@ async def optimize(
 
         # Adversarial audit BEFORE the expensive build+measure: a fresh-context reviewer
         # tries to refuse the diff for answer-leakage / misplacement / eval-infra gaming —
-        # the cheats the held-out gate can't see. Blocked -> revert without measuring.
+        # the cheats the held-out gate can't see. A block isn't final: the findings go
+        # back to the proposer to AMEND its still-in-tree edits (move/delete the flagged
+        # content), up to ``audit_retries`` times — that salvages an expensive proposal
+        # whose only sin is placement. Deterministic guards re-run on every amendment.
         if auditor is not None:
-            log(f"round {n}: auditing the proposed diff...")
-            verdict = auditor.audit(patch, [q.text for q in questions])
-            _dump(save_dir, f"round{n}_audit.txt", verdict.text())
-            log(f"round {n}: audit verdict: {escape(' '.join(verdict.summary.split())[:240])}")
-            if verdict.blocked:
-                log(f"round {n}: [bold red]AUDIT BLOCKED[/bold red] ({len(verdict.findings)} finding(s)) — reverting")
-                _revert(repo_dir)
-                _record(n, False, "audit-blocked", baseline, verdict.text(), parent.label)
-                continue
-            if verdict.findings:
+            blocked_text = ""
+            for attempt in range(audit_retries + 1):
+                log(f"round {n}: auditing the proposed diff (attempt {attempt + 1})...")
+                verdict = auditor.audit(patch, [q.text for q in questions])
+                _dump(save_dir, f"round{n}_audit{attempt + 1}.txt", verdict.text())
+                log(f"round {n}: audit verdict: {escape(' '.join(verdict.summary.split())[:240])}")
+                if not verdict.blocked:
+                    blocked_text = ""
+                    if verdict.findings:
+                        log(
+                            f"round {n}: audit passed with {len(verdict.findings)} "
+                            f"warning(s) (see artifacts)"
+                        )
+                    break
+                blocked_text = verdict.text()
+                if attempt == audit_retries:
+                    break
                 log(
-                    f"round {n}: audit passed with {len(verdict.findings)} warning(s) (see artifacts)"
+                    f"round {n}: [bold red]AUDIT BLOCKED[/bold red] "
+                    f"({len(verdict.findings)} finding(s)) — sending findings back to the "
+                    f"proposer to amend ({attempt + 1}/{audit_retries})"
                 )
+                amend = build_amend_prompt(verdict.text())
+                _dump(save_dir, f"round{n}_amend{attempt + 1}.txt", amend)
+                with _hidden([Path(repo_dir) / p for p in hide_paths]):
+                    amended = proposer.propose(amend)
+                if not amended.ok:
+                    log(f"round {n}: [red]amend failed[/red]: {escape(amended.summary[:200])}")
+                    break
+                new_patch = _capture_patch(repo_dir)
+                if new_patch == patch:
+                    log(f"round {n}: proposer made no amendments — giving up")
+                    break
+                patch = new_patch
+                proposal = amended
+                # Re-screen the amended diff with the unfoolable guards before re-auditing.
+                violations = _protected_violations(repo_dir, protected_paths)
+                leaks = _leak_check(patch, questions)
+                if violations or leaks:
+                    blocked_text = f"amendment hit deterministic guards: {violations or leaks}"
+                    break
+            if blocked_text:
+                log(f"round {n}: [bold red]AUDIT BLOCKED[/bold red] (final) — reverting")
+                _revert(repo_dir)
+                _record(n, False, "audit-blocked", baseline, blocked_text, parent.label)
+                continue
 
         log(f"round {n}: proposal made edits; rebuilding + restarting harness...")
         try:
