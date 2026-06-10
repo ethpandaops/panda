@@ -22,6 +22,19 @@ _MARKERS = {"exec", "codex", "user", "thinking"}
 # A diff/patch body line — suppressed wherever it appears. codex repeats whole patches in
 # its messages, which is the real firehose when the proposer edits many files.
 _DIFF_BODY = re.compile(r"^(diff --git |index [0-9a-f]|--- |\+\+\+ |@@ |[+\- ]|/)")
+# Git diff metadata lines: part of a patch, but not matched by _DIFF_BODY — leaving any
+# of them unrecognized used to end in_diff mid-patch and pour the rest into the log.
+_DIFF_META = re.compile(
+    r"^(new file mode |deleted file mode |old mode |new mode |similarity index "
+    r"|rename (from|to) |copy (from|to) |Binary files |GIT binary patch|\\ No newline)"
+)
+# Unambiguous patch openers: any of these starts diff suppression even when the
+# "diff --git" header was never seen (assistant messages often quote partial patches).
+_DIFF_ENTER = re.compile(
+    r"^(diff --git |\*\*\* (Begin|End) Patch|\*\*\* (Add|Update|Delete) File: "
+    r"|index [0-9a-f]+\.\.[0-9a-f]+|(new|deleted) file mode \d"
+    r"|--- (a/|/dev/null)|\+\+\+ (b/|/dev/null)|@@ -\d)"
+)
 # A shell wrapper prefix codex puts around most commands (`bash -lc '<cmd>'`).
 _SHELL_WRAP = re.compile(r"""^(?:/\S+/)?(?:ba|z|da)?sh\s+-l?c\s+['"]?""")
 # codex's token-usage meta lines ("tokens used" + a bare number) — not chat, not a tool.
@@ -54,17 +67,20 @@ def _summarize(line: str, state: dict) -> str | None:
     if bare == "apply patch" or clean.startswith("patch:"):
         state["in_diff"] = True
         return None
-    m = re.match(r"diff --git a/(\S+)", clean)
+    m = re.match(r"diff --git a/(\S+)|\+\+\+ b/(\S+)|\*\*\* (?:Add|Update) File: (\S+)", clean)
     if m:
         state["in_diff"] = True
-        f = m.group(1)
+        f = next(g for g in m.groups() if g)
         if f not in state.setdefault("edited", set()):
             state["edited"].add(f)
             return f"edited {f}"
         return None
+    if _DIFF_ENTER.match(clean):
+        state["in_diff"] = True
+        return None
     if state.get("in_diff"):
-        if not bare or _DIFF_BODY.match(clean):
-            return None  # still inside the diff
+        if not bare or _DIFF_BODY.match(clean) or _DIFF_META.match(clean):
+            return None  # still inside the diff (body, header, or metadata line)
         state["in_diff"] = False  # diff ended — fall through to normal handling
     if state.get("mode") == "exec":
         if state.get("await_cmd") and bare:

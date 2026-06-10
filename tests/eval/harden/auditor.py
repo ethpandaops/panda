@@ -190,6 +190,9 @@ class CodexAuditor:
                 f"model_reasoning_effort={self.reasoning_effort}",
                 "-C",
                 self.repo_dir,
+                # The run's auto-created worktree is never in codex's interactive
+                # trust store; without this, headless exec refuses to start.
+                "--skip-git-repo-check",
                 "--sandbox",
                 "read-only",
                 "--output-schema",
