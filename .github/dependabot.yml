@@ -48,6 +48,15 @@ updates:
       docker:
         patterns:
           - "*"
+    ignore:
+      # The sandbox Python version is load-bearing: sandbox/.python-version,
+      # the hash-locked requirements.txt, and eval-smoke's setup-python all
+      # target the same 3.11. Upgrading Python is a deliberate, coordinated
+      # change — only digest/patch bumps of the 3.11 line flow automatically.
+      - dependency-name: "python"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
 
   # Sandbox Python deps: requirements.in (intent) compiled to a hash-locked
   # requirements.txt with `uv pip compile --generate-hashes --universal`.
