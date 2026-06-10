@@ -67,3 +67,32 @@ func TestParseCreateTable_TableComment(t *testing.T) {
 		})
 	}
 }
+
+func TestParseCreateTable_KeyClauses(t *testing.T) {
+	createStmt := "CREATE TABLE default.test_table\n" +
+		"(\n" +
+		"    `ts` DateTime,\n" +
+		"    `id` UInt64,\n" +
+		"    `name` String\n" +
+		")\n" +
+		"ENGINE = MergeTree\n" +
+		"PARTITION BY toYYYYMM(ts)\n" +
+		"ORDER BY (ts, id)\n" +
+		"PRIMARY KEY ts\n" +
+		"SETTINGS index_granularity = 8192"
+
+	schema, err := parseCreateTable("test_table", createStmt)
+	require.NoError(t, err)
+
+	assert.Equal(t, "toYYYYMM(ts)", schema.PartitionBy)
+	assert.Equal(t, "(ts, id)", schema.OrderBy)
+	assert.Equal(t, "ts", schema.PrimaryKey)
+}
+
+func TestExtractCreateClause_IgnoresNestedKeywords(t *testing.T) {
+	suffix := "ENGINE = MergeTree\n" +
+		"ORDER BY (if(kind = 'PRIMARY KEY', a, b), c)\n" +
+		"COMMENT 'ORDER BY text in a comment'"
+
+	assert.Equal(t, "(if(kind = 'PRIMARY KEY', a, b), c)", extractCreateClause(suffix, "ORDER BY"))
+}

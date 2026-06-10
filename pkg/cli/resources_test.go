@@ -29,6 +29,12 @@ func TestRunResourcesReadsDirectURI(t *testing.T) {
 			return
 		}
 
+		if got := r.URL.Query().Get("client_context"); got != "cli" {
+			t.Errorf("client_context = %q, want cli", got)
+			http.Error(w, "bad client_context", http.StatusBadRequest)
+			return
+		}
+
 		w.Header().Set("Content-Type", "text/markdown")
 		_, _ = fmt.Fprint(w, "guide content")
 	}))
@@ -97,6 +103,48 @@ func TestServerErrorHintUsesExistingResourcesCommand(t *testing.T) {
 
 	assert.Contains(t, hint, "panda resources")
 	assert.NotContains(t, hint, "panda resources list")
+}
+
+func TestServerErrorHintClassifiesClickHouseErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		status  int
+		message string
+		want    string
+	}{
+		{
+			name:    "primary key not used",
+			status:  http.StatusInternalServerError,
+			message: "Code: 277. DB::Exception: Primary key (a, b) is not used and setting 'force_primary_key' is set. (INDEX_NOT_USED)",
+			want:    "partition or primary-key columns",
+		},
+		{
+			name:    "unknown identifier",
+			status:  http.StatusNotFound,
+			message: "Code: 47. DB::Exception: Unknown expression identifier `missing_col`. (UNKNOWN_IDENTIFIER)",
+			want:    "references a column or expression",
+		},
+		{
+			name:    "not aggregate",
+			status:  http.StatusInternalServerError,
+			message: "Code: 215. DB::Exception: Column is not under aggregate function. (NOT_AN_AGGREGATE)",
+			want:    "aggregated or included in GROUP BY",
+		},
+		{
+			name:    "wrong clickhouse datasource",
+			status:  http.StatusNotFound,
+			message: "clickhouse datasource \"network\" not found",
+			want:    "datasource/cluster name",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hint := serverErrorHint(tt.status, tt.message)
+			assert.Contains(t, hint, tt.want)
+			assert.NotContains(t, hint, "panda resources")
+		})
+	}
 }
 
 func setOutputFormat(t *testing.T, value string) {

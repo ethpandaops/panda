@@ -515,6 +515,17 @@ func TestSearchAll(t *testing.T) {
 		exampleSearcher := &stubExampleSearcher{results: []resource.SearchResult{
 			{CategoryKey: "blocks", Example: types.Example{Name: "ex"}, Score: 0.9},
 		}}
+		runbookSearcher := &stubRunbookSearcher{results: []resource.RunbookSearchResult{
+			{
+				Runbook: types.Runbook{
+					Name:        "Debug",
+					Description: "Debug a network.",
+					Tags:        []string{"debugging"},
+					Content:     "full runbook body",
+				},
+				Score: 0.9,
+			},
+		}}
 		specsSearcher := &stubSpecsSearcher{specs: []resource.ConsensusSpecSearchResult{
 			{Spec: types.ConsensusSpec{Fork: "deneb", Topic: "beacon-chain"}, Score: 0.9},
 		}}
@@ -522,7 +533,7 @@ func TestSearchAll(t *testing.T) {
 		svc := New(
 			exampleSearcher,
 			newExampleRegistry(t, map[string]types.ExampleCategory{"blocks": {Name: "Blocks"}}),
-			nil, nil,
+			runbookSearcher, &stubRunbookTags{tags: []string{"debugging"}},
 			nil, nil,
 			specsSearcher, &stubSpecsMetadata{forks: []string{"deneb"}},
 		)
@@ -532,9 +543,13 @@ func TestSearchAll(t *testing.T) {
 
 		assert.Equal(t, "all", resp.Type)
 		require.NotNil(t, resp.Examples)
+		require.NotNil(t, resp.Runbooks)
 		require.NotNil(t, resp.Specs)
-		assert.Nil(t, resp.Runbooks)
 		assert.Nil(t, resp.EIPs)
+		require.Len(t, resp.Runbooks.Results, 1)
+		assert.Empty(t, resp.Runbooks.Results[0].Content)
+		require.Len(t, runbookSearcher.results, 1)
+		assert.Equal(t, "full runbook body", runbookSearcher.results[0].Runbook.Content)
 	})
 
 	t.Run("empty service returns no sections", func(t *testing.T) {

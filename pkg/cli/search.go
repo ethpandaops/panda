@@ -23,6 +23,10 @@ var (
 	searchEIPLimit        int
 	searchSpecsFork       string
 	searchSpecsLimit      int
+	searchExamplesQuery   string
+	searchRunbooksQuery   string
+	searchEIPsQuery       string
+	searchSpecsQuery      string
 )
 
 var searchCmd = &cobra.Command{
@@ -33,7 +37,8 @@ var searchCmd = &cobra.Command{
 
 For data queries, start with 'panda search examples "<topic>"' to get SQL/API
 patterns without unrelated protocol results. When called with a query and no
-subcommand, this command searches all indices at once.
+subcommand, this command searches all indices at once and prints compact
+summaries for non-example results.
 
 Examples:
   panda search examples "attestation participation"
@@ -46,31 +51,31 @@ Examples:
 }
 
 var searchExamplesCmd = &cobra.Command{
-	Use:   "examples <query>",
+	Use:   "examples <query...>",
 	Short: "Search query examples",
-	Args:  cobra.ExactArgs(1),
+	Args:  queryArgsOrFlag(&searchExamplesQuery),
 	RunE:  runSearchExamples,
 }
 
 var searchRunbooksCmd = &cobra.Command{
-	Use:   "runbooks <query>",
+	Use:   "runbooks <query...>",
 	Short: "Search investigation runbooks",
-	Args:  cobra.ExactArgs(1),
+	Args:  queryArgsOrFlag(&searchRunbooksQuery),
 	RunE:  runSearchRunbooks,
 }
 
 var searchEIPsCmd = &cobra.Command{
-	Use:   "eips <query>",
+	Use:   "eips <query...>",
 	Short: "Search Ethereum Improvement Proposals",
-	Args:  cobra.ExactArgs(1),
+	Args:  queryArgsOrFlag(&searchEIPsQuery),
 	RunE:  runSearchEIPs,
 }
 
 var searchSpecsCmd = &cobra.Command{
-	Use:     "consensus-specs <query>",
+	Use:     "consensus-specs <query...>",
 	Aliases: []string{"specs"},
 	Short:   "Search consensus-specs documents and protocol constants",
-	Args:    cobra.ExactArgs(1),
+	Args:    queryArgsOrFlag(&searchSpecsQuery),
 	RunE:    runSearchSpecs,
 }
 
@@ -84,24 +89,50 @@ func init() {
 	searchCmd.Flags().IntVar(&searchAllLimit, "limit", 3, "Max results per index (default: 3)")
 	searchCmd.ValidArgsFunction = noCompletions
 
+	searchExamplesCmd.Flags().StringVar(&searchExamplesQuery, "query", "", "Query text (alternative to positional query)")
 	searchExamplesCmd.Flags().StringVar(&searchExampleCategory, "category", "", "Filter by category")
 	searchExamplesCmd.Flags().StringVar(&searchExampleDataset, "dataset", "", "Filter by dataset (e.g. xatu-raw, otel-logs)")
 	searchExamplesCmd.Flags().IntVar(&searchExampleLimit, "limit", 3, "Max results (default: 3, max: 10)")
 	searchExamplesCmd.ValidArgsFunction = noCompletions
 
+	searchRunbooksCmd.Flags().StringVar(&searchRunbooksQuery, "query", "", "Query text (alternative to positional query)")
 	searchRunbooksCmd.Flags().StringVar(&searchRunbookTag, "tag", "", "Filter by tag")
 	searchRunbooksCmd.Flags().IntVar(&searchRunbookLimit, "limit", 3, "Max results (default: 3, max: 5)")
 	searchRunbooksCmd.ValidArgsFunction = noCompletions
 
+	searchEIPsCmd.Flags().StringVar(&searchEIPsQuery, "query", "", "Query text (alternative to positional query)")
 	searchEIPsCmd.Flags().StringVar(&searchEIPStatus, "status", "", "Filter by status (e.g., Final, Draft)")
 	searchEIPsCmd.Flags().StringVar(&searchEIPCategory, "category", "", "Filter by category (e.g., Core, ERC)")
 	searchEIPsCmd.Flags().StringVar(&searchEIPType, "type", "", "Filter by type (e.g., Standards Track)")
 	searchEIPsCmd.Flags().IntVar(&searchEIPLimit, "limit", 5, "Max results (default: 5, max: 10)")
 	searchEIPsCmd.ValidArgsFunction = noCompletions
 
+	searchSpecsCmd.Flags().StringVar(&searchSpecsQuery, "query", "", "Query text (alternative to positional query)")
 	searchSpecsCmd.Flags().StringVar(&searchSpecsFork, "fork", "", "Filter by consensus fork (e.g., deneb, electra)")
 	searchSpecsCmd.Flags().IntVar(&searchSpecsLimit, "limit", 5, "Max results (default: 5, max: 10)")
 	searchSpecsCmd.ValidArgsFunction = noCompletions
+}
+
+func queryArgsOrFlag(queryFlag *string) cobra.PositionalArgs {
+	return func(_ *cobra.Command, args []string) error {
+		if strings.TrimSpace(*queryFlag) != "" {
+			return nil
+		}
+
+		if len(args) == 0 {
+			return fmt.Errorf("requires a query; pass positional words or --query")
+		}
+
+		return nil
+	}
+}
+
+func queryFromArgsOrFlag(args []string, queryFlag string) string {
+	if strings.TrimSpace(queryFlag) != "" {
+		return queryFlag
+	}
+
+	return strings.Join(args, " ")
 }
 
 func runSearchAll(cmd *cobra.Command, args []string) error {
@@ -169,7 +200,7 @@ func runSearchAll(cmd *cobra.Command, args []string) error {
 		return printJSON(map[string]any{
 			"query":    query,
 			"examples": examplesResp,
-			"runbooks": runbooksResp,
+			"runbooks": compactRunbookResponse(runbooksResp),
 			"eips":     eipsResp,
 			"specs":    specsResp,
 		})
@@ -194,7 +225,7 @@ func runSearchAll(cmd *cobra.Command, args []string) error {
 
 		sections++
 		fmt.Printf("=== Runbooks (%d) ===\n\n", runbooksResp.TotalMatches)
-		printRunbookResults(runbooksResp.Results)
+		printRunbookSummaries(runbooksResp.Results)
 	}
 
 	if eipsErr == nil && len(eipsResp.Results) > 0 {
@@ -250,7 +281,8 @@ func runSearchAll(cmd *cobra.Command, args []string) error {
 }
 
 func runSearchExamples(cmd *cobra.Command, args []string) error {
-	response, err := searchExamples(cmd.Context(), args[0], searchExampleCategory, searchExampleDataset, searchExampleLimit)
+	query := queryFromArgsOrFlag(args, searchExamplesQuery)
+	response, err := searchExamples(cmd.Context(), query, searchExampleCategory, searchExampleDataset, searchExampleLimit)
 	if err != nil {
 		return err
 	}
@@ -270,7 +302,8 @@ func runSearchExamples(cmd *cobra.Command, args []string) error {
 }
 
 func runSearchRunbooks(cmd *cobra.Command, args []string) error {
-	response, err := searchRunbooks(cmd.Context(), args[0], searchRunbookTag, searchRunbookLimit)
+	query := queryFromArgsOrFlag(args, searchRunbooksQuery)
+	response, err := searchRunbooks(cmd.Context(), query, searchRunbookTag, searchRunbookLimit)
 	if err != nil {
 		return err
 	}
@@ -290,8 +323,9 @@ func runSearchRunbooks(cmd *cobra.Command, args []string) error {
 }
 
 func runSearchEIPs(cmd *cobra.Command, args []string) error {
+	query := queryFromArgsOrFlag(args, searchEIPsQuery)
 	response, err := searchEIPs(
-		cmd.Context(), args[0],
+		cmd.Context(), query,
 		searchEIPStatus, searchEIPCategory, searchEIPType,
 		searchEIPLimit,
 	)
@@ -350,6 +384,46 @@ func printRunbookResults(results []*serverapi.SearchRunbookResult) {
 	}
 }
 
+func compactRunbookResponse(resp *serverapi.SearchRunbooksResponse) *serverapi.SearchRunbooksResponse {
+	if resp == nil {
+		return nil
+	}
+
+	compact := *resp
+	compact.Results = make([]*serverapi.SearchRunbookResult, 0, len(resp.Results))
+
+	for _, result := range resp.Results {
+		if result == nil {
+			continue
+		}
+
+		item := *result
+		item.Content = ""
+		compact.Results = append(compact.Results, &item)
+	}
+
+	return &compact
+}
+
+func printRunbookSummaries(results []*serverapi.SearchRunbookResult) {
+	for i, result := range results {
+		if i > 0 {
+			fmt.Print("\n---\n\n")
+		}
+
+		fmt.Printf("%s (score: %.2f)\n", result.Name, result.SimilarityScore)
+		fmt.Printf("  %s\n", result.Description)
+		fmt.Printf("  Tags: %s\n", strings.Join(result.Tags, ", "))
+
+		if len(result.Prerequisites) > 0 {
+			fmt.Printf("  Prerequisites: %s\n",
+				strings.Join(result.Prerequisites, ", "))
+		}
+
+		fmt.Println("  Full content: panda search runbooks \"<query>\"")
+	}
+}
+
 func printEIPResults(results []*serverapi.SearchEIPResult) {
 	for i, result := range results {
 		if i > 0 {
@@ -374,7 +448,8 @@ func printEIPResults(results []*serverapi.SearchEIPResult) {
 }
 
 func runSearchSpecs(cmd *cobra.Command, args []string) error {
-	response, err := searchSpecs(cmd.Context(), args[0], searchSpecsFork, searchSpecsLimit)
+	query := queryFromArgsOrFlag(args, searchSpecsQuery)
+	response, err := searchSpecs(cmd.Context(), query, searchSpecsFork, searchSpecsLimit)
 	if err != nil {
 		return err
 	}

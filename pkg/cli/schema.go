@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -54,6 +55,10 @@ func runSchema(cmd *cobra.Command, args []string) error {
 	case 1:
 		response, err = readClickHouseClusterTables(ctx, args[0])
 	case 2:
+		if database, table, ok := splitQualifiedTable(args[1]); ok {
+			return showTable(ctx, args[0], database, table)
+		}
+
 		response, err = readClickHouseDatabaseTables(ctx, args[0], args[1])
 	default:
 		return showTable(ctx, args[0], args[1], args[2])
@@ -64,6 +69,15 @@ func runSchema(cmd *cobra.Command, args []string) error {
 	}
 
 	return renderTablesList(response)
+}
+
+func splitQualifiedTable(value string) (string, string, bool) {
+	parts := strings.Split(value, ".")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", false
+	}
+
+	return parts[0], parts[1], true
 }
 
 func renderTablesList(response *clickhousemodule.TablesListResponse) error {
@@ -107,6 +121,27 @@ func showTable(ctx context.Context, cluster, database, table string) error {
 
 	if schema.Comment != "" {
 		fmt.Printf("Comment: %s\n", schema.Comment)
+	}
+
+	if schema.Engine != "" {
+		fmt.Printf("Engine: %s\n", schema.Engine)
+	}
+
+	if schema.PartitionBy != "" || schema.OrderBy != "" || schema.PrimaryKey != "" {
+		fmt.Println()
+		fmt.Println("Keys:")
+
+		if schema.PartitionBy != "" {
+			fmt.Printf("  Partition by: %s\n", schema.PartitionBy)
+		}
+
+		if schema.OrderBy != "" {
+			fmt.Printf("  Order by: %s\n", schema.OrderBy)
+		}
+
+		if schema.PrimaryKey != "" {
+			fmt.Printf("  Primary key: %s\n", schema.PrimaryKey)
+		}
 	}
 
 	fmt.Println()

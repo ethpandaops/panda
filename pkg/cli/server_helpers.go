@@ -18,6 +18,7 @@ import (
 	"github.com/ethpandaops/panda/pkg/config"
 	"github.com/ethpandaops/panda/pkg/operations"
 	"github.com/ethpandaops/panda/pkg/serverapi"
+	"github.com/ethpandaops/panda/pkg/types"
 )
 
 var serverHTTP = &http.Client{Timeout: 0}
@@ -348,7 +349,7 @@ func listResources(ctx context.Context) (*serverapi.ListResourcesResponse, error
 }
 
 func readResource(ctx context.Context, uri string) (*serverapi.ResourceResponse, error) {
-	return readResourceWithClientContext(ctx, uri, "")
+	return readResourceWithClientContext(ctx, uri, types.ClientContextCLIParam)
 }
 
 func readResourceWithClientContext(ctx context.Context, uri, clientContext string) (*serverapi.ResourceResponse, error) {
@@ -452,7 +453,26 @@ func decodeAPIError(status int, data []byte) error {
 	return fmt.Errorf("HTTP %d: %s", status, message)
 }
 
-func serverErrorHint(status int, _ string) string {
+func serverErrorHint(status int, message string) string {
+	normalized := strings.ToLower(message)
+
+	switch {
+	case strings.Contains(normalized, "index_not_used") ||
+		strings.Contains(normalized, "force_primary_key") ||
+		strings.Contains(normalized, "primary key") && strings.Contains(normalized, "not used"):
+		return "ClickHouse requires a selective filter that uses the table's partition or primary-key columns; inspect the table with 'panda schema <cluster> <database> <table>' and add an appropriate WHERE clause"
+	case strings.Contains(normalized, "unknown_identifier") ||
+		strings.Contains(normalized, "unknown expression identifier") ||
+		strings.Contains(normalized, "missing columns"):
+		return "the SQL references a column or expression that is not available in the selected table; inspect the table with 'panda schema <cluster> <database> <table>' and adjust the SELECT, WHERE, and GROUP BY clauses"
+	case strings.Contains(normalized, "not_an_aggregate"):
+		return "ClickHouse requires every selected expression to be aggregated or included in GROUP BY; update the SELECT/GROUP BY clauses or inspect examples with 'panda search examples <topic>'"
+	case strings.Contains(normalized, "syntax_error"):
+		return "ClickHouse rejected the SQL syntax; confirm the datasource and dataset syntax with 'panda datasets <name>' and inspect the table with 'panda schema <cluster> <database> <table>'"
+	case strings.Contains(normalized, "clickhouse datasource") && strings.Contains(normalized, "not found"):
+		return "the first ClickHouse argument must be a datasource/cluster name; list them with 'panda datasources --type clickhouse' or 'panda clickhouse list-datasources'"
+	}
+
 	switch status {
 	case http.StatusNotFound:
 		return "the requested module, operation, datasource, or resource is not available on this server; check 'panda datasources' and 'panda resources'"

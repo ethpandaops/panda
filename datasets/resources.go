@@ -90,7 +90,7 @@ func (m *Module) handleDatasetsList(_ context.Context, _ string) (string, error)
 	return string(data), nil
 }
 
-func (m *Module) handleDatasetDetail(_ context.Context, uri string) (string, error) {
+func (m *Module) handleDatasetDetail(ctx context.Context, uri string) (string, error) {
 	matches := datasetURIPattern.FindStringSubmatch(uri)
 	if len(matches) != 2 {
 		return "", fmt.Errorf("invalid URI format: %s", uri)
@@ -106,7 +106,7 @@ func (m *Module) handleDatasetDetail(_ context.Context, uri string) (string, err
 			continue
 		}
 
-		return m.renderDatasetGuide(p), nil
+		return m.renderDatasetGuide(p, types.GetClientContext(ctx)), nil
 	}
 
 	names := make([]string, 0, len(m.packs))
@@ -120,7 +120,7 @@ func (m *Module) handleDatasetDetail(_ context.Context, uri string) (string, err
 // renderDatasetGuide assembles the full per-dataset guide: identity, where the
 // dataset lives in this deployment, the pack's guidance, and its example
 // categories.
-func (m *Module) renderDatasetGuide(p pack) string {
+func (m *Module) renderDatasetGuide(p pack, clientCtx types.ClientContext) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "# %s — %s\n\n", p.name, p.description)
@@ -173,7 +173,11 @@ func (m *Module) renderDatasetGuide(p pack) string {
 		fmt.Fprintf(&b, "- %s (%d examples)\n", key, len(p.examples[key].Examples))
 	}
 
-	fmt.Fprintf(&b, "\nRetrieve them with the search tool: search(type=\"examples\", dataset=%q, query=\"...\").\n", p.name)
+	if clientCtx == types.ClientContextCLI {
+		fmt.Fprintf(&b, "\nRetrieve them with: panda search examples --dataset %s \"<topic>\".\n", p.name)
+	} else {
+		fmt.Fprintf(&b, "\nRetrieve them with the search tool: search(type=\"examples\", dataset=%q, query=\"...\").\n", p.name)
+	}
 
 	return b.String()
 }

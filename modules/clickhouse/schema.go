@@ -74,6 +74,9 @@ type TableSchema struct {
 	Database        string        `json:"database"`
 	Name            string        `json:"name"`
 	Engine          string        `json:"engine,omitempty"`
+	PartitionBy     string        `json:"partition_by,omitempty"`
+	OrderBy         string        `json:"order_by,omitempty"`
+	PrimaryKey      string        `json:"primary_key,omitempty"`
 	Columns         []TableColumn `json:"columns"`
 	CreateStatement string        `json:"create_statement,omitempty"`
 	Comment         string        `json:"comment,omitempty"`
@@ -885,6 +888,10 @@ outerLoop:
 		schema.Comment = matches[1]
 	}
 
+	schema.PartitionBy = extractCreateClause(suffix, "PARTITION BY")
+	schema.OrderBy = extractCreateClause(suffix, "ORDER BY")
+	schema.PrimaryKey = extractCreateClause(suffix, "PRIMARY KEY")
+
 	// Parse each column definition.
 	// Column format: `name` Type [DEFAULT expr] [CODEC(...)] [COMMENT 'comment'].
 
@@ -924,6 +931,135 @@ outerLoop:
 	}
 
 	return schema, nil
+}
+
+var createClauseStopKeywords = []string{
+	"PARTITION BY",
+	"PRIMARY KEY",
+	"ORDER BY",
+	"SAMPLE BY",
+	"TTL",
+	"SETTINGS",
+	"COMMENT",
+}
+
+func extractCreateClause(s, keyword string) string {
+	_, keywordEnd, ok := findTopLevelKeyword(s, keyword, 0)
+	if !ok {
+		return ""
+	}
+
+	start := skipSpaces(s, keywordEnd)
+	end := len(s)
+
+	for _, stop := range createClauseStopKeywords {
+		if strings.EqualFold(stop, keyword) {
+			continue
+		}
+
+		stopStart, _, found := findTopLevelKeyword(s, stop, start)
+		if found && stopStart < end {
+			end = stopStart
+		}
+	}
+
+	expr := strings.TrimSpace(s[start:end])
+	expr = strings.TrimSuffix(expr, ";")
+	expr = strings.TrimSuffix(strings.TrimSpace(expr), ",")
+
+	return strings.TrimSpace(expr)
+}
+
+func findTopLevelKeyword(s, keyword string, from int) (int, int, bool) {
+	depth := 0
+	quoted := byte(0)
+
+	for i := max(from, 0); i < len(s); i++ {
+		ch := s[i]
+
+		if quoted != 0 {
+			if ch == '\\' && i+1 < len(s) {
+				i++
+
+				continue
+			}
+
+			if ch == quoted {
+				quoted = 0
+			}
+
+			continue
+		}
+
+		switch ch {
+		case '\'', '"', '`':
+			quoted = ch
+		case '(':
+			depth++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+		default:
+			if depth == 0 {
+				if end, ok := matchKeywordAt(s, i, keyword); ok {
+					return i, end, true
+				}
+			}
+		}
+	}
+
+	return 0, 0, false
+}
+
+func matchKeywordAt(s string, pos int, keyword string) (int, bool) {
+	if pos > 0 && isIdentifierByte(s[pos-1]) {
+		return 0, false
+	}
+
+	parts := strings.Fields(keyword)
+	cur := pos
+
+	for i, part := range parts {
+		if i > 0 {
+			if cur >= len(s) || !isSpaceByte(s[cur]) {
+				return 0, false
+			}
+
+			cur = skipSpaces(s, cur)
+		}
+
+		if cur+len(part) > len(s) || !strings.EqualFold(s[cur:cur+len(part)], part) {
+			return 0, false
+		}
+
+		cur += len(part)
+	}
+
+	if cur < len(s) && isIdentifierByte(s[cur]) {
+		return 0, false
+	}
+
+	return cur, true
+}
+
+func skipSpaces(s string, pos int) int {
+	for pos < len(s) && isSpaceByte(s[pos]) {
+		pos++
+	}
+
+	return pos
+}
+
+func isSpaceByte(ch byte) bool {
+	return ch == ' ' || ch == '\n' || ch == '\r' || ch == '\t'
+}
+
+func isIdentifierByte(ch byte) bool {
+	return (ch >= 'a' && ch <= 'z') ||
+		(ch >= 'A' && ch <= 'Z') ||
+		(ch >= '0' && ch <= '9') ||
+		ch == '_'
 }
 
 // cleanColumnType removes trailing clauses from the column type.

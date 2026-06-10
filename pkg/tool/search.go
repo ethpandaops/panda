@@ -15,7 +15,9 @@ const SearchToolName = "search"
 
 const searchDescription = `Search indexed examples, runbooks, EIPs, and consensus specs using semantic search.
 
-When ` + "`type`" + ` is omitted, searches across all types and returns combined results. Use a specific type to narrow results.
+When ` + "`type`" + ` is omitted, searches across all types and returns compact combined results. Runbook content is omitted in this mode; use ` + "`type=\"runbooks\"`" + ` when you need a full procedure.
+
+For data queries, use ` + "`type=\"examples\"`" + ` first to get SQL/API snippets without unrelated protocol or runbook results.
 
 ` + "`type=\"examples\"`" + ` for query snippets (SQL, PromQL, LogQL), ` + "`type=\"runbooks\"`" + ` for multi-step investigation procedures, ` + "`type=\"eips\"`" + ` for Ethereum Improvement Proposals, ` + "`type=\"consensus-specs\"`" + ` for consensus-specs documents and protocol constants. ` + "`type=\"notebooks\"`" + ` is accepted as an alias for runbooks, ` + "`type=\"specs\"`" + ` as an alias for consensus-specs.
 
