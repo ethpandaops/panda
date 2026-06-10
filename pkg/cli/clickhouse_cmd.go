@@ -65,15 +65,14 @@ var clickhouseQueryCmd = &cobra.Command{
 	Short: "Execute a SQL query",
 	Long: `Execute a SQL query against a ClickHouse datasource.
 
-The datasource name is typically "clickhouse-raw" or "clickhouse-refined". Use 'panda clickhouse list-datasources'
-to see available datasources.
-
-Use 'panda search examples "<topic>"' to find dataset-specific query patterns.
-Use 'panda schema <cluster> <database> <table>' to inspect a table before querying it.
+Datasource names come from 'panda datasources' or 'panda clickhouse list-datasources'.
+Read 'panda datasets <name>' for a dataset's query syntax rules, use
+'panda search examples "<topic>"' for query patterns, and
+'panda schema <cluster> <database> <table>' to inspect a table before querying it.
 
 Examples:
-  panda clickhouse query clickhouse-raw "SHOW DATABASES"
-  panda clickhouse query clickhouse-refined "SELECT 1"`,
+  panda clickhouse query <datasource> "SHOW DATABASES"
+  panda clickhouse query <datasource> "SELECT 1"`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runClickHouseOperation(cmd, "clickhouse.query", args[0], args[1], false)

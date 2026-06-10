@@ -23,8 +23,9 @@ Hard rules (these are gated — violations are reverted, so a "win" that breaks 
   writing `seen_slot_start_diff`, a specific table name, or "for latest-X questions do Y"
   where Y is one of these questions' answers, stop.
 - PLACEMENT matters. Dataset-specific knowledge (which table/column holds what for a
-  given dataset) belongs in that DATASOURCE's searchable examples/docs/schema, fetched on
-  demand — NEVER in a generic module's always-loaded description or in error-hint text.
+  given dataset) belongs in that dataset's knowledge pack under datasets/<pack>/ (served
+  via datasets://{name} and the example search index), fetched on demand — NEVER in a
+  generic module's always-loaded description or in error-hint text.
   Error hints must be error-CLASS generic: explain the error and how to DISCOVER the fix
   (e.g. "filter on the table's primary key; run `panda schema <…>` to see it") and name
   no dataset-specific columns or tables. Anything always-loaded is paid for by every

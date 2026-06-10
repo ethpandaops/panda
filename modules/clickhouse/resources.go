@@ -16,7 +16,7 @@ import (
 )
 
 // TablesListResponse is the response for the table listing resources
-// (clickhouse://tables, .../{cluster}, and .../{cluster}/{database}).
+// (clickhouse://tables/{cluster} and .../{cluster}/{database}).
 type TablesListResponse struct {
 	Description string                           `json:"description"`
 	Clusters    map[string]*ClusterTablesSummary `json:"clusters"`

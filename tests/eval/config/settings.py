@@ -77,18 +77,6 @@ class EvalSettings(BaseSettings):
     )
 
     # Metric thresholds
-    tool_correctness_threshold: float = Field(
-        default=0.5,
-        description="Minimum threshold for tool correctness metric",
-    )
-    task_completion_threshold: float = Field(
-        default=0.5,
-        description="Minimum threshold for task completion metric",
-    )
-    resource_discovery_threshold: float = Field(
-        default=0.7,
-        description="Minimum threshold for resource discovery metric",
-    )
 
     # Cost tracking
     track_costs: bool = Field(

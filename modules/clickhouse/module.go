@@ -229,7 +229,7 @@ func (m *Module) DatasourceInfo() []types.DatasourceInfo {
 
 // PythonAPIDocs returns the ClickHouse module documentation. It describes the
 // generic transport only; dataset-specific guidance (table syntax, conventions)
-// lives in the dataset knowledge packs surfaced via search and getting-started.
+// lives in the dataset knowledge packs surfaced via search and datasets://{name}.
 func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 	return map[string]types.ModuleDoc{
 		"clickhouse": {
