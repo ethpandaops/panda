@@ -152,7 +152,7 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 				},
 				"query": {
 					Signature:   "prometheus.query(instance_name: str, promql: str, time: str = None) -> dict",
-					Description: "Execute instant PromQL query",
+					Description: "Execute instant PromQL query. Datasource names, metric names, and labels are deployment-specific; call list_datasources and use get_label_values(instance_name, \"__name__\") for metric discovery.",
 					Parameters: map[string]string{
 						"instance_name": "Datasource name from datasources://prometheus",
 						"promql":        "PromQL query string",
@@ -184,7 +184,7 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 				},
 				"get_label_values": {
 					Signature:   "prometheus.get_label_values(instance_name: str, label: str, start: str = None, end: str = None) -> list[str]",
-					Description: "Get all values for a label",
+					Description: "Get all values for a label. Use label=\"__name__\" to discover metric names before writing PromQL against an unfamiliar datasource.",
 					Parameters: map[string]string{
 						"instance_name": "Datasource name",
 						"label":         "Label name",

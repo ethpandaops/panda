@@ -67,6 +67,18 @@ func (s *stubSchemaClient) GetTableInCluster(clusterName, database, tableName st
 	return schema, ok
 }
 
+func (s *stubSchemaClient) FetchTableInCluster(_ context.Context, clusterName, database, tableName string) (*TableSchema, error) {
+	if schema, ok := s.GetTableInCluster(clusterName, database, tableName); ok {
+		return schema, nil
+	}
+
+	if _, ok := s.clusters[clusterName]; !ok {
+		return nil, ErrSchemaClusterNotConfigured
+	}
+
+	return nil, assert.AnError
+}
+
 func newStubSchemaClient() *stubSchemaClient {
 	col := []TableColumn{{Name: "slot", Type: "UInt32"}}
 
@@ -151,4 +163,45 @@ func TestTableDetailHandler(t *testing.T) {
 	_, err = handler(context.Background(), "clickhouse://tables/nope/mainnet/fct_block")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
+}
+
+func TestTableDetailHandlerFallsBackToLiveFetch(t *testing.T) {
+	client := &fetchingSchemaClient{
+		stubSchemaClient: &stubSchemaClient{
+			clusters: map[string]*ClusterTables{},
+		},
+		live: &TableSchema{
+			Database: "sample_db",
+			Name:     "sample_table",
+			Columns:  []TableColumn{{Name: "sample_key", Type: "UInt64"}},
+		},
+	}
+	handler := createTableDetailHandler(logrus.New(), client)
+
+	out, err := handler(context.Background(), "clickhouse://tables/synthetic-cluster/sample_db/sample_table")
+	require.NoError(t, err)
+
+	var resp TableDetailResponse
+	require.NoError(t, json.Unmarshal([]byte(out), &resp))
+
+	assert.Equal(t, "synthetic-cluster", resp.Cluster)
+	require.NotNil(t, resp.Table)
+	assert.Equal(t, "sample_db", resp.Table.Database)
+	assert.Equal(t, "sample_table", resp.Table.Name)
+	assert.Equal(t, 1, client.fetches)
+}
+
+type fetchingSchemaClient struct {
+	*stubSchemaClient
+	live    *TableSchema
+	fetches int
+}
+
+func (s *fetchingSchemaClient) FetchTableInCluster(_ context.Context, clusterName, database, tableName string) (*TableSchema, error) {
+	s.fetches++
+	if clusterName == "synthetic-cluster" && database == s.live.Database && tableName == s.live.Name {
+		return s.live, nil
+	}
+
+	return nil, ErrSchemaClusterNotConfigured
 }

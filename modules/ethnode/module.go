@@ -97,7 +97,7 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 			Functions: map[string]types.FunctionDoc{
 				// Discovery functions.
 				"list_datasources": {Signature: "list_datasources() -> list[dict]", Description: "List available ethnode datasources"},
-				"list_networks":    {Signature: "list_networks() -> list[dict]", Description: "List networks reachable for direct node access"},
+				"list_networks":    {Signature: "list_networks() -> list[dict]", Description: "List active network ids reachable for direct node access; instance names are supplied separately"},
 				// Beacon node (CL) functions.
 				"get_node_version":         {Signature: "get_node_version(network, instance) -> dict", Description: "Get beacon node software version"},
 				"get_node_syncing":         {Signature: "get_node_syncing(network, instance) -> dict", Description: "Get beacon node sync status"},

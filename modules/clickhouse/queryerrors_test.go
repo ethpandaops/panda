@@ -20,6 +20,10 @@ func TestClassifyQueryError(t *testing.T) {
 			"DB::Exception: Double-distributed IN/JOIN subqueries is denied. (DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED)",
 			QueryErrorDistributedJoinDenied,
 		},
+		{"DB::Exception: Unknown table expression identifier 'example_db.example_table'. (UNKNOWN_TABLE)", QueryErrorUnknownTable},
+		{"DB::Exception: Database example_db does not exist. (UNKNOWN_DATABASE)", QueryErrorUnknownTable},
+		{"DB::Exception: Function with name `toLower` does not exist. (UNKNOWN_FUNCTION)", QueryErrorUnknownFunction},
+		{"DB::Exception: Functions lowerUTF8 cannot work with FixedString argument. (BAD_ARGUMENTS)", QueryErrorBadFunctionArguments},
 		{"connection refused", QueryErrorUnknown},
 		{"", QueryErrorUnknown},
 	}

@@ -219,6 +219,9 @@ func (f *fakeSchemaClient) GetClusterTables(_ string) (*ClusterTables, bool) {
 func (f *fakeSchemaClient) GetTableInCluster(_, _, _ string) (*TableSchema, bool) {
 	return nil, false
 }
+func (f *fakeSchemaClient) FetchTableInCluster(context.Context, string, string, string) (*TableSchema, error) {
+	return nil, ErrSchemaClusterNotConfigured
+}
 func (f *fakeSchemaClient) UpdateDatasources(d []SchemaDiscoveryDatasource) {
 	f.lastUpdate = d
 }

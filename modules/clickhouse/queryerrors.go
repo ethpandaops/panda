@@ -27,6 +27,15 @@ const (
 	// QueryErrorDistributedJoinDenied: ClickHouse rejected a distributed
 	// subquery or join under the datasource's distributed_product_mode.
 	QueryErrorDistributedJoinDenied
+	// QueryErrorUnknownTable: the SQL references a table or database that is
+	// not available in the selected datasource.
+	QueryErrorUnknownTable
+	// QueryErrorUnknownFunction: the SQL uses a function unavailable in the
+	// selected ClickHouse deployment/version.
+	QueryErrorUnknownFunction
+	// QueryErrorBadFunctionArguments: the SQL calls a function with an
+	// incompatible column type or argument shape.
+	QueryErrorBadFunctionArguments
 )
 
 // ClassifyQueryError maps an upstream error message to a QueryErrorClass.
@@ -51,6 +60,17 @@ func ClassifyQueryError(message string) QueryErrorClass {
 	case strings.Contains(normalized, "distributed_in_join_subquery_denied") ||
 		strings.Contains(normalized, "double-distributed in/join subqueries"):
 		return QueryErrorDistributedJoinDenied
+	case strings.Contains(normalized, "unknown_table") ||
+		strings.Contains(normalized, "unknown_database") ||
+		strings.Contains(normalized, "database ") && strings.Contains(normalized, " does not exist") ||
+		strings.Contains(normalized, "unknown table expression identifier"):
+		return QueryErrorUnknownTable
+	case strings.Contains(normalized, "unknown_function") ||
+		strings.Contains(normalized, "function with name") && strings.Contains(normalized, "does not exist"):
+		return QueryErrorUnknownFunction
+	case strings.Contains(normalized, "bad_arguments") ||
+		strings.Contains(normalized, "cannot work with"):
+		return QueryErrorBadFunctionArguments
 	}
 
 	return QueryErrorUnknown

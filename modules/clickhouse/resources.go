@@ -3,6 +3,7 @@ package clickhouse
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -140,7 +141,7 @@ func createDatabaseTablesHandler(client SchemaClient) types.ReadHandler {
 }
 
 func createTableDetailHandler(log logrus.FieldLogger, client SchemaClient) types.ReadHandler {
-	return func(_ context.Context, uri string) (string, error) {
+	return func(ctx context.Context, uri string) (string, error) {
 		parts := tableURISegments(uri)
 		if len(parts) != 3 {
 			return "", fmt.Errorf("invalid table URI: %s", uri)
@@ -150,11 +151,30 @@ func createTableDetailHandler(log logrus.FieldLogger, client SchemaClient) types
 
 		schema, ok := client.GetTableInCluster(clusterName, database, tableName)
 		if !ok {
-			if _, clusterOK := client.GetClusterTables(clusterName); !clusterOK {
-				return "", clusterNotFoundError(client, clusterName)
+			var fetchErr error
+			schema, fetchErr = client.FetchTableInCluster(ctx, clusterName, database, tableName)
+			if fetchErr == nil {
+				data, err := marshalResource(&TableDetailResponse{Cluster: clusterName, Table: schema}, "table detail")
+				if err != nil {
+					return "", err
+				}
+
+				log.WithFields(logrus.Fields{
+					"cluster":  clusterName,
+					"database": database,
+					"table":    tableName,
+				}).Debug("Returned live table schema")
+
+				return data, nil
 			}
 
-			return "", fmt.Errorf("table %q in database %q not found in cluster %q", tableName, database, clusterName)
+			if _, clusterOK := client.GetClusterTables(clusterName); !clusterOK {
+				if errors.Is(fetchErr, ErrSchemaClusterNotConfigured) {
+					return "", clusterNotFoundError(client, clusterName)
+				}
+			}
+
+			return "", fmt.Errorf("table %q in database %q not found in cluster %q: %w", tableName, database, clusterName, fetchErr)
 		}
 
 		data, err := marshalResource(&TableDetailResponse{Cluster: clusterName, Table: schema}, "table detail")
@@ -215,7 +235,7 @@ func clusterNotFoundError(client SchemaClient, clusterName string) error {
 	sort.Strings(available)
 
 	if len(available) == 0 {
-		return fmt.Errorf("cluster %q not found: no ClickHouse clusters are available", clusterName)
+		return fmt.Errorf("cluster %q not found: no ClickHouse schema cache is available yet; list live datasources with 'panda datasources --type clickhouse' and retry schema after discovery warms up", clusterName)
 	}
 
 	return fmt.Errorf("cluster %q not found: available clusters are %s", clusterName, strings.Join(available, ", "))
