@@ -454,23 +454,20 @@ func decodeAPIError(status int, data []byte) error {
 }
 
 func serverErrorHint(status int, message string) string {
-	normalized := strings.ToLower(message)
-
-	switch {
-	case strings.Contains(normalized, "index_not_used") ||
-		strings.Contains(normalized, "force_primary_key") ||
-		strings.Contains(normalized, "primary key") && strings.Contains(normalized, "not used"):
+	// Error classification is the ClickHouse module's knowledge; the CLI only
+	// owns the command-idiom wording per class.
+	switch clickhousemodule.ClassifyQueryError(message) {
+	case clickhousemodule.QueryErrorPrimaryKeyFilterRequired:
 		return "ClickHouse requires a selective filter that uses the table's partition or primary-key columns; inspect the table with 'panda schema <cluster> <database> <table>' and add an appropriate WHERE clause"
-	case strings.Contains(normalized, "unknown_identifier") ||
-		strings.Contains(normalized, "unknown expression identifier") ||
-		strings.Contains(normalized, "missing columns"):
+	case clickhousemodule.QueryErrorUnknownIdentifier:
 		return "the SQL references a column or expression that is not available in the selected table; inspect the table with 'panda schema <cluster> <database> <table>' and adjust the SELECT, WHERE, and GROUP BY clauses"
-	case strings.Contains(normalized, "not_an_aggregate"):
+	case clickhousemodule.QueryErrorNotAggregate:
 		return "ClickHouse requires every selected expression to be aggregated or included in GROUP BY; update the SELECT/GROUP BY clauses or inspect examples with 'panda search examples <topic>'"
-	case strings.Contains(normalized, "syntax_error"):
+	case clickhousemodule.QueryErrorSyntax:
 		return "ClickHouse rejected the SQL syntax; confirm the datasource and dataset syntax with 'panda datasets <name>' and inspect the table with 'panda schema <cluster> <database> <table>'"
-	case strings.Contains(normalized, "clickhouse datasource") && strings.Contains(normalized, "not found"):
+	case clickhousemodule.QueryErrorDatasourceNotFound:
 		return "the first ClickHouse argument must be a datasource/cluster name; list them with 'panda datasources --type clickhouse' or 'panda clickhouse list-datasources'"
+	case clickhousemodule.QueryErrorUnknown:
 	}
 
 	switch status {
