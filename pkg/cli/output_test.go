@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ethpandaops/panda/pkg/operations"
 	"github.com/ethpandaops/panda/pkg/serverapi"
 )
 
@@ -112,6 +113,33 @@ func TestPrintExampleResultsUsesNeutralTargetLabel(t *testing.T) {
 
 	assert.Contains(t, output, "  Target: prometheus")
 	assert.NotContains(t, output, "Cluster:")
+}
+
+func TestPrintDatasourceListUsesCompactIdentityColumns(t *testing.T) {
+	setOutputFormat(t, "text")
+
+	output := captureStdout(t, func() {
+		err := printDatasourceList(&operations.Response{
+			Data: map[string]any{
+				"datasources": []any{
+					map[string]any{
+						"type":        "clickhouse",
+						"name":        "warehouse",
+						"description": "long operational notes",
+						"url":         "http://example.invalid",
+					},
+				},
+			},
+		})
+		require.NoError(t, err)
+	})
+
+	assert.Contains(t, output, "TYPE")
+	assert.Contains(t, output, "NAME")
+	assert.Contains(t, output, "clickhouse")
+	assert.Contains(t, output, "warehouse")
+	assert.NotContains(t, output, "long operational notes")
+	assert.NotContains(t, output, "http://example.invalid")
 }
 
 func TestIntFromAny(t *testing.T) {

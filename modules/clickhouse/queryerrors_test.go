@@ -16,6 +16,10 @@ func TestClassifyQueryError(t *testing.T) {
 		{"DB::Exception: Column slot is not under aggregate function. (NOT_AN_AGGREGATE)", QueryErrorNotAggregate},
 		{"DB::Exception: Syntax error: failed at position 12. (SYNTAX_ERROR)", QueryErrorSyntax},
 		{"clickhouse datasource \"warehouse\" not found", QueryErrorDatasourceNotFound},
+		{
+			"DB::Exception: Double-distributed IN/JOIN subqueries is denied. (DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED)",
+			QueryErrorDistributedJoinDenied,
+		},
 		{"connection refused", QueryErrorUnknown},
 		{"", QueryErrorUnknown},
 	}

@@ -136,6 +136,12 @@ func TestServerErrorHintClassifiesClickHouseErrors(t *testing.T) {
 			message: "clickhouse datasource \"network\" not found",
 			want:    "datasource/cluster name",
 		},
+		{
+			name:    "distributed join denied",
+			status:  http.StatusInternalServerError,
+			message: "Code: 288. DB::Exception: Double-distributed IN/JOIN subqueries is denied. (DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED)",
+			want:    "distributed subquery or join",
+		},
 	}
 
 	for _, tt := range tests {
