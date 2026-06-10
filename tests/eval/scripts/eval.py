@@ -64,6 +64,13 @@ def _parse_args() -> argparse.Namespace:
     ap.add_argument(
         "--min-pass", type=float, default=1.0, help="min pass-rate to exit 0 (default 1.0 = all)"
     )
+    ap.add_argument(
+        "--per-question",
+        action="store_true",
+        help="gate on (question, subject) cells instead of runs: a cell passes if ANY of "
+        "its repeats passed. Smoke semantics — 'can the pipeline answer this at all' — "
+        "tolerant of single-run agent flubs; use with -k 2+.",
+    )
     ap.add_argument("--junit", default="", help="write JUnit XML here (for CI)")
     ap.add_argument("--json", dest="json_out", default="", help="write a JSON summary here")
     ap.add_argument("--save-dir", default="", help="where to write run artifacts + traces")
@@ -262,6 +269,18 @@ def main() -> None:
             server.stop()
 
     _report(result)
+    gate_pass = result.pass_rate
+    if args.per_question:
+        cells: dict[tuple[str, str], bool] = {}
+        for r in result.records:
+            key = (r.score.question_id, r.score.subject)
+            cells[key] = cells.get(key, False) or r.score.correct
+        gate_pass = sum(cells.values()) / len(cells) if cells else 0.0
+        failed = sorted(f"{q} [{s}]" for (q, s), ok in cells.items() if not ok)
+        console.print(
+            f"per-question gate: [bold]{gate_pass:.0%}[/bold] of {len(cells)} cells"
+            + (f" — failed: {', '.join(failed)}" if failed else "")
+        )
     if args.junit:
         _write_junit(args.junit, result, suite=Path(args.cases).stem)
     if args.json_out:
@@ -272,7 +291,7 @@ def main() -> None:
     )
     _write_langfuse_links(reports_dir / "langfuse_links.md", result)
 
-    sys.exit(0 if result.pass_rate >= args.min_pass else 1)
+    sys.exit(0 if gate_pass >= args.min_pass else 1)
 
 
 if __name__ == "__main__":

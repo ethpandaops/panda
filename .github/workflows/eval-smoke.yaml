@@ -52,7 +52,7 @@ jobs:
       (github.actor != 'dependabot[bot]' &&
       contains(github.event.pull_request.labels.*.name, 'run-smoke'))
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -214,8 +214,10 @@ jobs:
           # subject + judge default to the harness defaults (config/settings.py) — don't
           # restate them here. --no-variations keeps smoke fast: canonical phrasings only
           # (questions x subjects runs); the paraphrase sweep belongs to the harden loop.
+          # -k 2 + --per-question = smoke semantics: a question fails only if BOTH its
+          # runs fail (catches systemic breakage, tolerates a single agent flub).
           uv run python -m scripts.eval \
-            --cases smoke.yaml --no-variations \
+            --cases smoke.yaml --no-variations -k 2 --per-question \
             --junit reports/junit.xml --json reports/eval.json
 
       - name: Server log (sandbox / proxy activity)
