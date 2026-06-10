@@ -142,6 +142,30 @@ func TestServerErrorHintClassifiesClickHouseErrors(t *testing.T) {
 			message: "Code: 288. DB::Exception: Double-distributed IN/JOIN subqueries is denied. (DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED)",
 			want:    "distributed subquery or join",
 		},
+		{
+			name:    "unknown table",
+			status:  http.StatusNotFound,
+			message: "Code: 60. DB::Exception: Unknown table expression identifier 'example_db.example_table'. (UNKNOWN_TABLE)",
+			want:    "table or database",
+		},
+		{
+			name:    "unknown function",
+			status:  http.StatusNotFound,
+			message: "Code: 46. DB::Exception: Function with name `exampleFn` does not exist. (UNKNOWN_FUNCTION)",
+			want:    "function unavailable",
+		},
+		{
+			name:    "bad function arguments",
+			status:  http.StatusBadRequest,
+			message: "Code: 36. DB::Exception: Functions lowerUTF8 cannot work with FixedString argument. (BAD_ARGUMENTS)",
+			want:    "incompatible argument type",
+		},
+		{
+			name:    "wrong prometheus datasource",
+			status:  http.StatusNotFound,
+			message: "prometheus datasource \"metrics\" not found",
+			want:    "Prometheus argument",
+		},
 	}
 
 	for _, tt := range tests {

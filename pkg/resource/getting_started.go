@@ -24,7 +24,7 @@ const gettingStartedHeaderMCP = `# Getting Started Guide
 
 ## Workflow
 
-1. **Discover** → ` + "`datasets://list`" + ` shows the datasets this deployment holds; ` + "`datasources://list`" + ` shows the connections that hold them (placement params + operator notes)
+1. **Discover** → ` + "`datasets://list`" + ` shows the datasets this deployment holds; ` + "`datasources://list`" + ` shows the connections that hold them (placement params + operator notes); ` + "`networks://active`" + ` shows live network/devnet ids
 2. **Learn the data** → **read ` + "`datasets://{name}`" + ` before querying a dataset** — its required syntax rules and placement live there. Live schema: ` + "`clickhouse://tables/{cluster}/{database}`" + `
 3. **Find patterns** → Use the ` + "`search`" + ` tool to find relevant examples and procedures:
    - ` + "`search(query=\"...\")`" + ` → Search everything (examples, runbooks, EIPs, consensus specs)
@@ -249,6 +249,7 @@ func writeCLIDiscoverySection(sb *strings.Builder) {
 	sb.WriteString("- `panda datasets` — datasets in this deployment and where they live\n")
 	sb.WriteString("- `panda datasets <name>` — **read before querying a dataset**: required syntax rules and placement\n")
 	sb.WriteString("- `panda datasources` — connections and the datasets each one holds\n")
+	sb.WriteString("- `panda resources read networks://active` — live network/devnet ids; use the id, not the display name, when reading `networks://<id>`\n")
 	sb.WriteString("- `panda schema` — live ClickHouse schemas\n")
 	sb.WriteString("- `panda docs` — Python module APIs\n")
 	sb.WriteString("\n## Discovering Commands\n\n")

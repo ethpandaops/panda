@@ -14,14 +14,18 @@ var ethnodeCmd = &cobra.Command{
 	Use:     "ethnode",
 	Short:   "Query Ethereum beacon and execution nodes",
 	Long: `Direct access to Ethereum beacon and execution node APIs.
-Nodes are identified by network and instance name (e.g., "lighthouse-geth-1").
+Nodes are identified by network id and instance name. Use 'panda ethnode
+networks' to discover network ids before calling a node endpoint. Instance
+names come from the network's node inventory or observability data; direct node
+access does not enumerate every instance.
 
 Examples:
   panda ethnode list-datasources
-  panda ethnode syncing dencun-devnet-12 lighthouse-geth-1
-  panda ethnode peers dencun-devnet-12 lighthouse-geth-1
-  panda ethnode finality dencun-devnet-12 lighthouse-geth-1
-  panda ethnode beacon-get dencun-devnet-12 lighthouse-geth-1 /eth/v1/node/identity`,
+  panda ethnode networks
+  panda ethnode syncing <network-id> <instance>
+  panda ethnode peers <network-id> <instance>
+  panda ethnode finality <network-id> <instance>
+  panda ethnode beacon-get <network-id> <instance> /eth/v1/node/identity`,
 }
 
 func init() {
@@ -29,6 +33,7 @@ func init() {
 
 	ethnodeCmd.AddCommand(
 		ethNodeListDatasourcesCmd,
+		ethNodeNetworksCmd,
 		ethNodeSyncingCmd,
 		ethNodeVersionCmd,
 		ethNodeHealthCmd,
@@ -62,6 +67,20 @@ var ethNodeListDatasourcesCmd = &cobra.Command{
 		}
 
 		return printDatasourceList(response)
+	},
+}
+
+var ethNodeNetworksCmd = &cobra.Command{
+	Use:   "networks",
+	Short: "List active networks reachable for direct node access",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		response, err := runServerOperation(cmd, "ethnode.list_networks", map[string]any{})
+		if err != nil {
+			return err
+		}
+
+		return printListing(response, "networks", "No ethnode-reachable active networks found.")
 	},
 }
 
@@ -310,8 +329,8 @@ var ethNodeBeaconGetCmd = &cobra.Command{
 The path should start with / (e.g., /eth/v1/node/identity).
 
 Examples:
-  panda ethnode beacon-get my-devnet lighthouse-geth-1 /eth/v1/node/identity
-  panda ethnode beacon-get my-devnet lighthouse-geth-1 /eth/v1/config/deposit_contract`,
+  panda ethnode beacon-get <network-id> <instance> /eth/v1/node/identity
+  panda ethnode beacon-get <network-id> <instance> /eth/v1/config/deposit_contract`,
 	Args: cobra.ExactArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		path := args[2]
@@ -339,9 +358,9 @@ var ethNodeExecRPCCmd = &cobra.Command{
 Params should be a JSON array string.
 
 Examples:
-  panda ethnode exec-rpc my-devnet lighthouse-geth-1 eth_blockNumber
-  panda ethnode exec-rpc my-devnet lighthouse-geth-1 eth_getBlockByNumber '["latest", false]'
-  panda ethnode exec-rpc my-devnet lighthouse-geth-1 eth_chainId`,
+  panda ethnode exec-rpc <network-id> <instance> eth_blockNumber
+  panda ethnode exec-rpc <network-id> <instance> eth_getBlockByNumber '["latest", false]'
+  panda ethnode exec-rpc <network-id> <instance> eth_chainId`,
 	Args: cobra.RangeArgs(3, 4),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var params []any

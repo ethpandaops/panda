@@ -21,6 +21,7 @@ Examples:
   panda resources panda://getting-started
   panda resources datasets://list
   panda resources read panda://getting-started
+  panda resources read networks://active
   panda resources read python://ethpandaops
   panda resources read clickhouse://tables/<cluster>
   panda resources -o json`,
@@ -36,6 +37,7 @@ var resourcesReadCmd = &cobra.Command{
 
 Examples:
   panda resources read panda://getting-started
+  panda resources read networks://active
   panda resources read python://ethpandaops -o json
   panda resources read datasources://clickhouse`,
 	Args: cobra.ExactArgs(1),

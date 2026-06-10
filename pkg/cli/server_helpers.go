@@ -458,18 +458,29 @@ func serverErrorHint(status int, message string) string {
 	// owns the command-idiom wording per class.
 	switch clickhousemodule.ClassifyQueryError(message) {
 	case clickhousemodule.QueryErrorPrimaryKeyFilterRequired:
-		return "ClickHouse requires a selective filter that uses the table's partition or primary-key columns; inspect the table with 'panda schema <cluster> <database> <table>' and add an appropriate WHERE clause"
+		return "ClickHouse requires a query shape that can use the table's partition or primary-key columns; inspect key clauses with 'panda schema <cluster> <database> <table>' and add a selective WHERE clause. For bounded aggregate scans that still fail after key filters, append 'SETTINGS force_primary_key=0' deliberately rather than removing the bound"
 	case clickhousemodule.QueryErrorUnknownIdentifier:
 		return "the SQL references a column or expression that is not available in the selected table; inspect the table with 'panda schema <cluster> <database> <table>' and adjust the SELECT, WHERE, and GROUP BY clauses"
 	case clickhousemodule.QueryErrorNotAggregate:
 		return "ClickHouse requires every selected expression to be aggregated or included in GROUP BY; update the SELECT/GROUP BY clauses or inspect examples with 'panda search examples <topic>'"
 	case clickhousemodule.QueryErrorSyntax:
-		return "ClickHouse rejected the SQL syntax; confirm the datasource and dataset syntax with 'panda datasets <name>' and inspect the table with 'panda schema <cluster> <database> <table>'"
+		return "ClickHouse rejected the SQL syntax; confirm dataset syntax with 'panda datasets <name>' and table shape with 'panda schema <cluster> <database> <table>'. For FINAL with aliases, use 'FROM table AS alias FINAL' or wrap the FINAL read in a subquery"
 	case clickhousemodule.QueryErrorDatasourceNotFound:
 		return "the first ClickHouse argument must be a datasource/cluster name; list them with 'panda datasources --type clickhouse' or 'panda clickhouse list-datasources'"
 	case clickhousemodule.QueryErrorDistributedJoinDenied:
-		return "ClickHouse denied a distributed subquery or join; prefer a single-table aggregate, add GLOBAL when appropriate, or resolve the small subquery first and pass literal filter values into the next query"
+		return "ClickHouse denied a distributed subquery or join; filter each side before joining, use GLOBAL/ANY JOIN when appropriate for distributed tables, or resolve the small side first and pass literal filter values into the next query"
+	case clickhousemodule.QueryErrorUnknownTable:
+		return "the SQL references a table or database that is not available in the selected ClickHouse datasource; list datasources with 'panda datasources --type clickhouse' and inspect tables with 'panda schema <cluster> [database]'"
+	case clickhousemodule.QueryErrorUnknownFunction:
+		return "the SQL uses a ClickHouse function unavailable in this deployment/version; replace it with a supported function or simplify the expression, then rerun the query"
+	case clickhousemodule.QueryErrorBadFunctionArguments:
+		return "a SQL function received an incompatible argument type or shape; inspect column types with 'panda schema <cluster> <database> <table>' and cast deliberately where needed"
 	case clickhousemodule.QueryErrorUnknown:
+	}
+
+	normalized := strings.ToLower(message)
+	if strings.Contains(normalized, "prometheus datasource") && strings.Contains(normalized, "not found") {
+		return "the first Prometheus argument must be a live datasource name; list them with 'panda prometheus list-datasources' or 'panda datasources --type prometheus'"
 	}
 
 	switch status {

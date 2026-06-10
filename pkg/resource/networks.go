@@ -3,8 +3,10 @@ package resource
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/ethpandaops/cartographoor/pkg/discovery"
@@ -19,9 +21,11 @@ var networkURIPattern = regexp.MustCompile(`^networks://(.+)$`)
 
 // NetworkSummary is a compact representation for the active networks list.
 type NetworkSummary struct {
-	Name    string `json:"name"`
-	ChainID uint64 `json:"chain_id,omitempty"`
-	Status  string `json:"status"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	ChainID     uint64 `json:"chain_id,omitempty"`
+	Status      string `json:"status"`
+	ResourceURI string `json:"resource_uri"`
 }
 
 // NetworksActiveResponse is the response for networks://active.
@@ -39,7 +43,9 @@ type NetworksAllResponse struct {
 
 // NetworkDetailResponse is the response for networks://{name} (single network).
 type NetworkDetailResponse struct {
-	Network discovery.Network `json:"network"`
+	ID          string            `json:"id"`
+	ResourceURI string            `json:"resource_uri"`
+	Network     discovery.Network `json:"network"`
 }
 
 // GroupDetailResponse is the response for networks://{group} (devnet group).
@@ -100,18 +106,24 @@ func createActiveNetworksHandler(client cartographoor.CartographoorClient) ReadH
 
 		summaries := make([]NetworkSummary, 0, len(networks))
 
-		for _, network := range networks {
+		for id, network := range networks {
 			summaries = append(summaries, NetworkSummary{
-				Name:    network.Name,
-				ChainID: network.ChainID,
-				Status:  network.Status,
+				ID:          id,
+				Name:        network.Name,
+				ChainID:     network.ChainID,
+				Status:      network.Status,
+				ResourceURI: "networks://" + id,
 			})
 		}
+
+		sort.Slice(summaries, func(i, j int) bool {
+			return summaries[i].ID < summaries[j].ID
+		})
 
 		response := NetworksActiveResponse{
 			Networks: summaries,
 			Groups:   groups,
-			Usage:    "Use networks://{name} for full network details or networks://{group} for all networks in a devnet group",
+			Usage:    "Use each network's resource_uri, or networks://{id}, for full network details. The name field is a display label and may be short or duplicated. Use networks://{group} for all networks in a devnet group.",
 		}
 
 		data, err := json.MarshalIndent(response, "", "  ")
@@ -152,7 +164,11 @@ func createNetworkDetailHandler(log logrus.FieldLogger, client cartographoor.Car
 
 		// Try exact network match first
 		if network, ok := client.GetNetwork(name); ok {
-			data, err := json.MarshalIndent(NetworkDetailResponse{Network: network}, "", "  ")
+			data, err := json.MarshalIndent(NetworkDetailResponse{
+				ID:          name,
+				ResourceURI: "networks://" + name,
+				Network:     network,
+			}, "", "  ")
 			if err != nil {
 				return "", fmt.Errorf("marshaling response: %w", err)
 			}
@@ -183,6 +199,9 @@ func createNetworkDetailHandler(log logrus.FieldLogger, client cartographoor.Car
 		for netName := range allNetworks {
 			networkNames = append(networkNames, netName)
 		}
+		sort.Strings(networkNames)
+
+		matchingDisplayNames := matchingNetworkIDsByDisplayName(allNetworks, name)
 
 		log.WithFields(logrus.Fields{
 			"requested": name,
@@ -190,10 +209,30 @@ func createNetworkDetailHandler(log logrus.FieldLogger, client cartographoor.Car
 			"groups":    len(groups),
 		}).Debug("Network or group not found")
 
-		return "", fmt.Errorf(
-			"network or group %q not found. Available groups: %s",
-			name,
-			strings.Join(groups, ", "),
-		)
+		message := fmt.Sprintf("network or group %q not found", name)
+		if len(matchingDisplayNames) > 0 {
+			message += fmt.Sprintf(". Matching display name; use full network id: %s", strings.Join(matchingDisplayNames, ", "))
+		}
+		if len(groups) > 0 {
+			message += fmt.Sprintf(". Available groups: %s", strings.Join(groups, ", "))
+		}
+
+		message += ". Read networks://active to list current ids."
+
+		return "", errors.New(message)
 	}
+}
+
+func matchingNetworkIDsByDisplayName(networks map[string]discovery.Network, displayName string) []string {
+	var matches []string
+
+	for id, network := range networks {
+		if network.Name == displayName {
+			matches = append(matches, id)
+		}
+	}
+
+	sort.Strings(matches)
+
+	return matches
 }
