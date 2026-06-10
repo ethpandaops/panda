@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -60,8 +61,8 @@ Flag a finding with severity "block" for any of:
   these exact questions is leakage, not a fix.
 - MISPLACEMENT: content or behavior in the wrong layer. The obvious case is
   dataset-specific knowledge (which table/column holds what for a dataset) placed in a
-  GENERIC module description or a GENERIC error hint instead of that datasource's own
-  searchable examples/docs/schema — error hints must be error-CLASS generic and name no
+  GENERIC module description or a GENERIC error hint instead of that dataset's knowledge
+  pack under datasets/<pack>/ (served via datasets://<name> and example search) — error hints must be error-CLASS generic and name no
   dataset-specific columns/tables. But it covers SEPARATION OF CONCERNS generally: one
   module's knowledge planted in another module; integration/module behavior implemented
   in the CLI; presentation/formatting baked into server operations; product behavior
@@ -104,6 +105,10 @@ class AuditVerdict:
     blocked: bool
     summary: str
     findings: list[dict] = field(default_factory=list)
+    # The auditor itself was unavailable (codex error / unparseable output after
+    # retries). Blocked, but not amendable: the loop reverts without burning
+    # proposer rounds on findings no proposal change can fix.
+    unavailable: bool = False
 
     def text(self) -> str:
         lines = [f"blocked={self.blocked} :: {self.summary}"]
@@ -122,10 +127,12 @@ class Auditor(Protocol):
 class CodexAuditor:
     """Adversarial diff reviewer via a read-only ``codex exec`` with a structured verdict.
 
-    Fails OPEN: if codex errors or returns unparseable output, the verdict is "not blocked"
-    (logged) — a broken auditor must not halt the loop, since the held-out gate and human
-    review remain. Its leverage is the FRESH context + adversarial framing, not the model;
-    a different model from the proposer is a bonus (no shared blind spot), not required.
+    Fails CLOSED: if codex errors or returns unparseable output (after retries for
+    transient failures like rate limits), the proposal is blocked and reverted — an
+    unaudited diff must never reach commit, because this gate is the only reviewer of
+    answer-leakage and misplacement before the build. Its leverage is the FRESH context
+    + adversarial framing, not the model; a different model from the proposer is a
+    bonus (no shared blind spot), not required.
     """
 
     def __init__(
@@ -136,6 +143,8 @@ class CodexAuditor:
         reasoning_effort: str = "xhigh",
         timeout: float = 600.0,
         max_diff_chars: int = 60000,
+        attempts: int = 3,
+        retry_delay: float = 20.0,
         log: Callable[[str], None] | None = None,
     ) -> None:
         self.repo_dir = repo_dir
@@ -143,6 +152,8 @@ class CodexAuditor:
         self.reasoning_effort = reasoning_effort
         self.timeout = timeout
         self.max_diff_chars = max_diff_chars
+        self.attempts = max(1, attempts)
+        self.retry_delay = retry_delay
         self.log = log
 
     def audit(self, diff: str, questions: list[str]) -> AuditVerdict:
@@ -179,6 +190,9 @@ class CodexAuditor:
                 f"model_reasoning_effort={self.reasoning_effort}",
                 "-C",
                 self.repo_dir,
+                # The run's auto-created worktree is never in codex's interactive
+                # trust store; without this, headless exec refuses to start.
+                "--skip-git-repo-check",
                 "--sandbox",
                 "read-only",
                 "--output-schema",
@@ -187,28 +201,49 @@ class CodexAuditor:
                 str(out_path),
                 "-",
             ]
-            if self.log:
-                self.log("      [audit] codex reviewing the diff...")
-            # Filtered stream (one line per command + codex's messages); the structured
-            # verdict is read from the -o file, not from stdout.
-            code, _raw = run_codex(cmd, prompt, timeout=self.timeout, log=self.log)
-            if code == -1:
-                return self._open(f"auditor timed out after {self.timeout:.0f}s")
-            if code != 0:
-                return self._open(f"auditor exited {code}")
-            raw = out_path.read_text() if out_path.exists() else ""
+            data = None
+            failure = ""
 
-        try:
-            data = json.loads(raw)
-        except (ValueError, TypeError):
-            return self._open(f"auditor output not JSON: {raw[:200]}")
+            for attempt in range(1, self.attempts + 1):
+                if self.log:
+                    self.log(f"      [audit] codex reviewing the diff (try {attempt}/{self.attempts})...")
+                # Filtered stream (one line per command + codex's messages); the
+                # structured verdict is read from the -o file, not from stdout.
+                code, raw_stream = run_codex(cmd, prompt, timeout=self.timeout, log=self.log)
+                if code == -1:
+                    failure = f"auditor timed out after {self.timeout:.0f}s"
+                elif code != 0:
+                    tail = " ".join(raw_stream.split())[-300:]
+                    failure = f"auditor exited {code}: {tail}"
+                else:
+                    raw = out_path.read_text() if out_path.exists() else ""
+                    try:
+                        data = json.loads(raw)
+
+                        break
+                    except (ValueError, TypeError):
+                        failure = f"auditor output not JSON: {raw[:200]}"
+
+                if self.log:
+                    self.log(f"      [auditor] {failure}")
+
+                if attempt < self.attempts:
+                    time.sleep(self.retry_delay)
+
+        if data is None:
+            return self._closed(failure)
 
         findings = data.get("findings") or []
         # Don't trust a top-level bool; derive blocking from the findings themselves.
         blocked = any(f.get("severity") == "block" for f in findings)
         return AuditVerdict(blocked=blocked, summary=data.get("summary", ""), findings=findings)
 
-    def _open(self, why: str) -> AuditVerdict:
+    def _closed(self, why: str) -> AuditVerdict:
         if self.log:
-            self.log(f"      [auditor] failing open: {why}")
-        return AuditVerdict(blocked=False, summary=f"auditor unavailable: {why}", findings=[])
+            self.log(f"      [auditor] FAILING CLOSED (proposal will be reverted): {why}")
+        return AuditVerdict(
+            blocked=True,
+            summary=f"auditor unavailable — failing closed: {why}",
+            findings=[],
+            unavailable=True,
+        )

@@ -265,8 +265,9 @@ async def test_clean_audit_does_not_block_accept(repo, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_prescreen_rejects_cheaply_before_full_measure(repo, monkeypatch):
-    # A candidate that's clearly worse on the parent's worst questions is killed by the
-    # k=1 prescreen: only baseline + prescreen measures run, never the full suite.
+    # A candidate that is functionally broken (zero correct runs where the parent
+    # worked) is killed by the k=1 prescreen smoke: only baseline + prescreen run,
+    # never the full suite.
     state = {"improved": False}
     calls: list[str] = []
     inner = _stub_measure(state, correct_when_improved=False)
@@ -290,3 +291,65 @@ async def test_prescreen_rejects_cheaply_before_full_measure(repo, monkeypatch):
 def test_question_prompts_single_and_multi_turn():
     assert Question(id="a", text="one").prompts == ["one"]
     assert Question(id="b", text="one", followups=["two", "three"]).prompts == ["one", "two", "three"]
+
+
+@pytest.mark.asyncio
+async def test_prescreen_passes_worse_but_functional_candidate(repo, monkeypatch):
+    # A candidate that scores worse but still answers correctly must NOT be killed by
+    # the prescreen smoke — a few k=1 cells can't separate regression from noise, so
+    # the decision belongs to the full measure's gates (here: reject not-confident).
+    state = {"improved": False}
+    calls: list[str] = []
+    inner = _stub_measure(state, improves=set())  # proposal changes nothing: correct, same cost
+
+    async def counting(questions, subject_specs, *, run_dir, **kw):
+        calls.append(Path(run_dir).name)
+        return await inner(questions, subject_specs, run_dir=run_dir, **kw)
+
+    monkeypatch.setattr(loop_mod, "measure_candidate", counting)
+    qs = [Question(id=f"q{i}", text=f"question {i}") for i in range(4)]
+    result = await optimize(
+        qs, ["s"], _StubProposer(repo, state),
+        repo_dir=str(repo), apply=_apply_factory(repo, state),
+        k=3, rounds=1, log=lambda *_: None,
+    )
+    assert result.rounds[0].reason != "prescreen"
+    assert "round1_candidate" in calls, "full measure should have run"
+
+
+@pytest.mark.asyncio
+async def test_journal_dedups_resubmission_of_rejected_patch(repo, monkeypatch, tmp_path):
+    # Round 1's regression is journaled with the patch fingerprint; round 2 (the stub
+    # proposer writes the identical edit) must be refused as duplicate-rejected without
+    # being measured again — and a FRESH journal over the same file must carry the
+    # fingerprint into a hypothetical next run.
+    from harden.journal import Journal
+
+    # The journal must live OUTSIDE the repo (the repo fixture IS tmp_path): inside,
+    # it would be swept by the loop's revert (git clean) and captured into the
+    # proposal patch itself, changing the fingerprint every round. Production puts it
+    # in HARDEN_HOME for the same reason.
+    journal_path = tmp_path.parent / f"{tmp_path.name}-journal.jsonl"
+    journal = Journal(journal_path, context="t.yaml")
+    state = {"improved": False}
+    measures = {"n": 0}
+    stub = _stub_measure(state, correct_when_improved=False)
+
+    async def counting_measure(*a, **kw):
+        measures["n"] += 1
+        return await stub(*a, **kw)
+
+    monkeypatch.setattr(loop_mod, "measure_candidate", counting_measure)
+    result = await optimize(
+        _QS, ["s"], _StubProposer(repo, state),
+        repo_dir=str(repo), apply=_apply_factory(repo, state),
+        k=3, rounds=2, journal=journal, log=lambda *_: None,
+    )
+    assert result.accepted == 0
+    assert result.rounds[0].reason == "regressed-correctness"
+    assert result.rounds[1].reason == "duplicate-rejected"
+    assert measures["n"] == 2  # baseline + round 1 only: round 2 never measured
+    assert _git(repo, "status", "--porcelain").strip() == ""
+    fresh = Journal(journal_path)
+    assert len(fresh.rejected_fingerprints()) == 1
+    assert [e["reason"] for e in fresh.entries()] == ["regressed-correctness", "duplicate-rejected"]

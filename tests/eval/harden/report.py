@@ -23,8 +23,9 @@ Hard rules (these are gated — violations are reverted, so a "win" that breaks 
   writing `seen_slot_start_diff`, a specific table name, or "for latest-X questions do Y"
   where Y is one of these questions' answers, stop.
 - PLACEMENT matters. Dataset-specific knowledge (which table/column holds what for a
-  given dataset) belongs in that DATASOURCE's searchable examples/docs/schema, fetched on
-  demand — NEVER in a generic module's always-loaded description or in error-hint text.
+  given dataset) belongs in that dataset's knowledge pack under datasets/<pack>/ (served
+  via datasets://<name> and the example search index), fetched on demand — NEVER in a
+  generic module's always-loaded description or in error-hint text.
   Error hints must be error-CLASS generic: explain the error and how to DISCOVER the fix
   (e.g. "filter on the table's primary key; run `panda schema <…>` to see it") and name
   no dataset-specific columns or tables. Anything always-loaded is paid for by every
@@ -158,10 +159,13 @@ def build_proposal_prompt(
     traces_dir: str | None = None,
     limit: int = 12,
     history: list[str] | None = None,
+    prior_runs: str = "",
 ) -> str:
     """The prompt handed to the proposer: objective + a lean summary of the worst runs +
     a pointer to the full traces on disk (read on demand) + what was already tried this
-    run and how it fared (so it explores instead of re-proposing a rejected idea)."""
+    run and how it fared (so it explores instead of re-proposing a rejected idea).
+    ``prior_runs`` is the rendered cross-run journal section (harden.journal) — the same
+    idea extended across runs, so a fresh run doesn't start amnesiac."""
     head = headroom_summary(records)
     shown = worst_records(records, limit)
     body = "\n".join(summarize_record(r) for r in shown)
@@ -180,8 +184,9 @@ def build_proposal_prompt(
             "Do NOT re-propose a rejected approach; reason about WHY it failed and try a "
             "different angle:\n" + "\n".join(history)
         )
+    journal = f"\n\n{prior_runs}" if prior_runs else ""
     return (
         f"{_OBJECTIVE}\n"
         f"Per-question reliability + token headroom (leanest correct run = proof of what's "
-        f"achievable):\n{head}\n\nRuns (worst first):\n{body}{pointer}{past}"
+        f"achievable):\n{head}\n\nRuns (worst first):\n{body}{pointer}{past}{journal}"
     )

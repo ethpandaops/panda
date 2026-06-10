@@ -178,9 +178,16 @@ class OpenCodeAgent:
                 return
             self._client = None  # shared server died; respawn below
 
-        if not os.environ.get("OPENCODE_GO_API_KEY") and not os.environ.get("OPENCODE_API_KEY"):
+        if (
+            self.provider_id in ("opencode-go", "opencode")
+            and not os.environ.get("OPENCODE_GO_API_KEY")
+            and not os.environ.get("OPENCODE_API_KEY")
+        ):
+            # Only the opencode-go provider needs the key; other providers (e.g.
+            # openai via ChatGPT OAuth) authenticate from the mounted auth.json.
             raise ValueError(
-                "OPENCODE_GO_API_KEY (or OPENCODE_API_KEY) must be set for the opencode backend."
+                "OPENCODE_GO_API_KEY (or OPENCODE_API_KEY) must be set (and exported) "
+                f"for the {self.provider_id} provider."
             )
 
         key = json.dumps(self._opencode_config(), sort_keys=True)

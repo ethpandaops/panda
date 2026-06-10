@@ -108,3 +108,93 @@ def test_confidence_small_n_fallback_requires_unanimity():
     assert is_confident(base, up) is True
     mixed = up[:3] + [_rs("q3", "s", correct=True, score=0.3)]
     assert is_confident(base, mixed) is False
+
+
+def test_confidence_saturated_cell_does_not_make_gate_unwinnable():
+    # q0 is perfect in both states (delta 0): a tie carries no evidence and must be
+    # dropped, not counted as a failure — otherwise nothing could ever commit.
+    base = [_rs("q0", "s", correct=True, score=1.0)] + [
+        _rs(f"q{i}", "s", correct=True, score=0.4) for i in range(1, 4)
+    ]
+    cand = [_rs("q0", "s", correct=True, score=1.0)] + [
+        _rs(f"q{i}", "s", correct=True, score=0.8) for i in range(1, 4)
+    ]
+    assert is_confident(base, cand, min_cells=3) is True
+
+
+def test_confidence_all_ties_is_no_evidence():
+    base = [_rs(f"q{i}", "s", correct=True, score=1.0) for i in range(4)]
+    cand = [_rs(f"q{i}", "s", correct=True, score=1.0) for i in range(4)]
+    assert is_confident(base, cand, min_cells=3) is False
+
+
+def test_confidence_tie_plus_regression_still_fails():
+    base = [_rs("q0", "s", correct=True, score=1.0)] + [
+        _rs(f"q{i}", "s", correct=True, score=0.5) for i in range(1, 4)
+    ]
+    cand = (
+        [_rs("q0", "s", correct=True, score=1.0)]
+        + [_rs(f"q{i}", "s", correct=True, score=0.8) for i in range(1, 3)]
+        + [_rs("q3", "s", correct=True, score=0.4)]
+    )
+    assert is_confident(base, cand, min_cells=3) is False
+
+
+def _cell_runs(qid: str, scores: list[float]) -> list:
+    return [_rs(qid, "s", correct=True, score=v) for v in scores]
+
+
+def test_confidence_noise_sized_dip_does_not_veto_unanimity():
+    # Three solid wins + one dip well inside that cell's own run spread: the dip is
+    # not distinguishable from judge noise and must not veto the commit.
+    base = (
+        _cell_runs("q0", [0.4, 0.4])
+        + _cell_runs("q1", [0.4, 0.4])
+        + _cell_runs("q2", [0.4, 0.4])
+        + _cell_runs("q3", [0.4, 0.6])  # mean 0.5, sd 0.141
+    )
+    cand = (
+        _cell_runs("q0", [0.8, 0.8])
+        + _cell_runs("q1", [0.8, 0.8])
+        + _cell_runs("q2", [0.8, 0.8])
+        + _cell_runs("q3", [0.34, 0.6])  # mean 0.47: delta -0.03 << SE
+    )
+    assert is_confident(base, cand, min_cells=3) is True
+
+
+def test_confidence_real_regression_still_vetoes():
+    # The dip is far beyond the cell's run spread: a real regression still blocks.
+    base = (
+        _cell_runs("q0", [0.4, 0.4])
+        + _cell_runs("q1", [0.4, 0.4])
+        + _cell_runs("q2", [0.4, 0.4])
+        + _cell_runs("q3", [0.5, 0.5])
+    )
+    cand = (
+        _cell_runs("q0", [0.8, 0.8])
+        + _cell_runs("q1", [0.8, 0.8])
+        + _cell_runs("q2", [0.8, 0.8])
+        + _cell_runs("q3", [0.1, 0.1])  # delta -0.4, zero spread
+    )
+    assert is_confident(base, cand, min_cells=3) is False
+
+
+def test_confidence_k1_keeps_strict_behavior():
+    # With a single run per cell there is no spread information (SE=0): any nonzero
+    # dip is treated as informative, exactly as before.
+    base = [_rs(f"q{i}", "s", correct=True, score=0.4) for i in range(4)]
+    cand = [_rs(f"q{i}", "s", correct=True, score=0.8) for i in range(3)] + [
+        _rs("q3", "s", correct=True, score=0.39)
+    ]
+    assert is_confident(base, cand, min_cells=3) is False
+
+
+def test_confidence_all_within_noise_is_no_evidence():
+    # Every delta is inside its cell's spread: nothing distinguishable from noise.
+    base = _cell_runs("q0", [0.4, 0.6]) + _cell_runs("q1", [0.4, 0.6]) + _cell_runs(
+        "q2", [0.4, 0.6]
+    )
+    cand = _cell_runs("q0", [0.45, 0.6]) + _cell_runs("q1", [0.4, 0.65]) + _cell_runs(
+        "q2", [0.42, 0.62]
+    )
+    assert is_confident(base, cand, min_cells=3) is False

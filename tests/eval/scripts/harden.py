@@ -33,6 +33,8 @@ from pathlib import Path
 from cases.loader import load_test_cases
 from config.settings import DEFAULT_EVALUATOR_MODEL, DEFAULT_SUBJECTS
 from harden.auditor import CodexAuditor
+from harden.journal import DEFAULT_NAME as JOURNAL_NAME
+from harden.journal import Journal
 from harden.logsetup import setup_logging
 from harden.loop import optimize
 from harden.proposer import CodexProposer
@@ -82,6 +84,55 @@ def _cleanup_worktree(invoking_repo: str, repo_dir: str, branch: str) -> None:
         capture_output=True,
     )
     subprocess.run(["git", "-C", invoking_repo, "branch", "-D", branch], capture_output=True)
+
+
+def _promote(invoking_repo: str, branch: str, log) -> bool:
+    """Cherry-pick the run's champion commits onto the invoking checkout.
+
+    Returns True when every commit landed. Refuses on a dirty checkout (a
+    half-applied cherry-pick over local edits is worse than a manual step) and
+    aborts cleanly on conflicts, leaving the harden branch untouched either way.
+    """
+    dirty = subprocess.run(
+        ["git", "-C", invoking_repo, "status", "--porcelain"],
+        text=True, capture_output=True,
+    ).stdout.strip()
+    if dirty:
+        log(
+            "[yellow]promote skipped[/yellow]: your checkout has uncommitted changes — "
+            f"bring the run in yourself with: git cherry-pick ..{branch}"
+        )
+        return False
+
+    base = subprocess.run(
+        ["git", "-C", invoking_repo, "merge-base", "HEAD", branch],
+        text=True, capture_output=True,
+    ).stdout.strip()
+    if not base:
+        log(f"[yellow]promote skipped[/yellow]: no merge base with {branch}")
+        return False
+
+    picked = subprocess.run(
+        ["git", "-C", invoking_repo, "cherry-pick", f"{base}..{branch}"],
+        text=True, capture_output=True,
+    )
+    if picked.returncode != 0:
+        subprocess.run(
+            ["git", "-C", invoking_repo, "cherry-pick", "--abort"], capture_output=True
+        )
+        tail = " ".join((picked.stderr or picked.stdout).split())[-300:]
+        log(
+            f"[yellow]promote failed[/yellow] (cherry-pick conflict, aborted cleanly): {tail} — "
+            f"the run is intact on {branch}; resolve manually with: git cherry-pick {base[:12]}..{branch}"
+        )
+        return False
+
+    count = subprocess.run(
+        ["git", "-C", invoking_repo, "rev-list", "--count", f"{base}..{branch}"],
+        text=True, capture_output=True,
+    ).stdout.strip()
+    log(f"[bold green]promoted {count} champion commit(s) onto your checkout[/bold green]")
+    return True
 
 
 def main() -> None:
@@ -169,8 +220,17 @@ def main() -> None:
         "--prescreen",
         type=int,
         default=3,
-        help="cheap k=1 check on this many of the parent's worst questions before the full "
-        "measure (0 disables)",
+        help="functional smoke: k=1 on this many of the parent's worst questions before "
+        "the full measure, rejecting only candidates with zero correct runs where the "
+        "parent worked (0 disables)",
+    )
+    ap.add_argument(
+        "--promote",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="on success, cherry-pick the champion commit(s) onto the checkout the run "
+        "was launched from (skipped if it has uncommitted changes); --no-promote "
+        "leaves them only on the harden/<ts> branch",
     )
     ap.add_argument(
         "--audit-retries",
@@ -282,6 +342,7 @@ def main() -> None:
                 pool_size=args.pool_size,
                 prescreen=args.prescreen,
                 audit_retries=args.audit_retries,
+                journal=Journal(HARDEN_HOME / JOURNAL_NAME, context=Path(args.cases).name),
                 log=log,
             )
         )
@@ -297,10 +358,13 @@ def main() -> None:
                 ["git", "-C", repo_dir, "rev-parse", "--short", "HEAD"],
                 text=True, capture_output=True,
             ).stdout.strip()
-            log(
-                f"[bold green]committed on {branch}[/bold green] (worktree {repo_dir}) — "
-                f"bring it into your checkout with: git cherry-pick {sha}"
-            )
+            log(f"[bold green]committed on {branch}[/bold green] (worktree {repo_dir})")
+            promoted = args.promote and _promote(invoking_repo, branch, log)
+            if promoted:
+                _cleanup_worktree(invoking_repo, repo_dir, branch)
+                log("auto-worktree removed (champions promoted)")
+            else:
+                log(f"bring it into your checkout with: git cherry-pick {sha}")
         else:
             _cleanup_worktree(invoking_repo, repo_dir, branch)
             log(f"auto-worktree removed (nothing was committed); branch {branch} deleted")

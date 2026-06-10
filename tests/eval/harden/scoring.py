@@ -169,6 +169,31 @@ def no_correctness_regression(
     return True
 
 
+def _paired_cell_stats(
+    baseline: list[RunScore], candidate: list[RunScore]
+) -> list[tuple[float, float]]:
+    """Per-cell (delta, SE(delta)) over cells present in BOTH. SE is computed from the
+    within-cell run spread (sqrt(s_b^2/k_b + s_c^2/k_c)); 0.0 when either side has a
+    single run (no spread information)."""
+    base = _by_cell(baseline)
+    cand = _by_cell(candidate)
+    stats: list[tuple[float, float]] = []
+    for cell, base_runs in base.items():
+        cand_runs = cand.get(cell)
+        if not cand_runs:
+            continue
+        b = [r.score for r in base_runs]
+        c = [r.score for r in cand_runs]
+        delta = statistics.mean(c) - statistics.mean(b)
+        se = 0.0
+        if len(b) >= 2 and len(c) >= 2:
+            se = math.sqrt(
+                statistics.variance(b) / len(b) + statistics.variance(c) / len(c)
+            )
+        stats.append((delta, se))
+    return stats
+
+
 def _paired_cell_deltas(baseline: list[RunScore], candidate: list[RunScore]) -> list[float]:
     """Per-cell (candidate_mean - baseline_mean) over cells present in BOTH."""
     base = _by_cell(baseline)
@@ -190,6 +215,7 @@ def is_confident(
     *,
     min_cells: int = 3,
     confidence: float = 0.95,
+    log: "Callable[[str], None] | None" = None,
 ) -> bool:
     """Gate: accept only if the improvement is real, not noise.
 
@@ -200,21 +226,46 @@ def is_confident(
     per-question effort variance; the permutation test is exact (not anti-conservative
     like a bootstrap at small N) and fully deterministic — enumeration, no RNG.
 
-    Small-N fallback: with fewer cells than a permutation test can ever reach
-    ``confidence`` on (2^-n > alpha, e.g. under 5 cells at 95%), require UNANIMOUS
-    improvement instead — every cell strictly better. That keeps a single-question
-    smoke usable while staying honest about what so few cells can show.
+    Tied cells (zero delta — e.g. a cell already saturated at 1.0 in both states)
+    carry no directional information and are DROPPED, per standard sign-test
+    convention. Treating them as failures would make the gate permanently unwinnable
+    once any baseline cell is perfect. They are exactly p-neutral in the permutation
+    branch anyway; dropping them only affects branch selection and unanimity.
+
+    Small-N fallback: with fewer informative cells than a permutation test can ever
+    reach ``confidence`` on (2^-n > alpha, e.g. under 5 cells at 95%), require
+    UNANIMOUS improvement among informative cells. In this branch a cell is
+    informative only if |delta| exceeds the cell's own standard error (measured from
+    its run spread, needs k>=2 on both sides): a judge-noise-sized wobble neither
+    vetoes three solid wins nor counts as a win itself. The permutation branch keeps
+    every non-tied cell — pricing noisy deltas is what that test is for.
     """
-    deltas = _paired_cell_deltas(baseline, candidate)
-    n = len(deltas)
-    if n < min_cells:
+    stats = _paired_cell_stats(baseline, candidate)
+    if len(stats) < min_cells:
         return False
+    nontied = [(d, se) for d, se in stats if abs(d) > 1e-9]
+    ties = len(stats) - len(nontied)
+    if ties and log:
+        log(f"confidence gate: dropped {ties} tied cell(s); {len(nontied)} informative")
+    n = len(nontied)
+    if n == 0:
+        return False  # every cell tied: no evidence either way
+    deltas = [d for d, _ in nontied]
     observed = statistics.mean(deltas)
     if observed <= 0:
         return False
     alpha = 1.0 - confidence
     if 0.5**n > alpha:
-        return all(d > 0 for d in deltas)
+        beyond_noise = [d for d, se in nontied if abs(d) > se]
+        within = n - len(beyond_noise)
+        if within and log:
+            log(
+                f"confidence gate: {within} cell(s) within run-spread noise "
+                f"(|delta| <= SE) excluded from unanimity"
+            )
+        if not beyond_noise:
+            return False  # nothing distinguishable from noise
+        return all(d > 0 for d in beyond_noise)
     if n <= 18:  # exact enumeration of all 2^n sign patterns
         hits, total = 0, 2**n
         for mask in range(total):

@@ -13,7 +13,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
-from harden.codex import run_codex
+from harden.codex import assistant_prose, run_codex
 
 
 @dataclass
@@ -74,4 +74,6 @@ class CodexProposer:
             return ProposalResult(ok=False, summary=f"codex timed out after {self.timeout:.0f}s")
         if code != 0:
             return ProposalResult(ok=False, summary=f"codex exited {code}: {out[-1000:]}")
-        return ProposalResult(ok=True, summary=out[-2000:])
+        # The raw tail is usually the end of a printed diff; the summary the
+        # history/journal keeps must be the assistant's prose.
+        return ProposalResult(ok=True, summary=(assistant_prose(out) or out)[-2000:])

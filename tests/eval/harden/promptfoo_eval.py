@@ -360,4 +360,6 @@ def _write_trace_file(path: Path, trace: RunTrace, correct: bool, correctness: f
         lines.append(tc.output or "")
         lines.append("")
     lines.append(f"=== final answer ===\n{trace.output}")
+    if trace.crashed and getattr(trace, "error", ""):
+        lines.append(f"\n=== crash ===\n{trace.error}")
     path.write_text("\n".join(lines))
