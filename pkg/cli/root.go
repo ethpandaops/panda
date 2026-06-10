@@ -55,11 +55,12 @@ var rootCmd = &cobra.Command{
 New? Start here: panda getting-started
 
 For data questions, use this workflow:
+  panda resources                             # list live metadata resources
   panda datasets
   panda datasets <name>
   panda search examples "<topic>"
   panda clickhouse query-raw <Target> "<SQL>"   # for one SQL answer
-  panda execute --code '<python>'               # for multi-step Python analysis`,
+  panda execute --file script.py                # for multi-step Python analysis`,
 	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 		level, err := logrus.ParseLevel(logLevel)
 		if err != nil {
@@ -128,7 +129,7 @@ func unknownCommandHint(err error) string {
 		return ""
 	}
 
-	return `Tip: panda has fixed workflow, discovery, and datasource commands; most topic words are search terms, not commands. Use 'panda resources' for live metadata such as networks, 'panda datasets' for dataset guides, and 'panda search examples "<topic>"' for query patterns.`
+	return `Tip: panda has fixed workflow, discovery, and datasource commands; most topic words are search terms, not commands. Use 'panda resources' to list live metadata resources, 'panda datasets' for dataset guides, and 'panda search examples "<topic>"' for query patterns.`
 }
 
 func init() {

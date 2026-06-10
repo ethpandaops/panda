@@ -82,7 +82,13 @@ Examples:
 var clickhouseQueryRawCmd = &cobra.Command{
 	Use:   "query-raw <datasource> <sql>",
 	Short: "Execute a SQL query and return raw rows (always JSON)",
-	Args:  cobra.ExactArgs(2),
+	Long: `Execute a SQL query and return raw rows as JSON.
+
+Keep result sets bounded: aggregate in SQL or add a LIMIT when inspecting rows.
+For cross-source analysis, run separate bounded queries and combine them with
+'panda execute' or another client-side step instead of dumping unbounded rows
+through shell JSON.`,
+	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runClickHouseOperation(cmd, "clickhouse.query_raw", args[0], args[1], true)
 	},

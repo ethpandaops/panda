@@ -66,7 +66,7 @@ func RegisterSchemaResources(
 		Template: mcp.NewResourceTemplate(
 			"clickhouse://tables/{cluster}",
 			"ClickHouse Cluster Databases",
-			mcp.WithTemplateDescription("Compact database/table-namespace summary for a ClickHouse cluster. Read clickhouse://tables/{cluster}/{database} for table names."),
+			mcp.WithTemplateDescription("Compact database/table-namespace summary for a ClickHouse datasource/cluster. {cluster} is a datasource name, not a dataset id. Read clickhouse://tables/{cluster}/{database} for table names."),
 			mcp.WithTemplateMIMEType("application/json"),
 			mcp.WithTemplateAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.6, ""),
 		),
@@ -78,7 +78,7 @@ func RegisterSchemaResources(
 		Template: mcp.NewResourceTemplate(
 			"clickhouse://tables/{cluster}/{database}",
 			"ClickHouse Database Tables",
-			mcp.WithTemplateDescription("List the tables in a single database within a ClickHouse cluster."),
+			mcp.WithTemplateDescription("List the tables in a single ClickHouse database/namespace within a datasource/cluster. Dataset ids are guides; use concrete database names here."),
 			mcp.WithTemplateMIMEType("application/json"),
 			mcp.WithTemplateAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.6, ""),
 		),
@@ -90,7 +90,7 @@ func RegisterSchemaResources(
 		Template: mcp.NewResourceTemplate(
 			"clickhouse://tables/{cluster}/{database}/{table_name}",
 			"ClickHouse Table Schema",
-			mcp.WithTemplateDescription("Full schema for a specific ClickHouse table identified by (cluster, database, table) — columns, types, comments, engine, and key clauses."),
+			mcp.WithTemplateDescription("Full schema for a specific ClickHouse table identified by concrete (cluster, database, table) names — columns, types, comments, engine, and key clauses."),
 			mcp.WithTemplateMIMEType("application/json"),
 			mcp.WithTemplateAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.6, ""),
 		),
@@ -126,13 +126,13 @@ func createClusterTablesHandler(client SchemaClient) types.ReadHandler {
 		response := &TablesListResponse{
 			Description: fmt.Sprintf("Databases in ClickHouse cluster %q.", clusterName),
 			Clusters:    map[string]*ClusterTablesSummary{clusterName: buildClusterDatabaseSummary(cluster)},
-			Usage:       "Read clickhouse://tables/{cluster}/{database} for table names, then clickhouse://tables/{cluster}/{database}/{table_name} for detailed schema. The cluster view intentionally omits table names to keep output bounded.",
+			Usage:       "Use concrete ClickHouse identifiers: {cluster} is a datasource name, and {database} is a ClickHouse database/namespace. Read clickhouse://tables/{cluster}/{database} for table names, then clickhouse://tables/{cluster}/{database}/{table_name} for detailed schema. The cluster view intentionally omits table names to keep output bounded.",
 		}
 
 		if clusterTablesIncludeTables(uri) {
 			response.Description = fmt.Sprintf("Tables in ClickHouse cluster %q, keyed by (database, table).", clusterName)
 			response.Clusters[clusterName] = buildClusterSummary(cluster, "")
-			response.Usage = "Read clickhouse://tables/{cluster}/{database}/{table_name} for detailed schema. Prefer the compact cluster URI or database-scoped URI unless you need every table name."
+			response.Usage = "Read clickhouse://tables/{cluster}/{database}/{table_name} for detailed schema. Prefer the compact cluster URI or database-scoped URI unless you need every table name. Dataset ids are guide names, not schema path segments."
 		}
 
 		return marshalResource(response, "cluster tables")
@@ -164,7 +164,7 @@ func createDatabaseTablesHandler(client SchemaClient) types.ReadHandler {
 		response := &TablesListResponse{
 			Description: fmt.Sprintf("Tables in database %q of ClickHouse cluster %q.", database, clusterName),
 			Clusters:    map[string]*ClusterTablesSummary{clusterName: buildClusterSummary(cluster, database)},
-			Usage:       "Read clickhouse://tables/{cluster}/{database}/{table_name} for the detailed schema.",
+			Usage:       "Read clickhouse://tables/{cluster}/{database}/{table_name} for the detailed schema. Use concrete table names from this list.",
 		}
 
 		return marshalResource(response, "database tables")

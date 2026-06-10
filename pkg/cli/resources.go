@@ -109,6 +109,8 @@ func runResourcesList(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
+	fmt.Println("\nRead a resource: panda resources <uri>")
+
 	return nil
 }
 

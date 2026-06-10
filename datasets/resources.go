@@ -79,9 +79,14 @@ func (m *Module) handleDatasetsList(_ context.Context, _ string) (string, error)
 		})
 	}
 
+	usage := "Read datasets://{name} for a dataset's query guide. Placement params/notes also appear in datasources://clickhouse."
+	if !m.hasAnyPlacements() {
+		usage = "This server has not advertised dataset placement metadata; examples still include Target fields and datasources://clickhouse lists concrete datasources. Read datasets://{name} for syntax rules."
+	}
+
 	data, err := json.MarshalIndent(map[string]any{
 		"datasets": summaries,
-		"usage":    "Read datasets://{name} for a dataset's query guide. Placement params/notes also appear in datasources://clickhouse.",
+		"usage":    usage,
 	}, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("marshaling datasets list: %w", err)
@@ -133,7 +138,19 @@ func (m *Module) renderDatasetGuide(p pack, clientCtx types.ClientContext) strin
 
 	placements := m.packPlacements(p.name)
 	if len(placements) == 0 {
-		b.WriteString("No datasource in this deployment declares this dataset (or the proxy predates `contains` declarations). Check `datasources://clickhouse`.\n")
+		if m.hasAnyDatasetDeclarations() {
+			if clientCtx == types.ClientContextCLI {
+				b.WriteString("No discovered datasource declares this dataset in this deployment. Check `panda datasets` and `panda resources datasources://clickhouse` for available placements.\n")
+			} else {
+				b.WriteString("No discovered datasource declares this dataset in this deployment. Check `datasets://list` and `datasources://clickhouse` for available placements.\n")
+			}
+		} else {
+			if clientCtx == types.ClientContextCLI {
+				b.WriteString("This server has not advertised dataset placement metadata, so this guide is shown in compatibility mode. Use search result `Target` fields or `panda resources datasources://clickhouse` to choose a concrete datasource.\n")
+			} else {
+				b.WriteString("This server has not advertised dataset placement metadata, so this guide is shown in compatibility mode. Use search result `Target` fields or `datasources://clickhouse` to choose a concrete datasource.\n")
+			}
+		}
 	}
 
 	for _, pl := range placements {
@@ -184,4 +201,24 @@ func (m *Module) renderDatasetGuide(p pack, clientCtx types.ClientContext) strin
 	}
 
 	return b.String()
+}
+
+func (m *Module) hasAnyDatasetDeclarations() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	return len(m.active) > 0
+}
+
+func (m *Module) hasAnyPlacements() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	for _, placements := range m.placements {
+		if len(placements) > 0 {
+			return true
+		}
+	}
+
+	return false
 }

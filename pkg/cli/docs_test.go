@@ -42,3 +42,24 @@ func TestShowFunction(t *testing.T) {
 	assert.Contains(t, output, "Function: clickhouse.query")
 	assert.Contains(t, output, "query(datasource, sql)")
 }
+
+func TestShowModuleExplainsCLICommandName(t *testing.T) {
+	err := showModule(map[string]types.ModuleDoc{
+		"clickhouse": {Description: "SQL"},
+	}, "execute")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `module "execute" not found in Python API docs`)
+	assert.Contains(t, err.Error(), `panda execute --help`)
+	assert.Contains(t, err.Error(), "Available Python modules: clickhouse")
+}
+
+func TestShowModuleListsPythonModulesForUnknownName(t *testing.T) {
+	err := showModule(map[string]types.ModuleDoc{
+		"clickhouse": {Description: "SQL"},
+	}, "missing")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Available Python modules: clickhouse")
+	assert.NotContains(t, err.Error(), "--help")
+}
