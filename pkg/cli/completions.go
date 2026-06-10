@@ -117,14 +117,14 @@ func completeSchemaArgs(cmd *cobra.Command, args []string, _ string) ([]string, 
 }
 
 func completeClusterNames(ctx context.Context) ([]string, cobra.ShellCompDirective) {
-	response, err := readClickHouseTables(ctx)
+	response, err := listDatasources(ctx, "clickhouse")
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
-	names := make([]string, 0, len(response.Clusters))
-	for clusterName := range response.Clusters {
-		names = append(names, clusterName)
+	names := make([]string, 0, len(response.Datasources))
+	for _, info := range response.Datasources {
+		names = append(names, info.Name)
 	}
 
 	return names, cobra.ShellCompDirectiveNoFileComp

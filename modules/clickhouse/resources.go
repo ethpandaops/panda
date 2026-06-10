@@ -52,17 +52,6 @@ func RegisterSchemaResources(
 ) {
 	log = log.WithField("resource", "clickhouse_schema")
 
-	reg.RegisterStatic(types.StaticResource{
-		Resource: mcp.NewResource(
-			"clickhouse://tables",
-			"ClickHouse Tables",
-			mcp.WithResourceDescription("List all available ClickHouse tables, grouped by cluster. This can be large; prefer scoped cluster/database/table resources when you know the target."),
-			mcp.WithMIMEType("application/json"),
-			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.7, ""),
-		),
-		Handler: createTablesListHandler(client),
-	})
-
 	reg.RegisterTemplate(types.TemplateResource{
 		Template: mcp.NewResourceTemplate(
 			"clickhouse://tables/{cluster}",
@@ -100,24 +89,6 @@ func RegisterSchemaResources(
 	})
 
 	log.Debug("Registered ClickHouse schema resources")
-}
-
-func createTablesListHandler(client SchemaClient) types.ReadHandler {
-	return func(_ context.Context, _ string) (string, error) {
-		allTables := client.GetAllTables()
-
-		response := &TablesListResponse{
-			Description: "Available ClickHouse tables, grouped by cluster. This list can be large; prefer a scoped cluster, database, or table schema resource when possible.",
-			Clusters:    make(map[string]*ClusterTablesSummary, len(allTables)),
-			Usage:       "Read clickhouse://tables/{cluster}, clickhouse://tables/{cluster}/{database}, or clickhouse://tables/{cluster}/{database}/{table_name} to narrow the result.",
-		}
-
-		for clusterName, cluster := range allTables {
-			response.Clusters[clusterName] = buildClusterSummary(cluster, "")
-		}
-
-		return marshalResource(response, "tables list")
-	}
 }
 
 func createClusterTablesHandler(client SchemaClient) types.ReadHandler {

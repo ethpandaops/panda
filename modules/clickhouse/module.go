@@ -280,7 +280,7 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 					Description: "Execute SQL query, return DataFrame",
 					Parameters: map[string]string{
 						"datasource": "a ClickHouse datasource name from clickhouse.list_datasources() or datasources://clickhouse",
-						"sql":        "SQL query string; reference tables as database.table and inspect schemas via clickhouse://tables",
+						"sql":        "SQL query string; reference tables as database.table and inspect schemas via clickhouse://tables/{cluster}/{database}",
 						"parameters": "Optional ClickHouse query parameters referenced in SQL as {name:Type}",
 					},
 					Returns: "pandas.DataFrame",

@@ -246,7 +246,7 @@ func (b *Builder) buildResourceRegistry(
 	// Register getting-started resource.
 	resource.RegisterGettingStartedResources(b.log, reg, toolReg)
 
-	// Register module-specific resources (e.g., clickhouse://tables).
+	// Register module-specific resources (e.g., clickhouse://tables/{cluster}).
 	for _, ext := range moduleReg.Initialized() {
 		provider, ok := ext.(module.ResourceProvider)
 		if !ok {

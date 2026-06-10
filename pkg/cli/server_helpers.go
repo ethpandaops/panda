@@ -373,11 +373,6 @@ func readResourceWithClientContext(ctx context.Context, uri, clientContext strin
 	}, nil
 }
 
-// readClickHouseTables lists every cluster and its tables.
-func readClickHouseTables(ctx context.Context) (*clickhousemodule.TablesListResponse, error) {
-	return readClickHouseTablesURI(ctx, "clickhouse://tables")
-}
-
 // readClickHouseClusterTables lists the tables in a single cluster.
 func readClickHouseClusterTables(ctx context.Context, cluster string) (*clickhousemodule.TablesListResponse, error) {
 	return readClickHouseTablesURI(ctx, "clickhouse://tables/"+cluster)

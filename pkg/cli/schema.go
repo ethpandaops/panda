@@ -50,7 +50,7 @@ func runSchema(cmd *cobra.Command, args []string) error {
 
 	switch len(args) {
 	case 0:
-		response, err = readClickHouseTables(ctx)
+		return renderSchemaClusterIndex(ctx)
 	case 1:
 		response, err = readClickHouseClusterTables(ctx, args[0])
 	case 2:
@@ -117,6 +117,36 @@ func showTable(ctx context.Context, cluster, database, table string) error {
 	}
 
 	printTable([]string{"NAME", "TYPE", "COMMENT"}, rows)
+
+	return nil
+}
+
+// renderSchemaClusterIndex lists the ClickHouse clusters and how to drill into
+// them. The full all-clusters table dump no longer exists: it was unbounded on
+// deployments with per-network databases.
+func renderSchemaClusterIndex(ctx context.Context) error {
+	response, err := listDatasources(ctx, "clickhouse")
+	if err != nil {
+		return fmt.Errorf("listing ClickHouse datasources: %w", err)
+	}
+
+	if len(response.Datasources) == 0 {
+		fmt.Println("No ClickHouse datasources found.")
+
+		return nil
+	}
+
+	fmt.Println("Specify a cluster: panda schema <cluster> [database] [table]")
+	fmt.Println()
+
+	rows := make([][]string, 0, len(response.Datasources))
+	for _, info := range response.Datasources {
+		rows = append(rows, []string{info.Name, info.Description})
+	}
+
+	sort.Slice(rows, func(i, j int) bool { return rows[i][0] < rows[j][0] })
+
+	printTable([]string{"CLUSTER", "DESCRIPTION"}, rows)
 
 	return nil
 }

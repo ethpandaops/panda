@@ -93,20 +93,6 @@ func newStubSchemaClient() *stubSchemaClient {
 	}
 }
 
-func TestTablesListHandler(t *testing.T) {
-	client := newStubSchemaClient()
-
-	out, err := createTablesListHandler(client)(context.Background(), "clickhouse://tables")
-	require.NoError(t, err)
-
-	var resp TablesListResponse
-	require.NoError(t, json.Unmarshal([]byte(out), &resp))
-
-	assert.Len(t, resp.Clusters, 2)
-	assert.Equal(t, 1, resp.Clusters["clickhouse-raw"].TableCount)
-	assert.Equal(t, 3, resp.Clusters["clickhouse-refined"].TableCount)
-}
-
 func TestClusterTablesHandler(t *testing.T) {
 	client := newStubSchemaClient()
 	handler := createClusterTablesHandler(client)
