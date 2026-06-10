@@ -60,10 +60,6 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 		return nil, err
 	}
 
-	// Gate on schema discovery so the search index is built from the
-	// schema-validated example set rather than the conservative everything-set.
-	application.WaitForSchemaReady(ctx)
-
 	searchRuntime, err := searchruntime.Build(ctx, b.log, application.ModuleRegistry, application.ProxyClient, b.cfg.Storage.CacheDir, b.cfg.ConsensusSpecs)
 	if err != nil {
 		_ = application.Stop(ctx)

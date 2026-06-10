@@ -20,8 +20,6 @@ var (
 	_ module.ProxyDiscoverable      = (*Module)(nil)
 	_ module.DiscoveryReloadable    = (*Module)(nil)
 	_ module.ProxyAware             = (*Module)(nil)
-	_ module.SchemaResolver         = (*Module)(nil)
-	_ module.SchemaReadyWaiter      = (*Module)(nil)
 	_ module.ResourceProvider       = (*Module)(nil)
 	_ module.SandboxEnvProvider     = (*Module)(nil)
 	_ module.DatasourceInfoProvider = (*Module)(nil)
@@ -53,49 +51,6 @@ func (m *Module) getSchemaClient() SchemaClient {
 	defer m.dsMu.RUnlock()
 
 	return m.schemaClient
-}
-
-// KnownTables implements module.SchemaResolver: it returns the set of bare table
-// names discovered live for a datasource (across all of its databases) and
-// whether any schema is available yet. ok=false until schema discovery has
-// populated the datasource, so callers treat unknown datasources conservatively.
-func (m *Module) KnownTables(datasource string) (map[string]bool, bool) {
-	schemaClient := m.getSchemaClient()
-	if schemaClient == nil {
-		return nil, false
-	}
-
-	cluster, ok := schemaClient.GetClusterTables(datasource)
-	if !ok || len(cluster.Tables) == 0 {
-		return nil, false
-	}
-
-	names := make(map[string]bool, len(cluster.Tables))
-	for _, table := range cluster.Tables {
-		names[table.Name] = true
-	}
-
-	return names, true
-}
-
-// WaitForSchemaReady implements module.SchemaReadyWaiter: it blocks until the
-// initial schema fetch has completed, ctx is done, or the configured
-// ready_timeout elapses. Returns immediately when schema discovery is disabled.
-func (m *Module) WaitForSchemaReady(ctx context.Context) error {
-	schemaClient := m.getSchemaClient()
-	if schemaClient == nil {
-		return nil
-	}
-
-	timeout := m.cfg.SchemaDiscovery.ReadyTimeout
-	if timeout <= 0 {
-		timeout = DefaultSchemaReadyTimeout
-	}
-
-	waitCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	return schemaClient.WaitReady(waitCtx)
 }
 
 // SetProxyClient injects the proxy service for schema discovery.
@@ -194,9 +149,6 @@ func (m *Module) ApplyDefaults() {
 		m.cfg.SchemaDiscovery.RefreshInterval = DefaultSchemaRefreshInterval
 	}
 
-	if m.cfg.SchemaDiscovery.ReadyTimeout == 0 {
-		m.cfg.SchemaDiscovery.ReadyTimeout = DefaultSchemaReadyTimeout
-	}
 }
 
 // Validate checks that the parsed config is valid.

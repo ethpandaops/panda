@@ -30,30 +30,6 @@ type ProxyAware interface {
 	SetProxyClient(client proxy.Service)
 }
 
-// SchemaResolver reports the tables discovered live for a datasource. It lets
-// content modules validate examples against the real schema so stale references
-// can be hidden rather than handed to the assistant.
-type SchemaResolver interface {
-	// KnownTables returns the set of bare table names known for the datasource
-	// and whether any schema is available. ok=false means "no schema info" —
-	// callers must not treat that as "every table is missing".
-	KnownTables(datasource string) (tables map[string]bool, ok bool)
-}
-
-// SchemaResolverAware is an optional interface for modules that validate their
-// content against the live schema.
-type SchemaResolverAware interface {
-	SetSchemaResolver(resolver SchemaResolver)
-}
-
-// SchemaReadyWaiter is implemented by modules whose asynchronous startup (e.g.
-// schema discovery) must complete before dependent state is built. The server
-// waits on this before building the search index so it indexes a schema-valid
-// example set rather than a conservative everything-set.
-type SchemaReadyWaiter interface {
-	WaitForSchemaReady(ctx context.Context) error
-}
-
 // ProxyDiscoverable modules initialize from datasources discovered via the proxy.
 type ProxyDiscoverable interface {
 	// InitFromDiscovery initializes the module from discovered datasources.

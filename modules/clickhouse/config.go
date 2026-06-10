@@ -15,12 +15,6 @@ type SchemaDiscoveryConfig struct {
 	// RefreshInterval is the duration between schema refresh cycles. Defaults to 15 minutes.
 	RefreshInterval time.Duration `yaml:"refresh_interval,omitempty"`
 
-	// ReadyTimeout bounds how long server startup waits for the initial schema
-	// fetch before building the search index and serving. On timeout the server
-	// proceeds with the conservative example set and the background refresh
-	// corrects it. Defaults to 2 minutes; raise it for large schemas.
-	ReadyTimeout time.Duration `yaml:"ready_timeout,omitempty"`
-
 	// Datasources lists the ClickHouse datasources to discover schemas from.
 	// Each entry references a proxy-exposed datasource by name.
 	// If empty, all proxy datasources are used.

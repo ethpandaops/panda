@@ -22,12 +22,11 @@ import (
 
 // Compile-time interface checks.
 var (
-	_ module.Module              = (*Module)(nil)
-	_ module.DefaultEnabled      = (*Module)(nil)
-	_ module.ProxyDiscoverable   = (*Module)(nil)
-	_ module.SchemaResolverAware = (*Module)(nil)
-	_ module.ExamplesProvider    = (*Module)(nil)
-	_ module.ResourceProvider    = (*Module)(nil)
+	_ module.Module            = (*Module)(nil)
+	_ module.DefaultEnabled    = (*Module)(nil)
+	_ module.ProxyDiscoverable = (*Module)(nil)
+	_ module.ExamplesProvider  = (*Module)(nil)
+	_ module.ResourceProvider  = (*Module)(nil)
 )
 
 //go:embed */manifest.yaml */examples.yaml */getting-started.md
@@ -70,15 +69,9 @@ type Module struct {
 	// placements maps dataset name -> the datasources that declared it, with
 	// their params and notes. Rebuilt on every discovery refresh.
 	placements map[string][]placement
-	// resolver validates example table references against the live schema.
-	// When nil, examples are not schema-validated.
-	resolver module.SchemaResolver
 	// warnedUnknown dedupes warnings about declared datasets with no matching
 	// pack, so the periodic discovery refresh doesn't repeat them.
 	warnedUnknown map[string]bool
-	// droppedLogged dedupes warnings about examples hidden by live-schema
-	// validation, so repeated Examples() calls don't repeat them.
-	droppedLogged map[string]bool
 }
 
 // New creates a new datasets module.
@@ -86,7 +79,6 @@ func New() *Module {
 	return &Module{
 		log:           logrus.WithField("module", "datasets"),
 		warnedUnknown: make(map[string]bool, 4),
-		droppedLogged: make(map[string]bool, 16),
 	}
 }
 
@@ -111,14 +103,6 @@ func (m *Module) Stop(_ context.Context) error { return nil }
 // DefaultEnabled activates the module without configuration: packs ship with the
 // release and are always available.
 func (m *Module) DefaultEnabled() bool { return true }
-
-// SetSchemaResolver injects the live-schema resolver used to validate example
-// table references. Safe to call before or after the schema is populated.
-func (m *Module) SetSchemaResolver(resolver module.SchemaResolver) {
-	m.mu.Lock()
-	m.resolver = resolver
-	m.mu.Unlock()
-}
 
 // InitFromDiscovery scopes the exposed packs to the datasets declared by
 // discovered datasources (via their Contents bindings) and records where each
@@ -304,111 +288,32 @@ func (m *Module) packPlacements(name string) []placement {
 
 // Examples aggregates query examples across the active packs. Categories that
 // appear in more than one pack (e.g. a category split across xatu-raw and
-// xatu-cbt) are merged so no examples are dropped. When a live-schema resolver
-// is available, examples that reference tables absent from the live schema are
-// dropped so stale guidance is never surfaced.
+// xatu-cbt) are merged so no examples are dropped. Examples are never filtered
+// against the live schema: a stale example fails loudly at query time where
+// the agent can see and recover from it, whereas serve-time hiding is
+// invisible and amplifies any discovery or parsing bug into silently missing
+// guidance.
 func (m *Module) Examples() map[string]types.ExampleCategory {
-	validate := m.exampleValidator()
-
 	result := make(map[string]types.ExampleCategory)
 
 	for _, p := range m.activePacks() {
 		for key, cat := range p.examples {
-			kept := cat.Examples
-			if validate != nil {
-				kept = make([]types.Example, 0, len(cat.Examples))
-				for _, ex := range cat.Examples {
-					missing := validate(ex)
-					if len(missing) == 0 {
-						kept = append(kept, ex)
-
-						continue
-					}
-
-					m.logDropped(ex, missing)
-				}
-			}
-
-			if len(kept) == 0 {
-				continue
-			}
-
 			existing, ok := result[key]
 			if !ok {
-				cat.Examples = kept
 				result[key] = cat
 
 				continue
 			}
 
-			// Merge into a fresh slice: kept may alias the pack's stored slice,
-			// and appending in place would write into the pack's backing array.
-			merged := make([]types.Example, 0, len(existing.Examples)+len(kept))
+			// Merge into a fresh slice: appending in place would write into
+			// the first pack's backing array.
+			merged := make([]types.Example, 0, len(existing.Examples)+len(cat.Examples))
 			merged = append(merged, existing.Examples...)
-			merged = append(merged, kept...)
+			merged = append(merged, cat.Examples...)
 			existing.Examples = merged
 			result[key] = existing
 		}
 	}
 
 	return result
-}
-
-// exampleValidator returns a function reporting which of an example's table
-// references are absent from the live schema (empty = keep the example). It
-// returns nil when no resolver is set (validation disabled). Per-target
-// known-table sets are cached for the duration of the call; a target with no
-// schema yet (ok=false) is not validated.
-func (m *Module) exampleValidator() func(types.Example) []string {
-	m.mu.RLock()
-	resolver := m.resolver
-	m.mu.RUnlock()
-
-	if resolver == nil {
-		return nil
-	}
-
-	type lookup struct {
-		known   map[string]bool
-		present bool
-	}
-
-	cache := make(map[string]lookup, 4)
-
-	return func(ex types.Example) []string {
-		l, ok := cache[ex.Target]
-		if !ok {
-			known, present := resolver.KnownTables(ex.Target)
-			l = lookup{known: known, present: present}
-			cache[ex.Target] = l
-		}
-
-		if !l.present {
-			return nil
-		}
-
-		return unknownTableRefs(ex.Query, l.known)
-	}
-}
-
-// logDropped warns (once per example+reason) that live-schema validation hid an
-// example, so drift fails loud rather than silently narrowing guidance.
-func (m *Module) logDropped(ex types.Example, missing []string) {
-	key := ex.Target + "\x00" + ex.Name + "\x00" + strings.Join(missing, ",")
-
-	m.mu.Lock()
-	logged := m.droppedLogged[key]
-	m.droppedLogged[key] = true
-	log := m.log
-	m.mu.Unlock()
-
-	if logged {
-		return
-	}
-
-	log.WithFields(logrus.Fields{
-		"example":        ex.Name,
-		"target":         ex.Target,
-		"missing_tables": missing,
-	}).Warn("Hiding example: it references tables absent from the live schema (likely schema drift)")
 }

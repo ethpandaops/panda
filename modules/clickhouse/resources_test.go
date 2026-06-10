@@ -47,7 +47,6 @@ type stubSchemaClient struct {
 
 func (s *stubSchemaClient) Start(_ context.Context) error                   { return nil }
 func (s *stubSchemaClient) Stop() error                                     { return nil }
-func (s *stubSchemaClient) WaitReady(_ context.Context) error               { return nil }
 func (s *stubSchemaClient) UpdateDatasources(_ []SchemaDiscoveryDatasource) {}
 func (s *stubSchemaClient) GetAllTables() map[string]*ClusterTables         { return s.clusters }
 

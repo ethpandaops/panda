@@ -131,10 +131,6 @@ func (a *App) Build(ctx context.Context) error {
 
 	a.log.Info("All modules started")
 
-	// Wire the live-schema resolver into content modules so they can validate
-	// examples against the real schema (drift gate).
-	a.injectSchemaResolver()
-
 	// 6. Create and start cartographoor client.
 	cartographoorClient := cartographoor.NewCartographoorClient(a.log, cartographoor.CartographoorConfig{
 		URL:      cartographoor.DefaultCartographoorURL,
@@ -436,8 +432,6 @@ func (a *App) refreshModulesFromDiscovery() {
 	ctx, cancel := context.WithTimeout(context.Background(), refreshActivationTimeout)
 	defer cancel()
 
-	activated := false
-
 	for _, ext := range a.ModuleRegistry.Initialized() {
 		if previouslyInitialized[ext.Name()] {
 			if reloadable, ok := ext.(module.DiscoveryReloadable); ok {
@@ -452,14 +446,6 @@ func (a *App) refreshModulesFromDiscovery() {
 		}
 
 		a.activateModule(ctx, ext)
-
-		activated = true
-	}
-
-	// A newly-activated module may be the schema resolver (clickhouse) or depend
-	// on it (datasets); re-run injection so late activation still wires them.
-	if activated {
-		a.injectSchemaResolver()
 	}
 }
 
@@ -508,52 +494,6 @@ func (a *App) discoveredDatasources(proxyClient proxy.Client) []types.Datasource
 func (a *App) injectProxyClient() {
 	for _, ext := range a.ModuleRegistry.Initialized() {
 		a.injectProxyClientInto(ext)
-	}
-}
-
-// WaitForSchemaReady blocks until every module whose async startup feeds derived
-// state has completed its initial fetch, so callers that build derived state
-// (e.g. the search index) read a populated, schema-validated view. Each module
-// bounds its own wait (e.g. ClickHouse via schema_discovery.ready_timeout); on
-// timeout it logs and moves on, and the background refresh recovers once the
-// schema arrives.
-func (a *App) WaitForSchemaReady(ctx context.Context) {
-	for _, ext := range a.ModuleRegistry.Initialized() {
-		waiter, ok := ext.(module.SchemaReadyWaiter)
-		if !ok {
-			continue
-		}
-
-		if err := waiter.WaitForSchemaReady(ctx); err != nil {
-			a.log.WithField("module", ext.Name()).WithError(err).
-				Warn("Timed out waiting for schema readiness; proceeding (background refresh will catch up)")
-		}
-	}
-}
-
-// injectSchemaResolver wires the first module that resolves live schema (the
-// ClickHouse module) into every SchemaResolverAware module so content can be
-// validated against the real schema.
-func (a *App) injectSchemaResolver() {
-	var resolver module.SchemaResolver
-
-	for _, ext := range a.ModuleRegistry.Initialized() {
-		if r, ok := ext.(module.SchemaResolver); ok {
-			resolver = r
-
-			break
-		}
-	}
-
-	if resolver == nil {
-		return
-	}
-
-	for _, ext := range a.ModuleRegistry.Initialized() {
-		if aware, ok := ext.(module.SchemaResolverAware); ok {
-			aware.SetSchemaResolver(resolver)
-			a.log.WithField("module", ext.Name()).Debug("Injected schema resolver into module")
-		}
 	}
 }
 

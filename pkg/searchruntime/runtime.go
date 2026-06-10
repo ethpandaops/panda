@@ -38,8 +38,8 @@ type Runtime struct {
 }
 
 // exampleRefreshInterval is how often the example search index is rebuilt to
-// track changes in the validated example set (e.g. after the live schema
-// changes which examples are valid). Rebuilds are skipped when the example set
+// track changes in the exposed example set (deployment scoping changes when
+// the proxy's dataset declarations change). Rebuilds are skipped when the set
 // is unchanged, so polling this often is cheap.
 const exampleRefreshInterval = 5 * time.Minute
 
@@ -238,8 +238,8 @@ func (r *Runtime) Close() error {
 	return nil
 }
 
-// startExampleRefresh rebuilds the example search index when the validated
-// example set changes (e.g. after live schema changes which examples are valid).
+// startExampleRefresh rebuilds the example search index when the exposed
+// example set changes (e.g. the proxy's dataset declarations changed scoping).
 // Rebuilds are skipped while the set is unchanged, so the poll is cheap.
 func (r *Runtime) startExampleRefresh(log logrus.FieldLogger, moduleRegistry *module.Registry, initialSig uint64) {
 	r.wg.Add(1)

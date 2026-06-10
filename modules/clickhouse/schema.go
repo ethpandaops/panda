@@ -44,11 +44,6 @@ const (
 	// DefaultSchemaQueryTimeout is the timeout for individual schema queries.
 	DefaultSchemaQueryTimeout = 60 * time.Second
 
-	// DefaultSchemaReadyTimeout bounds how long server startup waits for the
-	// initial schema fetch before proceeding (and letting the background refresh
-	// catch up).
-	DefaultSchemaReadyTimeout = 2 * time.Minute
-
 	// schemaQueryConcurrency limits concurrent schema queries per cluster.
 	schemaQueryConcurrency = 5
 )
@@ -103,10 +98,6 @@ type SchemaClient interface {
 	GetClusterTables(clusterName string) (*ClusterTables, bool)
 	GetTableInCluster(clusterName, database, tableName string) (*TableSchema, bool)
 	UpdateDatasources(datasources []SchemaDiscoveryDatasource)
-	// WaitReady blocks until the initial schema fetch has completed (success or
-	// failure) or ctx is done. Consumers that build derived state from the
-	// schema (e.g. the search index) wait on this so they read a populated view.
-	WaitReady(ctx context.Context) error
 }
 
 // Compile-time interface compliance check.
@@ -126,9 +117,6 @@ type clickhouseSchemaClient struct {
 	done       chan struct{}
 	refreshNow chan struct{} // capacity 1; coalesces on-demand refresh signals
 	wg         sync.WaitGroup
-
-	ready     chan struct{} // closed once the initial fetch completes
-	readyOnce sync.Once
 }
 
 // NewSchemaClient creates a new schema discovery client.
@@ -153,24 +141,7 @@ func NewSchemaClient(
 		datasources: make(map[string]string, 2),
 		done:        make(chan struct{}),
 		refreshNow:  make(chan struct{}, 1),
-		ready:       make(chan struct{}),
 	}
-}
-
-// WaitReady blocks until the initial schema fetch completes or ctx is done.
-func (c *clickhouseSchemaClient) WaitReady(ctx context.Context) error {
-	select {
-	case <-c.ready:
-		return nil
-	case <-c.done:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
-func (c *clickhouseSchemaClient) markReady() {
-	c.readyOnce.Do(func() { close(c.ready) })
 }
 
 // UpdateDatasources replaces the cluster→datasource mapping used on the next
@@ -247,7 +218,6 @@ func (c *clickhouseSchemaClient) Start(ctx context.Context) error {
 
 	go func() {
 		defer c.wg.Done()
-		defer c.markReady()
 
 		fetchCtx, cancel := context.WithTimeout(context.Background(), c.cfg.QueryTimeout*10)
 		defer cancel()
