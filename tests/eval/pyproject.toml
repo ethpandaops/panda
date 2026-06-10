@@ -5,7 +5,7 @@ description = "LLM evaluation harness for ethpandaops-panda server"
 requires-python = ">=3.11"
 dependencies = [
     "claude-agent-sdk>=0.1.0",
-    "deepeval>=2.0.0",
+    "deepeval>=4.0.0,<5",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
     "pydantic>=2.0.0",
