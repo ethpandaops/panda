@@ -374,3 +374,53 @@ func (f *fakeProxyClient) EthNodeDatasourceInfo() []types.DatasourceInfo {
 
 func (f *fakeProxyClient) EmbeddingAvailable() bool { return false }
 func (f *fakeProxyClient) EmbeddingModel() string   { return "" }
+
+// TestDiscoveryRefreshDisarmedUntilBuildCompletes verifies the discovery hook
+// is inert before ArmDiscoveryRefresh: background ticks during server build
+// must not activate modules concurrently with registry wiring.
+func TestDiscoveryRefreshDisarmedUntilBuildCompletes(t *testing.T) {
+	t.Parallel()
+
+	log := logrus.New()
+	log.SetOutput(io.Discard)
+
+	reg := module.NewRegistry(log)
+	mod := &fakeDiscoverableModule{name: "fake"}
+	reg.Add(mod)
+
+	client := &fakeProxyClient{
+		clickhouse: []types.DatasourceInfo{{Type: "clickhouse", Name: "clickhouse-raw"}},
+	}
+
+	a := &App{
+		log:            log,
+		ModuleRegistry: reg,
+		ProxyClient:    client,
+	}
+
+	a.onDiscoveryRefresh()
+
+	if reg.IsInitialized("fake") {
+		t.Fatal("disarmed discovery hook activated a module")
+	}
+
+	registered := atomic.Int32{}
+
+	a.ArmDiscoveryRefresh(func(_ module.Module) {
+		registered.Add(1)
+	})
+
+	if !reg.IsInitialized("fake") {
+		t.Fatal("ArmDiscoveryRefresh did not run the catch-up refresh")
+	}
+
+	if registered.Load() != 1 {
+		t.Fatalf("registrar called %d times for the late-activated module, want 1", registered.Load())
+	}
+
+	a.onDiscoveryRefresh()
+
+	if registered.Load() != 1 {
+		t.Fatalf("registrar re-ran for an already-active module: %d calls", registered.Load())
+	}
+}

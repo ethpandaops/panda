@@ -126,7 +126,8 @@ Datasource identity is owned by the proxy that advertised it. Modules that imple
 7. Semantic search runtime
 8. MCP tool registry: `execute_python`, `manage_session`, `search`
 9. MCP resource registry
-10. Product HTTP API
+10. Background discovery refresh armed (module activation/resource registration for datasources that appear later; inert during build)
+11. Product HTTP API
 
 ### Public Surfaces
 

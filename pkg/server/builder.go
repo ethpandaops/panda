@@ -122,6 +122,22 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 		toolReg,
 	)
 
+	// Arm the background discovery refresh only now that the registries exist:
+	// activation during build raced registry wiring, and modules that activate
+	// later (e.g. a local Kurtosis datasource appearing after startup) still
+	// need their resources registered.
+	application.ArmDiscoveryRefresh(func(ext module.Module) {
+		provider, ok := ext.(module.ResourceProvider)
+		if !ok {
+			return
+		}
+
+		if err := provider.RegisterResources(b.log, resourceReg); err != nil {
+			b.log.WithError(err).WithField("module", ext.Name()).
+				Warn("Failed to register resources for late-activated module")
+		}
+	})
+
 	cleanup := func(stopCtx context.Context) error {
 		var errs []error
 

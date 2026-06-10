@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -54,6 +55,17 @@ type App struct {
 	Cartographoor  cartographoor.CartographoorClient
 
 	refreshMu sync.Mutex
+
+	// discoveryRefreshArmed gates the proxy discovery hook: until the server
+	// build completes, module activation would race registry wiring on the
+	// main goroutine.
+	discoveryRefreshArmed atomic.Bool
+
+	registrarMu sync.Mutex
+	// moduleResourceRegistrar registers a late-activated module's resources
+	// with the (already-built) resource registry. Installed by the server
+	// builder when it arms the discovery refresh.
+	moduleResourceRegistrar func(module.Module)
 }
 
 // New creates a new App.
@@ -97,7 +109,7 @@ func (a *App) Build(ctx context.Context) error {
 	// datasources show up without a server restart. During the initial
 	// Discover (before step 4) no modules are initialized yet, so the hook is
 	// a no-op until the first background tick.
-	proxyClient, err := a.buildProxyClient(ctx, a.refreshModulesFromDiscovery)
+	proxyClient, err := a.buildProxyClient(ctx, a.onDiscoveryRefresh)
 	if err != nil {
 		_ = a.stop(ctx)
 
@@ -370,6 +382,33 @@ func (a *App) localProxyServerConfig() proxy.ServerConfig {
 	}
 }
 
+// onDiscoveryRefresh is the proxy clients' discovery hook. It is inert until
+// the server build completes: the background refresh (the embedded local proxy
+// ticks every 5s) would otherwise activate modules concurrently with registry
+// wiring on the main goroutine.
+func (a *App) onDiscoveryRefresh() {
+	if !a.discoveryRefreshArmed.Load() {
+		return
+	}
+
+	a.refreshModulesFromDiscovery()
+}
+
+// ArmDiscoveryRefresh enables the background discovery hook and installs the
+// registrar used to register resources for modules that activate after the
+// server is built (e.g. a local Kurtosis datasource appearing later). It runs
+// one refresh immediately to catch datasources discovered while the hook was
+// still disarmed.
+func (a *App) ArmDiscoveryRefresh(registrar func(module.Module)) {
+	a.registrarMu.Lock()
+	a.moduleResourceRegistrar = registrar
+	a.registrarMu.Unlock()
+
+	a.discoveryRefreshArmed.Store(true)
+
+	a.refreshModulesFromDiscovery()
+}
+
 // refreshModulesFromDiscovery re-applies the proxy client's current datasource
 // list to every ProxyDiscoverable module. Called from the proxy client's
 // discovery hook so periodic refresh propagates to module state without
@@ -462,6 +501,14 @@ func (a *App) activateModule(ctx context.Context, ext module.Module) {
 			Warn("Failed to start newly-initialized module after refresh")
 
 		return
+	}
+
+	a.registrarMu.Lock()
+	registrar := a.moduleResourceRegistrar
+	a.registrarMu.Unlock()
+
+	if registrar != nil {
+		registrar(ext)
 	}
 
 	a.log.WithField("module", ext.Name()).Info("Module activated after proxy discovery refresh")
