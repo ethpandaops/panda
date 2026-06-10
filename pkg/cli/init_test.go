@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -153,6 +154,22 @@ func TestBuildComposeTemplate(t *testing.T) {
 				"volumes should contain config mount %q, got %v",
 				expectedMount, volumes)
 
+			// The Docker socket must always be mounted to the in-container
+			// path the sandbox backend dials, regardless of the host source.
+			socketMountFound := false
+
+			for _, v := range volumes {
+				if s, ok := v.(string); ok && strings.HasSuffix(s, ":/var/run/docker.sock") {
+					socketMountFound = true
+
+					break
+				}
+			}
+
+			assert.True(t, socketMountFound,
+				"volumes must mount the Docker socket to /var/run/docker.sock, got %v",
+				volumes)
+
 			// Verify command starts with the full binary name.
 			// Bare subcommands like ["serve", ...] break the docker-entrypoint.sh
 			// which needs ["panda-server", "serve", ...].
@@ -172,6 +189,66 @@ func TestBuildComposeTemplate(t *testing.T) {
 			assert.Equal(t, "bridge", pandaNet["driver"])
 		})
 	}
+}
+
+func TestResolveDockerSocketPath(t *testing.T) {
+	tests := []struct {
+		name       string
+		dockerHost string
+		want       string
+	}{
+		{
+			name:       "unset falls back to default",
+			dockerHost: "",
+			want:       "/var/run/docker.sock",
+		},
+		{
+			name:       "rootless socket under XDG_RUNTIME_DIR",
+			dockerHost: "unix:///run/user/1000/docker.sock",
+			want:       "/run/user/1000/docker.sock",
+		},
+		{
+			name:       "explicit rootful unix socket",
+			dockerHost: "unix:///var/run/docker.sock",
+			want:       "/var/run/docker.sock",
+		},
+		{
+			name:       "tcp endpoint is not mountable, falls back to default",
+			dockerHost: "tcp://127.0.0.1:2375",
+			want:       "/var/run/docker.sock",
+		},
+		{
+			name:       "ssh endpoint falls back to default",
+			dockerHost: "ssh://user@remote",
+			want:       "/var/run/docker.sock",
+		},
+		{
+			name:       "empty unix path falls back to default",
+			dockerHost: "unix://",
+			want:       "/var/run/docker.sock",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// t.Setenv mutates process env, so this test cannot be parallel.
+			t.Setenv("DOCKER_HOST", tt.dockerHost)
+
+			assert.Equal(t, tt.want, resolveDockerSocketPath())
+		})
+	}
+}
+
+// TestBuildComposeTemplateRootlessSocket verifies the generated compose binds
+// the rootless Docker socket from DOCKER_HOST rather than the rootful default
+// (issue #168).
+func TestBuildComposeTemplateRootlessSocket(t *testing.T) {
+	t.Setenv("DOCKER_HOST", "unix:///run/user/1000/docker.sock")
+
+	result := buildComposeTemplate(defaultServerImage, "/home/user/.config/panda")
+
+	assert.Contains(t, result, "- /run/user/1000/docker.sock:/var/run/docker.sock",
+		"compose must bind-mount the rootless socket from DOCKER_HOST")
 }
 
 func TestImageForVersion(t *testing.T) {
