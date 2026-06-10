@@ -337,6 +337,15 @@ func (a *App) startLocalProxyRoute(ctx context.Context, onDiscover func()) (*pro
 func (a *App) localProxyServerConfig() proxy.ServerConfig {
 	clickhouse := make([]proxy.ClickHouseClusterConfig, 0, len(a.cfg.LocalProxy.ClickHouse))
 	for _, item := range a.cfg.LocalProxy.ClickHouse {
+		contains := make([]proxy.DatasetBindingConfig, 0, len(item.Contains))
+		for _, b := range item.Contains {
+			contains = append(contains, proxy.DatasetBindingConfig{
+				Dataset: b.Dataset,
+				Params:  b.Params,
+				Notes:   b.Notes,
+			})
+		}
+
 		clickhouse = append(clickhouse, proxy.ClickHouseClusterConfig{
 			BaseDatasourceConfig: proxy.BaseDatasourceConfig{
 				Name:        item.Name,
@@ -350,6 +359,7 @@ func (a *App) localProxyServerConfig() proxy.ServerConfig {
 			Secure:               item.Secure,
 			Autodiscover:         item.Autodiscover,
 			AutodiscoverInterval: item.AutodiscoverInterval,
+			Contains:             contains,
 		})
 	}
 

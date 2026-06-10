@@ -13,11 +13,12 @@ read it first and follow it:
 - **CLI:** `panda getting-started`
 - **MCP:** read the `panda://getting-started` resource
 
-It is generated live from the running server — workflow, the Python
-`clickhouse`/`prometheus`/`dora`/`storage` API, the ClickHouse raw-vs-refined rules,
-partition-key filters, sessions, and storage — so it never goes stale. Use
-`panda docs <module>` for a module's full API and `panda search examples "<topic>"` for
-worked queries. Everything below is the durable context that guide does not carry.
+It is generated live from the running server — workflow, discovery pointers, and
+sessions — so it never goes stale. Dataset query rules (table syntax, partition-key
+filters, FINAL, network filtering) live in per-dataset guides: `panda datasets` lists
+them, `panda datasets <name>` shows one. Use `panda docs <module>` for a module's full
+API and `panda search examples "<topic>"` for worked queries. Everything below is the
+durable context those guides do not carry.
 
 ## Discover names — don't hardcode them
 
@@ -27,6 +28,8 @@ chat, or a screenshot:
 
 ```bash
 panda datasources                                 # datasources and their types
+panda datasets                                    # datasets and where they live
+panda datasets <name>                             # one dataset's query guide
 panda schema [<cluster> [<database> [<table>]]]   # clusters → tables → schema
 ```
 

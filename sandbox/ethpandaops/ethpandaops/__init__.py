@@ -4,7 +4,7 @@ This library provides direct access to Ethereum network data:
 - ClickHouse: Raw and aggregated blockchain data
 - Prometheus: Infrastructure metrics
 - Loki: Log data
-- Storage: S3-compatible file storage for outputs
+- Storage: server-managed file storage for outputs
 
 Use list_datasources() on each module to discover available datasources or
 check the datasources://list MCP resource.
@@ -12,12 +12,12 @@ check the datasources://list MCP resource.
 Example usage:
     from ethpandaops import clickhouse, prometheus, loki, storage
 
-    # List available ClickHouse clusters
-    clusters = clickhouse.list_datasources()
-    cluster_name = clusters[0]['name']  # e.g., "clickhouse-raw"
+    # List available ClickHouse datasources (incl. extra.datasets placement)
+    datasources = clickhouse.list_datasources()
+    name = datasources[0]['name']
 
-    # Query ClickHouse using cluster name
-    df = clickhouse.query(cluster_name, "SELECT * FROM beacon_api_eth_v1_events_block LIMIT 10")
+    # Query ClickHouse using the datasource name
+    df = clickhouse.query(name, "SELECT 1")
 
     # Query Prometheus using instance name
     result = prometheus.query("ethpandaops", "up")

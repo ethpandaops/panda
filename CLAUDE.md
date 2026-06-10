@@ -96,7 +96,7 @@ uv run python -m scripts.repl
 
 ### Module System
 
-Seven compiled-in modules are registered in `pkg/app/app.go`:
+Eight compiled-in modules are registered in `pkg/app/app.go`:
 - `clickhouse`
 - `prometheus`
 - `loki`
@@ -104,6 +104,7 @@ Seven compiled-in modules are registered in `pkg/app/app.go`:
 - `ethnode`
 - `cbt`
 - `block_archive`
+- `datasets` (dataset knowledge packs, lives in `datasets/` at the repo root)
 
 Each module implements `module.Module` in `pkg/module/module.go`. Optional capability interfaces live alongside it in `pkg/module/module.go`.
 - `ProxyAware` — receives proxy client for proxy-backed operations
@@ -239,6 +240,7 @@ pkg/
   config/          # Configuration loading and validation
   observability/   # Prometheus metrics
   types/           # Shared data types
+datasets/          # Dataset knowledge packs (content-only module)
 modules/
   clickhouse/      # ClickHouse module
   prometheus/      # Prometheus module

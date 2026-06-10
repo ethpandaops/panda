@@ -45,16 +45,27 @@ func New() *Module {
 
 func (m *Module) Name() string { return "clickhouse" }
 
+// getSchemaClient returns the schema client under the lock: Start can run on
+// the discovery-refresh goroutine (late activation) concurrently with readers
+// on the main goroutine.
+func (m *Module) getSchemaClient() SchemaClient {
+	m.dsMu.RLock()
+	defer m.dsMu.RUnlock()
+
+	return m.schemaClient
+}
+
 // KnownTables implements module.SchemaResolver: it returns the set of bare table
 // names discovered live for a datasource (across all of its databases) and
 // whether any schema is available yet. ok=false until schema discovery has
 // populated the datasource, so callers treat unknown datasources conservatively.
 func (m *Module) KnownTables(datasource string) (map[string]bool, bool) {
-	if m.schemaClient == nil {
+	schemaClient := m.getSchemaClient()
+	if schemaClient == nil {
 		return nil, false
 	}
 
-	cluster, ok := m.schemaClient.GetClusterTables(datasource)
+	cluster, ok := schemaClient.GetClusterTables(datasource)
 	if !ok || len(cluster.Tables) == 0 {
 		return nil, false
 	}
@@ -71,7 +82,8 @@ func (m *Module) KnownTables(datasource string) (map[string]bool, bool) {
 // initial schema fetch has completed, ctx is done, or the configured
 // ready_timeout elapses. Returns immediately when schema discovery is disabled.
 func (m *Module) WaitForSchemaReady(ctx context.Context) error {
-	if m.schemaClient == nil {
+	schemaClient := m.getSchemaClient()
+	if schemaClient == nil {
 		return nil
 	}
 
@@ -83,7 +95,7 @@ func (m *Module) WaitForSchemaReady(ctx context.Context) error {
 	waitCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	return m.schemaClient.WaitReady(waitCtx)
+	return schemaClient.WaitReady(waitCtx)
 }
 
 // SetProxyClient injects the proxy service for schema discovery.
@@ -127,7 +139,8 @@ func (m *Module) InitFromDiscovery(datasources []types.DatasourceInfo) error {
 // fetched without a server restart. Skipped when YAML schema_discovery.datasources
 // is configured (those are authoritative) or when schema discovery is disabled.
 func (m *Module) OnDiscoveryReloaded(_ context.Context) error {
-	if m.schemaClient == nil {
+	schemaClient := m.getSchemaClient()
+	if schemaClient == nil {
 		return nil
 	}
 
@@ -151,7 +164,7 @@ func (m *Module) OnDiscoveryReloaded(_ context.Context) error {
 	}
 	m.dsMu.RUnlock()
 
-	m.schemaClient.UpdateDatasources(dsList)
+	schemaClient.UpdateDatasources(dsList)
 
 	return nil
 }
@@ -303,8 +316,8 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 // RegisterResources registers ClickHouse schema resources.
 func (m *Module) RegisterResources(log logrus.FieldLogger, reg module.ResourceRegistry) error {
 	m.log = log.WithField("module", "clickhouse")
-	if m.schemaClient != nil {
-		RegisterSchemaResources(m.log, reg, m.schemaClient)
+	if schemaClient := m.getSchemaClient(); schemaClient != nil {
+		RegisterSchemaResources(m.log, reg, schemaClient)
 	}
 
 	return nil
@@ -358,7 +371,7 @@ func (m *Module) Start(ctx context.Context) error {
 		return nil
 	}
 
-	m.schemaClient = NewSchemaClient(
+	schemaClient := NewSchemaClient(
 		m.log,
 		SchemaConfig{
 			RefreshInterval: m.cfg.SchemaDiscovery.RefreshInterval,
@@ -368,13 +381,17 @@ func (m *Module) Start(ctx context.Context) error {
 		m.proxySvc,
 	)
 
-	return m.schemaClient.Start(ctx)
+	m.dsMu.Lock()
+	m.schemaClient = schemaClient
+	m.dsMu.Unlock()
+
+	return schemaClient.Start(ctx)
 }
 
 // Stop cleans up resources.
 func (m *Module) Stop(_ context.Context) error {
-	if m.schemaClient != nil {
-		return m.schemaClient.Stop()
+	if schemaClient := m.getSchemaClient(); schemaClient != nil {
+		return schemaClient.Stop()
 	}
 
 	return nil

@@ -3,6 +3,7 @@ package clickhouse
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -626,24 +627,45 @@ func (c *clickhouseSchemaClient) queryJSON(ctx context.Context, datasourceName, 
 	return &result, nil
 }
 
-// fetchTableList fetches the list of tables from a ClickHouse datasource.
-// First tries SHOW TABLES (works for clusters with a default database).
-// If that returns 0 rows, falls back to querying system.tables to discover
-// tables across all databases (clusters with no default database).
+// fetchTableList discovers tables for a datasource by merging the default
+// database (SHOW TABLES) with every other non-system database. A cluster can
+// hold data in both at once — e.g. a populated default database plus
+// per-dataset databases — so short-circuiting on a non-empty default database
+// would hide the others (and live-schema validation would then wrongly demote
+// examples that reference them). Each source failing alone is tolerated; both
+// failing is an error.
 func (c *clickhouseSchemaClient) fetchTableList(ctx context.Context, datasourceName string) ([]discoveredTable, error) {
-	tables, err := c.fetchTableListDefault(ctx, datasourceName)
-	if err != nil {
-		return nil, err
+	defaultTables, defaultErr := c.fetchTableListDefault(ctx, datasourceName)
+	if defaultErr != nil {
+		c.log.WithError(defaultErr).WithField("datasource", datasourceName).
+			Warn("Default-database table discovery failed")
 	}
 
-	if len(tables) > 0 {
-		return tables, nil
+	databaseTables, databasesErr := c.fetchTableListFromSystemTables(ctx, datasourceName)
+	if databasesErr != nil {
+		c.log.WithError(databasesErr).WithField("datasource", datasourceName).
+			Warn("Per-database table discovery failed")
 	}
 
-	// Default database is empty — try per-network-database discovery.
-	c.log.WithField("datasource", datasourceName).Info("SHOW TABLES returned 0 rows, trying per-database discovery fallback")
+	if defaultErr != nil && databasesErr != nil {
+		return nil, fmt.Errorf("discovering tables: %w", errors.Join(defaultErr, databasesErr))
+	}
 
-	return c.fetchTableListFromSystemTables(ctx, datasourceName)
+	seen := make(map[string]bool, len(defaultTables)+len(databaseTables))
+	merged := make([]discoveredTable, 0, len(defaultTables)+len(databaseTables))
+
+	for _, t := range append(defaultTables, databaseTables...) {
+		key := t.Database + "\x00" + t.Name
+		if seen[key] {
+			continue
+		}
+
+		seen[key] = true
+
+		merged = append(merged, t)
+	}
+
+	return merged, nil
 }
 
 // fetchTableListDefault fetches tables from the cluster's default database via

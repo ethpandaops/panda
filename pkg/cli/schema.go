@@ -17,7 +17,7 @@ var schemaCmd = &cobra.Command{
 	Long: `Show available ClickHouse tables and their schemas, scoped by cluster.
 
 Arguments progressively narrow the view:
-  panda schema                              list every cluster and its tables
+  panda schema                              list the available clusters
   panda schema <cluster>                    list the tables in one cluster
   panda schema <cluster> <database>         list the tables in one database
   panda schema <cluster> <database> <table> show the full schema for one table
@@ -28,8 +28,8 @@ to see the available cluster names.
 Examples:
   panda schema
   panda schema clickhouse-raw
-  panda schema clickhouse-raw <database>
-  panda schema clickhouse-refined <database> <table>
+  panda schema clickhouse-refined mainnet
+  panda schema clickhouse-refined mainnet fct_block_head
   panda schema --json`,
 	Args: cobra.MaximumNArgs(3),
 	RunE: runSchema,

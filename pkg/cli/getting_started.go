@@ -12,8 +12,8 @@ var gettingStartedCmd = &cobra.Command{
 	GroupID: groupDiscovery,
 	Use:     "getting-started",
 	Short:   "Show the getting started guide",
-	Long: `Display the getting started guide with workflow guidance, available commands,
-and critical syntax rules for querying Ethereum data.
+	Long: `Display the getting started guide: workflow, data discovery pointers, and
+session rules. Per-dataset syntax rules live in 'panda datasets <name>'.
 
 Examples:
   panda getting-started

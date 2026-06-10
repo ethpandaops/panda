@@ -22,6 +22,7 @@ Examples:
   panda resources clickhouse://tables
   panda resources read panda://getting-started
   panda resources read python://ethpandaops
+  panda resources read clickhouse://tables/<cluster>
   panda resources -o json`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runResources,

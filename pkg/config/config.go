@@ -21,7 +21,7 @@ const (
 	defaultProxyName                    = "primary"
 	defaultProxyURL                     = "http://localhost:18081"
 	defaultLocalProxyClickHouseName     = "local-kurtosis"
-	defaultLocalProxyClickHouseDesc     = "Local Kurtosis devnet logs (OpenTelemetry, autodiscovered). ClickHouse db `otel`, table `otel_logs` (per-service devnet logs; level is in Body, not SeverityText). Filter by EnclaveName (one per devnet) and ServiceName."
+	defaultLocalProxyClickHouseDesc     = "Local Kurtosis devnet logs (OpenTelemetry, autodiscovered)"
 	defaultLocalProxyClickHouseHost     = "host.docker.internal"
 	defaultLocalProxyClickHousePort     = 18123
 	defaultLocalProxyClickHouseDatabase = "otel"
@@ -220,6 +220,19 @@ type LocalProxyClickHouseConfig struct {
 	Autodiscover bool `yaml:"autodiscover,omitempty"`
 	// AutodiscoverInterval is how often to check liveness.
 	AutodiscoverInterval time.Duration `yaml:"autodiscover_interval,omitempty"`
+	// Contains declares the datasets stored in this datasource, mirroring the
+	// standalone proxy's contains entries. Passed through to discovery verbatim.
+	Contains []LocalProxyDatasetBinding `yaml:"contains,omitempty"`
+}
+
+// LocalProxyDatasetBinding declares a dataset stored in a local datasource.
+// Dataset names a knowledge pack shipped with the release; Params are opaque
+// placement hints interpreted by that pack; Notes says what distinguishes this
+// copy from the dataset's other copies.
+type LocalProxyDatasetBinding struct {
+	Dataset string            `yaml:"dataset"`
+	Params  map[string]string `yaml:"params,omitempty"`
+	Notes   string            `yaml:"notes,omitempty"`
 }
 
 // Load loads configuration from a YAML file with environment variable substitution.
@@ -474,6 +487,12 @@ func defaultLocalProxyClickHouseConfig() LocalProxyClickHouseConfig {
 		Database:             defaultLocalProxyClickHouseDatabase,
 		Autodiscover:         true,
 		AutodiscoverInterval: defaultLocalProxyClickHouseInterval,
+		Contains: []LocalProxyDatasetBinding{
+			{
+				Dataset: "otel-logs",
+				Params:  map[string]string{"database": defaultLocalProxyClickHouseDatabase},
+			},
+		},
 	}
 }
 

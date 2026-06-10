@@ -59,7 +59,7 @@ func (c *resourceTipCache) cleanupLocked() {
 }
 
 const resourceTipMessage = `
-TIP: Read panda://getting-started for datasource rules and workflow guidance.`
+TIP: Read panda://getting-started for the workflow, then datasets://{name} for a dataset's syntax rules.`
 
 const (
 	ExecutePythonToolName = "execute_python"
@@ -70,7 +70,7 @@ const (
 
 const executePythonDescription = `Execute Python code with the ethpandaops library for Ethereum data analysis.
 
-**BEFORE YOUR FIRST QUERY:** Read panda://getting-started for workflow guidance and critical syntax rules.
+**BEFORE YOUR FIRST QUERY:** Read panda://getting-started for the workflow, then datasets://{name} for the dataset's required syntax rules.
 
 Use the search tool with ` + "`type=\"examples\"`" + ` for query patterns. Reuse session_id from responses.`
 

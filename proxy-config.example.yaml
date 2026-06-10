@@ -139,6 +139,10 @@ clickhouse:
     secure: true
     skip_verify: false
     timeout: 300
+    contains:
+      - dataset: xatu-raw
+        params: { database: default }
+        notes: "Devnet networks only."
     # allowed_orgs:
     #   - ethpandaops
 
@@ -154,7 +158,7 @@ clickhouse:
   #   contains:
   #     - dataset: otel-logs
   #       params: { database: otel }
-  #       notes: "Local Kurtosis devnet logs. Filter by EnclaveName (one per devnet)."
+  #       notes: "Local Kurtosis devnet logs."
 
 # Prometheus instances
 prometheus:

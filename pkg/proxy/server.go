@@ -705,6 +705,16 @@ func (s *server) ClickHouseDatasourceInfo() []types.DatasourceInfo {
 		seen[ch.Name] = struct{}{}
 	}
 
+	// Autodiscovered clusters keep their configured name, so their dataset
+	// bindings come from the matching config entry.
+	containsByName := make(map[string][]types.DatasetBinding, len(s.cfg.ClickHouse))
+
+	for _, ch := range s.cfg.ClickHouse {
+		if len(ch.Contains) > 0 {
+			containsByName[ch.Name] = bindingsToInfo(ch.Contains)
+		}
+	}
+
 	for _, name := range s.clickhouseHandler.Clusters() {
 		if _, ok := seen[name]; ok {
 			continue
@@ -720,6 +730,7 @@ func (s *server) ClickHouseDatasourceInfo() []types.DatasourceInfo {
 			Name:        cfg.Name,
 			Description: cfg.Description,
 			Metadata:    metadataValue("database", cfg.Database),
+			Contents:    containsByName[cfg.Name],
 		})
 	}
 

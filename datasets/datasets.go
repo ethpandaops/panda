@@ -399,13 +399,14 @@ func (m *Module) logDropped(ex types.Example, missing []string) {
 	m.mu.Lock()
 	logged := m.droppedLogged[key]
 	m.droppedLogged[key] = true
+	log := m.log
 	m.mu.Unlock()
 
 	if logged {
 		return
 	}
 
-	m.log.WithFields(logrus.Fields{
+	log.WithFields(logrus.Fields{
 		"example":        ex.Name,
 		"target":         ex.Target,
 		"missing_tables": missing,

@@ -57,8 +57,10 @@ func NewSearchTool(
 						"enum": []string{
 							searchsvc.SearchTypeExamples,
 							searchsvc.SearchTypeRunbooks,
+							"notebooks",
 							searchsvc.SearchTypeEIPs,
 							searchsvc.SearchTypeConsensusSpecs,
+							"specs",
 						},
 					},
 					"query": map[string]any{
