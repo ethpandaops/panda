@@ -180,9 +180,12 @@ async def test_held_out_rejects_train_only_improvement(repo, monkeypatch):
         repo_dir=str(repo), apply=_apply_factory(repo, state),
         k=2, rounds=1, min_cells=1, held_out_ids={"q2"}, log=lambda *_: None,
     )
+    # Not committed (no held-out gain), but Pareto-retained as a mutation parent: it IS
+    # strictly best on the train cells, and a future round may build on it.
     assert result.accepted == 0
-    assert result.rounds[0].reason == "not-confident"
+    assert result.rounds[0].reason == "pool-added"
     assert not (repo / "proposal.txt").exists()
+    assert "harden round" not in _git(repo, "log", "--oneline")
 
 
 @pytest.mark.asyncio
@@ -223,6 +226,30 @@ async def test_clean_audit_does_not_block_accept(repo, monkeypatch):
         auditor=_StubAuditor(blocked=False), k=2, rounds=1, log=lambda *_: None,
     )
     assert result.accepted == 1
+
+
+@pytest.mark.asyncio
+async def test_prescreen_rejects_cheaply_before_full_measure(repo, monkeypatch):
+    # A candidate that's clearly worse on the parent's worst questions is killed by the
+    # k=1 prescreen: only baseline + prescreen measures run, never the full suite.
+    state = {"improved": False}
+    calls: list[str] = []
+    inner = _stub_measure(state, correct_when_improved=False)
+
+    async def counting(questions, subject_specs, *, run_dir, **kw):
+        calls.append(Path(run_dir).name)
+        return await inner(questions, subject_specs, run_dir=run_dir, **kw)
+
+    monkeypatch.setattr(loop_mod, "measure_candidate", counting)
+    qs = [Question(id=f"q{i}", text=f"question {i}") for i in range(4)]  # prescreen(3) < 4
+    result = await optimize(
+        qs, ["s"], _StubProposer(repo, state),
+        repo_dir=str(repo), apply=_apply_factory(repo, state),
+        k=3, rounds=1, log=lambda *_: None,
+    )
+    assert result.rounds[0].reason == "prescreen"
+    assert calls == ["baseline", "round1_prescreen"]
+    assert not (repo / "proposal.txt").exists()
 
 
 def test_question_prompts_single_and_multi_turn():

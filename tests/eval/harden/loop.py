@@ -1,33 +1,47 @@
-"""The optimization loop — measure, propose, re-measure, gate. Deliberately dumb.
+"""The optimization loop — measure, propose, prescreen, re-measure, gate.
 
     baseline = measure(current harness)
+    pool = {baseline}                          # candidate states, as patches vs HEAD
     repeat:
-        proposer edits the harness from the baseline's RAW traces
-        apply()                       # rebuild + restart — injected, env-specific
+        parent = pick from pool (weighted by per-cell wins — GEPA-style Pareto)
+        proposer edits the harness from the PARENT's raw traces (eval cases hidden)
+        deterministic guards -> LLM audit -> apply() (rebuild + restart)
+        prescreen on the parent's worst questions (k=1, cheap) — bail early if worse
         candidate = measure()
-        if no correctness regression AND confidently better:  accept (commit), rebase baseline
-        else:                                                 revert (git) + rebuild
+        gates vs the ORIGINAL baseline:
+            correctness regressed             -> discard
+            confidently better (held-out)     -> champion (+ pool)
+            strictly best on >=1 cell in pool -> pool (mutation parent only)
+    finally: commit the best champion's patch (one commit), or nothing.
+
+Single-lineage hill-climbing is the one configuration GEPA ablates and beats (+6.4
+aggregate): a greedy loop finds one idea and grinds on it. The pool keeps every state
+that is best at SOMETHING as a future mutation parent, while the COMMIT bar stays what
+it always was — no correctness regression anywhere, confidently better on questions the
+proposer never saw.
 
 The loop knows nothing panda-specific or env-specific. It decides accept/reject from the
 two top-level gates in scoring.py and nothing else; the proposer reasons from raw traces;
 "how to make an edit live" is the injected ``apply`` callable. Swap the Subject, the
 Proposer, or the apply command and the loop is unchanged.
 
-Safety: the loop refuses to start unless the git tree is CLEAN, so a rejected proposal is
-reverted with a full ``git checkout`` + ``git clean`` back to that known-good commit —
-no chance of clobbering uncommitted work. Run it on a throwaway worktree/branch.
+Safety: the loop refuses to start unless the git tree is CLEAN, so candidate states are
+plain patches vs HEAD and any reject is a full ``git checkout`` + ``git clean`` back to
+that known-good commit — no chance of clobbering uncommitted work. HEAD never moves until
+the single end-of-run champion commit. Run it on a throwaway worktree/branch.
 """
 
 from __future__ import annotations
 
 import contextlib
+import random
 import re
 import shutil
 import statistics
 import subprocess
 import tempfile
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from rich.markup import escape
@@ -184,23 +198,75 @@ def _hidden(paths: list[Path]) -> Iterator[None]:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def _proposal_diff(repo: str) -> str:
-    """The proposal's full diff vs HEAD, including untracked new files — what the auditor
-    reviews. Does not stage anything (so revert stays a plain checkout + clean)."""
-    parts = []
-    tracked = _git(repo, "diff", "HEAD")
-    if tracked:
-        parts.append(tracked)
-    for path in _git(repo, "ls-files", "--others", "--exclude-standard").splitlines():
-        path = path.strip()
-        if not path:
-            continue
-        try:
-            content = Path(repo, path).read_text(errors="replace")
-        except OSError:
-            continue
-        parts.append(f"--- /dev/null\n+++ b/{path}\n{content}")
-    return "\n".join(parts)
+def _capture_patch(repo: str) -> str:
+    """The working tree's full diff vs HEAD as a real, re-appliable git patch (new files
+    included). Stages everything to render the patch, then unstages — the tree itself is
+    untouched, so revert stays a plain checkout + clean. NB: not via ``_git`` — that
+    strips whitespace, and git refuses a patch missing its trailing newline."""
+    _git(repo, "add", "-A")
+    patch = subprocess.run(
+        ["git", "-C", repo, "diff", "--cached", "--binary"],
+        text=True, capture_output=True, check=True,
+    ).stdout
+    _git(repo, "reset", "-q")
+    return patch
+
+
+def _apply_patch(repo: str, patch: str) -> None:
+    """Materialize a captured patch onto the clean HEAD tree."""
+    if not patch:
+        return
+    subprocess.run(
+        ["git", "-C", repo, "apply", "--binary", "--whitespace=nowarn"],
+        input=patch, text=True, capture_output=True, check=True,
+    )
+
+
+@dataclass
+class PoolEntry:
+    """One harness state in the candidate pool: its patch vs HEAD + its measurement.
+    ``champion`` marks states that passed the COMMIT bar (confidently better than the
+    original baseline on the gate questions); non-champions are mutation parents only."""
+
+    label: str
+    patch: str  # "" = the baseline itself
+    result: CandidateResult
+    traces_dir: str
+    champion: bool = False
+
+
+def _cell_means(result: CandidateResult) -> dict[tuple[str, str], float]:
+    cells: dict[tuple[str, str], list[float]] = {}
+    for rs in result.runs:
+        cells.setdefault((rs.question_id, rs.subject), []).append(rs.score)
+    return {c: statistics.mean(v) for c, v in cells.items()}
+
+
+def _pool_wins(pool: list[PoolEntry]) -> list[int]:
+    """Per-entry count of cells where it's (jointly) best in the pool — GEPA-style
+    instance wins, the weights for stochastic parent selection. An entry that's best at
+    NOTHING still gets selection weight 1 via the caller's +1, it just rarely wins."""
+    means = [_cell_means(e.result) for e in pool]
+    cells = set().union(*means) if means else set()
+    wins = [0] * len(pool)
+    for cell in cells:
+        best = max(m.get(cell, float("-inf")) for m in means)
+        for i, m in enumerate(means):
+            if m.get(cell, float("-inf")) >= best - 1e-9:
+                wins[i] += 1
+    return wins
+
+
+def _strictly_wins_a_cell(candidate: CandidateResult, pool: list[PoolEntry]) -> bool:
+    """Pareto retention: keep a candidate only if it's STRICTLY best on at least one
+    (question, subject) cell — ties don't count, or the pool fills with clones."""
+    cand = _cell_means(candidate)
+    pool_means = [_cell_means(e.result) for e in pool]
+    for cell, mean in cand.items():
+        best = max((m.get(cell, float("-inf")) for m in pool_means), default=float("-inf"))
+        if mean > best + 1e-9:
+            return True
+    return False
 
 
 async def optimize(
@@ -224,6 +290,9 @@ async def optimize(
     save_dir: str | None = None,
     protected_paths: tuple[str, ...] = ("tests/eval/", ".github/"),
     hide_paths: tuple[str, ...] = ("tests/eval/cases",),
+    pool_size: int = 6,
+    prescreen: int = 3,
+    seed: int = 1234,
     log: Callable[[str], None] = print,
 ) -> OptimizeResult:
     """Run the optimization loop. ``apply`` rebuilds+restarts the harness so a fresh
@@ -236,7 +305,13 @@ async def optimize(
     computed on these held-out questions. A change that just memorizes the train questions
     produces no held-out gain and is rejected. The no-correctness-regression floor still
     applies to ALL questions. With no held_out_ids the loop gates on everything (fine for a
-    single-question smoke, but it CAN be gamed by encoding that question's answer)."""
+    single-question smoke, but it CAN be gamed by encoding that question's answer).
+
+    ``pool_size`` caps the candidate pool (mutation parents beyond the baseline);
+    ``prescreen`` is how many of the parent's worst train questions get a cheap k=1
+    canonical-phrasing check before the full measure (0 disables; it also auto-disables
+    when it wouldn't be cheaper than the full suite). ``seed`` makes parent selection
+    reproducible."""
     if not _is_clean(repo_dir):
         raise RuntimeError(
             f"{repo_dir} has uncommitted changes; the loop reverts with git and would "
@@ -249,13 +324,20 @@ async def optimize(
 
     run_root = Path(save_dir) if save_dir else Path(tempfile.mkdtemp(prefix="harden-"))
 
-    async def measure(label: str, refs: dict[str, float] | None = None) -> CandidateResult:
-        n = len(questions) * len(subject_specs) * k
-        log(f"  measuring {label}: {n} runs ({len(subject_specs)} subj x k={k}) via promptfoo...")
+    async def measure(
+        label: str,
+        refs: dict[str, float] | None = None,
+        qs: list[Question] | None = None,
+        k_override: int | None = None,
+    ) -> CandidateResult:
+        qs = qs or questions
+        kk = k_override or k
+        n = sum(1 + len(q.variations) for q in qs) * len(subject_specs) * kk
+        log(f"  measuring {label}: {n} runs ({len(subject_specs)} subj x k={kk}) via promptfoo...")
         return await measure_candidate(
-            questions,
+            qs,
             subject_specs,
-            k=k,
+            k=kk,
             run_dir=str(run_root / label),
             refs=refs,
             steepness=steepness,
@@ -276,31 +358,55 @@ async def optimize(
         f"{ {q: int(t) for q, t in sorted(refs.items())} }")
     baseline_traces = run_root / "baseline" / "traces"
     result = OptimizeResult(baseline=baseline)
+    pool: list[PoolEntry] = [PoolEntry("baseline", "", baseline, str(baseline_traces))]
+    rng = random.Random(seed)
     # What the proposer already tried this run and how it fared — fed into every
     # subsequent prompt so it explores instead of re-proposing a rejected idea.
     history: list[str] = []
 
-    def _record(n: int, accepted: bool, reason: str, after: CandidateResult, summary: str) -> None:
+    def _record(
+        n: int, accepted: bool, reason: str, after: CandidateResult, summary: str, parent: str
+    ) -> None:
         result.rounds.append(_round(n, accepted, reason, baseline, after, summary))
         outcome = (
-            f"ACCEPTED (score {baseline.score:.3f} -> {after.score:.3f})"
+            f"CHAMPION (score {baseline.score:.3f} -> {after.score:.3f})"
             if accepted
-            else f"REJECTED: {reason}"
+            else f"{reason}"
             + (
                 f" (score {baseline.score:.3f} -> {after.score:.3f})"
                 if after is not baseline
                 else ""
             )
         )
-        history.append(f"- round {n} {outcome}. Proposal: {' '.join(summary.split())[:300]}")
+        history.append(
+            f"- round {n} (parent={parent}) {outcome}. "
+            f"Proposal: {' '.join(summary.split())[:300]}"
+        )
+
+    def _gate_runs(res: CandidateResult):
+        return filter_runs(res.runs, held_out_ids) if held_out_ids else res.runs
+
+    def _gate_score(res: CandidateResult) -> float:
+        runs = _gate_runs(res)
+        return statistics.mean(r.score for r in runs) if runs else 0.0
 
     for n in range(1, rounds + 1):
         log(f"[bold cyan]--- round {n}/{rounds} ---[/bold cyan]")
+        # Stochastic Pareto parent selection: entries that are best on more cells get
+        # picked more; +1 keeps every entry (incl. a winless baseline) selectable.
+        wins = _pool_wins(pool)
+        parent = rng.choices(pool, weights=[1 + w for w in wins], k=1)[0]
+        if len(pool) > 1:
+            standing = ", ".join(f"{e.label}={w}" for e, w in zip(pool, wins))
+            log(f"round {n}: pool cell-wins: {standing} -> parent [bold]{parent.label}[/bold]")
+        _apply_patch(repo_dir, parent.patch)
+        pre_patch = _capture_patch(repo_dir)
+
         # The proposer only ever sees TRAIN traces — never the held-out questions. The
-        # prompt is a lean summary; the FULL traces live in baseline_traces for it to read.
-        train_records = [r for r in baseline.records if r.question.id in train_ids]
+        # prompt is a lean summary; the FULL traces live on disk for it to read.
+        train_records = [r for r in parent.result.records if r.question.id in train_ids]
         prompt = build_proposal_prompt(
-            train_records, traces_dir=str(baseline_traces), limit=show, history=history
+            train_records, traces_dir=parent.traces_dir, limit=show, history=history
         )
         _dump(save_dir, f"round{n}_proposal_prompt.txt", prompt)
         log(f"round {n}: proposing harness edits (this can take several minutes)...")
@@ -312,11 +418,13 @@ async def optimize(
         if not proposal.ok:
             log(f"round {n}: [red]proposer failed[/red]: {escape(proposal.summary[:200])}")
             _revert(repo_dir)
-            _record(n, False, "proposer-failed", baseline, proposal.summary)
+            _record(n, False, "proposer-failed", baseline, proposal.summary, parent.label)
             continue
-        if _is_clean(repo_dir):
+        patch = _capture_patch(repo_dir)
+        if patch == pre_patch:
             log(f"round {n}: proposer made no edits")
-            _record(n, False, "no-edits", baseline, proposal.summary)
+            _revert(repo_dir)
+            _record(n, False, "no-edits", baseline, proposal.summary, parent.label)
             continue
         touched = _changed_paths(repo_dir)
         log(f"round {n}: proposal summary: {escape(' '.join(proposal.summary.split())[:280])}")
@@ -330,14 +438,17 @@ async def optimize(
                 f"({', '.join(violations)[:200]}) — reverting"
             )
             _revert(repo_dir)
-            _record(n, False, f"protected-paths:{','.join(violations)[:120]}", baseline, proposal.summary)
+            _record(
+                n, False, f"protected-paths:{','.join(violations)[:120]}",
+                baseline, proposal.summary, parent.label,
+            )
             continue
-        leaks = _leak_check(_proposal_diff(repo_dir), questions)
+        leaks = _leak_check(patch, questions)
         if leaks:
             log(f"round {n}: [bold red]LEAK CHECK[/bold red] ({len(leaks)} hit(s)) — reverting")
             _dump(save_dir, f"round{n}_leaks.txt", "\n".join(leaks))
             _revert(repo_dir)
-            _record(n, False, "rubric-leak", baseline, proposal.summary)
+            _record(n, False, "rubric-leak", baseline, proposal.summary, parent.label)
             continue
 
         # Adversarial audit BEFORE the expensive build+measure: a fresh-context reviewer
@@ -345,13 +456,13 @@ async def optimize(
         # the cheats the held-out gate can't see. Blocked -> revert without measuring.
         if auditor is not None:
             log(f"round {n}: auditing the proposed diff...")
-            verdict = auditor.audit(_proposal_diff(repo_dir), [q.text for q in questions])
+            verdict = auditor.audit(patch, [q.text for q in questions])
             _dump(save_dir, f"round{n}_audit.txt", verdict.text())
             log(f"round {n}: audit verdict: {escape(' '.join(verdict.summary.split())[:240])}")
             if verdict.blocked:
                 log(f"round {n}: [bold red]AUDIT BLOCKED[/bold red] ({len(verdict.findings)} finding(s)) — reverting")
                 _revert(repo_dir)
-                _record(n, False, "audit-blocked", baseline, verdict.text())
+                _record(n, False, "audit-blocked", baseline, verdict.text(), parent.label)
                 continue
             if verdict.findings:
                 log(
@@ -364,40 +475,110 @@ async def optimize(
         except Exception as exc:  # noqa: BLE001 - a broken build is a rejected proposal
             log(f"round {n}: [red]build failed[/red], reverting: {type(exc).__name__}: {escape(str(exc))}")
             _revert(repo_dir)
-            apply()
-            _record(n, False, "build-failed", baseline, proposal.summary)
+            _record(n, False, "build-failed", baseline, proposal.summary, parent.label)
             continue
+
+        # Cheap prescreen (GEPA's minibatch): the parent's worst train questions, canonical
+        # phrasing, k=1. A candidate that can't keep up THERE doesn't get the full suite.
+        if 0 < prescreen < len(questions):
+            by_q: dict[str, list[float]] = {}
+            for r in parent.result.runs:
+                if r.question_id in train_ids:
+                    by_q.setdefault(r.question_id, []).append(r.score)
+            worst_qids = sorted(by_q, key=lambda q: statistics.mean(by_q[q]))[:prescreen]
+            sub_qs = [replace(q, variations=[]) for q in questions if q.id in worst_qids]
+            pre = await measure(f"round{n}_prescreen", refs=refs, qs=sub_qs, k_override=1)
+            parent_mean = statistics.mean(
+                s for q in worst_qids for s in by_q[q]
+            )
+            # 0.05 slack: the prescreen is k=1 — it kills clear losers, not close calls.
+            if pre.score < parent_mean - 0.05:
+                log(
+                    f"round {n}: [bold yellow]PRESCREEN[/bold yellow] "
+                    f"{pre.score:.3f} < parent {parent_mean:.3f} on {worst_qids} — rejecting "
+                    f"without the full measure"
+                )
+                _revert(repo_dir)
+                _record(n, False, "prescreen", baseline, proposal.summary, parent.label)
+                continue
+            log(f"round {n}: prescreen ok ({pre.score:.3f} vs parent {parent_mean:.3f})")
 
         candidate = await measure(f"round{n}_candidate", refs=refs)
         _log_breakdown(log, f"round{n} candidate", candidate)
-        # Correctness must not regress ANYWHERE; the improvement must show on the HELD-OUT
-        # questions the proposer never saw (so memorizing the train questions can't pass).
-        gate_base = filter_runs(baseline.runs, held_out_ids) if held_out_ids else baseline.runs
-        gate_cand = filter_runs(candidate.runs, held_out_ids) if held_out_ids else candidate.runs
+        # Gates are ALWAYS vs the ORIGINAL baseline (the state HEAD points at): correctness
+        # must not regress anywhere, and the champion bar is confident improvement on the
+        # held-out questions the proposer never saw.
         gate_label = "held-out" if held_out_ids else "all"
         regressed = not no_correctness_regression(baseline.runs, candidate.runs)
-        confident = is_confident(gate_base, gate_cand, min_cells=min_cells)
+        confident = is_confident(_gate_runs(baseline), _gate_runs(candidate), min_cells=min_cells)
         log(f"round {n}: gate on {gate_label} — regressed={regressed} confident={confident}")
-        if not regressed and confident:
-            _commit(repo_dir, f"harden round {n}: {baseline.score:.3f} -> {candidate.score:.3f}")
+        _revert(repo_dir)  # the candidate lives on as a patch; the tree goes back to HEAD
+
+        if regressed:
             log(
-                f"round {n}: [bold green]ACCEPT[/bold green] score {baseline.score:.3f} -> "
-                f"{candidate.score:.3f} pass {baseline.pass_rate:.2f} -> {candidate.pass_rate:.2f}"
-            )
-            _record(n, True, "accepted", candidate, proposal.summary)
-            baseline = candidate
-        else:
-            reason = "regressed-correctness" if regressed else "not-confident"
-            log(
-                f"round {n}: [bold yellow]REJECT[/bold yellow] ({reason}) score "
+                f"round {n}: [bold yellow]REJECT[/bold yellow] (regressed-correctness) score "
                 f"{baseline.score:.3f} -> {candidate.score:.3f} "
                 f"pass {baseline.pass_rate:.2f} -> {candidate.pass_rate:.2f}"
             )
-            _revert(repo_dir)
-            apply()
-            _record(n, False, reason, candidate, proposal.summary)
+            _record(n, False, "regressed-correctness", candidate, proposal.summary, parent.label)
+            continue
 
-    log(f"done: {result.accepted}/{rounds} accepted, final score {baseline.score:.3f}")
+        entry = PoolEntry(
+            label=f"round {n}",
+            patch=patch,
+            result=candidate,
+            traces_dir=str(run_root / f"round{n}_candidate" / "traces"),
+            champion=confident,
+        )
+        if confident:
+            log(
+                f"round {n}: [bold green]CHAMPION[/bold green] score {baseline.score:.3f} -> "
+                f"{candidate.score:.3f} pass {baseline.pass_rate:.2f} -> {candidate.pass_rate:.2f}"
+            )
+            pool.append(entry)
+            _record(n, True, "accepted", candidate, proposal.summary, parent.label)
+        elif _strictly_wins_a_cell(candidate, pool):
+            log(
+                f"round {n}: [yellow]POOL[/yellow] (not confident overall, but best on >=1 "
+                f"cell) score {baseline.score:.3f} -> {candidate.score:.3f}"
+            )
+            pool.append(entry)
+            _record(n, False, "pool-added", candidate, proposal.summary, parent.label)
+        else:
+            log(
+                f"round {n}: [bold yellow]REJECT[/bold yellow] (not-confident) score "
+                f"{baseline.score:.3f} -> {candidate.score:.3f} "
+                f"pass {baseline.pass_rate:.2f} -> {candidate.pass_rate:.2f}"
+            )
+            _record(n, False, "not-confident", candidate, proposal.summary, parent.label)
+            continue
+        # Cap the pool: drop the winless tail (never the baseline, never a champion —
+        # champions are commit candidates, not just mutation parents).
+        while len(pool) > pool_size:
+            wins = _pool_wins(pool)
+            droppable = [
+                i for i, e in enumerate(pool) if e.label != "baseline" and not e.champion
+            ]
+            if not droppable:
+                break
+            drop = min(droppable, key=lambda i: wins[i])
+            log(f"  pool full: dropping {pool[drop].label} ({wins[drop]} cell-wins)")
+            pool.pop(drop)
+
+    # One commit at the end: the best champion's whole patch. HEAD never moved during the
+    # run, so every pool patch applies cleanly; non-champion pool entries were mutation
+    # fuel, not commits.
+    champions = [e for e in pool if e.champion]
+    if champions:
+        best = max(champions, key=lambda e: _gate_score(e.result))
+        _apply_patch(repo_dir, best.patch)
+        _commit(repo_dir, f"harden {best.label}: {baseline.score:.3f} -> {best.result.score:.3f}")
+        log(
+            f"[bold green]COMMITTED[/bold green] {best.label}: score {baseline.score:.3f} -> "
+            f"{best.result.score:.3f} (best of {len(champions)} champion(s))"
+        )
+    apply()  # leave the live harness matching the final tree
+    log(f"done: {result.accepted}/{rounds} champion round(s), {len(pool) - 1} pool candidate(s)")
     return result
 
 

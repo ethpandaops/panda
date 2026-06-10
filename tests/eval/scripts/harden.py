@@ -7,9 +7,11 @@ By default it runs TWO agent subjects — opencode-go/deepseek-v4-flash + openai
 with one or more --subject provider/model:route.
 
 The loop measures the current harness, lets Codex (GPT-5.5 @ xhigh) edit panda from the
-RAW agent traces, rebuilds + re-measures, and keeps the change only if it doesn't regress
-correctness and is bootstrap-confidently better. It commits accepted changes and
-git-reverts rejected ones, so run it on a throwaway worktree/branch with a clean tree.
+RAW agent traces (eval cases hidden while it runs), prescreens cheaply, re-measures, and
+keeps a small Pareto pool of candidate states as mutation parents. A state is only
+COMMITTED (once, at the end) if it never regresses correctness and is permutation-test
+confidently better on the gate questions. Run it on a throwaway worktree/branch with a
+clean tree.
 
 It builds panda from the candidate source and runs it as a LOCAL scratch server (default
 :2481), derived from your ~/.config/panda/config.yaml (hosted proxy + datasources work as
@@ -110,6 +112,19 @@ def main() -> None:
         help="run the subject in a container with no repo access, so it can't read the eval "
         "cases (it sees only a linux `panda` + the scratch server). Recommended.",
     )
+    ap.add_argument(
+        "--pool-size",
+        type=int,
+        default=6,
+        help="max candidate states kept as mutation parents (GEPA-style Pareto pool)",
+    )
+    ap.add_argument(
+        "--prescreen",
+        type=int,
+        default=3,
+        help="cheap k=1 check on this many of the parent's worst questions before the full "
+        "measure (0 disables)",
+    )
     args = ap.parse_args()
 
     repo_dir = _repo_root()
@@ -202,6 +217,8 @@ def main() -> None:
                 cwd=eval_dir,
                 held_out_ids=set(args.held_out) or None,
                 save_dir=str(run_dir),
+                pool_size=args.pool_size,
+                prescreen=args.prescreen,
                 log=log,
             )
         )
