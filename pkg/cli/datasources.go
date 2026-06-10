@@ -52,10 +52,6 @@ func runDatasources(cmd *cobra.Command, _ []string) error {
 	rows := make([][]string, 0, len(response.Datasources))
 	hasClickHouse := false
 
-	type noteLine struct{ source, dataset, note string }
-
-	var notes []noteLine
-
 	for _, info := range response.Datasources {
 		if info.Type == "clickhouse" {
 			hasClickHouse = true
@@ -66,35 +62,23 @@ func runDatasources(cmd *cobra.Command, _ []string) error {
 			desc = info.Name
 		}
 
-		// The same dataset may be bound more than once to one datasource (e.g.
-		// otel-logs in both the internal and external databases); annotate
-		// duplicates with their params so the bindings stay distinguishable.
-		counts := make(map[string]int, len(info.Contents))
-		for _, b := range info.Contents {
-			counts[b.Dataset]++
-		}
-
+		// Dataset names only, deduplicated: a dataset bound more than once
+		// (e.g. otel-logs in two databases) is one entry here. Placement
+		// detail lives in `panda datasets`.
+		seen := make(map[string]bool, len(info.Contents))
 		datasets := make([]string, 0, len(info.Contents))
 
 		for _, b := range info.Contents {
-			label := b.Dataset
-			if counts[b.Dataset] > 1 && len(b.Params) > 0 {
-				label += " (" + formatBindingParams(b.Params) + ")"
+			if seen[b.Dataset] {
+				continue
 			}
 
-			datasets = append(datasets, label)
+			seen[b.Dataset] = true
 
-			if b.Notes != "" {
-				key := b.Dataset
-				if len(b.Params) > 0 {
-					key += " (" + formatBindingParams(b.Params) + ")"
-				}
-
-				notes = append(notes, noteLine{source: info.Name, dataset: key, note: b.Notes})
-			}
+			datasets = append(datasets, b.Dataset)
 		}
 
-		rows = append(rows, []string{info.Type, info.Name, desc, strings.Join(datasets, ", ")})
+		rows = append(rows, []string{info.Type, info.Name, strings.Join(datasets, ", "), desc})
 	}
 
 	sort.Slice(rows, func(i, j int) bool {
@@ -105,15 +89,9 @@ func runDatasources(cmd *cobra.Command, _ []string) error {
 		return rows[i][1] < rows[j][1]
 	})
 
-	printTable([]string{"TYPE", "NAME", "DESCRIPTION", "DATASETS"}, rows)
+	printTable([]string{"TYPE", "NAME", "DATASETS", "DESCRIPTION"}, rows)
 
-	if len(notes) > 0 {
-		fmt.Println("\nNotes:")
-
-		for _, n := range notes {
-			fmt.Printf("  %s/%s: %s\n", n.source, n.dataset, n.note)
-		}
-	}
+	fmt.Println("\nDataset placements and notes: panda datasets")
 
 	return nil
 }

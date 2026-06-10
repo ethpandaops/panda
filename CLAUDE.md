@@ -142,6 +142,7 @@ CLI commands and groups include:
 - `build` (GitHub Actions Docker image builder)
 - `clickhouse`
 - `config`
+- `datasets`
 - `datasources`
 - `docs`
 - `dora`
