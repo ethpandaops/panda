@@ -20,7 +20,7 @@ for query patterns and 'panda schema' for table names, columns, and keys.
 
 Examples:
   panda clickhouse list-datasources
-  panda clickhouse query <datasource> "SHOW DATABASES"
+  panda clickhouse query-raw <datasource> "SHOW DATABASES"
   panda clickhouse <datasource> "SELECT 1"`,
 	Args: cobra.MaximumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -72,7 +72,7 @@ Read 'panda datasets <name>' for a dataset's query syntax rules, use
 
 Examples:
   panda clickhouse query <datasource> "SHOW DATABASES"
-  panda clickhouse query <datasource> "SELECT 1"`,
+  panda clickhouse query-raw <datasource> "SELECT 1"`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runClickHouseOperation(cmd, "clickhouse.query", args[0], args[1], false)

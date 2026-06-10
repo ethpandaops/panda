@@ -131,7 +131,7 @@ func completeClusterNames(ctx context.Context) ([]string, cobra.ShellCompDirecti
 }
 
 func completeDatabaseNames(ctx context.Context, cluster string) ([]string, cobra.ShellCompDirective) {
-	response, err := readClickHouseClusterTables(ctx, cluster)
+	response, err := readClickHouseClusterTables(ctx, cluster, false)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
@@ -141,6 +141,23 @@ func completeDatabaseNames(ctx context.Context, cluster string) ([]string, cobra
 	var names []string
 
 	for _, c := range response.Clusters {
+		if c == nil {
+			continue
+		}
+
+		for _, database := range c.Databases {
+			if database == nil {
+				continue
+			}
+
+			if _, ok := seen[database.Name]; ok {
+				continue
+			}
+
+			seen[database.Name] = struct{}{}
+			names = append(names, database.Name)
+		}
+
 		for _, table := range c.Tables {
 			if _, ok := seen[table.Database]; ok {
 				continue

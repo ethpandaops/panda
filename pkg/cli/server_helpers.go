@@ -374,9 +374,16 @@ func readResourceWithClientContext(ctx context.Context, uri, clientContext strin
 	}, nil
 }
 
-// readClickHouseClusterTables lists the tables in a single cluster.
-func readClickHouseClusterTables(ctx context.Context, cluster string) (*clickhousemodule.TablesListResponse, error) {
-	return readClickHouseTablesURI(ctx, "clickhouse://tables/"+cluster)
+// readClickHouseClusterTables reads the cluster-level schema resource. The
+// default response is compact; includeTables opts into the full table list for
+// table-name searches and shell completion.
+func readClickHouseClusterTables(ctx context.Context, cluster string, includeTables bool) (*clickhousemodule.TablesListResponse, error) {
+	uri := "clickhouse://tables/" + cluster
+	if includeTables {
+		uri += "?include=tables"
+	}
+
+	return readClickHouseTablesURI(ctx, uri)
 }
 
 // readClickHouseDatabaseTables lists the tables in a single database of a cluster.
@@ -475,10 +482,19 @@ func serverErrorHint(status int, message string) string {
 		return "the SQL uses a ClickHouse function unavailable in this deployment/version; replace it with a supported function or simplify the expression, then rerun the query"
 	case clickhousemodule.QueryErrorBadFunctionArguments:
 		return "a SQL function received an incompatible argument type or shape; inspect column types with 'panda schema <cluster> <database> <table>' and cast deliberately where needed"
+	case clickhousemodule.QueryErrorIllegalAggregation:
+		return "ClickHouse does not allow aggregate functions nested inside other aggregate functions; compute the inner aggregate in one step, then materialize or simplify before applying an outer aggregate"
+	case clickhousemodule.QueryErrorAliasRequired:
+		return "ClickHouse requires explicit aliases for subqueries used in JOIN/CROSS JOIN contexts; add 'AS <alias>' to each subquery or table expression"
 	case clickhousemodule.QueryErrorUnknown:
 	}
 
 	normalized := strings.ToLower(message)
+	if strings.Contains(normalized, "clickhouse://tables/") &&
+		strings.Contains(normalized, "invalid identifier") {
+		return "schema resource paths use concrete ClickHouse identifiers in /<cluster>/<database>/<table>; dataset names, placeholders, and SQL clauses are not identifiers. Read 'panda datasets <name>' for placement, then substitute concrete names"
+	}
+
 	if strings.Contains(normalized, "clickhouse://tables/") &&
 		strings.Contains(normalized, "cluster ") &&
 		strings.Contains(normalized, "not found") {
@@ -496,6 +512,8 @@ func serverErrorHint(status int, message string) string {
 	switch status {
 	case http.StatusNotFound:
 		return "the requested module, operation, datasource, or resource is not available on this server; check 'panda datasources' and 'panda resources'"
+	case http.StatusBadGateway:
+		return "an upstream datasource or node returned a gateway error; verify the datasource, network, and instance through discovery commands, then try a currently reachable target"
 	case http.StatusServiceUnavailable:
 		return "the server is running but a required service (e.g. sandbox) is not available — check server logs with 'docker compose logs server'"
 	default:
