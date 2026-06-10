@@ -1,10 +1,11 @@
 """Run ``codex exec`` with a FILTERED live log.
 
 codex streams blocks: an ``exec`` block is a tool call — the command AND its full output
-(file dumps, test logs: the firehose) — and a ``codex`` block is the assistant's message. We
-show one concise line per command (``ran: <cmd>``) and the assistant messages, and drop the
-command output + the header noise. The full raw output is still returned (for the proposer's
-summary / an error tail); only what's LOGGED is trimmed.
+(file dumps, test logs: the firehose) — and a ``codex`` block is the assistant's message.
+We show one line per tool call carrying only its NAME (``ran: rg``, ``edited <file>``)
+plus the assistant's messages — no command content, no command output. The full raw
+output is still returned (for the proposer's summary / an error tail); only what's
+LOGGED is trimmed.
 """
 
 from __future__ import annotations
@@ -21,14 +22,28 @@ _MARKERS = {"exec", "codex", "user", "thinking"}
 # A diff/patch body line — suppressed wherever it appears. codex repeats whole patches in
 # its messages, which is the real firehose when the proposer edits many files.
 _DIFF_BODY = re.compile(r"^(diff --git |index [0-9a-f]|--- |\+\+\+ |@@ |[+\- ]|/)")
+# A shell wrapper prefix codex puts around most commands (`bash -lc '<cmd>'`).
+_SHELL_WRAP = re.compile(r"""^(?:/\S+/)?(?:ba|z|da)?sh\s+-l?c\s+['"]?""")
+# codex's token-usage meta lines ("tokens used" + a bare number) — not chat, not a tool.
+_TOKENS_META = re.compile(r"^(tokens used:?|[\d,]+)$")
+
+
+def _cmd_name(cmd: str) -> str:
+    """Just the tool's NAME from a command line: unwrap the `bash -lc '...'` shell
+    wrapper, then take the first token (`rg`, `go`, `sed`, ...). No arguments — the log
+    shows WHAT ran, never its content."""
+    inner = _SHELL_WRAP.sub("", cmd.strip())
+    tok = inner.split()[0] if inner.split() else inner
+    return tok.strip("'\"`()")
 
 
 def _summarize(line: str, state: dict) -> str | None:
     """One filtered log line (or None to suppress) for a raw codex output line.
 
-    Shows: one ``ran: <cmd>`` per command, one ``edited <file>`` per patched file, and the
-    assistant's prose messages. Suppresses command output, diff/patch bodies (deduped per
-    file), and header/prompt noise.
+    Shows: one ``ran: <name>`` per tool call (the command's name only, no arguments),
+    one ``edited <file>`` per patched file, and the assistant's prose messages.
+    Suppresses command content/output, diff/patch bodies (deduped per file), token-usage
+    meta, and header/prompt noise.
     """
     clean = _ANSI.sub("", line).rstrip()
     bare = clean.strip()
@@ -54,9 +69,11 @@ def _summarize(line: str, state: dict) -> str | None:
     if state.get("mode") == "exec":
         if state.get("await_cmd") and bare:
             state["await_cmd"] = False
-            return f"ran: {' '.join(bare.split())[:140]}"  # the command, one line
+            return f"ran: {_cmd_name(bare)}"  # the tool's name only, no arguments
         return None  # suppress the command's output (the firehose)
     if state.get("mode") == "codex" and bare:
+        if _TOKENS_META.match(bare):
+            return None  # usage meta, not a chat message
         # codex repeats its final message (e.g. a structured verdict) as the run's
         # output — suppress exact repeats of long lines we already showed.
         if len(bare) > 60:
