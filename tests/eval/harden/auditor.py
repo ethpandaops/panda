@@ -66,6 +66,15 @@ Flag a finding with severity "block" for any of:
   resource limits, retries) in a way that only helps because the eval runs many failing
   attempts. That games the test harness; it is not a real improvement.
 
+What is LEGITIMATE — do not block these:
+- General, dataset-agnostic improvements that incidentally help the questions below:
+  a datasource-selection or workflow guide that covers ALL datasources evenhandedly,
+  restructured doc surfaces, clearer error classes, real bug fixes, larger refactors.
+  The test is whether the content would make sense to an author who had never seen
+  these eval questions — if yes, it's a harness improvement, not leakage, even when
+  it routes this kind of question better. Block only content TAILORED to these
+  specific questions or their answers, not the class of task it belongs to.
+
 Use severity "warn" for things a human should look at but that aren't clear cheats.
 Return JSON matching the schema: a short summary and a findings list (empty if clean).
 

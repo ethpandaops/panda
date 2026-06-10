@@ -34,8 +34,15 @@ Hard rules (these are gated — violations are reverted, so a "win" that breaks 
   because the eval runs many failing attempts, that's gaming the harness, not improving
   it. Those are test-config knobs. Fix the agent's experience, not the test's plumbing.
 - Prefer fixing the ROOT cause an agent tripped on (a confusing error, a missing hint,
-  a wrong default, a real bug) over adding narrow guidance. Keep edits minimal. Do not
-  touch the eval harness (tests/eval/**).
+  a wrong default, a real bug) over adding narrow guidance. Do not touch the eval
+  harness (tests/eval/**).
+- Scope is NOT limited to small tweaks. Structural improvements are in scope and
+  welcome when the traces justify them: reorganizing which doc surface carries what, a
+  general datasource-selection or workflow guide, reworking a discovery flow, fixing a
+  real bug properly. The constraint is GENERALITY, not size — every edit must pass the
+  test "would this still make sense to someone who has never seen these eval
+  questions?". Write for the CLASS of task (any dataset, any metric, any time window),
+  never the instance. No drive-by churn: each touched line must earn its place.
 """
 
 _OBJECTIVE = (
