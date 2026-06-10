@@ -15,9 +15,9 @@ import (
 	"github.com/ethpandaops/panda/pkg/operations"
 )
 
-// slotsPerEpoch is the mainnet SLOTS_PER_EPOCH. Networks with a different value
-// will report an inaccurate derived slot.
-const slotsPerEpoch = 32
+// defaultSlotsPerEpoch is the mainnet SLOTS_PER_EPOCH, used when Dora does not
+// report the network's actual value.
+const defaultSlotsPerEpoch = 32
 
 func (s *service) handleDoraOperation(operationID string, w http.ResponseWriter, r *http.Request) bool {
 	switch operationID {
@@ -110,78 +110,27 @@ func (s *service) handleDoraNetworkOverview(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Prefer the head epoch, falling back to the latest finalized epoch when
-	// head is unavailable; only the fallback's outcome is surfaced to the caller.
-	data, _, err := s.doraAPIGet(r.Context(), baseURL, "/api/v1/epoch/head", nil)
+	data, status, err := s.doraAPIGet(r.Context(), baseURL, "/api/v1/network/overview", nil)
 	if err != nil {
-		data, status, err = s.doraAPIGet(r.Context(), baseURL, "/api/v1/epoch/latest", nil)
-		if err != nil {
-			writeAPIError(w, status, err.Error())
-			return
-		}
+		writeAPIError(w, status, err.Error())
+		return
 	}
 
-	payload, err := doraDataObject(data, "epoch overview")
+	payload, err := doraDataObject(data, "network overview")
 	if err != nil {
 		writeAPIError(w, http.StatusBadGateway, err.Error())
 		return
 	}
 
-	finalizedData, _, finalizedErr := s.doraAPIGet(r.Context(), baseURL, "/api/v1/epoch/finalized", nil)
-	finalizedPayload, finalizedPayloadErr := doraDataObject(finalizedData, "finalized epoch")
-	slotsData, _, slotsErr := s.doraAPIGet(r.Context(), baseURL, "/api/v1/slots", url.Values{"limit": {"1"}})
+	overview, ok := doraOverview(payload)
+	if !ok {
+		writeAPIError(
+			w,
+			http.StatusBadGateway,
+			"Dora network overview is missing summary fields; upgrade Dora to a release whose /api/v1/network/overview includes them",
+		)
 
-	currentEpoch, hasCurrentEpoch := numericValue(payload["epoch"])
-	finalizedEpoch, hasFinalizedEpoch := numericValue(finalizedPayload["epoch"])
-	warnings := make([]string, 0, 2)
-	if finalizedErr != nil {
-		warnings = append(warnings, fmt.Sprintf("finalized epoch unavailable: %v", finalizedErr))
-	} else if finalizedPayloadErr != nil {
-		warnings = append(warnings, finalizedPayloadErr.Error())
-	}
-	if slotsErr != nil {
-		warnings = append(warnings, fmt.Sprintf("current slot unavailable: %v", slotsErr))
-	}
-
-	overview := map[string]any{
-		"current_epoch": payload["epoch"],
-	}
-	if hasCurrentEpoch {
-		overview["current_epoch_start_slot"] = epochStartSlot(payload["epoch"])
-	}
-	if currentSlot, ok := doraLatestSlot(slotsData); ok {
-		overview["current_slot"] = currentSlot
-	} else if slotsErr == nil {
-		warnings = append(warnings, "current slot unavailable: invalid Dora slots response")
-	}
-	if hasFinalizedEpoch {
-		overview["finalized_epoch"] = finalizedPayload["epoch"]
-		overview["finalized_epoch_start_slot"] = epochStartSlot(finalizedPayload["epoch"])
-	}
-	if hasCurrentEpoch && hasFinalizedEpoch {
-		epochsSinceFinality := currentEpoch - finalizedEpoch
-		overview["epochs_since_finality"] = epochsSinceFinality
-		overview["finalized"] = epochsSinceFinality >= 0 && epochsSinceFinality <= 2
-
-		if participationRate, ok := numericValue(payload["globalparticipationrate"]); ok && participationRate < 67 && epochsSinceFinality >= 0 && epochsSinceFinality <= 2 {
-			warnings = append(
-				warnings,
-				fmt.Sprintf(
-					"participation_rate omitted: Dora epoch vote aggregate reports %.2f%% while checkpoint finality is %v epochs behind",
-					participationRate,
-					epochsSinceFinality,
-				),
-			)
-		}
-	}
-	if validatorInfo, ok := payload["validatorinfo"].(map[string]any); ok {
-		overview["active_validator_count"] = validatorInfo["active"]
-		overview["total_validator_count"] = validatorInfo["total"]
-		overview["pending_validator_count"] = validatorInfo["pending"]
-		overview["exited_validator_count"] = validatorInfo["exited"]
-	}
-	if len(warnings) > 0 {
-		overview["data_quality_warnings"] = warnings
+		return
 	}
 
 	writeOperationResponse(s.log, w, http.StatusOK, operations.Response{
@@ -383,7 +332,7 @@ func (s *service) doraAPIGetRaw(
 	return body, contentType, http.StatusOK, nil
 }
 
-func epochStartSlot(value any) any {
+func epochStartSlot(value any, slotsPerEpoch int64) any {
 	switch epoch := value.(type) {
 	case float64:
 		if epoch != float64(int64(epoch)) {
@@ -403,6 +352,46 @@ func epochStartSlot(value any) any {
 	return value
 }
 
+// doraOverview normalizes a Dora /api/v1/network/overview payload into the
+// overview shape exposed to clients. It reports false when the payload lacks
+// the flattened summary fields (older Dora releases).
+func doraOverview(payload map[string]any) (map[string]any, bool) {
+	if _, ok := numericValue(payload["current_epoch"]); !ok {
+		return nil, false
+	}
+
+	overview := make(map[string]any, len(payload)+2)
+	for key, value := range payload {
+		overview[key] = value
+	}
+
+	slots := doraSlotsPerEpoch(payload)
+	overview["current_epoch_start_slot"] = epochStartSlot(payload["current_epoch"], slots)
+
+	if _, ok := numericValue(payload["finalized_epoch"]); ok {
+		overview["finalized_epoch_start_slot"] = epochStartSlot(payload["finalized_epoch"], slots)
+	}
+
+	return overview, true
+}
+
+// doraSlotsPerEpoch reads the network's SLOTS_PER_EPOCH from the overview
+// payload, falling back to the mainnet default when it is not reported.
+func doraSlotsPerEpoch(payload map[string]any) int64 {
+	for _, key := range []string{"current_state", "metadata"} {
+		section, ok := payload[key].(map[string]any)
+		if !ok {
+			continue
+		}
+
+		if value, ok := numericValue(section["slots_per_epoch"]); ok && value > 0 {
+			return int64(value)
+		}
+	}
+
+	return defaultSlotsPerEpoch
+}
+
 func doraDataObject(payload map[string]any, label string) (map[string]any, error) {
 	data, ok := payload["data"].(map[string]any)
 	if !ok {
@@ -412,46 +401,12 @@ func doraDataObject(payload map[string]any, label string) (map[string]any, error
 	return data, nil
 }
 
-func doraLatestSlot(payload map[string]any) (any, bool) {
-	data, err := doraDataObject(payload, "slots")
-	if err != nil {
-		return nil, false
-	}
-
-	slots, ok := data["slots"].([]any)
-	if !ok || len(slots) == 0 {
-		return nil, false
-	}
-
-	slot, ok := slots[0].(map[string]any)
-	if !ok {
-		return nil, false
-	}
-
-	value := slot["slot"]
-	_, ok = numericValue(value)
-
-	return value, ok
-}
-
+// numericValue parses a number from a decoded Dora JSON payload, which only
+// ever yields float64, json.Number, or stringly-typed numbers.
 func numericValue(value any) (float64, bool) {
 	switch number := value.(type) {
 	case float64:
 		return number, true
-	case float32:
-		return float64(number), true
-	case int:
-		return float64(number), true
-	case int64:
-		return float64(number), true
-	case int32:
-		return float64(number), true
-	case uint:
-		return float64(number), true
-	case uint64:
-		return float64(number), true
-	case uint32:
-		return float64(number), true
 	case json.Number:
 		parsed, err := number.Float64()
 		return parsed, err == nil

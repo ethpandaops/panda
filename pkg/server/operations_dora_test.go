@@ -17,18 +17,28 @@ import (
 	"github.com/ethpandaops/panda/pkg/operations"
 )
 
-func TestDoraNetworkOverviewDerivesFinalityFromFinalizedEpoch(t *testing.T) {
+func TestDoraNetworkOverviewUsesNativeOverviewEndpoint(t *testing.T) {
 	t.Parallel()
 
 	doraServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/v1/epoch/latest":
-			_, _ = w.Write([]byte(`{"status":"OK","data":{"epoch":100,"finalized":false,"globalparticipationrate":64,"validatorinfo":{"active":10,"total":12,"pending":1,"exited":1}}}`))
-		case "/api/v1/epoch/finalized":
-			_, _ = w.Write([]byte(`{"status":"OK","data":{"epoch":98,"finalized":true}}`))
-		case "/api/v1/slots":
-			assert.Equal(t, "1", r.URL.Query().Get("limit"))
-			_, _ = w.Write([]byte(`{"status":"OK","data":{"slots":[{"slot":3210,"epoch":100}]}}`))
+		case "/api/v1/network/overview":
+			_, _ = w.Write([]byte(`{"status":"OK","data":{
+				"is_synced":true,
+				"current_slot":3210,
+				"current_epoch":200,
+				"finalized_epoch":198,
+				"epochs_since_finality":2,
+				"finalizing":true,
+				"active_validator_count":10,
+				"total_validator_count":12,
+				"pending_validator_count":1,
+				"exited_validator_count":1,
+				"data_quality_warnings":["vote aggregate likely incomplete"],
+				"participation":{"rate":null,"source":"attestation_index","complete":false},
+				"current_state":{"current_slot":3211,"current_epoch":200,"slots_per_epoch":16},
+				"metadata":{"slots_per_epoch":16}
+			}}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -47,17 +57,47 @@ func TestDoraNetworkOverviewDerivesFinalityFromFinalizedEpoch(t *testing.T) {
 
 	data, ok := response.Data.(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, float64(100), data["current_epoch"])
-	assert.Equal(t, float64(98), data["finalized_epoch"])
+	assert.Equal(t, float64(200), data["current_epoch"])
 	assert.Equal(t, float64(3210), data["current_slot"])
+	assert.Equal(t, float64(198), data["finalized_epoch"])
+	// Start slots derive from the reported slots_per_epoch, not the mainnet default.
 	assert.Equal(t, float64(3200), data["current_epoch_start_slot"])
-	assert.Equal(t, float64(3136), data["finalized_epoch_start_slot"])
-	assert.NotContains(t, data, "finalized_slot")
+	assert.Equal(t, float64(3168), data["finalized_epoch_start_slot"])
 	assert.Equal(t, float64(2), data["epochs_since_finality"])
-	assert.Equal(t, true, data["finalized"])
-	assert.NotContains(t, data, "participation_rate")
-	assert.NotEmpty(t, data["data_quality_warnings"])
+	assert.Equal(t, true, data["finalizing"])
+	assert.NotContains(t, data, "finalized")
+	assert.Equal(t, true, data["is_synced"])
 	assert.Equal(t, float64(10), data["active_validator_count"])
+	assert.NotEmpty(t, data["data_quality_warnings"])
+
+	participation, ok := data["participation"].(map[string]any)
+	require.True(t, ok)
+	assert.Nil(t, participation["rate"])
+	assert.Equal(t, false, participation["complete"])
+}
+
+func TestDoraNetworkOverviewRejectsLegacyOverviewShape(t *testing.T) {
+	t.Parallel()
+
+	doraServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/network/overview":
+			// Older Dora releases expose the endpoint without the flattened
+			// top-level summary fields.
+			_, _ = w.Write([]byte(`{"status":"OK","data":{"network_info":{"network_name":"testnet"},"current_state":{"current_slot":3210,"current_epoch":100,"slots_per_epoch":32},"checkpoints":{"finalized_epoch":98},"is_synced":true}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(doraServer.Close)
+
+	svc := newDoraOperationService(doraServer.Client(), doraServer.URL)
+	rec := httptest.NewRecorder()
+
+	handled := svc.handleDoraOperation("dora.get_network_overview", rec, newDoraOpRequest(t, "testnet"))
+	require.True(t, handled)
+	assert.Equal(t, http.StatusBadGateway, rec.Code)
+	assert.Contains(t, rec.Body.String(), "upgrade Dora")
 }
 
 func TestDoraNetworkOverviewRejectsDoraErrorEnvelope(t *testing.T) {
@@ -65,7 +105,7 @@ func TestDoraNetworkOverviewRejectsDoraErrorEnvelope(t *testing.T) {
 
 	doraServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/v1/epoch/latest":
+		case "/api/v1/network/overview":
 			_, _ = w.Write([]byte(`{"status":"ERROR: upstream index unavailable","data":null}`))
 		default:
 			http.NotFound(w, r)

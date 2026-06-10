@@ -81,15 +81,18 @@ var doraOverviewCmd = &cobra.Command{
 			{"Finalized epoch", "finalized_epoch"},
 			{"Finalized epoch start slot", "finalized_epoch_start_slot"},
 			{"Epochs since finality", "epochs_since_finality"},
-			{"Finalizing", "finalized"},
+			{"Finalizing", "finalizing"},
+			{"Synced", "is_synced"},
 		} {
 			if value, ok := data[kv[1]]; ok {
 				pairs = append(pairs, [2]string{kv[0], fmt.Sprintf("%v", value)})
 			}
 		}
 
-		if rate, ok := data["participation_rate"].(float64); ok {
-			pairs = append(pairs, [2]string{"Participation rate", fmt.Sprintf("%.2f%%", rate)})
+		if participation, ok := data["participation"].(map[string]any); ok {
+			if rate, ok := participation["rate"].(float64); ok {
+				pairs = append(pairs, [2]string{"Participation rate", fmt.Sprintf("%.2f%%", rate)})
+			}
 		}
 
 		for _, kv := range [][2]string{
@@ -112,19 +115,19 @@ var doraOverviewCmd = &cobra.Command{
 	},
 }
 
+// formatDoraWarnings joins a JSON-decoded warnings array into one line.
 func formatDoraWarnings(value any) string {
-	switch warnings := value.(type) {
-	case []string:
-		return strings.Join(warnings, "; ")
-	case []any:
-		parts := make([]string, 0, len(warnings))
-		for _, warning := range warnings {
-			parts = append(parts, fmt.Sprintf("%v", warning))
-		}
-		return strings.Join(parts, "; ")
-	default:
+	warnings, ok := value.([]any)
+	if !ok {
 		return fmt.Sprintf("%v", value)
 	}
+
+	parts := make([]string, 0, len(warnings))
+	for _, warning := range warnings {
+		parts = append(parts, fmt.Sprintf("%v", warning))
+	}
+
+	return strings.Join(parts, "; ")
 }
 
 var doraValidatorCmd = &cobra.Command{
