@@ -39,10 +39,14 @@ Hard rules (these are gated — violations are reverted, so a "win" that breaks 
 - Scope is NOT limited to small tweaks. Structural improvements are in scope and
   welcome when the traces justify them: reorganizing which doc surface carries what, a
   general datasource-selection or workflow guide, reworking a discovery flow, fixing a
-  real bug properly. The constraint is GENERALITY, not size — every edit must pass the
-  test "would this still make sense to someone who has never seen these eval
-  questions?". Write for the CLASS of task (any dataset, any metric, any time window),
-  never the instance. No drive-by churn: each touched line must earn its place.
+  real bug properly. The constraint is GENERALITY, not size. Every edit must pass TWO
+  tests: (1) does it help OTHER questions beyond the ones below — the whole class of
+  task (any dataset, any metric, any time window), not these instances; and (2) is it
+  a sound architectural decision going FORWARD — datasources get added, changed, and
+  removed, so guidance must not hardcode today's lineup. Knowledge about a specific
+  datasource belongs where that datasource carries it (its own searchable docs /
+  schema / examples, discovered live), so it appears and disappears with the
+  datasource itself. No drive-by churn: each touched line must earn its place.
 """
 
 _OBJECTIVE = (

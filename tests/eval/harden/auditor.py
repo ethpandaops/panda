@@ -70,10 +70,16 @@ What is LEGITIMATE — do not block these:
 - General, dataset-agnostic improvements that incidentally help the questions below:
   a datasource-selection or workflow guide that covers ALL datasources evenhandedly,
   restructured doc surfaces, clearer error classes, real bug fixes, larger refactors.
-  The test is whether the content would make sense to an author who had never seen
-  these eval questions — if yes, it's a harness improvement, not leakage, even when
-  it routes this kind of question better. Block only content TAILORED to these
-  specific questions or their answers, not the class of task it belongs to.
+  The test is twofold: (1) does the change generalize — would it help OTHER,
+  non-specified questions of the same class, and would it make sense to an author who
+  had never seen these eval questions; and (2) is it a sound architectural decision
+  going forward — datasources get added, changed, and removed, so a change that
+  hardcodes today's datasource lineup (or plants one datasource's specifics in another
+  component or a generic surface) is a misplacement even if it "works" now, while
+  knowledge carried by the datasource's own live-discovered surfaces (docs / schema /
+  examples) is well-placed. Block only content tailored to these specific questions or
+  their answers, or architecture that won't survive datasource change — not the class
+  of task it belongs to.
 
 Use severity "warn" for things a human should look at but that aren't clear cheats.
 Return JSON matching the schema: a short summary and a findings list (empty if clean).
