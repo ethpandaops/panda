@@ -321,6 +321,17 @@ async def optimize(
     train_ids = {q.id for q in questions} - held_out_ids
     if held_out_ids:
         log(f"train questions: {sorted(train_ids)} | held-out (gate): {sorted(held_out_ids)}")
+    # Fail loudly up front if the gate is unwinnable: fewer gate cells than min_cells
+    # means is_confident is False forever and NOTHING can ever be committed.
+    gate_cells = (len(held_out_ids) or len(questions)) * len(subject_specs)
+    if gate_cells < min_cells:
+        log(
+            f"[bold yellow]WARNING[/bold yellow]: only {gate_cells} gate cell(s) "
+            f"({len(held_out_ids) or len(questions)} gate question(s) x "
+            f"{len(subject_specs)} subject(s)) but min-cells={min_cells} — the confidence "
+            f"gate can NEVER pass, so no candidate will be committed. Lower --min-cells "
+            f"or hold out more questions."
+        )
 
     run_root = Path(save_dir) if save_dir else Path(tempfile.mkdtemp(prefix="harden-"))
 
@@ -511,7 +522,11 @@ async def optimize(
         gate_label = "held-out" if held_out_ids else "all"
         regressed = not no_correctness_regression(baseline.runs, candidate.runs)
         confident = is_confident(_gate_runs(baseline), _gate_runs(candidate), min_cells=min_cells)
-        log(f"round {n}: gate on {gate_label} — regressed={regressed} confident={confident}")
+        n_cells = len({(r.question_id, r.subject) for r in _gate_runs(candidate)})
+        log(
+            f"round {n}: gate on {gate_label} ({n_cells} cells) — "
+            f"regressed={regressed} confident={confident}"
+        )
         _revert(repo_dir)  # the candidate lives on as a patch; the tree goes back to HEAD
 
         if regressed:
@@ -577,6 +592,16 @@ async def optimize(
             f"[bold green]COMMITTED[/bold green] {best.label}: score {baseline.score:.3f} -> "
             f"{best.result.score:.3f} (best of {len(champions)} champion(s))"
         )
+    elif len(pool) > 1:
+        best = max(pool[1:], key=lambda e: _gate_score(e.result))
+        log(
+            f"[bold yellow]NO COMMIT[/bold yellow]: no candidate cleared the confidence bar "
+            f"on the {'held-out' if held_out_ids else 'full'} questions. Best was "
+            f"[bold]{best.label}[/bold] (score {baseline.score:.3f} -> {best.result.score:.3f}); "
+            f"its patch + traces are in the run artifacts."
+        )
+    else:
+        log("[bold yellow]NO COMMIT[/bold yellow]: no proposal survived the gates this run.")
     apply()  # leave the live harness matching the final tree
     log(f"done: {result.accepted}/{rounds} champion round(s), {len(pool) - 1} pool candidate(s)")
     return result

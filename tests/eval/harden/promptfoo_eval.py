@@ -155,11 +155,16 @@ async def measure(
             indent=2,
         )
     )
+    # --no-table: promptfoo's end-of-eval results table is ~100 lines of border art per
+    # measure that duplicates our per-question breakdown — without it the stream is just
+    # the useful part (periodic "[CI Progress] ... ETA" liveness lines + the pass/fail
+    # summary + any provider errors).
     cmd = [
         "npx", _PROMPTFOO, "eval",
         "-c", str(cfg_path),
         "-o", str(results_path),
         "--no-cache",
+        "--no-table",
         "-j", str(concurrency),
         "--repeat", str(k),
     ]
