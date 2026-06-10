@@ -22,13 +22,12 @@ import (
 
 // Compile-time interface checks.
 var (
-	_ module.Module                        = (*Module)(nil)
-	_ module.DefaultEnabled                = (*Module)(nil)
-	_ module.ProxyDiscoverable             = (*Module)(nil)
-	_ module.SchemaResolverAware           = (*Module)(nil)
-	_ module.ExamplesProvider              = (*Module)(nil)
-	_ module.GettingStartedSnippetProvider = (*Module)(nil)
-	_ module.ResourceProvider              = (*Module)(nil)
+	_ module.Module              = (*Module)(nil)
+	_ module.DefaultEnabled      = (*Module)(nil)
+	_ module.ProxyDiscoverable   = (*Module)(nil)
+	_ module.SchemaResolverAware = (*Module)(nil)
+	_ module.ExamplesProvider    = (*Module)(nil)
+	_ module.ResourceProvider    = (*Module)(nil)
 )
 
 //go:embed */manifest.yaml */examples.yaml */getting-started.md
@@ -353,41 +352,6 @@ func (m *Module) Examples() map[string]types.ExampleCategory {
 	}
 
 	return result
-}
-
-// GettingStartedSnippet renders a compact index of the datasets exposed in this
-// deployment: name, description, where each lives, and the pointer to its full
-// guide. The guide content itself lives behind datasets://{name} so the
-// always-read getting-started stays a map, not an encyclopedia.
-func (m *Module) GettingStartedSnippet() string {
-	packs := m.activePacks()
-	if len(packs) == 0 {
-		return ""
-	}
-
-	var b strings.Builder
-
-	b.WriteString("## Datasets\n\n")
-	b.WriteString("Datasets available in this deployment. **Read `datasets://<name>` before querying a dataset** — it contains required syntax rules and placement.\n\n")
-
-	for _, p := range packs {
-		fmt.Fprintf(&b, "- **%s** — %s", p.name, p.description)
-
-		if placements := m.packPlacements(p.name); len(placements) > 0 {
-			names := make([]string, 0, len(placements))
-			for _, pl := range placements {
-				names = append(names, "`"+pl.Datasource+"`")
-			}
-
-			fmt.Fprintf(&b, " (in %s)", strings.Join(names, ", "))
-		}
-
-		b.WriteString("\n")
-	}
-
-	b.WriteString("\nFull placement detail (params, operator notes): `datasources://clickhouse`.\n")
-
-	return b.String()
 }
 
 // exampleValidator returns a function reporting which of an example's table

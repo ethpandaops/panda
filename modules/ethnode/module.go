@@ -11,13 +11,12 @@ import (
 
 // Compile-time interface checks.
 var (
-	_ module.Module                        = (*Module)(nil)
-	_ module.ProxyDiscoverable             = (*Module)(nil)
-	_ module.SandboxEnvProvider            = (*Module)(nil)
-	_ module.DatasourceInfoProvider        = (*Module)(nil)
-	_ module.ExamplesProvider              = (*Module)(nil)
-	_ module.PythonAPIDocsProvider         = (*Module)(nil)
-	_ module.GettingStartedSnippetProvider = (*Module)(nil)
+	_ module.Module                 = (*Module)(nil)
+	_ module.ProxyDiscoverable      = (*Module)(nil)
+	_ module.SandboxEnvProvider     = (*Module)(nil)
+	_ module.DatasourceInfoProvider = (*Module)(nil)
+	_ module.ExamplesProvider       = (*Module)(nil)
+	_ module.PythonAPIDocsProvider  = (*Module)(nil)
 )
 
 // Module implements the module.Module interface for direct Ethereum node API access.
@@ -124,16 +123,6 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 			},
 		},
 	}
-}
-
-// GettingStartedSnippet returns a Markdown snippet for the getting-started resource.
-func (m *Module) GettingStartedSnippet() string {
-	return `## Ethereum Node API (Direct Access)
-
-Query individual beacon/execution nodes (sync status, peers, finality, generic
-beacon/EL calls) via the ` + "`ethnode`" + ` Python module. Instances are named
-` + "`{client_cl}-{client_el}-{index}`" + ` (e.g. "lighthouse-geth-1"). Functions: ` + "`python://ethpandaops`" + `.
-`
 }
 
 func (m *Module) Start(_ context.Context) error { return nil }

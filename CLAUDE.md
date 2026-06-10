@@ -110,7 +110,7 @@ Each module implements `module.Module` in `pkg/module/module.go`. Optional capab
 - `ProxyDiscoverable` — initializes from discovered datasources
 - `CartographoorAware` — receives network discovery client
 - `DefaultEnabled` — activates without explicit config (e.g., dora)
-- provider interfaces such as sandbox env, datasource info, examples, Python docs, getting-started snippets, and resources are optional and capability-based
+- provider interfaces such as sandbox env, datasource info, examples, Python docs, and resources are optional and capability-based
 
 Datasource identity is owned by the proxy that advertised it. Modules that implement `ProxyDiscoverable` initialize from discovered datasources. The proxy client refreshes datasource info every 60 seconds by default (the embedded local proxy polls every 5 seconds).
 

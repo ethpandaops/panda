@@ -117,7 +117,6 @@ Optional capabilities are declared explicitly in `pkg/module/module.go`, for exa
 - datasource metadata
 - examples
 - Python API docs
-- getting-started snippets
 - custom resources
 - proxy-aware startup
 - proxy-discoverable

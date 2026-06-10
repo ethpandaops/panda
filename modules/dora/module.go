@@ -13,14 +13,13 @@ import (
 
 // Compile-time interface checks.
 var (
-	_ module.Module                        = (*Module)(nil)
-	_ module.DefaultEnabled                = (*Module)(nil)
-	_ module.CartographoorAware            = (*Module)(nil)
-	_ module.SandboxEnvProvider            = (*Module)(nil)
-	_ module.DatasourceInfoProvider        = (*Module)(nil)
-	_ module.ExamplesProvider              = (*Module)(nil)
-	_ module.PythonAPIDocsProvider         = (*Module)(nil)
-	_ module.GettingStartedSnippetProvider = (*Module)(nil)
+	_ module.Module                 = (*Module)(nil)
+	_ module.DefaultEnabled         = (*Module)(nil)
+	_ module.CartographoorAware     = (*Module)(nil)
+	_ module.SandboxEnvProvider     = (*Module)(nil)
+	_ module.DatasourceInfoProvider = (*Module)(nil)
+	_ module.ExamplesProvider       = (*Module)(nil)
+	_ module.PythonAPIDocsProvider  = (*Module)(nil)
 )
 
 // Module implements the module.Module interface for the Dora module.
@@ -111,14 +110,6 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 			},
 		},
 	}
-}
-
-func (m *Module) GettingStartedSnippet() string {
-	return `## Dora Beacon Chain Explorer
-
-Network status, validators, slots, and deep links into the Dora web UI via the
-` + "`dora`" + ` Python module. Functions: ` + "`python://ethpandaops`" + `; patterns: search(type="examples").
-`
 }
 
 // SetCartographoorClient implements module.CartographoorAware.

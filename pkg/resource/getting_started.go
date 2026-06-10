@@ -9,7 +9,6 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/sirupsen/logrus"
 
-	"github.com/ethpandaops/panda/pkg/module"
 	"github.com/ethpandaops/panda/pkg/types"
 )
 
@@ -18,18 +17,21 @@ type ToolLister interface {
 	List() []mcp.Tool
 }
 
-// gettingStartedHeaderMCP contains the MCP workflow guidance.
+// gettingStartedHeaderMCP contains the MCP workflow guidance. It teaches the
+// system only: no dataset, datasource, table, or network is ever named here —
+// those facts live behind the resources this guide points at.
 const gettingStartedHeaderMCP = `# Getting Started Guide
 
 ## Workflow
 
-1. **Discover** → Read datasource resources to find available data sources and schemas
-2. **Find patterns** → Use the ` + "`search`" + ` tool to find relevant examples and procedures:
+1. **Discover** → ` + "`datasets://list`" + ` shows the datasets this deployment holds; ` + "`datasources://list`" + ` shows the connections that hold them (placement params + operator notes)
+2. **Learn the data** → **read ` + "`datasets://{name}`" + ` before querying a dataset** — its required syntax rules and placement live there. Live schema: ` + "`clickhouse://tables/{cluster}/{database}`" + `
+3. **Find patterns** → Use the ` + "`search`" + ` tool to find relevant examples and procedures:
    - ` + "`search(query=\"...\")`" + ` → Search everything (examples, runbooks, EIPs, consensus specs)
-   - ` + "`search(type=\"examples\", query=\"...\")`" + ` → Query snippets only
+   - ` + "`search(type=\"examples\", query=\"...\", dataset=\"...\")`" + ` → Query snippets, optionally scoped to one dataset
    - ` + "`search(type=\"runbooks\", query=\"...\")`" + ` → Investigation procedures only
    - ` + "`search(type=\"consensus-specs\", query=\"...\")`" + ` → Consensus-specs documents and protocol constants
-3. **Execute** → ` + "`execute_python`" + ` tool with the ethpandaops library
+4. **Execute** → ` + "`execute_python`" + ` tool with the ethpandaops library; Python module APIs: ` + "`python://ethpandaops`" + `
 
 `
 
@@ -61,12 +63,7 @@ for ds in clickhouse.list_datasources():
 ` + "```" + `
 
 Then query a discovered datasource with ` + "`clickhouse.query(\"<datasource>\", \"<sql>\")`" + ` —
-see the dataset sections below for table syntax and conventions.
-
-### Discovery
-
-Run ` + "`panda --help`" + ` to see all available commands and ` + "`panda resources`" + ` to list
-available data resources. Use ` + "`panda <command> --help`" + ` for details on any command.
+the dataset guides (see Discovering Data below) carry table syntax and conventions.
 
 `
 
@@ -137,7 +134,6 @@ func RegisterGettingStartedResources(
 	log logrus.FieldLogger,
 	reg Registry,
 	toolReg ToolLister,
-	moduleReg *module.Registry,
 ) {
 	log = log.WithField("resource", "getting_started")
 
@@ -149,7 +145,7 @@ func RegisterGettingStartedResources(
 			mcp.WithMIMEType("text/markdown"),
 			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 1.0, ""),
 		),
-		Handler: createGettingStartedHandler(reg, toolReg, moduleReg),
+		Handler: createGettingStartedHandler(reg, toolReg),
 	})
 
 	log.Debug("Registered getting-started resource")
@@ -160,7 +156,6 @@ func RegisterGettingStartedResources(
 func createGettingStartedHandler(
 	reg Registry,
 	toolReg ToolLister,
-	moduleReg *module.Registry,
 ) ReadHandler {
 	return func(ctx context.Context, _ string) (string, error) {
 		clientCtx := types.GetClientContext(ctx)
@@ -173,12 +168,6 @@ func createGettingStartedHandler(
 			sb.WriteString(gettingStartedHeaderCLI)
 		default:
 			sb.WriteString(gettingStartedHeaderMCP)
-		}
-
-		// Module snippets are factual reference — same for all contexts.
-		snippets := moduleReg.GettingStartedSnippets()
-		if snippets != "" {
-			sb.WriteString(snippets)
 		}
 
 		// Context-specific tools/commands section.
@@ -256,7 +245,13 @@ func writeResourcesSection(sb *strings.Builder, reg Registry) {
 
 // writeCLIDiscoverySection writes CLI discovery instructions.
 func writeCLIDiscoverySection(sb *strings.Builder) {
-	sb.WriteString("## Discovering Commands and Resources\n\n")
+	sb.WriteString("## Discovering Data\n\n")
+	sb.WriteString("- `panda datasources` — connections and the datasets each one holds\n")
+	sb.WriteString("- `panda resources read datasets://list` — datasets in this deployment\n")
+	sb.WriteString("- `panda resources read datasets://<name>` — **read before querying a dataset**: required syntax rules and placement\n")
+	sb.WriteString("- `panda schema` — live ClickHouse schemas\n")
+	sb.WriteString("- `panda docs` — Python module APIs\n")
+	sb.WriteString("\n## Discovering Commands\n\n")
 	sb.WriteString("Run `panda --help` to see all available commands.\n")
 	sb.WriteString("Run `panda resources` to list available data resources.\n")
 	sb.WriteString("Run `panda <command> --help` for details on any command.\n")

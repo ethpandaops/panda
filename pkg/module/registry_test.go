@@ -56,15 +56,6 @@ func (e *datasourceTestExtension) DatasourceInfo() []types.DatasourceInfo {
 	return e.infos
 }
 
-type gettingStartedTestExtension struct {
-	baseTestExtension
-	snippet string
-}
-
-func (e *gettingStartedTestExtension) GettingStartedSnippet() string {
-	return e.snippet
-}
-
 type discoverableTestExtension struct {
 	baseTestExtension
 	infos []types.DatasourceInfo
@@ -161,10 +152,6 @@ func TestRegistryCapabilityAggregation(t *testing.T) {
 		baseTestExtension: baseTestExtension{name: "datasource"},
 		infos:             []types.DatasourceInfo{{Type: "custom", Name: "demo"}},
 	})
-	reg.Add(&gettingStartedTestExtension{
-		baseTestExtension: baseTestExtension{name: "snippet"},
-		snippet:           "hello world",
-	})
 
 	for _, name := range reg.All() {
 		if err := reg.InitModule(name, nil); err != nil {
@@ -193,10 +180,5 @@ func TestRegistryCapabilityAggregation(t *testing.T) {
 	infos := reg.DatasourceInfo()
 	if len(infos) != 1 || infos[0].Name != "demo" {
 		t.Fatalf("DatasourceInfo() = %#v, want single capability contribution", infos)
-	}
-
-	snippets := reg.GettingStartedSnippets()
-	if snippets != "hello world\n" {
-		t.Fatalf("GettingStartedSnippets() = %q, want %q", snippets, "hello world\n")
 	}
 }

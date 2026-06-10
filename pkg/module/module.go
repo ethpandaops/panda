@@ -118,11 +118,6 @@ type PythonAPIDocsProvider interface {
 	PythonAPIDocs() map[string]types.ModuleDoc
 }
 
-// GettingStartedSnippetProvider contributes snippets to the getting-started resource.
-type GettingStartedSnippetProvider interface {
-	GettingStartedSnippet() string
-}
-
 // ResourceProvider contributes custom MCP resources.
 type ResourceProvider interface {
 	RegisterResources(log logrus.FieldLogger, reg ResourceRegistry) error

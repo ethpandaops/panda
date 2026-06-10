@@ -13,14 +13,13 @@ import (
 
 // Compile-time interface checks.
 var (
-	_ module.Module                        = (*Module)(nil)
-	_ module.DefaultEnabled                = (*Module)(nil)
-	_ module.CartographoorAware            = (*Module)(nil)
-	_ module.SandboxEnvProvider            = (*Module)(nil)
-	_ module.DatasourceInfoProvider        = (*Module)(nil)
-	_ module.ExamplesProvider              = (*Module)(nil)
-	_ module.PythonAPIDocsProvider         = (*Module)(nil)
-	_ module.GettingStartedSnippetProvider = (*Module)(nil)
+	_ module.Module                 = (*Module)(nil)
+	_ module.DefaultEnabled         = (*Module)(nil)
+	_ module.CartographoorAware     = (*Module)(nil)
+	_ module.SandboxEnvProvider     = (*Module)(nil)
+	_ module.DatasourceInfoProvider = (*Module)(nil)
+	_ module.ExamplesProvider       = (*Module)(nil)
+	_ module.PythonAPIDocsProvider  = (*Module)(nil)
 )
 
 // Module implements the module.Module interface for the CBT module.
@@ -116,14 +115,6 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 			},
 		},
 	}
-}
-
-func (m *Module) GettingStartedSnippet() string {
-	return `## CBT (ClickHouse Build Tool)
-
-Data-model metadata, transformation status/coverage, and deep links into the CBT
-web UI via the ` + "`cbt`" + ` Python module. Functions: ` + "`python://ethpandaops`" + `.
-`
 }
 
 // SetCartographoorClient implements module.CartographoorAware.

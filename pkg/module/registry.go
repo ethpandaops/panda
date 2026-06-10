@@ -284,27 +284,3 @@ func (r *Registry) PythonAPIDocs() map[string]types.ModuleDoc {
 
 	return result
 }
-
-// GettingStartedSnippets aggregates getting-started snippets from
-// all initialized modules.
-func (r *Registry) GettingStartedSnippets() string {
-	r.mu.RLock()
-	modules := make([]Module, len(r.initialized))
-	copy(modules, r.initialized)
-	r.mu.RUnlock()
-
-	var snippets string
-	for _, ext := range modules {
-		provider, ok := ext.(GettingStartedSnippetProvider)
-		if !ok {
-			continue
-		}
-
-		snippet := provider.GettingStartedSnippet()
-		if snippet != "" {
-			snippets += snippet + "\n"
-		}
-	}
-
-	return snippets
-}

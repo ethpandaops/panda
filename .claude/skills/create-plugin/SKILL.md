@@ -68,7 +68,7 @@ Add these when needed:
 
 Implement `module.Module` from `pkg/module/module.go` and only the optional capability interfaces you need:
 - base lifecycle: `Name`, `Init`, `ApplyDefaults`, `Validate`, `Start`, `Stop`
-- optional capabilities: `SandboxEnvProvider`, `DatasourceInfoProvider`, `ExamplesProvider`, `PythonAPIDocsProvider`, `GettingStartedSnippetProvider`, `ResourceProvider`
+- optional capabilities: `SandboxEnvProvider`, `DatasourceInfoProvider`, `ExamplesProvider`, `PythonAPIDocsProvider`, `ResourceProvider`
 
 ## Python Rules
 

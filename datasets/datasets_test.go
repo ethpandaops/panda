@@ -2,6 +2,7 @@ package datasets
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -89,9 +90,22 @@ func TestInitFromDiscoveryScopesToDeclaredDatasets(t *testing.T) {
 		t.Error("scoped to otel-logs but xatu-cbt category block_timing present")
 	}
 
-	gs := m.GettingStartedSnippet()
-	if strings.Contains(gs, "xatu-raw") || strings.Contains(gs, "xatu-cbt") {
-		t.Error("scoped to otel-logs but getting-started includes xatu packs")
+	list, err := m.handleDatasetsList(context.Background(), "datasets://list")
+	if err != nil {
+		t.Fatalf("handleDatasetsList() error = %v", err)
+	}
+
+	var parsed struct {
+		Datasets []datasetSummary `json:"datasets"`
+	}
+	if err := json.Unmarshal([]byte(list), &parsed); err != nil {
+		t.Fatalf("parsing datasets list: %v", err)
+	}
+
+	for _, d := range parsed.Datasets {
+		if want := d.Name == "otel-logs"; d.Active != want {
+			t.Errorf("dataset %q active = %v, want %v", d.Name, d.Active, want)
+		}
 	}
 }
 
@@ -119,8 +133,8 @@ func TestInitFromDiscoveryUnknownDatasetsShowNothing(t *testing.T) {
 		t.Fatalf("unknown-only declaration: got %d example categories, want 0", len(ex))
 	}
 
-	if gs := m.GettingStartedSnippet(); gs != "" {
-		t.Fatalf("unknown-only declaration: got getting-started content, want none: %q", gs)
+	if packs := m.activePacks(); len(packs) != 0 {
+		t.Fatalf("unknown-only declaration: %d packs exposed, want 0", len(packs))
 	}
 }
 
@@ -205,17 +219,6 @@ func TestExamplesKeptWhenNoLiveSchema(t *testing.T) {
 	}
 }
 
-func TestGettingStartedCoversAllPacks(t *testing.T) {
-	m := newLoaded(t)
-	gs := m.GettingStartedSnippet()
-
-	for _, want := range []string{"xatu-raw", "xatu-cbt", "otel-logs"} {
-		if !strings.Contains(gs, want) {
-			t.Errorf("getting-started snippet missing pack heading %q", want)
-		}
-	}
-}
-
 func TestExamplesStampedWithDataset(t *testing.T) {
 	m := newLoaded(t)
 
@@ -225,26 +228,6 @@ func TestExamplesStampedWithDataset(t *testing.T) {
 				t.Fatalf("category %q example %q has no dataset stamp", key, ex.Name)
 			}
 		}
-	}
-}
-
-func TestGettingStartedIsIndexNotFullContent(t *testing.T) {
-	m := newLoaded(t)
-	gs := m.GettingStartedSnippet()
-
-	for _, want := range []string{"xatu-raw", "xatu-cbt", "otel-logs", "datasets://"} {
-		if !strings.Contains(gs, want) {
-			t.Errorf("getting-started index missing %q", want)
-		}
-	}
-
-	// Full pack bodies live behind datasets://{name}, not in the guide.
-	if strings.Contains(gs, "Table syntax") {
-		t.Error("getting-started should be an index, not contain full pack guidance")
-	}
-
-	if len(gs) > 2048 {
-		t.Errorf("getting-started index is %d bytes; expected a compact index (<2KB)", len(gs))
 	}
 }
 
