@@ -166,8 +166,10 @@ type ClickHouseClusterConfig struct {
 
 // DatasetBindingConfig declares a dataset stored in a datasource. The dataset
 // name matches a knowledge pack in the release; Params are opaque placement
-// hints interpreted by that pack (e.g. database: default); Notes are freeform
-// deployment context surfaced to operators and the LLM.
+// hints interpreted by that pack (e.g. database: default); Notes says what
+// distinguishes this copy from the dataset's other copies — universal query
+// knowledge belongs in the dataset pack, cluster-wide behavior in the
+// datasource description.
 type DatasetBindingConfig struct {
 	Dataset string            `yaml:"dataset"`
 	Params  map[string]string `yaml:"params,omitempty"`

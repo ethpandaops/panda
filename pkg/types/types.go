@@ -23,10 +23,12 @@ type DatasourceInfo struct {
 }
 
 // DatasetBinding declares that a named dataset lives in a datasource, with
-// opaque placement params and freeform operator notes. The dataset name matches
-// a knowledge pack shipped in the release; Params are interpreted by that pack
-// (e.g. {"database": "default"}); Notes are deployment-specific context surfaced
-// to operators and the LLM (e.g. "slow cluster, filter the partition").
+// opaque placement params and operator notes. The dataset name matches a
+// knowledge pack shipped in the release; Params are interpreted by that pack
+// (e.g. {"database": "default"}); Notes says what distinguishes this copy from
+// the dataset's other copies (e.g. "operator infrastructure logs" vs "devnet
+// node logs") — universal query knowledge belongs in the dataset pack, and
+// cluster-wide behavior in the datasource description.
 type DatasetBinding struct {
 	Dataset string            `json:"dataset" yaml:"dataset"`
 	Params  map[string]string `json:"params,omitempty" yaml:"params,omitempty"`
