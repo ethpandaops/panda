@@ -6,7 +6,7 @@
         parent = pick from pool (weighted by per-cell wins — GEPA-style Pareto)
         proposer edits the harness from the PARENT's raw traces (eval cases hidden)
         deterministic guards -> LLM audit -> apply() (rebuild + restart)
-        prescreen on the parent's worst questions (k=1, cheap) — bail early if worse
+        prescreen on the parent's worst questions (k=1, cheap) — bail early if broken
         candidate = measure()
         gates vs the ORIGINAL baseline:
             correctness regressed             -> discard
@@ -313,7 +313,7 @@ async def optimize(
     single-question smoke, but it CAN be gamed by encoding that question's answer).
 
     ``pool_size`` caps the candidate pool (mutation parents beyond the baseline);
-    ``prescreen`` is how many of the parent's worst train questions get a cheap k=1
+    ``prescreen`` is how many of the parent's worst train questions get a cheap k=1 functional smoke
     canonical-phrasing check before the full measure (0 disables; it also auto-disables
     when it wouldn't be cheaper than the full suite). ``audit_retries`` is how many times
     a blocked proposal goes back to the proposer with the auditor's findings to amend
@@ -556,30 +556,36 @@ async def optimize(
             _record(n, False, "build-failed", baseline, proposal.summary, parent.label)
             continue
 
-        # Cheap prescreen (GEPA's minibatch): the parent's worst train questions, canonical
-        # phrasing, k=1. A candidate that can't keep up THERE doesn't get the full suite.
+        # Cheap prescreen: a FUNCTIONAL smoke on the parent's worst train questions
+        # (canonical phrasing, k=1). Its only job is catching a candidate that broke
+        # the harness at runtime — zero correct runs where the parent had working
+        # ones — before paying for the full measure. It deliberately does NOT
+        # compare scores: a handful of k=1 cells cannot statistically separate a
+        # regression from noise (a score-based prescreen was observed killing
+        # candidates on variance), and the full measure's gates own that decision.
         if 0 < prescreen < len(questions):
             by_q: dict[str, list[float]] = {}
+            parent_correct: set[str] = set()
             for r in parent.result.runs:
                 if r.question_id in train_ids:
                     by_q.setdefault(r.question_id, []).append(r.score)
+                    if r.correct:
+                        parent_correct.add(r.question_id)
             worst_qids = sorted(by_q, key=lambda q: statistics.mean(by_q[q]))[:prescreen]
             sub_qs = [replace(q, variations=[]) for q in questions if q.id in worst_qids]
             pre = await measure(f"round{n}_prescreen", refs=refs, qs=sub_qs, k_override=1)
-            parent_mean = statistics.mean(
-                s for q in worst_qids for s in by_q[q]
-            )
-            # 0.05 slack: the prescreen is k=1 — it kills clear losers, not close calls.
-            if pre.score < parent_mean - 0.05:
+            parent_functional = any(q in parent_correct for q in worst_qids)
+            correct_runs = sum(1 for r in pre.runs if r.correct)
+            if pre.runs and parent_functional and correct_runs == 0:
                 log(
-                    f"round {n}: [bold yellow]PRESCREEN[/bold yellow] "
-                    f"{pre.score:.3f} < parent {parent_mean:.3f} on {worst_qids} — rejecting "
-                    f"without the full measure"
+                    f"round {n}: [bold yellow]PRESCREEN[/bold yellow] 0/{len(pre.runs)} "
+                    f"correct runs on {worst_qids} where the parent was functional — "
+                    f"candidate looks broken; rejecting without the full measure"
                 )
                 _revert(repo_dir)
                 _record(n, False, "prescreen", baseline, proposal.summary, parent.label)
                 continue
-            log(f"round {n}: prescreen ok ({pre.score:.3f} vs parent {parent_mean:.3f})")
+            log(f"round {n}: prescreen ok ({correct_runs}/{len(pre.runs)} runs correct)")
 
         candidate = await measure(f"round{n}_candidate", refs=refs)
         _log_breakdown(log, f"round{n} candidate", candidate)

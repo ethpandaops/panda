@@ -265,8 +265,9 @@ async def test_clean_audit_does_not_block_accept(repo, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_prescreen_rejects_cheaply_before_full_measure(repo, monkeypatch):
-    # A candidate that's clearly worse on the parent's worst questions is killed by the
-    # k=1 prescreen: only baseline + prescreen measures run, never the full suite.
+    # A candidate that is functionally broken (zero correct runs where the parent
+    # worked) is killed by the k=1 prescreen smoke: only baseline + prescreen run,
+    # never the full suite.
     state = {"improved": False}
     calls: list[str] = []
     inner = _stub_measure(state, correct_when_improved=False)
@@ -290,3 +291,27 @@ async def test_prescreen_rejects_cheaply_before_full_measure(repo, monkeypatch):
 def test_question_prompts_single_and_multi_turn():
     assert Question(id="a", text="one").prompts == ["one"]
     assert Question(id="b", text="one", followups=["two", "three"]).prompts == ["one", "two", "three"]
+
+
+@pytest.mark.asyncio
+async def test_prescreen_passes_worse_but_functional_candidate(repo, monkeypatch):
+    # A candidate that scores worse but still answers correctly must NOT be killed by
+    # the prescreen smoke — a few k=1 cells can't separate regression from noise, so
+    # the decision belongs to the full measure's gates (here: reject not-confident).
+    state = {"improved": False}
+    calls: list[str] = []
+    inner = _stub_measure(state, improves=set())  # proposal changes nothing: correct, same cost
+
+    async def counting(questions, subject_specs, *, run_dir, **kw):
+        calls.append(Path(run_dir).name)
+        return await inner(questions, subject_specs, run_dir=run_dir, **kw)
+
+    monkeypatch.setattr(loop_mod, "measure_candidate", counting)
+    qs = [Question(id=f"q{i}", text=f"question {i}") for i in range(4)]
+    result = await optimize(
+        qs, ["s"], _StubProposer(repo, state),
+        repo_dir=str(repo), apply=_apply_factory(repo, state),
+        k=3, rounds=1, log=lambda *_: None,
+    )
+    assert result.rounds[0].reason != "prescreen"
+    assert "round1_candidate" in calls, "full measure should have run"

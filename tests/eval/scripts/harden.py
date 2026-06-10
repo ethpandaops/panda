@@ -218,8 +218,9 @@ def main() -> None:
         "--prescreen",
         type=int,
         default=3,
-        help="cheap k=1 check on this many of the parent's worst questions before the full "
-        "measure (0 disables)",
+        help="functional smoke: k=1 on this many of the parent's worst questions before "
+        "the full measure, rejecting only candidates with zero correct runs where the "
+        "parent worked (0 disables)",
     )
     ap.add_argument(
         "--promote",
