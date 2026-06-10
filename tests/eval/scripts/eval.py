@@ -59,7 +59,7 @@ def _parse_args() -> argparse.Namespace:
     ap.add_argument(
         "--grader", default="", help="promptfoo grading provider (default openrouter:<judge-model>)"
     )
-    ap.add_argument("--concurrency", type=int, default=6, help="max agent runs in flight")
+    ap.add_argument("--concurrency", type=int, default=16, help="max agent runs in flight")
     ap.add_argument(
         "--subject-timeout",
         type=float,

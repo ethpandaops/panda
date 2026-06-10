@@ -282,7 +282,7 @@ async def optimize(
     show: int = 12,
     steepness: float = 2.0,
     min_cells: int = 3,
-    concurrency: int = 6,
+    concurrency: int = 16,
     grader: str = DEFAULT_GRADER,
     subject_timeout: int = 300,
     cwd: str | None = None,

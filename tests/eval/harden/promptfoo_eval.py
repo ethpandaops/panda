@@ -133,7 +133,7 @@ async def measure(
     k: int,
     run_dir: str,
     grader: str = DEFAULT_GRADER,
-    concurrency: int = 6,
+    concurrency: int = 16,
     worker_timeout_ms: int | None = None,
     subject_timeout: int = 300,
     cwd: str | None = None,
@@ -269,7 +269,7 @@ async def measure_candidate(
     refs: dict[str, float] | None = None,
     steepness: float = 2.0,
     grader: str = DEFAULT_GRADER,
-    concurrency: int = 6,
+    concurrency: int = 16,
     subject_timeout: int = 300,
     cwd: str | None = None,
 ) -> CandidateResult:
