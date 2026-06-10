@@ -3,15 +3,29 @@
 # These pressure-test chart generation: the agent must query real data AND return a
 # visualization artifact (a chart URL or saved image), not just a table of numbers.
 
-- id: block_time_histogram
-  description: Generate a histogram of block arrival times
-  input: "Create a histogram showing the distribution of block arrival times for the last 1000 blocks on mainnet."
-  network: mainnet
-  tags: [visualization, histogram, timing]
-  assert:
-    - type: llm-rubric
-      value: >
-        Produces a histogram visualization (a returned chart URL or saved image) of
-        block arrival times for recent mainnet blocks, built from real queried data.
-        A textual summary with no chart artifact, or one not grounded in a real query,
-        fails. Must provide the storage URL of the image it uploaded.
+  - id: block_time_histogram
+    description: Generate a histogram of block arrival times
+    input: "Create a histogram showing the distribution of block arrival times for
+      the last 1000 blocks on mainnet."
+    network: mainnet
+    tags: [visualization, histogram, timing]
+    assert:
+      - type: llm-rubric
+        value: >
+          Produces a histogram visualization (a returned chart URL or saved image)
+          of
+          block arrival times for recent mainnet blocks, built from real queried data.
+          A textual summary with no chart artifact, or one not grounded in a real
+          query,
+          fails. Must provide the storage URL of the image it uploaded.
+    variations:
+      - Plot a histogram of block arrival times using the last 1000 blocks on 
+        mainnet.
+      - Show the distribution of block arrival times for mainnet's last 1000 
+        blocks as a histogram.
+      - I'm trying to visualize how block arrival times are distributed across 
+        the last 1000 mainnet blocks in a histogram.
+      - Generate a histogram that displays the distribution of block arrival 
+        times for the most recent 1000 blocks on mainnet.
+      - For the last 1000 blocks on mainnet, create a histogram of their block 
+        arrival times.
