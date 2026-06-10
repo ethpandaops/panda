@@ -10,18 +10,23 @@ import (
 
 var datasetsCmd = &cobra.Command{
 	GroupID: groupDiscovery,
-	Use:     "datasets",
-	Short:   "List datasets in this deployment and where they live",
-	Long: `List the datasets this deployment holds, one row per placement: which
-datasource holds the dataset, in which database (params), with any operator
-notes. Read a dataset's full query guide with:
+	Use:     "datasets [name]",
+	Short:   "List datasets in this deployment, or show one dataset's query guide",
+	Long: `Without arguments, list the datasets this deployment holds, one row per
+placement: which datasource holds the dataset, in which database (params),
+with any operator notes.
 
-  panda resources read datasets://<name>
+With a dataset name, show its full query guide: placement in this deployment,
+required syntax rules, and example categories. Read it before querying the
+dataset.
 
 Examples:
-  panda datasets          # List datasets and placements
-  panda datasets --json   # Output as JSON`,
-	RunE: runDatasets,
+  panda datasets            # List datasets and placements
+  panda datasets otel-logs  # Show the otel-logs query guide
+  panda datasets --json     # Output the list as JSON`,
+	Args:              cobra.MaximumNArgs(1),
+	ValidArgsFunction: completeDatasetNames,
+	RunE:              runDatasets,
 }
 
 // datasetListEntry mirrors one entry of the datasets://list resource payload.
@@ -40,7 +45,18 @@ func init() {
 	rootCmd.AddCommand(datasetsCmd)
 }
 
-func runDatasets(cmd *cobra.Command, _ []string) error {
+func runDatasets(cmd *cobra.Command, args []string) error {
+	if len(args) == 1 {
+		guide, err := readResource(cmd.Context(), "datasets://"+args[0])
+		if err != nil {
+			return fmt.Errorf("reading dataset guide: %w", err)
+		}
+
+		fmt.Println(guide.Content)
+
+		return nil
+	}
+
 	response, err := readResource(cmd.Context(), "datasets://list")
 	if err != nil {
 		return fmt.Errorf("reading datasets list: %w", err)
@@ -115,7 +131,37 @@ func runDatasets(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	fmt.Println("\nRead a dataset's guide: panda resources read datasets://<name>")
+	fmt.Println("\nRead a dataset's guide: panda datasets <name>")
 
 	return nil
+}
+
+// completeDatasetNames offers active dataset names for shell completion.
+func completeDatasetNames(cmd *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
+	if len(args) > 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	response, err := readResource(cmd.Context(), "datasets://list")
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	var parsed struct {
+		Datasets []datasetListEntry `json:"datasets"`
+	}
+
+	if err := json.Unmarshal([]byte(response.Content), &parsed); err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	names := make([]string, 0, len(parsed.Datasets))
+
+	for _, d := range parsed.Datasets {
+		if d.Active {
+			names = append(names, d.Name)
+		}
+	}
+
+	return names, cobra.ShellCompDirectiveNoFileComp
 }
