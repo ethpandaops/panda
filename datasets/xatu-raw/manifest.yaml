@@ -1,2 +1,1 @@
 name: xatu-raw
-description: Raw, unaggregated Ethereum beacon/execution events captured by Xatu (one row per observation).

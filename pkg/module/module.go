@@ -108,7 +108,7 @@ type DatasourceInfoProvider interface {
 	DatasourceInfo() []types.DatasourceInfo
 }
 
-// ExamplesProvider contributes search examples and examples:// resources.
+// ExamplesProvider contributes query examples to the semantic search index.
 type ExamplesProvider interface {
 	Examples() map[string]types.ExampleCategory
 }

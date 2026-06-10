@@ -76,15 +76,17 @@ func bareTableName(ref string) string {
 	return strings.TrimSpace(ref)
 }
 
-// queryReferencesOnlyKnownTables reports whether every table referenced by the
-// query exists in the known set. A query with no extractable table references is
-// considered valid (conservative — never demote what we cannot parse).
-func queryReferencesOnlyKnownTables(sql string, known map[string]bool) bool {
+// unknownTableRefs returns the tables referenced by the query that are absent
+// from the known set. A query with no extractable table references yields none
+// (conservative — never demote what we cannot parse).
+func unknownTableRefs(sql string, known map[string]bool) []string {
+	var missing []string
+
 	for _, ref := range extractTableRefs(sql) {
 		if !known[ref] {
-			return false
+			missing = append(missing, ref)
 		}
 	}
 
-	return true
+	return missing
 }

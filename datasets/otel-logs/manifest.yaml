@@ -1,2 +1,1 @@
 name: otel-logs
-description: OpenTelemetry container/process logs stored in ClickHouse (local Kurtosis devnets and hosted devnets).

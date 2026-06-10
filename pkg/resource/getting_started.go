@@ -55,10 +55,13 @@ that module commands cannot provide.
 ` + "```" + `
 panda execute --code '
 from ethpandaops import clickhouse
-df = clickhouse.query("clickhouse-refined", "SHOW DATABASES")
-print(df)
+for ds in clickhouse.list_datasources():
+    print(ds)
 '
 ` + "```" + `
+
+Then query a discovered datasource with ` + "`clickhouse.query(\"<datasource>\", \"<sql>\")`" + ` —
+see the dataset sections below for table syntax and conventions.
 
 ### Discovery
 
@@ -80,7 +83,7 @@ const gettingStartedFooterMCP = `
 **Example - Multi-step workflow:**
 ` + "```python" + `
 # Call 1: Query and SAVE to workspace
-df = clickhouse.query("clickhouse-refined", "SELECT ...")
+df = clickhouse.query("<datasource>", "SELECT ...")
 df.to_parquet("/workspace/data.parquet")  # Persist!
 ` + "```" + `
 
@@ -109,7 +112,7 @@ const gettingStartedFooterCLI = `
 **Example — Multi-step workflow:**
 ` + "```" + `
 panda execute --code '
-df = clickhouse.query("clickhouse-refined", "SELECT ...")
+df = clickhouse.query("<datasource>", "SELECT ...")
 df.to_parquet("/workspace/data.parquet")
 '
 ` + "```" + `

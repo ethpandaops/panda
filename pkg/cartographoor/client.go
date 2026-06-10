@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -51,17 +50,12 @@ type CartographoorClient interface {
 	GetGroup(name string) (map[string]discovery.Network, bool)
 	// GetGroups returns all available devnet group names.
 	GetGroups() []string
-	// IsDevnet returns true if the network is a devnet.
-	IsDevnet(network discovery.Network) bool
-	// GetClusters returns the clickhouse clusters for a network.
-	GetClusters(network discovery.Network) []string
 }
 
 // cartographoorClient adapts the upstream cartographoor client library to panda's
 // network model. Fetching and caching of networks.json is delegated to a
-// client.MemoryProvider; this type layers panda-specific devnet grouping and
-// clickhouse cluster mapping on top, refreshing its derived state whenever the
-// provider reports new data.
+// client.MemoryProvider; this type layers panda-specific devnet grouping on top,
+// refreshing its derived state whenever the provider reports new data.
 type cartographoorClient struct {
 	log logrus.FieldLogger
 	cfg CartographoorConfig
@@ -246,20 +240,6 @@ func (c *cartographoorClient) GetGroups() []string {
 	sort.Strings(groups)
 
 	return groups
-}
-
-// IsDevnet returns true if the network is a devnet.
-func (c *cartographoorClient) IsDevnet(network discovery.Network) bool {
-	return strings.Contains(network.Repository, "devnet")
-}
-
-// GetClusters returns the clickhouse clusters for a network.
-func (c *cartographoorClient) GetClusters(network discovery.Network) []string {
-	if c.IsDevnet(network) {
-		return []string{"xatu-experimental", "clickhouse-refined"}
-	}
-
-	return []string{"clickhouse-raw", "clickhouse-refined"}
 }
 
 // watch rebuilds the derived state whenever the provider reports new data.

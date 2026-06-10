@@ -237,9 +237,6 @@ func (b *Builder) buildResourceRegistry(
 	// Register datasources resources (from module registry).
 	resource.RegisterDatasourcesResources(b.log, reg, moduleReg)
 
-	// Register examples resources (from module registry).
-	resource.RegisterExamplesResources(b.log, reg, moduleReg)
-
 	// Register networks resources.
 	resource.RegisterNetworksResources(b.log, reg, cartographoorClient)
 

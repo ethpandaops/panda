@@ -19,10 +19,9 @@ var networkURIPattern = regexp.MustCompile(`^networks://(.+)$`)
 
 // NetworkSummary is a compact representation for the active networks list.
 type NetworkSummary struct {
-	Name     string   `json:"name"`
-	ChainID  uint64   `json:"chain_id,omitempty"`
-	Clusters []string `json:"clusters"`
-	Status   string   `json:"status"`
+	Name    string `json:"name"`
+	ChainID uint64 `json:"chain_id,omitempty"`
+	Status  string `json:"status"`
 }
 
 // NetworksActiveResponse is the response for networks://active.
@@ -32,27 +31,21 @@ type NetworksActiveResponse struct {
 	Usage    string           `json:"usage"`
 }
 
-// NetworkWithClusters wraps a discovery.Network with clickhouse cluster info.
-type NetworkWithClusters struct {
-	discovery.Network
-	Clusters []string `json:"clusters"`
-}
-
 // NetworksAllResponse is the response for networks://all.
 type NetworksAllResponse struct {
-	Networks map[string]NetworkWithClusters `json:"networks"`
-	Groups   []string                       `json:"groups"`
+	Networks map[string]discovery.Network `json:"networks"`
+	Groups   []string                     `json:"groups"`
 }
 
 // NetworkDetailResponse is the response for networks://{name} (single network).
 type NetworkDetailResponse struct {
-	Network NetworkWithClusters `json:"network"`
+	Network discovery.Network `json:"network"`
 }
 
 // GroupDetailResponse is the response for networks://{group} (devnet group).
 type GroupDetailResponse struct {
-	Group    string                         `json:"group"`
-	Networks map[string]NetworkWithClusters `json:"networks"`
+	Group    string                       `json:"group"`
+	Networks map[string]discovery.Network `json:"networks"`
 }
 
 // RegisterNetworksResources registers all network-related resources with the registry.
@@ -109,10 +102,9 @@ func createActiveNetworksHandler(client cartographoor.CartographoorClient) ReadH
 
 		for _, network := range networks {
 			summaries = append(summaries, NetworkSummary{
-				Name:     network.Name,
-				ChainID:  network.ChainID,
-				Clusters: client.GetClusters(network),
-				Status:   network.Status,
+				Name:    network.Name,
+				ChainID: network.ChainID,
+				Status:  network.Status,
 			})
 		}
 
@@ -134,21 +126,9 @@ func createActiveNetworksHandler(client cartographoor.CartographoorClient) ReadH
 // createAllNetworksHandler returns a handler for networks://all.
 func createAllNetworksHandler(client cartographoor.CartographoorClient) ReadHandler {
 	return func(_ context.Context, _ string) (string, error) {
-		networks := client.GetAllNetworks()
-		groups := client.GetGroups()
-
-		networksWithClusters := make(map[string]NetworkWithClusters, len(networks))
-
-		for name, network := range networks {
-			networksWithClusters[name] = NetworkWithClusters{
-				Network:  network,
-				Clusters: client.GetClusters(network),
-			}
-		}
-
 		response := NetworksAllResponse{
-			Networks: networksWithClusters,
-			Groups:   groups,
+			Networks: client.GetAllNetworks(),
+			Groups:   client.GetGroups(),
 		}
 
 		data, err := json.MarshalIndent(response, "", "  ")
@@ -172,14 +152,7 @@ func createNetworkDetailHandler(log logrus.FieldLogger, client cartographoor.Car
 
 		// Try exact network match first
 		if network, ok := client.GetNetwork(name); ok {
-			response := NetworkDetailResponse{
-				Network: NetworkWithClusters{
-					Network:  network,
-					Clusters: client.GetClusters(network),
-				},
-			}
-
-			data, err := json.MarshalIndent(response, "", "  ")
+			data, err := json.MarshalIndent(NetworkDetailResponse{Network: network}, "", "  ")
 			if err != nil {
 				return "", fmt.Errorf("marshaling response: %w", err)
 			}
@@ -189,18 +162,9 @@ func createNetworkDetailHandler(log logrus.FieldLogger, client cartographoor.Car
 
 		// Try group match
 		if networks, ok := client.GetGroup(name); ok {
-			networksWithClusters := make(map[string]NetworkWithClusters, len(networks))
-
-			for netName, network := range networks {
-				networksWithClusters[netName] = NetworkWithClusters{
-					Network:  network,
-					Clusters: client.GetClusters(network),
-				}
-			}
-
 			response := GroupDetailResponse{
 				Group:    name,
-				Networks: networksWithClusters,
+				Networks: networks,
 			}
 
 			data, err := json.MarshalIndent(response, "", "  ")

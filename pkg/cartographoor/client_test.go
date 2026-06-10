@@ -77,15 +77,3 @@ func TestClientAccessors(t *testing.T) {
 		assert.Equal(t, []string{"fusaka"}, c.GetGroups())
 	})
 }
-
-func TestClientClusters(t *testing.T) {
-	c := &cartographoorClient{}
-
-	devnet := discovery.Network{Repository: "ethpandaops/fusaka-devnets"}
-	assert.True(t, c.IsDevnet(devnet))
-	assert.Equal(t, []string{"xatu-experimental", "clickhouse-refined"}, c.GetClusters(devnet))
-
-	mainnet := discovery.Network{Repository: "ethereum/mainnet"}
-	assert.False(t, c.IsDevnet(mainnet))
-	assert.Equal(t, []string{"clickhouse-raw", "clickhouse-refined"}, c.GetClusters(mainnet))
-}

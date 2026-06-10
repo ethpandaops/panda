@@ -4,7 +4,8 @@
 devnet_logs:
   name: Local Devnet OTel Logs
   description: Queries for local Kurtosis devnet OTel logs exposed through the autodiscovered local-kurtosis
-    ClickHouse datasource
+    ClickHouse datasource. Replace {db} with the database hosting the otel-logs dataset — given by the
+    datasource's dataset params or its default database (see datasources://).
   examples:
   - name: List local devnet enclaves
     description: List Kurtosis enclave names currently present in the shared local OTel logs table. Run
@@ -12,7 +13,7 @@ devnet_logs:
     target: local-kurtosis
     query: |
       SELECT DISTINCT EnclaveName
-      FROM otel.otel_logs
+      FROM {db}.otel_logs
       WHERE EnclaveName != ''
       ORDER BY EnclaveName
   - name: Recent service errors
@@ -24,7 +25,7 @@ devnet_logs:
         Timestamp,
         ServiceName,
         Body
-      FROM otel.otel_logs
+      FROM {db}.otel_logs
       WHERE EnclaveName = {enclave:String}
         AND ServiceName = {service:String}
         AND match(Body, '(?i)(crit|err|error|fatal)')
@@ -40,7 +41,7 @@ devnet_logs:
         Timestamp,
         ServiceName,
         Body
-      FROM otel.otel_logs
+      FROM {db}.otel_logs
       WHERE EnclaveName = {enclave:String}
         AND ServiceName LIKE 'el-%'
         AND match(Body, '(?i)(crit|err|error|fatal|warn)')
@@ -50,7 +51,8 @@ devnet_logs:
 production_devnet_logs:
   name: Production Devnet OTel Logs
   description: Queries for hosted (multi-VM) devnet and testnet container logs in the clickhouse-raw datasource,
-    table external.otel_logs. Logs are keyed by ResourceAttributes['network'] (devnet name) and ResourceAttributes['host.name']
+    table {db}.otel_logs — replace {db} with the database from the datasource's otel-logs dataset params
+    (see datasources://). Logs are keyed by ResourceAttributes['network'] (devnet name) and ResourceAttributes['host.name']
     (node, e.g. lighthouse-geth-super-1). SeverityText is usually empty for raw Docker logs, so match
     severity on Body. This is NOT for local Kurtosis devnets — use the local-kurtosis datasource for those.
   examples:
@@ -60,7 +62,7 @@ production_devnet_logs:
     target: clickhouse-raw
     query: |
       SELECT DISTINCT ResourceAttributes['host.name'] AS host
-      FROM external.otel_logs
+      FROM {db}.otel_logs
       WHERE ResourceAttributes['network'] = {network:String}
         AND Timestamp >= now() - INTERVAL 1 HOUR
       ORDER BY host
@@ -75,7 +77,7 @@ production_devnet_logs:
         ResourceAttributes['host.name'] AS host,
         LogAttributes['log.file.name'] AS container_log,
         Body
-      FROM external.otel_logs
+      FROM {db}.otel_logs
       WHERE ResourceAttributes['network'] = {network:String}
         AND ResourceAttributes['host.name'] = {host:String}
         AND match(Body, '(?i)(crit|err|error|fatal)')
@@ -92,7 +94,7 @@ production_devnet_logs:
         Timestamp,
         ResourceAttributes['host.name'] AS host,
         Body
-      FROM external.otel_logs
+      FROM {db}.otel_logs
       WHERE ResourceAttributes['network'] = {network:String}
         AND ResourceAttributes['host.name'] LIKE {cl_prefix:String}
         AND match(Body, '(?i)(crit|err|error|fatal)')

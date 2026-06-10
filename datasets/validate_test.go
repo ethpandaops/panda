@@ -75,19 +75,20 @@ func TestExtractTableRefs(t *testing.T) {
 	}
 }
 
-func TestQueryReferencesOnlyKnownTables(t *testing.T) {
+func TestUnknownTableRefs(t *testing.T) {
 	known := map[string]bool{"fct_block_head": true, "fct_attestation": true}
 
-	if !queryReferencesOnlyKnownTables("SELECT * FROM {network}.fct_block_head FINAL", known) {
-		t.Error("expected known table query to be valid")
+	if missing := unknownTableRefs("SELECT * FROM {network}.fct_block_head FINAL", known); len(missing) != 0 {
+		t.Errorf("expected known table query to be valid, got missing %v", missing)
 	}
 
-	if queryReferencesOnlyKnownTables("SELECT * FROM {network}.fct_block_removed", known) {
-		t.Error("expected query referencing unknown table to be invalid")
+	missing := unknownTableRefs("SELECT * FROM {network}.fct_block_removed", known)
+	if !reflect.DeepEqual(missing, []string{"fct_block_removed"}) {
+		t.Errorf("expected missing [fct_block_removed], got %v", missing)
 	}
 
 	// No extractable refs => valid (conservative).
-	if !queryReferencesOnlyKnownTables("SELECT 1", known) {
-		t.Error("expected query with no table refs to be valid")
+	if missing := unknownTableRefs("SELECT 1", known); len(missing) != 0 {
+		t.Errorf("expected query with no table refs to be valid, got missing %v", missing)
 	}
 }

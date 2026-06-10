@@ -46,8 +46,8 @@ func TestLiveFetch(t *testing.T) {
 	// Print a few sample networks so the data can be eyeballed.
 	shown := 0
 	for name, n := range active {
-		t.Logf("  active: %-28s status=%-8s chainID=%d clusters=%v repo=%s",
-			name, n.Status, n.ChainID, client.GetClusters(n), n.Repository)
+		t.Logf("  active: %-28s status=%-8s chainID=%d repo=%s",
+			name, n.Status, n.ChainID, n.Repository)
 
 		if shown++; shown >= 5 {
 			break
