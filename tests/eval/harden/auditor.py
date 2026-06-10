@@ -61,7 +61,7 @@ Flag a finding with severity "block" for any of:
 - MISPLACEMENT: content or behavior in the wrong layer. The obvious case is
   dataset-specific knowledge (which table/column holds what for a dataset) placed in a
   GENERIC module description or a GENERIC error hint instead of that dataset's knowledge
-  pack under datasets/<pack>/ (served via datasets://{name} and example search) — error hints must be error-CLASS generic and name no
+  pack under datasets/<pack>/ (served via datasets://<name> and example search) — error hints must be error-CLASS generic and name no
   dataset-specific columns/tables. But it covers SEPARATION OF CONCERNS generally: one
   module's knowledge planted in another module; integration/module behavior implemented
   in the CLI; presentation/formatting baked into server operations; product behavior
