@@ -95,18 +95,18 @@ func printDatasourceList(response *operations.Response) error {
 		entry, _ := item.(map[string]any)
 		name, _ := entry["name"].(string)
 		dsType, _ := entry["type"].(string)
-		rows = append(rows, []string{dsType, name})
+		rows = append(rows, []string{name, dsType})
 	}
 
 	sort.Slice(rows, func(i, j int) bool {
-		if rows[i][0] != rows[j][0] {
-			return rows[i][0] < rows[j][0]
+		if rows[i][1] != rows[j][1] {
+			return rows[i][1] < rows[j][1]
 		}
 
-		return rows[i][1] < rows[j][1]
+		return rows[i][0] < rows[j][0]
 	})
 
-	printTable([]string{"TYPE", "NAME"}, rows)
+	printTable([]string{"DATASOURCE", "TYPE"}, rows)
 
 	return nil
 }
@@ -169,19 +169,33 @@ func printListing(response *operations.Response, key, emptyMessage string) error
 // printAPIStringValues parses a JSON response with a "data" array of strings
 // and prints each value on its own line.
 func printAPIStringValues(data []byte) error {
+	values, err := apiStringValues(data)
+	if err != nil {
+		return printJSONBytes(data)
+	}
+
+	for _, value := range values {
+		fmt.Println(value)
+	}
+
+	return nil
+}
+
+func apiStringValues(data []byte) ([]string, error) {
 	var resp struct {
 		Data []any `json:"data"`
 	}
 
 	if err := json.Unmarshal(data, &resp); err != nil {
-		return printJSONBytes(data)
+		return nil, err
 	}
 
+	values := make([]string, 0, len(resp.Data))
 	for _, value := range resp.Data {
-		fmt.Println(value)
+		values = append(values, fmt.Sprint(value))
 	}
 
-	return nil
+	return values, nil
 }
 
 // formatLabelSet sorts label keys and formats them as {key=value, ...}.

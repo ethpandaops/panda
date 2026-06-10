@@ -50,7 +50,13 @@ var rootCmd = &cobra.Command{
 	Short: "Ethereum network analytics CLI",
 	Long: `Ethereum network analytics CLI.
 
-New? Start here: panda getting-started`,
+New? Start here: panda getting-started
+
+For data questions, use this workflow:
+  panda datasets
+  panda datasets <name>
+  panda search examples "<topic>"
+  panda execute --code '<python>'`,
 	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 		level, err := logrus.ParseLevel(logLevel)
 		if err != nil {

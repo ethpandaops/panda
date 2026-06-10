@@ -107,12 +107,30 @@ func TestPrintExampleResultsUsesNeutralTargetLabel(t *testing.T) {
 			Description:     "Inspect validator duty latency.",
 			Query:           "up",
 			Target:          "prometheus",
+			Dataset:         "metrics",
 			SimilarityScore: 0.8,
 		}})
 	})
 
 	assert.Contains(t, output, "  Target: prometheus")
+	assert.Contains(t, output, "  Dataset: metrics")
 	assert.NotContains(t, output, "Cluster:")
+}
+
+func TestPrintExampleUsageHintsAreGeneric(t *testing.T) {
+	output := captureStdout(t, func() {
+		printExampleUsageHints([]*serverapi.SearchExampleResult{{
+			Query:   "SELECT count() FROM {network}.example",
+			Target:  "warehouse",
+			Dataset: "example-pack",
+		}})
+	})
+
+	assert.Contains(t, output, "Search examples are reusable patterns")
+	assert.Contains(t, output, "panda clickhouse query-raw <Target>")
+	assert.Contains(t, output, "panda datasets <Dataset>")
+	assert.NotContains(t, output, "mainnet")
+	assert.NotContains(t, output, "slot")
 }
 
 func TestPrintDatasourceListUsesCompactIdentityColumns(t *testing.T) {
@@ -134,12 +152,27 @@ func TestPrintDatasourceListUsesCompactIdentityColumns(t *testing.T) {
 		require.NoError(t, err)
 	})
 
+	assert.Contains(t, output, "DATASOURCE")
 	assert.Contains(t, output, "TYPE")
-	assert.Contains(t, output, "NAME")
 	assert.Contains(t, output, "clickhouse")
 	assert.Contains(t, output, "warehouse")
 	assert.NotContains(t, output, "long operational notes")
 	assert.NotContains(t, output, "http://example.invalid")
+}
+
+func TestPrintFilteredAPIStringValuesFiltersAndLimits(t *testing.T) {
+	output := captureStdout(t, func() {
+		err := printFilteredAPIStringValues(
+			[]byte(`{"status":"success","data":["alpha_total","beta_total","alpha_count"]}`),
+			"alpha",
+			1,
+		)
+		require.NoError(t, err)
+	})
+
+	assert.Contains(t, output, "alpha_total")
+	assert.NotContains(t, output, "beta_total")
+	assert.NotContains(t, output, "alpha_count")
 }
 
 func TestIntFromAny(t *testing.T) {

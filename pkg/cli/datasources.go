@@ -73,7 +73,7 @@ func runDatasources(cmd *cobra.Command, _ []string) error {
 			datasets = append(datasets, b.Dataset)
 		}
 
-		row := []string{info.Type, info.Name, strings.Join(datasets, ", ")}
+		row := []string{info.Name, info.Type, strings.Join(datasets, ", ")}
 		if datasourcesDetails {
 			row = append(row, info.Description)
 		}
@@ -82,14 +82,14 @@ func runDatasources(cmd *cobra.Command, _ []string) error {
 	}
 
 	sort.Slice(rows, func(i, j int) bool {
-		if rows[i][0] != rows[j][0] {
-			return rows[i][0] < rows[j][0]
+		if rows[i][1] != rows[j][1] {
+			return rows[i][1] < rows[j][1]
 		}
 
-		return rows[i][1] < rows[j][1]
+		return rows[i][0] < rows[j][0]
 	})
 
-	headers := []string{"TYPE", "NAME", "DATASETS"}
+	headers := []string{"DATASOURCE", "TYPE", "DATASETS"}
 	if datasourcesDetails {
 		headers = append(headers, "DESCRIPTION")
 	}

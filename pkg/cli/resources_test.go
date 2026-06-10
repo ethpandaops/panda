@@ -137,6 +137,18 @@ func TestServerErrorHintClassifiesClickHouseErrors(t *testing.T) {
 			want:    "datasource/cluster name",
 		},
 		{
+			name:    "wrong schema cluster",
+			status:  http.StatusBadRequest,
+			message: "reading template resource clickhouse://tables/xatu-cbt: cluster \"xatu-cbt\" not found: available clusters are clickhouse-refined",
+			want:    "schema expects a ClickHouse datasource/cluster name",
+		},
+		{
+			name:    "unknown dataset",
+			status:  http.StatusBadRequest,
+			message: "reading template resource datasets://warehouse: unknown dataset \"warehouse\". Known datasets: metrics",
+			want:    "knowledge-pack IDs",
+		},
+		{
 			name:    "distributed join denied",
 			status:  http.StatusInternalServerError,
 			message: "Code: 288. DB::Exception: Double-distributed IN/JOIN subqueries is denied. (DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED)",
