@@ -318,6 +318,21 @@ func resolveComposeFile() string {
 	)
 }
 
+// composeOverrideFile returns the path to a user-managed
+// docker-compose.override.yaml next to the given compose file, or "" if
+// none exists. The override file is never written by panda, so it is the
+// place for host-specific customizations (e.g. dns) that must survive the
+// compose file regeneration done by 'panda server update'.
+func composeOverrideFile(compose string) string {
+	override := filepath.Join(filepath.Dir(compose), "docker-compose.override.yaml")
+
+	if _, err := os.Stat(override); err != nil {
+		return ""
+	}
+
+	return override
+}
+
 // runDockerCompose executes a docker compose command with the given
 // compose file and arguments, connecting stdout/stderr for live output.
 func runDockerCompose(compose string, args ...string) error {
@@ -329,8 +344,13 @@ func runDockerComposeContext(ctx context.Context, compose string, args ...string
 		ctx = context.Background()
 	}
 
-	fullArgs := make([]string, 0, len(args)+3)
+	fullArgs := make([]string, 0, len(args)+5)
 	fullArgs = append(fullArgs, "compose", "-f", compose)
+
+	if override := composeOverrideFile(compose); override != "" {
+		fullArgs = append(fullArgs, "-f", override)
+	}
+
 	fullArgs = append(fullArgs, args...)
 
 	cmd := exec.CommandContext(ctx, "docker", fullArgs...)
