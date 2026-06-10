@@ -221,9 +221,12 @@ jobs:
           # pipeline works end to end. The multi-subject / paraphrase / repeat sweeps
           # belong to the harden loop, not per-commit CI. --concurrency 6: the local
           # default (16) starves a 4-vCPU runner.
+          # Stronger judge than the harden default: at k=1 a single grader
+          # false-negative reds CI, and 4 graded runs make judge cost irrelevant.
           uv run python -m scripts.eval \
             --cases smoke.yaml --no-variations --concurrency 6 \
             --subject opencode-go/deepseek-v4-flash:cli \
+            --judge-model google/gemini-3.5-flash \
             --junit reports/junit.xml --json reports/eval.json
 
       - name: Server log (sandbox / proxy activity)

@@ -133,9 +133,12 @@ def _write_junit(path: str, result: CandidateResult, *, suite: str) -> None:
             ts, "testcase", classname=rs.subject, name=name, time=f"{tr.duration_ms / 1000:.1f}"
         )
         if not rs.correct:
-            msg = f"crashed: {tr.error}" if tr.crashed else f"failed grading (score={rs.score:.2f})"
-            fail = ET.SubElement(tc, "failure", message=msg[:300])
-            fail.text = (tr.output or "")[:2000]
+            if tr.crashed:
+                msg = f"crashed: {tr.error}"
+            else:
+                msg = f"failed grading (score={rs.score:.2f}): {rs.reason or 'no reason given'}"
+            fail = ET.SubElement(tc, "failure", message=msg[:400])
+            fail.text = f"grader reason: {rs.reason}\n\n{(tr.output or '')[:2000]}"
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     ET.ElementTree(ts).write(str(p), encoding="utf-8", xml_declaration=True)
@@ -156,6 +159,7 @@ def _write_json(path: str, result: CandidateResult, *, cases: str, subjects: lis
                 "correct": r.score.correct,
                 "correctness": r.score.correctness,
                 "score": r.score.score,
+                "grader_reason": r.score.reason,
                 "tokens": r.score.tokens,
                 "tools": r.score.n_tools,
                 "crashed": r.trace.crashed,

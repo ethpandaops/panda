@@ -74,6 +74,7 @@ class PfRun:
     trace: RunTrace
     correct: bool
     correctness: float
+    reason: str = ""  # the grader's stated reason — kept for failure debugging
 
 
 def build_config(
@@ -245,6 +246,7 @@ def score_runs(
             ref=refs.get(pf.question_id, 0.0),
             steepness=steepness,
             question_id=pf.question_id,
+            reason=pf.reason,
         )
         runs.append(rs)
         question = by_id.get(pf.question_id) or Question(id=pf.question_id, text=pf.trace.question)
@@ -334,12 +336,13 @@ def _parse(results_path: Path, run_dir: Path) -> list[PfRun]:
         correct = bool(r.get("success"))
         score = grading.get("score")
         correctness = float(score if score is not None else (1.0 if correct else 0.0))
+        reason = " ".join(str(grading.get("reason") or "").split())
 
         i = counters.get((qid, subject), 0)
         counters[(qid, subject)] = i + 1
         safe = subject.replace("/", "-").replace(":", "-")
         _write_trace_file(traces_dir / f"{qid}__{safe}__{i}.txt", trace, correct, correctness)
-        runs.append(PfRun(qid, subject, trace, correct, correctness))
+        runs.append(PfRun(qid, subject, trace, correct, correctness, reason))
     return runs
 
 

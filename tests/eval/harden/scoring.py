@@ -68,6 +68,7 @@ class RunScore:
     tokens: int
     n_tools: int
     score: float  # 0 if wrong/crashed, else efficiency(tokens)
+    reason: str = ""  # the grader's stated reason (diagnosis only, not scored)
 
 
 def score_run(
@@ -78,6 +79,7 @@ def score_run(
     ref: float,
     steepness: float = 2.0,
     question_id: str = "",
+    reason: str = "",
 ) -> RunScore:
     ok = correct and not trace.crashed
     score = efficiency(trace.total_tokens, ref, steepness) if ok else 0.0
@@ -89,6 +91,7 @@ def score_run(
         tokens=trace.total_tokens,
         n_tools=trace.n_tools,
         score=score,
+        reason=reason,
     )
 
 
