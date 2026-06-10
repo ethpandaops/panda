@@ -108,3 +108,33 @@ def test_confidence_small_n_fallback_requires_unanimity():
     assert is_confident(base, up) is True
     mixed = up[:3] + [_rs("q3", "s", correct=True, score=0.3)]
     assert is_confident(base, mixed) is False
+
+
+def test_confidence_saturated_cell_does_not_make_gate_unwinnable():
+    # q0 is perfect in both states (delta 0): a tie carries no evidence and must be
+    # dropped, not counted as a failure — otherwise nothing could ever commit.
+    base = [_rs("q0", "s", correct=True, score=1.0)] + [
+        _rs(f"q{i}", "s", correct=True, score=0.4) for i in range(1, 4)
+    ]
+    cand = [_rs("q0", "s", correct=True, score=1.0)] + [
+        _rs(f"q{i}", "s", correct=True, score=0.8) for i in range(1, 4)
+    ]
+    assert is_confident(base, cand, min_cells=3) is True
+
+
+def test_confidence_all_ties_is_no_evidence():
+    base = [_rs(f"q{i}", "s", correct=True, score=1.0) for i in range(4)]
+    cand = [_rs(f"q{i}", "s", correct=True, score=1.0) for i in range(4)]
+    assert is_confident(base, cand, min_cells=3) is False
+
+
+def test_confidence_tie_plus_regression_still_fails():
+    base = [_rs("q0", "s", correct=True, score=1.0)] + [
+        _rs(f"q{i}", "s", correct=True, score=0.5) for i in range(1, 4)
+    ]
+    cand = (
+        [_rs("q0", "s", correct=True, score=1.0)]
+        + [_rs(f"q{i}", "s", correct=True, score=0.8) for i in range(1, 3)]
+        + [_rs("q3", "s", correct=True, score=0.4)]
+    )
+    assert is_confident(base, cand, min_cells=3) is False

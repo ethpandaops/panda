@@ -190,6 +190,7 @@ def is_confident(
     *,
     min_cells: int = 3,
     confidence: float = 0.95,
+    log: "Callable[[str], None] | None" = None,
 ) -> bool:
     """Gate: accept only if the improvement is real, not noise.
 
@@ -200,15 +201,27 @@ def is_confident(
     per-question effort variance; the permutation test is exact (not anti-conservative
     like a bootstrap at small N) and fully deterministic — enumeration, no RNG.
 
-    Small-N fallback: with fewer cells than a permutation test can ever reach
-    ``confidence`` on (2^-n > alpha, e.g. under 5 cells at 95%), require UNANIMOUS
-    improvement instead — every cell strictly better. That keeps a single-question
-    smoke usable while staying honest about what so few cells can show.
+    Tied cells (zero delta — e.g. a cell already saturated at 1.0 in both states)
+    carry no directional information and are DROPPED, per standard sign-test
+    convention. Treating them as failures would make the gate permanently unwinnable
+    once any baseline cell is perfect. They are exactly p-neutral in the permutation
+    branch anyway; dropping them only affects branch selection and unanimity.
+
+    Small-N fallback: with fewer informative cells than a permutation test can ever
+    reach ``confidence`` on (2^-n > alpha, e.g. under 5 cells at 95%), require
+    UNANIMOUS improvement instead — every non-tied cell strictly better. That keeps a
+    single-question smoke usable while staying honest about what so few cells can show.
     """
-    deltas = _paired_cell_deltas(baseline, candidate)
-    n = len(deltas)
-    if n < min_cells:
+    all_deltas = _paired_cell_deltas(baseline, candidate)
+    if len(all_deltas) < min_cells:
         return False
+    deltas = [d for d in all_deltas if abs(d) > 1e-9]
+    ties = len(all_deltas) - len(deltas)
+    if ties and log:
+        log(f"confidence gate: dropped {ties} tied cell(s); {len(deltas)} informative")
+    n = len(deltas)
+    if n == 0:
+        return False  # every cell tied: no evidence either way
     observed = statistics.mean(deltas)
     if observed <= 0:
         return False

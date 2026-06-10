@@ -588,7 +588,9 @@ async def optimize(
         # held-out questions the proposer never saw.
         gate_label = "held-out" if held_out_ids else "all"
         regressed = not no_correctness_regression(baseline.runs, candidate.runs)
-        confident = is_confident(_gate_runs(baseline), _gate_runs(candidate), min_cells=min_cells)
+        confident = is_confident(
+            _gate_runs(baseline), _gate_runs(candidate), min_cells=min_cells, log=log
+        )
         n_cells = len({(r.question_id, r.subject) for r in _gate_runs(candidate)})
         log(
             f"round {n}: gate on {gate_label} ({n_cells} cells) — "
