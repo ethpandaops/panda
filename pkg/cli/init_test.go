@@ -123,6 +123,11 @@ func TestBuildComposeTemplate(t *testing.T) {
 			require.True(t, ok, "service must have extra_hosts")
 			require.Contains(t, extraHosts, "host.docker.internal:host-gateway")
 
+			// Forced DNS servers break setups where public resolvers are
+			// unreachable (issue #156); DNS must be left to Docker.
+			assert.NotContains(t, svc, "dns",
+				"compose template must not force container DNS")
+
 			// Verify port mapping.
 			ports, ok := svc["ports"].([]any)
 			require.True(t, ok, "service must have ports")

@@ -177,6 +177,8 @@ download_binary() {
         fatal "Download failed for ${DOWNLOAD_URL} (HTTP ${http_code:-unknown}). Asset may not exist for ${OS}/${ARCH}."
     fi
 
+    verify_checksum
+
     # Extract the panda binary from the archive.
     tar -xzf "$tmpfile" -C "$tmpdir" panda 2>/dev/null || \
         fatal "Failed to extract panda binary from archive"
@@ -188,6 +190,67 @@ download_binary() {
     fi
 
     info "Download complete"
+}
+
+# --------------------------------------------------------------------------- #
+# Verify the downloaded archive against the release's checksums.txt, and the
+# checksums.txt itself against its Sigstore signature when cosign is available.
+# --------------------------------------------------------------------------- #
+
+verify_checksum() {
+    CHECKSUMS_FILE="${tmpdir}/checksums.txt"
+    CHECKSUMS_URL="https://github.com/ethpandaops/panda/releases/download/${VERSION}/checksums.txt"
+
+    curl -sSfL -o "$CHECKSUMS_FILE" "$CHECKSUMS_URL" 2>/dev/null || \
+        fatal "Failed to download checksums.txt for ${VERSION}; refusing to install an unverified binary"
+
+    expected="$(grep " ${ASSET_NAME}\$" "$CHECKSUMS_FILE" | awk '{print $1}')"
+    if [ -z "$expected" ]; then
+        fatal "No checksum entry for ${ASSET_NAME} in checksums.txt"
+    fi
+
+    if command -v sha256sum >/dev/null 2>&1; then
+        actual="$(sha256sum "$tmpfile" | awk '{print $1}')"
+    elif command -v shasum >/dev/null 2>&1; then
+        actual="$(shasum -a 256 "$tmpfile" | awk '{print $1}')"
+    else
+        fatal "Neither sha256sum nor shasum is available; cannot verify the download"
+    fi
+
+    if [ "$actual" != "$expected" ]; then
+        fatal "Checksum mismatch for ${ASSET_NAME} (expected ${expected}, got ${actual}). Aborting install."
+    fi
+    info "Checksum verified"
+
+    verify_signature
+}
+
+verify_signature() {
+    # Keyless cosign signature over checksums.txt (see .goreleaser.yaml).
+    # Best-effort: requires cosign locally, and releases older than the signing
+    # pipeline have no .sig/.pem assets.
+    command -v cosign >/dev/null 2>&1 || return 0
+
+    sig="${tmpdir}/checksums.txt.sig"
+    pem="${tmpdir}/checksums.txt.pem"
+    base="https://github.com/ethpandaops/panda/releases/download/${VERSION}"
+
+    if ! curl -sSfL -o "$sig" "${base}/checksums.txt.sig" 2>/dev/null || \
+       ! curl -sSfL -o "$pem" "${base}/checksums.txt.pem" 2>/dev/null; then
+        warn "Release ${VERSION} has no Sigstore signature assets; skipping signature verification."
+        return 0
+    fi
+
+    if cosign verify-blob \
+        --certificate "$pem" \
+        --signature "$sig" \
+        --certificate-identity-regexp 'https://github.com/ethpandaops/panda/.*' \
+        --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+        "$CHECKSUMS_FILE" >/dev/null 2>&1; then
+        info "Sigstore signature verified"
+    else
+        fatal "Sigstore signature verification FAILED for checksums.txt. Aborting install."
+    fi
 }
 
 install_binary() {

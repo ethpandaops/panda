@@ -2,10 +2,10 @@
 # This container provides a secure execution environment for Python code
 # with the ethpandaops library pre-installed for Ethereum network data analysis.
 
-FROM python:3.11-slim
+FROM python:3.11-slim@sha256:a3ab0b966bc4e91546a033e22093cb840908979487a9fc0e6e38295747e49ac0
 
 # Install uv and system dependencies
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.11.17@sha256:03bdc89bb9798628846e60c3a9ad19006c8c3c724ccd2985a33145c039a0577b /uv /uvx /bin/
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
@@ -17,9 +17,11 @@ RUN useradd -m -s /bin/bash sandbox
 RUN mkdir -p /shared /output && \
     chown sandbox:sandbox /shared /output
 
-# Install Python dependencies
+# Install Python dependencies. requirements.txt is compiled from requirements.in
+# with hashes (`uv pip compile --generate-hashes --universal`); --require-hashes
+# makes pip refuse anything that doesn't match the lock.
 COPY sandbox/requirements.txt /tmp/requirements.txt
-RUN uv pip install --system --no-cache -r /tmp/requirements.txt && \
+RUN uv pip install --system --no-cache --require-hashes -r /tmp/requirements.txt && \
     rm /tmp/requirements.txt
 
 # Install the ethpandaops platform library
@@ -34,7 +36,9 @@ COPY modules/loki/python/loki.py /opt/ethpandaops-pkg/ethpandaops/loki.py
 COPY modules/prometheus/python/prometheus.py /opt/ethpandaops-pkg/ethpandaops/prometheus.py
 COPY modules/ethnode/python/ethnode.py /opt/ethpandaops-pkg/ethpandaops/ethnode.py
 
-RUN uv pip install --system --no-cache /opt/ethpandaops-pkg && rm -rf /opt/ethpandaops-pkg
+# --no-deps: the package's dependencies are already installed (hash-locked)
+# above; resolving them here would bypass the lock.
+RUN uv pip install --system --no-cache --no-deps /opt/ethpandaops-pkg && rm -rf /opt/ethpandaops-pkg
 
 # Set working directory
 WORKDIR /home/sandbox

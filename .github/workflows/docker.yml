@@ -2,6 +2,9 @@ name: Build Check
 
 on:
   workflow_dispatch:
+  # sandbox/** and modules python files are the sandbox image build inputs
+  # (see scripts/sandbox-hash.sh) — build-sandbox needs no secrets, so it is
+  # the gate that catches a broken requirements lock on Dependabot PRs.
   pull_request:
     branches: [master]
     paths:
@@ -11,7 +14,8 @@ on:
       - 'Makefile'
       - '.goreleaser.yaml'
       - 'goreleaser.*.Dockerfile'
-      - 'sandbox/Dockerfile'
+      - 'sandbox/**'
+      - 'modules/*/python/*.py'
   push:
     branches: [master]
     paths:
@@ -21,7 +25,8 @@ on:
       - 'Makefile'
       - '.goreleaser.yaml'
       - 'goreleaser.*.Dockerfile'
-      - 'sandbox/Dockerfile'
+      - 'sandbox/**'
+      - 'modules/*/python/*.py'
 
 concurrency:
   group: build-check-${{ github.ref }}

@@ -9,7 +9,7 @@
 # =============================================================================
 # Stage 1: Go builder
 # =============================================================================
-FROM golang:1.26-bookworm AS builder
+FROM golang:1.26-bookworm@sha256:5d2b868674b57c9e48cdd39e891acce4196b6926ca6d11e9c270a8f85106203d AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git ca-certificates && \
@@ -49,7 +49,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # =============================================================================
 # Stage 2: Runtime
 # =============================================================================
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim@sha256:0104b334637a5f19aa9c983a91b54c89887c0984081f2068983107a6f6c21eeb
 
 # Install runtime dependencies for Docker access and health checks
 RUN apt-get update && apt-get install -y --no-install-recommends \

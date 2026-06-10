@@ -1,0 +1,8 @@
+{
+  "name": "panda-ci-opencode",
+  "private": true,
+  "description": "Locks the opencode CLI used by the eval workflows. npm ci installs exactly the committed package-lock.json (integrity-hashed), so transitive npm deps cannot drift or run unreviewed postinstall code in CI.",
+  "dependencies": {
+    "opencode-ai": "1.15.0"
+  }
+}

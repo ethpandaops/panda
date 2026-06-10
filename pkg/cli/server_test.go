@@ -48,6 +48,30 @@ func TestResolveComposeFile(t *testing.T) {
 	})
 }
 
+func TestComposeOverrideFile(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns empty when no override exists", func(t *testing.T) {
+		t.Parallel()
+
+		compose := filepath.Join(t.TempDir(), "docker-compose.yaml")
+
+		assert.Empty(t, composeOverrideFile(compose))
+	})
+
+	t.Run("returns override path when present", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+		compose := filepath.Join(dir, "docker-compose.yaml")
+		override := filepath.Join(dir, "docker-compose.override.yaml")
+
+		require.NoError(t, os.WriteFile(override, []byte("services: {}\n"), 0o644))
+
+		assert.Equal(t, override, composeOverrideFile(compose))
+	})
+}
+
 func TestWaitForServerHealthSucceedsAfterTemporaryFailure(t *testing.T) {
 	var attempts atomic.Int32
 

@@ -1,23 +1,14 @@
 name: CI
 
+# No paths filters: test/lint/govulncheck are required status checks on master,
+# and a required check that never reports blocks the PR from merging. Running
+# them on every PR (~2 min) is the price of being able to require them.
 on:
   workflow_dispatch:
   pull_request:
     branches: [master]
-    paths:
-      - '**.go'
-      - 'go.mod'
-      - 'go.sum'
-      - 'Makefile'
-      - '.golangci.yml'
   push:
     branches: [master]
-    paths:
-      - '**.go'
-      - 'go.mod'
-      - 'go.sum'
-      - 'Makefile'
-      - '.golangci.yml'
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -70,11 +61,9 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
-
       # Gate on reachable, non-allowlisted vulnerabilities. Known-unfixable
       # advisories (no fix on a usable import path) are allowlisted in the
-      # script with justification; new reachable vulns fail the build.
+      # script with justification; new reachable vulns fail the build. The
+      # govulncheck binary is a go.mod tool dependency (pinned + sum-verified).
       - name: Run govulncheck
         run: ./scripts/govulncheck.sh
