@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"syscall"
 
@@ -60,6 +61,14 @@ func serverDo(
 
 	for key, value := range headers {
 		req.Header.Set(key, value)
+	}
+
+	// Attribution: callers (e.g. chat agents acting for a human user) set
+	// PANDA_ON_BEHALF_OF per invocation; it travels to panda-server as
+	// X-Panda-On-Behalf-Of, which the server forwards to the proxy. The
+	// value is untrusted free-text used for audit only — never authorization.
+	if v := strings.TrimSpace(os.Getenv("PANDA_ON_BEHALF_OF")); v != "" {
+		req.Header.Set("X-Panda-On-Behalf-Of", v)
 	}
 
 	resp, err := serverHTTP.Do(req)
