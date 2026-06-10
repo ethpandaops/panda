@@ -266,7 +266,7 @@ def main() -> None:
         )
     finally:
         if server is not None:
-            server.stop()
+            server.stop()  # purges all sandbox sessions before terminating
 
     _report(result)
     gate_pass = result.pass_rate

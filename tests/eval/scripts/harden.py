@@ -43,6 +43,7 @@ from scripts._panda_env import (
     make_apply,
     point_cli_at_scratch,
     prepare_opencode_sandbox,
+    purge_sessions,
     write_scratch_config,
 )
 
@@ -227,6 +228,7 @@ def main() -> None:
                 pool_size=args.pool_size,
                 prescreen=args.prescreen,
                 audit_retries=args.audit_retries,
+                post_measure=lambda: purge_sessions(args.port),
                 log=log,
             )
         )

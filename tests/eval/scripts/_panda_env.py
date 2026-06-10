@@ -18,6 +18,7 @@ Datasources come from the hosted proxy in your config, which a local server reac
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -53,6 +54,10 @@ def write_scratch_config(port: int, *, source: Path | None = None) -> Path:
     sb["image"] = "ethpandaops-panda-sandbox:latest"
     sb["network"] = "ethpandaops-panda-harden"
     sb["host_shared_path"] = str(shared)
+    # Eval runs many agents at once (questions x phrasings x subjects, -j concurrent);
+    # the default 50-session cap can starve them. The sessions are torn down after
+    # every measure (purge_sessions), so a high cap costs nothing when idle.
+    sb.setdefault("sessions", {})["max_sessions"] = 150
     cfg["storage"] = {"base_dir": str(storage), "cache_dir": str(cache)}
     cfg.setdefault("observability", {})["metrics_enabled"] = False
 
@@ -80,6 +85,7 @@ class ScratchServer:
 
     def stop(self) -> None:
         if self._proc and self._proc.poll() is None:
+            purge_sessions(self.port)  # tear down sandbox containers before the server dies
             self._proc.terminate()
             try:
                 self._proc.wait(timeout=10)
@@ -112,6 +118,32 @@ class ScratchServer:
                 pass
             time.sleep(1)
         raise RuntimeError(f"scratch server not ready within {self.ready_timeout:.0f}s")
+
+
+def purge_sessions(port: int) -> int:
+    """Destroy ALL sandbox sessions on the scratch server (it serves only this eval), so
+    agents' containers are torn down as soon as their runs conclude instead of idling
+    out a 30m TTL. Best-effort: a dead/unreachable server just means nothing to purge."""
+    base = f"http://localhost:{port}/api/v1/sessions"
+    try:
+        with urllib.request.urlopen(base, timeout=10) as r:  # noqa: S310
+            sessions = (json.loads(r.read().decode()) or {}).get("sessions") or []
+    except Exception:  # noqa: BLE001 - server gone -> nothing to purge
+        return 0
+    purged = 0
+    for s in sessions:
+        sid = s.get("session_id")
+        if not sid:
+            continue
+        req = urllib.request.Request(f"{base}/{sid}", method="DELETE")  # noqa: S310
+        try:
+            with urllib.request.urlopen(req, timeout=10):  # noqa: S310
+                purged += 1
+        except Exception:  # noqa: BLE001 - already gone is fine
+            continue
+    if purged:
+        _log.info(f"[cyan]sandbox[/cyan] purged {purged} session(s)")
+    return purged
 
 
 def _sandbox_hash(repo: str) -> str:
