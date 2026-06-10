@@ -426,6 +426,8 @@ func (a *App) refreshModulesFromDiscovery() {
 	ctx, cancel := context.WithTimeout(context.Background(), refreshActivationTimeout)
 	defer cancel()
 
+	activated := false
+
 	for _, ext := range a.ModuleRegistry.Initialized() {
 		if previouslyInitialized[ext.Name()] {
 			if reloadable, ok := ext.(module.DiscoveryReloadable); ok {
@@ -440,6 +442,14 @@ func (a *App) refreshModulesFromDiscovery() {
 		}
 
 		a.activateModule(ctx, ext)
+
+		activated = true
+	}
+
+	// A newly-activated module may be the schema resolver (clickhouse) or depend
+	// on it (datasets); re-run injection so late activation still wires them.
+	if activated {
+		a.injectSchemaResolver()
 	}
 }
 

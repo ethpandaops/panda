@@ -15,7 +15,12 @@ var (
 
 	// cteNamePattern captures common-table-expression names declared via
 	// "WITH name AS (" or ", name AS (" so they are not mistaken for tables.
-	cteNamePattern = regexp.MustCompile(`(?i)(?:WITH|,)\s+([A-Za-z_][A-Za-z0-9_]*)\s+AS\s*\(`)
+	cteNamePattern = regexp.MustCompile(`(?i)(?:WITH\s+|,\s*)([A-Za-z_][A-Za-z0-9_]*)\s+AS\s*\(`)
+
+	// arrayJoinPattern matches ClickHouse's ARRAY JOIN clause, which is followed
+	// by column expressions, not a table. It is removed before table extraction
+	// so its columns are not mistaken for tables.
+	arrayJoinPattern = regexp.MustCompile(`(?i)\bARRAY\s+JOIN\b`)
 )
 
 // extractTableRefs returns the bare table names referenced by FROM/JOIN clauses
@@ -23,6 +28,10 @@ var (
 // prefixes are stripped so refs can be matched against a set of bare table
 // names. The result is deduplicated.
 func extractTableRefs(sql string) []string {
+	// Strip ARRAY JOIN before matching: it is followed by columns, and leaving
+	// it in place would let the JOIN keyword capture a column as a table.
+	sql = arrayJoinPattern.ReplaceAllString(sql, " ")
+
 	ctes := make(map[string]bool)
 	for _, m := range cteNamePattern.FindAllStringSubmatch(sql, -1) {
 		ctes[strings.ToLower(m[1])] = true

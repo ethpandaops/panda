@@ -45,6 +45,19 @@ func TestExtractTableRefs(t *testing.T) {
 			sql:  "SELECT 1",
 			want: nil,
 		},
+		{
+			name: "array join columns not captured as tables",
+			sql: `SELECT validator FROM canonical_beacon_elaborated_attestation
+			      LEFT ARRAY JOIN validators AS validator
+			      WHERE meta_network_name = 'mainnet'`,
+			want: []string{"canonical_beacon_elaborated_attestation"},
+		},
+		{
+			name: "cte after comma without space",
+			sql: `WITH a AS (SELECT 1),b AS (SELECT slot FROM {network}.fct_block)
+			      SELECT * FROM b JOIN a ON 1=1`,
+			want: []string{"fct_block"},
+		},
 	}
 
 	for _, tc := range cases {

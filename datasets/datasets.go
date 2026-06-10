@@ -250,7 +250,12 @@ func (m *Module) Examples() map[string]types.ExampleCategory {
 				continue
 			}
 
-			existing.Examples = append(existing.Examples, kept...)
+			// Merge into a fresh slice: kept may alias the pack's stored slice,
+			// and appending in place would write into the pack's backing array.
+			merged := make([]types.Example, 0, len(existing.Examples)+len(kept))
+			merged = append(merged, existing.Examples...)
+			merged = append(merged, kept...)
+			existing.Examples = merged
 			result[key] = existing
 		}
 	}
