@@ -6,37 +6,66 @@
 # not the method. Session reuse vs re-querying isn't asserted: re-doing work just burns
 # tokens, which the efficiency objective already penalizes.
 
-- id: session_data_analysis
-  description: Multi-turn data analysis with session persistence
-  network: mainnet
-  tags: [multi_step, session, analysis]
-  steps:
-    - prompt: "Query the last 1000 blocks on mainnet and save the data to a CSV file."
-    - prompt: "Now load that CSV and calculate the average gas used per block."
-    - prompt: "Create a histogram of gas usage from the data."
-  assert:
-    - type: llm-rubric
-      value: >
-        Across the turns the agent queries ~1000 recent mainnet blocks, computes a
-        plausible average gas used per block (tens of millions of gas, e.g. ~10M-40M),
-        and produces a histogram of gas usage. Must provide the storage URL of the chart
-        image it uploaded. A missing chart URL or an implausible gas figure fails.
-        Must re-use the session to maintain persistence between turns (look for a session_id.)
+  - id: session_data_analysis
+    description: Multi-turn data analysis with session persistence
+    network: mainnet
+    tags: [multi_step, session, analysis]
+    steps:
+      - prompt: "Query the last 1000 blocks on mainnet and save the data to a CSV
+          file."
+      - prompt: "Now load that CSV and calculate the average gas used per block."
+      - prompt: "Create a histogram of gas usage from the data."
+    assert:
+      - type: llm-rubric
+        value: >
+          Across the turns the agent queries ~1000 recent mainnet blocks, computes
+          a
+          plausible average gas used per block (tens of millions of gas, e.g. ~10M-40M),
+          and produces a histogram of gas usage. Must provide the storage URL of the
+          chart
+          image it uploaded. A missing chart URL or an implausible gas figure fails.
+          Must re-use the session to maintain persistence between turns (look for
+          a session_id.)
 
-- id: block_timing_analysis
-  description: Detailed block timing analysis workflow
-  network: mainnet
-  tags: [multi_step, timing, analysis]
-  steps:
-    - prompt: "Query block arrival times for the last 100 slots on mainnet."
-    - prompt: "Group the data by observer consensus client and calculate the mean and p95 arrival time for each."
-    - prompt: "Create a box plot comparing the arrival time distributions across clients."
-  assert:
-    - type: llm-rubric
-      value: >
-        Across the turns the agent pulls block arrival times for recent mainnet slots,
-        breaks them down per observing consensus client with mean and p95 values
-        (plausible sub-second to a few-second timings), and produces a box plot comparing
-        the per-client distributions. Must provide the storage URL of the chart image it
-        uploaded. A missing chart URL, no per-client breakdown, or implausible timings fails.
-        Must re-use the session to maintain persistence between turns (look for a session_id.)
+    variations:
+      - Fetch data for the most recent 1000 blocks on mainnet and write it to a 
+        CSV file.
+      - I'm trying to pull the last 1000 mainnet blocks and save the resulting 
+        data as a CSV.
+      - Please query mainnet for the last 1000 blocks and export the data to 
+        CSV.
+      - Can you retrieve data from the latest 1000 blocks on mainnet and store 
+        it in a CSV file?
+      - Run a query over the last 1000 blocks on mainnet, then save the data 
+        into a CSV file.
+  - id: block_timing_analysis
+    description: Detailed block timing analysis workflow
+    network: mainnet
+    tags: [multi_step, timing, analysis]
+    steps:
+      - prompt: "Query block arrival times for the last 100 slots on mainnet."
+      - prompt: "Group the data by observer consensus client and calculate the mean
+          and p95 arrival time for each."
+      - prompt: "Create a box plot comparing the arrival time distributions across
+          clients."
+    assert:
+      - type: llm-rubric
+        value: >
+          Across the turns the agent pulls block arrival times for recent mainnet
+          slots,
+          breaks them down per observing consensus client with mean and p95 values
+          (plausible sub-second to a few-second timings), and produces a box plot
+          comparing
+          the per-client distributions. Must provide the storage URL of the chart
+          image it
+          uploaded. A missing chart URL, no per-client breakdown, or implausible timings
+          fails.
+          Must re-use the session to maintain persistence between turns (look for
+          a session_id.)
+    variations:
+      - Get block arrival times for the last 100 slots on mainnet.
+      - Can you query the block arrival times for the last 100 slots on mainnet?
+      - I'm trying to retrieve block arrival times over the last 100 slots on 
+        mainnet.
+      - Please query mainnet block arrival times for the last 100 slots.
+      - Fetch the arrival times of blocks for the last 100 slots on mainnet.

@@ -22,88 +22,163 @@
 
 # ---- verified answerable (passing traces this session) ----
 
-- id: devnets_running                                    # ✓
-  description: which devnets are currently active (network discovery)
-  input: "What devnets are currently running?"
-  tags: [discovery, cartographoor, devnets]
-  assert:
-    - type: llm-rubric
-      value: >
-        Names the devnets currently active, discovered live from the network-discovery
-        data (not guessed or remembered). A concrete list of one or more current devnet
-        names passes; a vague non-answer or an admission it couldn't find out fails.
+  - id: devnets_running                                  # ✓
+    description: which devnets are currently active (network discovery)
+    input: "What devnets are currently running?"
+    tags: [discovery, cartographoor, devnets]
+    assert:
+      - type: llm-rubric
+        value: >
+          Names the devnets currently active, discovered live from the network-discovery
+          data (not guessed or remembered). A concrete list of one or more current
+          devnet
+          names passes; a vague non-answer or an admission it couldn't find out fails.
 
-- id: devnet_beacon_peers                                 # ✓
-  description: beacon node peer count on a devnet (prometheus)
-  input: "What is the peer count of a beacon node on a devnet right now?"
-  tags: [prometheus, devnets, peers]
-  assert:
-    - type: llm-rubric
-      value: >
-        Reports a current peer count for a beacon node on a devnet, from a real
-        Prometheus query — a plausible small-network integer (e.g. single digits to
-        low hundreds). A specific number passes; no number or a fabricated one fails.
+    variations:
+      - Which devnets are running right now?
+      - List the devnets that are currently running.
+      - What development networks are active at the moment?
+      - I'm trying to see which devnets are presently running.
+      - Can you tell me which devnets are currently up and running?
+  - id: devnet_beacon_peers                               # ✓
+    description: beacon node peer count on a devnet (prometheus)
+    input: "What is the peer count of a beacon node on a devnet right now?"
+    tags: [prometheus, devnets, peers]
+    assert:
+      - type: llm-rubric
+        value: >
+          Reports a current peer count for a beacon node on a devnet, from a real
+          Prometheus query — a plausible small-network integer (e.g. single digits
+          to
+          low hundreds). A specific number passes; no number or a fabricated one fails.
 
 # ---- clickhouse: blocks × entity × timing / mev ----
 
-- id: mev_timing_games                                    # 📓 timing-games
-  description: which entities delay block proposals to extract MEV
-  input: "Which entities delay their block proposals the most to extract MEV on mainnet?"
-  tags: [clickhouse, blocks, mev, timing, entity]
-  assert:
-    - type: llm-rubric
-      value: >
-        Identifies specific mainnet entities (builders/validators/pools) that propose
-        blocks later in the slot than the field, backed by a real query that ties block
-        timing to entity. Names concrete entities with supporting timing evidence; a
-        generic essay with no entities or no real data fails.
+    variations:
+      - How many peers does a beacon node on a devnet have right now?
+      - Report the current peer count for a beacon node on a devnet.
+      - I’m trying to find the peer count of a beacon node on a devnet at this 
+        moment.
+      - What is the current number of peers for a beacon node on a devnet?
+      - Right now, what peer count does a beacon node on a devnet show?
+  - id: mev_timing_games                                  # 📓 timing-games
+    description: which entities delay block proposals to extract MEV
+    input: "Which entities delay their block proposals the most to extract MEV on
+      mainnet?"
+    tags: [clickhouse, blocks, mev, timing, entity]
+    assert:
+      - type: llm-rubric
+        value: >
+          Identifies specific mainnet entities (builders/validators/pools) that propose
+          blocks later in the slot than the field, backed by a real query that ties
+          block
+          timing to entity. Names concrete entities with supporting timing evidence;
+          a
+          generic essay with no entities or no real data fails.
 
-- id: block_size_vs_propagation                           # 📓 block-size-vs-propagation
-  description: effect of payload size on propagation time
-  input: "How much does block payload size affect block propagation time on mainnet?"
-  tags: [clickhouse, blocks, propagation, size]
-  assert:
-    - type: llm-rubric
-      value: >
-        Quantifies the relationship between block payload size and propagation/arrival
-        time on mainnet from real queried data — e.g. larger blocks arriving later,
-        with numbers or a correlation. A grounded characterization of the effect passes;
-        a hand-wave with no data fails.
+    variations:
+      - On mainnet, which entities delay block proposals the most in order to 
+        extract MEV?
+      - Which mainnet entities are delaying their block proposals the most to 
+        capture MEV?
+      - I'm trying to identify the entities on mainnet that most delay their 
+        block proposals for MEV extraction.
+      - List the entities that delay their block proposals the most to extract 
+        MEV on mainnet.
+      - Formally, which entities exhibit the greatest block proposal delays for 
+        MEV extraction on mainnet?
+  - id: block_size_vs_propagation                         # 📓 block-size-vs-propagation
+    description: effect of payload size on propagation time
+    input: "How much does block payload size affect block propagation time on mainnet?"
+    tags: [clickhouse, blocks, propagation, size]
+    assert:
+      - type: llm-rubric
+        value: >
+          Quantifies the relationship between block payload size and propagation/arrival
+          time on mainnet from real queried data — e.g. larger blocks arriving later,
+          with numbers or a correlation. A grounded characterization of the effect
+          passes;
+          a hand-wave with no data fails.
 
 
 # ---- blobs / execution-layer ----
-- id: empty_blob_submitters                               # 📓 empty-blobs
-  description: who submits blob txs containing empty (zero-data) blobs
-  input: "Which entities submit blob transactions containing empty (zero-data) blobs on mainnet?"
-  tags: [clickhouse, blobs, execution, entity]
-  assert:
-    - type: llm-rubric
-      value: >
-        Names specific entities/senders that submit blob transactions carrying empty
-        (zero-data) blobs on mainnet, from a real query over blob/transaction data.
-        Concrete submitters with supporting counts pass; a generic answer or no data
-        fails.
+    variations:
+      - What effect does block payload size have on block propagation time on 
+        mainnet?
+      - Can you quantify how block payload size impacts block propagation time 
+        on mainnet?
+      - On mainnet, how strongly is block propagation time affected by block 
+        payload size?
+      - I'm trying to understand how much block payload size influences block 
+        propagation time on mainnet.
+      - Determine the extent to which block payload size affects block 
+        propagation time on mainnet.
+  - id: empty_blob_submitters                             # 📓 empty-blobs
+    description: who submits blob txs containing empty (zero-data) blobs
+    input: "Which entities submit blob transactions containing empty (zero-data) blobs
+      on mainnet?"
+    tags: [clickhouse, blobs, execution, entity]
+    assert:
+      - type: llm-rubric
+        value: >
+          Names specific entities/senders that submit blob transactions carrying empty
+          (zero-data) blobs on mainnet, from a real query over blob/transaction data.
+          Concrete submitters with supporting counts pass; a generic answer or no
+          data
+          fails.
 
-- id: precompile_usage                                    # 📓 precompile-usage
-  description: most-used EVM precompiles on mainnet
-  input: "Which EVM precompiles are used most on mainnet?"
-  tags: [clickhouse, execution, evm, precompiles]
-  assert:
-    - type: llm-rubric
-      value: >
-        Ranks the most-used EVM precompiles on mainnet (e.g. ecRecover, SHA-256,
-        identity, the BN/KZG precompiles) by real usage counts from a query. A ranked
-        list grounded in data passes; a guess from general knowledge with no query fails.
+    variations:
+      - On mainnet, which entities are submitting blob transactions that include
+        empty (zero-data) blobs?
+      - Identify the entities that submit mainnet blob transactions containing 
+        empty (zero-data) blobs.
+      - I'm trying to find which entities on mainnet submit blob transactions 
+        with empty (zero-data) blobs.
+      - Which mainnet entities have submitted blob transactions that contain 
+        empty (zero-data) blobs?
+      - Please list the entities that submit blob transactions with empty 
+        (zero-data) blobs on mainnet.
+  - id: precompile_usage                                  # 📓 precompile-usage
+    description: most-used EVM precompiles on mainnet
+    input: "Which EVM precompiles are used most on mainnet?"
+    tags: [clickhouse, execution, evm, precompiles]
+    assert:
+      - type: llm-rubric
+        value: >
+          Ranks the most-used EVM precompiles on mainnet (e.g. ecRecover, SHA-256,
+          identity, the BN/KZG precompiles) by real usage counts from a query. A ranked
+          list grounded in data passes; a guess from general knowledge with no query
+          fails.
 
 
-- id: mev_relay_share                                     # 💬 builder/relay asks
-  description: share of recent blocks delivered via an MEV relay
-  input: "What share of mainnet blocks over the last 24h were delivered via an MEV relay?"
-  tags: [clickhouse, blocks, mev, relay]
-  assert:
-    - type: llm-rubric
-      value: >
-        Reports the share of recent mainnet blocks delivered via an MEV relay, from a
-        real query (relay-delivered blocks over all blocks). The true figure is high —
-        roughly 85-95% — so an answer in that band passes; a missing percentage or one
-        far outside it fails.
+    variations:
+      - Which EVM precompiles see the most use on mainnet?
+      - On mainnet, which EVM precompiles are used the most?
+      - I'm trying to identify the most-used EVM precompiles on mainnet.
+      - List the EVM precompiles with the highest usage on mainnet.
+      - Which EVM precompiled contracts have the greatest usage on mainnet?
+  - id: mev_relay_share                                   # 💬 builder/relay asks
+    description: share of recent blocks delivered via an MEV relay
+    input: "What share of mainnet blocks over the last 24h were delivered via an MEV
+      relay?"
+    tags: [clickhouse, blocks, mev, relay]
+    assert:
+      - type: llm-rubric
+        value: >
+          Reports the share of recent mainnet blocks delivered via an MEV relay, from
+          a
+          real query (relay-delivered blocks over all blocks). The true figure is
+          high —
+          roughly 85-95% — so an answer in that band passes; a missing percentage
+          or one
+          far outside it fails.
+    variations:
+      - What percentage of mainnet blocks in the last 24h were delivered through
+        an MEV relay?
+      - Over the last 24h, what share of mainnet blocks came via an MEV relay?
+      - I'm trying to find the share of mainnet blocks delivered via an MEV 
+        relay over the last 24h.
+      - Calculate the proportion of mainnet blocks over the last 24h that were 
+        delivered via an MEV relay.
+      - For mainnet blocks in the last 24h, what fraction were delivered via an 
+        MEV relay?

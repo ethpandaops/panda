@@ -97,6 +97,12 @@
       an admission it couldn''t find out fails.
 
       '
+  variations:
+  - Which devnets are running right now?
+  - List the devnets that are currently running.
+  - What development networks are active at the moment?
+  - I'm trying to see which devnets are presently running.
+  - Can you tell me which devnets are currently up and running?
 - id: devnet_beacon_peers
   description: beacon node peer count on a devnet (prometheus)
   input: What is the peer count of a beacon node on a devnet right now?
@@ -111,6 +117,12 @@
       no number or a fabricated one fails.
 
       '
+  variations:
+  - How many peers does a beacon node on a devnet have right now?
+  - Report the current peer count for a beacon node on a devnet.
+  - I’m trying to find the peer count of a beacon node on a devnet at this moment.
+  - What is the current number of peers for a beacon node on a devnet?
+  - Right now, what peer count does a beacon node on a devnet show?
 - id: mev_timing_games
   description: which entities delay block proposals to extract MEV
   input: Which entities delay their block proposals the most to extract MEV on mainnet?
@@ -127,6 +139,12 @@
       entities with supporting timing evidence; a generic essay with no entities or no real data fails.
 
       '
+  variations:
+  - On mainnet, which entities delay block proposals the most in order to extract MEV?
+  - Which mainnet entities are delaying their block proposals the most to capture MEV?
+  - I'm trying to identify the entities on mainnet that most delay their block proposals for MEV extraction.
+  - List the entities that delay their block proposals the most to extract MEV on mainnet.
+  - Formally, which entities exhibit the greatest block proposal delays for MEV extraction on mainnet?
 - id: block_size_vs_propagation
   description: effect of payload size on propagation time
   input: How much does block payload size affect block propagation time on mainnet?
@@ -142,6 +160,12 @@
       characterization of the effect passes; a hand-wave with no data fails.
 
       '
+  variations:
+  - What effect does block payload size have on block propagation time on mainnet?
+  - Can you quantify how block payload size impacts block propagation time on mainnet?
+  - On mainnet, how strongly is block propagation time affected by block payload size?
+  - I'm trying to understand how much block payload size influences block propagation time on mainnet.
+  - Determine the extent to which block payload size affects block propagation time on mainnet.
 - id: empty_blob_submitters
   description: who submits blob txs containing empty (zero-data) blobs
   input: Which entities submit blob transactions containing empty (zero-data) blobs on mainnet?
@@ -157,6 +181,12 @@
       pass; a generic answer or no data fails.
 
       '
+  variations:
+  - On mainnet, which entities are submitting blob transactions that include empty (zero-data) blobs?
+  - Identify the entities that submit mainnet blob transactions containing empty (zero-data) blobs.
+  - I'm trying to find which entities on mainnet submit blob transactions with empty (zero-data) blobs.
+  - Which mainnet entities have submitted blob transactions that contain empty (zero-data) blobs?
+  - Please list the entities that submit blob transactions with empty (zero-data) blobs on mainnet.
 - id: precompile_usage
   description: most-used EVM precompiles on mainnet
   input: Which EVM precompiles are used most on mainnet?
@@ -172,6 +202,12 @@
       general knowledge with no query fails.
 
       '
+  variations:
+  - Which EVM precompiles see the most use on mainnet?
+  - On mainnet, which EVM precompiles are used the most?
+  - I'm trying to identify the most-used EVM precompiles on mainnet.
+  - List the EVM precompiles with the highest usage on mainnet.
+  - Which EVM precompiled contracts have the greatest usage on mainnet?
 - id: mev_relay_share
   description: share of recent blocks delivered via an MEV relay
   input: What share of mainnet blocks over the last 24h were delivered via an MEV relay?
@@ -187,6 +223,12 @@
       a missing percentage or one far outside it fails.
 
       '
+  variations:
+  - What percentage of mainnet blocks in the last 24h were delivered through an MEV relay?
+  - Over the last 24h, what share of mainnet blocks came via an MEV relay?
+  - I'm trying to find the share of mainnet blocks delivered via an MEV relay over the last 24h.
+  - Calculate the proportion of mainnet blocks over the last 24h that were delivered via an MEV relay.
+  - For mainnet blocks in the last 24h, what fraction were delivered via an MEV relay?
 - id: session_data_analysis
   description: Multi-turn data analysis with session persistence
   network: mainnet
@@ -206,6 +248,12 @@
       gas figure fails. Must re-use the session to maintain persistence between turns (look for a session_id.)
 
       '
+  variations:
+  - Fetch data for the most recent 1000 blocks on mainnet and write it to a CSV file.
+  - I'm trying to pull the last 1000 mainnet blocks and save the resulting data as a CSV.
+  - Please query mainnet for the last 1000 blocks and export the data to CSV.
+  - Can you retrieve data from the latest 1000 blocks on mainnet and store it in a CSV file?
+  - Run a query over the last 1000 blocks on mainnet, then save the data into a CSV file.
 - id: block_timing_analysis
   description: Detailed block timing analysis workflow
   network: mainnet
@@ -227,6 +275,12 @@
       timings fails. Must re-use the session to maintain persistence between turns (look for a session_id.)
 
       '
+  variations:
+  - Get block arrival times for the last 100 slots on mainnet.
+  - Can you query the block arrival times for the last 100 slots on mainnet?
+  - I'm trying to retrieve block arrival times over the last 100 slots on mainnet.
+  - Please query mainnet block arrival times for the last 100 slots.
+  - Fetch the arrival times of blocks for the last 100 slots on mainnet.
 - id: block_time_histogram
   description: Generate a histogram of block arrival times
   input: Create a histogram showing the distribution of block arrival times for the last 1000 blocks on
@@ -243,3 +297,11 @@
       or one not grounded in a real query, fails. Must provide the storage URL of the image it uploaded.
 
       '
+  variations:
+  - Plot a histogram of block arrival times using the last 1000 blocks on mainnet.
+  - Show the distribution of block arrival times for mainnet's last 1000 blocks as a histogram.
+  - I'm trying to visualize how block arrival times are distributed across the last 1000 mainnet blocks
+    in a histogram.
+  - Generate a histogram that displays the distribution of block arrival times for the most recent 1000
+    blocks on mainnet.
+  - For the last 1000 blocks on mainnet, create a histogram of their block arrival times.
