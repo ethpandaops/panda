@@ -205,6 +205,12 @@ func buildProxyAuthMetadata(cfg *config.Config) *serverapi.ProxyAuthMetadataResp
 		issuerURL = strings.TrimRight(cfg.Proxy.URL, "/")
 	}
 
+	// client_credentials is a server-side service-account flow; there is no
+	// human auth flow for `panda auth login` to drive against it.
+	if mode == "client_credentials" {
+		return &serverapi.ProxyAuthMetadataResponse{Mode: mode}
+	}
+
 	resource := strings.TrimSpace(cfg.Proxy.Auth.Resource)
 	if resource == "" && mode != "oidc" {
 		resource = issuerURL

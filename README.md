@@ -187,6 +187,13 @@ panda auth login
 
 Local proxies with `auth.mode: none` do not require authentication.
 
+Non-interactive deployments (bots, CI) can authenticate with an OIDC
+service account instead: set `proxies[].auth.mode: "client_credentials"`
+with `issuer_url`, `client_id`, `username`, and `password` (see
+`config.example.yaml`). Access tokens are minted on demand from the
+issuer's token endpoint and cached in memory only — no `panda auth login`
+and no credential files.
+
 ## Server Management
 
 ```bash

@@ -219,3 +219,123 @@ func TestFetchBrandingReturnsConfig(t *testing.T) {
 		t.Fatalf("unexpected default tagline: %+v", got.Default)
 	}
 }
+
+func TestClientCredentialsMintsToken(t *testing.T) {
+	t.Parallel()
+
+	var gotForm url.Values
+
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/.well-known/openid-configuration":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"issuer":         server.URL,
+				"token_endpoint": server.URL + "/token",
+			})
+		case "/token":
+			if err := r.ParseForm(); err != nil {
+				t.Errorf("parsing form: %v", err)
+			}
+
+			gotForm = r.PostForm
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"access_token": "svc-access-token",
+				"token_type":   "Bearer",
+				"expires_in":   3600,
+			})
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	c := New(logrus.New(), Config{
+		IssuerURL: server.URL,
+		ClientID:  "panda-proxy",
+		Username:  "panda-chat-svc",
+		Password:  "app-password",
+	})
+
+	tokens, err := c.ClientCredentials(context.Background())
+	if err != nil {
+		t.Fatalf("ClientCredentials failed: %v", err)
+	}
+
+	if tokens.AccessToken != "svc-access-token" {
+		t.Fatalf("unexpected access token: %q", tokens.AccessToken)
+	}
+
+	if tokens.RefreshToken != "" {
+		t.Fatalf("client_credentials must not carry a refresh token, got %q", tokens.RefreshToken)
+	}
+
+	if tokens.ExpiresAt.IsZero() {
+		t.Fatal("expected ExpiresAt to be set")
+	}
+
+	for key, want := range map[string]string{
+		"grant_type": "client_credentials",
+		"client_id":  "panda-proxy",
+		"username":   "panda-chat-svc",
+		"password":   "app-password",
+	} {
+		if got := gotForm.Get(key); got != want {
+			t.Errorf("form %s = %q, want %q", key, got, want)
+		}
+	}
+
+	if scope := gotForm.Get("scope"); strings.Contains(scope, "offline_access") {
+		t.Errorf("scope must not include offline_access, got %q", scope)
+	}
+}
+
+func TestClientCredentialsRequiresCredentials(t *testing.T) {
+	t.Parallel()
+
+	c := New(logrus.New(), Config{
+		IssuerURL: "http://example.test",
+		ClientID:  "panda-proxy",
+	})
+
+	if _, err := c.ClientCredentials(context.Background()); err == nil {
+		t.Fatal("expected error when username/password are missing")
+	}
+}
+
+func TestClientCredentialsSurfacesTokenEndpointError(t *testing.T) {
+	t.Parallel()
+
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/.well-known/openid-configuration":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"issuer":         server.URL,
+				"token_endpoint": server.URL + "/token",
+			})
+		case "/token":
+			http.Error(w, `{"error":"invalid_grant"}`, http.StatusUnauthorized)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	c := New(logrus.New(), Config{
+		IssuerURL: server.URL,
+		ClientID:  "panda-proxy",
+		Username:  "panda-chat-svc",
+		Password:  "wrong",
+	})
+
+	_, err := c.ClientCredentials(context.Background())
+	if err == nil {
+		t.Fatal("expected error from token endpoint")
+	}
+
+	if !strings.Contains(err.Error(), "401") {
+		t.Fatalf("expected 401 in error, got: %v", err)
+	}
+}

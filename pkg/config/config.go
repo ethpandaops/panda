@@ -159,7 +159,11 @@ type ProxyConfig struct {
 // ProxyAuthConfig configures authentication for the proxy.
 type ProxyAuthConfig struct {
 	// Mode describes the proxy auth flow. "oauth" is the legacy embedded proxy issuer,
-	// "oidc" is an external OpenID Connect issuer such as Dex.
+	// "oidc" is an external OpenID Connect issuer such as Authentik, and
+	// "client_credentials" is the non-interactive service-account flow: access
+	// tokens are minted from the issuer's token endpoint using Username +
+	// Password (Authentik service-account form), cached in memory, and
+	// re-minted before expiry. No credential files are written.
 	Mode string `yaml:"mode,omitempty"`
 
 	// IssuerURL is the OAuth issuer URL for proxy authentication.
@@ -167,6 +171,13 @@ type ProxyAuthConfig struct {
 
 	// ClientID is the OAuth client ID for authentication.
 	ClientID string `yaml:"client_id"`
+
+	// Username is the service-account username for mode "client_credentials".
+	Username string `yaml:"username,omitempty"`
+
+	// Password is the service-account app password for mode "client_credentials".
+	// Use ${ENV_VAR} substitution to source it from the environment.
+	Password string `yaml:"password,omitempty"`
 
 	// Resource is the optional OAuth resource indicator to request.
 	// Leave empty for standard OIDC providers that do not use RFC 8707 resource parameters.
@@ -526,6 +537,24 @@ func (c *Config) Validate() error {
 		}
 
 		seenProxyNames[proxy.Name] = struct{}{}
+
+		if proxy.Auth != nil && strings.TrimSpace(proxy.Auth.Mode) == "client_credentials" {
+			if strings.TrimSpace(proxy.Auth.IssuerURL) == "" {
+				return fmt.Errorf("proxies[%d].auth.issuer_url is required for mode client_credentials", i)
+			}
+
+			if strings.TrimSpace(proxy.Auth.ClientID) == "" {
+				return fmt.Errorf("proxies[%d].auth.client_id is required for mode client_credentials", i)
+			}
+
+			if strings.TrimSpace(proxy.Auth.Username) == "" {
+				return fmt.Errorf("proxies[%d].auth.username is required for mode client_credentials", i)
+			}
+
+			if strings.TrimSpace(proxy.Auth.Password) == "" {
+				return fmt.Errorf("proxies[%d].auth.password is required for mode client_credentials", i)
+			}
+		}
 	}
 
 	for i, clickhouse := range c.LocalProxy.ClickHouse {

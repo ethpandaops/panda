@@ -41,9 +41,20 @@ proxies:
   - name: "hosted"
     url: "https://panda-proxy.ethpandaops.io"
     # auth:                  # for hosted proxies; users run `ep auth login`
-    #   mode: "oidc"         # "oidc" or "oauth"
+    #   mode: "oidc"         # "oidc", "oauth", or "client_credentials"
     #   issuer_url: "https://panda-proxy.ethpandaops.io"
     #   client_id: "panda"
+    #
+    # Non-interactive service accounts (e.g. bots) use the client_credentials
+    # grant with an Authentik service account + app password. Access tokens are
+    # minted from the issuer's token endpoint, cached in memory, and re-minted
+    # before expiry — no credential files are written.
+    # auth:
+    #   mode: "client_credentials"
+    #   issuer_url: "https://authentik.example.com/application/o/panda-proxy/"
+    #   client_id: "panda-proxy"
+    #   username: "panda-chat-svc"          # service-account username
+    #   password: "${PANDA_BOT_TOKEN}"      # app password, from env
 
 # Deprecated: the old single-proxy form. Use `proxies:` above. If set it is promoted
 # to proxies[0]; setting both `proxy:` and `proxies:` is an error.

@@ -174,6 +174,10 @@ func (s *stubAuthClient) Login(_ context.Context) (*authclient.Tokens, error) {
 	return nil, errors.New("not implemented")
 }
 
+func (s *stubAuthClient) ClientCredentials(_ context.Context) (*authclient.Tokens, error) {
+	return nil, errors.New("not implemented")
+}
+
 func (s *stubAuthClient) Refresh(_ context.Context, _ string) (*authclient.Tokens, error) {
 	s.refreshCalls++
 	if s.refreshErr != nil {
@@ -194,6 +198,10 @@ type countingAuthClient struct {
 }
 
 func (s *countingAuthClient) Login(_ context.Context) (*authclient.Tokens, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (s *countingAuthClient) ClientCredentials(_ context.Context) (*authclient.Tokens, error) {
 	return nil, errors.New("not implemented")
 }
 

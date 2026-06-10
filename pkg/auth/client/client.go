@@ -28,6 +28,12 @@ type Client interface {
 
 	// Refresh refreshes an access token using a refresh token.
 	Refresh(ctx context.Context, refreshToken string) (*Tokens, error)
+
+	// ClientCredentials mints an access token using the OAuth2
+	// client_credentials grant with Authentik's service-account form
+	// (client_id + username + password). No refresh token is issued;
+	// callers re-mint before expiry.
+	ClientCredentials(ctx context.Context) (*Tokens, error)
 }
 
 // Tokens contains the authentication tokens.
@@ -63,6 +69,14 @@ type Config struct {
 
 	// Scopes are the OAuth scopes to request.
 	Scopes []string
+
+	// Username is the service-account username for the client_credentials
+	// grant (Authentik service-account form). Unused by interactive flows.
+	Username string
+
+	// Password is the service-account app password for the
+	// client_credentials grant. Unused by interactive flows.
+	Password string
 
 	// Headless uses the device authorization flow (RFC 8628) instead of
 	// the local callback server. Use for SSH or headless environments.
@@ -261,6 +275,83 @@ func (c *client) Refresh(ctx context.Context, refreshToken string) (*Tokens, err
 		ExpiresAt:            time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second),
 		RefreshTokenIssuedAt: refreshTokenIssuedAt,
 	}, nil
+}
+
+// ClientCredentials mints an access token using the client_credentials grant.
+// It POSTs Authentik's service-account form (grant_type=client_credentials +
+// client_id + username + password) to the issuer's token endpoint. The
+// returned Tokens carry no refresh token; callers re-mint before expiry.
+func (c *client) ClientCredentials(ctx context.Context) (*Tokens, error) {
+	if c.cfg.Username == "" || c.cfg.Password == "" {
+		return nil, fmt.Errorf("client_credentials grant requires username and password")
+	}
+
+	if err := c.discover(ctx); err != nil {
+		return nil, fmt.Errorf("discovering OIDC config: %w", err)
+	}
+
+	data := url.Values{
+		"grant_type": {"client_credentials"},
+		"client_id":  {c.cfg.ClientID},
+		"username":   {c.cfg.Username},
+		"password":   {c.cfg.Password},
+	}
+
+	// offline_access is meaningless for client_credentials (no refresh token).
+	if scopes := scopesWithoutOfflineAccess(c.cfg.Scopes); len(scopes) > 0 {
+		data.Set("scope", strings.Join(scopes, " "))
+	}
+
+	if c.cfg.Resource != "" {
+		data.Set("resource", c.cfg.Resource)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.oidc.TokenEndpoint, strings.NewReader(data.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("making request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return nil, fmt.Errorf("token endpoint returned status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var tokenResp tokenResponse
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	if tokenResp.AccessToken == "" {
+		return nil, fmt.Errorf("token endpoint returned no access token")
+	}
+
+	return &Tokens{
+		AccessToken: tokenResp.AccessToken,
+		TokenType:   tokenResp.TokenType,
+		ExpiresIn:   tokenResp.ExpiresIn,
+		ExpiresAt:   time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second),
+	}, nil
+}
+
+// scopesWithoutOfflineAccess filters offline_access from a scope list.
+func scopesWithoutOfflineAccess(scopes []string) []string {
+	filtered := make([]string, 0, len(scopes))
+
+	for _, scope := range scopes {
+		if scope != "offline_access" {
+			filtered = append(filtered, scope)
+		}
+	}
+
+	return filtered
 }
 
 // discover fetches OIDC configuration from the issuer.

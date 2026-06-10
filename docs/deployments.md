@@ -61,7 +61,9 @@ This is the recommended external-user shape when you do not want to execute code
   - `server.sandbox_url`
   - sandbox settings
   - `proxies:` entries (`name`, `url`)
-  - optional `proxies[].auth` (`mode`, `issuer_url`, `client_id`)
+  - optional `proxies[].auth` (`mode`, `issuer_url`, `client_id`; for
+    `mode: client_credentials` also `username` + `password` — service
+    accounts mint tokens in memory, no seeded credential files)
   - optional `local_proxy` settings for the embedded loopback proxy
   - deprecated `proxy:` single-proxy form, promoted to `proxies[0]` when used alone
 - `proxy` config:

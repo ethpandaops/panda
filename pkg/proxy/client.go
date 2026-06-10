@@ -48,6 +48,18 @@ type ClientConfig struct {
 	// ClientID is the OAuth client ID for authentication.
 	ClientID string
 
+	// AuthMode selects the proxy auth flow. Empty/"oauth"/"oidc" use the
+	// interactive flows backed by the on-disk credential store;
+	// "client_credentials" mints access tokens on demand with Username and
+	// Password (Authentik service-account form) and keeps them in memory only.
+	AuthMode string
+
+	// Username is the service-account username for AuthMode "client_credentials".
+	Username string
+
+	// Password is the service-account app password for AuthMode "client_credentials".
+	Password string
+
 	// Resource is the OAuth protected resource to request tokens for.
 	// Leave empty for standard OIDC providers that do not use RFC 8707 resource parameters.
 	Resource string
@@ -99,7 +111,20 @@ type proxyClient struct {
 	datasources *DatasourcesResponse
 	stopCh      chan struct{}
 	stopped     bool
+
+	// ccMu guards ccTokens, the in-memory client_credentials token cache.
+	// Tokens minted via client_credentials are never written to disk.
+	ccMu     sync.Mutex
+	ccTokens *client.Tokens
 }
+
+// AuthModeClientCredentials is the ClientConfig.AuthMode value for the
+// OAuth2 client_credentials grant (Authentik service-account form).
+const AuthModeClientCredentials = "client_credentials"
+
+// clientCredentialsRefreshBuffer is how long before expiry a cached
+// client_credentials access token is re-minted.
+const clientCredentialsRefreshBuffer = 5 * time.Minute
 
 var ErrAuthenticationRequired = errors.New("proxy authentication required")
 
@@ -139,18 +164,30 @@ func NewClient(log logrus.FieldLogger, cfg ClientConfig) Client {
 			IssuerURL: issuerURL,
 			ClientID:  cfg.ClientID,
 			Resource:  resource,
+			Username:  cfg.Username,
+			Password:  cfg.Password,
 		})
 
-		c.credStore = store.New(log, store.Config{
-			AuthClient:      c.authClient,
-			IssuerURL:       issuerURL,
-			ClientID:        cfg.ClientID,
-			Resource:        resource,
-			RefreshTokenTTL: cfg.RefreshTokenTTL,
-		})
+		// client_credentials mints tokens on demand and keeps them in
+		// memory only — no on-disk credential store.
+		if cfg.AuthMode != AuthModeClientCredentials {
+			c.credStore = store.New(log, store.Config{
+				AuthClient:      c.authClient,
+				IssuerURL:       issuerURL,
+				ClientID:        cfg.ClientID,
+				Resource:        resource,
+				RefreshTokenTTL: cfg.RefreshTokenTTL,
+			})
+		}
 	}
 
 	return c
+}
+
+// usesClientCredentials reports whether this client mints tokens via the
+// client_credentials grant.
+func (c *proxyClient) usesClientCredentials() bool {
+	return c.cfg.AuthMode == AuthModeClientCredentials && c.authClient != nil
 }
 
 // Start starts the client and performs initial discovery.
@@ -197,7 +234,7 @@ func (c *proxyClient) URL() string {
 }
 
 func (c *proxyClient) RegisterToken() string {
-	if c.credStore == nil {
+	if c.credStore == nil && !c.usesClientCredentials() {
 		return NoAuthToken
 	}
 
@@ -410,7 +447,23 @@ func (c *proxyClient) EmbeddingModel() string {
 }
 
 // Discover fetches datasource information from the proxy's /datasources endpoint.
+// In client_credentials mode a 401/403 invalidates the cached token and the
+// request is retried once with a freshly minted one (covers proxy-side
+// revocation before the local expiry buffer kicks in).
 func (c *proxyClient) Discover(ctx context.Context) error {
+	err := c.discoverOnce(ctx)
+	if err != nil && errors.Is(err, ErrAuthenticationRequired) && c.usesClientCredentials() {
+		c.log.WithError(err).Debug("Proxy rejected client_credentials token; re-minting and retrying")
+		c.invalidateClientCredentialsToken()
+
+		return c.discoverOnce(ctx)
+	}
+
+	return err
+}
+
+// discoverOnce performs a single /datasources fetch.
+func (c *proxyClient) discoverOnce(ctx context.Context) error {
 	url := fmt.Sprintf("%s/datasources", c.cfg.URL)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -471,6 +524,14 @@ func (c *proxyClient) Discover(ctx context.Context) error {
 
 // EnsureAuthenticated checks if the user has valid credentials.
 func (c *proxyClient) EnsureAuthenticated(_ context.Context) error {
+	if c.usesClientCredentials() {
+		if _, err := c.loadAccessToken(); err != nil {
+			return fmt.Errorf("authenticating to proxy via client_credentials: %w", err)
+		}
+
+		return nil
+	}
+
 	if c.credStore == nil {
 		// No auth required (e.g., local dev mode).
 		return nil
@@ -488,6 +549,10 @@ func (c *proxyClient) EnsureAuthenticated(_ context.Context) error {
 }
 
 func (c *proxyClient) loadAccessToken() (string, error) {
+	if c.usesClientCredentials() {
+		return c.clientCredentialsToken()
+	}
+
 	if c.credStore == nil {
 		return "", nil
 	}
@@ -507,6 +572,46 @@ func (c *proxyClient) loadAccessToken() (string, error) {
 	}
 
 	return token, nil
+}
+
+// clientCredentialsToken returns the cached client_credentials access token,
+// re-minting via the issuer's token endpoint when missing or close to expiry.
+// Tokens live in memory only; nothing is written to disk.
+func (c *proxyClient) clientCredentialsToken() (string, error) {
+	c.ccMu.Lock()
+	defer c.ccMu.Unlock()
+
+	if c.ccTokens != nil && time.Now().Add(clientCredentialsRefreshBuffer).Before(c.ccTokens.ExpiresAt) {
+		return c.ccTokens.AccessToken, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), c.cfg.HTTPTimeout)
+	defer cancel()
+
+	tokens, err := c.authClient.ClientCredentials(ctx)
+	if err != nil {
+		// Keep serving a still-valid cached token across transient mint failures.
+		if c.ccTokens != nil && time.Now().Before(c.ccTokens.ExpiresAt) {
+			c.log.WithError(err).Warn("Re-minting client_credentials token failed; using cached token")
+			return c.ccTokens.AccessToken, nil
+		}
+
+		return "", fmt.Errorf("minting client_credentials token: %w", err)
+	}
+
+	c.ccTokens = tokens
+
+	return tokens.AccessToken, nil
+}
+
+// invalidateClientCredentialsToken drops the cached client_credentials token
+// so the next loadAccessToken mints a fresh one. Used when the proxy rejects
+// a token that has not yet hit the local expiry buffer (e.g. revocation).
+func (c *proxyClient) invalidateClientCredentialsToken() {
+	c.ccMu.Lock()
+	defer c.ccMu.Unlock()
+
+	c.ccTokens = nil
 }
 
 // backgroundRefresh periodically refreshes datasource information.

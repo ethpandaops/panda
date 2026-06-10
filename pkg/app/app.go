@@ -288,8 +288,13 @@ func (a *App) proxyClientConfig(proxyCfg config.ProxyConfig, onDiscover func()) 
 	cfg.ClientID = proxyCfg.Auth.ClientID
 	cfg.Resource = strings.TrimSpace(proxyCfg.Auth.Resource)
 	cfg.RefreshTokenTTL = proxyCfg.Auth.RefreshTokenTTL
+	cfg.AuthMode = strings.TrimSpace(proxyCfg.Auth.Mode)
+	cfg.Username = strings.TrimSpace(proxyCfg.Auth.Username)
+	cfg.Password = proxyCfg.Auth.Password
 
-	if cfg.Resource == "" && strings.TrimSpace(proxyCfg.Auth.Mode) != "oidc" {
+	// The legacy "oauth" embedded-issuer mode defaults the RFC 8707 resource
+	// to the proxy URL; external-issuer modes (oidc, client_credentials) do not.
+	if cfg.Resource == "" && cfg.AuthMode != "oidc" && cfg.AuthMode != proxy.AuthModeClientCredentials {
 		cfg.Resource = proxyCfg.URL
 	}
 
