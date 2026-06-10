@@ -66,13 +66,31 @@ func runDatasources(cmd *cobra.Command, _ []string) error {
 			desc = info.Name
 		}
 
+		// The same dataset may be bound more than once to one datasource (e.g.
+		// otel-logs in both the internal and external databases); annotate
+		// duplicates with their params so the bindings stay distinguishable.
+		counts := make(map[string]int, len(info.Contents))
+		for _, b := range info.Contents {
+			counts[b.Dataset]++
+		}
+
 		datasets := make([]string, 0, len(info.Contents))
 
 		for _, b := range info.Contents {
-			datasets = append(datasets, b.Dataset)
+			label := b.Dataset
+			if counts[b.Dataset] > 1 && len(b.Params) > 0 {
+				label += " (" + formatBindingParams(b.Params) + ")"
+			}
+
+			datasets = append(datasets, label)
 
 			if b.Notes != "" {
-				notes = append(notes, noteLine{source: info.Name, dataset: b.Dataset, note: b.Notes})
+				key := b.Dataset
+				if len(b.Params) > 0 {
+					key += " (" + formatBindingParams(b.Params) + ")"
+				}
+
+				notes = append(notes, noteLine{source: info.Name, dataset: key, note: b.Notes})
 			}
 		}
 
@@ -98,4 +116,21 @@ func runDatasources(cmd *cobra.Command, _ []string) error {
 	}
 
 	return nil
+}
+
+// formatBindingParams renders a binding's opaque params as sorted "k=v" pairs.
+func formatBindingParams(params map[string]string) string {
+	keys := make([]string, 0, len(params))
+	for k := range params {
+		keys = append(keys, k)
+	}
+
+	sort.Strings(keys)
+
+	pairs := make([]string, 0, len(keys))
+	for _, k := range keys {
+		pairs = append(pairs, k+"="+params[k])
+	}
+
+	return strings.Join(pairs, ", ")
 }
