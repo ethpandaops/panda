@@ -151,7 +151,7 @@ func (m *Module) InitFromDiscovery(datasources []types.DatasourceInfo) error {
 	}
 
 	if len(active) > 0 && matched == 0 {
-		m.log.Warn("No declared dataset matches a shipped knowledge pack; falling back to all packs")
+		m.log.Warn("No declared dataset matches a shipped knowledge pack; no dataset guidance will be surfaced — fix the proxy contains declarations or upgrade panda")
 	}
 
 	m.active = active
@@ -233,9 +233,11 @@ func loadPack(dir string) (pack, error) {
 }
 
 // activePacks returns the packs to expose, scoped to the discovered active set.
-// When the set is empty (no declarations) or matches no shipped pack (typo, or
-// a release older than the declared dataset), all packs are exposed: showing
-// broad guidance degrades better than showing none.
+// An empty set means no deployment declared anything (old proxy) — with no
+// information, all packs are exposed. A non-empty set is authoritative even
+// when nothing matches: the deployment said what it contains, and surfacing
+// packs for other datasets would hand the assistant guidance that is known to
+// be wrong here.
 func (m *Module) activePacks() []pack {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -249,10 +251,6 @@ func (m *Module) activePacks() []pack {
 		if m.active[p.name] {
 			out = append(out, p)
 		}
-	}
-
-	if len(out) == 0 {
-		return m.packs
 	}
 
 	return out

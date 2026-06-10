@@ -94,6 +94,35 @@ func TestInitFromDiscoveryScopesToDeclaredDatasets(t *testing.T) {
 	}
 }
 
+func TestInitFromDiscoveryUnknownDatasetsShowNothing(t *testing.T) {
+	m := New()
+
+	// The deployment declares only a dataset this release has no pack for
+	// (typo, or a dataset newer than this release). The declaration is
+	// authoritative: surfacing other packs would be guidance known to be wrong
+	// for this deployment.
+	err := m.InitFromDiscovery([]types.DatasourceInfo{
+		{
+			Type: "clickhouse",
+			Name: "clickhouse-raw",
+			Contents: []types.DatasetBinding{
+				{Dataset: "xatu_raw"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("InitFromDiscovery() error = %v", err)
+	}
+
+	if ex := m.Examples(); len(ex) != 0 {
+		t.Fatalf("unknown-only declaration: got %d example categories, want 0", len(ex))
+	}
+
+	if gs := m.GettingStartedSnippet(); gs != "" {
+		t.Fatalf("unknown-only declaration: got getting-started content, want none: %q", gs)
+	}
+}
+
 func TestInitFromDiscoveryNoBindingsShowsAll(t *testing.T) {
 	m := New()
 
