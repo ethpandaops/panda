@@ -336,6 +336,11 @@ async def optimize(
         )
 
     run_root = Path(save_dir) if save_dir else Path(tempfile.mkdtemp(prefix="harden-"))
+    # The run's anchor: every candidate is a patch vs THIS commit. If something else
+    # commits to the worktree mid-run (a human, another agent), patches stop applying
+    # and uncommitted external edits would be misread as proposal files / reverted —
+    # detect it at each round boundary and stop cleanly instead.
+    start_head = _git(repo_dir, "rev-parse", "HEAD")
 
     async def measure(
         label: str,
@@ -404,6 +409,14 @@ async def optimize(
         return statistics.mean(r.score for r in runs) if runs else 0.0
 
     for n in range(1, rounds + 1):
+        if _git(repo_dir, "rev-parse", "HEAD") != start_head:
+            log(
+                "[bold red]HEAD MOVED[/bold red]: the worktree was committed to from "
+                "outside this run — candidate patches no longer apply to it. Stopping "
+                "cleanly (pool candidates so far are in the run artifacts). Don't edit "
+                "the worktree while a run is active."
+            )
+            break
         log(f"[bold cyan]--- round {n}/{rounds} ---[/bold cyan]")
         # Stochastic Pareto parent selection: entries that are best on more cells get
         # picked more; +1 keeps every entry (incl. a winless baseline) selectable.
