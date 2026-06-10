@@ -33,6 +33,8 @@ from pathlib import Path
 from cases.loader import load_test_cases
 from config.settings import DEFAULT_EVALUATOR_MODEL, DEFAULT_SUBJECTS
 from harden.auditor import CodexAuditor
+from harden.journal import DEFAULT_NAME as JOURNAL_NAME
+from harden.journal import Journal
 from harden.logsetup import setup_logging
 from harden.loop import optimize
 from harden.proposer import CodexProposer
@@ -340,6 +342,7 @@ def main() -> None:
                 pool_size=args.pool_size,
                 prescreen=args.prescreen,
                 audit_retries=args.audit_retries,
+                journal=Journal(HARDEN_HOME / JOURNAL_NAME, context=Path(args.cases).name),
                 log=log,
             )
         )

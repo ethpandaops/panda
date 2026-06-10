@@ -101,6 +101,20 @@ def _summarize(line: str, state: dict) -> str | None:
     return None  # header / prompt echo / pre-first-marker noise
 
 
+def assistant_prose(raw: str) -> str:
+    """The assistant's chat messages from a raw codex transcript, classified by the same
+    filter as the live log stream — no diff bodies, no tool output, no usage meta, no
+    ran:/edited markers. Summaries built from the raw tail were usually the end of a
+    printed patch; this is what they should be built from instead."""
+    state: dict = {"mode": None, "await_cmd": False}
+    kept = []
+    for line in raw.splitlines():
+        shown = _summarize(line, state)
+        if shown and not shown.startswith(("ran: ", "edited ")):
+            kept.append(shown)
+    return "\n".join(kept).strip()
+
+
 def run_codex(
     cmd: list[str],
     prompt: str,

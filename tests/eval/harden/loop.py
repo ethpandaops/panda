@@ -49,6 +49,7 @@ from rich.markup import escape
 from config.settings import DEFAULT_GRADER
 from harden import charts
 from harden.auditor import Auditor
+from harden.journal import Journal, patch_fingerprint
 from harden.promptfoo_eval import measure_candidate
 from harden.proposer import Proposer
 from harden.report import build_amend_prompt, build_proposal_prompt
@@ -299,6 +300,7 @@ async def optimize(
     prescreen: int = 3,
     audit_retries: int = 3,
     seed: int = 1234,
+    journal: Journal | None = None,
     log: Callable[[str], None] = print,
 ) -> OptimizeResult:
     """Run the optimization loop. ``apply`` rebuilds+restarts the harness so a fresh
@@ -391,6 +393,13 @@ async def optimize(
     # subsequent prompt so it explores instead of re-proposing a rejected idea.
     history: list[str] = []
 
+    # What the current round actually proposed, for the journal: updated at every patch
+    # capture (including amendments) so _record fingerprints the judged state, then
+    # cleared. ``rejected_fps`` seeds from the persistent journal and grows in-run, so
+    # an exact resubmission of any rejected patch is caught without re-measuring.
+    round_patch = {"text": ""}
+    rejected_fps = journal.rejected_fingerprints() if journal else set()
+
     def _record(
         n: int, accepted: bool, reason: str, after: CandidateResult, summary: str, parent: str
     ) -> None:
@@ -400,6 +409,18 @@ async def optimize(
             result=after if after is not baseline else None,
             summary=summary, parent=parent, log=log,
         )
+        fp = patch_fingerprint(round_patch["text"]) if round_patch["text"] else ""
+        round_patch["text"] = ""
+        if fp and not accepted:
+            rejected_fps.add(fp)
+        if journal:
+            journal.append(
+                run=run_root.name, round_n=n, accepted=accepted, reason=reason,
+                summary=summary,
+                score_before=baseline.score if after is not baseline else None,
+                score_after=after.score if after is not baseline else None,
+                fingerprint=fp,
+            )
         outcome = (
             f"CHAMPION (score {baseline.score:.3f} -> {after.score:.3f})"
             if accepted
@@ -446,7 +467,8 @@ async def optimize(
         # prompt is a lean summary; the FULL traces live on disk for it to read.
         train_records = [r for r in parent.result.records if r.question.id in train_ids]
         prompt = build_proposal_prompt(
-            train_records, traces_dir=parent.traces_dir, limit=show, history=history
+            train_records, traces_dir=parent.traces_dir, limit=show, history=history,
+            prior_runs=journal.render() if journal else "",
         )
         _dump(save_dir, f"round{n}_proposal_prompt.txt", prompt)
         log(f"round {n}: proposing harness edits (this can take several minutes)...")
@@ -468,6 +490,16 @@ async def optimize(
             continue
         touched = _changed_paths(repo_dir)
         log(f"round {n}: proposal summary: {escape(' '.join(proposal.summary.split())[:280])}")
+        round_patch["text"] = patch
+        if patch_fingerprint(patch) in rejected_fps:
+            log(
+                f"round {n}: [bold yellow]DUPLICATE[/bold yellow] of a previously "
+                "rejected proposal (journal fingerprint match) — reverting without "
+                "re-judging"
+            )
+            _revert(repo_dir)
+            _record(n, False, "duplicate-rejected", baseline, proposal.summary, parent.label)
+            continue
         log(f"round {n}: edited {len(touched)} file(s): {', '.join(touched)[:300]}")
 
         # Deterministic guards BEFORE the LLM audit — these can't be argued past.
@@ -543,6 +575,7 @@ async def optimize(
                     log(f"round {n}: proposer made no amendments — giving up")
                     break
                 patch = new_patch
+                round_patch["text"] = patch
                 proposal = amended
                 # Re-screen the amended diff with the unfoolable guards before re-auditing.
                 violations = _protected_violations(repo_dir, protected_paths)

@@ -315,3 +315,41 @@ async def test_prescreen_passes_worse_but_functional_candidate(repo, monkeypatch
     )
     assert result.rounds[0].reason != "prescreen"
     assert "round1_candidate" in calls, "full measure should have run"
+
+
+@pytest.mark.asyncio
+async def test_journal_dedups_resubmission_of_rejected_patch(repo, monkeypatch, tmp_path):
+    # Round 1's regression is journaled with the patch fingerprint; round 2 (the stub
+    # proposer writes the identical edit) must be refused as duplicate-rejected without
+    # being measured again — and a FRESH journal over the same file must carry the
+    # fingerprint into a hypothetical next run.
+    from harden.journal import Journal
+
+    # The journal must live OUTSIDE the repo (the repo fixture IS tmp_path): inside,
+    # it would be swept by the loop's revert (git clean) and captured into the
+    # proposal patch itself, changing the fingerprint every round. Production puts it
+    # in HARDEN_HOME for the same reason.
+    journal_path = tmp_path.parent / f"{tmp_path.name}-journal.jsonl"
+    journal = Journal(journal_path, context="t.yaml")
+    state = {"improved": False}
+    measures = {"n": 0}
+    stub = _stub_measure(state, correct_when_improved=False)
+
+    async def counting_measure(*a, **kw):
+        measures["n"] += 1
+        return await stub(*a, **kw)
+
+    monkeypatch.setattr(loop_mod, "measure_candidate", counting_measure)
+    result = await optimize(
+        _QS, ["s"], _StubProposer(repo, state),
+        repo_dir=str(repo), apply=_apply_factory(repo, state),
+        k=3, rounds=2, journal=journal, log=lambda *_: None,
+    )
+    assert result.accepted == 0
+    assert result.rounds[0].reason == "regressed-correctness"
+    assert result.rounds[1].reason == "duplicate-rejected"
+    assert measures["n"] == 2  # baseline + round 1 only: round 2 never measured
+    assert _git(repo, "status", "--porcelain").strip() == ""
+    fresh = Journal(journal_path)
+    assert len(fresh.rejected_fingerprints()) == 1
+    assert [e["reason"] for e in fresh.entries()] == ["regressed-correctness", "duplicate-rejected"]

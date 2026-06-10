@@ -68,3 +68,30 @@ def test_prose_and_tools_still_shown():
         ]
     )
     assert out == ["ran: go", "The full suite passes when the environment is cleared."]
+
+
+def test_assistant_prose_extracts_messages_not_diff_tails():
+    # A transcript whose TAIL is a printed patch: the old raw-tail summary captured the
+    # diff; assistant_prose must return only the chat messages.
+    raw = "\n".join(
+        [
+            "codex",
+            "I will adjust the error hints to be class-specific.",
+            "exec",
+            "bash -lc go test ./...",
+            "ok   github.com/x  0.5s",
+            "codex",
+            "Done: hints are now class-specific and the tests pass.",
+            "apply patch",
+            "*** Update File: pkg/cli/x.go",
+            "+new line of code",
+            "-old line of code",
+        ]
+    )
+    from harden.codex import assistant_prose
+
+    prose = assistant_prose(raw)
+    assert "class-specific" in prose
+    assert "new line of code" not in prose
+    assert "go test" not in prose
+    assert "edited" not in prose
