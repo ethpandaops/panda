@@ -499,6 +499,12 @@ async def optimize(
                     verdict = auditor.audit(patch, [q.text for q in questions])
                 _dump(save_dir, f"round{n}_audit{attempt + 1}.txt", verdict.text())
                 log(f"round {n}: audit verdict: {escape(' '.join(verdict.summary.split())[:240])}")
+                if getattr(verdict, "unavailable", False):
+                    # The auditor itself failed (after its own retries): fail closed
+                    # without amend rounds — no proposal change can fix auditor downtime.
+                    blocked_text = verdict.text()
+
+                    break
                 if not verdict.blocked:
                     blocked_text = ""
                     if verdict.findings:
