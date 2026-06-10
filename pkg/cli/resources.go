@@ -19,7 +19,7 @@ also available to MCP-connected clients.
 Examples:
   panda resources
   panda resources panda://getting-started
-  panda resources clickhouse://tables
+  panda resources datasets://list
   panda resources read panda://getting-started
   panda resources read python://ethpandaops
   panda resources read clickhouse://tables/<cluster>

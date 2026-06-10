@@ -93,6 +93,10 @@ func runDatasources(cmd *cobra.Command, _ []string) error {
 
 	fmt.Println("\nDataset placements and notes: panda datasets")
 
+	if hasClickHouse {
+		fmt.Println("ClickHouse schemas: panda schema <cluster> [database] [table]")
+	}
+
 	return nil
 }
 

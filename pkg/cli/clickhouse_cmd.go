@@ -15,12 +15,25 @@ var clickhouseCmd = &cobra.Command{
 	Long: `Execute SQL queries against ClickHouse datasources.
 
 Datasource names come from 'panda datasources'; query syntax rules for a
-dataset come from 'panda datasets <name>'.
+dataset come from 'panda datasets <name>'. Use 'panda search examples "<topic>"'
+for query patterns and 'panda schema' for table names, columns, and keys.
 
 Examples:
   panda clickhouse list-datasources
-  panda clickhouse query <datasource> "SELECT 1"
-  panda clickhouse query <datasource> "SELECT 1" --json`,
+  panda clickhouse query <datasource> "SHOW DATABASES"
+  panda clickhouse <datasource> "SELECT 1"`,
+	Args: cobra.MaximumNArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return cmd.Help()
+		}
+
+		if len(args) != 2 {
+			return fmt.Errorf("expected <datasource> and <sql>; use 'panda clickhouse query <datasource> <sql>'")
+		}
+
+		return runClickHouseOperation(cmd, "clickhouse.query", args[0], args[1], false)
+	},
 }
 
 func init() {
