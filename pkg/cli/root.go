@@ -66,14 +66,14 @@ New? Start here: panda getting-started`,
 			outputFormat = "json"
 		}
 
-		if !skipUpdateCheckCommands[cmd.Name()] {
+		if shouldCheckForUpdate(cmd) {
 			go backgroundUpdateCheck()
 		}
 
 		return nil
 	},
 	PersistentPostRunE: func(cmd *cobra.Command, _ []string) error {
-		if skipUpdateCheckCommands[cmd.Name()] {
+		if !shouldCheckForUpdate(cmd) {
 			return nil
 		}
 
@@ -137,6 +137,13 @@ func init() {
 		func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 			return []string{"yaml", "yml"}, cobra.ShellCompDirectiveFilterFileExt
 		})
+}
+
+// shouldCheckForUpdate reports whether a command run should trigger the
+// background update check and notification. Dev builds have no release
+// to compare against, so they never check.
+func shouldCheckForUpdate(cmd *cobra.Command) bool {
+	return version.Version != "dev" && !skipUpdateCheckCommands[cmd.Name()]
 }
 
 // backgroundUpdateCheck returns a cached version if fresh, otherwise
