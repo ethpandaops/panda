@@ -16,6 +16,7 @@ dependencies = [
     "openai>=1.0.0", # For OpenRouter evaluator support
     "langfuse>=2.0.0", # LLM observability and trace viewing
     "opencode-ai",
+    "matplotlib>=3.10.9",
 ]
 
 [project.optional-dependencies]

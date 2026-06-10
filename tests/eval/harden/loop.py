@@ -47,6 +47,7 @@ from pathlib import Path
 from rich.markup import escape
 
 from config.settings import DEFAULT_GRADER
+from harden import charts
 from harden.auditor import Auditor
 from harden.promptfoo_eval import measure_candidate
 from harden.proposer import Proposer
@@ -379,6 +380,10 @@ async def optimize(
     log(f"  token reference (per question, from baseline): "
         f"{ {q: int(t) for q, t in sorted(refs.items())} }")
     baseline_traces = run_root / "baseline" / "traces"
+    charts.record(
+        run_root, round_n=0, label="baseline", accepted=None, reason="baseline",
+        result=baseline, log=log,
+    )
     result = OptimizeResult(baseline=baseline)
     pool: list[PoolEntry] = [PoolEntry("baseline", "", baseline, str(baseline_traces))]
     rng = random.Random(seed)
@@ -390,6 +395,11 @@ async def optimize(
         n: int, accepted: bool, reason: str, after: CandidateResult, summary: str, parent: str
     ) -> None:
         result.rounds.append(_round(n, accepted, reason, baseline, after, summary))
+        charts.record(
+            run_root, round_n=n, label=f"round{n}", accepted=accepted, reason=reason,
+            result=after if after is not baseline else None,
+            summary=summary, parent=parent, log=log,
+        )
         outcome = (
             f"CHAMPION (score {baseline.score:.3f} -> {after.score:.3f})"
             if accepted
