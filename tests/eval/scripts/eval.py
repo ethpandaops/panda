@@ -60,7 +60,13 @@ def _parse_args() -> argparse.Namespace:
         "--grader", default="", help="promptfoo grading provider (default openrouter:<judge-model>)"
     )
     ap.add_argument("--concurrency", type=int, default=6, help="max agent runs in flight")
-    ap.add_argument("--subject-timeout", type=float, default=180.0)
+    ap.add_argument(
+        "--subject-timeout",
+        type=float,
+        default=300.0,
+        help="per-question agent timeout (seconds; CI-friendly default — harden uses "
+        "a much longer one so slow runs are measured, not crashed)",
+    )
     ap.add_argument(
         "--min-pass", type=float, default=1.0, help="min pass-rate to exit 0 (default 1.0 = all)"
     )

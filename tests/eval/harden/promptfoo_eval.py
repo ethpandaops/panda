@@ -134,11 +134,17 @@ async def measure(
     run_dir: str,
     grader: str = DEFAULT_GRADER,
     concurrency: int = 6,
-    worker_timeout_ms: int = 600000,
+    worker_timeout_ms: int | None = None,
     subject_timeout: int = 300,
     cwd: str | None = None,
 ) -> list[PfRun]:
-    """Run the cases × subjects × K through promptfoo and parse back graded runs."""
+    """Run the cases × subjects × K through promptfoo and parse back graded runs.
+
+    ``worker_timeout_ms`` (promptfoo's per-call kill switch) defaults to the subject
+    timeout plus slack — it must always outlast the subject's own timeout, or promptfoo
+    kills runs the subject would have finished (or cleanly timed out) itself."""
+    if worker_timeout_ms is None:
+        worker_timeout_ms = (subject_timeout + 120) * 1000
     rd = Path(run_dir)
     rd.mkdir(parents=True, exist_ok=True)
     cfg_path = rd / "promptfooconfig.json"

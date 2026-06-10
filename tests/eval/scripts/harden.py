@@ -114,7 +114,14 @@ def main() -> None:
         help="runs per (question, subject) — averages out effort variance",
     )
     ap.add_argument("--show", type=int, default=12, help="how many worst runs to show the proposer")
-    ap.add_argument("--subject-timeout", type=float, default=180.0)
+    ap.add_argument(
+        "--subject-timeout",
+        type=float,
+        default=1800.0,
+        help="per-question agent timeout (seconds). Generous on purpose: a flailing "
+        "agent should be MEASURED (it burns tokens and scores low), not crashed "
+        "(score-0 noise that contaminates the gates).",
+    )
     ap.add_argument("--proposer-timeout", type=float, default=1800.0)
     ap.add_argument("--port", type=int, default=2481, help="scratch panda-server port")
     ap.add_argument("--concurrency", type=int, default=6, help="max agent runs in flight at once")
