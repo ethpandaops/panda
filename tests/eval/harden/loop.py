@@ -294,7 +294,6 @@ async def optimize(
     prescreen: int = 3,
     audit_retries: int = 3,
     seed: int = 1234,
-    post_measure: Callable[[], None] | None = None,
     log: Callable[[str], None] = print,
 ) -> OptimizeResult:
     """Run the optimization loop. ``apply`` rebuilds+restarts the harness so a fresh
@@ -353,22 +352,18 @@ async def optimize(
         kk = k_override or k
         n = sum(1 + len(q.variations) for q in qs) * len(subject_specs) * kk
         log(f"  measuring {label}: {n} runs ({len(subject_specs)} subj x k={kk}) via promptfoo...")
-        try:
-            return await measure_candidate(
-                qs,
-                subject_specs,
-                k=kk,
-                run_dir=str(run_root / label),
-                refs=refs,
-                steepness=steepness,
-                grader=grader,
-                concurrency=concurrency,
-                subject_timeout=subject_timeout,
-                cwd=cwd,
-            )
-        finally:
-            if post_measure is not None:
-                post_measure()  # env hook: e.g. tear down the agents' sandbox sessions
+        return await measure_candidate(
+            qs,
+            subject_specs,
+            k=kk,
+            run_dir=str(run_root / label),
+            refs=refs,
+            steepness=steepness,
+            grader=grader,
+            concurrency=concurrency,
+            subject_timeout=subject_timeout,
+            cwd=cwd,
+        )
 
     log("rebuilding harness (baseline)...")
     apply()

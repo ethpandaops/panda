@@ -121,9 +121,11 @@ class ScratchServer:
 
 
 def purge_sessions(port: int) -> int:
-    """Destroy ALL sandbox sessions on the scratch server (it serves only this eval), so
-    agents' containers are torn down as soon as their runs conclude instead of idling
-    out a 30m TTL. Best-effort: a dead/unreachable server just means nothing to purge."""
+    """Destroy all remaining sandbox sessions on the SCRATCH server, called only as it
+    shuts down — its containers would otherwise outlive it as orphans (per-agent
+    teardown in the provider handles the during-run case; this is the final sweep of a
+    dying server, never a server anyone else uses). Best-effort: a dead/unreachable
+    server just means nothing to purge."""
     base = f"http://localhost:{port}/api/v1/sessions"
     try:
         with urllib.request.urlopen(base, timeout=10) as r:  # noqa: S310
