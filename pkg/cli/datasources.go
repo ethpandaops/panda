@@ -96,6 +96,8 @@ func runDatasources(cmd *cobra.Command, _ []string) error {
 
 	printTable(headers, rows)
 
+	fmt.Println("\nDataset placements and notes: panda datasets · descriptions: panda datasources --details")
+
 	return nil
 }
 
