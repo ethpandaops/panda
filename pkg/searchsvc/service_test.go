@@ -182,7 +182,7 @@ func TestSearchExamplesNilIndex(t *testing.T) {
 
 	svc := New(nil, nil, nil, nil, nil, nil, nil, nil)
 
-	_, err := svc.SearchExamples("query", "", 3)
+	_, err := svc.SearchExamples("query", "", "", 3)
 	require.Error(t, err)
 }
 
@@ -206,7 +206,7 @@ func TestSearchExamplesScoreAndCategoryFilter(t *testing.T) {
 		searcher := &stubExampleSearcher{results: results}
 		svc := New(searcher, newExampleRegistry(t, categories), nil, nil, nil, nil, nil, nil)
 
-		resp, err := svc.SearchExamples("q", "", 5)
+		resp, err := svc.SearchExamples("q", "", "", 5)
 		require.NoError(t, err)
 
 		assert.Len(t, resp.Results, 2)
@@ -226,7 +226,7 @@ func TestSearchExamplesScoreAndCategoryFilter(t *testing.T) {
 		searcher := &stubExampleSearcher{results: results}
 		svc := New(searcher, newExampleRegistry(t, categories), nil, nil, nil, nil, nil, nil)
 
-		resp, err := svc.SearchExamples("q", "blocks", 4)
+		resp, err := svc.SearchExamples("q", "blocks", "", 4)
 		require.NoError(t, err)
 
 		require.Len(t, resp.Results, 1)
@@ -235,13 +235,56 @@ func TestSearchExamplesScoreAndCategoryFilter(t *testing.T) {
 		assert.Equal(t, 4*exampleFilterOverscan, searcher.lastLimit)
 	})
 
+	t.Run("dataset filter restricts results and overscans", func(t *testing.T) {
+		t.Parallel()
+
+		stamped := []resource.SearchResult{
+			{CategoryKey: "blocks", CategoryName: "Blocks", Example: types.Example{Name: "raw", Target: "clickhouse-raw", Dataset: "xatu-raw"}, Score: 0.9},
+			{CategoryKey: "blocks", CategoryName: "Blocks", Example: types.Example{Name: "cbt", Target: "clickhouse-refined", Dataset: "xatu-cbt"}, Score: 0.8},
+		}
+		stampedCategories := map[string]types.ExampleCategory{
+			"blocks": {Name: "Blocks", Examples: []types.Example{
+				{Name: "raw", Dataset: "xatu-raw"},
+				{Name: "cbt", Dataset: "xatu-cbt"},
+			}},
+		}
+
+		searcher := &stubExampleSearcher{results: stamped}
+		svc := New(searcher, newExampleRegistry(t, stampedCategories), nil, nil, nil, nil, nil, nil)
+
+		resp, err := svc.SearchExamples("q", "", "xatu-cbt", 4)
+		require.NoError(t, err)
+
+		require.Len(t, resp.Results, 1)
+		assert.Equal(t, "cbt", resp.Results[0].ExampleName)
+		assert.Equal(t, "xatu-cbt", resp.Results[0].Dataset)
+		assert.Equal(t, "xatu-cbt", resp.DatasetFilter)
+		assert.Equal(t, 4*exampleFilterOverscan, searcher.lastLimit)
+	})
+
+	t.Run("unknown dataset errors with available list", func(t *testing.T) {
+		t.Parallel()
+
+		stampedCategories := map[string]types.ExampleCategory{
+			"blocks": {Name: "Blocks", Examples: []types.Example{{Name: "raw", Dataset: "xatu-raw"}}},
+		}
+
+		searcher := &stubExampleSearcher{}
+		svc := New(searcher, newExampleRegistry(t, stampedCategories), nil, nil, nil, nil, nil, nil)
+
+		_, err := svc.SearchExamples("q", "", "nope", 3)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unknown dataset")
+		assert.Contains(t, err.Error(), "xatu-raw")
+	})
+
 	t.Run("unknown category errors", func(t *testing.T) {
 		t.Parallel()
 
 		searcher := &stubExampleSearcher{results: results}
 		svc := New(searcher, newExampleRegistry(t, categories), nil, nil, nil, nil, nil, nil)
 
-		_, err := svc.SearchExamples("q", "missing", 3)
+		_, err := svc.SearchExamples("q", "missing", "", 3)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "unknown category")
 	})
@@ -252,7 +295,7 @@ func TestSearchExamplesScoreAndCategoryFilter(t *testing.T) {
 		searcher := &stubExampleSearcher{results: results}
 		svc := New(searcher, newExampleRegistry(t, categories), nil, nil, nil, nil, nil, nil)
 
-		resp, err := svc.SearchExamples("q", "", 1)
+		resp, err := svc.SearchExamples("q", "", "", 1)
 		require.NoError(t, err)
 		assert.Len(t, resp.Results, 1)
 	})
@@ -263,7 +306,7 @@ func TestSearchExamplesScoreAndCategoryFilter(t *testing.T) {
 		searcher := &stubExampleSearcher{err: fmt.Errorf("boom")}
 		svc := New(searcher, newExampleRegistry(t, categories), nil, nil, nil, nil, nil, nil)
 
-		_, err := svc.SearchExamples("q", "", 3)
+		_, err := svc.SearchExamples("q", "", "", 3)
 		require.Error(t, err)
 	})
 }

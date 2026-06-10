@@ -1,5 +1,3 @@
-## xatu-raw — Raw Ethereum events
-
 Raw, unaggregated event data — one row per observation. Typically served by the `clickhouse-raw` datasource.
 
 - **Table syntax:** `FROM table_name` (single database).

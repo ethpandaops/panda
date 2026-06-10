@@ -1,6 +1,7 @@
 package datasets
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -211,6 +212,91 @@ func TestGettingStartedCoversAllPacks(t *testing.T) {
 	for _, want := range []string{"xatu-raw", "xatu-cbt", "otel-logs"} {
 		if !strings.Contains(gs, want) {
 			t.Errorf("getting-started snippet missing pack heading %q", want)
+		}
+	}
+}
+
+func TestExamplesStampedWithDataset(t *testing.T) {
+	m := newLoaded(t)
+
+	for key, cat := range m.Examples() {
+		for _, ex := range cat.Examples {
+			if ex.Dataset == "" {
+				t.Fatalf("category %q example %q has no dataset stamp", key, ex.Name)
+			}
+		}
+	}
+}
+
+func TestGettingStartedIsIndexNotFullContent(t *testing.T) {
+	m := newLoaded(t)
+	gs := m.GettingStartedSnippet()
+
+	for _, want := range []string{"xatu-raw", "xatu-cbt", "otel-logs", "datasets://"} {
+		if !strings.Contains(gs, want) {
+			t.Errorf("getting-started index missing %q", want)
+		}
+	}
+
+	// Full pack bodies live behind datasets://{name}, not in the guide.
+	if strings.Contains(gs, "Table syntax") {
+		t.Error("getting-started should be an index, not contain full pack guidance")
+	}
+
+	if len(gs) > 2048 {
+		t.Errorf("getting-started index is %d bytes; expected a compact index (<2KB)", len(gs))
+	}
+}
+
+func TestDatasetDetailResource(t *testing.T) {
+	m := newLoaded(t)
+
+	if err := m.InitFromDiscovery([]types.DatasourceInfo{
+		{
+			Type: "clickhouse",
+			Name: "clickhouse-raw",
+			Contents: []types.DatasetBinding{
+				{Dataset: "otel-logs", Params: map[string]string{"database": "external"}, Notes: "hosted logs"},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("InitFromDiscovery() error = %v", err)
+	}
+
+	out, err := m.handleDatasetDetail(context.Background(), "datasets://otel-logs")
+	if err != nil {
+		t.Fatalf("handleDatasetDetail() error = %v", err)
+	}
+
+	for _, want := range []string{
+		"# otel-logs —",
+		"clickhouse-raw",
+		"database=external",
+		"hosted logs",
+		"{db}.otel_logs",
+		`search(type="examples", dataset="otel-logs"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("dataset guide missing %q", want)
+		}
+	}
+
+	if _, err := m.handleDatasetDetail(context.Background(), "datasets://nope"); err == nil {
+		t.Error("expected error for unknown dataset")
+	}
+}
+
+func TestDatasetsListResource(t *testing.T) {
+	m := newLoaded(t)
+
+	out, err := m.handleDatasetsList(context.Background(), "datasets://list")
+	if err != nil {
+		t.Fatalf("handleDatasetsList() error = %v", err)
+	}
+
+	for _, want := range []string{"xatu-raw", "xatu-cbt", "otel-logs", `"active": true`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("datasets list missing %q", want)
 		}
 	}
 }

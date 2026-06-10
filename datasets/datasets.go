@@ -28,19 +28,30 @@ var (
 	_ module.SchemaResolverAware           = (*Module)(nil)
 	_ module.ExamplesProvider              = (*Module)(nil)
 	_ module.GettingStartedSnippetProvider = (*Module)(nil)
+	_ module.ResourceProvider              = (*Module)(nil)
 )
 
 //go:embed */manifest.yaml */examples.yaml */getting-started.md
 var packFS embed.FS
 
 type manifest struct {
-	Name string `yaml:"name"`
+	Name        string `yaml:"name"`
+	Description string `yaml:"description"`
 }
 
 type pack struct {
-	name           string
+	name        string
+	description string
+	// examples are stamped with Dataset = pack name at load time.
 	examples       map[string]types.ExampleCategory
 	gettingStarted string
+}
+
+// placement records that a discovered datasource declared this dataset.
+type placement struct {
+	Datasource string            `json:"datasource"`
+	Params     map[string]string `json:"params,omitempty"`
+	Notes      string            `json:"notes,omitempty"`
 }
 
 // Module contributes dataset knowledge packs (examples + getting-started) to the
@@ -57,6 +68,9 @@ type Module struct {
 	// active is the set of dataset names declared by discovered datasources. A
 	// nil/empty set means "show all packs".
 	active map[string]bool
+	// placements maps dataset name -> the datasources that declared it, with
+	// their params and notes. Rebuilt on every discovery refresh.
+	placements map[string][]placement
 	// resolver validates example table references against the live schema.
 	// When nil, examples are not schema-validated.
 	resolver module.SchemaResolver
@@ -108,22 +122,30 @@ func (m *Module) SetSchemaResolver(resolver module.SchemaResolver) {
 }
 
 // InitFromDiscovery scopes the exposed packs to the datasets declared by
-// discovered datasources (via their Contents bindings). Always returns nil: the
-// packs ship with the release, so the module is always active. When no
-// datasource declares any dataset, the active set stays empty and all packs are
-// shown.
+// discovered datasources (via their Contents bindings) and records where each
+// dataset lives. Always returns nil: the packs ship with the release, so the
+// module is always active. When no datasource declares any dataset, the active
+// set stays empty and all packs are shown.
 func (m *Module) InitFromDiscovery(datasources []types.DatasourceInfo) error {
 	if err := m.ensureLoaded(); err != nil {
 		return err
 	}
 
 	active := make(map[string]bool, 4)
+	placements := make(map[string][]placement, 4)
 
 	for _, ds := range datasources {
 		for _, b := range ds.Contents {
-			if b.Dataset != "" {
-				active[b.Dataset] = true
+			if b.Dataset == "" {
+				continue
 			}
+
+			active[b.Dataset] = true
+			placements[b.Dataset] = append(placements[b.Dataset], placement{
+				Datasource: ds.Name,
+				Params:     b.Params,
+				Notes:      b.Notes,
+			})
 		}
 	}
 
@@ -155,6 +177,7 @@ func (m *Module) InitFromDiscovery(datasources []types.DatasourceInfo) error {
 	}
 
 	m.active = active
+	m.placements = placements
 	m.mu.Unlock()
 
 	return nil
@@ -213,6 +236,12 @@ func loadPack(dir string) (pack, error) {
 		p.name = mf.Name
 	}
 
+	if mf.Description == "" {
+		return p, fmt.Errorf("manifest description is required (rendered as the pack's section heading)")
+	}
+
+	p.description = mf.Description
+
 	exampleBytes, err := packFS.ReadFile(dir + "/examples.yaml")
 	if err != nil {
 		return p, fmt.Errorf("reading examples: %w", err)
@@ -222,12 +251,22 @@ func loadPack(dir string) (pack, error) {
 		return p, fmt.Errorf("parsing examples: %w", err)
 	}
 
+	// Stamp pack identity on every example so downstream consumers (search
+	// filtering, result display) know which dataset an example belongs to.
+	for key, cat := range p.examples {
+		for i := range cat.Examples {
+			cat.Examples[i].Dataset = p.name
+		}
+
+		p.examples[key] = cat
+	}
+
 	gsBytes, err := packFS.ReadFile(dir + "/getting-started.md")
 	if err != nil {
 		return p, fmt.Errorf("reading getting-started: %w", err)
 	}
 
-	p.gettingStarted = string(gsBytes)
+	p.gettingStarted = strings.TrimSpace(string(gsBytes))
 
 	return p, nil
 }
@@ -254,6 +293,14 @@ func (m *Module) activePacks() []pack {
 	}
 
 	return out
+}
+
+// packPlacements returns where the named dataset lives in this deployment.
+func (m *Module) packPlacements(name string) []placement {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	return m.placements[name]
 }
 
 // Examples aggregates query examples across the active packs. Categories that
@@ -306,6 +353,41 @@ func (m *Module) Examples() map[string]types.ExampleCategory {
 	}
 
 	return result
+}
+
+// GettingStartedSnippet renders a compact index of the datasets exposed in this
+// deployment: name, description, where each lives, and the pointer to its full
+// guide. The guide content itself lives behind datasets://{name} so the
+// always-read getting-started stays a map, not an encyclopedia.
+func (m *Module) GettingStartedSnippet() string {
+	packs := m.activePacks()
+	if len(packs) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+
+	b.WriteString("## Datasets\n\n")
+	b.WriteString("Datasets available in this deployment. **Read `datasets://<name>` before querying a dataset** — it contains required syntax rules and placement.\n\n")
+
+	for _, p := range packs {
+		fmt.Fprintf(&b, "- **%s** — %s", p.name, p.description)
+
+		if placements := m.packPlacements(p.name); len(placements) > 0 {
+			names := make([]string, 0, len(placements))
+			for _, pl := range placements {
+				names = append(names, "`"+pl.Datasource+"`")
+			}
+
+			fmt.Fprintf(&b, " (in %s)", strings.Join(names, ", "))
+		}
+
+		b.WriteString("\n")
+	}
+
+	b.WriteString("\nFull placement detail (params, operator notes): `datasources://clickhouse`.\n")
+
+	return b.String()
 }
 
 // exampleValidator returns a function reporting which of an example's table
@@ -364,24 +446,4 @@ func (m *Module) logDropped(ex types.Example, missing []string) {
 		"target":         ex.Target,
 		"missing_tables": missing,
 	}).Warn("Hiding example: it references tables absent from the live schema (likely schema drift)")
-}
-
-// GettingStartedSnippet concatenates the per-pack getting-started guidance for
-// the active packs.
-func (m *Module) GettingStartedSnippet() string {
-	var b strings.Builder
-
-	for _, p := range m.activePacks() {
-		if p.gettingStarted == "" {
-			continue
-		}
-
-		if b.Len() > 0 {
-			b.WriteString("\n")
-		}
-
-		b.WriteString(p.gettingStarted)
-	}
-
-	return b.String()
 }

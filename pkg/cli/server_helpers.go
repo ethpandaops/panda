@@ -247,10 +247,13 @@ func destroySession(ctx context.Context, sessionID string) error {
 	return serverDelete(ctx, "/api/v1/sessions/"+url.PathEscape(sessionID))
 }
 
-func searchExamples(ctx context.Context, queryText, category string, limit int) (*serverapi.SearchExamplesResponse, error) {
+func searchExamples(ctx context.Context, queryText, category, dataset string, limit int) (*serverapi.SearchExamplesResponse, error) {
 	query := url.Values{"query": []string{queryText}}
 	if category != "" {
 		query.Set("category", category)
+	}
+	if dataset != "" {
+		query.Set("dataset", dataset)
 	}
 	if limit > 0 {
 		query.Set("limit", fmt.Sprintf("%d", limit))

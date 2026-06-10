@@ -1,1 +1,2 @@
 name: xatu-raw
+description: Raw Ethereum events captured by Xatu (one row per observation)

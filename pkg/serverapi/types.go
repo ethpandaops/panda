@@ -82,6 +82,7 @@ type SearchExampleResult struct {
 	Description     string  `json:"description"`
 	Query           string  `json:"query"`
 	Target          string  `json:"target"`
+	Dataset         string  `json:"dataset,omitempty"`
 	SimilarityScore float64 `json:"similarity_score"`
 }
 

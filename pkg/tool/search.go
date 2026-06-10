@@ -23,6 +23,7 @@ Examples:
 - search(query="blob propagation getBlobs")
 - search(query="validator performance")
 - search(type="examples", query="block", category="validators")
+- search(type="examples", query="error logs", dataset="otel-logs")
 - search(type="runbooks", query="network not finalizing", tag="finality")
 - search(type="eips", query="account abstraction", status="Final")
 - search(type="consensus-specs", query="MAX_EFFECTIVE_BALANCE")
@@ -67,6 +68,10 @@ func NewSearchTool(
 					"category": map[string]any{
 						"type":        "string",
 						"description": "Optional for type='examples': filter to a specific category (e.g., 'attestations', 'block_events')",
+					},
+					"dataset": map[string]any{
+						"type":        "string",
+						"description": "Optional for type='examples': filter to a specific dataset (e.g., 'xatu-raw', 'xatu-cbt', 'otel-logs'). See datasets://list.",
 					},
 					"tag": map[string]any{
 						"type":        "string",
@@ -165,6 +170,7 @@ func (h *searchHandler) searchExamples(
 	response, err := h.service.SearchExamples(
 		query,
 		request.GetString("category", ""),
+		request.GetString("dataset", ""),
 		request.GetInt("limit", searchsvc.DefaultSearchLimit),
 	)
 	if err != nil {
@@ -191,6 +197,10 @@ func (h *searchHandler) searchRunbooks(
 ) (*mcp.CallToolResult, error) {
 	if category := request.GetString("category", ""); category != "" {
 		return CallToolError(fmt.Errorf("category is only supported for type=%q", searchsvc.SearchTypeExamples)), nil
+	}
+
+	if dataset := request.GetString("dataset", ""); dataset != "" {
+		return CallToolError(fmt.Errorf("dataset is only supported for type=%q", searchsvc.SearchTypeExamples)), nil
 	}
 
 	response, err := h.service.SearchRunbooks(
@@ -228,6 +238,10 @@ func (h *searchHandler) searchEIPs(
 		return CallToolError(fmt.Errorf("category is only supported for type=%q", searchsvc.SearchTypeExamples)), nil
 	}
 
+	if dataset := request.GetString("dataset", ""); dataset != "" {
+		return CallToolError(fmt.Errorf("dataset is only supported for type=%q", searchsvc.SearchTypeExamples)), nil
+	}
+
 	response, err := h.service.SearchEIPs(
 		query,
 		request.GetString("status", ""),
@@ -263,6 +277,10 @@ func (h *searchHandler) searchSpecs(
 
 	if category := request.GetString("category", ""); category != "" {
 		return CallToolError(fmt.Errorf("category is only supported for type=%q", searchsvc.SearchTypeExamples)), nil
+	}
+
+	if dataset := request.GetString("dataset", ""); dataset != "" {
+		return CallToolError(fmt.Errorf("dataset is only supported for type=%q", searchsvc.SearchTypeExamples)), nil
 	}
 
 	response, err := h.service.SearchSpecs(

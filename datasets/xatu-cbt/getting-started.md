@@ -1,5 +1,3 @@
-## xatu-cbt — Pre-aggregated Xatu analytics
-
 CBT-transformed, pre-aggregated tables. Typically served by the `clickhouse-refined` datasource.
 
 - **Table syntax:** `FROM {network}.table_name` — there is one database per network (`mainnet`, `holesky`, …), and the database prefix **is** the network filter.

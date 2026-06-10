@@ -130,29 +130,9 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 func (m *Module) GettingStartedSnippet() string {
 	return `## Ethereum Node API (Direct Access)
 
-Query individual beacon and execution nodes directly. Useful for checking sync status,
-peer counts, finality checkpoints, and comparing state across nodes during devnet debugging.
-
-Node instances follow the naming convention: ` + "`{client_cl}-{client_el}-{index}`" + ` (e.g., "lighthouse-geth-1").
-
-` + "```python" + `
-from ethpandaops import ethnode
-
-# Check beacon node sync status
-syncing = ethnode.get_node_syncing("my-devnet", "lighthouse-geth-1")
-print(f"Head slot: {syncing['data']['head_slot']}")
-
-# Check EL block number
-block_num = ethnode.eth_block_number("my-devnet", "lighthouse-geth-1")
-print(f"Latest block: {block_num}")
-
-# Check finality
-checkpoints = ethnode.get_finality_checkpoints("my-devnet", "lighthouse-geth-1")
-print(f"Finalized epoch: {checkpoints['data']['finalized']['epoch']}")
-
-# Generic beacon API call
-identity = ethnode.beacon_get("my-devnet", "lighthouse-geth-1", "/eth/v1/node/identity")
-` + "```" + `
+Query individual beacon/execution nodes (sync status, peers, finality, generic
+beacon/EL calls) via the ` + "`ethnode`" + ` Python module. Instances are named
+` + "`{client_cl}-{client_el}-{index}`" + ` (e.g. "lighthouse-geth-1"). Functions: ` + "`python://ethpandaops`" + `.
 `
 }
 

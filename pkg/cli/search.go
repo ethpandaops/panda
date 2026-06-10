@@ -13,6 +13,7 @@ import (
 var (
 	searchAllLimit        int
 	searchExampleCategory string
+	searchExampleDataset  string
 	searchExampleLimit    int
 	searchRunbookTag      string
 	searchRunbookLimit    int
@@ -84,6 +85,7 @@ func init() {
 	searchCmd.ValidArgsFunction = noCompletions
 
 	searchExamplesCmd.Flags().StringVar(&searchExampleCategory, "category", "", "Filter by category")
+	searchExamplesCmd.Flags().StringVar(&searchExampleDataset, "dataset", "", "Filter by dataset (e.g. xatu-raw, otel-logs)")
 	searchExamplesCmd.Flags().IntVar(&searchExampleLimit, "limit", 3, "Max results (default: 3, max: 10)")
 	searchExamplesCmd.ValidArgsFunction = noCompletions
 
@@ -127,7 +129,7 @@ func runSearchAll(cmd *cobra.Command, args []string) error {
 
 	go func() {
 		defer wg.Done()
-		examplesResp, examplesErr = searchExamples(ctx, query, "", searchAllLimit)
+		examplesResp, examplesErr = searchExamples(ctx, query, "", "", searchAllLimit)
 	}()
 
 	go func() {
@@ -248,7 +250,7 @@ func runSearchAll(cmd *cobra.Command, args []string) error {
 }
 
 func runSearchExamples(cmd *cobra.Command, args []string) error {
-	response, err := searchExamples(cmd.Context(), args[0], searchExampleCategory, searchExampleLimit)
+	response, err := searchExamples(cmd.Context(), args[0], searchExampleCategory, searchExampleDataset, searchExampleLimit)
 	if err != nil {
 		return err
 	}

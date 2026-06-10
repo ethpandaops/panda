@@ -116,24 +116,8 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 func (m *Module) GettingStartedSnippet() string {
 	return `## Dora Beacon Chain Explorer
 
-Query the Dora beacon chain explorer for network status, validators, and slots.
-Generate deep links to view data in the Dora web UI.
-
-` + "```python" + `
-from ethpandaops import dora
-
-# List networks with Dora explorers
-networks = dora.list_networks()
-
-# Get network overview
-overview = dora.get_network_overview("hoodi")
-print(f"Current epoch: {overview['current_epoch']}")
-
-# Look up a validator and get a deep link
-validator = dora.get_validator("hoodi", "12345")
-link = dora.link_validator("hoodi", "12345")
-print(f"View in Dora: {link}")
-` + "```" + `
+Network status, validators, slots, and deep links into the Dora web UI via the
+` + "`dora`" + ` Python module. Functions: ` + "`python://ethpandaops`" + `; patterns: search(type="examples").
 `
 }
 

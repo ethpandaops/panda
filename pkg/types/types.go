@@ -48,6 +48,9 @@ type Example struct {
 	// Target identifies the datasource the example runs against: a ClickHouse
 	// cluster name, or a Prometheus/Loki datasource name.
 	Target string `json:"target" yaml:"target"`
+	// Dataset is the knowledge pack the example ships in (e.g. xatu-raw). It is
+	// stamped by the datasets module at load time, never authored in YAML.
+	Dataset string `json:"dataset,omitempty" yaml:"-"`
 }
 
 // ModuleDoc describes a module in the Python library.

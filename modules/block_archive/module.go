@@ -121,42 +121,11 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 func (m *Module) GettingStartedSnippet() string {
 	return `## Block Archive
 
-Fetch raw canonical beacon blocks by (network, slot, block_root). Source the
-(slot, block_root) pairs from clickhouse, then pull the raw payload from the
-archive when you need the SSZ or decoded JSON.
-
-The archive serves mainnet, sepolia, hoodi, plus a rotating set of active
-devnets discovered from cartographoor. Inactive devnets keep their archived
-history available — pass active_only=False to ` + "`list_networks`" + ` to see them.
-
-The decoded-JSON endpoint needs a known fork schedule, which only exists for
-mainnet/sepolia/hoodi. For devnets use ` + "`download_ssz`" + ` and decode locally.
-
-` + "```python" + `
-from ethpandaops import block_archive, clickhouse
-
-# What's the archive currently polling?
-for n in block_archive.list_networks():
-    print(n["name"], n["status"], "polling" if n["polling"] else "")
-
-# Look up a recent block_root for a slot from clickhouse-raw.
-df = clickhouse.query("clickhouse-raw", """
-    SELECT slot, block_root
-    FROM beacon_api_eth_v1_events_block
-    WHERE meta_network_name = 'mainnet'
-    ORDER BY slot DESC
-    LIMIT 1
-""")
-slot = int(df.iloc[0]["slot"])
-root = df.iloc[0]["block_root"]
-
-# Decoded JSON (mainnet/sepolia/hoodi only).
-block = block_archive.get_block_json("mainnet", slot, root)
-print(block["block"]["message"]["proposer_index"])
-
-# Raw SSZ bytes — works for every archived network including devnets.
-raw = block_archive.download_ssz("mainnet", slot, root)
-` + "```" + `
+Raw canonical beacon blocks by (network, slot, block_root) via the ` + "`block_archive`" + `
+Python module — source the pairs from clickhouse first. Decoded JSON exists only for
+networks with a known fork schedule (mainnet/sepolia/hoodi); for devnets use
+` + "`download_ssz`" + ` and decode locally. Inactive devnets stay archived — pass
+active_only=False to ` + "`list_networks`" + `. Functions: ` + "`python://ethpandaops`" + `.
 `
 }
 

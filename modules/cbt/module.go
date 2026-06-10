@@ -121,28 +121,8 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 func (m *Module) GettingStartedSnippet() string {
 	return `## CBT (ClickHouse Build Tool)
 
-Query CBT for data model metadata, transformation status, coverage, and bounds.
-Generate deep links to view models in the CBT web UI.
-
-` + "```python" + `
-from ethpandaops import cbt
-
-# List networks with CBT instances
-networks = cbt.list_networks()
-
-# List all models for a network
-models = cbt.list_models("mainnet")
-print(f"Total models: {len(models)}")
-
-# Check transformation coverage
-coverage = cbt.get_transformation_coverage("mainnet")
-for c in coverage:
-    print(f"  {c.get('id')}: {c}")
-
-# Generate a deep link to a model
-link = cbt.link_model("mainnet", "default.beacon_api_eth_v1_events_block")
-print(f"View in CBT: {link}")
-` + "```" + `
+Data-model metadata, transformation status/coverage, and deep links into the CBT
+web UI via the ` + "`cbt`" + ` Python module. Functions: ` + "`python://ethpandaops`" + `.
 `
 }
 

@@ -1,5 +1,3 @@
-## otel-logs — Container/process logs in ClickHouse
-
 OpenTelemetry logs stored in ClickHouse, table `{db}.otel_logs`. The database differs per deployment: resolve `{db}` from the datasource's otel-logs dataset params (`database: ...` in `datasources://` or the sandbox datasource env), falling back to the datasource's default database.
 
 Two common locations:

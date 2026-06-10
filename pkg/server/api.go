@@ -131,7 +131,7 @@ func (s *service) handleAPISearchExamples(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	resp, err := s.searchService.SearchExamples(query, r.URL.Query().Get("category"), limit)
+	resp, err := s.searchService.SearchExamples(query, r.URL.Query().Get("category"), r.URL.Query().Get("dataset"), limit)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return

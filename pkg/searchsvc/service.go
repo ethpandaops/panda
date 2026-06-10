@@ -78,6 +78,7 @@ type SearchExampleResult struct {
 	Description     string  `json:"description"`
 	Query           string  `json:"query"`
 	Target          string  `json:"target"`
+	Dataset         string  `json:"dataset,omitempty"`
 	SimilarityScore float64 `json:"similarity_score"`
 }
 
@@ -85,6 +86,7 @@ type SearchExamplesResponse struct {
 	Type                string                 `json:"type"`
 	Query               string                 `json:"query"`
 	CategoryFilter      string                 `json:"category_filter,omitempty"`
+	DatasetFilter       string                 `json:"dataset_filter,omitempty"`
 	TotalMatches        int                    `json:"total_matches"`
 	Results             []*SearchExampleResult `json:"results"`
 	AvailableCategories []string               `json:"available_categories"`
@@ -226,7 +228,7 @@ func NormalizeSearchType(searchType string) (string, error) {
 	}
 }
 
-func (s *Service) SearchExamples(query, categoryFilter string, limit int) (*SearchExamplesResponse, error) {
+func (s *Service) SearchExamples(query, categoryFilter, datasetFilter string, limit int) (*SearchExamplesResponse, error) {
 	if s.exampleIndex == nil {
 		return nil, fmt.Errorf("example search index not available")
 	}
@@ -235,8 +237,16 @@ func (s *Service) SearchExamples(query, categoryFilter string, limit int) (*Sear
 
 	examples := resource.GetQueryExamples(s.moduleReg)
 	categories := make([]string, 0, len(examples))
-	for key := range examples {
+	datasets := make(map[string]bool, 4)
+
+	for key, cat := range examples {
 		categories = append(categories, key)
+
+		for _, ex := range cat.Examples {
+			if ex.Dataset != "" {
+				datasets[ex.Dataset] = true
+			}
+		}
 	}
 
 	sort.Strings(categories)
@@ -251,8 +261,23 @@ func (s *Service) SearchExamples(query, categoryFilter string, limit int) (*Sear
 		}
 	}
 
+	if datasetFilter != "" && !datasets[datasetFilter] {
+		names := make([]string, 0, len(datasets))
+		for name := range datasets {
+			names = append(names, name)
+		}
+
+		sort.Strings(names)
+
+		return nil, fmt.Errorf(
+			"unknown dataset: %q. Available datasets: %s",
+			datasetFilter,
+			strings.Join(names, ", "),
+		)
+	}
+
 	searchLimit := limit
-	if categoryFilter != "" {
+	if categoryFilter != "" || datasetFilter != "" {
 		searchLimit = limit * exampleFilterOverscan
 	}
 
@@ -271,6 +296,10 @@ func (s *Service) SearchExamples(query, categoryFilter string, limit int) (*Sear
 			continue
 		}
 
+		if datasetFilter != "" && result.Example.Dataset != datasetFilter {
+			continue
+		}
+
 		searchResults = append(searchResults, &SearchExampleResult{
 			CategoryKey:     result.CategoryKey,
 			CategoryName:    result.CategoryName,
@@ -278,6 +307,7 @@ func (s *Service) SearchExamples(query, categoryFilter string, limit int) (*Sear
 			Description:     result.Example.Description,
 			Query:           result.Example.Query,
 			Target:          result.Example.Target,
+			Dataset:         result.Example.Dataset,
 			SimilarityScore: result.Score,
 		})
 
@@ -290,6 +320,7 @@ func (s *Service) SearchExamples(query, categoryFilter string, limit int) (*Sear
 		Type:                SearchTypeExamples,
 		Query:               query,
 		CategoryFilter:      categoryFilter,
+		DatasetFilter:       datasetFilter,
 		TotalMatches:        len(searchResults),
 		Results:             searchResults,
 		AvailableCategories: categories,
@@ -559,7 +590,7 @@ func (s *Service) SearchAll(query string, limit int) (*SearchAllResponse, error)
 	}
 
 	if s.exampleIndex != nil {
-		examples, err := s.SearchExamples(query, "", limit)
+		examples, err := s.SearchExamples(query, "", "", limit)
 		if err == nil {
 			resp.Examples = examples
 		}
