@@ -15,7 +15,10 @@ DEFAULT_SUBJECT = f"{DEFAULT_AGENT_MODEL}:{DEFAULT_AGENT_ROUTE}"
 # help BOTH (it can't overfit to one) — and two subjects double the confidence gate's cells.
 # Both ride the opencode-go provider, so one API key covers them (CI included).
 DEFAULT_SUBJECTS = [DEFAULT_SUBJECT, f"opencode-go/mimo-v2.5:{DEFAULT_AGENT_ROUTE}"]
-DEFAULT_EVALUATOR_MODEL = "google/gemini-3.1-flash-lite"
+# Judge quality matters more than judge cost (~$0.004/grade): the lite tier produced
+# false-negatives on clearly-correct answers, and a flaky judge contaminates the harden
+# gates. gpt-5.4-mini is a strong rubric-follower, family-distinct from the subjects.
+DEFAULT_EVALUATOR_MODEL = "openai/gpt-5.4-mini"
 # The promptfoo grading provider: the evaluator model via OpenRouter.
 DEFAULT_GRADER = f"openrouter:{DEFAULT_EVALUATOR_MODEL}"
 
