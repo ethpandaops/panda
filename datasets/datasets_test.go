@@ -208,6 +208,24 @@ func TestDatasetDetailResource(t *testing.T) {
 	}
 }
 
+func TestDatasetDetailResourceCLIContext(t *testing.T) {
+	m := newLoaded(t)
+
+	ctx := types.WithClientContext(context.Background(), types.ClientContextCLI)
+	out, err := m.handleDatasetDetail(ctx, "datasets://otel-logs")
+	if err != nil {
+		t.Fatalf("handleDatasetDetail() error = %v", err)
+	}
+
+	if !strings.Contains(out, `panda search examples --dataset otel-logs "<topic>"`) {
+		t.Errorf("CLI dataset guide missing search command, got:\n%s", out)
+	}
+
+	if strings.Contains(out, `search(type="examples"`) {
+		t.Errorf("CLI dataset guide should not use MCP tool-call syntax, got:\n%s", out)
+	}
+}
+
 func TestDatasetsListResource(t *testing.T) {
 	m := newLoaded(t)
 

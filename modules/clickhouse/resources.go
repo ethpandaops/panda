@@ -80,7 +80,7 @@ func RegisterSchemaResources(
 		Template: mcp.NewResourceTemplate(
 			"clickhouse://tables/{cluster}/{database}/{table_name}",
 			"ClickHouse Table Schema",
-			mcp.WithTemplateDescription("Full schema for a specific ClickHouse table identified by (cluster, database, table) — columns, types, comments, engine."),
+			mcp.WithTemplateDescription("Full schema for a specific ClickHouse table identified by (cluster, database, table) — columns, types, comments, engine, and key clauses."),
 			mcp.WithTemplateMIMEType("application/json"),
 			mcp.WithTemplateAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.6, ""),
 		),

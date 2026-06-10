@@ -100,7 +100,7 @@ type SearchRunbookResult struct {
 	Description     string   `json:"description"`
 	Tags            []string `json:"tags"`
 	Prerequisites   []string `json:"prerequisites"`
-	Content         string   `json:"content"`
+	Content         string   `json:"content,omitempty"`
 	FilePath        string   `json:"file_path"`
 	SimilarityScore float64  `json:"similarity_score"`
 }

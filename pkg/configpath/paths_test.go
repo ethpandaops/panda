@@ -26,6 +26,8 @@ func TestResolveAppConfigPath(t *testing.T) {
 	})
 
 	t.Run("generic CONFIG_PATH honored for app config", func(t *testing.T) {
+		t.Setenv("PANDA_CONFIG", "")
+		t.Setenv("ETHPANDAOPS_CONFIG", "")
 		t.Setenv("CONFIG_PATH", "/from/generic.yaml")
 
 		got, err := ResolveAppConfigPath("")
@@ -34,6 +36,9 @@ func TestResolveAppConfigPath(t *testing.T) {
 	})
 
 	t.Run("not found returns NotFoundError", func(t *testing.T) {
+		t.Setenv("PANDA_CONFIG", "")
+		t.Setenv("ETHPANDAOPS_CONFIG", "")
+		t.Setenv("CONFIG_PATH", "")
 		t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 		t.Setenv("HOME", t.TempDir())
 
@@ -59,6 +64,8 @@ func TestResolveProxyConfigPath(t *testing.T) {
 	})
 
 	t.Run("generic CONFIG_PATH does not leak into proxy resolution", func(t *testing.T) {
+		t.Setenv("PANDA_PROXY_CONFIG", "")
+		t.Setenv("ETHPANDAOPS_PROXY_CONFIG", "")
 		t.Setenv("CONFIG_PATH", "/from/app.yaml")
 		t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 		t.Setenv("HOME", t.TempDir())
