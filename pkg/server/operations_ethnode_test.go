@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/ethpandaops/cartographoor/pkg/discovery"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -116,35 +115,3 @@ func (p *ethNodeOperationProxy) EthNodeDatasourceInfo() []types.DatasourceInfo {
 }
 func (p *ethNodeOperationProxy) EmbeddingAvailable() bool { return false }
 func (p *ethNodeOperationProxy) EmbeddingModel() string   { return "" }
-
-type ethNodeOperationNetworks struct {
-	networks map[string]discovery.Network
-	groups   map[string]map[string]discovery.Network
-}
-
-func (n *ethNodeOperationNetworks) Start(_ context.Context) error { return nil }
-func (n *ethNodeOperationNetworks) Stop() error                   { return nil }
-func (n *ethNodeOperationNetworks) GetAllNetworks() map[string]discovery.Network {
-	return n.networks
-}
-func (n *ethNodeOperationNetworks) GetActiveNetworks() map[string]discovery.Network {
-	out := make(map[string]discovery.Network)
-	for name, network := range n.networks {
-		if network.Status == "active" {
-			out[name] = network
-		}
-	}
-
-	return out
-}
-func (n *ethNodeOperationNetworks) GetNetwork(name string) (discovery.Network, bool) {
-	network, ok := n.networks[name]
-
-	return network, ok
-}
-func (n *ethNodeOperationNetworks) GetGroup(name string) (map[string]discovery.Network, bool) {
-	group, ok := n.groups[name]
-
-	return group, ok
-}
-func (n *ethNodeOperationNetworks) GetGroups() []string { return nil }
