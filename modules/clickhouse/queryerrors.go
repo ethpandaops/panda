@@ -24,6 +24,9 @@ const (
 	// QueryErrorDatasourceNotFound: the referenced ClickHouse datasource does
 	// not exist.
 	QueryErrorDatasourceNotFound
+	// QueryErrorDistributedJoinDenied: ClickHouse rejected a distributed
+	// subquery or join under the datasource's distributed_product_mode.
+	QueryErrorDistributedJoinDenied
 )
 
 // ClassifyQueryError maps an upstream error message to a QueryErrorClass.
@@ -45,6 +48,9 @@ func ClassifyQueryError(message string) QueryErrorClass {
 		return QueryErrorSyntax
 	case strings.Contains(normalized, "clickhouse datasource") && strings.Contains(normalized, "not found"):
 		return QueryErrorDatasourceNotFound
+	case strings.Contains(normalized, "distributed_in_join_subquery_denied") ||
+		strings.Contains(normalized, "double-distributed in/join subqueries"):
+		return QueryErrorDistributedJoinDenied
 	}
 
 	return QueryErrorUnknown

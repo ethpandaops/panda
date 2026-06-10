@@ -74,10 +74,41 @@ func printKeyValue(pairs [][2]string) {
 	_ = w.Flush()
 }
 
-// printDatasourceList renders a datasource listing response under the
+// printDatasourceList renders a compact datasource listing response under the
 // "datasources" key. Shared across clickhouse, prometheus, and loki.
 func printDatasourceList(response *operations.Response) error {
-	return printListing(response, "datasources", "No datasources found.")
+	if isJSON() {
+		return printJSON(response)
+	}
+
+	data, _ := response.Data.(map[string]any)
+	items, _ := data["datasources"].([]any)
+
+	if len(items) == 0 {
+		fmt.Println("No datasources found.")
+
+		return nil
+	}
+
+	rows := make([][]string, 0, len(items))
+	for _, item := range items {
+		entry, _ := item.(map[string]any)
+		name, _ := entry["name"].(string)
+		dsType, _ := entry["type"].(string)
+		rows = append(rows, []string{dsType, name})
+	}
+
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i][0] != rows[j][0] {
+			return rows[i][0] < rows[j][0]
+		}
+
+		return rows[i][1] < rows[j][1]
+	})
+
+	printTable([]string{"TYPE", "NAME"}, rows)
+
+	return nil
 }
 
 // printListing renders a unified listing response (items with name,

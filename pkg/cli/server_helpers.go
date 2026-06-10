@@ -467,6 +467,8 @@ func serverErrorHint(status int, message string) string {
 		return "ClickHouse rejected the SQL syntax; confirm the datasource and dataset syntax with 'panda datasets <name>' and inspect the table with 'panda schema <cluster> <database> <table>'"
 	case clickhousemodule.QueryErrorDatasourceNotFound:
 		return "the first ClickHouse argument must be a datasource/cluster name; list them with 'panda datasources --type clickhouse' or 'panda clickhouse list-datasources'"
+	case clickhousemodule.QueryErrorDistributedJoinDenied:
+		return "ClickHouse denied a distributed subquery or join; prefer a single-table aggregate, add GLOBAL when appropriate, or resolve the small subquery first and pass literal filter values into the next query"
 	case clickhousemodule.QueryErrorUnknown:
 	}
 
