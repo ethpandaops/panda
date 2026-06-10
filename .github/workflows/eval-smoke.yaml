@@ -217,15 +217,13 @@ jobs:
           MCP_EVAL_LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           MCP_EVAL_LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
         run: |
-          # subject + judge default to the harness defaults (config/settings.py) — don't
-          # restate them here. --no-variations keeps smoke fast: canonical phrasings only
-          # (questions x subjects runs); the paraphrase sweep belongs to the harden loop.
-          # -k 2 + --per-question = smoke semantics: a question fails only if BOTH its
-          # runs fail (catches systemic breakage, tolerates a single agent flub).
-          # --concurrency 6: the local default (16) starves a 4-vCPU runner — agents +
-          # sandbox containers + server contend until runs fail in weird ways.
+          # Minimal smoke: one subject, canonical phrasings, k=1 — 4 runs that prove the
+          # pipeline works end to end. The multi-subject / paraphrase / repeat sweeps
+          # belong to the harden loop, not per-commit CI. --concurrency 6: the local
+          # default (16) starves a 4-vCPU runner.
           uv run python -m scripts.eval \
-            --cases smoke.yaml --no-variations -k 2 --per-question --concurrency 6 \
+            --cases smoke.yaml --no-variations --concurrency 6 \
+            --subject opencode-go/deepseek-v4-flash:cli \
             --junit reports/junit.xml --json reports/eval.json
 
       - name: Server log (sandbox / proxy activity)
