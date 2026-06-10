@@ -491,7 +491,12 @@ async def optimize(
             blocked_text = ""
             for attempt in range(audit_retries + 1):
                 log(f"round {n}: auditing the proposed diff (attempt {attempt + 1})...")
-                verdict = auditor.audit(patch, [q.text for q in questions])
+                # The auditor reads the repo for placement context but must not read the
+                # cases/rubrics: its findings are fed back to the proposer on amend
+                # retries, so anything it quotes would tunnel through the barrier. It
+                # already gets every question text in its prompt — that's all it needs.
+                with _hidden([Path(repo_dir) / p for p in hide_paths]):
+                    verdict = auditor.audit(patch, [q.text for q in questions])
                 _dump(save_dir, f"round{n}_audit{attempt + 1}.txt", verdict.text())
                 log(f"round {n}: audit verdict: {escape(' '.join(verdict.summary.split())[:240])}")
                 if not verdict.blocked:
