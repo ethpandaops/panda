@@ -66,10 +66,9 @@ Flag a finding with severity "block" for any of:
   module's knowledge planted in another module; integration/module behavior implemented
   in the CLI; presentation/formatting baked into server operations; product behavior
   pushed into the proxy (a thin credentialed gateway, not a product API); sandbox code
-  reaching past the server. The repo documents its boundaries in CLAUDE.md and
-  docs/architecture.md — read them and judge the diff against them. A change that
-  "works" from the wrong layer is still misplacement: it rots when the layer it
-  bypassed changes.
+  reaching past the server. Judge the diff against how the surrounding code divides
+  these responsibilities. A change that "works" from the wrong layer is still
+  misplacement: it rots when the layer it bypassed changes.
 - INFRA GAMING: changes product behavior (session lifecycle, execution semantics, timeouts,
   resource limits, retries) in a way that only helps because the eval runs many failing
   attempts. That games the test harness; it is not a real improvement.

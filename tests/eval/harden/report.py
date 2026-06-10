@@ -29,12 +29,12 @@ Hard rules (these are gated — violations are reverted, so a "win" that breaks 
   (e.g. "filter on the table's primary key; run `panda schema <…>` to see it") and name
   no dataset-specific columns or tables. Anything always-loaded is paid for by every
   question, so it must help broadly or it's bloat.
-- SEPARATION OF CONCERNS is part of placement: respect the repo's layer boundaries
-  (documented in CLAUDE.md and docs/architecture.md). Module behavior stays in that
-  module; the CLI presents, it does not implement integration logic; server operations
-  return structured data, not presentation; the proxy stays a thin credentialed gateway;
-  sandbox code calls back into the server, never past it. A fix that "works" from the
-  wrong layer is misplaced and will be rejected even if it scores well.
+- SEPARATION OF CONCERNS is part of placement: respect the repo's layer boundaries.
+  Module behavior stays in that module; the CLI presents, it does not implement
+  integration logic; server operations return structured data, not presentation; the
+  proxy stays a thin credentialed gateway; sandbox code calls back into the server,
+  never past it. A fix that "works" from the wrong layer is misplaced and will be
+  rejected even if it scores well.
 - Do NOT change product behavior to relieve pressure the TEST creates. Session lifecycle,
   execution semantics, timeouts, resource limits, retry counts — if a change only helps
   because the eval runs many failing attempts, that's gaming the harness, not improving
