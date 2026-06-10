@@ -222,8 +222,10 @@ jobs:
           # (questions x subjects runs); the paraphrase sweep belongs to the harden loop.
           # -k 2 + --per-question = smoke semantics: a question fails only if BOTH its
           # runs fail (catches systemic breakage, tolerates a single agent flub).
+          # --concurrency 6: the local default (16) starves a 4-vCPU runner — agents +
+          # sandbox containers + server contend until runs fail in weird ways.
           uv run python -m scripts.eval \
-            --cases smoke.yaml --no-variations -k 2 --per-question \
+            --cases smoke.yaml --no-variations -k 2 --per-question --concurrency 6 \
             --junit reports/junit.xml --json reports/eval.json
 
       - name: Server log (sandbox / proxy activity)
