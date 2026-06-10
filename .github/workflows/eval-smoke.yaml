@@ -89,8 +89,13 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install opencode
-        run: npm install -g opencode-ai@1.15.0
+      # npm ci against the committed lockfile: transitive deps and the platform
+      # binary are integrity-hashed, so nothing resolves live from the registry.
+      - name: Install opencode (locked)
+        working-directory: .github/opencode
+        run: |
+          npm ci --no-audit --no-fund
+          echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
 
       - name: Configure opencode auth (opencode-go)
         env:

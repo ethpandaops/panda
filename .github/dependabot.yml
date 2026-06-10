@@ -65,6 +65,19 @@ updates:
         patterns:
           - "*"
 
+  # opencode CLI lockfile used by the eval workflows (.github/opencode).
+  - package-ecosystem: npm
+    directory: "/.github/opencode"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    cooldown:
+      default-days: 14
+    groups:
+      opencode:
+        patterns:
+          - "*"
+
   # Eval harness Python deps (tests/eval/uv.lock).
   - package-ecosystem: uv
     directory: "/tests/eval"
