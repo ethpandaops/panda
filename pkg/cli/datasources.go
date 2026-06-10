@@ -50,13 +50,8 @@ func runDatasources(cmd *cobra.Command, _ []string) error {
 	}
 
 	rows := make([][]string, 0, len(response.Datasources))
-	hasClickHouse := false
 
 	for _, info := range response.Datasources {
-		if info.Type == "clickhouse" {
-			hasClickHouse = true
-		}
-
 		desc := info.Description
 		if desc == "" {
 			desc = info.Name
@@ -92,10 +87,6 @@ func runDatasources(cmd *cobra.Command, _ []string) error {
 	printTable([]string{"TYPE", "NAME", "DATASETS", "DESCRIPTION"}, rows)
 
 	fmt.Println("\nDataset placements and notes: panda datasets")
-
-	if hasClickHouse {
-		fmt.Println("ClickHouse schemas: panda schema <cluster> [database] [table]")
-	}
 
 	return nil
 }
