@@ -58,10 +58,18 @@ Flag a finding with severity "block" for any of:
   directly answers one of the questions below — especially into an always-loaded surface
   (a module description, getting-started) or into error-hint text. A change that only helps
   these exact questions is leakage, not a fix.
-- MISPLACEMENT: dataset-specific knowledge (which table/column holds what for a dataset)
-  placed in a GENERIC module description or a GENERIC error hint, instead of that
-  datasource's own searchable examples/docs/schema. Error hints must be error-CLASS generic
-  and name no dataset-specific columns/tables.
+- MISPLACEMENT: content or behavior in the wrong layer. The obvious case is
+  dataset-specific knowledge (which table/column holds what for a dataset) placed in a
+  GENERIC module description or a GENERIC error hint instead of that datasource's own
+  searchable examples/docs/schema — error hints must be error-CLASS generic and name no
+  dataset-specific columns/tables. But it covers SEPARATION OF CONCERNS generally: one
+  module's knowledge planted in another module; integration/module behavior implemented
+  in the CLI; presentation/formatting baked into server operations; product behavior
+  pushed into the proxy (a thin credentialed gateway, not a product API); sandbox code
+  reaching past the server. The repo documents its boundaries in CLAUDE.md and
+  docs/architecture.md — read them and judge the diff against them. A change that
+  "works" from the wrong layer is still misplacement: it rots when the layer it
+  bypassed changes.
 - INFRA GAMING: changes product behavior (session lifecycle, execution semantics, timeouts,
   resource limits, retries) in a way that only helps because the eval runs many failing
   attempts. That games the test harness; it is not a real improvement.
