@@ -72,22 +72,27 @@ generalize and be sustainable for the long term. Concerns need to be separated.
 )
 
 
-def build_amend_prompt(verdict_text: str) -> str:
+def build_amend_prompt(verdict_text: str, diff: str) -> str:
     """The retry prompt after an audit block: the proposer's edits are STILL in the
-    working tree; it must amend them to clear the findings. The usual legitimate fix is
-    moving knowledge to the right surface or deleting it — explicitly NOT rewording it,
-    since an auditor with fresh context re-reads the full diff every time."""
+    working tree; it must amend them to clear the findings. The diff is embedded
+    directly (git is unavailable during propose — the information barrier hides .git).
+    The usual legitimate fix is moving knowledge to the right surface or deleting it —
+    explicitly NOT rewording it, since an auditor with fresh context re-reads the full
+    diff every time."""
+    if len(diff) > 50000:
+        diff = diff[:50000] + "\n… [diff truncated]"
     return (
-        "Your previously proposed harness edits are still in the working tree (run "
-        "`git diff HEAD` to see them). An adversarial auditor BLOCKED them:\n\n"
+        "Your previously proposed harness edits are still applied in the working tree. "
+        "An adversarial auditor BLOCKED them:\n\n"
         f"{verdict_text}\n\n"
-        "Amend the diff to resolve EVERY blocking finding while keeping the genuinely "
-        "general improvements. The legitimate fix is usually to MOVE misplaced knowledge "
-        "to the right surface (the datasource's own searchable docs/examples, fetched on "
-        "demand) or to DELETE it — not to reword it: the auditor re-reads the full diff "
-        "with fresh context each time, so disguising the same content just wastes a "
-        "retry. If a finding can only be fixed by removing the edit entirely, remove "
-        "it.\n\n" + _RULES
+        f"The full diff of your current edits:\n\n```diff\n{diff}\n```\n\n"
+        "Amend the FILES directly (git is not available here) to resolve EVERY blocking "
+        "finding while keeping the genuinely general improvements. The legitimate fix is "
+        "usually to MOVE misplaced knowledge to the right surface (the datasource's own "
+        "searchable docs/examples, fetched on demand) or to DELETE it — not to reword "
+        "it: the auditor re-reads the full diff with fresh context each time, so "
+        "disguising the same content just wastes a retry. If a finding can only be "
+        "fixed by removing the edit entirely, remove it.\n\n" + _RULES
     )
 
 

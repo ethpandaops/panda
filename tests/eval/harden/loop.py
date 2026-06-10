@@ -289,7 +289,11 @@ async def optimize(
     held_out_ids: set[str] | None = None,
     save_dir: str | None = None,
     protected_paths: tuple[str, ...] = ("tests/eval/", ".github/"),
-    hide_paths: tuple[str, ...] = ("tests/eval/cases",),
+    # .git is hidden too: without it, `git show HEAD:tests/eval/cases/...` trivially
+    # defeats hiding the cases. (A determined model can still find the main checkout or
+    # the network — this barrier is anti-contamination, not containment; the gates and
+    # auditor are the containment.)
+    hide_paths: tuple[str, ...] = ("tests/eval/cases", ".git"),
     pool_size: int = 6,
     prescreen: int = 3,
     audit_retries: int = 3,
@@ -506,7 +510,7 @@ async def optimize(
                     f"({len(verdict.findings)} finding(s)) — sending findings back to the "
                     f"proposer to amend ({attempt + 1}/{audit_retries})"
                 )
-                amend = build_amend_prompt(verdict.text())
+                amend = build_amend_prompt(verdict.text(), patch)
                 _dump(save_dir, f"round{n}_amend{attempt + 1}.txt", amend)
                 with _hidden([Path(repo_dir) / p for p in hide_paths]):
                     amended = proposer.propose(amend)
@@ -531,6 +535,7 @@ async def optimize(
                 _record(n, False, "audit-blocked", baseline, blocked_text, parent.label)
                 continue
 
+        _dump(save_dir, f"round{n}.patch", patch)  # re-appliable: git apply round{n}.patch
         log(f"round {n}: proposal made edits; rebuilding + restarting harness...")
         try:
             apply()

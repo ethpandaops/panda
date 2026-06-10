@@ -129,6 +129,13 @@ def call_api(prompt, options, context):
     prompts = [prompt, *[str(f) for f in followups]]
     subject = _subject(cfg)
     trace = asyncio.run(subject.run(prompts))
+    retried = False
+    if trace.crashed:
+        # One retry on a crash: crashes are dominated by transient infra (model
+        # timeouts under load, provider 5xx) that contaminates the measurement — a
+        # crash the HARNESS causes reproduces on the retry and still scores 0.
+        retried = True
+        trace = asyncio.run(subject.run(prompts))
     subject.flush()  # push the run's Langfuse trace before promptfoo moves to the next
     destroyed = _teardown_agent_sessions(subject, trace)  # this agent's sandboxes only
     return {
@@ -150,6 +157,7 @@ def call_api(prompt, options, context):
             "trace_url": subject.trace_url(trace.trace_id),
             "session_id": subject.session_id,
             "destroyed_sandbox_sessions": destroyed,
+            "retried": retried,
             "input_tokens": trace.input_tokens,
             "output_tokens": trace.output_tokens,
             "duration_ms": trace.duration_ms,

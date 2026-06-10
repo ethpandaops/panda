@@ -53,6 +53,37 @@ def _repo_root() -> str:
     ).stdout.strip()
 
 
+def _auto_worktree(repo_dir: str, ts: str, log) -> tuple[str, str]:
+    """A dedicated worktree + branch (harden/<ts>) from the checkout's HEAD for this run.
+    Removed at the end if nothing was committed; kept (with instructions) if it was."""
+    branch = f"harden/{ts}"
+    path = HARDEN_HOME / "worktrees" / ts
+    path.parent.mkdir(parents=True, exist_ok=True)
+    dirty = subprocess.run(
+        ["git", "-C", repo_dir, "status", "--porcelain"], text=True, capture_output=True
+    ).stdout.strip()
+    if dirty:
+        log(
+            "[yellow]note[/yellow]: your checkout has uncommitted changes — the harden "
+            "worktree is created from HEAD, so they are NOT part of the measured harness"
+        )
+    subprocess.run(
+        ["git", "-C", repo_dir, "worktree", "add", "-q", "-b", branch, str(path)],
+        check=True, capture_output=True, text=True,
+    )
+    log(f"running in auto-worktree [bold]{path}[/bold] (branch {branch})")
+    return str(path), branch
+
+
+def _cleanup_worktree(invoking_repo: str, repo_dir: str, branch: str) -> None:
+    """Drop an auto-worktree that produced no commits (best-effort)."""
+    subprocess.run(
+        ["git", "-C", invoking_repo, "worktree", "remove", "--force", repo_dir],
+        capture_output=True,
+    )
+    subprocess.run(["git", "-C", invoking_repo, "branch", "-D", branch], capture_output=True)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -108,9 +139,18 @@ def main() -> None:
     )
     ap.add_argument(
         "--sandbox",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help="run the subject in a container with no repo access, so it can't read the eval "
-        "cases (it sees only a linux `panda` + the scratch server). Recommended.",
+        "cases or source (it sees only a linux `panda` + the scratch server). On by "
+        "default; --no-sandbox runs the agent on the host (it can read your whole disk).",
+    )
+    ap.add_argument(
+        "--in-place",
+        action="store_true",
+        help="run in the current checkout instead of an auto-created worktree. The loop "
+        "reverts/commits the tree it runs in, and any edits made to it mid-run abort the "
+        "run — in-place means nobody can touch the checkout until it finishes.",
     )
     ap.add_argument(
         "--pool-size",
@@ -133,8 +173,18 @@ def main() -> None:
         "auditor's findings to amend (0 = a block is final)",
     )
     args = ap.parse_args()
+    log = setup_logging().info
 
-    repo_dir = _repo_root()
+    ts = time.strftime("%Y-%m-%dT%H-%M-%S")
+    invoking_repo = _repo_root()
+    branch = None
+    if args.in_place:
+        repo_dir = invoking_repo
+    else:
+        # The run gets its OWN worktree from HEAD: the loop's reverts/commits never
+        # touch the user's checkout, and edits to the checkout can't corrupt the run.
+        repo_dir, branch = _auto_worktree(invoking_repo, ts, log)
+
     questions = [
         Question(
             id=c.id, text=c.input, followups=c.followups, asserts=c.asserts, variations=c.variations
@@ -164,8 +214,6 @@ def main() -> None:
     os.environ.setdefault("PROMPTFOO_PYTHON", sys.executable)
     eval_dir = str(Path(__file__).resolve().parents[1])
 
-    log = setup_logging().info
-
     subject_specs = args.subject or DEFAULT_SUBJECTS
     grader = args.grader or f"openrouter:{args.judge_model}"
     proposer = CodexProposer(
@@ -186,7 +234,7 @@ def main() -> None:
         )
     )
 
-    run_dir = HARDEN_HOME / "runs" / time.strftime("%Y-%m-%dT%H-%M-%S")
+    run_dir = HARDEN_HOME / "runs" / ts
     qids = ", ".join(q.id for q in questions)
     nvar = sum(len(q.variations) for q in questions)
     auditor_desc = "off" if args.no_audit else f"{args.auditor_model} @ {args.reasoning_effort} (codex)"
@@ -236,6 +284,19 @@ def main() -> None:
     for r in result.rounds:
         flag = "[green]ACCEPT[/green]" if r.accepted else f"[yellow]reject:{r.reason}[/yellow]"
         log(f"  round {r.n}: {flag}  score {r.score_before:.3f} -> {r.score_after:.3f}")
+    if branch is not None:
+        if result.accepted:
+            sha = subprocess.run(
+                ["git", "-C", repo_dir, "rev-parse", "--short", "HEAD"],
+                text=True, capture_output=True,
+            ).stdout.strip()
+            log(
+                f"[bold green]committed on {branch}[/bold green] (worktree {repo_dir}) — "
+                f"bring it into your checkout with: git cherry-pick {sha}"
+            )
+        else:
+            _cleanup_worktree(invoking_repo, repo_dir, branch)
+            log(f"auto-worktree removed (nothing was committed); branch {branch} deleted")
 
 
 if __name__ == "__main__":
