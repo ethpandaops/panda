@@ -259,6 +259,8 @@ func TestSearchExamplesScoreAndCategoryFilter(t *testing.T) {
 		assert.Equal(t, "cbt", resp.Results[0].ExampleName)
 		assert.Equal(t, "xatu-cbt", resp.Results[0].Dataset)
 		assert.Equal(t, "xatu-cbt", resp.DatasetFilter)
+		assert.Contains(t, resp.Guidance, "The target field is the datasource name the example is intended to run against.")
+		assert.Contains(t, resp.Guidance, "The dataset field identifies the knowledge pack; read datasets://<dataset> only when you need placement or syntax rules.")
 		assert.Equal(t, 4*exampleFilterOverscan, searcher.lastLimit)
 	})
 

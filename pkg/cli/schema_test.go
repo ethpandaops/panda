@@ -25,6 +25,46 @@ func TestSplitQualifiedTable(t *testing.T) {
 	assert.False(t, ok)
 }
 
+func TestFilterTablesByNameMatchesQualifiedName(t *testing.T) {
+	tables := []*clickhousemodule.TableSummary{
+		{Database: "db", Name: "blocks", ColumnCount: 2},
+		{Database: "metrics", Name: "validators", ColumnCount: 3},
+		nil,
+	}
+
+	filtered := filterTablesByName(tables, "METRICS.")
+
+	require.Len(t, filtered, 1)
+	assert.Equal(t, "validators", filtered[0].Name)
+}
+
+func TestRenderTablesListSummarizesClusterDatabases(t *testing.T) {
+	setOutputFormat(t, "text")
+
+	output := captureStdout(t, func() {
+		err := renderTablesList(&clickhousemodule.TablesListResponse{
+			Clusters: map[string]*clickhousemodule.ClusterTablesSummary{
+				"warehouse": {
+					TableCount:  3,
+					LastUpdated: "now",
+					Tables: []*clickhousemodule.TableSummary{
+						{Database: "db_b", Name: "blocks"},
+						{Database: "db_a", Name: "blocks"},
+						{Database: "db_a", Name: "validators"},
+					},
+				},
+			},
+		}, true)
+		require.NoError(t, err)
+	})
+
+	assert.Contains(t, output, "3 tables across 2 databases")
+	assert.Contains(t, output, "DATABASE")
+	assert.Contains(t, output, "db_a")
+	assert.Contains(t, output, "Use: panda schema warehouse <database>")
+	assert.NotContains(t, output, "db_a.blocks")
+}
+
 func TestRunSchemaAcceptsQualifiedTableAndPrintsKeys(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/resources/read" {

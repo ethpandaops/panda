@@ -114,7 +114,11 @@ func (m *Module) handleDatasetDetail(ctx context.Context, uri string) (string, e
 		names = append(names, p.name)
 	}
 
-	return "", fmt.Errorf("unknown dataset %q. Known datasets: %s", name, strings.Join(names, ", "))
+	return "", fmt.Errorf(
+		"unknown dataset %q. Known datasets: %s. Dataset names are knowledge-pack IDs, not datasource names; read datasets://list for valid names and placement",
+		name,
+		strings.Join(names, ", "),
+	)
 }
 
 // renderDatasetGuide assembles the full per-dataset guide: identity, where the

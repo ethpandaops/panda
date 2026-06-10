@@ -68,7 +68,10 @@ def get_label_values(
     label: str,
     start: str | None = None,
     end: str | None = None,
+    contains: str | None = None,
+    limit: int | None = None,
 ) -> list[str]:
+    """Return label values, optionally filtered locally for concise discovery."""
     data = _runtime.invoke_json_data(
         "prometheus.get_label_values",
         {
@@ -78,4 +81,13 @@ def get_label_values(
             "end": end,
         },
     )
-    return data if isinstance(data, list) else []
+    values = data if isinstance(data, list) else []
+
+    if contains:
+        needle = contains.lower()
+        values = [value for value in values if needle in str(value).lower()]
+
+    if limit is not None:
+        values = values[:limit]
+
+    return values

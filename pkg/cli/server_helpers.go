@@ -458,7 +458,7 @@ func serverErrorHint(status int, message string) string {
 	// owns the command-idiom wording per class.
 	switch clickhousemodule.ClassifyQueryError(message) {
 	case clickhousemodule.QueryErrorPrimaryKeyFilterRequired:
-		return "ClickHouse requires a query shape that can use the table's partition or primary-key columns; inspect key clauses with 'panda schema <cluster> <database> <table>' and add a selective WHERE clause. For bounded aggregate scans that still fail after key filters, append 'SETTINGS force_primary_key=0' deliberately rather than removing the bound"
+		return "ClickHouse requires a query shape that can use the table's partition or primary-key columns; inspect key clauses with 'panda schema <cluster> <database> <table>' and add selective WHERE filters. Do not disable force_primary_key on an unbounded scan; only append 'SETTINGS force_primary_key=0' when the query is otherwise tightly bounded and you can explain why the key cannot be used"
 	case clickhousemodule.QueryErrorUnknownIdentifier:
 		return "the SQL references a column or expression that is not available in the selected table; inspect the table with 'panda schema <cluster> <database> <table>' and adjust the SELECT, WHERE, and GROUP BY clauses"
 	case clickhousemodule.QueryErrorNotAggregate:
@@ -479,6 +479,16 @@ func serverErrorHint(status int, message string) string {
 	}
 
 	normalized := strings.ToLower(message)
+	if strings.Contains(normalized, "clickhouse://tables/") &&
+		strings.Contains(normalized, "cluster ") &&
+		strings.Contains(normalized, "not found") {
+		return "schema expects a ClickHouse datasource/cluster name; list clusters with 'panda datasources --type clickhouse'. If starting from a dataset, read 'panda datasets <name>' for placement"
+	}
+
+	if strings.Contains(normalized, "unknown dataset") {
+		return "datasets are knowledge-pack IDs, not datasource names; list valid datasets with 'panda datasets'. Use 'panda datasources' for datasource names and 'panda schema <cluster>' for ClickHouse table discovery"
+	}
+
 	if strings.Contains(normalized, "prometheus datasource") && strings.Contains(normalized, "not found") {
 		return "the first Prometheus argument must be a live datasource name; list them with 'panda prometheus list-datasources' or 'panda datasources --type prometheus'"
 	}

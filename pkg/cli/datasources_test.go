@@ -44,7 +44,7 @@ func TestRunDatasourcesDefaultIsCompact(t *testing.T) {
 	})
 
 	assert.Contains(t, output, "TYPE")
-	assert.Contains(t, output, "NAME")
+	assert.Contains(t, output, "DATASOURCE")
 	assert.Contains(t, output, "DATASETS")
 	assert.Contains(t, output, "clickhouse")
 	assert.Contains(t, output, "warehouse")
