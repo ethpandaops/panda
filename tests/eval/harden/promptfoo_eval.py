@@ -172,7 +172,10 @@ async def measure(
     # Stream promptfoo's progress live (prefixed) instead of swallowing minutes of silence;
     # keep a tail of the output for the error message if it produces no results.
     def run() -> tuple[int, str]:
-        env = {**os.environ, "NO_COLOR": "1", "FORCE_COLOR": "0"}  # plain output, no ANSI
+        # CI=true: promptfoo only emits its periodic "[CI Progress] ... ETA" liveness
+        # lines in CI mode — in a local pipe (no TTY, no CI) it goes silent for the
+        # whole eval. NO_COLOR/FORCE_COLOR keep the stream ANSI-free for our logger.
+        env = {**os.environ, "NO_COLOR": "1", "FORCE_COLOR": "0", "CI": "true"}
         proc = subprocess.Popen(
             cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, bufsize=1,
