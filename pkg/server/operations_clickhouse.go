@@ -32,9 +32,37 @@ func (s *service) handleClickHouseListDatasources(w http.ResponseWriter) {
 			URL:         info.Metadata["url"],
 			Type:        info.Type,
 		}
+
+		extra := make(map[string]any, 2)
+
 		if database := info.Metadata["database"]; database != "" {
-			item.Extra = map[string]any{"database": database}
+			extra["database"] = database
 		}
+
+		// Dataset bindings ride along so sandbox code can resolve dataset
+		// placement (e.g. the {db} convention) without leaving Python.
+		if len(info.Contents) > 0 {
+			datasets := make([]map[string]any, 0, len(info.Contents))
+			for _, b := range info.Contents {
+				d := map[string]any{"dataset": b.Dataset}
+				if len(b.Params) > 0 {
+					d["params"] = b.Params
+				}
+
+				if b.Notes != "" {
+					d["notes"] = b.Notes
+				}
+
+				datasets = append(datasets, d)
+			}
+
+			extra["datasets"] = datasets
+		}
+
+		if len(extra) > 0 {
+			item.Extra = extra
+		}
+
 		items = append(items, item)
 	}
 
