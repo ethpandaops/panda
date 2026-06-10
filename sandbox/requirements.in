@@ -1,0 +1,43 @@
+# Core data analysis libraries
+pandas>=2.2.0
+numpy>=2.0.0
+polars>=1.20.0
+scipy>=1.14.0
+pyarrow>=22.0.0  # Parquet support, columnar data
+fastparquet>=2025.12.0  # Alternative parquet engine
+
+# Machine learning & statistics
+scikit-learn>=1.8.0
+statsmodels>=0.14.6
+
+# Graph analysis
+networkx>=3.6.0  # For transaction flow, address relationships
+
+# Large dataset processing
+dask>=2025.12.0  # Parallel pandas-like operations
+
+# Visualization
+matplotlib>=3.9.0
+seaborn>=0.13.0
+plotly>=5.24.0
+altair>=5.4.0
+vl-convert-python>=1.7.0  # For Altair PNG/SVG export
+bokeh>=3.6.0
+kaleido>=0.2.1  # For Plotly image export
+plotnine>=0.15.0  # ggplot2 grammar of graphics
+pygwalker>=0.5.0  # Tableau-like drag-and-drop exploration
+
+# ClickHouse client
+clickhouse-connect>=0.8.0
+
+# HTTP client for Prometheus/Loki
+httpx>=0.28.0
+
+# S3 client
+boto3>=1.35.0
+
+# Utilities
+python-dateutil>=2.9.0
+pytz>=2024.2
+rich>=13.9.0  # For better terminal output
+tabulate>=0.9.0  # For table formatting

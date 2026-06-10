@@ -4,6 +4,9 @@
 # explicitly allowlisted. govulncheck has no native allowlist, so we scan in
 # JSON mode and gate on the result ourselves.
 #
+# govulncheck is a go.mod `tool` dependency (version-pinned, go.sum-verified,
+# bumped by Dependabot); `go tool` builds it from the module cache on first use.
+#
 # The allowlist holds advisories that have been assessed and accepted because
 # no fixed version is available on an import path we can use. Remove an entry
 # the moment a usable fix ships — Dependabot will bump the dependency and this
@@ -25,10 +28,10 @@ ALLOWLIST=(
 # Human-readable report for the logs. govulncheck exits non-zero when it finds
 # affecting vulnerabilities, so don't let that abort the script here — the gate
 # below is what decides pass/fail.
-govulncheck ./... || true
+go tool govulncheck ./... || true
 echo "----------------------------------------"
 
-json="$(govulncheck -format json ./...)"
+json="$(go tool govulncheck -format json ./...)"
 
 # An advisory is "reachable" when at least one finding's most specific trace
 # frame names a called function (as opposed to a merely-imported module).

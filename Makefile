@@ -55,7 +55,6 @@ vet: ## Run go vet
 	go vet ./...
 
 govulncheck: ## Scan for reachable vulnerabilities (allowlist in scripts/govulncheck.sh)
-	@which govulncheck > /dev/null || (echo "Installing govulncheck..." && go install golang.org/x/vuln/cmd/govulncheck@latest)
 	./scripts/govulncheck.sh
 
 tidy: ## Run go mod tidy

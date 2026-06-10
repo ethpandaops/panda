@@ -70,11 +70,9 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
-
       # Gate on reachable, non-allowlisted vulnerabilities. Known-unfixable
       # advisories (no fix on a usable import path) are allowlisted in the
-      # script with justification; new reachable vulns fail the build.
+      # script with justification; new reachable vulns fail the build. The
+      # govulncheck binary is a go.mod tool dependency (pinned + sum-verified).
       - name: Run govulncheck
         run: ./scripts/govulncheck.sh

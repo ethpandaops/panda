@@ -6,7 +6,7 @@
 # hash covers exactly the build inputs the Dockerfile COPYs in, so it changes iff
 # the sandbox actually needs rebuilding:
 #   - sandbox/Dockerfile
-#   - sandbox/requirements.txt
+#   - sandbox/requirements.in / requirements.txt (intent + compiled hash lock)
 #   - sandbox/ethpandaops/**            (the ethpandaops runtime package)
 #   - modules/*/python/*.py             (per-module Python injected into the package)
 set -euo pipefail
@@ -23,6 +23,7 @@ _sha256() {
 
 {
   echo sandbox/Dockerfile
+  echo sandbox/requirements.in
   echo sandbox/requirements.txt
   find sandbox/ethpandaops -type f
   find modules -type f -path '*/python/*.py'
