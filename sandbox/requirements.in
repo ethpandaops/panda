@@ -24,7 +24,7 @@ altair>=5.4.0
 vl-convert-python>=1.7.0  # For Altair PNG/SVG export
 bokeh>=3.6.0
 kaleido>=0.2.1  # For Plotly image export
-plotnine>=0.15.0  # ggplot2 grammar of graphics
+plotnine>=0.15.4  # ggplot2 grammar of graphics
 pygwalker>=0.5.0  # Tableau-like drag-and-drop exploration
 
 # ClickHouse client
