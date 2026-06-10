@@ -176,6 +176,8 @@ def make_apply(server: ScratchServer, *, sandbox: bool = False):
         _run(["go", "build", "-o", "panda-server", "./cmd/server"], repo)
         _log.info("[cyan]build[/cyan] go build panda (CLI)")
         _run(["go", "build", "-o", "panda", "./cmd/panda"], repo)
+        _log.info("[cyan]lint[/cyan] golangci-lint run")
+        _lint(repo)
         if sandbox:
             _log.info("[cyan]build[/cyan] cross-compiling linux panda (sandbox)")
             cross_build_panda_linux(repo)
@@ -244,6 +246,19 @@ def prepare_opencode_sandbox(repo_dir: str, port: int, *, image: str = OPENCODE_
     os.environ["OPENCODE_SANDBOX_SERVER_URL"] = f"http://host.docker.internal:{port}"
     os.environ["MCP_EVAL_OPENCODE_SANDBOX"] = "true"
     cross_build_panda_linux(repo_dir)
+
+
+def _lint(repo: str) -> None:
+    """Lint is part of apply(): a lint-dirty candidate is rejected exactly like a broken
+    build. Without this, a champion can ship dead code or vet failures straight onto the
+    invoking branch via auto-promote (observed: an unused test fake survived to commit).
+    Findings go on stdout, which _run discards — capture both streams here."""
+    proc = subprocess.run(
+        ["golangci-lint", "run", "./..."], cwd=repo, text=True, capture_output=True
+    )
+    if proc.returncode != 0:
+        findings = ((proc.stdout or "") + (proc.stderr or ""))[-1200:]
+        raise RuntimeError(f"golangci-lint failed ({proc.returncode}):\n{findings}")
 
 
 def _run(cmd: list[str], cwd: str) -> None:
