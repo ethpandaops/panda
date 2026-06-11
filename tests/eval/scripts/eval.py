@@ -34,7 +34,7 @@ from rich.table import Table
 from cases.loader import load_test_cases
 from config.settings import DEFAULT_EVALUATOR_MODEL, DEFAULT_SUBJECTS
 from harden.logsetup import setup_logging
-from harden.promptfoo_eval import measure_candidate
+from harden.promptfoo_eval import measure_candidate, scrub_secrets
 from harden.runner import CandidateResult, Question
 
 console = Console()
@@ -137,8 +137,10 @@ def _write_junit(path: str, result: CandidateResult, *, suite: str) -> None:
                 msg = f"crashed: {tr.error}"
             else:
                 msg = f"failed grading (score={rs.score:.2f}): {rs.reason or 'no reason given'}"
-            fail = ET.SubElement(tc, "failure", message=msg[:400])
-            fail.text = f"grader reason: {rs.reason}\n\n{(tr.output or '')[:2000]}"
+            # The failure body carries raw agent output into an uploaded artifact and
+            # the PR results comment — scrub credential values like the trace files do.
+            fail = ET.SubElement(tc, "failure", message=scrub_secrets(msg[:400]))
+            fail.text = scrub_secrets(f"grader reason: {rs.reason}\n\n{(tr.output or '')[:2000]}")
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     ET.ElementTree(ts).write(str(p), encoding="utf-8", xml_declaration=True)

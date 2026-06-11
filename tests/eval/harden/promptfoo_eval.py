@@ -14,6 +14,7 @@ import asyncio
 import collections
 import json
 import os
+import re
 import statistics
 import subprocess
 from dataclasses import dataclass
@@ -350,6 +351,32 @@ def _parse(results_path: Path, run_dir: Path) -> list[PfRun]:
     return runs
 
 
+_SECRET_ENV_NAME = re.compile(r"KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL", re.IGNORECASE)
+
+
+def scrub_secrets(text: str) -> str:
+    """Redact the values of credential-looking environment variables from text.
+
+    Trace files record every tool call's full output, and the agent's bash inherits
+    this process's environment (provider API keys, Langfuse keys) — so an agent that
+    runs `env` while debugging would otherwise copy live secrets into files that CI
+    uploads as publicly downloadable artifacts. Values shorter than 8 chars are left
+    alone (redacting e.g. "1" would shred the text)."""
+    values = sorted(
+        (
+            (value, name)
+            for name, value in os.environ.items()
+            if _SECRET_ENV_NAME.search(name) and len(value) >= 8
+        ),
+        key=lambda pair: len(pair[0]),
+        reverse=True,
+    )
+    for value, name in values:
+        text = text.replace(value, f"[redacted:{name}]")
+
+    return text
+
+
 def _write_trace_file(path: Path, trace: RunTrace, correct: bool, correctness: float) -> None:
     lines = [
         f"question: {trace.question}",
@@ -366,4 +393,4 @@ def _write_trace_file(path: Path, trace: RunTrace, correct: bool, correctness: f
     lines.append(f"=== final answer ===\n{trace.output}")
     if trace.crashed and getattr(trace, "error", ""):
         lines.append(f"\n=== crash ===\n{trace.error}")
-    path.write_text("\n".join(lines))
+    path.write_text(scrub_secrets("\n".join(lines)))
