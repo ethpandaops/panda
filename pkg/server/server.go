@@ -26,9 +26,9 @@ import (
 	"github.com/ethpandaops/panda/pkg/searchsvc"
 	"github.com/ethpandaops/panda/pkg/serverapi"
 	"github.com/ethpandaops/panda/pkg/storage"
+	"github.com/ethpandaops/panda/pkg/surface"
 	"github.com/ethpandaops/panda/pkg/tokenstore"
 	"github.com/ethpandaops/panda/pkg/tool"
-	"github.com/ethpandaops/panda/pkg/types"
 )
 
 // Service is the main MCP server service.
@@ -247,8 +247,7 @@ func (s *service) wrapToolHandler(toolName string, handler tool.Handler) mcpserv
 // createResourceHandler creates a resource handler for a static resource.
 func (s *service) createResourceHandler(uri string) mcpserver.ResourceHandlerFunc {
 	return func(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
-		ctx = types.WithClientContext(ctx, types.ClientContextMCP)
-		content, mimeType, err := s.resourceRegistry.Read(ctx, uri)
+		content, mimeType, err := s.resourceRegistry.Read(ctx, uri, surface.MCP)
 		if err != nil {
 			return nil, err
 		}
@@ -266,8 +265,7 @@ func (s *service) createResourceHandler(uri string) mcpserver.ResourceHandlerFun
 // createResourceTemplateHandler creates a handler for template resources.
 func (s *service) createResourceTemplateHandler() mcpserver.ResourceTemplateHandlerFunc {
 	return func(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
-		ctx = types.WithClientContext(ctx, types.ClientContextMCP)
-		content, mimeType, err := s.resourceRegistry.Read(ctx, req.Params.URI)
+		content, mimeType, err := s.resourceRegistry.Read(ctx, req.Params.URI, surface.MCP)
 		if err != nil {
 			return nil, err
 		}

@@ -18,7 +18,7 @@ import (
 	"github.com/ethpandaops/panda/pkg/config"
 	"github.com/ethpandaops/panda/pkg/operations"
 	"github.com/ethpandaops/panda/pkg/serverapi"
-	"github.com/ethpandaops/panda/pkg/types"
+	"github.com/ethpandaops/panda/pkg/surface"
 )
 
 var serverHTTP = &http.Client{Timeout: 0}
@@ -349,14 +349,8 @@ func listResources(ctx context.Context) (*serverapi.ListResourcesResponse, error
 }
 
 func readResource(ctx context.Context, uri string) (*serverapi.ResourceResponse, error) {
-	return readResourceWithClientContext(ctx, uri, types.ClientContextCLIParam)
-}
-
-func readResourceWithClientContext(ctx context.Context, uri, clientContext string) (*serverapi.ResourceResponse, error) {
 	query := url.Values{"uri": []string{uri}}
-	if clientContext != "" {
-		query.Set("client_context", clientContext)
-	}
+	query.Set(surface.QueryParam, surface.CLI.Key())
 
 	data, status, headers, err := serverDo(ctx, http.MethodGet, "/api/v1/resources/read", nil, query, nil)
 	if err != nil {

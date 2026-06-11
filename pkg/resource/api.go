@@ -10,6 +10,7 @@ import (
 
 	"github.com/ethpandaops/panda/pkg/module"
 	"github.com/ethpandaops/panda/pkg/serverapi"
+	"github.com/ethpandaops/panda/pkg/surface"
 	"github.com/ethpandaops/panda/pkg/types"
 )
 
@@ -33,7 +34,7 @@ func RegisterAPIResources(log logrus.FieldLogger, reg Registry, moduleReg *modul
 }
 
 func createAPIHandler(moduleReg *module.Registry) ReadHandler {
-	return func(_ context.Context, _ string) (string, error) {
+	return func(_ context.Context, _ string, _ surface.Surface) (string, error) {
 		modules := moduleReg.PythonAPIDocs()
 
 		// Add platform-owned storage module.

@@ -9,6 +9,8 @@ import (
 	"github.com/ethpandaops/cartographoor/pkg/discovery"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
+
+	"github.com/ethpandaops/panda/pkg/surface"
 )
 
 type fakeNetworkClient struct {
@@ -55,7 +57,7 @@ func TestActiveNetworksIncludesStableIDs(t *testing.T) {
 		},
 	}
 
-	out, err := createActiveNetworksHandler(client)(context.Background(), "networks://active")
+	out, err := createActiveNetworksHandler(client)(context.Background(), "networks://active", surface.MCP)
 	require.NoError(t, err)
 
 	var response NetworksActiveResponse
@@ -79,7 +81,7 @@ func TestNetworkDetailErrorSuggestsIDForDisplayName(t *testing.T) {
 	log := logrus.New()
 	log.SetOutput(io.Discard)
 
-	_, err := createNetworkDetailHandler(log, client)(context.Background(), "networks://devnet-1")
+	_, err := createNetworkDetailHandler(log, client)(context.Background(), "networks://devnet-1", surface.MCP)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "use full network id: group-a-devnet-1")
 	require.Contains(t, err.Error(), "networks://active")
@@ -107,7 +109,7 @@ func TestNetworkDetailIncludesID(t *testing.T) {
 	log := logrus.New()
 	log.SetOutput(io.Discard)
 
-	out, err := createNetworkDetailHandler(log, client)(context.Background(), "networks://group-a-devnet-1")
+	out, err := createNetworkDetailHandler(log, client)(context.Background(), "networks://group-a-devnet-1", surface.MCP)
 	require.NoError(t, err)
 
 	var response NetworkDetailResponse

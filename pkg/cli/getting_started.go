@@ -4,8 +4,6 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-
-	"github.com/ethpandaops/panda/pkg/types"
 )
 
 var gettingStartedCmd = &cobra.Command{
@@ -26,7 +24,7 @@ func init() {
 }
 
 func runGettingStarted(cmd *cobra.Command, _ []string) error {
-	response, err := readResourceWithClientContext(cmd.Context(), "panda://getting-started", types.ClientContextCLIParam)
+	response, err := readResource(cmd.Context(), "panda://getting-started")
 	if err != nil {
 		return fmt.Errorf("reading getting-started guide: %w", err)
 	}

@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethpandaops/panda/pkg/surface"
+
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -134,7 +136,7 @@ func TestClusterTablesHandler(t *testing.T) {
 	client := newStubSchemaClient()
 	handler := createClusterTablesHandler(client)
 
-	out, err := handler(context.Background(), "clickhouse://tables/clickhouse-refined")
+	out, err := handler(context.Background(), "clickhouse://tables/clickhouse-refined", surface.MCP)
 	require.NoError(t, err)
 
 	var resp TablesListResponse
@@ -146,7 +148,7 @@ func TestClusterTablesHandler(t *testing.T) {
 	assert.Len(t, resp.Clusters["clickhouse-refined"].Databases, 2)
 	assert.Empty(t, resp.Clusters["clickhouse-refined"].Tables)
 
-	_, err = handler(context.Background(), "clickhouse://tables/nope")
+	_, err = handler(context.Background(), "clickhouse://tables/nope", surface.MCP)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "available clusters are clickhouse-raw, clickhouse-refined")
 }
@@ -155,7 +157,7 @@ func TestClusterTablesHandlerFullTableOptIn(t *testing.T) {
 	client := newStubSchemaClient()
 	handler := createClusterTablesHandler(client)
 
-	out, err := handler(context.Background(), "clickhouse://tables/clickhouse-refined?include=tables")
+	out, err := handler(context.Background(), "clickhouse://tables/clickhouse-refined?include=tables", surface.MCP)
 	require.NoError(t, err)
 
 	var resp TablesListResponse
@@ -171,7 +173,7 @@ func TestDatabaseTablesHandler(t *testing.T) {
 	client := newStubSchemaClient()
 	handler := createDatabaseTablesHandler(client)
 
-	out, err := handler(context.Background(), "clickhouse://tables/clickhouse-refined/mainnet")
+	out, err := handler(context.Background(), "clickhouse://tables/clickhouse-refined/mainnet", surface.MCP)
 	require.NoError(t, err)
 
 	var resp TablesListResponse
@@ -203,7 +205,7 @@ func TestClusterTablesHandlerFallsBackToLiveListing(t *testing.T) {
 	}
 	handler := createClusterTablesHandler(client)
 
-	out, err := handler(context.Background(), "clickhouse://tables/synthetic-cluster")
+	out, err := handler(context.Background(), "clickhouse://tables/synthetic-cluster", surface.MCP)
 	require.NoError(t, err)
 
 	var resp TablesListResponse
@@ -221,7 +223,7 @@ func TestTableDetailHandler(t *testing.T) {
 	client := newStubSchemaClient()
 	handler := createTableDetailHandler(logrus.New(), client)
 
-	out, err := handler(context.Background(), "clickhouse://tables/clickhouse-refined/mainnet/fct_block")
+	out, err := handler(context.Background(), "clickhouse://tables/clickhouse-refined/mainnet/fct_block", surface.MCP)
 	require.NoError(t, err)
 
 	var resp TableDetailResponse
@@ -234,11 +236,11 @@ func TestTableDetailHandler(t *testing.T) {
 
 	// Same table name exists in the clickhouse-refined holesky database and not in clickhouse-raw;
 	// the cluster+database scoping must not leak across them.
-	_, err = handler(context.Background(), "clickhouse://tables/clickhouse-raw/mainnet/fct_block")
+	_, err = handler(context.Background(), "clickhouse://tables/clickhouse-raw/mainnet/fct_block", surface.MCP)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not found in cluster \"clickhouse-raw\"")
 
-	_, err = handler(context.Background(), "clickhouse://tables/nope/mainnet/fct_block")
+	_, err = handler(context.Background(), "clickhouse://tables/nope/mainnet/fct_block", surface.MCP)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
 }
@@ -256,7 +258,7 @@ func TestTableDetailHandlerFallsBackToLiveFetch(t *testing.T) {
 	}
 	handler := createTableDetailHandler(logrus.New(), client)
 
-	out, err := handler(context.Background(), "clickhouse://tables/synthetic-cluster/sample_db/sample_table")
+	out, err := handler(context.Background(), "clickhouse://tables/synthetic-cluster/sample_db/sample_table", surface.MCP)
 	require.NoError(t, err)
 
 	var resp TableDetailResponse

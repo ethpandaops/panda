@@ -14,6 +14,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/ethpandaops/panda/pkg/module"
+	"github.com/ethpandaops/panda/pkg/surface"
 	"github.com/ethpandaops/panda/pkg/types"
 )
 
@@ -102,7 +103,7 @@ func RegisterSchemaResources(
 }
 
 func createClusterTablesHandler(client SchemaClient) types.ReadHandler {
-	return func(ctx context.Context, uri string) (string, error) {
+	return func(ctx context.Context, uri string, _ surface.Surface) (string, error) {
 		parts := tableURISegments(uri)
 		if len(parts) != 1 {
 			return "", fmt.Errorf("invalid cluster URI: %s", uri)
@@ -140,7 +141,7 @@ func createClusterTablesHandler(client SchemaClient) types.ReadHandler {
 }
 
 func createDatabaseTablesHandler(client SchemaClient) types.ReadHandler {
-	return func(ctx context.Context, uri string) (string, error) {
+	return func(ctx context.Context, uri string, _ surface.Surface) (string, error) {
 		parts := tableURISegments(uri)
 		if len(parts) != 2 {
 			return "", fmt.Errorf("invalid database URI: %s", uri)
@@ -172,7 +173,7 @@ func createDatabaseTablesHandler(client SchemaClient) types.ReadHandler {
 }
 
 func createTableDetailHandler(log logrus.FieldLogger, client SchemaClient) types.ReadHandler {
-	return func(ctx context.Context, uri string) (string, error) {
+	return func(ctx context.Context, uri string, _ surface.Surface) (string, error) {
 		parts := tableURISegments(uri)
 		if len(parts) != 3 {
 			return "", fmt.Errorf("invalid table URI: %s", uri)

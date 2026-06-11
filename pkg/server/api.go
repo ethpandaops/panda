@@ -18,6 +18,7 @@ import (
 	"github.com/ethpandaops/panda/pkg/module"
 	"github.com/ethpandaops/panda/pkg/proxy"
 	"github.com/ethpandaops/panda/pkg/serverapi"
+	"github.com/ethpandaops/panda/pkg/surface"
 	"github.com/ethpandaops/panda/pkg/types"
 )
 
@@ -399,12 +400,9 @@ func (s *service) handleAPIReadResource(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	ctx := r.Context()
-	if cc := strings.TrimSpace(r.URL.Query().Get("client_context")); cc == types.ClientContextCLIParam {
-		ctx = types.WithClientContext(ctx, types.ClientContextCLI)
-	}
+	surf := surface.FromKey(strings.TrimSpace(r.URL.Query().Get(surface.QueryParam)))
 
-	content, mimeType, err := s.resourceRegistry.Read(ctx, uri)
+	content, mimeType, err := s.resourceRegistry.Read(r.Context(), uri, surf)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return

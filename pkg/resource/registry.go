@@ -9,6 +9,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/sirupsen/logrus"
 
+	"github.com/ethpandaops/panda/pkg/surface"
 	"github.com/ethpandaops/panda/pkg/types"
 )
 
@@ -35,8 +36,9 @@ type Registry interface {
 	// ListTemplates returns all registered resource templates.
 	ListTemplates() []mcp.ResourceTemplate
 
-	// Read reads a resource by URI and returns its content, mime type, and any error.
-	Read(ctx context.Context, uri string) (content string, mimeType string, err error)
+	// Read reads a resource by URI for the given client surface and
+	// returns its content, mime type, and any error.
+	Read(ctx context.Context, uri string, s surface.Surface) (content string, mimeType string, err error)
 }
 
 // registry is the default implementation of Registry.
@@ -106,8 +108,9 @@ func (r *registry) ListTemplates() []mcp.ResourceTemplate {
 	return templates
 }
 
-// Read reads a resource by URI and returns its content and mime type.
-func (r *registry) Read(ctx context.Context, uri string) (string, string, error) {
+// Read reads a resource by URI for the given client surface and returns
+// its content and mime type.
+func (r *registry) Read(ctx context.Context, uri string, surf surface.Surface) (string, string, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -116,7 +119,7 @@ func (r *registry) Read(ctx context.Context, uri string) (string, string, error)
 	// Check static resources first
 	for _, s := range r.static {
 		if s.Resource.URI == uri {
-			content, err := s.Handler(ctx, uri)
+			content, err := s.Handler(ctx, uri, surf)
 			if err != nil {
 				return "", "", fmt.Errorf("reading static resource %s: %w", uri, err)
 			}
@@ -128,7 +131,7 @@ func (r *registry) Read(ctx context.Context, uri string) (string, string, error)
 	// Check template resources
 	for _, t := range r.templates {
 		if t.Pattern.MatchString(uri) {
-			content, err := t.Handler(ctx, uri)
+			content, err := t.Handler(ctx, uri, surf)
 			if err != nil {
 				return "", "", fmt.Errorf("reading template resource %s: %w", uri, err)
 			}

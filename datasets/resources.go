@@ -12,6 +12,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/ethpandaops/panda/pkg/module"
+	"github.com/ethpandaops/panda/pkg/surface"
 	"github.com/ethpandaops/panda/pkg/types"
 )
 
@@ -63,7 +64,7 @@ func (m *Module) RegisterResources(log logrus.FieldLogger, reg module.ResourceRe
 	return nil
 }
 
-func (m *Module) handleDatasetsList(_ context.Context, _ string) (string, error) {
+func (m *Module) handleDatasetsList(_ context.Context, _ string, _ surface.Surface) (string, error) {
 	exposed := make(map[string]bool, len(m.packs))
 	for _, p := range m.activePacks() {
 		exposed[p.name] = true
@@ -95,7 +96,7 @@ func (m *Module) handleDatasetsList(_ context.Context, _ string) (string, error)
 	return string(data), nil
 }
 
-func (m *Module) handleDatasetDetail(ctx context.Context, uri string) (string, error) {
+func (m *Module) handleDatasetDetail(ctx context.Context, uri string, s surface.Surface) (string, error) {
 	matches := datasetURIPattern.FindStringSubmatch(uri)
 	if len(matches) != 2 {
 		return "", fmt.Errorf("invalid URI format: %s", uri)
@@ -103,7 +104,7 @@ func (m *Module) handleDatasetDetail(ctx context.Context, uri string) (string, e
 
 	name := matches[1]
 	if name == "list" {
-		return m.handleDatasetsList(context.Background(), uri)
+		return m.handleDatasetsList(ctx, uri, s)
 	}
 
 	for _, p := range m.packs {
@@ -111,7 +112,7 @@ func (m *Module) handleDatasetDetail(ctx context.Context, uri string) (string, e
 			continue
 		}
 
-		return m.renderDatasetGuide(p, types.GetClientContext(ctx)), nil
+		return m.renderDatasetGuide(p, s), nil
 	}
 
 	names := make([]string, 0, len(m.packs))
@@ -129,7 +130,7 @@ func (m *Module) handleDatasetDetail(ctx context.Context, uri string) (string, e
 // renderDatasetGuide assembles the full per-dataset guide: identity, where the
 // dataset lives in this deployment, the pack's guidance, and its example
 // categories.
-func (m *Module) renderDatasetGuide(p pack, clientCtx types.ClientContext) string {
+func (m *Module) renderDatasetGuide(p pack, s surface.Surface) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "# %s — %s\n\n", p.name, p.description)
@@ -139,17 +140,13 @@ func (m *Module) renderDatasetGuide(p pack, clientCtx types.ClientContext) strin
 	placements := m.packPlacements(p.name)
 	if len(placements) == 0 {
 		if m.hasAnyDatasetDeclarations() {
-			if clientCtx == types.ClientContextCLI {
-				b.WriteString("No discovered datasource declares this dataset in this deployment. Check `panda datasets` and `panda resources datasources://clickhouse` for available placements.\n")
-			} else {
-				b.WriteString("No discovered datasource declares this dataset in this deployment. Check `datasets://list` and `datasources://clickhouse` for available placements.\n")
-			}
+			fmt.Fprintf(&b,
+				"No discovered datasource declares this dataset in this deployment. Check %s and %s for available placements.\n",
+				s.ResourceRef("datasets://list"), s.ResourceRef("datasources://clickhouse"))
 		} else {
-			if clientCtx == types.ClientContextCLI {
-				b.WriteString("This server has not advertised dataset placement metadata, so this guide is shown in compatibility mode. Use search result `Target` fields or `panda resources datasources://clickhouse` to choose a concrete datasource.\n")
-			} else {
-				b.WriteString("This server has not advertised dataset placement metadata, so this guide is shown in compatibility mode. Use search result `Target` fields or `datasources://clickhouse` to choose a concrete datasource.\n")
-			}
+			fmt.Fprintf(&b,
+				"This server has not advertised dataset placement metadata, so this guide is shown in compatibility mode. Use search result `Target` fields or %s to choose a concrete datasource.\n",
+				s.ResourceRef("datasources://clickhouse"))
 		}
 	}
 
@@ -194,11 +191,7 @@ func (m *Module) renderDatasetGuide(p pack, clientCtx types.ClientContext) strin
 		fmt.Fprintf(&b, "- %s (%d examples)\n", key, len(p.examples[key].Examples))
 	}
 
-	if clientCtx == types.ClientContextCLI {
-		fmt.Fprintf(&b, "\nRetrieve them with: panda search examples --dataset %s \"<topic>\".\n", p.name)
-	} else {
-		fmt.Fprintf(&b, "\nRetrieve them with the search tool: search(type=\"examples\", dataset=%q, query=\"...\").\n", p.name)
-	}
+	fmt.Fprintf(&b, "\nRetrieve them with %s.\n", s.SearchExamples(p.name, "<topic>"))
 
 	return b.String()
 }

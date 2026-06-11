@@ -9,6 +9,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/ethpandaops/panda/pkg/module"
+	"github.com/ethpandaops/panda/pkg/surface"
 	"github.com/ethpandaops/panda/pkg/types"
 )
 
@@ -100,7 +101,7 @@ func RegisterDatasourcesResources(
 }
 
 func createDatasourcesHandler(provider *DatasourceProvider, filterType string) ReadHandler {
-	return func(_ context.Context, _ string) (string, error) {
+	return func(_ context.Context, _ string, _ surface.Surface) (string, error) {
 		allInfos := provider.DatasourceInfo()
 
 		var filtered []types.DatasourceInfo

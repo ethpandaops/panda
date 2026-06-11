@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ethpandaops/panda/pkg/surface"
 	"github.com/ethpandaops/panda/pkg/types"
 )
 
@@ -90,7 +91,7 @@ func TestInitFromDiscoveryScopesToDeclaredDatasets(t *testing.T) {
 		t.Error("scoped to otel-logs but xatu-cbt category block_timing present")
 	}
 
-	list, err := m.handleDatasetsList(context.Background(), "datasets://list")
+	list, err := m.handleDatasetsList(context.Background(), "datasets://list", surface.MCP)
 	if err != nil {
 		t.Fatalf("handleDatasetsList() error = %v", err)
 	}
@@ -185,7 +186,7 @@ func TestDatasetDetailResource(t *testing.T) {
 		t.Fatalf("InitFromDiscovery() error = %v", err)
 	}
 
-	out, err := m.handleDatasetDetail(context.Background(), "datasets://otel-logs")
+	out, err := m.handleDatasetDetail(context.Background(), "datasets://otel-logs", surface.MCP)
 	if err != nil {
 		t.Fatalf("handleDatasetDetail() error = %v", err)
 	}
@@ -203,7 +204,7 @@ func TestDatasetDetailResource(t *testing.T) {
 		}
 	}
 
-	if _, err := m.handleDatasetDetail(context.Background(), "datasets://nope"); err == nil {
+	if _, err := m.handleDatasetDetail(context.Background(), "datasets://nope", surface.MCP); err == nil {
 		t.Error("expected error for unknown dataset")
 	}
 }
@@ -211,8 +212,7 @@ func TestDatasetDetailResource(t *testing.T) {
 func TestDatasetDetailResourceCLIContext(t *testing.T) {
 	m := newLoaded(t)
 
-	ctx := types.WithClientContext(context.Background(), types.ClientContextCLI)
-	out, err := m.handleDatasetDetail(ctx, "datasets://otel-logs")
+	out, err := m.handleDatasetDetail(context.Background(), "datasets://otel-logs", surface.CLI)
 	if err != nil {
 		t.Fatalf("handleDatasetDetail() error = %v", err)
 	}
@@ -241,7 +241,7 @@ func TestDatasetDetailResourceCLIContext(t *testing.T) {
 func TestDatasetsListResource(t *testing.T) {
 	m := newLoaded(t)
 
-	out, err := m.handleDatasetsList(context.Background(), "datasets://list")
+	out, err := m.handleDatasetsList(context.Background(), "datasets://list", surface.MCP)
 	if err != nil {
 		t.Fatalf("handleDatasetsList() error = %v", err)
 	}
