@@ -52,15 +52,7 @@ var rootCmd = &cobra.Command{
 	Version: fmt.Sprintf("%s (commit: %s, built: %s)", version.Version, version.GitCommit, version.BuildTime),
 	Long: `Ethereum network analytics CLI.
 
-New? Start here: panda getting-started
-
-For data questions, use this workflow:
-  panda resources                             # list live metadata resources
-  panda datasets
-  panda datasets <name>
-  panda search examples "<topic>"
-  panda clickhouse query-raw <Target> "<SQL>"   # for one SQL answer
-  panda execute --file script.py                # for multi-step Python analysis`,
+New? Start here: panda getting-started — it walks the data-discovery workflow.`,
 	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 		level, err := logrus.ParseLevel(logLevel)
 		if err != nil {
@@ -129,7 +121,7 @@ func unknownCommandHint(err error) string {
 		return ""
 	}
 
-	return `Tip: panda has fixed workflow, discovery, and datasource commands; most topic words are search terms, not commands. Use 'panda resources' to list live metadata resources, 'panda datasets' for dataset guides, and 'panda search examples "<topic>"' for query patterns.`
+	return `Tip: panda has fixed workflow, discovery, and datasource commands; most topic words are search terms, not commands. Run 'panda getting-started' for the workflow.`
 }
 
 func init() {

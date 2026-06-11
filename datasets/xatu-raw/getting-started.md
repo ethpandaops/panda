@@ -1,4 +1,4 @@
-Raw, unaggregated event data — one row per observation. Typically served by the `clickhouse-raw` datasource.
+Raw, unaggregated event data — one row per observation.
 
 - **Table syntax:** `FROM table_name` (single database).
 - **Network filter:** `WHERE meta_network_name = 'mainnet'`.

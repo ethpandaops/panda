@@ -31,8 +31,8 @@ type datasetSummary struct {
 // RegisterResources registers the datasets://list and datasets://{name}
 // resources.
 func (m *Module) RegisterResources(log logrus.FieldLogger, reg module.ResourceRegistry) error {
-	// The discovery-refresh goroutine reads the logger concurrently (warn
-	// paths in InitFromDiscovery / logDropped), so swap it under the lock.
+	// The discovery-refresh goroutine reads the logger concurrently (the
+	// warn paths in InitFromDiscovery), so swap it under the lock.
 	m.mu.Lock()
 	m.log = log.WithField("module", "datasets")
 	m.mu.Unlock()

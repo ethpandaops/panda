@@ -304,7 +304,7 @@ func clusterNotFoundError(client SchemaClient, clusterName string) error {
 	sort.Strings(available)
 
 	if len(available) == 0 {
-		return fmt.Errorf("cluster %q not found: no ClickHouse schema cache is available yet; list live datasources with 'panda datasources --type clickhouse' and retry schema after discovery warms up", clusterName)
+		return fmt.Errorf("cluster %q not found: no ClickHouse schema cache is available yet; live datasource names are listed in datasources://clickhouse — retry after discovery warms up", clusterName)
 	}
 
 	return fmt.Errorf("cluster %q not found: available clusters are %s", clusterName, strings.Join(available, ", "))

@@ -4,7 +4,9 @@ import "strings"
 
 // QueryErrorClass identifies a recognizable class of ClickHouse query failure.
 // Classification is integration knowledge and lives here; consumers (CLI, MCP
-// surfaces) own the wording of any guidance they attach to a class.
+// surfaces) own the wording of any guidance they attach to a class. The sandbox
+// Python library keeps a mirrored matcher in python/clickhouse.py (it cannot
+// call into Go) — keep the two in sync when classes change.
 type QueryErrorClass int
 
 const (

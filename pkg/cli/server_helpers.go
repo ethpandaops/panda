@@ -513,7 +513,7 @@ func serverErrorHint(status int, message string) string {
 	case http.StatusNotFound:
 		return "the requested module, operation, datasource, or resource is not available on this server; check 'panda datasources' and 'panda resources'"
 	case http.StatusBadGateway:
-		return "an upstream datasource or node returned a gateway error; verify the datasource, network, and instance through discovery commands, then try a currently reachable target"
+		return "an upstream datasource or node returned a gateway error; the target may be temporarily unreachable — retry, or confirm it is still advertised with 'panda datasources'"
 	case http.StatusServiceUnavailable:
 		return "the server is running but a required service (e.g. sandbox) is not available — check server logs with 'docker compose logs server'"
 	default:

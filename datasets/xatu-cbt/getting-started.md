@@ -1,4 +1,4 @@
-CBT-transformed, pre-aggregated tables. Typically served by the `clickhouse-refined` datasource.
+CBT-transformed, pre-aggregated tables.
 
 - **Table syntax:** `FROM {network}.table_name` — there is one database per network (`mainnet`, `holesky`, …), and the database prefix **is** the network filter.
 - **Use `FINAL`** to read the merged/deduplicated rows.

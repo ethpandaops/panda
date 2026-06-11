@@ -91,7 +91,7 @@ func init() {
 
 	searchExamplesCmd.Flags().StringVar(&searchExamplesQuery, "query", "", "Query text (alternative to positional query)")
 	searchExamplesCmd.Flags().StringVar(&searchExampleCategory, "category", "", "Filter by category")
-	searchExamplesCmd.Flags().StringVar(&searchExampleDataset, "dataset", "", "Filter by dataset (e.g. xatu-raw, otel-logs)")
+	searchExamplesCmd.Flags().StringVar(&searchExampleDataset, "dataset", "", "Filter by dataset (names: panda datasets)")
 	searchExamplesCmd.Flags().IntVar(&searchExampleLimit, "limit", 3, "Max results (default: 3, max: 10)")
 	searchExamplesCmd.ValidArgsFunction = noCompletions
 

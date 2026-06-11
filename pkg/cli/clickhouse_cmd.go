@@ -29,7 +29,7 @@ Examples:
 		}
 
 		if len(args) != 2 {
-			return fmt.Errorf("expected <datasource> and <sql>; use 'panda clickhouse query <datasource> <sql>'")
+			return fmt.Errorf("expected <datasource> and <sql>: panda clickhouse <datasource> \"<SQL>\"")
 		}
 
 		return runClickHouseOperation(cmd, "clickhouse.query", args[0], args[1], false)

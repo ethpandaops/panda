@@ -23,10 +23,9 @@ Example results include ` + "`target`" + ` (the datasource to query) and, when a
 ` + "`type=\"examples\"`" + ` for query snippets (SQL, PromQL, LogQL), ` + "`type=\"runbooks\"`" + ` for multi-step investigation procedures, ` + "`type=\"eips\"`" + ` for Ethereum Improvement Proposals, ` + "`type=\"consensus-specs\"`" + ` for consensus-specs documents and protocol constants. ` + "`type=\"notebooks\"`" + ` is accepted as an alias for runbooks, ` + "`type=\"specs\"`" + ` as an alias for consensus-specs.
 
 Examples:
-- search(query="blob propagation getBlobs")
-- search(query="validator performance")
-- search(type="examples", query="block", category="validators")
-- search(type="examples", query="error logs", dataset="otel-logs")
+- search(query="<topic or error message>")
+- search(type="examples", query="<topic>", category="<category>")
+- search(type="examples", query="<topic>", dataset="<dataset>")
 - search(type="runbooks", query="network not finalizing", tag="finality")
 - search(type="eips", query="account abstraction", status="Final")
 - search(type="consensus-specs", query="MAX_EFFECTIVE_BALANCE")
@@ -76,7 +75,7 @@ func NewSearchTool(
 					},
 					"dataset": map[string]any{
 						"type":        "string",
-						"description": "Optional for type='examples': filter to a specific dataset (e.g., 'xatu-raw', 'xatu-cbt', 'otel-logs'). See datasets://list.",
+						"description": "Optional for type='examples': filter to a specific dataset; valid names come from datasets://list.",
 					},
 					"tag": map[string]any{
 						"type":        "string",

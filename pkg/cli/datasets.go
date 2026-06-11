@@ -23,7 +23,7 @@ dataset.
 
 Examples:
   panda datasets            # List datasets and placements
-  panda datasets otel-logs  # Show the otel-logs query guide
+  panda datasets <name>     # Show that dataset's query guide
   panda datasets --json     # Output the list as JSON`,
 	Args:              cobra.MaximumNArgs(1),
 	ValidArgsFunction: completeDatasetNames,

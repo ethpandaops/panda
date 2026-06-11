@@ -1,6 +1,6 @@
 """Thin ClickHouse wrappers over the server operation API."""
 
-from typing import Any
+from typing import Any, NoReturn
 
 import pandas as pd
 
@@ -8,7 +8,12 @@ from ethpandaops import _runtime
 
 
 def _query_error_hint(message: str) -> str:
-    """Return concise ClickHouse guidance for common error classes."""
+    """Return concise ClickHouse guidance for common error classes.
+
+    This is the sandbox-side sibling of the Go classifier in queryerrors.go
+    (the sandbox cannot call into Go): when adding or changing an error class
+    there, mirror the match patterns here.
+    """
     normalized = message.lower()
 
     if (
@@ -18,7 +23,8 @@ def _query_error_hint(message: str) -> str:
     ):
         return (
             "ClickHouse requires this query to use primary-key/order-key columns. "
-            "Inspect key clauses with panda schema <cluster> <database> <table> and "
+            "Inspect the table's PARTITION/ORDER BY keys via schema discovery "
+            "(clickhouse://tables/<cluster>/<database>/<table>) and "
             "add selective WHERE filters on those keys; partition filters help bound "
             "work but may not satisfy force_primary_key. Only use SETTINGS "
             "force_primary_key=0 for a bounded query you can justify."
@@ -36,9 +42,10 @@ def _query_error_hint(message: str) -> str:
 
     if "syntax_error" in normalized or "syntax error" in normalized:
         return (
-            "ClickHouse rejected the SQL syntax. Check table syntax with panda datasets "
-            "<name> and schema with panda schema <cluster> <database> <table>. For "
-            "FINAL with an alias use FROM table AS alias FINAL. Put SETTINGS after "
+            "ClickHouse rejected the SQL syntax. Check the dataset's syntax rules "
+            "(datasets://<dataset>) and the table schema "
+            "(clickhouse://tables/<cluster>/<database>/<table>). For FINAL with an "
+            "alias use FROM table AS alias FINAL. Put SETTINGS after "
             "LIMIT/OFFSET/ORDER BY clauses."
         )
 
@@ -60,8 +67,8 @@ def _query_error_hint(message: str) -> str:
     ):
         return (
             "The SQL references a table or database that is not available in the "
-            "selected datasource. List ClickHouse datasources and inspect tables with "
-            "panda schema <cluster> [database]."
+            "selected datasource. List datasources (datasources://clickhouse) and inspect "
+            "tables via clickhouse://tables/<cluster>/<database>."
         )
 
     if (
@@ -97,7 +104,7 @@ def _query_error_hint(message: str) -> str:
     return ""
 
 
-def _raise_with_query_hint(error: ValueError) -> None:
+def _raise_with_query_hint(error: ValueError) -> NoReturn:
     message = str(error)
     hint = _query_error_hint(message)
     if not hint or "hint:" in message.lower():

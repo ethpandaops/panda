@@ -20,7 +20,7 @@ Example usage:
     df = clickhouse.query(name, "SELECT 1")
 
     # Query Prometheus using instance name
-    result = prometheus.query("ethpandaops", "up")
+    result = prometheus.query("<datasource>", "up")
 
     # Upload output file
     url = storage.upload("/workspace/chart.png")

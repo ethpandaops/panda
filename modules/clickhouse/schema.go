@@ -766,8 +766,7 @@ func (c *clickhouseSchemaClient) queryJSON(ctx context.Context, datasourceName, 
 // database (SHOW TABLES) with every other non-system database. A cluster can
 // hold data in both at once — e.g. a populated default database plus
 // per-dataset databases — so short-circuiting on a non-empty default database
-// would hide the others (and live-schema validation would then wrongly demote
-// examples that reference them). Each source failing alone is tolerated; both
+// would hide the others. Each source failing alone is tolerated; both
 // failing is an error.
 func (c *clickhouseSchemaClient) fetchTableList(ctx context.Context, datasourceName string) ([]discoveredTable, error) {
 	defaultTables, defaultErr := c.fetchTableListDefault(ctx, datasourceName)

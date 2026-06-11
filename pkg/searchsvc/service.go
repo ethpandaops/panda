@@ -361,7 +361,7 @@ func exampleSearchGuidance(results []*SearchExampleResult) []string {
 	}
 
 	if hasDataset {
-		guidance = append(guidance, "The dataset field identifies the knowledge pack; read datasets://<dataset> only when you need placement or syntax rules.")
+		guidance = append(guidance, "The dataset field identifies the knowledge pack; read datasets://<dataset> for placement and required syntax before querying that dataset.")
 	}
 
 	return guidance

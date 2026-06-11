@@ -6,8 +6,8 @@ import (
 )
 
 // RefreshableExampleIndex wraps an ExampleIndex behind a swap so a background
-// refresher can replace it (e.g. after the live schema changes which examples
-// are valid) without disrupting in-flight searches. It implements the same
+// refresher can replace it (e.g. when proxy discovery changes which datasets
+// are active in this deployment) without disrupting in-flight searches. It implements the same
 // Search signature as ExampleIndex.
 type RefreshableExampleIndex struct {
 	mu  sync.RWMutex

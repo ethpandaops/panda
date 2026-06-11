@@ -1,9 +1,10 @@
 OpenTelemetry logs stored in ClickHouse, table `{db}.otel_logs`. The database differs per deployment: resolve `{db}` from the datasource's otel-logs dataset params (`database: ...` in `datasources://` or the sandbox datasource env), falling back to the datasource's default database.
 
-Two common locations:
+How the rows are keyed depends on the deployment shape (the live placement
+section above shows which datasources carry this dataset here):
 
-- **Local Kurtosis devnets:** `local-kurtosis` datasource. Multiple enclaves can share one table — filter on `EnclaveName` (list distinct values first).
-- **Hosted devnets:** `clickhouse-raw` datasource. Keyed by `ResourceAttributes['network']` (devnet name) and `ResourceAttributes['host.name']` (node).
+- **Kurtosis enclaves:** multiple enclaves can share one table — filter on `EnclaveName` (list distinct values first).
+- **Hosted/central stores:** keyed by `ResourceAttributes['network']` (network name) and `ResourceAttributes['host.name']` (node).
 
 Tips:
 - **Always filter `Timestamp`** (e.g. `Timestamp >= now() - INTERVAL 1 HOUR`).
