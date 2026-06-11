@@ -182,3 +182,390 @@
         delivered via an MEV relay.
       - For mainnet blocks in the last 24h, what fraction were delivered via an 
         MEV relay?
+
+  - id: validator_count                                   # 💬 basic validator ask
+    description: active validators on mainnet on 2026-06-08
+    input: "How many validators had an active status on mainnet on 8 June 2026 (UTC)?"
+    tags: [clickhouse, validators, basic]
+    assert:
+      - type: llm-rubric
+        value: >
+          Reports the active validator count on mainnet for 8 June 2026 from a real
+          query over validator-status snapshot data. The canonical snapshot for that
+          day shows ~888,800 active validators (different validator-status sources
+          disagree by ~1%, so accept roughly 870k-910k). A missing count or one
+          outside that band fails.
+    variations:
+      - What was the count of validators with active status on mainnet on 8 June
+        2026 (UTC)?
+      - On June 8, 2026 (UTC), how many mainnet validators had active status?
+      - I'm trying to find the number of validators that had an active status on
+        mainnet on 8 June 2026 (UTC).
+      - Please report how many validators were in active status on mainnet on 8 
+        June 2026 (UTC).
+      - For 8 June 2026 (UTC), give the active-status validator count for 
+        mainnet.
+  - id: validator_head_accuracy                           # 💬 single-validator lookup
+    description: head-vote accuracy of validator 2 for 1-7 June 2026
+    input: "What was the attestation head accuracy of mainnet validator 2 for the
+      week of 1-7 June 2026 (UTC)?"
+    tags: [clickhouse, validators, attestations]
+    assert:
+      - type: llm-rubric
+        value: >
+          Reports validator 2's head-vote accuracy for 1-7 June 2026 from a real
+          per-validator attestation-correctness query. The measured value is ~98.5%
+          (1552 of 1576 attestations head-correct); accept ~97-100%. No number, or
+          a figure outside that band, fails.
+    variations:
+      - For mainnet validator 2, what was the attestation head accuracy during 
+        1-7 June 2026 (UTC)?
+      - Report the attestation head accuracy for mainnet validator 2 for the 
+        week of 1-7 June 2026, UTC.
+      - I'm trying to find the attestation head accuracy of mainnet validator 2 
+        over the UTC week from 1 June to 7 June 2026.
+      - During the week of 1-7 June 2026 (UTC), what attestation head accuracy 
+        did mainnet validator 2 achieve?
+      - Please provide mainnet validator 2's attestation head accuracy for 1-7 
+        June 2026 (UTC).
+  - id: engine_newpayload_el_comparison                   # 💬 EL block-processing ask
+    description: engine_newPayload duration comparison across ELs on 2026-06-08
+    input: "Compare engine_newPayload processing times across execution clients on
+      mainnet on 8 June 2026 (UTC). Which was fastest, which was slowest — and was
+      any client at risk of blowing the slot time?"
+    tags: [clickhouse, execution, engine, timing]
+    assert:
+      - type: llm-rubric
+        value: >
+          Reports per-execution-client engine_newPayload durations for 8 June 2026
+          from a real query. Measured medians that day: Reth ~38ms (fastest), ethrex
+          ~41ms, Nethermind ~48ms, geth ~87ms, Besu ~139ms, erigon ~266ms (slowest);
+          accept values within roughly 2x and the same fastest/slowest identities.
+          Must conclude everything sat far below the 12s slot. A ranking with no
+          real per-client numbers fails.
+    variations:
+      - 'On mainnet on 8 June 2026 (UTC), compare engine_newPayload processing times
+        by execution client: which client was fastest, which was slowest, and did
+        any client appear close to exceeding the slot time?'
+      - I'm trying to compare engine_newPayload processing times across 
+        execution clients on mainnet for 8 June 2026 (UTC). Identify the fastest
+        and slowest clients, and say whether any client was at risk of blowing 
+        the slot time.
+      - For 8 June 2026 (UTC) on mainnet, rank execution clients by 
+        engine_newPayload processing time. Which one processed fastest, which 
+        one was slowest, and was any client in danger of missing the slot time?
+      - Compare the mainnet engine_newPayload processing-time performance of 
+        execution clients on 8 June 2026 (UTC), specifying the fastest client, 
+        the slowest client, and whether any client risked exceeding the slot 
+        time.
+      - Which execution client had the quickest engine_newPayload processing 
+        times on mainnet on 8 June 2026 (UTC), which had the slowest, and did 
+        any client get close enough to the slot time to be concerning?
+  - id: engine_getblobs_blob_scaling                      # 💬 getBlobs scaling ask
+    description: engine_getBlobs response time vs blob count per EL on 
+      2026-06-08
+    input: "How did engine_getBlobs response time scale with blob count for each execution
+      client on mainnet on 8 June 2026 (UTC)?"
+    tags: [clickhouse, blobs, engine, execution]
+    assert:
+      - type: llm-rubric
+        value: >
+          Shows per-execution-client engine_getBlobs durations for 8 June 2026 from
+          a real query, growing with blob count. Measured medians that day: Nethermind
+          ~2ms and Reth ~4ms (fastest) up to erigon ~32ms and geth ~50ms (slowest);
+          accept values within roughly 2x with the same fast/slow grouping. Concrete
+          per-client numbers required; a hand-wave with no data fails.
+    variations:
+      - For mainnet on 8 June 2026 (UTC), how did engine_getBlobs response time 
+        vary as blob count changed for each execution client?
+      - Show how engine_getBlobs response time scaled by blob count for every 
+        execution client on mainnet on 8 June 2026 (UTC).
+      - I'm trying to understand, for each execution client on mainnet on 8 June
+        2026 (UTC), how engine_getBlobs response time changed with blob count.
+      - On 8 June 2026 (UTC) on mainnet, what was the relationship between blob 
+        count and engine_getBlobs response time for each execution client?
+      - Could you compare engine_getBlobs response time across blob counts for 
+        each execution client on mainnet on 8 June 2026 (UTC)?
+  - id: blob_count_stats                                  # 💬 blob count stats ask
+    description: min/max/avg/p50 blobs per block during May 2026
+    input: "What were the min, max, average and p50 blob counts per block on mainnet
+      during May 2026 (UTC)?"
+    tags: [clickhouse, blobs]
+    assert:
+      - type: llm-rubric
+        value: >
+          Reports all four statistics from a real query over canonical per-block blob
+          counts for May 2026. Measured values: min 1 (accept 0-1), max 21, average
+          ~4.7, median 5. All four close to those values pass; missing stats or
+          values outside ~±40% fail.
+    variations:
+      - For mainnet blocks in May 2026 (UTC), what were the minimum, maximum, 
+        average, and p50 blob counts per block?
+      - Report the min, max, average, and p50 values for blob counts per block 
+        on mainnet during May 2026 in UTC.
+      - I'm trying to find the min, max, average, and p50 blob count per block 
+        on mainnet for May 2026 (UTC).
+      - During May 2026 (UTC), what were the min, max, average, and p50 counts 
+        of blobs per block on mainnet?
+      - Could you calculate the minimum, maximum, mean, and p50 blob counts per 
+        block for mainnet over May 2026 (UTC)?
+  - id: mev_max_value_block                               # 💬 410-ETH-reward hunt
+    description: most valuable MEV payload delivered during May 2026
+    input: "What was the most valuable MEV payload delivered on mainnet during May
+      2026 (UTC)? Which slot, and how much was it worth?"
+    tags: [clickhouse, mev, relay, blocks]
+    assert:
+      - type: llm-rubric
+        value: >
+          Identifies the top mainnet slot by delivered MEV payload value in May 2026
+          from a real query: slot 14,264,634 (2026-05-05), worth ~307 ETH, delivered
+          via the Ultra Sound relay. The slot number and a value of roughly 300-310
+          ETH are required (relay name is a plus); any other slot, a missing value,
+          or a typical-block-sized value fails.
+    variations:
+      - During May 2026 (UTC), what was the highest-value MEV payload delivered 
+        on mainnet, and what slot was it in and what was it worth?
+      - Identify the most valuable MEV payload delivered on mainnet in May 2026 
+        UTC; include the slot and its value.
+      - I'm trying to find the top-valued MEV payload delivered on mainnet 
+        during May 2026 (UTC). Which slot was it delivered in, and how much was 
+        it worth?
+      - For mainnet, in the UTC window of May 2026, which delivered MEV payload 
+        had the greatest value? Please provide the slot and the amount it was 
+        worth.
+      - What slot contained the most valuable MEV payload delivered on mainnet 
+        during May 2026 (UTC), and what was that payload's worth?
+  - id: mempool_observer_coverage                         # 💬 mempool contributor ask
+    description: distinct clients feeding mempool observations on 2026-06-08
+    input: "How many distinct clients contributed mempool transaction observations
+      on mainnet on 8 June 2026 (UTC), and how many observations in total?"
+    tags: [clickhouse, mempool, execution]
+    assert:
+      - type: llm-rubric
+        value: >
+          Reports, from a real query over mempool transaction data for 8 June 2026,
+          the number of distinct observing clients and the total observation count.
+          Measured: 21 clients and ~53 million observations (accept 19-23 clients
+          and ~45-60M). Both numbers required; values outside those bands or no
+          real query fail.
+    variations:
+      - On mainnet, for 8 June 2026 (UTC), how many distinct clients contributed
+        mempool transaction observations, and what was the total number of 
+        observations?
+      - Count the distinct clients that contributed mempool transaction 
+        observations on mainnet on 8 June 2026 (UTC), and also report the total 
+        observation count.
+      - I'm trying to find, for mainnet on 8 June 2026 (UTC), how many distinct 
+        clients submitted mempool transaction observations and how many 
+        observations there were in total.
+      - For the UTC day of 8 June 2026 on mainnet, what is the number of 
+        distinct clients contributing mempool transaction observations, 
+        alongside the total number of such observations?
+      - How many unique clients contributed mempool transaction observations on 
+        mainnet during 8 June 2026 (UTC), and what was the overall count of 
+        observations?
+  - id: late_data_columns                                 # 💬 late-column hunt
+    description: gossip observations of data column sidecars minutes late on 
+      2026-06-08
+    input: "Looking at individual libp2p gossip observations of data column sidecars
+      on mainnet on 8 June 2026 (UTC): how many observations arrived more than 5 minutes
+      after their slot started, and from how many distinct sending peers?"
+    tags: [clickhouse, libp2p, peerdas, timing]
+    assert:
+      - type: llm-rubric
+        value: >
+          Answers from a real query over raw libp2p gossipsub data-column-sidecar
+          observations for 8 June 2026 with a >5-minute propagation threshold.
+          Measured: ~8,400 late observations from ~93 distinct peers (accept roughly
+          7k-10k observations and 80-110 peers). A first-seen/deduplicated view
+          hides these laggard re-sends and lands near zero — a zero answer fails,
+          as does an ungrounded count.
+    variations:
+      - For individual libp2p gossip observations of data column sidecars on 
+        mainnet during 8 June 2026 (UTC), count the observations that arrived 
+        more than 5 minutes after their slot began and the number of distinct 
+        sending peers behind them.
+      - On mainnet on 8 June 2026 (UTC), how many individual libp2p gossip 
+        observations of data column sidecars were received more than 5 minutes 
+        after the start of their slot, and how many unique sending peers sent 
+        them?
+      - I'm trying to determine, from individual libp2p gossip observations of 
+        data column sidecars on mainnet for 8 June 2026 (UTC), how many arrived 
+        over 5 minutes after their slot started and how many distinct sending 
+        peers that represents.
+      - 'Please report two counts for individual libp2p gossip observations of data
+        column sidecars on mainnet on 8 June 2026 (UTC): observations arriving more
+        than 5 minutes after slot start, and distinct sending peers for those observations.'
+      - How many data column sidecar observations seen via individual libp2p 
+        gossip on mainnet on 8 June 2026 (UTC) came in more than 5 minutes after
+        their slot started, and from how many distinct sending peers?
+  - id: parent_distance_orphans                           # 💬 stale-parent analysis
+    description: blocks built on stale parents during May 2026, and their fate
+    input: "On mainnet during May 2026 (UTC), how often did proposers build on a parent
+      block more than one slot back — and did those blocks survive?"
+    tags: [clickhouse, blocks, reorgs]
+    assert:
+      - type: llm-rubric
+        value: >
+          Quantifies parent distance for May 2026 from a real query over block data
+          that includes orphaned blocks. Measured: ~221,000 blocks at distance 1
+          (99.6%), 768 at distance 2 (10 of them orphaned), and only ~9 at distance
+          3+ — almost all orphaned. Accept counts within ~10% of those; must report
+          both the distribution and the orphan outcome. Canonical-only analysis that
+          can't see orphans is wrong.
+    variations:
+      - During May 2026 (UTC) on mainnet, how many times did proposers build on 
+        a parent block from more than one slot earlier, and did those blocks 
+        survive?
+      - For mainnet over May 2026 in UTC, measure how often proposers chose a 
+        parent block more than one slot back, and indicate whether the resulting
+        blocks survived.
+      - In May 2026 (UTC), on mainnet, were there proposer blocks built on 
+        parents older than one slot, how often did that happen, and did those 
+        blocks survive?
+      - I'm trying to find, for mainnet during May 2026 (UTC), the frequency of 
+        proposers building on parent blocks more than one slot behind, plus 
+        whether those blocks survived.
+      - On mainnet in the UTC month of May 2026, how frequently did a proposer 
+        build atop a parent block that was more than one slot back, and did any 
+        such blocks survive?
+  - id: dec4_relay_circuit_breaker                        # 💬 fixed-date incident
+    description: the 2025-12-04 MEV relay circuit-breaker collapse (finalized 
+      history)
+    input: "Around the 3rd-4th of December 2025, MEV relay circuit breakers reportedly
+      tripped on mainnet and relay-delivered blocks collapsed for a while. Find the
+      actual window and quantify how bad it got."
+    tags: [clickhouse, mev, relay, incident]
+    assert:
+      - type: llm-rubric
+        value: >
+          Places the incident on 2025-12-04 UTC (early morning, starting roughly
+          02:50-03:30) from real queries over relay payload-delivered data, and
+          quantifies the collapse with concrete numbers at any granularity:
+          relay-delivered slots fall from a ~85-95%-of-slots baseline to roughly
+          a quarter or less at the trough (epoch views show epochs at or near zero
+          delivered in the 411,440-411,460 range; hourly views show ~77 of 300
+          slots in the worst hour), recovering later the same day. The data puts
+          it on Dec 4 even though the prompt hedges "3rd-4th" — pinning it to Dec
+          3 without checking fails, as does a window with no collapse numbers.
+    variations:
+      - On mainnet around December 3rd-4th, 2025, MEV relay circuit breakers 
+        were said to have tripped and relay-delivered blocks dropped sharply for
+        a period. Identify the real window and measure the severity of the 
+        collapse.
+      - Find the actual timeframe around the 3rd-4th of December 2025 when MEV 
+        relay circuit breakers reportedly tripped on mainnet, and quantify how 
+        far relay-delivered blocks fell during that period.
+      - I'm trying to pin down the mainnet incident around December 3rd-4th, 
+        2025 where MEV relay circuit breakers supposedly tripped and 
+        relay-delivered blocks collapsed for a while. What was the actual 
+        window, and how bad did it get?
+      - For the reported mainnet MEV relay circuit-breaker trip around 3-4 
+        December 2025, determine the precise window of the relay-delivered block
+        collapse and quantify its worst severity.
+      - Around Dec. 3-4, 2025, mainnet reportedly saw MEV relay circuit breakers
+        trip and relay-delivered blocks collapse temporarily; establish the 
+        actual window and quantify the extent of the drop.
+  - id: testnet_status                                    # 💬 "state of hoodi" ask
+    description: live health summary of the hoodi testnet
+    input: "What's the current state of the hoodi testnet? Is it finalizing, and how
+      does recent block production look?"
+    network: hoodi
+    tags: [dora, ethnode, testnet, finality]
+    assert:
+      - type: llm-rubric
+        value: >
+          Reports hoodi's live state from a real explorer/node query: the current
+          epoch and finalized epoch (normally ~2 epochs behind head when healthy),
+          plus a recent block-production or participation figure. Concrete, mutually
+          consistent numbers pass; tiny stale epoch numbers, or a verdict with no
+          numbers, fail.
+    variations:
+      - How is the hoodi testnet doing right now? Is it finalizing, and what 
+        does recent block production look like?
+      - Give me the current status of the hoodi testnet, including whether it is
+        finalizing and how block production has looked recently.
+      - "I'm trying to understand the present state of the hoodi testnet: is it finalizing,
+        and what has recent block production been like?"
+      - What is the current condition of the hoodi testnet? Please assess 
+        whether it is finalizing and summarize recent block production.
+      - "Check the hoodi testnet's current state: finalization status and recent block
+        production behavior."
+  - id: sepolia_validator_lookup                          # 💬 validator lookup ask
+    description: single validator status/balance on sepolia on 2026-06-08
+    input: "What were the status and balance of validator 405 on sepolia on 8 June
+      2026 (UTC)?"
+    network: sepolia
+    tags: [clickhouse, validators, testnet]
+    assert:
+      - type: llm-rubric
+        value: >
+          Reports sepolia validator 405's state on 8 June 2026 from a real query
+          over validator snapshot data: status active (active_ongoing) and balance
+          ~32.0002 ETH (effective balance 32 ETH; accept anything reported as ~32
+          ETH). Both fields from real data pass; fabricated or missing fields fail.
+    variations:
+      - 'Validator 405 on Sepolia: what was its status and balance on 8 June 2026
+        (UTC)?'
+      - Can you tell me the status and balance for validator 405 on the Sepolia 
+        network on 8 June 2026 (UTC)?
+      - I’m trying to find out what status validator 405 had, and what its 
+        balance was, on Sepolia on 8 June 2026 (UTC).
+      - Report the status and balance of Sepolia validator 405 for 8 June 2026 
+        (UTC).
+      - For the Sepolia network, what were validator 405’s status and balance on
+        8 June 2026 (UTC)?
+  - id: devnet_error_logs                                 # 💬 devnet log triage
+    description: error-level log summary for a currently-running devnet
+    input: "Pick any currently-running devnet and summarize its error-level log volume
+      from the last few hours — which services or hosts are noisiest?"
+    tags: [clickhouse, logs, devnets]
+    assert:
+      - type: llm-rubric
+        value: >
+          Discovers a devnet that is actually running right now, queries its container
+          logs (OTel logs in ClickHouse) filtered to error severity, and reports a
+          per-service or per-host breakdown with real counts. Log-derived numbers
+          for
+          a named, current devnet pass; an answer with no real log query fails.
+    variations:
+      - Choose any currently-running devnet and summarize the volume of 
+        error-level logs over the last few hours, highlighting the noisiest 
+        services or hosts.
+      - 'For any devnet that is currently running, report on error-level log volume
+        from the last few hours: which services or hosts are generating the most noise?'
+      - I'm trying to understand recent error-level log volume on a 
+        currently-running devnet. Pick any one and summarize the last few hours,
+        including which services or hosts are noisiest.
+      - Please select any currently-running devnet and provide a summary of its 
+        error-level log volume for the last few hours, identifying the services 
+        or hosts with the highest noise.
+      - Pick a live devnet and give me a quick read on error-level log volume 
+        from the last few hours. Which services or hosts are the loudest?
+  - id: head_vote_correctness_24h                         # 💬 recurring accuracy ask
+    description: network-wide head-vote correctness and participation on 
+      2026-06-08
+    input: "What percentage of mainnet attestations voted for the correct head block
+      on 8 June 2026 (UTC)? And what was overall participation that day?"
+    tags: [clickhouse, attestations, basic]
+    assert:
+      - type: llm-rubric
+        value: >
+          Reports both figures from a real query over attestation-correctness data
+          for 8 June 2026. Measured: head-vote correctness ~98.9% and participation
+          ~99.7% (accept ~98-99.5% and ~99.3-100% respectively). Both percentages,
+          clearly distinguished, are required; one number doing double duty or no
+          real query fails.
+    variations:
+      - On 8 June 2026 (UTC), what share of mainnet attestations voted for the 
+        correct head block, and what was the overall participation for that day?
+      - For 8 June 2026 in UTC, give the percentage of mainnet attestations that
+        selected the correct head block, plus the day’s overall participation.
+      - I'm trying to find the percentage of mainnet attestations that voted for
+        the correct head block on 8 June 2026 (UTC), and the overall 
+        participation on that same day.
+      - What was the correct-head vote percentage among mainnet attestations on 
+        8 June 2026 (UTC), and what was overall participation that day?
+      - Please report, for 8 June 2026 (UTC), the percentage of mainnet 
+        attestations voting for the correct head block and the overall 
+        participation for that date.

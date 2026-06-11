@@ -29,3 +29,29 @@
         times for the most recent 1000 blocks on mainnet.
       - For the last 1000 blocks on mainnet, create a histogram of their block 
         arrival times.
+  - id: au_block_arrivals_chart                           # 💬 geo-filtered arrivals
+    description: chart of block arrivals seen by Australian observers on 
+      2026-06-08
+    input: "Chart block arrival times on mainnet on 8 June 2026 (UTC) as seen by observer
+      nodes in Australia."
+    network: mainnet
+    tags: [visualization, timing, geo]
+    assert:
+      - type: llm-rubric
+        value: >
+          Filters block-arrival observations for 8 June 2026 to Australian observers
+          using the observer geo metadata, builds a chart from that real data, and
+          provides the storage URL of the uploaded image. The measured AU median
+          arrival that day is ~2.1s into the slot (accept ~1.8-2.5s). A chart that
+          never geo-filters, or a missing chart URL, fails.
+    variations:
+      - Plot block arrival times on mainnet for 8 June 2026 (UTC), using 
+        observations from observer nodes in Australia.
+      - Create a chart of mainnet block arrival times on 8 June 2026 UTC as 
+        recorded by Australian observer nodes.
+      - I'm trying to visualize block arrival times on mainnet on 8 June 2026 
+        (UTC) from the perspective of observer nodes in Australia.
+      - For observer nodes located in Australia, chart the block arrival times 
+        seen on mainnet during 8 June 2026 (UTC).
+      - Can you graph the block arrival times on mainnet for 8 June 2026 (UTC) 
+        as seen by Australia-based observer nodes?

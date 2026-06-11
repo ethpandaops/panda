@@ -69,3 +69,36 @@
         mainnet.
       - Please query mainnet block arrival times for the last 100 slots.
       - Fetch the arrival times of blocks for the last 100 slots on mainnet.
+  - id: attestation_volume_analysis                       # 💬 attestations-per-day ask
+    description: per-day attestation event volume for 1-7 June 2026, per 
+      network, charted
+    network: mainnet
+    tags: [multi_step, attestations, analysis]
+    steps:
+      - prompt: "How many attestation events per day landed in the raw beacon API
+          event stream on mainnet for 1-7 June 2026 (UTC)?"
+      - prompt: "Now break that down per network — mainnet, hoodi and sepolia."
+      - prompt: "Chart the per-network daily volumes."
+    assert:
+      - type: llm-rubric
+        value: >
+          Across the turns the agent counts raw beacon-API attestation events per
+          day for 1-7 June 2026 (filtering on the partition key — these tables are
+          billions of rows). Measured daily averages for that week: mainnet ~975M
+          events/day (~6.8B total), hoodi ~420M/day, sepolia ~1.5M/day; accept
+          ~±15% with that network ordering. Then produces a per-network chart and
+          provides the storage URL of the uploaded image. Wrong magnitudes, a
+          missing chart URL, or wrong ordering fails. Must re-use the session to
+          maintain persistence between turns (look for a session_id.)
+    variations:
+      - For each day from 1-7 June 2026 (UTC), how many attestation events 
+        landed in the raw beacon API event stream on mainnet?
+      - Count the attestation events per day in the raw beacon API event stream 
+        on mainnet for 1-7 June 2026 (UTC).
+      - I'm trying to find the daily number of attestation events that landed in
+        the raw beacon API event stream on mainnet between 1 and 7 June 2026 
+        (UTC).
+      - What was the per-day count of attestation events landing in the raw 
+        beacon API event stream on mainnet during 1-7 June 2026 (UTC)?
+      - Please report, by day, how many attestation events landed in the raw 
+        beacon API event stream on mainnet for 1-7 June 2026 (UTC).
