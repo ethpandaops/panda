@@ -114,3 +114,33 @@ func TestReleaseChecksumsAsset(t *testing.T) {
 		assert.Nil(t, asset)
 	})
 }
+
+func TestFirstPublished(t *testing.T) {
+	t.Run("skips drafts, keeps pre-releases", func(t *testing.T) {
+		releases := []Release{
+			{TagName: "v1.3.0", Draft: true},
+			{TagName: "v1.3.0-rc.1", Prerelease: true},
+			{TagName: "v1.2.0"},
+		}
+
+		release := firstPublished(releases)
+		require.NotNil(t, release)
+		assert.Equal(t, "v1.3.0-rc.1", release.TagName)
+	})
+
+	t.Run("stable first when newest", func(t *testing.T) {
+		releases := []Release{
+			{TagName: "v1.3.0"},
+			{TagName: "v1.3.0-rc.1", Prerelease: true},
+		}
+
+		release := firstPublished(releases)
+		require.NotNil(t, release)
+		assert.Equal(t, "v1.3.0", release.TagName)
+	})
+
+	t.Run("no published releases", func(t *testing.T) {
+		assert.Nil(t, firstPublished([]Release{{TagName: "v1.0.0", Draft: true}}))
+		assert.Nil(t, firstPublished(nil))
+	})
+}

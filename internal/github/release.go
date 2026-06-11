@@ -27,9 +27,11 @@ const (
 
 // Release represents a GitHub release.
 type Release struct {
-	TagName string  `json:"tag_name"`
-	HTMLURL string  `json:"html_url"`
-	Assets  []Asset `json:"assets"`
+	TagName    string  `json:"tag_name"`
+	HTMLURL    string  `json:"html_url"`
+	Prerelease bool    `json:"prerelease"`
+	Draft      bool    `json:"draft"`
+	Assets     []Asset `json:"assets"`
 }
 
 // Asset represents a downloadable file attached to a release.
@@ -64,33 +66,34 @@ func (r *ReleaseChecker) LatestRelease(ctx context.Context) (*Release, error) {
 		r.owner, r.repo,
 	)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
-	}
-
-	req.Header.Set("Accept", "application/vnd.github+json")
-
-	if token := githubapi.Token(); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-
-	resp, err := r.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("fetching latest release: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("github API returned %d", resp.StatusCode)
-	}
-
 	var release Release
-	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
-		return nil, fmt.Errorf("decoding release: %w", err)
+	if err := r.getJSON(ctx, url, &release); err != nil {
+		return nil, err
 	}
 
 	return &release, nil
+}
+
+// LatestReleaseIncludingPrereleases fetches the most recently published
+// release, pre-releases included. GitHub's /releases/latest endpoint never
+// returns pre-releases, so this lists releases (newest first) and takes the
+// first published one.
+func (r *ReleaseChecker) LatestReleaseIncludingPrereleases(ctx context.Context) (*Release, error) {
+	url := fmt.Sprintf(
+		"https://api.github.com/repos/%s/%s/releases?per_page=20",
+		r.owner, r.repo,
+	)
+
+	var releases []Release
+	if err := r.getJSON(ctx, url, &releases); err != nil {
+		return nil, err
+	}
+
+	if release := firstPublished(releases); release != nil {
+		return release, nil
+	}
+
+	return nil, fmt.Errorf("no published releases found for %s/%s", r.owner, r.repo)
 }
 
 // FindAsset returns the binary asset for the given OS, architecture, and
@@ -127,4 +130,47 @@ func (r *Release) ChecksumsAsset() (*Asset, error) {
 	}
 
 	return nil, fmt.Errorf("no checksums.txt asset found in release %s", r.TagName)
+}
+
+// getJSON performs an authenticated GitHub API GET and decodes the JSON
+// response into target.
+func (r *ReleaseChecker) getJSON(ctx context.Context, url string, target any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	if token := githubapi.Token(); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := r.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("fetching release info: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("github API returned %d", resp.StatusCode)
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
+		return fmt.Errorf("decoding release info: %w", err)
+	}
+
+	return nil
+}
+
+// firstPublished returns the first non-draft release in GitHub's
+// newest-first listing, i.e. the most recently published one.
+func firstPublished(releases []Release) *Release {
+	for i := range releases {
+		if !releases[i].Draft {
+			return &releases[i]
+		}
+	}
+
+	return nil
 }

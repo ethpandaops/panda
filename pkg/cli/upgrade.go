@@ -38,6 +38,7 @@ var (
 	upgradeCLIOnly    bool
 	upgradeServerOnly bool
 	upgradeYes        bool
+	upgradePrerelease bool
 )
 
 var upgradeCmd = &cobra.Command{
@@ -48,9 +49,10 @@ var upgradeCmd = &cobra.Command{
 and docker-compose configuration to the latest release.
 
 By default, upgrades everything. Use flags to limit scope:
-  panda upgrade              # upgrade CLI + server + sandbox
-  panda upgrade --cli-only   # only upgrade the CLI binary
-  panda upgrade --server-only # only upgrade server/sandbox containers`,
+  panda upgrade               # upgrade CLI + server + sandbox
+  panda upgrade --cli-only    # only upgrade the CLI binary
+  panda upgrade --server-only # only upgrade server/sandbox containers
+  panda upgrade --pre-release # accept pre-release builds (release candidates)`,
 	RunE: runUpgrade,
 }
 
@@ -62,6 +64,8 @@ func init() {
 		"only upgrade server containers and compose file")
 	upgradeCmd.Flags().BoolVarP(&upgradeYes, "yes", "y", false,
 		"skip confirmation prompt")
+	upgradeCmd.Flags().BoolVar(&upgradePrerelease, "pre-release", false,
+		"include pre-releases when resolving the latest version")
 }
 
 func runUpgrade(cmd *cobra.Command, _ []string) error {
@@ -73,7 +77,17 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 
 	fmt.Println("Checking for updates...")
 
-	release, err := checker.LatestRelease(ctx)
+	var (
+		release *github.Release
+		err     error
+	)
+
+	if upgradePrerelease {
+		release, err = checker.LatestReleaseIncludingPrereleases(ctx)
+	} else {
+		release, err = checker.LatestRelease(ctx)
+	}
+
 	if err != nil {
 		return fmt.Errorf("checking for updates: %w", err)
 	}
