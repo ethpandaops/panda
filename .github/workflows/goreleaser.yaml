@@ -73,6 +73,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LATEST_TAG: ${{ steps.meta.outputs.latest_tag }}
+          # The rc promotion flow puts two tags on one commit (v1.2.3-rc.N and
+          # v1.2.3); goreleaser's git-describe version detection can pick the
+          # wrong one. Pin it to the tag that actually triggered this run.
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
 
       # SLSA build provenance linking the release artifacts back to this
       # workflow run and source commit. Verify with `gh attestation verify`.
