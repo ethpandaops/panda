@@ -211,12 +211,15 @@ jobs:
           # the same measurement the harden loop calls its reference number. --min-pass 0
           # because qualification is a human-reviewed scorecard, not a gate — the job
           # should only go red when the harness itself breaks. --concurrency 6: the
-          # local default (16) starves a 4-vCPU runner.
+          # local default (16) starves a 4-vCPU runner. --save-dir reports/run puts
+          # the per-run trace files inside the uploaded artifact, so failing runs are
+          # diagnosable from CI without Langfuse access.
           uv run python -m scripts.eval \
             --cases baseline_all.yaml --concurrency 6 \
             --subject opencode-go/deepseek-v4-flash:cli \
             --subject-timeout 900 \
             --min-pass 0 \
+            --save-dir reports/run \
             --junit reports/junit.xml --json reports/eval.json
 
       - name: Server log (sandbox / proxy activity)

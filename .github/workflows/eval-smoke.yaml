@@ -225,11 +225,14 @@ jobs:
           # belong to the harden loop, not per-commit CI. --concurrency 6: the local
           # default (16) starves a 4-vCPU runner. --subject-timeout 600: the 300s
           # default times out healthy-but-slow runs on this runner; slow is measured
-          # (and bounded by the job timeout), not crashed.
+          # (and bounded by the job timeout), not crashed. --save-dir reports/run puts
+          # the per-run trace files inside the uploaded artifact, so a failing agent's
+          # actual commands are diagnosable from CI without Langfuse access.
           uv run python -m scripts.eval \
             --cases smoke.yaml --no-variations --concurrency 6 \
             --subject opencode-go/deepseek-v4-flash:cli \
             --subject-timeout 600 \
+            --save-dir reports/run \
             --junit reports/junit.xml --json reports/eval.json
 
       - name: Server log (sandbox / proxy activity)

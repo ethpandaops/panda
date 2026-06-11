@@ -211,7 +211,10 @@ jobs:
           # only override --subject when the dispatch input is set.
           ARGS=(--cases "${{ inputs.cases || 'coverage.yaml' }}" --repeat "${{ inputs.repeat || '1' }}")
           [ -n "${{ inputs.subject }}" ] && ARGS+=(--subject "${{ inputs.subject }}")
+          # --save-dir reports/run puts the per-run trace files inside the uploaded
+          # artifact, so failing runs are diagnosable from CI without Langfuse access.
           uv run python -m scripts.eval "${ARGS[@]}" \
+            --save-dir reports/run \
             --junit reports/junit.xml --json reports/eval.json \
             || true   # don't fail the job before uploading results
 
