@@ -1,0 +1,110 @@
+# Validators & attestations: counts, status, correctness.
+#
+# Grading is promptfoo `assert:` blocks (llm-rubric): the rubric describes what a correct
+# answer looks like, NOT how to get it. Selection is by tags (`--tags`); this file is just
+# the validators drawer. Provenance marks on each case are real, not invented:
+#   ✓ = verbatim from a passing trace   💬 = real chat-history ask   📓 = a real notebooks investigation
+
+  - id: validator_count                                   # 💬 basic validator ask
+    description: active validators on mainnet on 2026-06-08
+    input: "How many validators had an active status on mainnet on 8 June 2026 (UTC)?"
+    tags: [clickhouse, validators, basic]
+    assert:
+      - type: llm-rubric
+        value: >
+          Reports the active validator count on mainnet for 8 June 2026 from a real
+          query over validator-status snapshot data. The canonical snapshot for that
+          day shows ~888,800 active validators (different validator-status sources
+          disagree by ~1%, so accept roughly 870k-910k). A missing count or one
+          outside that band fails.
+    variations:
+      - What was the count of validators with active status on mainnet on 8 June
+        2026 (UTC)?
+      - On June 8, 2026 (UTC), how many mainnet validators had active status?
+      - I'm trying to find the number of validators that had an active status on
+        mainnet on 8 June 2026 (UTC).
+      - Please report how many validators were in active status on mainnet on 8 
+        June 2026 (UTC).
+      - For 8 June 2026 (UTC), give the active-status validator count for 
+        mainnet.
+
+
+  - id: validator_head_accuracy                           # 💬 single-validator lookup
+    description: head-vote accuracy of validator 2 for 1-7 June 2026
+    input: "What was the attestation head accuracy of mainnet validator 2 for the
+      week of 1-7 June 2026 (UTC)?"
+    tags: [clickhouse, validators, attestations]
+    assert:
+      - type: llm-rubric
+        value: >
+          Reports validator 2's head-vote accuracy for 1-7 June 2026 from a real
+          per-validator attestation-correctness query. The measured value is ~98.5%
+          (1552 of 1576 attestations head-correct); accept ~97-100%. No number, or
+          a figure outside that band, fails.
+    variations:
+      - For mainnet validator 2, what was the attestation head accuracy during 
+        1-7 June 2026 (UTC)?
+      - Report the attestation head accuracy for mainnet validator 2 for the 
+        week of 1-7 June 2026, UTC.
+      - I'm trying to find the attestation head accuracy of mainnet validator 2 
+        over the UTC week from 1 June to 7 June 2026.
+      - During the week of 1-7 June 2026 (UTC), what attestation head accuracy 
+        did mainnet validator 2 achieve?
+      - Please provide mainnet validator 2's attestation head accuracy for 1-7 
+        June 2026 (UTC).
+
+
+  - id: sepolia_validator_lookup                          # 💬 validator lookup ask
+    description: single validator status/balance on sepolia on 2026-06-08
+    input: "What were the status and balance of validator 405 on sepolia on 8 June
+      2026 (UTC)?"
+    network: sepolia
+    tags: [clickhouse, validators, testnet]
+    assert:
+      - type: llm-rubric
+        value: >
+          Reports sepolia validator 405's state on 8 June 2026 from a real query
+          over validator snapshot data: status active (active_ongoing) and balance
+          ~32.0002 ETH (effective balance 32 ETH; accept anything reported as ~32
+          ETH). Both fields from real data pass; fabricated or missing fields fail.
+    variations:
+      - 'Validator 405 on Sepolia: what was its status and balance on 8 June 2026
+        (UTC)?'
+      - Can you tell me the status and balance for validator 405 on the Sepolia 
+        network on 8 June 2026 (UTC)?
+      - I’m trying to find out what status validator 405 had, and what its 
+        balance was, on Sepolia on 8 June 2026 (UTC).
+      - Report the status and balance of Sepolia validator 405 for 8 June 2026 
+        (UTC).
+      - For the Sepolia network, what were validator 405’s status and balance on
+        8 June 2026 (UTC)?
+
+
+  - id: head_vote_correctness_24h                         # 💬 recurring accuracy ask
+    description: network-wide head-vote correctness and participation on 
+      2026-06-08
+    input: "What percentage of mainnet attestations voted for the correct head block
+      on 8 June 2026 (UTC)? And what was overall participation that day?"
+    tags: [clickhouse, attestations, basic]
+    assert:
+      - type: llm-rubric
+        value: >
+          Reports both figures from a real query over attestation-correctness data
+          for 8 June 2026. Measured: head-vote correctness ~98.9% and participation
+          ~99.7% (accept ~98-99.5% and ~99.3-100% respectively). Both percentages,
+          clearly distinguished, are required; one number doing double duty or no
+          real query fails.
+    variations:
+      - On 8 June 2026 (UTC), what share of mainnet attestations voted for the 
+        correct head block, and what was the overall participation for that day?
+      - For 8 June 2026 in UTC, give the percentage of mainnet attestations that
+        selected the correct head block, plus the day’s overall participation.
+      - I'm trying to find the percentage of mainnet attestations that voted for
+        the correct head block on 8 June 2026 (UTC), and the overall 
+        participation on that same day.
+      - What was the correct-head vote percentage among mainnet attestations on 
+        8 June 2026 (UTC), and what was overall participation that day?
+      - Please report, for 8 June 2026 (UTC), the percentage of mainnet 
+        attestations voting for the correct head block and the overall 
+        participation for that date.
+

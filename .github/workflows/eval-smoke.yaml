@@ -229,7 +229,7 @@ jobs:
           # the per-run trace files inside the uploaded artifact, so a failing agent's
           # actual commands are diagnosable from CI without Langfuse access.
           uv run python -m scripts.eval \
-            --cases smoke.yaml --no-variations --concurrency 6 \
+            --tags smoke --no-variations --concurrency 6 \
             --subject opencode-go/deepseek-v4-flash:cli \
             --subject-timeout 600 \
             --save-dir reports/run \

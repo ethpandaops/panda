@@ -1,8 +1,8 @@
 name: Release Qualification
 
-# Full-suite eval for every release and pre-release tag: a single pass over
-# baseline_all.yaml (every question + its paraphrase variations) against the hosted
-# production proxy — the same path a released CLI uses. The scorecard (headline
+# Full-suite eval for every release and pre-release tag: a single pass over every
+# case in cases/*.yaml (every question + its paraphrase variations) against the
+# hosted production proxy — the same path a released CLI uses. The scorecard (headline
 # numbers, per-question flips vs the previous qualified release, trend chart,
 # Langfuse traces) is spliced into the GitHub release description, and the run's
 # eval-qualification.json is attached as a release asset so future runs compare
@@ -207,15 +207,16 @@ jobs:
           MCP_EVAL_LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           MCP_EVAL_LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
         run: |
-          # The full frozen baseline, paraphrase variations included, k=1, one subject:
-          # the same measurement the harden loop calls its reference number. --min-pass 0
+          # The whole suite (every cases/*.yaml), paraphrase variations included, k=1,
+          # one subject: the same measurement the harden loop calls its reference
+          # number. --min-pass 0
           # because qualification is a human-reviewed scorecard, not a gate — the job
           # should only go red when the harness itself breaks. --concurrency 6: the
           # local default (16) starves a 4-vCPU runner. --save-dir reports/run puts
           # the per-run trace files inside the uploaded artifact, so failing runs are
           # diagnosable from CI without Langfuse access.
           uv run python -m scripts.eval \
-            --cases baseline_all.yaml --concurrency 6 \
+            --concurrency 6 \
             --subject opencode-go/deepseek-v4-flash:cli \
             --subject-timeout 900 \
             --min-pass 0 \

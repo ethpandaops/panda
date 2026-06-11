@@ -1,7 +1,8 @@
 name: LLM Evaluation
 
-# Full eval: run a whole cases/*.yaml through the unified harness (scripts.eval) against
-# the opencode-go agent over the panda CLI route, graded by promptfoo llm-rubric asserts.
+# Full eval: run the cases suite (all of cases/*.yaml by default; narrow with the tags
+# input) through the unified harness (scripts.eval) against the opencode-go agent over
+# the panda CLI route, graded by promptfoo llm-rubric asserts.
 # Runs against the hosted production proxy as the external-scoped `panda-ci` service
 # account — the same data plane as eval-smoke and release-eval, so results are
 # comparable and no upstream credentials exist in this repo. Opt-in per PR via the
@@ -15,9 +16,14 @@ on:
   workflow_dispatch:
     inputs:
       cases:
-        description: 'cases/*.yaml file to run'
+        description: 'restrict to one cases/*.yaml file (blank = all files)'
         required: false
-        default: 'coverage.yaml'
+        default: ''
+        type: string
+      tags:
+        description: 'comma-separated case tags to run (blank = no tag filter)'
+        required: false
+        default: ''
         type: string
       subject:
         description: 'agent subject provider/model:route (blank = harness default)'
@@ -34,7 +40,11 @@ on:
     inputs:
       cases:
         required: false
-        default: 'coverage.yaml'
+        default: ''
+        type: string
+      tags:
+        required: false
+        default: ''
         type: string
       subject:
         required: false
@@ -61,8 +71,8 @@ jobs:
       github.event_name != 'pull_request' ||
       contains(github.event.pull_request.labels.*.name, 'run-evals')
     runs-on: ubuntu-latest
-    # A full cases file with paraphrase variations (~48 runs for coverage.yaml) at
-    # --concurrency 6 with a 900s per-question ceiling needs real headroom.
+    # The full suite with paraphrase variations (~180 runs) at --concurrency 6 with a
+    # 900s per-question ceiling needs real headroom.
     timeout-minutes: 150
 
     steps:
@@ -224,7 +234,9 @@ jobs:
           # local default (16) starves a 4-vCPU runner. --save-dir reports/run puts the
           # per-run trace files inside the uploaded artifact, so failing runs are
           # diagnosable from CI without Langfuse access.
-          ARGS=(--cases "${{ inputs.cases || 'coverage.yaml' }}" --repeat "${{ inputs.repeat || '1' }}")
+          ARGS=(--repeat "${{ inputs.repeat || '1' }}")
+          [ -n "${{ inputs.cases }}" ] && ARGS+=(--cases "${{ inputs.cases }}")
+          [ -n "${{ inputs.tags }}" ] && ARGS+=(--tags "${{ inputs.tags }}")
           [ -n "${{ inputs.subject }}" ] && ARGS+=(--subject "${{ inputs.subject }}")
           uv run python -m scripts.eval "${ARGS[@]}" \
             --concurrency 6 \

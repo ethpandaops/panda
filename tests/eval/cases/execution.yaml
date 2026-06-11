@@ -1,0 +1,93 @@
+# Execution layer: EVM usage, engine API timing, mempool.
+#
+# Grading is promptfoo `assert:` blocks (llm-rubric): the rubric describes what a correct
+# answer looks like, NOT how to get it. Selection is by tags (`--tags`); this file is just
+# the execution drawer. Provenance marks on each case are real, not invented:
+#   ✓ = verbatim from a passing trace   💬 = real chat-history ask   📓 = a real notebooks investigation
+
+  - id: precompile_usage                                  # 📓 precompile-usage
+    description: most-used EVM precompiles on mainnet
+    input: "Which EVM precompiles are used most on mainnet?"
+    tags: [clickhouse, execution, evm, precompiles]
+    assert:
+      - type: llm-rubric
+        value: >
+          Ranks the most-used EVM precompiles on mainnet (e.g. ecRecover, SHA-256,
+          identity, the BN/KZG precompiles) by real usage counts from a query. A ranked
+          list grounded in data passes; a guess from general knowledge with no query
+          fails.
+
+
+    variations:
+      - Which EVM precompiles see the most use on mainnet?
+      - On mainnet, which EVM precompiles are used the most?
+      - I'm trying to identify the most-used EVM precompiles on mainnet.
+      - List the EVM precompiles with the highest usage on mainnet.
+      - Which EVM precompiled contracts have the greatest usage on mainnet?
+
+
+  - id: engine_newpayload_el_comparison                   # 💬 EL block-processing ask
+    description: engine_newPayload duration comparison across ELs on 2026-06-08
+    input: "Compare engine_newPayload processing times across execution clients on
+      mainnet on 8 June 2026 (UTC). Which was fastest, which was slowest — and was
+      any client at risk of blowing the slot time?"
+    tags: [clickhouse, execution, engine, timing]
+    assert:
+      - type: llm-rubric
+        value: >
+          Reports per-execution-client engine_newPayload durations for 8 June 2026
+          from a real query. Measured medians that day: Reth ~38ms (fastest), ethrex
+          ~41ms, Nethermind ~48ms, geth ~87ms, Besu ~139ms, erigon ~266ms (slowest);
+          accept values within roughly 2x and the same fastest/slowest identities.
+          Must conclude everything sat far below the 12s slot. A ranking with no
+          real per-client numbers fails.
+    variations:
+      - 'On mainnet on 8 June 2026 (UTC), compare engine_newPayload processing times
+        by execution client: which client was fastest, which was slowest, and did
+        any client appear close to exceeding the slot time?'
+      - I'm trying to compare engine_newPayload processing times across 
+        execution clients on mainnet for 8 June 2026 (UTC). Identify the fastest
+        and slowest clients, and say whether any client was at risk of blowing 
+        the slot time.
+      - For 8 June 2026 (UTC) on mainnet, rank execution clients by 
+        engine_newPayload processing time. Which one processed fastest, which 
+        one was slowest, and was any client in danger of missing the slot time?
+      - Compare the mainnet engine_newPayload processing-time performance of 
+        execution clients on 8 June 2026 (UTC), specifying the fastest client, 
+        the slowest client, and whether any client risked exceeding the slot 
+        time.
+      - Which execution client had the quickest engine_newPayload processing 
+        times on mainnet on 8 June 2026 (UTC), which had the slowest, and did 
+        any client get close enough to the slot time to be concerning?
+
+
+  - id: mempool_observer_coverage                         # 💬 mempool contributor ask
+    description: distinct clients feeding mempool observations on 2026-06-08
+    input: "How many distinct clients contributed mempool transaction observations
+      on mainnet on 8 June 2026 (UTC), and how many observations in total?"
+    tags: [clickhouse, mempool, execution]
+    assert:
+      - type: llm-rubric
+        value: >
+          Reports, from a real query over mempool transaction data for 8 June 2026,
+          the number of distinct observing clients and the total observation count.
+          Measured: 21 clients and ~53 million observations (accept 19-23 clients
+          and ~45-60M). Both numbers required; values outside those bands or no
+          real query fail.
+    variations:
+      - On mainnet, for 8 June 2026 (UTC), how many distinct clients contributed
+        mempool transaction observations, and what was the total number of 
+        observations?
+      - Count the distinct clients that contributed mempool transaction 
+        observations on mainnet on 8 June 2026 (UTC), and also report the total 
+        observation count.
+      - I'm trying to find, for mainnet on 8 June 2026 (UTC), how many distinct 
+        clients submitted mempool transaction observations and how many 
+        observations there were in total.
+      - For the UTC day of 8 June 2026 on mainnet, what is the number of 
+        distinct clients contributing mempool transaction observations, 
+        alongside the total number of such observations?
+      - How many unique clients contributed mempool transaction observations on 
+        mainnet during 8 June 2026 (UTC), and what was the overall count of 
+        observations?
+

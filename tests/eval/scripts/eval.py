@@ -1,7 +1,8 @@
 """Unified single-pass eval: run cases through promptfoo, report, exit nonzero on failure.
 
-    uv run python -m scripts.eval --cases smoke.yaml
-    uv run python -m scripts.eval --cases coverage.yaml --subject opencode-go/deepseek-v4-flash:cli
+    uv run python -m scripts.eval --tags smoke
+    uv run python -m scripts.eval                      # every case in cases/*.yaml
+    uv run python -m scripts.eval --tags mev,blobs --subject opencode-go/deepseek-v4-flash:cli
 
 Runs each case (single- or multi-turn) against the agent subject(s) via promptfoo, grades
 with the case's ``assert:`` blocks, prints a table, and writes JUnit XML (``--junit``) so CI
@@ -44,7 +45,22 @@ def _parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    ap.add_argument("--cases", default="smoke.yaml", help="cases/*.yaml file to run")
+    ap.add_argument(
+        "--cases", default="", help="restrict to one cases/*.yaml file (default: all files)"
+    )
+    ap.add_argument(
+        "--tags",
+        action="append",
+        default=[],
+        help="run only cases carrying at least one of these tags (repeatable, comma-ok); "
+        "e.g. --tags smoke",
+    )
+    ap.add_argument(
+        "--exclude-tags",
+        action="append",
+        default=[],
+        help="drop cases carrying any of these tags (repeatable, comma-ok)",
+    )
     ap.add_argument(
         "--subject", action="append", default=[], help="provider/model:route (repeatable)"
     )
@@ -197,9 +213,20 @@ def _write_langfuse_links(path: Path, result: CandidateResult) -> None:
     console.print(f"[dim]wrote Langfuse links: {path} ({len(links)} traces)[/dim]")
 
 
+def _split_tags(values: list[str]) -> list[str]:
+    return [t for v in values for t in v.split(",") if t.strip()]
+
+
 def main() -> None:
     args = _parse_args()
     setup_logging()  # configure the rich logger so build/promptfoo sub-loggers render
+
+    tags, exclude_tags = _split_tags(args.tags), _split_tags(args.exclude_tags)
+    selection = args.cases or "all files"
+    if tags:
+        selection += f" tags={','.join(tags)}"
+    if exclude_tags:
+        selection += f" exclude={','.join(exclude_tags)}"
 
     questions = [
         Question(
@@ -209,13 +236,13 @@ def main() -> None:
             asserts=c.asserts,
             variations=[] if args.no_variations else c.variations,
         )
-        for c in load_test_cases(args.cases)
+        for c in load_test_cases(args.cases or None, tags=tags, exclude_tags=exclude_tags)
     ]
     if args.question_id:
         wanted = set(args.question_id)
         questions = [q for q in questions if q.id in wanted]
     if not questions:
-        raise SystemExit(f"no questions loaded from cases/{args.cases}")
+        raise SystemExit(f"no cases matched ({selection})")
 
     subject_specs = args.subject or DEFAULT_SUBJECTS
     grader = args.grader or f"openrouter:{args.judge_model}"
@@ -234,7 +261,7 @@ def main() -> None:
         f"  subjects (agent): {', '.join(subject_specs)}"
         + ("   [sandboxed: container, no repo access]" if args.sandbox else "   [host process]")
         + f"\n  grader:           {grader}"
-        f"\n  cases:            {args.cases} | {len(questions)} question(s) + {nvar} variations "
+        f"\n  cases:            {selection} | {len(questions)} question(s) + {nvar} variations "
         f"| k={args.repeat}"
         f"\n  artifacts:        {save_dir}\n[bold]===================[/bold]"
     )
@@ -294,9 +321,10 @@ def main() -> None:
             + (f" — failed: {', '.join(failed)}" if failed else "")
         )
     if args.junit:
-        _write_junit(args.junit, result, suite=Path(args.cases).stem)
+        suite = Path(args.cases).stem if args.cases else (",".join(tags) or "all")
+        _write_junit(args.junit, result, suite=suite)
     if args.json_out:
-        _write_json(args.json_out, result, cases=args.cases, subjects=subject_specs)
+        _write_json(args.json_out, result, cases=selection, subjects=subject_specs)
     # Langfuse links go next to the JUnit/JSON (the reports dir CI uploads + comments from).
     reports_dir = Path(args.junit).parent if args.junit else (
         Path(args.json_out).parent if args.json_out else Path("reports")

@@ -1,0 +1,122 @@
+# Blobs & data columns (PeerDAS): counts, engine_getBlobs, gossip.
+#
+# Grading is promptfoo `assert:` blocks (llm-rubric): the rubric describes what a correct
+# answer looks like, NOT how to get it. Selection is by tags (`--tags`); this file is just
+# the blobs drawer. Provenance marks on each case are real, not invented:
+#   ✓ = verbatim from a passing trace   💬 = real chat-history ask   📓 = a real notebooks investigation
+
+  - id: empty_blob_submitters                             # 📓 empty-blobs
+    description: who submits blob txs containing empty (zero-data) blobs
+    input: "Which entities submit blob transactions containing empty (zero-data) blobs
+      on mainnet?"
+    tags: [clickhouse, blobs, execution, entity]
+    assert:
+      - type: llm-rubric
+        value: >
+          Names specific entities/senders that submit blob transactions carrying empty
+          (zero-data) blobs on mainnet, from a real query over blob/transaction data.
+          Concrete submitters with supporting counts pass; a generic answer or no
+          data
+          fails.
+
+    variations:
+      - On mainnet, which entities are submitting blob transactions that include
+        empty (zero-data) blobs?
+      - Identify the entities that submit mainnet blob transactions containing 
+        empty (zero-data) blobs.
+      - I'm trying to find which entities on mainnet submit blob transactions 
+        with empty (zero-data) blobs.
+      - Which mainnet entities have submitted blob transactions that contain 
+        empty (zero-data) blobs?
+      - Please list the entities that submit blob transactions with empty 
+        (zero-data) blobs on mainnet.
+
+
+  - id: engine_getblobs_blob_scaling                      # 💬 getBlobs scaling ask
+    description: engine_getBlobs response time vs blob count per EL on 
+      2026-06-08
+    input: "How did engine_getBlobs response time scale with blob count for each execution
+      client on mainnet on 8 June 2026 (UTC)?"
+    tags: [clickhouse, blobs, engine, execution]
+    assert:
+      - type: llm-rubric
+        value: >
+          Shows per-execution-client engine_getBlobs durations for 8 June 2026 from
+          a real query, growing with blob count. Measured medians that day: Nethermind
+          ~2ms and Reth ~4ms (fastest) up to erigon ~32ms and geth ~50ms (slowest);
+          accept values within roughly 2x with the same fast/slow grouping. Concrete
+          per-client numbers required; a hand-wave with no data fails.
+    variations:
+      - For mainnet on 8 June 2026 (UTC), how did engine_getBlobs response time 
+        vary as blob count changed for each execution client?
+      - Show how engine_getBlobs response time scaled by blob count for every 
+        execution client on mainnet on 8 June 2026 (UTC).
+      - I'm trying to understand, for each execution client on mainnet on 8 June
+        2026 (UTC), how engine_getBlobs response time changed with blob count.
+      - On 8 June 2026 (UTC) on mainnet, what was the relationship between blob 
+        count and engine_getBlobs response time for each execution client?
+      - Could you compare engine_getBlobs response time across blob counts for 
+        each execution client on mainnet on 8 June 2026 (UTC)?
+
+
+  - id: blob_count_stats                                  # 💬 blob count stats ask
+    description: min/max/avg/p50 blobs per block during May 2026
+    input: "What were the min, max, average and p50 blob counts per block on mainnet
+      during May 2026 (UTC)?"
+    tags: [clickhouse, blobs]
+    assert:
+      - type: llm-rubric
+        value: >
+          Reports all four statistics from a real query over canonical per-block blob
+          counts for May 2026. Measured values: min 1 (accept 0-1), max 21, average
+          ~4.7, median 5. All four close to those values pass; missing stats or
+          values outside ~±40% fail.
+    variations:
+      - For mainnet blocks in May 2026 (UTC), what were the minimum, maximum, 
+        average, and p50 blob counts per block?
+      - Report the min, max, average, and p50 values for blob counts per block 
+        on mainnet during May 2026 in UTC.
+      - I'm trying to find the min, max, average, and p50 blob count per block 
+        on mainnet for May 2026 (UTC).
+      - During May 2026 (UTC), what were the min, max, average, and p50 counts 
+        of blobs per block on mainnet?
+      - Could you calculate the minimum, maximum, mean, and p50 blob counts per 
+        block for mainnet over May 2026 (UTC)?
+
+
+  - id: late_data_columns                                 # 💬 late-column hunt
+    description: gossip observations of data column sidecars minutes late on 
+      2026-06-08
+    input: "Looking at individual libp2p gossip observations of data column sidecars
+      on mainnet on 8 June 2026 (UTC): how many observations arrived more than 5 minutes
+      after their slot started, and from how many distinct sending peers?"
+    tags: [clickhouse, libp2p, peerdas, timing]
+    assert:
+      - type: llm-rubric
+        value: >
+          Answers from a real query over raw libp2p gossipsub data-column-sidecar
+          observations for 8 June 2026 with a >5-minute propagation threshold.
+          Measured: ~8,400 late observations from ~93 distinct peers (accept roughly
+          7k-10k observations and 80-110 peers). A first-seen/deduplicated view
+          hides these laggard re-sends and lands near zero — a zero answer fails,
+          as does an ungrounded count.
+    variations:
+      - For individual libp2p gossip observations of data column sidecars on 
+        mainnet during 8 June 2026 (UTC), count the observations that arrived 
+        more than 5 minutes after their slot began and the number of distinct 
+        sending peers behind them.
+      - On mainnet on 8 June 2026 (UTC), how many individual libp2p gossip 
+        observations of data column sidecars were received more than 5 minutes 
+        after the start of their slot, and how many unique sending peers sent 
+        them?
+      - I'm trying to determine, from individual libp2p gossip observations of 
+        data column sidecars on mainnet for 8 June 2026 (UTC), how many arrived 
+        over 5 minutes after their slot started and how many distinct sending 
+        peers that represents.
+      - 'Please report two counts for individual libp2p gossip observations of data
+        column sidecars on mainnet on 8 June 2026 (UTC): observations arriving more
+        than 5 minutes after slot start, and distinct sending peers for those observations.'
+      - How many data column sidecar observations seen via individual libp2p 
+        gossip on mainnet on 8 June 2026 (UTC) came in more than 5 minutes after
+        their slot started, and from how many distinct sending peers?
+

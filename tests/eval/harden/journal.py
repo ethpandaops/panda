@@ -19,7 +19,7 @@ discourage, not a fuzzy matcher's to guess at.
 
 Backfill from an existing run dir's history.jsonl (charts module format):
 
-    uv run python -m harden.journal backfill <run_dir> --cases coverage.yaml
+    uv run python -m harden.journal backfill <run_dir> --cases "all files"
 """
 
 from __future__ import annotations

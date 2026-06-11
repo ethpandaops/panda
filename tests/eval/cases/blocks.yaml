@@ -1,0 +1,65 @@
+# Block production & propagation: size effects, parents, reorgs.
+#
+# Grading is promptfoo `assert:` blocks (llm-rubric): the rubric describes what a correct
+# answer looks like, NOT how to get it. Selection is by tags (`--tags`); this file is just
+# the blocks drawer. Provenance marks on each case are real, not invented:
+#   ✓ = verbatim from a passing trace   💬 = real chat-history ask   📓 = a real notebooks investigation
+
+  - id: block_size_vs_propagation                         # 📓 block-size-vs-propagation
+    description: effect of payload size on propagation time
+    input: "How much does block payload size affect block propagation time on mainnet?"
+    tags: [clickhouse, blocks, propagation, size]
+    assert:
+      - type: llm-rubric
+        value: >
+          Quantifies the relationship between block payload size and propagation/arrival
+          time on mainnet from real queried data — e.g. larger blocks arriving later,
+          with numbers or a correlation. A grounded characterization of the effect
+          passes;
+          a hand-wave with no data fails.
+
+
+    variations:
+      - What effect does block payload size have on block propagation time on 
+        mainnet?
+      - Can you quantify how block payload size impacts block propagation time 
+        on mainnet?
+      - On mainnet, how strongly is block propagation time affected by block 
+        payload size?
+      - I'm trying to understand how much block payload size influences block 
+        propagation time on mainnet.
+      - Determine the extent to which block payload size affects block 
+        propagation time on mainnet.
+
+
+  - id: parent_distance_orphans                           # 💬 stale-parent analysis
+    description: blocks built on stale parents during May 2026, and their fate
+    input: "On mainnet during May 2026 (UTC), how often did proposers build on a parent
+      block more than one slot back — and did those blocks survive?"
+    tags: [clickhouse, blocks, reorgs]
+    assert:
+      - type: llm-rubric
+        value: >
+          Quantifies parent distance for May 2026 from a real query over block data
+          that includes orphaned blocks. Measured: ~221,000 blocks at distance 1
+          (99.6%), 768 at distance 2 (10 of them orphaned), and only ~9 at distance
+          3+ — almost all orphaned. Accept counts within ~10% of those; must report
+          both the distribution and the orphan outcome. Canonical-only analysis that
+          can't see orphans is wrong.
+    variations:
+      - During May 2026 (UTC) on mainnet, how many times did proposers build on 
+        a parent block from more than one slot earlier, and did those blocks 
+        survive?
+      - For mainnet over May 2026 in UTC, measure how often proposers chose a 
+        parent block more than one slot back, and indicate whether the resulting
+        blocks survived.
+      - In May 2026 (UTC), on mainnet, were there proposer blocks built on 
+        parents older than one slot, how often did that happen, and did those 
+        blocks survive?
+      - I'm trying to find, for mainnet during May 2026 (UTC), the frequency of 
+        proposers building on parent blocks more than one slot behind, plus 
+        whether those blocks survived.
+      - On mainnet in the UTC month of May 2026, how frequently did a proposer 
+        build atop a parent block that was more than one slot back, and did any 
+        such blocks survive?
+

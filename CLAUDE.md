@@ -69,9 +69,9 @@ docker compose up -d          # Full local stack: server + proxy
 
 # Evaluation tests (in tests/eval/)
 cd tests/eval && uv sync
-uv run python -m scripts.eval --cases smoke.yaml          # single-pass eval (CI smoke uses this)
-uv run python -m scripts.eval --cases coverage.yaml       # full eval over a cases file
-uv run python -m scripts.harden --cases coverage.yaml     # same harness, wrapped in the optimization loop
+uv run python -m scripts.eval --tags smoke                # single-pass eval (CI smoke uses this)
+uv run python -m scripts.eval                             # full eval over every case in cases/*.yaml
+uv run python -m scripts.harden                           # same harness, wrapped in the optimization loop
 uv run python -m scripts.repl
 ```
 

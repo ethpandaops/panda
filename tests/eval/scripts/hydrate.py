@@ -6,7 +6,7 @@ wordings — and the harden proposer can't score by overfitting to one phrasing.
 written back into the cases file (comments preserved): static, traceable, reviewable. Commit
 the diff.
 
-    uv run python -m scripts.hydrate --cases coverage.yaml --n 5
+    uv run python -m scripts.hydrate --cases mev.yaml --n 5
     uv run python -m scripts.hydrate --cases smoke.yaml --question-id mainnet_block_arrival_p50 --dry-run
 
 Uses Codex (gpt-5.5 @ xhigh by default) via your `codex` CLI — the same model the harden

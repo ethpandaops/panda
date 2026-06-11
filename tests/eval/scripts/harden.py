@@ -1,6 +1,6 @@
 """Run the harden optimization loop against the panda harness.
 
-    uv run python -m scripts.harden --cases smoke.yaml --rounds 3 --k 3 --sandbox
+    uv run python -m scripts.harden --tags smoke --rounds 3 --k 3 --sandbox
 
 By default it runs TWO agent subjects — opencode-go/deepseek-v4-flash + openai/gpt-5.4-mini
 (over the CLI route) — so an accepted change has to help both, not overfit to one. Override
@@ -141,12 +141,24 @@ def main() -> None:
     )
     ap.add_argument(
         "--cases",
-        default="baseline_all.yaml",
-        help="cases/*.yaml to use as the question set. The default is the full hydrated "
-        "suite (84 cells): champions must generalize across every workload at once, and "
-        "there are enough questions to afford --held-out (recommended: 3-4 questions the "
-        "proposer never sees). Use a single file (smoke.yaml, coverage.yaml) for quick "
+        default="",
+        help="restrict to one cases/*.yaml file. The default is EVERY case in cases/ "
+        "(the full hydrated suite): champions must generalize across every workload at "
+        "once, and there are enough questions to afford --held-out (recommended: 3-4 "
+        "questions the proposer never sees). Use --tags (or a single file) for quick "
         "targeted iterations.",
+    )
+    ap.add_argument(
+        "--tags",
+        action="append",
+        default=[],
+        help="run only cases carrying at least one of these tags (repeatable, comma-ok)",
+    )
+    ap.add_argument(
+        "--exclude-tags",
+        action="append",
+        default=[],
+        help="drop cases carrying any of these tags (repeatable, comma-ok)",
     )
     ap.add_argument(
         "--subject", action="append", default=[], help="provider/model:route (repeatable)"
@@ -260,17 +272,24 @@ def main() -> None:
         # touch the user's checkout, and edits to the checkout can't corrupt the run.
         repo_dir, branch = _auto_worktree(invoking_repo, ts, log)
 
+    tags = [t for v in args.tags for t in v.split(",") if t.strip()]
+    exclude_tags = [t for v in args.exclude_tags for t in v.split(",") if t.strip()]
+    selection = args.cases or "all files"
+    if tags:
+        selection += f" tags={','.join(tags)}"
+    if exclude_tags:
+        selection += f" exclude={','.join(exclude_tags)}"
     questions = [
         Question(
             id=c.id, text=c.input, followups=c.followups, asserts=c.asserts, variations=c.variations
         )
-        for c in load_test_cases(args.cases)
+        for c in load_test_cases(args.cases or None, tags=tags, exclude_tags=exclude_tags)
     ]
     if args.question_id:
         wanted = set(args.question_id)
         questions = [q for q in questions if q.id in wanted]
     if not questions:
-        raise SystemExit(f"no questions loaded from cases/{args.cases}")
+        raise SystemExit(f"no cases matched ({selection})")
 
     # Local scratch server built from the candidate source; CLI subjects hit it via
     # PANDA_CONFIG + the freshly-built `panda` on PATH (set before any subject spawns).
@@ -350,7 +369,7 @@ def main() -> None:
                 pool_size=args.pool_size,
                 prescreen=args.prescreen,
                 audit_retries=args.audit_retries,
-                journal=Journal(HARDEN_HOME / JOURNAL_NAME, context=Path(args.cases).name),
+                journal=Journal(HARDEN_HOME / JOURNAL_NAME, context=selection),
                 log=log,
             )
         )

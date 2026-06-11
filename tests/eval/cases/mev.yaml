@@ -1,0 +1,128 @@
+# MEV: relays, builders, timing games, incidents.
+#
+# Grading is promptfoo `assert:` blocks (llm-rubric): the rubric describes what a correct
+# answer looks like, NOT how to get it. Selection is by tags (`--tags`); this file is just
+# the mev drawer. Provenance marks on each case are real, not invented:
+#   ✓ = verbatim from a passing trace   💬 = real chat-history ask   📓 = a real notebooks investigation
+
+  - id: mev_timing_games                                  # 📓 timing-games
+    description: which entities delay block proposals to extract MEV
+    input: "Which entities delay their block proposals the most to extract MEV on
+      mainnet?"
+    tags: [clickhouse, blocks, mev, timing, entity]
+    assert:
+      - type: llm-rubric
+        value: >
+          Identifies specific mainnet entities (builders/validators/pools) that propose
+          blocks later in the slot than the field, backed by a real query that ties
+          block
+          timing to entity. Names concrete entities with supporting timing evidence;
+          a
+          generic essay with no entities or no real data fails.
+
+    variations:
+      - On mainnet, which entities delay block proposals the most in order to 
+        extract MEV?
+      - Which mainnet entities are delaying their block proposals the most to 
+        capture MEV?
+      - I'm trying to identify the entities on mainnet that most delay their 
+        block proposals for MEV extraction.
+      - List the entities that delay their block proposals the most to extract 
+        MEV on mainnet.
+      - Formally, which entities exhibit the greatest block proposal delays for 
+        MEV extraction on mainnet?
+
+
+  - id: mev_relay_share                                   # 💬 builder/relay asks
+    description: share of recent blocks delivered via an MEV relay
+    input: "What share of mainnet blocks over the last 24h were delivered via an MEV
+      relay?"
+    tags: [clickhouse, blocks, mev, relay]
+    assert:
+      - type: llm-rubric
+        value: >
+          Reports the share of recent mainnet blocks delivered via an MEV relay, from
+          a
+          real query (relay-delivered blocks over all blocks). The true figure is
+          high —
+          roughly 85-95% — so an answer in that band passes; a missing percentage
+          or one
+          far outside it fails.
+    variations:
+      - What percentage of mainnet blocks in the last 24h were delivered through
+        an MEV relay?
+      - Over the last 24h, what share of mainnet blocks came via an MEV relay?
+      - I'm trying to find the share of mainnet blocks delivered via an MEV 
+        relay over the last 24h.
+      - Calculate the proportion of mainnet blocks over the last 24h that were 
+        delivered via an MEV relay.
+      - For mainnet blocks in the last 24h, what fraction were delivered via an 
+        MEV relay?
+
+
+  - id: mev_max_value_block                               # 💬 410-ETH-reward hunt
+    description: most valuable MEV payload delivered during May 2026
+    input: "What was the most valuable MEV payload delivered on mainnet during May
+      2026 (UTC)? Which slot, and how much was it worth?"
+    tags: [clickhouse, mev, relay, blocks]
+    assert:
+      - type: llm-rubric
+        value: >
+          Identifies the top mainnet slot by delivered MEV payload value in May 2026
+          from a real query: slot 14,264,634 (2026-05-05), worth ~307 ETH, delivered
+          via the Ultra Sound relay. The slot number and a value of roughly 300-310
+          ETH are required (relay name is a plus); any other slot, a missing value,
+          or a typical-block-sized value fails.
+    variations:
+      - During May 2026 (UTC), what was the highest-value MEV payload delivered 
+        on mainnet, and what slot was it in and what was it worth?
+      - Identify the most valuable MEV payload delivered on mainnet in May 2026 
+        UTC; include the slot and its value.
+      - I'm trying to find the top-valued MEV payload delivered on mainnet 
+        during May 2026 (UTC). Which slot was it delivered in, and how much was 
+        it worth?
+      - For mainnet, in the UTC window of May 2026, which delivered MEV payload 
+        had the greatest value? Please provide the slot and the amount it was 
+        worth.
+      - What slot contained the most valuable MEV payload delivered on mainnet 
+        during May 2026 (UTC), and what was that payload's worth?
+
+
+  - id: dec4_relay_circuit_breaker                        # 💬 fixed-date incident
+    description: the 2025-12-04 MEV relay circuit-breaker collapse (finalized 
+      history)
+    input: "Around the 3rd-4th of December 2025, MEV relay circuit breakers reportedly
+      tripped on mainnet and relay-delivered blocks collapsed for a while. Find the
+      actual window and quantify how bad it got."
+    tags: [clickhouse, mev, relay, incident]
+    assert:
+      - type: llm-rubric
+        value: >
+          Places the incident on 2025-12-04 UTC (early morning, starting roughly
+          02:50-03:30) from real queries over relay payload-delivered data, and
+          quantifies the collapse with concrete numbers at any granularity:
+          relay-delivered slots fall from a ~85-95%-of-slots baseline to roughly
+          a quarter or less at the trough (epoch views show epochs at or near zero
+          delivered in the 411,440-411,460 range; hourly views show ~77 of 300
+          slots in the worst hour), recovering later the same day. The data puts
+          it on Dec 4 even though the prompt hedges "3rd-4th" — pinning it to Dec
+          3 without checking fails, as does a window with no collapse numbers.
+    variations:
+      - On mainnet around December 3rd-4th, 2025, MEV relay circuit breakers 
+        were said to have tripped and relay-delivered blocks dropped sharply for
+        a period. Identify the real window and measure the severity of the 
+        collapse.
+      - Find the actual timeframe around the 3rd-4th of December 2025 when MEV 
+        relay circuit breakers reportedly tripped on mainnet, and quantify how 
+        far relay-delivered blocks fell during that period.
+      - I'm trying to pin down the mainnet incident around December 3rd-4th, 
+        2025 where MEV relay circuit breakers supposedly tripped and 
+        relay-delivered blocks collapsed for a while. What was the actual 
+        window, and how bad did it get?
+      - For the reported mainnet MEV relay circuit-breaker trip around 3-4 
+        December 2025, determine the precise window of the relay-delivered block
+        collapse and quantify its worst severity.
+      - Around Dec. 3-4, 2025, mainnet reportedly saw MEV relay circuit breakers
+        trip and relay-delivered blocks collapse temporarily; establish the 
+        actual window and quantify the extent of the drop.
+

@@ -1,11 +1,12 @@
 # ethpandaops-panda Evaluation Harness
 
-One harness, two launch modes. Cases live in `cases/*.yaml` and are graded by
-[promptfoo](https://promptfoo.dev) `assert:` blocks (llm-rubric); a coding-agent subject
-(opencode driving the `panda` CLI) answers each case against live data.
+One harness, two launch modes. Cases live in `cases/*.yaml` (one domain per file, selected
+by tags) and are graded by [promptfoo](https://promptfoo.dev) `assert:` blocks (llm-rubric);
+a coding-agent subject (opencode driving the `panda` CLI) answers each case against live
+data.
 
-- **`scripts.eval`** — run a cases file once, print a table, write JUnit XML, exit nonzero
-  on failure. This is what CI runs.
+- **`scripts.eval`** — run a case selection once, print a table, write JUnit XML, exit
+  nonzero on failure. This is what CI runs.
 - **`scripts.harden`** — the *same* measurement core wrapped in an optimization loop: a
   proposer (Codex) edits the panda harness from the raw traces, re-measures, and keeps the
   change only if it doesn't regress correctness and is bootstrap-confidently more efficient.
@@ -19,15 +20,16 @@ cd tests/eval
 uv sync                  # Python deps
 # promptfoo runs via `npx promptfoo@latest` (needs Node); the agent needs opencode auth.
 
-# single-pass eval over a cases file
-uv run python -m scripts.eval --cases smoke.yaml
-uv run python -m scripts.eval --cases coverage.yaml --subject opencode-go/deepseek-v4-flash:cli
+# single-pass eval: tags select cases (no flags = every case in cases/*.yaml)
+uv run python -m scripts.eval --tags smoke
+uv run python -m scripts.eval                      # the whole suite
+uv run python -m scripts.eval --tags mev,blobs --subject opencode-go/deepseek-v4-flash:cli
 
 # build + run a local scratch server from the current source, then eval against it
-uv run python -m scripts.eval --cases smoke.yaml --scratch
+uv run python -m scripts.eval --tags smoke --scratch
 
 # the optimization loop (throwaway worktree/branch — it commits/reverts)
-uv run python -m scripts.harden --cases coverage.yaml --rounds 3
+uv run python -m scripts.harden --rounds 3
 
 # interactive sandbox REPL
 uv run python -m scripts.repl
@@ -41,10 +43,24 @@ Required environment:
 
 ## Cases
 
+Files under `cases/` are purely organizational — one domain per file (`smoke.yaml`,
+`blocks.yaml`, `mev.yaml`, `validators.yaml`, ...) with ids unique across the whole
+directory. Selection is by tags: `--tags smoke` runs the smoke cases wherever they live,
+no flags runs everything, `--cases <file>` restricts to one file when iterating on it.
+There is no hand-maintained "all" file — the union of `cases/*.yaml` *is* the suite, so
+adding a case to any file automatically adds it to the full runs (release qualification,
+`scripts.harden` defaults).
+
+The suite is deliberately diverse — cases pressure-test DIFFERENT parts of the harness,
+not more variants of one question. That breadth is what makes the harden loop's held-out
+gate and token-bloat penalty bite: a change that stuffs the always-loaded clickhouse docs
+costs the unrelated questions tokens, and overfitting one datasource won't help the others.
+
 A case is single- or multi-turn and carries its own grading rubric. No method assertions
 (no expected-tools / expected-tables) — the rubric describes what a *correct answer* looks
 like; token efficiency is scored separately, so wasteful paths are penalised without being
-asserted.
+asserted. The proposer never sees the rubrics (only question text + traces), so rubrics
+can be specific about the expected answer without leaking the method into the harness.
 
 ```yaml
 # single-turn
@@ -97,7 +113,7 @@ the proposer and loops.
 
 ```
 tests/eval/
-├── cases/            # *.yaml cases (input/followups + assert) + loader.py
+├── cases/            # one *.yaml per domain (selection by tags) + loader.py
 ├── promptfoo/        # provider.py — the promptfoo↔agent bridge
 ├── harden/           # measurement core + optimization loop
 │   ├── promptfoo_eval.py   # build config, run promptfoo, parse → scored runs
@@ -122,12 +138,13 @@ tests/eval/
 ## CI
 
 - **`eval-smoke.yaml`** — every PR + master push. A couple of fast cases against the hosted
-  production proxy (as the `panda-ci` service account). Runs `scripts.eval --cases smoke.yaml`
+  production proxy (as the `panda-ci` service account). Runs `scripts.eval --tags smoke`
   and publishes the JUnit results as a PR comment/check.
-- **`eval.yaml`** — opt-in (the `run-evals` PR label, manual dispatch). Runs a full cases
-  file against the hosted production proxy (as `panda-ci`), same data plane as the smoke.
+- **`eval.yaml`** — opt-in (the `run-evals` PR label, manual dispatch). Runs the whole
+  suite (narrow with the `tags`/`cases` dispatch inputs) against the hosted production
+  proxy (as `panda-ci`), same data plane as the smoke.
 - **`release-eval.yaml`** — every `v*` tag (releases and `-rc.N` pre-releases). Single pass
-  over `baseline_all.yaml` (variations included) against the hosted proxy, then
+  over every case (variations included) against the hosted proxy, then
   `scripts.release_scorecard` splices a scorecard into the GitHub release description:
   headline pass-rate/score, per-question flips vs the previous qualified release, a trend
   chart, and Langfuse trace links. Each run's `eval-qualification.json` is attached as a

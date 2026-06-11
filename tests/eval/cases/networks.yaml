@@ -1,0 +1,104 @@
+# Network status & discovery: devnet/testnet liveness, peers, logs.
+#
+# Grading is promptfoo `assert:` blocks (llm-rubric): the rubric describes what a correct
+# answer looks like, NOT how to get it. Selection is by tags (`--tags`); this file is just
+# the networks drawer. Provenance marks on each case are real, not invented:
+#   ✓ = verbatim from a passing trace   💬 = real chat-history ask   📓 = a real notebooks investigation
+
+  - id: devnets_running                                  # ✓
+    description: which devnets are currently active (network discovery)
+    input: "What devnets are currently running?"
+    tags: [discovery, cartographoor, devnets]
+    assert:
+      - type: llm-rubric
+        value: >
+          Names the devnets currently active, discovered live from the network-discovery
+          data (not guessed or remembered). A concrete list of one or more current
+          devnet
+          names passes; a vague non-answer or an admission it couldn't find out fails.
+
+    variations:
+      - Which devnets are running right now?
+      - List the devnets that are currently running.
+      - What development networks are active at the moment?
+      - I'm trying to see which devnets are presently running.
+      - Can you tell me which devnets are currently up and running?
+
+
+  - id: devnet_beacon_peers                               # ✓
+    description: beacon node peer count on a devnet (prometheus)
+    input: "What is the peer count of a beacon node on a devnet right now?"
+    tags: [prometheus, devnets, peers]
+    assert:
+      - type: llm-rubric
+        value: >
+          Reports a current peer count for a beacon node on a devnet, from a real
+          Prometheus query — a plausible small-network integer (e.g. single digits
+          to
+          low hundreds). A specific number passes; no number or a fabricated one fails.
+
+
+    variations:
+      - How many peers does a beacon node on a devnet have right now?
+      - Report the current peer count for a beacon node on a devnet.
+      - I’m trying to find the peer count of a beacon node on a devnet at this 
+        moment.
+      - What is the current number of peers for a beacon node on a devnet?
+      - Right now, what peer count does a beacon node on a devnet show?
+
+
+  - id: testnet_status                                    # 💬 "state of hoodi" ask
+    description: live health summary of the hoodi testnet
+    input: "What's the current state of the hoodi testnet? Is it finalizing, and how
+      does recent block production look?"
+    network: hoodi
+    tags: [dora, ethnode, testnet, finality]
+    assert:
+      - type: llm-rubric
+        value: >
+          Reports hoodi's live state from a real explorer/node query: the current
+          epoch and finalized epoch (normally ~2 epochs behind head when healthy),
+          plus a recent block-production or participation figure. Concrete, mutually
+          consistent numbers pass; tiny stale epoch numbers, or a verdict with no
+          numbers, fail.
+    variations:
+      - How is the hoodi testnet doing right now? Is it finalizing, and what 
+        does recent block production look like?
+      - Give me the current status of the hoodi testnet, including whether it is
+        finalizing and how block production has looked recently.
+      - "I'm trying to understand the present state of the hoodi testnet: is it finalizing,
+        and what has recent block production been like?"
+      - What is the current condition of the hoodi testnet? Please assess 
+        whether it is finalizing and summarize recent block production.
+      - "Check the hoodi testnet's current state: finalization status and recent block
+        production behavior."
+
+
+  - id: devnet_error_logs                                 # 💬 devnet log triage
+    description: error-level log summary for a currently-running devnet
+    input: "Pick any currently-running devnet and summarize its error-level log volume
+      from the last few hours — which services or hosts are noisiest?"
+    tags: [clickhouse, logs, devnets]
+    assert:
+      - type: llm-rubric
+        value: >
+          Discovers a devnet that is actually running right now, queries its container
+          logs (OTel logs in ClickHouse) filtered to error severity, and reports a
+          per-service or per-host breakdown with real counts. Log-derived numbers
+          for
+          a named, current devnet pass; an answer with no real log query fails.
+    variations:
+      - Choose any currently-running devnet and summarize the volume of 
+        error-level logs over the last few hours, highlighting the noisiest 
+        services or hosts.
+      - 'For any devnet that is currently running, report on error-level log volume
+        from the last few hours: which services or hosts are generating the most noise?'
+      - I'm trying to understand recent error-level log volume on a 
+        currently-running devnet. Pick any one and summarize the last few hours,
+        including which services or hosts are noisiest.
+      - Please select any currently-running devnet and provide a summary of its 
+        error-level log volume for the last few hours, identifying the services 
+        or hosts with the highest noise.
+      - Pick a live devnet and give me a quick read on error-level log volume 
+        from the last few hours. Which services or hosts are the loudest?
+

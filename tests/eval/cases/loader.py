@@ -3,6 +3,10 @@
 One case shape for everything. A case is single-turn (one ``input``) or multi-turn
 (``steps``); the loader flattens steps into ``input`` + ``followups`` (run in one session).
 Grading is promptfoo ``assert`` blocks, passed through verbatim.
+
+Files under ``cases/`` are purely organizational (one domain per file); selection is by
+tags. ``load_test_cases()`` with no filename loads every ``cases/*.yaml`` (case ids must
+be unique across files); ``tags``/``exclude_tags`` filter the result.
 """
 
 from __future__ import annotations
@@ -33,28 +37,17 @@ class TestCase:
     asserts: list[dict] = field(default_factory=list)
     # Alternate phrasings of ``input`` with the SAME intent/answer (hydrated once by a
     # frontier model). Each runs as its own case under the same id + asserts, so the harness
-    # is graded on intent across wordings — and the proposer can't overfit to one phrasing.
+    # is graded on intent across many wordings — and the proposer can't overfit to one
+    # phrasing.
     variations: list[str] = field(default_factory=list)
 
 
-def load_test_cases(filename: str, cases_dir: Path | None = None) -> list[TestCase]:
-    """Load cases from a ``cases/*.yaml`` file.
-
-    Single-turn cases use ``input``; multi-turn cases use ``steps`` (a list of
-    ``{prompt: ...}`` or bare strings), which is flattened to input + followups.
-    """
-    if cases_dir is None:
-        cases_dir = Path(__file__).parent
-
-    filepath = cases_dir / filename
-    if not filepath.exists():
-        raise FileNotFoundError(f"Test case file not found: {filepath}")
-
+def _load_file(filepath: Path) -> list[TestCase]:
     with open(filepath) as f:
         data = yaml.safe_load(f)
 
     if not isinstance(data, list):
-        raise ValueError(f"Expected a list of test cases in {filename}")
+        raise ValueError(f"Expected a list of test cases in {filepath.name}")
 
     test_cases = []
     for item in data:
@@ -90,6 +83,52 @@ def load_test_cases(filename: str, cases_dir: Path | None = None) -> list[TestCa
     return test_cases
 
 
-def get_test_case_ids(filename: str, cases_dir: Path | None = None) -> list[str]:
-    """IDs of all cases in a file."""
+def load_test_cases(
+    filename: str | None = None,
+    cases_dir: Path | None = None,
+    *,
+    tags: list[str] | None = None,
+    exclude_tags: list[str] | None = None,
+) -> list[TestCase]:
+    """Load cases from one ``cases/*.yaml`` file, or all of them.
+
+    With ``filename=None`` every ``*.yaml`` in ``cases_dir`` is loaded (sorted by name)
+    and case ids must be unique across files. ``tags`` keeps only cases carrying at least
+    one of the given tags; ``exclude_tags`` then drops cases carrying any of those.
+
+    Single-turn cases use ``input``; multi-turn cases use ``steps`` (a list of
+    ``{prompt: ...}`` or bare strings), which is flattened to input + followups.
+    """
+    if cases_dir is None:
+        cases_dir = Path(__file__).parent
+
+    if filename is not None:
+        filepath = cases_dir / filename
+        if not filepath.exists():
+            raise FileNotFoundError(f"Test case file not found: {filepath}")
+        cases = _load_file(filepath)
+    else:
+        cases = []
+        seen: dict[str, str] = {}
+        for filepath in sorted(cases_dir.glob("*.yaml")):
+            for case in _load_file(filepath):
+                if case.id in seen:
+                    raise ValueError(
+                        f"duplicate case id {case.id!r}: in both "
+                        f"{seen[case.id]} and {filepath.name}"
+                    )
+                seen[case.id] = filepath.name
+                cases.append(case)
+
+    if tags:
+        wanted = set(tags)
+        cases = [c for c in cases if wanted & set(c.tags)]
+    if exclude_tags:
+        unwanted = set(exclude_tags)
+        cases = [c for c in cases if not (unwanted & set(c.tags))]
+    return cases
+
+
+def get_test_case_ids(filename: str | None = None, cases_dir: Path | None = None) -> list[str]:
+    """IDs of all cases in a file (or across all files)."""
     return [case.id for case in load_test_cases(filename, cases_dir)]
