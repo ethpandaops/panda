@@ -134,12 +134,10 @@ jobs:
           # Name the eval config references.
           docker tag "$IMG" ethpandaops-panda-sandbox:latest
 
-      - name: Mint panda-ci service-account credential
-        working-directory: tests/eval
-        env:
-          PANDA_CI_SVC_TOKEN: ${{ secrets.PANDA_CI_SVC_TOKEN }}
-        run: uv run python -m scripts.ci_auth
-
+      # VERIFICATION BRANCH: the ci_auth mint step is removed so the server's only
+      # auth path is the new in-process client_credentials mode — the same mint
+      # ci_auth.py did in Python, now done by pkg/auth/client. A green smoke proves
+      # the new mode mints, authorizes (groups scope), and queries end to end.
       - name: Write server config (talks to the hosted production proxy as panda-ci)
         run: |
           cat > config.ci.yaml << EOF
@@ -157,12 +155,11 @@ jobs:
           proxy:
             url: "${PANDA_PROXY_URL}"
             auth:
-              # oidc mode = externally-minted token (ci_auth), empty resource. Without
-              # this the server defaults resource to the proxy URL, changing the
-              # credential-store digest so it never finds the token ci_auth wrote.
-              mode: "oidc"
+              mode: "client_credentials"
               issuer_url: "${PANDA_PROXY_OIDC_ISSUER}"
               client_id: "panda-proxy"
+              username: "panda-ci-svc"
+              password: "\${PANDA_CI_SVC_TOKEN}"
           EOF
 
       - name: Configure panda CLI (CLI route shells out to `panda` -> local server)
