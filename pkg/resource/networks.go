@@ -43,9 +43,11 @@ type NetworksAllResponse struct {
 
 // NetworkDetailResponse is the response for networks://{name} (single network).
 type NetworkDetailResponse struct {
-	ID          string            `json:"id"`
-	ResourceURI string            `json:"resource_uri"`
-	Network     discovery.Network `json:"network"`
+	ID               string            `json:"id"`
+	ResourceURI      string            `json:"resource_uri"`
+	NodeInventoryURL string            `json:"node_inventory_url,omitempty"`
+	Usage            string            `json:"usage,omitempty"`
+	Network          discovery.Network `json:"network"`
 }
 
 // GroupDetailResponse is the response for networks://{group} (devnet group).
@@ -164,10 +166,13 @@ func createNetworkDetailHandler(log logrus.FieldLogger, client cartographoor.Car
 
 		// Try exact network match first
 		if network, ok := client.GetNetwork(name); ok {
+			inventoryURL := networkNodeInventoryURL(network)
 			data, err := json.MarshalIndent(NetworkDetailResponse{
-				ID:          name,
-				ResourceURI: "networks://" + name,
-				Network:     network,
+				ID:               name,
+				ResourceURI:      "networks://" + name,
+				NodeInventoryURL: inventoryURL,
+				Usage:            networkDetailUsage(inventoryURL),
+				Network:          network,
 			}, "", "  ")
 			if err != nil {
 				return "", fmt.Errorf("marshaling response: %w", err)
@@ -221,6 +226,28 @@ func createNetworkDetailHandler(log logrus.FieldLogger, client cartographoor.Car
 
 		return "", errors.New(message)
 	}
+}
+
+func networkNodeInventoryURL(network discovery.Network) string {
+	if network.GenesisConfig == nil {
+		return ""
+	}
+
+	for _, cfg := range network.GenesisConfig.API {
+		if strings.Contains(cfg.Path, "/nodes/inventory") || strings.Contains(cfg.URL, "/nodes/inventory") {
+			return cfg.URL
+		}
+	}
+
+	return ""
+}
+
+func networkDetailUsage(inventoryURL string) string {
+	if inventoryURL == "" {
+		return "Use networks://active for current network ids. This network does not advertise a node inventory URL."
+	}
+
+	return "Use node_inventory_url to discover node instance labels for direct node API calls."
 }
 
 func matchingNetworkIDsByDisplayName(networks map[string]discovery.Network, displayName string) []string {

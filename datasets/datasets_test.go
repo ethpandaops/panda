@@ -221,8 +221,20 @@ func TestDatasetDetailResourceCLIContext(t *testing.T) {
 		t.Errorf("CLI dataset guide missing search command, got:\n%s", out)
 	}
 
+	if !strings.Contains(out, `panda resources datasources://clickhouse`) {
+		t.Errorf("CLI dataset guide missing resource command, got:\n%s", out)
+	}
+
 	if strings.Contains(out, `search(type="examples"`) {
 		t.Errorf("CLI dataset guide should not use MCP tool-call syntax, got:\n%s", out)
+	}
+
+	if !strings.Contains(out, "compatibility mode") || !strings.Contains(out, "Target") {
+		t.Errorf("CLI dataset guide should explain missing placement metadata, got:\n%s", out)
+	}
+
+	if strings.Contains(out, "No datasource in this deployment declares this dataset") {
+		t.Errorf("CLI dataset guide should not imply absence when no placement metadata was advertised, got:\n%s", out)
 	}
 }
 
@@ -238,5 +250,9 @@ func TestDatasetsListResource(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("datasets list missing %q", want)
 		}
+	}
+
+	if !strings.Contains(out, "has not advertised dataset placement metadata") {
+		t.Errorf("datasets list should explain missing placement metadata, got:\n%s", out)
 	}
 }
