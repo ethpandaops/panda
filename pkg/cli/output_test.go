@@ -133,6 +133,18 @@ func TestPrintExampleUsageHintsAreGeneric(t *testing.T) {
 	assert.NotContains(t, output, "slot")
 }
 
+func TestPrintExampleUsageHintsMentionMultipleTargets(t *testing.T) {
+	output := captureStdout(t, func() {
+		printExampleUsageHints([]*serverapi.SearchExampleResult{
+			{Query: "SELECT 1", Target: "warehouse-a"},
+			{Query: "SELECT 2", Target: "warehouse-b"},
+		})
+	})
+
+	assert.Contains(t, output, "Results span multiple Targets")
+	assert.Contains(t, output, "combine bounded results")
+}
+
 func TestPrintDatasourceListUsesCompactIdentityColumns(t *testing.T) {
 	setOutputFormat(t, "text")
 

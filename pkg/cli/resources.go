@@ -23,7 +23,7 @@ Examples:
   panda resources read panda://getting-started
   panda resources read networks://active
   panda resources read python://ethpandaops
-  panda resources read clickhouse://tables/<cluster>
+  panda resources read clickhouse://tables/<cluster>/<database>
   panda resources -o json`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runResources,
@@ -108,6 +108,8 @@ func runResourcesList(cmd *cobra.Command, _ []string) error {
 			fmt.Printf("  %-42s  %s\n", tmpl.URITemplate, desc)
 		}
 	}
+
+	fmt.Println("\nRead a resource: panda resources <uri>")
 
 	return nil
 }

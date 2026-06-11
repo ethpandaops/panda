@@ -36,6 +36,12 @@ const (
 	// QueryErrorBadFunctionArguments: the SQL calls a function with an
 	// incompatible column type or argument shape.
 	QueryErrorBadFunctionArguments
+	// QueryErrorIllegalAggregation: the SQL nests aggregate functions or uses
+	// aggregate outputs in a way ClickHouse rejects.
+	QueryErrorIllegalAggregation
+	// QueryErrorAliasRequired: the SQL uses a subquery/table expression in a
+	// join context where ClickHouse requires an explicit alias.
+	QueryErrorAliasRequired
 )
 
 // ClassifyQueryError maps an upstream error message to a QueryErrorClass.
@@ -69,8 +75,16 @@ func ClassifyQueryError(message string) QueryErrorClass {
 		strings.Contains(normalized, "function with name") && strings.Contains(normalized, "does not exist"):
 		return QueryErrorUnknownFunction
 	case strings.Contains(normalized, "bad_arguments") ||
-		strings.Contains(normalized, "cannot work with"):
+		strings.Contains(normalized, "cannot work with") ||
+		strings.Contains(normalized, "cannot_parse_quoted_string"):
 		return QueryErrorBadFunctionArguments
+	case strings.Contains(normalized, "illegal_aggregation") ||
+		strings.Contains(normalized, "aggregate function") && strings.Contains(normalized, "inside another aggregate function"):
+		return QueryErrorIllegalAggregation
+	case strings.Contains(normalized, "alias_required") ||
+		strings.Contains(normalized, "requires alias") ||
+		strings.Contains(normalized, "no alias for subquery"):
+		return QueryErrorAliasRequired
 	}
 
 	return QueryErrorUnknown

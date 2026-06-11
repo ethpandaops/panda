@@ -38,32 +38,39 @@ const gettingStartedHeaderMCP = `# Getting Started Guide
 // gettingStartedHeaderCLI contains the CLI workflow guidance.
 const gettingStartedHeaderCLI = `# Getting Started Guide
 
-## Preferred Workflow: panda execute
+## Preferred Workflow
 
-**Always use ` + "`panda execute`" + ` for data analysis.** This is the Python sandbox — the same
-engine used by MCP clients via ` + "`execute_python`" + `. It provides:
+Use the narrowest surface that fits the question:
 
-- **Workspace persistence** between calls (files saved to ` + "`/workspace/`" + ` survive across executions)
-- **Multi-turn workflows** (query → save → load → plot across separate calls)
-- **Token efficiency** (one command handles any datasource type)
-- **Full ethpandaops library** (clickhouse, prometheus, loki, dora, ethnode, storage)
+- **One SQL answer**: ` + "`panda clickhouse query-raw <datasource> \"<SQL>\"`" + `
+- **One PromQL answer**: ` + "`panda prometheus query <datasource> \"<promql>\"`" + `
+- **Python, plots, files, or cross-source joins**: ` + "`panda execute`" + `
 
-While module-specific CLI commands exist (e.g. ` + "`panda clickhouse query`" + `), **prefer
-` + "`panda execute`" + `** because it supports multi-step workflows with workspace persistence
-that module commands cannot provide.
+Search examples name the target datasource for SQL snippets. Read the dataset
+guide first when an example names a dataset.
+
+` + "`panda execute`" + ` is the Python sandbox — the same engine used by MCP clients via
+` + "`execute_python`" + `. It provides workspace persistence between calls, multi-step
+workflows, and the full ethpandaops library (clickhouse, prometheus, loki,
+dora, ethnode, storage).
 
 ### Quick Start
 
 ` + "```" + `
-panda execute --code '
-from ethpandaops import clickhouse
-for ds in clickhouse.list_datasources():
-    print(ds)
-'
+panda datasets
+panda search examples "<topic>"
+panda clickhouse query-raw <Target> "<SQL from the example, adjusted for the question>"
 ` + "```" + `
 
-Then query a discovered datasource with ` + "`clickhouse.query(\"<datasource>\", \"<sql>\")`" + ` —
-the dataset guides (see Discovering Data below) carry table syntax and conventions.
+For Python workflows:
+
+` + "```" + `
+panda execute <<'PY'
+from ethpandaops import clickhouse
+df = clickhouse.query("<datasource>", "SELECT ...")
+print(df)
+PY
+` + "```" + `
 
 `
 
@@ -108,21 +115,21 @@ const gettingStartedFooterCLI = `
 
 **Example — Multi-step workflow:**
 ` + "```" + `
-panda execute --code '
+panda execute <<'PY'
 df = clickhouse.query("<datasource>", "SELECT ...")
 df.to_parquet("/workspace/data.parquet")
-'
+PY
 ` + "```" + `
 
 ` + "```" + `
-panda execute --code '
+panda execute --session <id> <<'PY'
 import pandas as pd
 df = pd.read_parquet("/workspace/data.parquet")
 plt.plot(df["time"], df["value"])
 plt.savefig("/workspace/chart.png")
 url = storage.upload("/workspace/chart.png")
 print(url)
-'
+PY
 ` + "```" + `
 
 Use ` + "`storage.upload()`" + ` for permanent public URLs (see ` + "`panda docs storage`" + ` for API details).

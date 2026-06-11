@@ -82,6 +82,7 @@ func TestRunResourcesListsWithoutURI(t *testing.T) {
 
 	assert.Contains(t, output, "Resources:")
 	assert.Contains(t, output, "panda://getting-started")
+	assert.Contains(t, output, "Read a resource: panda resources <uri>")
 }
 
 func TestResourcesReadHasGetAliasAndListSubcommand(t *testing.T) {
@@ -116,7 +117,7 @@ func TestServerErrorHintClassifiesClickHouseErrors(t *testing.T) {
 			name:    "primary key not used",
 			status:  http.StatusInternalServerError,
 			message: "Code: 277. DB::Exception: Primary key (a, b) is not used and setting 'force_primary_key' is set. (INDEX_NOT_USED)",
-			want:    "partition or primary-key columns",
+			want:    "primary-key/order-key columns",
 		},
 		{
 			name:    "unknown identifier",
@@ -173,10 +174,40 @@ func TestServerErrorHintClassifiesClickHouseErrors(t *testing.T) {
 			want:    "incompatible argument type",
 		},
 		{
+			name:    "bad query parameter literal",
+			status:  http.StatusBadRequest,
+			message: "Code: 26. DB::Exception: Cannot parse quoted string. (CANNOT_PARSE_QUOTED_STRING)",
+			want:    "incompatible argument type",
+		},
+		{
+			name:    "illegal aggregation",
+			status:  http.StatusInternalServerError,
+			message: "Code: 184. DB::Exception: Aggregate function count() is found inside another aggregate function. (ILLEGAL_AGGREGATION)",
+			want:    "nested inside other aggregate functions",
+		},
+		{
+			name:    "alias required",
+			status:  http.StatusInternalServerError,
+			message: "Code: 206. DB::Exception: JOIN CROSS JOIN ... no alias for subquery. (ALIAS_REQUIRED)",
+			want:    "explicit aliases",
+		},
+		{
 			name:    "wrong prometheus datasource",
 			status:  http.StatusNotFound,
 			message: "prometheus datasource \"metrics\" not found",
 			want:    "Prometheus argument",
+		},
+		{
+			name:    "invalid schema path identifier",
+			status:  http.StatusBadRequest,
+			message: "reading template resource clickhouse://tables/cluster/dataset-name/table: validating database name: invalid identifier \"dataset-name\"",
+			want:    "concrete ClickHouse identifiers",
+		},
+		{
+			name:    "upstream bad gateway",
+			status:  http.StatusBadGateway,
+			message: "error code: 502",
+			want:    "upstream datasource or node",
 		},
 	}
 

@@ -264,6 +264,29 @@ func TestSearchExamplesScoreAndCategoryFilter(t *testing.T) {
 		assert.Equal(t, 4*exampleFilterOverscan, searcher.lastLimit)
 	})
 
+	t.Run("guidance notes multiple targets", func(t *testing.T) {
+		t.Parallel()
+
+		stamped := []resource.SearchResult{
+			{CategoryKey: "blocks", CategoryName: "Blocks", Example: types.Example{Name: "one", Target: "warehouse-a", Dataset: "pack-a"}, Score: 0.9},
+			{CategoryKey: "blocks", CategoryName: "Blocks", Example: types.Example{Name: "two", Target: "warehouse-b", Dataset: "pack-b"}, Score: 0.8},
+		}
+		stampedCategories := map[string]types.ExampleCategory{
+			"blocks": {Name: "Blocks", Examples: []types.Example{
+				{Name: "one", Dataset: "pack-a"},
+				{Name: "two", Dataset: "pack-b"},
+			}},
+		}
+
+		searcher := &stubExampleSearcher{results: stamped}
+		svc := New(searcher, newExampleRegistry(t, stampedCategories), nil, nil, nil, nil, nil, nil)
+
+		resp, err := svc.SearchExamples("q", "", "", 3)
+		require.NoError(t, err)
+
+		assert.Contains(t, resp.Guidance, "When relevant examples span multiple targets, run each SQL query against its own target; combine bounded intermediate results in Python or another client-side step instead of writing one cross-datasource SQL query.")
+	})
+
 	t.Run("unknown dataset errors with available list", func(t *testing.T) {
 		t.Parallel()
 

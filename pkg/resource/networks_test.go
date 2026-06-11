@@ -90,7 +90,17 @@ func TestNetworkDetailIncludesID(t *testing.T) {
 
 	client := &fakeNetworkClient{
 		networks: map[string]discovery.Network{
-			"group-a-devnet-1": {Name: "devnet-1", ChainID: 11, Status: "active"},
+			"group-a-devnet-1": {
+				Name:    "devnet-1",
+				ChainID: 11,
+				Status:  "active",
+				GenesisConfig: &discovery.GenesisConfig{
+					API: []discovery.ConfigFile{{
+						Path: "/api/v1/nodes/inventory",
+						URL:  "https://config.example/api/v1/nodes/inventory",
+					}},
+				},
+			},
 		},
 	}
 
@@ -104,4 +114,6 @@ func TestNetworkDetailIncludesID(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(out), &response))
 	require.Equal(t, "group-a-devnet-1", response.ID)
 	require.Equal(t, "networks://group-a-devnet-1", response.ResourceURI)
+	require.Equal(t, "https://config.example/api/v1/nodes/inventory", response.NodeInventoryURL)
+	require.Contains(t, response.Usage, "node_inventory_url")
 }

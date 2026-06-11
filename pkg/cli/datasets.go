@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -79,6 +80,7 @@ func runDatasets(cmd *cobra.Command, args []string) error {
 	rows := make([][]string, 0, len(parsed.Datasets))
 
 	var notes []noteLine
+	var blankPlacementRows bool
 
 	for _, d := range parsed.Datasets {
 		// Inactive datasets are known to the release but absent from this
@@ -88,6 +90,7 @@ func runDatasets(cmd *cobra.Command, args []string) error {
 		}
 
 		if len(d.Placements) == 0 {
+			blankPlacementRows = true
 			rows = append(rows, []string{d.Name, "", "", d.Description})
 
 			continue
@@ -131,6 +134,10 @@ func runDatasets(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	if blankPlacementRows {
+		fmt.Println("\nBlank datasource means this server did not advertise dataset placement metadata. Use the `Target` shown by `panda search examples \"<topic>\"`, or inspect concrete datasources with `panda resources datasources://clickhouse`.")
+	}
+
 	fmt.Println("\nRead a dataset's guide: panda datasets <name>")
 
 	return nil
@@ -164,4 +171,27 @@ func completeDatasetNames(cmd *cobra.Command, args []string, _ string) ([]string
 	}
 
 	return names, cobra.ShellCompDirectiveNoFileComp
+}
+
+func isActiveDatasetName(ctx context.Context, name string) bool {
+	response, err := readResource(ctx, "datasets://list")
+	if err != nil {
+		return false
+	}
+
+	var parsed struct {
+		Datasets []datasetListEntry `json:"datasets"`
+	}
+
+	if err := json.Unmarshal([]byte(response.Content), &parsed); err != nil {
+		return false
+	}
+
+	for _, d := range parsed.Datasets {
+		if d.Active && d.Name == name {
+			return true
+		}
+	}
+
+	return false
 }

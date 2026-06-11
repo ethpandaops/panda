@@ -24,6 +24,9 @@ func TestClassifyQueryError(t *testing.T) {
 		{"DB::Exception: Database example_db does not exist. (UNKNOWN_DATABASE)", QueryErrorUnknownTable},
 		{"DB::Exception: Function with name `toLower` does not exist. (UNKNOWN_FUNCTION)", QueryErrorUnknownFunction},
 		{"DB::Exception: Functions lowerUTF8 cannot work with FixedString argument. (BAD_ARGUMENTS)", QueryErrorBadFunctionArguments},
+		{"DB::Exception: Cannot parse quoted string. (CANNOT_PARSE_QUOTED_STRING)", QueryErrorBadFunctionArguments},
+		{"DB::Exception: Aggregate function count() is found inside another aggregate function. (ILLEGAL_AGGREGATION)", QueryErrorIllegalAggregation},
+		{"DB::Exception: JOIN CROSS JOIN ... no alias for subquery. (ALIAS_REQUIRED)", QueryErrorAliasRequired},
 		{"connection refused", QueryErrorUnknown},
 		{"", QueryErrorUnknown},
 	}
