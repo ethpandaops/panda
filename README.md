@@ -6,45 +6,7 @@ Read more: https://www.anthropic.com/engineering/code-execution-with-mcp
 
 ## Architecture
 
-```
-┌─ Your Machine ─────────────────────────────────────────────────┐
-│                                                                │
-│   ┌───────────┐         ┌──────────────────────────────────┐   │
-│   │           │  HTTP   │ Server (Docker)                  │   │
-│   │  Claude / ├────────►│                                  │   │
-│   │  panda    │   MCP   │  MCP tools ─ execute_python      │   │
-│   │           │         │             ─ manage_session      │   │
-│   └───────────┘         │             ─ search              │   │
-│                         │                                  │   │
-│                         │  ┌────────────────────────────┐  │   │
-│                         │  │ Sandbox (Docker)           │  │   │
-│                         │  │                            │  │   │
-│                         │  │  Python code executes here │  │   │
-│                         │  │  No credentials, only a    │  │   │
-│                         │  │  server token + API URL    │  │   │
-│                         │  └─────────┬──────────────────┘  │   │
-│                         │            │ calls back           │   │
-│                         │◄───────────┘                     │   │
-│                         └──────────────┬───────────────────┘   │
-│                                        │                       │
-└────────────────────────────────────────┼───────────────────────┘
-                                         │ OAuth / OIDC
-                              ┌──────────▼──────────┐
-                              │ Proxy               │
-                              │ (remote or local)   │
-                              │                     │
-                              │  OAuth / OIDC gate   │
-                              │  + credentials for   │
-                              │  all datasources     │
-                              └──────────┬──────────┘
-                                         │
-                    ┌────────────────────┬┴───────────────────┐
-                    ▼                    ▼                    ▼
-             ┌────────────┐    ┌──────────────┐    ┌──────────────┐
-             │ ClickHouse │    │  Prometheus  │    │  Loki / Eth  │
-             │            │    │              │    │    nodes     │
-             └────────────┘    └──────────────┘    └──────────────┘
-```
+![Request flow: a sandbox and server on your machine send a request to a credential-holding proxy, which queries ClickHouse, Prometheus, Loki, and an Eth node and returns rows. The sandbox holds no credentials.](docs/img/architecture.png)
 
 Code runs on your machine. Credentials stay in the proxy. Sandbox containers never receive datasource credentials.
 
