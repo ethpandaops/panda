@@ -67,3 +67,129 @@ jobs:
       # govulncheck binary is a go.mod tool dependency (pinned + sum-verified).
       - name: Run govulncheck
         run: ./scripts/govulncheck.sh
+
+  # Deterministic end-to-end plumbing test of the FULL candidate-built stack:
+  # CLI -> server -> proxy -> ClickHouse, every binary built from this commit.
+  # The LLM eval workflows run against the deployed hosted proxy (no upstream
+  # credentials live in this repo), so this job is what exercises a release's
+  # proxy code before it ships — against a fixture ClickHouse container, with
+  # hard asserts and no secrets.
+  stack-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      clickhouse:
+        image: clickhouse/clickhouse-server:24.8-alpine
+        env:
+          CLICKHOUSE_USER: panda
+          CLICKHOUSE_PASSWORD: localtest
+          CLICKHOUSE_DB: fixture
+        ports:
+          - 8123:8123
+        options: >-
+          --health-cmd "wget -qO- http://127.0.0.1:8123/ping || exit 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build binaries (server + CLI + proxy)
+        run: |
+          make build
+          make build-proxy
+
+      - name: Seed fixture data
+        run: |
+          set -euo pipefail
+          ch() { curl -sf -u panda:localtest 'http://127.0.0.1:8123/' --data-binary "$1"; }
+          ch "CREATE TABLE fixture.blocks (slot UInt64, block_root String) ENGINE = MergeTree ORDER BY slot"
+          ch "INSERT INTO fixture.blocks VALUES (1, 'a'), (2, 'b'), (3, 'c')"
+          ch "SELECT count() FROM fixture.blocks" | grep -qx 3
+
+      - name: Write configs
+        run: |
+          cat > proxy-config.ci.yaml << 'EOF'
+          server:
+            listen_addr: ":18081"
+
+          auth:
+            mode: none
+
+          clickhouse:
+            - name: clickhouse-fixture
+              description: "Fixture ClickHouse for the stack smoke"
+              host: "127.0.0.1"
+              port: 8123
+              database: fixture
+              username: panda
+              password: localtest
+              secure: false
+          EOF
+
+          cat > config.ci.yaml << 'EOF'
+          server:
+            host: "0.0.0.0"
+            port: 2480
+            base_url: "http://127.0.0.1:2480"
+            sandbox_url: "http://127.0.0.1:2480"
+
+          sandbox:
+            backend: docker
+            image: "ethpandaops-panda-sandbox:latest"
+
+          proxy:
+            url: "http://127.0.0.1:18081"
+          EOF
+
+          mkdir -p "$HOME/.config/panda"
+          cat > "$HOME/.config/panda/config.yaml" << 'EOF'
+          server:
+            base_url: "http://localhost:2480"
+          EOF
+
+      - name: Start proxy (built from this commit)
+        run: |
+          ./panda-proxy --config proxy-config.ci.yaml > proxy.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:18081/health >/dev/null 2>&1 && { echo "proxy ready"; break; }
+            echo "waiting for proxy... ($i/30)"; sleep 2
+          done
+          curl -sf http://localhost:18081/health >/dev/null 2>&1 || {
+            echo "ERROR: proxy not ready"; tail -50 proxy.log; exit 1; }
+
+      - name: Start server (built from this commit)
+        run: |
+          ./panda-server serve --config config.ci.yaml > server.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:2480/health >/dev/null 2>&1 && { echo "server ready after $((i*2))s"; break; }
+            echo "waiting for server... ($i/60)"; sleep 2
+          done
+          curl -sf http://localhost:2480/health >/dev/null 2>&1 || {
+            echo "ERROR: server not ready after 120s"; tail -60 server.log; exit 1; }
+
+      - name: Assert CLI -> server -> proxy -> ClickHouse round-trip
+        run: |
+          set -euo pipefail
+          echo "--- panda datasources ---"
+          ./panda datasources | tee /tmp/datasources.out
+          grep -q "clickhouse-fixture" /tmp/datasources.out
+
+          echo "--- panda clickhouse query-raw ---"
+          ./panda clickhouse query-raw clickhouse-fixture \
+            "SELECT count() AS n FROM fixture.blocks" | tee /tmp/query.out
+          grep -q '"n"' /tmp/query.out
+          grep -Eq '"n"[": ]*3' /tmp/query.out
+
+          echo "stack smoke OK: candidate CLI/server/proxy round-tripped a real query"
+
+      - name: Logs on failure
+        if: failure()
+        run: |
+          echo "===== proxy.log ====="; tail -80 proxy.log 2>/dev/null || true
+          echo "===== server.log ====="; tail -80 server.log 2>/dev/null || true
