@@ -101,7 +101,7 @@ func RegisterDatasourcesResources(
 }
 
 func createDatasourcesHandler(provider *DatasourceProvider, filterType string) ReadHandler {
-	return func(_ context.Context, _ string, _ surface.Surface) (string, error) {
+	return func(_ context.Context, _ string, _ surface.Dialect) (string, error) {
 		allInfos := provider.DatasourceInfo()
 
 		var filtered []types.DatasourceInfo

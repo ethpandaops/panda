@@ -6,53 +6,53 @@ import (
 	"strings"
 )
 
-// mcpSurface speaks the MCP dialect: tool calls and resource URIs.
-type mcpSurface struct{}
+// mcpDialect speaks the MCP dialect: tool calls and resource URIs.
+type mcpDialect struct{}
 
-var _ Surface = mcpSurface{}
+var _ Dialect = mcpDialect{}
 
 // Key returns the wire identifier for the MCP surface.
-func (mcpSurface) Key() string { return "mcp" }
+func (mcpDialect) Key() string { return "mcp" }
 
 // ExecuteRef returns the inline reference to the execute_python tool.
-func (mcpSurface) ExecuteRef() string { return "`execute_python`" }
+func (mcpDialect) ExecuteRef() string { return "`execute_python`" }
 
 // PythonBlock renders python source as a fenced python block.
-func (mcpSurface) PythonBlock(code string) string {
+func (mcpDialect) PythonBlock(code string) string {
 	return "```python\n" + code + "\n```\n"
 }
 
 // PythonBlockInSession renders python source for a reused session. MCP
 // clients resume sessions via the session_id tool argument, not in code,
 // so the block is identical to PythonBlock.
-func (s mcpSurface) PythonBlockInSession(code string) string {
+func (s mcpDialect) PythonBlockInSession(code string) string {
 	return s.PythonBlock(code)
 }
 
 // SessionHint says how MCP clients reuse a sandbox session.
-func (mcpSurface) SessionHint() string {
+func (mcpDialect) SessionHint() string {
 	return "Pass `session_id` from tool responses for file persistence and faster startup"
 }
 
 // SearchExamples returns a search tool invocation scoped to a dataset.
-func (mcpSurface) SearchExamples(dataset, topic string) string {
+func (mcpDialect) SearchExamples(dataset, topic string) string {
 	return fmt.Sprintf("the search tool: `search(type=\"examples\", dataset=%q, query=%q)`", dataset, topic)
 }
 
 // ResourceRef returns the resource URI as an inline reference.
-func (mcpSurface) ResourceRef(uri string) string {
+func (mcpDialect) ResourceRef(uri string) string {
 	return "`" + uri + "`"
 }
 
 // PythonDocsRef returns the Python API docs resource reference.
-func (mcpSurface) PythonDocsRef(_ string) string {
+func (mcpDialect) PythonDocsRef(_ string) string {
 	return "`python://ethpandaops`"
 }
 
 // GettingStartedIntro returns the MCP onboarding workflow section. It
 // teaches the system only: no dataset, datasource, table, or network is
 // ever named here — those facts live behind the resources it points at.
-func (mcpSurface) GettingStartedIntro() string {
+func (mcpDialect) GettingStartedIntro() string {
 	return `## Workflow
 
 1. **Discover** → ` + "`datasets://list`" + ` shows the datasets this deployment holds; ` + "`datasources://list`" + ` shows the connections that hold them (placement params + operator notes); ` + "`networks://active`" + ` shows live network/devnet ids
@@ -68,7 +68,7 @@ func (mcpSurface) GettingStartedIntro() string {
 }
 
 // DiscoveryGuide lists the registered tools and resources.
-func (mcpSurface) DiscoveryGuide(d Discovery) string {
+func (mcpDialect) DiscoveryGuide(d Discovery) string {
 	var sb strings.Builder
 
 	sb.WriteString("## Available Tools\n\n")

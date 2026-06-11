@@ -1,17 +1,17 @@
 // Package surface defines how each client surface (MCP, CLI) addresses
-// panda's capabilities. Content renderers receive a Surface and use it to
+// panda's capabilities. Content renderers receive a Dialect and use it to
 // spell invocations and onboarding guidance in the reader's dialect; they
 // never branch on caller identity themselves. Handlers own facts and
 // structure, surfaces own voice and addressing.
 package surface
 
 // QueryParam is the HTTP query parameter that selects a surface on the
-// product API. The value is a Surface key.
+// product API. The value is a Dialect key.
 const QueryParam = "client_context"
 
-// Surface renders invocation references and onboarding prose for one
+// Dialect renders invocation references and onboarding prose for one
 // client surface. Implementations must be stateless values.
-type Surface interface {
+type Dialect interface {
 	// Key returns the wire identifier for this surface ("mcp", "cli").
 	Key() string
 
@@ -67,14 +67,14 @@ type Item struct {
 }
 
 // MCP is the surface for MCP clients (LLM tool use). It is the default.
-var MCP Surface = mcpSurface{}
+var MCP Dialect = mcpDialect{}
 
 // CLI is the surface for agents driving the panda CLI.
-var CLI Surface = cliSurface{}
+var CLI Dialect = cliDialect{}
 
-// FromKey resolves a wire identifier to a Surface. Unknown or empty keys
+// FromKey resolves a wire identifier to a Dialect. Unknown or empty keys
 // resolve to MCP, the default surface.
-func FromKey(key string) Surface {
+func FromKey(key string) Dialect {
 	if key == CLI.Key() {
 		return CLI
 	}

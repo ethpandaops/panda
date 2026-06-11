@@ -11,7 +11,7 @@ func TestFromKey(t *testing.T) {
 	tests := []struct {
 		name string
 		key  string
-		want Surface
+		want Dialect
 	}{
 		{name: "cli key", key: "cli", want: CLI},
 		{name: "mcp key", key: "mcp", want: MCP},
@@ -29,7 +29,7 @@ func TestFromKey(t *testing.T) {
 func TestResourceRef(t *testing.T) {
 	tests := []struct {
 		name string
-		s    Surface
+		s    Dialect
 		uri  string
 		want string
 	}{

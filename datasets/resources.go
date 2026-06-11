@@ -64,7 +64,7 @@ func (m *Module) RegisterResources(log logrus.FieldLogger, reg module.ResourceRe
 	return nil
 }
 
-func (m *Module) handleDatasetsList(_ context.Context, _ string, _ surface.Surface) (string, error) {
+func (m *Module) handleDatasetsList(_ context.Context, _ string, _ surface.Dialect) (string, error) {
 	exposed := make(map[string]bool, len(m.packs))
 	for _, p := range m.activePacks() {
 		exposed[p.name] = true
@@ -96,7 +96,7 @@ func (m *Module) handleDatasetsList(_ context.Context, _ string, _ surface.Surfa
 	return string(data), nil
 }
 
-func (m *Module) handleDatasetDetail(ctx context.Context, uri string, s surface.Surface) (string, error) {
+func (m *Module) handleDatasetDetail(ctx context.Context, uri string, s surface.Dialect) (string, error) {
 	matches := datasetURIPattern.FindStringSubmatch(uri)
 	if len(matches) != 2 {
 		return "", fmt.Errorf("invalid URI format: %s", uri)
@@ -130,7 +130,7 @@ func (m *Module) handleDatasetDetail(ctx context.Context, uri string, s surface.
 // renderDatasetGuide assembles the full per-dataset guide: identity, where the
 // dataset lives in this deployment, the pack's guidance, and its example
 // categories.
-func (m *Module) renderDatasetGuide(p pack, s surface.Surface) string {
+func (m *Module) renderDatasetGuide(p pack, s surface.Dialect) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "# %s — %s\n\n", p.name, p.description)

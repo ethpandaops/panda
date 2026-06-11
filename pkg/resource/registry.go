@@ -38,7 +38,7 @@ type Registry interface {
 
 	// Read reads a resource by URI for the given client surface and
 	// returns its content, mime type, and any error.
-	Read(ctx context.Context, uri string, s surface.Surface) (content string, mimeType string, err error)
+	Read(ctx context.Context, uri string, s surface.Dialect) (content string, mimeType string, err error)
 }
 
 // registry is the default implementation of Registry.
@@ -110,7 +110,7 @@ func (r *registry) ListTemplates() []mcp.ResourceTemplate {
 
 // Read reads a resource by URI for the given client surface and returns
 // its content and mime type.
-func (r *registry) Read(ctx context.Context, uri string, surf surface.Surface) (string, string, error) {
+func (r *registry) Read(ctx context.Context, uri string, surf surface.Dialect) (string, string, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

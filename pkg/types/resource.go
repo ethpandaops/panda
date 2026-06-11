@@ -10,7 +10,7 @@ import (
 )
 
 // ReadHandler handles reading a resource by URI for a given client surface.
-type ReadHandler func(ctx context.Context, uri string, s surface.Surface) (string, error)
+type ReadHandler func(ctx context.Context, uri string, s surface.Dialect) (string, error)
 
 // StaticResource is a resource with a fixed URI.
 type StaticResource struct {

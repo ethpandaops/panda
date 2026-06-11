@@ -34,7 +34,7 @@ func RegisterAPIResources(log logrus.FieldLogger, reg Registry, moduleReg *modul
 }
 
 func createAPIHandler(moduleReg *module.Registry) ReadHandler {
-	return func(_ context.Context, _ string, _ surface.Surface) (string, error) {
+	return func(_ context.Context, _ string, _ surface.Dialect) (string, error) {
 		modules := moduleReg.PythonAPIDocs()
 
 		// Add platform-owned storage module.

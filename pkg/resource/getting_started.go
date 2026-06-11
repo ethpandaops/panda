@@ -60,7 +60,7 @@ func createGettingStartedHandler(
 	reg Registry,
 	toolReg ToolLister,
 ) ReadHandler {
-	return func(_ context.Context, _ string, s surface.Surface) (string, error) {
+	return func(_ context.Context, _ string, s surface.Dialect) (string, error) {
 		var sb strings.Builder
 
 		sb.WriteString("# Getting Started Guide\n\n")
@@ -106,7 +106,7 @@ func discoveryFacts(toolReg ToolLister, reg Registry) surface.Discovery {
 
 // sessionsSection renders the sandbox session semantics, spelling
 // invocations in the surface's dialect.
-func sessionsSection(s surface.Surface) string {
+func sessionsSection(s surface.Dialect) string {
 	var sb strings.Builder
 
 	sb.WriteString("\n## Sessions\n\n")

@@ -17,7 +17,7 @@ type fakeToolLister struct {
 
 func (f *fakeToolLister) List() []mcp.Tool { return f.tools }
 
-func renderGettingStarted(t *testing.T, s surface.Surface) string {
+func renderGettingStarted(t *testing.T, s surface.Dialect) string {
 	t.Helper()
 
 	reg := NewRegistry(logrus.New())

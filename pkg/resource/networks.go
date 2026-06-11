@@ -103,7 +103,7 @@ func RegisterNetworksResources(log logrus.FieldLogger, reg Registry, client cart
 
 // createActiveNetworksHandler returns a handler for networks://active.
 func createActiveNetworksHandler(client cartographoor.CartographoorClient) ReadHandler {
-	return func(_ context.Context, _ string, _ surface.Surface) (string, error) {
+	return func(_ context.Context, _ string, _ surface.Dialect) (string, error) {
 		networks := client.GetActiveNetworks()
 		groups := client.GetGroups()
 
@@ -140,7 +140,7 @@ func createActiveNetworksHandler(client cartographoor.CartographoorClient) ReadH
 
 // createAllNetworksHandler returns a handler for networks://all.
 func createAllNetworksHandler(client cartographoor.CartographoorClient) ReadHandler {
-	return func(_ context.Context, _ string, _ surface.Surface) (string, error) {
+	return func(_ context.Context, _ string, _ surface.Dialect) (string, error) {
 		response := NetworksAllResponse{
 			Networks: client.GetAllNetworks(),
 			Groups:   client.GetGroups(),
@@ -157,7 +157,7 @@ func createAllNetworksHandler(client cartographoor.CartographoorClient) ReadHand
 
 // createNetworkDetailHandler returns a handler for networks://{name}.
 func createNetworkDetailHandler(log logrus.FieldLogger, client cartographoor.CartographoorClient) ReadHandler {
-	return func(_ context.Context, uri string, _ surface.Surface) (string, error) {
+	return func(_ context.Context, uri string, _ surface.Dialect) (string, error) {
 		matches := networkURIPattern.FindStringSubmatch(uri)
 		if len(matches) != 2 {
 			return "", fmt.Errorf("invalid URI format: %s", uri)

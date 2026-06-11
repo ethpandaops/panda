@@ -11,40 +11,40 @@ var cliResourceCommands = map[string]string{
 	"python://ethpandaops": "panda docs",
 }
 
-// cliSurface speaks the CLI dialect: panda commands and flags.
-type cliSurface struct{}
+// cliDialect speaks the CLI dialect: panda commands and flags.
+type cliDialect struct{}
 
-var _ Surface = cliSurface{}
+var _ Dialect = cliDialect{}
 
 // Key returns the wire identifier for the CLI surface.
-func (cliSurface) Key() string { return "cli" }
+func (cliDialect) Key() string { return "cli" }
 
 // ExecuteRef returns the inline reference to the panda execute command.
-func (cliSurface) ExecuteRef() string { return "`panda execute`" }
+func (cliDialect) ExecuteRef() string { return "`panda execute`" }
 
 // PythonBlock renders python source wrapped in a panda execute heredoc.
-func (cliSurface) PythonBlock(code string) string {
+func (cliDialect) PythonBlock(code string) string {
 	return "```\npanda execute <<'PY'\n" + code + "\nPY\n```\n"
 }
 
 // PythonBlockInSession renders python source for a reused session,
 // resuming via the --session flag.
-func (cliSurface) PythonBlockInSession(code string) string {
+func (cliDialect) PythonBlockInSession(code string) string {
 	return "```\npanda execute --session <id> <<'PY'\n" + code + "\nPY\n```\n"
 }
 
 // SessionHint says how CLI agents reuse a sandbox session.
-func (cliSurface) SessionHint() string {
+func (cliDialect) SessionHint() string {
 	return "Pass `--session <id>` for file persistence and faster startup"
 }
 
 // SearchExamples returns a panda search invocation scoped to a dataset.
-func (cliSurface) SearchExamples(dataset, topic string) string {
+func (cliDialect) SearchExamples(dataset, topic string) string {
 	return fmt.Sprintf("`panda search examples --dataset %s %q`", dataset, topic)
 }
 
 // ResourceRef returns the CLI command that reads the given resource URI.
-func (cliSurface) ResourceRef(uri string) string {
+func (cliDialect) ResourceRef(uri string) string {
 	if cmd, ok := cliResourceCommands[uri]; ok {
 		return "`" + cmd + "`"
 	}
@@ -53,7 +53,7 @@ func (cliSurface) ResourceRef(uri string) string {
 }
 
 // PythonDocsRef returns the panda docs command for the given topic.
-func (cliSurface) PythonDocsRef(topic string) string {
+func (cliDialect) PythonDocsRef(topic string) string {
 	if topic == "" {
 		return "`panda docs`"
 	}
@@ -62,7 +62,7 @@ func (cliSurface) PythonDocsRef(topic string) string {
 }
 
 // GettingStartedIntro returns the CLI onboarding workflow section.
-func (cliSurface) GettingStartedIntro() string {
+func (cliDialect) GettingStartedIntro() string {
 	return `## Preferred Workflow
 
 Use the narrowest surface that fits the question:
@@ -103,7 +103,7 @@ PY
 // DiscoveryGuide points CLI readers at the built-in discovery commands;
 // the CLI documents its own command set, so the registered tool and
 // resource listings are not repeated here.
-func (cliSurface) DiscoveryGuide(_ Discovery) string {
+func (cliDialect) DiscoveryGuide(_ Discovery) string {
 	return `## Discovering Data
 
 - ` + "`panda datasets`" + ` — datasets in this deployment and where they live

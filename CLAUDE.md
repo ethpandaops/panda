@@ -22,7 +22,7 @@ See `docs/architecture.md` for the canonical boundary definition.
 - `proxy` is a thin credentialed upstream gateway, not a product operations API
 - module behavior is exposed through `execute_python`, resources, docs, and search; do not add per-module MCP tools
 - datasource identity is owned by the proxy route that advertised it; modules initialize from proxy discovery
-- rendered content never branches on caller identity: resource handlers receive a `surface.Surface` and spell invocations through its vocabulary (`pkg/surface`); never add `if cli/mcp` conditionals to content code
+- rendered content never branches on caller identity: resource handlers receive a `surface.Dialect` and spell invocations through its vocabulary (`pkg/surface`); never add `if cli/mcp` conditionals to content code
 
 ## Supported Deployment Modes
 
