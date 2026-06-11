@@ -1,0 +1,157 @@
+forky_fork_choice_snapshots:
+  name: Fork Choice Snapshots
+  description: Browse fork-choice frames captured by Forky from beacon nodes
+  examples:
+    - name: List recent frames
+      description: List the most recent fork-choice frames for a network
+      query: |
+        from ethpandaops import forky
+
+        # List available networks with Forky instances
+        networks = forky.list_networks()
+        print(f"Available networks: {[n['name'] for n in networks]}")
+
+        network = "mainnet"
+        now = forky.get_now(network)
+        print(f"Current slot: {now['slot']}, epoch: {now['epoch']}")
+
+        # Frames captured during the current epoch
+        result = forky.list_frames(network, epoch=now["epoch"], limit=20)
+        print(f"Frames this epoch: {result['total']}")
+        for frame in result["frames"][:10]:
+            print(
+                f"  {frame['id']} node={frame['node']} slot={frame['wall_clock_slot']} "
+                f"client={frame['consensus_client']} source={frame['event_source']}"
+            )
+
+    - name: Inspect a fork-choice frame
+      description: Fetch a full fork-choice dump and inspect its head and checkpoints
+      query: |
+        from ethpandaops import forky
+
+        network = "mainnet"
+        now = forky.get_now(network)
+        result = forky.list_frames(network, slot=now["slot"] - 2, limit=1)
+        if not result["frames"]:
+            raise RuntimeError("No frames captured for that slot yet")
+
+        frame_id = result["frames"][0]["id"]
+        frame = forky.get_frame(network, frame_id)
+
+        meta = frame["metadata"]
+        data = frame["data"]
+        print(f"Frame {meta['id']} from {meta['node']} at slot {meta['wall_clock_slot']}")
+        print(f"Justified: {data['justified_checkpoint']}")
+        print(f"Finalized: {data['finalized_checkpoint']}")
+
+        nodes = data["fork_choice_nodes"]
+        print(f"Fork choice nodes: {len(nodes)}")
+
+        # Head = highest-slot node with the greatest weight
+        head = max(nodes, key=lambda n: (int(n["slot"]), int(n["weight"])))
+        print(f"Head: slot {head['slot']} root {head['block_root']} weight {head['weight']}")
+        print(f"View in Forky: {forky.link_frame(network, frame_id)}")
+
+    - name: Detect forks in a slot
+      description: Check whether multiple block roots compete for the same slot
+      query: |
+        from ethpandaops import forky
+        from collections import defaultdict
+
+        network = "mainnet"
+        now = forky.get_now(network)
+        result = forky.list_frames(network, slot=now["slot"] - 2, limit=1)
+        if not result["frames"]:
+            raise RuntimeError("No frames captured for that slot yet")
+
+        frame = forky.get_frame(network, result["frames"][0]["id"])
+
+        roots_by_slot = defaultdict(set)
+        for node in frame["data"]["fork_choice_nodes"]:
+            roots_by_slot[int(node["slot"])].add(node["block_root"])
+
+        forked = {slot: roots for slot, roots in roots_by_slot.items() if len(roots) > 1}
+        if not forked:
+            print("No competing block roots in this frame (healthy)")
+        else:
+            print("WARNING: competing block roots detected:")
+            for slot, roots in sorted(forked.items()):
+                print(f"  slot {slot}: {len(roots)} roots")
+
+forky_node_views:
+  name: Node Views
+  description: Compare fork choice across nodes and consensus clients
+  examples:
+    - name: List nodes with frames
+      description: Discover which sentry nodes have fork-choice data for a slot
+      query: |
+        from ethpandaops import forky
+
+        network = "mainnet"
+        now = forky.get_now(network)
+
+        result = forky.list_nodes(network, epoch=now["epoch"])
+        print(f"Nodes with frames this epoch ({result['total']} total):")
+        for node in result["nodes"]:
+            print(f"  {node}")
+
+    - name: Compare head across clients
+      description: Check whether different consensus clients agree on the head block
+      query: |
+        from ethpandaops import forky
+
+        network = "mainnet"
+        now = forky.get_now(network)
+        slot = now["slot"] - 2
+
+        heads = {}
+        for client in ["lighthouse", "prysm", "teku", "nimbus", "lodestar", "grandine"]:
+            result = forky.list_frames(network, slot=slot, consensus_client=client, limit=1)
+            if not result["frames"]:
+                continue
+            frame = forky.get_frame(network, result["frames"][0]["id"])
+            nodes = frame["data"]["fork_choice_nodes"]
+            head = max(nodes, key=lambda n: (int(n["slot"]), int(n["weight"])))
+            heads[client] = head["block_root"]
+
+        print(f"Head per client at slot {slot}:")
+        for client, root in heads.items():
+            print(f"  {client}: {root}")
+        if len(set(heads.values())) > 1:
+            print("WARNING: clients disagree on head!")
+
+forky_reorg_analysis:
+  name: Reorg Analysis
+  description: Find and analyze reorg events captured by Forky
+  examples:
+    - name: Find reorg event frames
+      description: List frames captured because of a reorg event
+      query: |
+        from ethpandaops import forky
+
+        network = "mainnet"
+
+        # Frames captured from xatu reorg events in the recent past
+        result = forky.list_frames(
+            network,
+            event_source="xatu_reorg_event",
+            limit=20,
+        )
+        print(f"Reorg-event frames: {result['total']}")
+        for frame in result["frames"]:
+            print(
+                f"  {frame['fetched_at']} slot={frame['wall_clock_slot']} "
+                f"node={frame['node']} labels={frame['labels']}"
+            )
+            print(f"    {forky.link_frame(network, frame['id'])}")
+
+    - name: Browse frame labels
+      description: Discover what labels exist on captured frames
+      query: |
+        from ethpandaops import forky
+
+        network = "mainnet"
+        result = forky.list_labels(network, limit=200)
+        print(f"Labels ({result['total']} total):")
+        for label in result["labels"]:
+            print(f"  {label}")

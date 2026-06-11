@@ -36,7 +36,7 @@ __version__ = "0.1.0"
 
 def __getattr__(name):
     """Lazy import for integration modules (clickhouse, prometheus, loki, dora)."""
-    if name in ("block_archive", "cbt", "clickhouse", "prometheus", "loki", "dora", "ethnode", "specs"):
+    if name in ("block_archive", "cbt", "clickhouse", "prometheus", "loki", "dora", "ethnode", "forky", "specs"):
         import importlib
 
         mod = importlib.import_module(f".{name}", __name__)

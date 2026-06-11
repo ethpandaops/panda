@@ -14,6 +14,7 @@ func (s *service) dispatchOperation(operationID string, w http.ResponseWriter, r
 		s.handlePrometheusOperation,
 		s.handleLokiOperation,
 		s.handleDoraOperation,
+		s.handleForkyOperation,
 		s.handleEthNodeOperation,
 		s.handleCBTOperation,
 		s.handleSpecsOperation,

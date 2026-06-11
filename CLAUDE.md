@@ -11,7 +11,7 @@ The architecture is:
 - `server` routes through `proxy`/`proxies`
 - each `proxy` talks to the datasources it advertises
 
-Modules provide integration-specific metadata and behavior for ClickHouse, Prometheus, Loki, Dora, Ethnode, CBT, and block archive.
+Modules provide integration-specific metadata and behavior for ClickHouse, Prometheus, Loki, Dora, Forky, Ethnode, CBT, and block archive.
 
 See `docs/architecture.md` for the canonical boundary definition.
 
@@ -97,11 +97,12 @@ uv run python -m scripts.repl
 
 ### Module System
 
-Eight compiled-in modules are registered in `pkg/app/app.go`:
+Nine compiled-in modules are registered in `pkg/app/app.go`:
 - `clickhouse`
 - `prometheus`
 - `loki`
 - `dora`
+- `forky`
 - `ethnode`
 - `cbt`
 - `block_archive`
@@ -151,6 +152,7 @@ CLI commands and groups include:
 - `dora`
 - `ethnode`
 - `execute`
+- `forky`
 - `getting-started`
 - `init`
 - `loki`
@@ -250,6 +252,7 @@ modules/
   prometheus/      # Prometheus module
   loki/            # Loki module
   dora/            # Dora module
+  forky/           # Forky module
   ethnode/         # Ethnode module
   cbt/             # CBT module
   block_archive/   # Block archive module

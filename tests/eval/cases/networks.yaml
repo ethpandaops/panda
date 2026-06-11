@@ -102,3 +102,29 @@
       - Pick a live devnet and give me a quick read on error-level log volume 
         from the last few hours. Which services or hosts are the loudest?
 
+
+  - id: forky_node_coverage                               # 💬 fork-choice capture ask
+    description: live forky fork-choice snapshot coverage on sepolia
+    input: "Which beacon nodes does Forky have fork-choice snapshots for on sepolia
+      right now, and what consensus clients are they running?"
+    network: sepolia
+    tags: [forky, testnet, fork-choice]
+    assert:
+      - type: llm-rubric
+        value: >
+          Lists the sentry nodes Forky has frames for on sepolia from a real Forky
+          query (node names like utility-sepolia-<client>-<el>-001) and names the
+          consensus clients behind them (e.g. lighthouse, prysm, teku, nimbus).
+          Concrete node names sourced from Forky pass; invented node names, an
+          empty hand-wave, or no real query fail.
+    variations:
+      - What nodes are reporting fork-choice data to Forky on sepolia at the 
+        moment, and which consensus clients do they run?
+      - Using Forky, list the beacon nodes with fork-choice snapshots on sepolia
+        right now and the consensus client each one runs.
+      - "I'm trying to see Forky's current sepolia coverage: which beacon nodes
+        have fork-choice frames, and what consensus clients are those nodes on?"
+      - Which sentry nodes currently have fork-choice snapshots captured in 
+        Forky for sepolia, and what consensus clients are they running?
+      - Please query Forky for sepolia and report the beacon nodes it has 
+        fork-choice snapshots from, including their consensus clients.

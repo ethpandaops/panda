@@ -52,6 +52,32 @@ func completeNetworkNames(cmd *cobra.Command, args []string, _ string) ([]string
 	return names, cobra.ShellCompDirectiveNoFileComp
 }
 
+// completeForkyNetworkNames completes the first positional arg with networks
+// that have Forky instances.
+func completeForkyNetworkNames(cmd *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
+	if len(args) > 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	response, err := runServerOperation(cmd, "forky.list_networks", map[string]any{})
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	data, _ := response.Data.(map[string]any)
+	items, _ := data["networks"].([]any)
+
+	names := make([]string, 0, len(items))
+	for _, item := range items {
+		network, _ := item.(map[string]any)
+		if name, _ := network["name"].(string); name != "" {
+			names = append(names, name)
+		}
+	}
+
+	return names, cobra.ShellCompDirectiveNoFileComp
+}
+
 // completeEthNodeArgs completes the ethnode positional args. The first arg
 // (network) is completed from ethnode's own active networks; the second arg
 // (instance) is a per-node DNS label the proxy cannot enumerate, so it is left
