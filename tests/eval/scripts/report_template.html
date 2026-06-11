@@ -157,10 +157,11 @@
   /* ── headline cards ──────────────────────────────────────────────────── */
   .cards {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 10px;
     margin-top: 22px;
   }
+  @media (max-width: 760px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 3px; padding: 12px 14px 10px; }
   .card .k {
     font: 600 9.5px/1 var(--mono);
@@ -468,6 +469,7 @@
 <main>
   <section id="headline" style="margin-top:0">
     <div class="cards" id="cards"></div>
+    <p class="note" id="cards-note"></p>
   </section>
 
   <section id="trend">
@@ -549,6 +551,23 @@
   const history = [...(RAW.history || [])].sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
   const prev = history.length ? history[history.length - 1] : null;
   const releases = [...history, record];
+
+  /* previous release's per-question token references (median, mean for older
+     schemas) — the anchor for every efficiency number on this page */
+  const prevRefs = new Map();
+  if (prev) for (const [qid, q] of Object.entries(prev.questions || {})) {
+    const ref = q.median_tokens_correct || q.mean_tokens_correct || 0;
+    if (ref > 0) prevRefs.set(qid, ref);
+  }
+  /* harden-loop score vs prev ref: wrong = 0, correct = (ref/(ref+tokens))²;
+     null when the previous release has no reference for this question */
+  const runEff = r => {
+    const ref = prevRefs.get(r.id);
+    if (ref == null) return null;
+    return (r.correct && (r.tokens || 0) > 0) ? (ref / (ref + r.tokens)) ** 2 : 0;
+  };
+  const EFF_EXPLAIN = "harden-loop score vs previous release's per-question cost: " +
+    "wrong = 0, correct = (ref/(ref+tokens))²; 0.25 × pass-rate = parity";
 
   const byQ = new Map();
   for (const r of runs) {
@@ -654,8 +673,8 @@
     const cls = neutral ? "flat" : ((d > 0) === (goodWhen === "up") ? "good" : "badd");
     return `<span class="delta ${cls}" title="vs ${esc(prev ? prev.tag : "")}">${arrow} ${fmt(Math.abs(d))}</span>`;
   }
-  function card(k, v, sub, chip) {
-    return `<div class="card"><div class="k"><span>${k}</span></div>` +
+  function card(k, v, sub, chip, title) {
+    return `<div class="card"${title ? ` title="${esc(title)}"` : ""}><div class="k"><span>${k}</span></div>` +
       `<div class="v">${v}${chip || ""}</div><div class="s">${sub}</div></div>`;
   }
   (() => {
@@ -665,21 +684,38 @@
     const fmtPP = d => (d * 100).toFixed(1) + "pp";
     const fmtAbs = d => d.toFixed(3);
     const fmtRel = base => d => Math.round(d / base * 100) + "%";
+    const eff = record.efficiency_vs;
+    const parity = 0.25 * record.pass_rate;
+    const effCard = eff
+      ? card("efficiency",
+          `<span style="color:${eff.score >= parity ? "var(--ok)" : "var(--bad)"}">${eff.score.toFixed(3)}</span>`,
+          `vs ${esc(eff.ref_tag)} · ${parity.toFixed(3)} = parity` +
+            (eff.skipped ? ` · ${eff.skipped} runs w/o ref` : ""),
+          "", EFF_EXPLAIN)
+      : card("efficiency", `<span style="color:var(--faint)">—</span>`, "no reference release", "", EFF_EXPLAIN);
+    const tps = record.tokens_per_solve ||
+      (nOk ? runs.reduce((a, r) => a + (r.tokens || 0), 0) / nOk : 0);
+    const ptps = prev && prev.tokens_per_solve;
     const html = [
       card("pass rate", fPct(record.pass_rate), `${nOk}/${runs.length} runs correct`,
         deltaChip(record.pass_rate, prev && prev.pass_rate, { fmt: fmtPP })),
       card("mean score", record.mean_score.toFixed(3), "token-efficiency, correctness-gated",
         deltaChip(record.mean_score, prev && prev.mean_score, { fmt: fmtAbs })),
-      card("questions", String(byQ.size), esc(record.cases || ""),
-        deltaChip(byQ.size, prev && Object.keys(prev.questions || {}).length, { fmt: d => String(d), neutral: true })),
-      card("runs", String(runs.length), "canonical + paraphrase variations, single pass",
-        deltaChip(runs.length, prev && prev.runs, { fmt: d => String(d), neutral: true })),
+      effCard,
+      card("tokens / solve", fTok(tps), "all spend ÷ correct answers",
+        ptps ? deltaChip(tps, ptps, { fmt: fmtRel(ptps), goodWhen: "down" }) : ""),
       card("tokens p50", fTok(tp.p50 || 0), "per correct run",
         ptp && ptp.p50 ? deltaChip(tp.p50, ptp.p50, { fmt: fmtRel(ptp.p50), goodWhen: "down" }) : ""),
       card("tokens p90", fTok(tp.p90 || 0), "per correct run",
         ptp && ptp.p90 ? deltaChip(tp.p90, ptp.p90, { fmt: fmtRel(ptp.p90), goodWhen: "down" }) : ""),
+      card("questions", String(byQ.size), esc(record.cases || ""),
+        deltaChip(byQ.size, prev && Object.keys(prev.questions || {}).length, { fmt: d => String(d), neutral: true })),
+      card("runs", String(runs.length), "canonical + paraphrase variations, single pass",
+        deltaChip(runs.length, prev && prev.runs, { fmt: d => String(d), neutral: true })),
     ].join("");
     $("#cards").innerHTML = html;
+    $("#cards-note").textContent = "efficiency = " + EFF_EXPLAIN +
+      " · refs come from the previous release's per-question median tokens over correct runs";
   })();
 
   /* ── trend chart ──────────────────────────────────────────────────────── */
@@ -690,8 +726,12 @@
     const ml = 46, mr = 18;
     const p1t = 14, p1b = 178;          /* pane 1: rates */
     const p2t = 206, p2b = 286;         /* pane 2: tokens */
+    const effs = releases.map(e => e.efficiency_vs || null);
+    const hasEff = effs.some(Boolean);
+    const p3t = 312, p3b = 360;         /* pane 3: chained efficiency (when present) */
+    const axisB = hasEff ? p3b : p2b;
     const lblH = 58;
-    const H = p2b + lblH;
+    const H = axisB + lblH;
     const svg = sv("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}` });
     const n = releases.length;
     const x = i => n === 1 ? (ml + (W - ml - mr) / 2) : ml + (W - ml - mr) * i / (n - 1);
@@ -699,6 +739,11 @@
     const toks = releases.map(tokenLabel);
     const tokMax = Math.max(1, ...toks.map(t => t.v)) * 1.15;
     const y2 = v => p2b - (p2b - p2t) * (v / tokMax);
+    const parityOf = e => 0.25 * e.pass_rate;
+    const effMax = Math.max(0.3,
+      ...effs.map(f => f ? f.score : 0),
+      ...releases.filter((e, i) => effs[i]).map(parityOf)) * 1.2;
+    const y3 = v => p3b - (p3b - p3t) * (v / effMax);
 
     /* gridlines pane 1 */
     for (const v of [0, .25, .5, .75, 1]) {
@@ -715,6 +760,38 @@
       svg.appendChild(svText(ml - 7, y2(v) + 3, fTok(v), { "text-anchor": "end", "font-size": 9 }));
     }
     svg.appendChild(svText(ml, p2t - 7, "tokens p50 (correct runs)", { "font-size": 9 }));
+
+    /* pane 3: efficiency vs prev — each point is anchored to ITS previous release,
+       so this is a per-step indicator, not a level; no connecting line on purpose */
+    if (hasEff) {
+      const g0 = sv("g", { class: "grid" });
+      g0.appendChild(sv("line", { x1: ml, x2: W - mr, y1: y3(0), y2: y3(0) }));
+      svg.appendChild(g0);
+      svg.appendChild(svText(ml - 7, y3(0) + 3, "0", { "text-anchor": "end", "font-size": 9 }));
+      svg.appendChild(svText(ml - 7, y3(effMax / 1.2) + 3, (effMax / 1.2).toFixed(2),
+        { "text-anchor": "end", "font-size": 9 }));
+      svg.appendChild(svText(ml, p3t - 7,
+        "efficiency vs prev release (chained — each dot scored against its own predecessor)",
+        { "font-size": 9 }));
+      releases.forEach((e, i) => {
+        const f = effs[i];
+        if (!f) return;
+        const px = x(i), par = parityOf(e);
+        const good = f.score >= par;
+        svg.appendChild(sv("line", {
+          x1: px, x2: px, y1: y3(0), y2: y3(f.score),
+          stroke: good ? "var(--ok)" : "var(--bad)", "stroke-width": 1, opacity: .45,
+        }));
+        svg.appendChild(sv("line", {
+          x1: px - 6, x2: px + 6, y1: y3(par), y2: y3(par),
+          stroke: "var(--mut)", "stroke-width": 1.4, "stroke-dasharray": "2 2",
+        }));
+        svg.appendChild(sv("circle", {
+          cx: px, cy: y3(f.score), r: 3.4,
+          fill: good ? "var(--ok)" : "var(--bad)",
+        }));
+      });
+    }
 
     /* series */
     const path = (vals, yfn, cls) => {
@@ -741,16 +818,16 @@
       /* x labels */
       const showLbl = n <= 14 || i % 2 === (n - 1) % 2;
       if (showLbl) {
-        const t = svText(0, 0, e.tag, { "font-size": 9.5, "text-anchor": "end", transform: `translate(${x(i) + 3},${p2b + 14}) rotate(-42)` });
+        const t = svText(0, 0, e.tag, { "font-size": 9.5, "text-anchor": "end", transform: `translate(${x(i) + 3},${axisB + 14}) rotate(-42)` });
         if (i === n - 1) t.setAttribute("font-weight", "700");
         svg.appendChild(t);
       }
     });
 
     /* hover */
-    const guide = sv("line", { y1: p1t, y2: p2b, class: "guide" });
+    const guide = sv("line", { y1: p1t, y2: axisB, class: "guide" });
     svg.appendChild(guide);
-    const zone = sv("rect", { x: ml - 10, y: p1t, width: W - ml - mr + 20, height: p2b - p1t, class: "hover-zone" });
+    const zone = sv("rect", { x: ml - 10, y: p1t, width: W - ml - mr + 20, height: axisB - p1t, class: "hover-zone" });
     zone.addEventListener("mousemove", ev => {
       const bx = svg.getBoundingClientRect();
       const px = ev.clientX - bx.left;
@@ -764,7 +841,10 @@
         `<b>${esc(e.tag)}</b>${best === n - 1 ? " · current" : ""}${e.prerelease ? " · pre" : ""}<br>` +
         `${fDate(e.created_at)} · ${e.runs} runs · ${esc(e.cases || "")}<br>` +
         `pass <b class="ok">${fPct(e.pass_rate)}</b> (${nOk}/${e.runs}) · score <b>${e.mean_score.toFixed(3)}</b><br>` +
-        `tokens ${t.isP50 ? "p50" : "≈mean"} <b>${fTok(t.v)}</b> per correct run`,
+        `tokens ${t.isP50 ? "p50" : "≈mean"} <b>${fTok(t.v)}</b> per correct run` +
+        (e.efficiency_vs
+          ? `<br>eff vs ${esc(e.efficiency_vs.ref_tag)} <b class="${e.efficiency_vs.score >= parityOf(e) ? "ok" : "bad"}">${e.efficiency_vs.score.toFixed(3)}</b> · parity ${parityOf(e).toFixed(3)}`
+          : ""),
         ev.clientX, ev.clientY);
     });
     zone.addEventListener("mouseleave", () => { guide.style.opacity = 0; hideTip(); });
@@ -775,7 +855,8 @@
       `<span><span class="sw" style="background:var(--ok)"></span>pass rate</span>` +
       `<span><span class="sw" style="background:var(--blue)"></span>mean score</span>` +
       `<span><span class="sw" style="background:var(--amber)"></span>tokens p50 (correct)</span>` +
-      (toks.some(t => !t.isP50) ? `<span><span class="sw dotc" style="border:1.5px solid var(--amber)"></span>mean fallback (older record)</span>` : "");
+      (toks.some(t => !t.isP50) ? `<span><span class="sw dotc" style="border:1.5px solid var(--amber)"></span>mean fallback (older record)</span>` : "") +
+      (hasEff ? `<span><span class="sw dotc" style="background:var(--ok)"></span>efficiency vs prev (dashed tick = parity; chained, not a level)</span>` : "");
     $("#trend-note").textContent = prev
       ? "Single-pass runs: small headline moves are noise — per-question flips (section 04) are the signal."
       : "First qualified release — no prior eval-qualification.json records to compare against.";
@@ -792,6 +873,8 @@
         `<td class="num">${fDate(e.created_at)}</td>` +
         `<td class="r">${fPct(e.pass_rate)} <span style="color:var(--faint)">(${nOk}/${e.runs})</span></td>` +
         `<td class="r">${e.mean_score.toFixed(3)}</td>` +
+        `<td class="r"${e.efficiency_vs ? ` title="vs ${esc(e.efficiency_vs.ref_tag)} · parity ${(0.25 * e.pass_rate).toFixed(3)}"` : ""}>` +
+        `${e.efficiency_vs ? e.efficiency_vs.score.toFixed(3) : '<span style="color:var(--faint)">—</span>'}</td>` +
         `<td class="r">${t.isP50 ? "" : "≈"}${fTok(t.v)}</td>` +
         `<td class="r">${e.runs}</td>` +
         `<td class="num" style="color:var(--mut)">${esc((e.commit || "").slice(0, 9))}</td>` +
@@ -799,6 +882,7 @@
     }).join("");
     $("#rel-table").innerHTML =
       `<thead><tr><th>release</th><th>date</th><th class="r">pass rate</th><th class="r">mean score</th>` +
+      `<th class="r" title="${esc(EFF_EXPLAIN)} (each release vs its own predecessor)">eff vs prev</th>` +
       `<th class="r">tok p50</th><th class="r">runs</th><th>commit</th><th>cases</th></tr></thead>` +
       `<tbody>${rows}</tbody>`;
   })();
@@ -942,14 +1026,25 @@
         else verdict = `<span class="verdict flat">·</span>`;
       }
       const tagsHtml = byQ.get(qid)[0].tags.map(t => esc(t)).join(" · ");
+      const ref = prevRefs.get(qid);
+      let effCell = `<td class="r" style="color:var(--faint)">—</td>`;
+      if (ref != null) {
+        const qEff = rs.reduce((a, r) => a + runEff(r), 0) / rs.length;
+        const par = 0.25 * (nOk / rs.length);
+        effCell = `<td class="r" style="color:${qEff < par ? "var(--amber)" : "var(--mut)"}" ` +
+          `title="mean over runs vs ref ${fInt(ref)} tok (${esc(prev.tag)})${qEff < par ? " · below parity: heavier than the previous release" : ""}">${qEff.toFixed(3)}</td>`;
+      }
       return `<tr><td><button class="qid" data-q="${esc(qid)}" title="filter run explorer to this question">${esc(qid)}</button>` +
         `<div style="font:10px var(--mono);color:var(--faint);margin-top:2px">${tagsHtml}</div></td>` +
         `<td class="r" style="color:${nOk === rs.length ? "var(--ok)" : "var(--bad)"}">${nOk}/${rs.length}</td>` +
+        effCell +
         `<td><div class="mx-cells">${cells}</div></td>` +
         `<td>${verdict}</td></tr>`;
     }).join("");
     $("#mx-table").innerHTML =
-      `<thead><tr><th>question</th><th class="r">pass</th><th>runs · canonical + variations</th>` +
+      `<thead><tr><th>question</th><th class="r">pass</th>` +
+      `<th class="r" title="${esc(EFF_EXPLAIN)}">eff</th>` +
+      `<th>runs · canonical + variations</th>` +
       `<th>Δ vs ${prev ? esc(prev.tag) : "—"}</th></tr></thead><tbody>${rows}</tbody>`;
 
     $("#mx-table").querySelectorAll(".mx-cell").forEach(b => {
@@ -980,6 +1075,7 @@
     status: r => r.crashed ? 2 : (r.correct ? 0 : 1),
     score: r => r.score ?? 0,
     tokens: r => r.tokens ?? 0,
+    eff: r => runEff(r) ?? -1,
     tools: r => r.tools ?? 0,
   };
 
@@ -1029,27 +1125,30 @@
       `<th class="sortable${arrow("status")}" data-key="status">status</th>` +
       `<th class="sortable r${arrow("score")}" data-key="score">score</th>` +
       `<th class="sortable r${arrow("tokens")}" data-key="tokens">tokens</th>` +
+      `<th class="sortable r${arrow("eff")}" data-key="eff" title="${esc(EFF_EXPLAIN)}">eff</th>` +
       `<th class="sortable r${arrow("tools")}" data-key="tools">tools</th>` +
       `<th>grader reason</th><th>trace</th></tr></thead>`;
     const body = rows.map(r => {
       const st = runStatus(r);
+      const eff = runEff(r);
       return `<tr data-i="${r._i}" class="${selectedIdx === r._i ? "selected" : ""}">` +
         `<td class="qid">${esc(r.id)}</td>` +
         `<td class="subj" title="${esc(r.subject)}">${esc(shortSubject(r.subject))}</td>` +
         `<td><span class="pill ${st === "pass" ? "ok" : (st === "crash" ? "crash" : "bad")}">${st === "pass" ? "✓ pass" : (st === "crash" ? "✕ crash" : "✕ fail")}</span></td>` +
         `<td class="r">${(r.score ?? 0).toFixed(3)}</td>` +
         `<td class="r">${fInt(r.tokens || 0)}</td>` +
+        `<td class="r">${eff == null ? '<span style="color:var(--faint)">—</span>' : eff.toFixed(3)}</td>` +
         `<td class="r">${r.tools ?? ""}</td>` +
         `<td class="reason-cell" title="${esc((r.grader_reason || "").slice(0, 500))}">${esc(r.grader_reason || "")}</td>` +
         `<td>${r.trace_url ? `<a href="${esc(r.trace_url)}" target="_blank" rel="noopener">↗</a>` : ""}</td></tr>`;
     }).join("");
-    $("#run-table").innerHTML = head + `<tbody>${body || `<tr><td colspan="8" style="color:var(--faint);font-family:var(--mono)">no runs match the current filter</td></tr>`}</tbody>`;
+    $("#run-table").innerHTML = head + `<tbody>${body || `<tr><td colspan="9" style="color:var(--faint);font-family:var(--mono)">no runs match the current filter</td></tr>`}</tbody>`;
 
     $("#run-table").querySelectorAll("th.sortable").forEach(th =>
       th.addEventListener("click", () => {
         const k = th.dataset.key;
         if (sort.key === k) sort.dir = -sort.dir;
-        else { sort.key = k; sort.dir = k === "tokens" || k === "score" || k === "tools" ? -1 : 1; }
+        else { sort.key = k; sort.dir = ["tokens", "score", "eff", "tools"].includes(k) ? -1 : 1; }
         renderExplorer();
       }));
     $("#run-table").querySelectorAll("tbody tr[data-i]").forEach(tr => {
@@ -1065,11 +1164,15 @@
     const toks = rows.map(r => r.tokens || 0).filter(t => t > 0);
     const p50 = pctl(toks, .5);
     const sum = toks.reduce((a, b) => a + b, 0);
+    const effVals = rows.map(runEff).filter(v => v != null);
     $("#agg").innerHTML =
       `<span><b>${rows.length}</b> / ${runs.length} runs</span>` +
       `<span>pass <b>${rows.length ? fPct(nOk / rows.length) : "—"}</b> (${nOk}/${rows.length})</span>` +
       `<span>tokens p50 <b>${fTok(p50)}</b></span>` +
       `<span>Σ tokens <b>${fTok(sum)}</b></span>` +
+      (effVals.length
+        ? `<span title="${esc(EFF_EXPLAIN)}">eff <b>${(effVals.reduce((a, b) => a + b, 0) / effVals.length).toFixed(3)}</b></span>`
+        : "") +
       (state.tags.size ? `<span style="color:var(--faint)">tags: any of [${[...state.tags].map(esc).join(", ")}]</span>` : "");
   }
 
@@ -1128,6 +1231,11 @@
   const drawer = $("#drawer");
   function openDrawer(r) {
     const st = runStatus(r);
+    const eff = runEff(r);
+    const ref = prevRefs.get(r.id);
+    const effDd = eff == null
+      ? `<span style="color:var(--faint)">— no reference${prev ? "" : " release"}</span>`
+      : `${eff.toFixed(3)} <span style="color:var(--faint)">vs ref ${fInt(ref)} tok (${esc(prev.tag)})</span>`;
     $("#drawer-title").textContent = r.id;
     const sibs = byQ.get(r.id).map((s, j) =>
       `<button class="mx-cell ${s.correct ? "ok" : "bad"}${s._i === r._i ? " selected" : ""}" data-i="${s._i}" title="run ${j + 1}: ${runStatus(s)} · ${fInt(s.tokens || 0)} tok">${s.correct ? "✓" : "✕"}</button>`).join("");
@@ -1138,6 +1246,7 @@
       `<dt>score</dt><dd>${(r.score ?? 0).toFixed(4)}</dd>` +
       `<dt>correctness</dt><dd>${(r.correctness ?? 0).toFixed(2)}</dd>` +
       `<dt>tokens</dt><dd>${fInt(r.tokens || 0)}</dd>` +
+      `<dt>efficiency</dt><dd title="${esc(EFF_EXPLAIN)}">${effDd}</dd>` +
       `<dt>tool calls</dt><dd>${r.tools ?? "—"}</dd>` +
       `<dt>tags</dt><dd><div class="tagset">${r.tags.map(t => `<span>${esc(t)}</span>`).join("")}</div></dd>` +
       `</dl>` +

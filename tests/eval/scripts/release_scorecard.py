@@ -34,7 +34,7 @@ from pathlib import Path
 
 from scripts.release_report import build_html, category_breakdown, token_percentiles
 
-SCHEMA = 2
+SCHEMA = 3
 MARKER_START = "<!-- eval-scorecard:start -->"
 MARKER_END = "<!-- eval-scorecard:end -->"
 TABLE_HISTORY = 8  # releases shown in the comparison table
@@ -95,9 +95,51 @@ def _pool_questions(runs: list[dict]) -> dict[str, dict]:
             "mean_tokens_correct": round(statistics.mean(c["tokens_correct"]), 1)
             if c["tokens_correct"]
             else 0.0,
+            # The harden-style per-question token reference: future releases score
+            # their runs against THIS release's cost (see efficiency_vs).
+            "median_tokens_correct": round(statistics.median(c["tokens_correct"]), 1)
+            if c["tokens_correct"]
+            else 0.0,
             "fail_reasons": c["fail_reasons"],
         }
         for qid, c in sorted(cells.items())
+    }
+
+
+def efficiency_vs(runs: list[dict], prev: dict | None) -> dict | None:
+    """The harden loop's efficiency score, anchored to the previous qualified release.
+
+    Same formula as harden/scoring.py: a wrong run scores 0, a correct run scores
+    (ref/(ref+tokens))^2 — but ref is the PREVIOUS release's per-question token
+    reference (its median tokens over correct runs), the release analogue of the
+    loop's frozen-baseline refs. The single-pass self-normalized mean_score can't
+    move between releases by construction; this can. Reading it: 0.25 x pass-rate
+    means "same per-question cost as the previous release"; higher means leaner or
+    more correct, lower means heavier or less correct. Questions the previous
+    release has no reference for are skipped (counted in ``skipped``)."""
+    if not prev:
+        return None
+    refs = {
+        qid: (q.get("median_tokens_correct") or q.get("mean_tokens_correct") or 0.0)
+        for qid, q in (prev.get("questions") or {}).items()
+    }
+    scores, skipped = [], 0
+    for run in runs:
+        ref = refs.get(run["id"], 0.0)
+        if ref <= 0:
+            skipped += 1
+            continue
+        if run["correct"] and run.get("tokens", 0) > 0:
+            scores.append((ref / (ref + run["tokens"])) ** 2)
+        else:
+            scores.append(0.0)
+    if not scores:
+        return None
+    return {
+        "ref_tag": prev["tag"],
+        "score": round(statistics.mean(scores), 4),
+        "runs": len(scores),
+        "skipped": skipped,
     }
 
 
@@ -114,10 +156,17 @@ def _question_tags(cases_file: str) -> dict[str, list[str]]:
         return {}
 
 
-def _build_record(args: argparse.Namespace, summary: dict, questions: dict[str, dict]) -> dict:
+def _build_record(
+    args: argparse.Namespace,
+    summary: dict,
+    questions: dict[str, dict],
+    prev: dict | None,
+) -> dict:
     correct_tokens = [
         r["tokens"] for r in summary["runs"] if r["correct"] and r.get("tokens", 0) > 0
     ]
+    n_correct = sum(1 for r in summary["runs"] if r["correct"])
+    total_tokens = sum(r.get("tokens", 0) for r in summary["runs"])
     return {
         "schema": SCHEMA,
         "tag": args.tag,
@@ -133,6 +182,10 @@ def _build_record(args: argparse.Namespace, summary: dict, questions: dict[str, 
         if correct_tokens
         else 0.0,
         "token_percentiles": token_percentiles(summary["runs"]),
+        # Total spend (all runs, failures included) per correct answer — the blunt
+        # "what does a right answer cost" number.
+        "tokens_per_solve": round(total_tokens / n_correct, 1) if n_correct else 0.0,
+        "efficiency_vs": efficiency_vs(summary["runs"], prev),
         "categories": category_breakdown(
             summary["runs"], _question_tags(summary.get("cases", ""))
         ),
@@ -265,8 +318,19 @@ def _build_markdown(
     lines += [
         "",
         f"Tokens per correct run: p50 {pcts['p50']:,.0f} · p90 {pcts['p90']:,.0f} · "
-        f"p99 {pcts['p99']:,.0f}.",
+        f"p99 {pcts['p99']:,.0f} · {record['tokens_per_solve']:,.0f} per solve "
+        "(all spend / correct answers).",
     ]
+    eff = record.get("efficiency_vs")
+    if eff:
+        anchor = 0.25 * record["pass_rate"]
+        lines += [
+            "",
+            f"Efficiency vs {eff['ref_tag']}: **{eff['score']:.3f}** — the harden-loop "
+            f"score with the previous release as the frozen token reference. "
+            f"{anchor:.3f} would be this pass rate at identical per-question cost; "
+            "higher is leaner, lower is heavier.",
+        ]
     if args.report_url:
         lines += ["", f"**[📊 Full report]({args.report_url})** — per-run matrix, "
                   "category breakdowns, token distributions, every grader reason."]
@@ -335,8 +399,8 @@ def main() -> None:
     args = _parse_args()
     summary = json.loads(Path(args.eval_json).read_text())
     questions = _pool_questions(summary["runs"])
-    record = _build_record(args, summary, questions)
     history = _load_history(args.history_dir)
+    record = _build_record(args, summary, questions, history[-1] if history else None)
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
