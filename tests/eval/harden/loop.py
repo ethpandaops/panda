@@ -50,11 +50,11 @@ from config.settings import DEFAULT_GRADER
 from harden import charts
 from harden.auditor import Auditor
 from harden.journal import Journal, patch_fingerprint
-from harden.promptfoo_eval import measure_candidate
 from harden.proposer import Proposer
 from harden.report import build_amend_prompt, build_proposal_prompt
-from harden.runner import CandidateResult, Question
-from harden.scoring import filter_runs, is_confident, no_correctness_regression
+from harness.promptfoo_eval import measure_candidate
+from harness.runner import CandidateResult, Question
+from harness.scoring import filter_runs, is_confident, no_correctness_regression
 
 
 def _dump(save_dir: str | None, name: str, text: str) -> None:

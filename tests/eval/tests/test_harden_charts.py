@@ -10,8 +10,8 @@ from __future__ import annotations
 import json
 
 from harden.charts import CHART_NAME, HISTORY_NAME, load_history, record, render
-from harden.runner import CandidateResult
-from harden.scoring import RunScore
+from harness.runner import CandidateResult
+from harness.scoring import RunScore
 
 
 def _result(score: float, pass_rate: float, tokens: int = 1000) -> CandidateResult:

@@ -33,9 +33,10 @@ from __future__ import annotations
 import math
 import random
 import statistics
+from collections.abc import Callable
 from dataclasses import dataclass
 
-from harden.trace import RunTrace
+from harness.trace import RunTrace
 
 
 def efficiency(tokens: int, ref: float, steepness: float = 2.0) -> float:
@@ -215,7 +216,7 @@ def is_confident(
     *,
     min_cells: int = 3,
     confidence: float = 0.95,
-    log: "Callable[[str], None] | None" = None,
+    log: Callable[[str], None] | None = None,
 ) -> bool:
     """Gate: accept only if the improvement is real, not noise.
 

@@ -1,6 +1,6 @@
-"""The measured-data types the loop reasons over.
+"""The measured-data types the harness reasons over.
 
-Measurement itself is delegated to promptfoo (see harden.promptfoo_eval): it runs the
+Measurement itself is delegated to promptfoo (see harness.promptfoo_eval): it runs the
 cases across our agentic subjects K times, grades them with its asserts, and hands back
 runs that get turned into these types. This module is just the vocabulary — a Question, a
 RunRecord (raw trace + its score), and a CandidateResult (the measured quality of one
@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from harden.scoring import RunScore
-from harden.trace import RunTrace
+from harness.scoring import RunScore
+from harness.trace import RunTrace
 
 
 @dataclass

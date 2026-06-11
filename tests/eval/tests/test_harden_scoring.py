@@ -1,4 +1,4 @@
-"""Unit tests for harden.scoring — the objective and the paired acceptance gates.
+"""Unit tests for harness.scoring — the objective and the paired acceptance gates.
 
 The gates are the part most likely to silently let a regression through, so they get
 explicit adversarial cases: a candidate that keeps the same AGGREGATE pass-rate while
@@ -7,7 +7,7 @@ breaking one cell must be rejected, and a noisy "improvement" must not pass the 
 
 from __future__ import annotations
 
-from harden.scoring import (
+from harness.scoring import (
     RunScore,
     efficiency,
     is_confident,

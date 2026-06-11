@@ -26,7 +26,7 @@ from pathlib import Path
 from rich.markup import escape
 from ruamel.yaml import YAML
 
-from harden.logsetup import setup_logging
+from harness.logsetup import setup_logging
 
 _SCHEMA = {
     "type": "object",

@@ -16,9 +16,9 @@ from harden import loop as loop_mod
 from harden.auditor import AuditVerdict
 from harden.loop import optimize
 from harden.proposer import ProposalResult
-from harden.runner import CandidateResult, Question, RunRecord
-from harden.scoring import candidate_score, pass_rate, score_run
-from harden.trace import RunTrace, ToolCall
+from harness.runner import CandidateResult, Question, RunRecord
+from harness.scoring import candidate_score, pass_rate, score_run
+from harness.trace import RunTrace, ToolCall
 
 
 def _git(repo, *args):

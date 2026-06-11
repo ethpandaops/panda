@@ -1,6 +1,6 @@
 """scrub_secrets: credential-looking env values must never reach written artifacts."""
 
-from harden.promptfoo_eval import scrub_secrets
+from harness.promptfoo_eval import scrub_secrets
 
 
 def test_redacts_credential_env_values(monkeypatch):

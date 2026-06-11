@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from harden.report import build_proposal_prompt, summarize_record, worst_records
-from harden.runner import Question, RunRecord
-from harden.scoring import RunScore
-from harden.trace import RunTrace, ToolCall
+from harness.runner import Question, RunRecord
+from harness.scoring import RunScore
+from harness.trace import RunTrace, ToolCall
 
 
 def _record(qid, *, correct, score, tokens=1000, tools=None, output="ans", crashed=False):

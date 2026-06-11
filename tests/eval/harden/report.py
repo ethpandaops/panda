@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import statistics
 
-from harden.runner import RunRecord
+from harness.runner import RunRecord
 
 _RULES = """\
 Hard rules (these are gated — violations are reverted, so a "win" that breaks one is wasted work):

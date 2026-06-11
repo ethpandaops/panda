@@ -1,4 +1,5 @@
-"""Measurement via promptfoo — the test-runner the harden loop wraps.
+"""Measurement via promptfoo — the shared test-runner (scripts.eval runs it once; the
+harden loop wraps it).
 
 promptfoo owns running the cases (across our agentic subjects, K times, concurrently) and
 grading them with its asserts (llm-rubric / python / ...). This module generates a config
@@ -23,10 +24,10 @@ from pathlib import Path
 from rich.markup import escape
 
 from config.settings import DEFAULT_AGENT_ROUTE, DEFAULT_GRADER
-from harden.logsetup import get_logger
-from harden.runner import CandidateResult, Question, RunRecord
-from harden.scoring import candidate_score, pass_rate, score_run
-from harden.trace import TOOLS_MARKER, RunTrace, ToolCall
+from harness.logsetup import get_logger
+from harness.runner import CandidateResult, Question, RunRecord
+from harness.scoring import candidate_score, pass_rate, score_run
+from harness.trace import TOOLS_MARKER, RunTrace, ToolCall
 
 _log = get_logger("promptfoo")
 
@@ -120,7 +121,7 @@ def build_config(
         for phrasing in q.phrasings
     ]
     return {
-        "description": "harden measurement",
+        "description": "panda eval measurement",
         "prompts": ["{{question}}"],
         "providers": providers,
         "defaultTest": {"options": {"provider": grader}},

@@ -9,7 +9,7 @@ with the case's ``assert:`` blocks, prints a table, and writes JUnit XML (``--ju
 can publish a check + PR comment. Exit code is nonzero if any case fails.
 
 This is the measure-once entry point. ``scripts.harden`` wraps this SAME measurement core
-(``harden.promptfoo_eval.measure_candidate``) in an optimization loop — same harness, the
+(``harness.promptfoo_eval.measure_candidate``) in an optimization loop — same harness, the
 loop is just different launch params.
 
 Needs a panda server the agent can reach. In CI a server is already running; for local use
@@ -34,9 +34,9 @@ from rich.table import Table
 
 from cases.loader import load_test_cases
 from config.settings import DEFAULT_EVALUATOR_MODEL, DEFAULT_SUBJECTS
-from harden.logsetup import setup_logging
-from harden.promptfoo_eval import measure_candidate, scrub_secrets
-from harden.runner import CandidateResult, Question
+from harness.logsetup import setup_logging
+from harness.promptfoo_eval import measure_candidate, scrub_secrets
+from harness.runner import CandidateResult, Question
 
 console = Console()
 

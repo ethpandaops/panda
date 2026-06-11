@@ -19,7 +19,7 @@ import os
 import urllib.request
 from typing import Protocol, runtime_checkable
 
-from harden.trace import RunTrace, ToolCall
+from harness.trace import RunTrace, ToolCall
 
 
 def _server_health_url() -> str:

@@ -22,8 +22,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))  # tests/eval 
 import yaml
 
 from config.settings import DEFAULT_AGENT_MODEL, DEFAULT_AGENT_ROUTE
-from harden.subject import OpencodeSubject
-from harden.trace import TOOLS_MARKER
+from harness.subject import OpencodeSubject
+from harness.trace import TOOLS_MARKER
 
 _SUBJECTS: dict[tuple, OpencodeSubject] = {}
 

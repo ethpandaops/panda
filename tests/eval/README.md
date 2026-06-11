@@ -11,7 +11,9 @@ data.
   proposer (Codex) edits the panda harness from the raw traces, re-measures, and keeps the
   change only if it doesn't regress correctness and is bootstrap-confidently more efficient.
 
-Both call `harden.promptfoo_eval.measure_candidate` — the difference is just launch params.
+Both call `harness.promptfoo_eval.measure_candidate` — the difference is just launch params.
+The split is deliberate: `harness/` is the shared measurement core every entry point uses;
+`harden/` is the optimization loop built on top of it.
 
 ## Quick Start
 
@@ -96,12 +98,12 @@ and the grader sees a per-turn transcript (each turn tagged with its session id)
 cases/*.yaml
    │  load_test_cases → Question(input, followups, asserts)
    ▼
-harden.promptfoo_eval.measure()            # builds a promptfoo config, runs `npx promptfoo eval --repeat k`
+harness.promptfoo_eval.measure()           # builds a promptfoo config, runs `npx promptfoo eval --repeat k`
    │  promptfoo/provider.py  (call_api)    # per case: runs the opencode subject in one session
-   │     harden/subject.py   OpencodeSubject.run(prompts) → RunTrace (output transcript + full tool calls)
+   │     harness/subject.py  OpencodeSubject.run(prompts) → RunTrace (output transcript + full tool calls)
    │  promptfoo grades each case's llm-rubric assert via the judge model
    ▼
-harden.scoring   # 0 if wrong, else efficiency(tokens); the loop's gates live here
+harness.scoring  # 0 if wrong, else efficiency(tokens); the loop's gates live here
    ▼
 CandidateResult  # + full untruncated traces written to run_dir/traces/ for humans/the proposer
 ```
@@ -115,10 +117,11 @@ the proposer and loops.
 tests/eval/
 ├── cases/            # one *.yaml per domain (selection by tags) + loader.py
 ├── promptfoo/        # provider.py — the promptfoo↔agent bridge
-├── harden/           # measurement core + optimization loop
+├── harness/          # shared measurement core (every entry point measures through this)
 │   ├── promptfoo_eval.py   # build config, run promptfoo, parse → scored runs
 │   ├── subject.py          # OpencodeSubject: runs the agent, returns a RunTrace
-│   ├── scoring.py          # the objective + acceptance gates
+│   └── scoring.py          # the objective + acceptance gates
+├── harden/           # the optimization loop on top of the harness
 │   ├── loop.py             # measure → propose → re-measure → gate
 │   ├── proposer.py         # Codex proposer
 │   ├── auditor.py          # adversarial overfit/placement auditor
@@ -132,7 +135,7 @@ tests/eval/
 │   ├── ci_auth.py          # mint the panda-ci service-account token
 │   ├── repl.py             # interactive sandbox REPL
 │   └── langfuse.py         # local Langfuse docker-compose helper
-└── tests/            # harden unit tests
+└── tests/            # harness + harden unit tests
 ```
 
 ## CI

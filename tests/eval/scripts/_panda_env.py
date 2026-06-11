@@ -28,7 +28,7 @@ from pathlib import Path
 
 import yaml
 
-from harden.logsetup import get_logger
+from harness.logsetup import get_logger
 
 _log = get_logger("env")
 
