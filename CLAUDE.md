@@ -229,6 +229,7 @@ cmd/panda/         # CLI binary entry point (panda)
 cmd/proxy/         # Credential proxy binary entry point
 pkg/
   app/             # Shared server-side application kernel
+  attribution/     # Caller attribution (on-behalf-of) carried CLI -> server -> proxy
   cli/             # CLI command definitions
   module/          # Module interface and registry
   server/          # Server builder, HTTP API, MCP transport

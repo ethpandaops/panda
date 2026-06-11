@@ -15,6 +15,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/ethpandaops/panda/internal/version"
+	"github.com/ethpandaops/panda/pkg/attribution"
 	"github.com/ethpandaops/panda/pkg/auth/client"
 	"github.com/ethpandaops/panda/pkg/auth/store"
 	"github.com/ethpandaops/panda/pkg/proxy/handlers"
@@ -359,6 +360,10 @@ func (c *proxyClient) ClickHouseQuery(ctx context.Context, datasource, sql strin
 
 	req.Header.Set(handlers.DatasourceHeader, datasource)
 	req.Header.Set("Content-Type", "text/plain")
+
+	if v := attribution.FromContext(ctx); v != "" {
+		req.Header.Set(attribution.Header, v)
+	}
 
 	if token := c.RegisterToken(); token != "" && token != NoAuthToken {
 		req.Header.Set("Authorization", "Bearer "+token)

@@ -7,6 +7,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/ethpandaops/panda/pkg/attribution"
 	simpleauth "github.com/ethpandaops/panda/pkg/auth"
 	"github.com/ethpandaops/panda/pkg/proxy/handlers"
 )
@@ -97,6 +98,12 @@ func (a *Auditor) Middleware() func(http.Handler) http.Handler {
 
 			if ds := r.Header.Get(handlers.DatasourceHeader); ds != "" {
 				fields["datasource_name"] = ds
+			}
+
+			// Caller-supplied attribution (e.g. the human a chat agent acts
+			// for). Untrusted free-text: audit context only.
+			if v := r.Header.Get(attribution.Header); v != "" {
+				fields["on_behalf_of"] = v
 			}
 
 			if r.URL.RawQuery != "" {

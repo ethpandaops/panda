@@ -347,6 +347,10 @@ func (s *service) runHTTP(ctx context.Context) error {
 func (s *service) buildHTTPHandler(routes map[string]http.Handler) http.Handler {
 	r := chi.NewRouter()
 
+	// Lift caller attribution into the request context so proxy-bound
+	// requests can forward it for audit.
+	r.Use(attributionMiddleware)
+
 	// Health endpoints.
 	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)

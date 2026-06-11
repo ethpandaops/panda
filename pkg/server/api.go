@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/ethpandaops/panda/pkg/attribution"
 	"github.com/ethpandaops/panda/pkg/auth"
 	"github.com/ethpandaops/panda/pkg/execsvc"
 	"github.com/ethpandaops/panda/pkg/module"
@@ -56,6 +57,18 @@ func (s *service) mountAPIRoutes(r chi.Router) {
 type runtimeContextKey string
 
 const runtimeExecutionIDKey runtimeContextKey = "runtime_execution_id"
+
+// attributionMiddleware lifts the caller attribution header into the
+// request context; proxy-bound requests forward it for audit.
+func attributionMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if v := r.Header.Get(attribution.Header); v != "" {
+			r = r.WithContext(attribution.WithValue(r.Context(), v))
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
 
 func (s *service) runtimeAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -758,6 +771,10 @@ func (s *service) proxyRequestWithService(
 		}
 	}
 	req.Header.Del("Authorization")
+
+	if v := attribution.FromContext(ctx); v != "" {
+		req.Header.Set(attribution.Header, v)
+	}
 
 	token := proxySvc.RegisterToken()
 	defer proxySvc.RevokeToken()

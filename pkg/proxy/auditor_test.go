@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ethpandaops/panda/pkg/attribution"
+
 	"github.com/sirupsen/logrus"
 	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
@@ -123,4 +125,29 @@ func lastAuditEntry(t *testing.T, hook *test.Hook) *logrus.Entry {
 	t.Fatal("no audit entry emitted")
 
 	return nil
+}
+
+func TestAuditorLogsOnBehalfOf(t *testing.T) {
+	log, hook := test.NewNullLogger()
+	log.SetLevel(logrus.InfoLevel)
+	auditor := NewAuditor(log, AuditConfig{Enabled: true})
+
+	handler := auditor.Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/clickhouse/", strings.NewReader("SELECT 1"))
+	req.Header.Set(attribution.Header, "discord:sam")
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	entry := lastAuditEntry(t, hook)
+	assert.Equal(t, "discord:sam", entry.Data["on_behalf_of"])
+
+	// Absent header must not produce the field.
+	hook.Reset()
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/clickhouse/", strings.NewReader("SELECT 1")))
+
+	entry = lastAuditEntry(t, hook)
+	_, ok := entry.Data["on_behalf_of"]
+	assert.False(t, ok, "on_behalf_of must be omitted when header is absent")
 }

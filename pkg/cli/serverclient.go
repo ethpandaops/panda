@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 
 	clickhousemodule "github.com/ethpandaops/panda/modules/clickhouse"
+	"github.com/ethpandaops/panda/pkg/attribution"
 	"github.com/ethpandaops/panda/pkg/config"
 	"github.com/ethpandaops/panda/pkg/operations"
 )
@@ -62,12 +63,8 @@ func serverDo(
 		req.Header.Set(key, value)
 	}
 
-	// Attribution: callers (e.g. chat agents acting for a human user) set
-	// PANDA_ON_BEHALF_OF per invocation; it travels to panda-server as
-	// X-Panda-On-Behalf-Of, which the server forwards to the proxy. The
-	// value is untrusted free-text used for audit only — never authorization.
-	if v := strings.TrimSpace(os.Getenv("PANDA_ON_BEHALF_OF")); v != "" {
-		req.Header.Set("X-Panda-On-Behalf-Of", v)
+	if v := strings.TrimSpace(os.Getenv(attribution.EnvVar)); v != "" {
+		req.Header.Set(attribution.Header, v)
 	}
 
 	resp, err := serverHTTP.Do(req)

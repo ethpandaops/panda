@@ -12,6 +12,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/ethpandaops/panda/pkg/attribution"
 	"github.com/ethpandaops/panda/pkg/proxy"
 	"github.com/ethpandaops/panda/pkg/proxy/handlers"
 	"github.com/ethpandaops/panda/pkg/types"
@@ -292,3 +293,58 @@ func datasourceNames(infos []types.DatasourceInfo) []string {
 }
 
 var _ proxy.Client = (*routingProxyClient)(nil)
+
+func TestProxyRequestForwardsAttribution(t *testing.T) {
+	t.Parallel()
+
+	transport := &recordingTransport{body: "ok\n", contentType: "text/plain"}
+	svc := testRoutingService(t, transport, []proxy.ClientRoute{
+		{
+			Name: "hosted",
+			Client: &routingProxyClient{
+				url:        "https://hosted.proxy",
+				token:      "hosted-token",
+				clickhouse: []types.DatasourceInfo{{Name: "xatu"}},
+			},
+		},
+	})
+
+	ctx := attribution.WithValue(context.Background(), "discord:sam")
+
+	_, status, _, err := svc.proxyDatasourceRequest(
+		ctx,
+		"clickhouse",
+		"xatu",
+		http.MethodPost,
+		"/clickhouse/",
+		strings.NewReader("SELECT 1"),
+		http.Header{handlers.DatasourceHeader: []string{"xatu"}},
+	)
+	if err != nil {
+		t.Fatalf("proxyDatasourceRequest error = %v", err)
+	}
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	if got := transport.last.Header.Get(attribution.Header); got != "discord:sam" {
+		t.Fatalf("%s = %q, want discord:sam", attribution.Header, got)
+	}
+}
+
+func TestAttributionMiddlewareLiftsHeader(t *testing.T) {
+	t.Parallel()
+
+	var seen string
+
+	handler := attributionMiddleware(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		seen = attribution.FromContext(r.Context())
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/datasources", nil)
+	req.Header.Set(attribution.Header, "discord:sam")
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	if seen != "discord:sam" {
+		t.Fatalf("attribution in context = %q, want discord:sam", seen)
+	}
+}
