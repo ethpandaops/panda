@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -396,4 +397,50 @@ func renderSchemaClusterIndex(ctx context.Context) error {
 	fmt.Println("Cluster names are ClickHouse datasource names, not dataset names.")
 
 	return nil
+}
+
+// readClickHouseClusterTables reads the cluster-level schema resource. The
+// default response is compact; includeTables opts into the full table list for
+// table-name searches and shell completion.
+func readClickHouseClusterTables(ctx context.Context, cluster string, includeTables bool) (*clickhousemodule.TablesListResponse, error) {
+	uri := "clickhouse://tables/" + cluster
+	if includeTables {
+		uri += "?include=tables"
+	}
+
+	return readClickHouseTablesURI(ctx, uri)
+}
+
+// readClickHouseDatabaseTables lists the tables in a single database of a cluster.
+func readClickHouseDatabaseTables(ctx context.Context, cluster, database string) (*clickhousemodule.TablesListResponse, error) {
+	return readClickHouseTablesURI(ctx, "clickhouse://tables/"+cluster+"/"+database)
+}
+
+// readClickHouseTable resolves a (cluster, database, table) reference to its schema.
+func readClickHouseTable(ctx context.Context, cluster, database, table string) (*clickhousemodule.TableDetailResponse, error) {
+	response, err := readResource(ctx, "clickhouse://tables/"+cluster+"/"+database+"/"+table)
+	if err != nil {
+		return nil, err
+	}
+
+	var payload clickhousemodule.TableDetailResponse
+	if err := json.Unmarshal([]byte(response.Content), &payload); err != nil {
+		return nil, fmt.Errorf("decoding table detail: %w", err)
+	}
+
+	return &payload, nil
+}
+
+func readClickHouseTablesURI(ctx context.Context, uri string) (*clickhousemodule.TablesListResponse, error) {
+	response, err := readResource(ctx, uri)
+	if err != nil {
+		return nil, err
+	}
+
+	var payload clickhousemodule.TablesListResponse
+	if err := json.Unmarshal([]byte(response.Content), &payload); err != nil {
+		return nil, fmt.Errorf("decoding tables list: %w", err)
+	}
+
+	return &payload, nil
 }

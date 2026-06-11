@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -148,4 +149,13 @@ func resolveCode() (string, error) {
 
 		return string(data), nil
 	}
+}
+
+func executeCodeRemotely(ctx context.Context, req serverapi.ExecuteRequest) (*serverapi.ExecuteResponse, error) {
+	var response serverapi.ExecuteResponse
+	if err := serverPostJSON(ctx, "/api/v1/execute", req, &response); err != nil {
+		return nil, err
+	}
+
+	return &response, nil
 }

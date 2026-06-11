@@ -1,10 +1,14 @@
 package cli
 
 import (
+	"context"
 	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/ethpandaops/panda/pkg/serverapi"
 )
 
 var sessionCmd = &cobra.Command{
@@ -101,4 +105,26 @@ func runSessionDestroy(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+func listSessions(ctx context.Context) (*serverapi.ListSessionsResponse, error) {
+	var response serverapi.ListSessionsResponse
+	if err := serverGetJSON(ctx, "/api/v1/sessions", nil, &response); err != nil {
+		return nil, err
+	}
+
+	return &response, nil
+}
+
+func createSession(ctx context.Context) (*serverapi.CreateSessionResponse, error) {
+	var response serverapi.CreateSessionResponse
+	if err := serverPostJSON(ctx, "/api/v1/sessions", map[string]any{}, &response); err != nil {
+		return nil, err
+	}
+
+	return &response, nil
+}
+
+func destroySession(ctx context.Context, sessionID string) error {
+	return serverDelete(ctx, "/api/v1/sessions/"+url.PathEscape(sessionID))
 }

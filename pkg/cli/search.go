@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"context"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
 
@@ -544,4 +546,95 @@ func printSpecResults(response *serverapi.SearchSpecsResponse) {
 		fmt.Printf("  Topic: %s\n", result.Topic)
 		fmt.Printf("  %s\n", result.URL)
 	}
+}
+
+func searchExamples(ctx context.Context, queryText, category, dataset string, limit int) (*serverapi.SearchExamplesResponse, error) {
+	query := url.Values{"query": []string{queryText}}
+	if category != "" {
+		query.Set("category", category)
+	}
+	if dataset != "" {
+		query.Set("dataset", dataset)
+	}
+	if limit > 0 {
+		query.Set("limit", fmt.Sprintf("%d", limit))
+	}
+
+	var response serverapi.SearchExamplesResponse
+	if err := serverGetJSON(ctx, "/api/v1/search/examples", query, &response); err != nil {
+		return nil, err
+	}
+
+	return &response, nil
+}
+
+func searchRunbooks(ctx context.Context, queryText, tag string, limit int) (*serverapi.SearchRunbooksResponse, error) {
+	query := url.Values{"query": []string{queryText}}
+	if tag != "" {
+		query.Set("tag", tag)
+	}
+	if limit > 0 {
+		query.Set("limit", fmt.Sprintf("%d", limit))
+	}
+
+	var response serverapi.SearchRunbooksResponse
+	if err := serverGetJSON(ctx, "/api/v1/search/runbooks", query, &response); err != nil {
+		return nil, err
+	}
+
+	return &response, nil
+}
+
+func searchEIPs(
+	ctx context.Context,
+	queryText, status, category, eipType string,
+	limit int,
+) (*serverapi.SearchEIPsResponse, error) {
+	query := url.Values{"query": []string{queryText}}
+
+	if status != "" {
+		query.Set("status", status)
+	}
+
+	if category != "" {
+		query.Set("category", category)
+	}
+
+	if eipType != "" {
+		query.Set("type", eipType)
+	}
+
+	if limit > 0 {
+		query.Set("limit", fmt.Sprintf("%d", limit))
+	}
+
+	var response serverapi.SearchEIPsResponse
+	if err := serverGetJSON(ctx, "/api/v1/search/eips", query, &response); err != nil {
+		return nil, err
+	}
+
+	return &response, nil
+}
+
+func searchSpecs(
+	ctx context.Context,
+	queryText, fork string,
+	limit int,
+) (*serverapi.SearchSpecsResponse, error) {
+	query := url.Values{"query": []string{queryText}}
+
+	if fork != "" {
+		query.Set("fork", fork)
+	}
+
+	if limit > 0 {
+		query.Set("limit", fmt.Sprintf("%d", limit))
+	}
+
+	var response serverapi.SearchSpecsResponse
+	if err := serverGetJSON(ctx, "/api/v1/search/consensus-specs", query, &response); err != nil {
+		return nil, err
+	}
+
+	return &response, nil
 }

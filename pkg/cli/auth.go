@@ -12,6 +12,7 @@ import (
 	authclient "github.com/ethpandaops/panda/pkg/auth/client"
 	authstore "github.com/ethpandaops/panda/pkg/auth/store"
 	"github.com/ethpandaops/panda/pkg/config"
+	"github.com/ethpandaops/panda/pkg/serverapi"
 )
 
 const defaultProxyAuthClientID = "panda"
@@ -323,4 +324,13 @@ func isSSHSession() bool {
 	}
 
 	return false
+}
+
+func proxyAuthMetadata(ctx context.Context) (*serverapi.ProxyAuthMetadataResponse, error) {
+	var response serverapi.ProxyAuthMetadataResponse
+	if err := serverGetJSON(ctx, "/api/v1/proxy/auth", nil, &response); err != nil {
+		return nil, err
+	}
+
+	return &response, nil
 }

@@ -1,11 +1,15 @@
 package cli
 
 import (
+	"context"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/ethpandaops/panda/pkg/serverapi"
 )
 
 var (
@@ -116,4 +120,18 @@ func formatBindingParams(params map[string]string) string {
 	}
 
 	return strings.Join(pairs, ", ")
+}
+
+func listDatasources(ctx context.Context, filterType string) (*serverapi.DatasourcesResponse, error) {
+	query := url.Values{}
+	if filterType != "" {
+		query.Set("type", filterType)
+	}
+
+	var response serverapi.DatasourcesResponse
+	if err := serverGetJSON(ctx, "/api/v1/datasources", query, &response); err != nil {
+		return nil, err
+	}
+
+	return &response, nil
 }

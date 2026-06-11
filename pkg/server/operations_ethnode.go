@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/ethpandaops/panda/pkg/operations"
@@ -629,4 +630,18 @@ func (s *service) ethNodeExecutionRPCRaw(
 	}
 
 	return data, contentType, http.StatusOK, nil
+}
+
+func parseHexUint64(value string) (uint64, error) {
+	value = strings.TrimPrefix(value, "0x")
+	if value == "" {
+		return 0, nil
+	}
+
+	parsed, err := strconv.ParseUint(value, 16, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid hex value %q: %w", value, err)
+	}
+
+	return parsed, nil
 }

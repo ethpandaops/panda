@@ -1,10 +1,16 @@
 package cli
 
 import (
+	"context"
 	"fmt"
+	"net/http"
+	"net/url"
 	"sort"
 
 	"github.com/spf13/cobra"
+
+	"github.com/ethpandaops/panda/pkg/serverapi"
+	"github.com/ethpandaops/panda/pkg/surface"
 )
 
 var resourcesCmd = &cobra.Command{
@@ -127,4 +133,33 @@ func runResourcesRead(cmd *cobra.Command, args []string) error {
 	fmt.Print(response.Content)
 
 	return nil
+}
+
+func listResources(ctx context.Context) (*serverapi.ListResourcesResponse, error) {
+	var response serverapi.ListResourcesResponse
+	if err := serverGetJSON(ctx, "/api/v1/resources", nil, &response); err != nil {
+		return nil, err
+	}
+
+	return &response, nil
+}
+
+func readResource(ctx context.Context, uri string) (*serverapi.ResourceResponse, error) {
+	query := url.Values{"uri": []string{uri}}
+	query.Set(surface.QueryParam, surface.CLI.Key())
+
+	data, status, headers, err := serverDo(ctx, http.MethodGet, "/api/v1/resources/read", nil, query, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if status < 200 || status >= 300 {
+		return nil, decodeAPIError(status, data)
+	}
+
+	return &serverapi.ResourceResponse{
+		URI:      uri,
+		MIMEType: headers.Get("Content-Type"),
+		Content:  string(data),
+	}, nil
 }

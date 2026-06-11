@@ -43,6 +43,7 @@ test-coverage: ## Run tests with coverage
 lint: ## Run linters
 	@which golangci-lint > /dev/null || (echo "Installing golangci-lint v2..." && go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest)
 	golangci-lint run ./...
+	./scripts/lint-structure.sh
 
 lint-fix: ## Run linters and fix issues
 	golangci-lint run --fix ./...

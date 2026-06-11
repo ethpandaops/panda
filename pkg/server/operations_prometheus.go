@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ethpandaops/panda/pkg/operations"
@@ -191,4 +193,38 @@ func buildPrometheusLabelParams(args map[string]any) (url.Values, error) {
 	}
 
 	return params, nil
+}
+
+func parsePrometheusTime(value string, now time.Time) (string, error) {
+	if value == "" {
+		return "", nil
+	}
+
+	if value == "now" {
+		return strconv.FormatInt(now.Unix(), 10), nil
+	}
+
+	if strings.HasPrefix(value, "now-") {
+		seconds, err := parseDurationSeconds(strings.TrimPrefix(value, "now-"))
+		if err != nil {
+			return "", err
+		}
+
+		return strconv.FormatInt(now.Add(-time.Duration(seconds)*time.Second).Unix(), 10), nil
+	}
+
+	if intValue, err := strconv.ParseInt(value, 10, 64); err == nil {
+		return strconv.FormatInt(intValue, 10), nil
+	}
+
+	if floatValue, err := strconv.ParseFloat(value, 64); err == nil {
+		return strconv.FormatInt(int64(floatValue), 10), nil
+	}
+
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return "", fmt.Errorf("cannot parse time %q: %w", value, err)
+	}
+
+	return strconv.FormatInt(parsed.Unix(), 10), nil
 }
