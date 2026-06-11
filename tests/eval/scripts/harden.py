@@ -139,7 +139,15 @@ def main() -> None:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    ap.add_argument("--cases", default="smoke.yaml", help="cases/*.yaml to use as the question set")
+    ap.add_argument(
+        "--cases",
+        default="baseline_all.yaml",
+        help="cases/*.yaml to use as the question set. The default is the full hydrated "
+        "suite (84 cells): champions must generalize across every workload at once, and "
+        "there are enough questions to afford --held-out (recommended: 3-4 questions the "
+        "proposer never sees). Use a single file (smoke.yaml, coverage.yaml) for quick "
+        "targeted iterations.",
+    )
     ap.add_argument(
         "--subject", action="append", default=[], help="provider/model:route (repeatable)"
     )
