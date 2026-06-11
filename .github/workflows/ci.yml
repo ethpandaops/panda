@@ -189,8 +189,7 @@ jobs:
           echo "--- panda clickhouse query-raw ---"
           ./panda clickhouse query-raw clickhouse-fixture \
             "SELECT count() AS n FROM fixture.blocks" | tee /tmp/query.out
-          grep -q '"n"' /tmp/query.out
-          grep -Eq '"n"[": ]*3' /tmp/query.out
+          jq -e '.columns == ["n"] and (.rows[0][0] | tostring) == "3"' /tmp/query.out
 
           echo "stack smoke OK: candidate CLI/server/proxy round-tripped a real query"
 
