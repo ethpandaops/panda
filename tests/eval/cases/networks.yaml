@@ -108,7 +108,7 @@
     input: "Which beacon nodes does Forky have fork-choice snapshots for on sepolia
       right now, and what consensus clients are they running?"
     network: sepolia
-    tags: [forky, testnet, fork-choice]
+    tags: [smoke, forky, testnet, fork-choice]
     assert:
       - type: llm-rubric
         value: >
