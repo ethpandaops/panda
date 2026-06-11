@@ -46,6 +46,18 @@ SYSTEM_PROMPT_MCP = "You are an ethpandaops agent. You have access to panda via 
 SYSTEM_PROMPT_CLI = "You are an ethpandaops agent. You have access to the panda CLI."
 
 
+def _host_panda_config() -> Path | None:
+    """The panda CLI config the host environment resolves to, or None.
+
+    Mirrors the CLI's own lookup (pkg/configpath): $XDG_CONFIG_HOME/panda/config.yaml
+    when XDG_CONFIG_HOME is set, else ~/.config/panda/config.yaml. The $PANDA_CONFIG
+    env var needs no mirroring — when set it is inherited by the serve env and the
+    CLI checks it first."""
+    base = os.environ.get("XDG_CONFIG_HOME", "").strip() or str(Path.home() / ".config")
+    candidate = Path(base) / "panda" / "config.yaml"
+    return candidate if candidate.is_file() else None
+
+
 def _free_port() -> int:
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.bind(("127.0.0.1", 0))
@@ -246,6 +258,15 @@ class OpenCodeAgent:
         env = os.environ.copy()
         env["XDG_DATA_HOME"] = str(datadir)
         env["XDG_CONFIG_HOME"] = str(confdir)
+        # The XDG override also redirects the panda CLI's config lookup
+        # ($XDG_CONFIG_HOME/panda/config.yaml takes precedence over ~/.config), so
+        # `panda` commands run by the agent would see "no config found" even though
+        # the host has a config. PANDA_CONFIG is checked before the XDG path — pin
+        # the host's config through it so the opencode isolation can't hide it.
+        if not env.get("PANDA_CONFIG"):
+            host_config = _host_panda_config()
+            if host_config is not None:
+                env["PANDA_CONFIG"] = str(host_config)
         return (["opencode", "serve", "--port", str(port)], str(workdir), env)
 
     def _docker_serve(
