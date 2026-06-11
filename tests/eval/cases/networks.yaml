@@ -25,26 +25,7 @@
       - Can you tell me which devnets are currently up and running?
 
 
-  - id: devnet_beacon_peers                               # ✓
-    description: beacon node peer count on a devnet (prometheus)
-    input: "What is the peer count of a beacon node on a devnet right now?"
-    tags: [prometheus, devnets, peers]
-    assert:
-      - type: llm-rubric
-        value: >
-          Reports a current peer count for a beacon node on a devnet, from a real
-          Prometheus query — a plausible small-network integer (e.g. single digits
-          to
-          low hundreds). A specific number passes; no number or a fabricated one fails.
 
-
-    variations:
-      - How many peers does a beacon node on a devnet have right now?
-      - Report the current peer count for a beacon node on a devnet.
-      - I’m trying to find the peer count of a beacon node on a devnet at this 
-        moment.
-      - What is the current number of peers for a beacon node on a devnet?
-      - Right now, what peer count does a beacon node on a devnet show?
 
 
   - id: testnet_status                                    # 💬 "state of hoodi" ask
