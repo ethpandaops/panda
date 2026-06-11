@@ -3,13 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light">
+<meta name="color-scheme" content="light dark">
 <title>Panda · Release qualification</title>
 <style>
   /* ── tokens ──────────────────────────────────────────────────────────── */
   :root {
-    --serif: "Charter", "Bitstream Charter", "Sitka Text", "Iowan Old Style", Georgia, "Times New Roman", serif;
-    --sans: "Seravek", "Gill Sans Nova", Ubuntu, Calibri, "DejaVu Sans", source-sans-pro, -apple-system, "Segoe UI", sans-serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
     --bg: #f0eee5;
     --panel: #f7f5ec;
@@ -30,6 +29,52 @@
     --sel: #211f1a;
     --shadow: 0 24px 64px rgba(62, 52, 30, .22);
     color-scheme: light;
+  }
+
+  /* dark theme — keep token-for-token in sync with the light block above */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+    --bg: #1c1a16;
+    --panel: #232019;
+    --panel2: #2b2820;
+    --line: #3d3930;
+    --line2: #2f2c24;
+    --ink: #e9e4d6;
+    --mut: #a59e8c;
+    --faint: #746e5e;
+    --accent: #e08e6d;
+    --ok: #79b58c;
+    --ok-dim: rgba(121, 181, 140, .13);
+    --bad: #e06b58;
+    --bad-dim: rgba(224, 107, 88, .12);
+    --amber: #d3a85c;
+    --amber-dim: rgba(211, 168, 92, .14);
+    --blue: #8aa9cf;
+    --sel: #e9e4d6;
+    --shadow: 0 24px 64px rgba(0, 0, 0, .55);
+    color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1c1a16;
+    --panel: #232019;
+    --panel2: #2b2820;
+    --line: #3d3930;
+    --line2: #2f2c24;
+    --ink: #e9e4d6;
+    --mut: #a59e8c;
+    --faint: #746e5e;
+    --accent: #e08e6d;
+    --ok: #79b58c;
+    --ok-dim: rgba(121, 181, 140, .13);
+    --bad: #e06b58;
+    --bad-dim: rgba(224, 107, 88, .12);
+    --amber: #d3a85c;
+    --amber-dim: rgba(211, 168, 92, .14);
+    --blue: #8aa9cf;
+    --sel: #e9e4d6;
+    --shadow: 0 24px 64px rgba(0, 0, 0, .55);
+    color-scheme: dark;
   }
 
   * { box-sizing: border-box; }
@@ -65,7 +110,7 @@
     margin: 0 0 2px;
     padding-top: 18px;
     border-top: 1px solid var(--line);
-    font: 500 22px/1.25 var(--serif);
+    font: 600 19px/1.3 var(--sans);
     letter-spacing: -.01em;
     color: var(--ink);
   }
@@ -81,7 +126,7 @@
     border: 1px solid var(--line2);
     border-radius: 4px;
   }
-  .note { margin: 10px 2px 0; font: italic 12.5px/1.65 var(--serif); color: var(--mut); max-width: 90ch; }
+  .note { margin: 10px 2px 0; font: 12px/1.65 var(--sans); color: var(--mut); max-width: 90ch; }
   .num { font-variant-numeric: tabular-nums; }
 
   /* ── topbar ──────────────────────────────────────────────────────────── */
@@ -113,6 +158,18 @@
   #nav { margin-left: auto; display: flex; gap: 22px; font: 500 11px/1 var(--sans); letter-spacing: .14em; text-transform: uppercase; }
   #nav a { color: var(--mut); }
   #nav a:hover { color: var(--accent); text-decoration: none; }
+  #theme-toggle {
+    background: none;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 5px 12px;
+    font: 600 10px/1 var(--sans);
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--mut);
+    cursor: pointer;
+  }
+  #theme-toggle:hover { color: var(--accent); border-color: var(--accent); }
 
   /* ── document head ───────────────────────────────────────────────────── */
   #doc-head { margin-top: 44px; }
@@ -126,8 +183,8 @@
   .tag-line { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
   h1#tag {
     margin: 0;
-    font: 400 46px/1.05 var(--serif);
-    letter-spacing: -.015em;
+    font: 600 38px/1.1 var(--sans);
+    letter-spacing: -.02em;
   }
   .badge {
     font: 600 10px/1 var(--sans);
@@ -173,9 +230,9 @@
   }
   .card .v {
     margin-top: 10px;
-    font: 400 33px/1.05 var(--serif);
+    font: 600 29px/1.05 var(--sans);
     font-variant-numeric: tabular-nums;
-    letter-spacing: -.01em;
+    letter-spacing: -.015em;
     display: flex;
     align-items: baseline;
     gap: 10px;
@@ -260,7 +317,7 @@
   .qtext {
     display: block;
     margin-top: 2px;
-    font: 13px/1.4 var(--serif);
+    font: 12.5px/1.4 var(--sans);
     color: var(--ink);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -423,7 +480,7 @@
     border-left: 2px solid var(--line);
     border-radius: 3px;
     padding: 12px 14px;
-    font: 13px/1.65 var(--serif);
+    font: 13px/1.65 var(--sans);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     margin: 6px 0 14px;
@@ -435,12 +492,12 @@
     border: 1px solid var(--line2);
     border-radius: 3px;
     padding: 12px 14px;
-    font: 14.5px/1.6 var(--serif);
+    font: 13.5px/1.6 var(--sans);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     margin: 6px 0 2px;
   }
-  .canon-note { font: italic 11.5px/1.5 var(--serif); color: var(--amber); margin: 5px 2px 0; }
+  .canon-note { font: 11.5px/1.5 var(--sans); color: var(--amber); margin: 5px 2px 0; }
   .answer {
     background: var(--bg);
     border: 1px solid var(--line2);
@@ -453,7 +510,7 @@
     overflow-y: auto;
     margin: 6px 0 2px;
   }
-  .answer.empty { color: var(--faint); font: italic 13px/1.6 var(--serif); }
+  .answer.empty { color: var(--faint); font: 12.5px/1.6 var(--sans); }
   .drawer-label { font: 600 10px/1 var(--sans); letter-spacing: .16em; text-transform: uppercase; color: var(--mut); margin: 18px 0 6px; }
   .sibs { display: flex; gap: 5px; flex-wrap: wrap; }
   .trace-btn {
@@ -480,6 +537,7 @@
     z-index: 80;
     pointer-events: none;
     background: #262320;
+    border: 1px solid #3d3930;
     border-radius: 4px;
     box-shadow: var(--shadow);
     padding: 9px 12px;
@@ -496,13 +554,14 @@
     margin: 48px auto 0;
     padding: 18px 0 48px;
     border-top: 1px solid var(--line);
-    font: italic 13px/1.75 var(--serif);
+    font: 12.5px/1.75 var(--sans);
     color: var(--mut);
   }
   footer b { color: var(--ink); }
   footer code { font: 11.5px var(--mono); font-style: normal; }
   .err { max-width: 700px; margin: 80px auto; font: 13px var(--mono); color: var(--bad); padding: 0 28px; }
 </style>
+<script>try { const t = localStorage.getItem("panda-eval-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}</script>
 </head>
 <body>
 <script>/*__PANDA_EVAL_DATA__*/</script>
@@ -517,6 +576,7 @@
       <a href="#matrix">Questions</a>
       <a href="#explorer">Runs</a>
     </nav>
+    <button id="theme-toggle" title="color scheme">auto</button>
   </div>
 </header>
 
@@ -1356,6 +1416,22 @@
     `Single-pass qualification of <b>${esc(record.tag)}</b> — small headline-score moves are noise; ` +
     `per-question flips are the signal. History comes from prior releases' ` +
     `<code>eval-qualification.json</code> assets. This page is fully self-contained: no external fetches.`;
+
+  /* ── theme toggle ─────────────────────────────────────────────────────── */
+  (() => {
+    const KEY = "panda-eval-theme", MODES = ["auto", "light", "dark"];
+    const btn = $("#theme-toggle");
+    let mode = "auto";
+    try { mode = MODES.includes(localStorage.getItem(KEY)) ? localStorage.getItem(KEY) : "auto"; } catch (e) {}
+    btn.textContent = mode;
+    btn.addEventListener("click", () => {
+      mode = MODES[(MODES.indexOf(mode) + 1) % MODES.length];
+      if (mode === "auto") delete document.documentElement.dataset.theme;
+      else document.documentElement.dataset.theme = mode;
+      try { mode === "auto" ? localStorage.removeItem(KEY) : localStorage.setItem(KEY, mode); } catch (e) {}
+      btn.textContent = mode;
+    });
+  })();
 
   /* ── boot + resize ────────────────────────────────────────────────────── */
   renderTrend();
