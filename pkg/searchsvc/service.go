@@ -335,6 +335,7 @@ func exampleSearchGuidance(results []*SearchExampleResult) []string {
 	}
 
 	var hasDataset, hasTarget bool
+	targets := make(map[string]struct{})
 	for _, result := range results {
 		if result == nil {
 			continue
@@ -342,6 +343,9 @@ func exampleSearchGuidance(results []*SearchExampleResult) []string {
 
 		hasDataset = hasDataset || result.Dataset != ""
 		hasTarget = hasTarget || result.Target != ""
+		if result.Target != "" {
+			targets[result.Target] = struct{}{}
+		}
 	}
 
 	guidance := []string{
@@ -350,6 +354,10 @@ func exampleSearchGuidance(results []*SearchExampleResult) []string {
 
 	if hasTarget {
 		guidance = append(guidance, "The target field is the datasource name the example is intended to run against.")
+	}
+
+	if len(targets) > 1 {
+		guidance = append(guidance, "When relevant examples span multiple targets, run each SQL query against its own target; combine bounded intermediate results in Python or another client-side step instead of writing one cross-datasource SQL query.")
 	}
 
 	if hasDataset {

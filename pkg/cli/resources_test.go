@@ -82,6 +82,7 @@ func TestRunResourcesListsWithoutURI(t *testing.T) {
 
 	assert.Contains(t, output, "Resources:")
 	assert.Contains(t, output, "panda://getting-started")
+	assert.Contains(t, output, "Read a resource: panda resources <uri>")
 }
 
 func TestResourcesReadHasGetAliasAndListSubcommand(t *testing.T) {
@@ -116,7 +117,7 @@ func TestServerErrorHintClassifiesClickHouseErrors(t *testing.T) {
 			name:    "primary key not used",
 			status:  http.StatusInternalServerError,
 			message: "Code: 277. DB::Exception: Primary key (a, b) is not used and setting 'force_primary_key' is set. (INDEX_NOT_USED)",
-			want:    "partition or primary-key columns",
+			want:    "primary-key/order-key columns",
 		},
 		{
 			name:    "unknown identifier",

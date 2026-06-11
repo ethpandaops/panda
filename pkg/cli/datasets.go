@@ -80,6 +80,7 @@ func runDatasets(cmd *cobra.Command, args []string) error {
 	rows := make([][]string, 0, len(parsed.Datasets))
 
 	var notes []noteLine
+	var blankPlacementRows bool
 
 	for _, d := range parsed.Datasets {
 		// Inactive datasets are known to the release but absent from this
@@ -89,6 +90,7 @@ func runDatasets(cmd *cobra.Command, args []string) error {
 		}
 
 		if len(d.Placements) == 0 {
+			blankPlacementRows = true
 			rows = append(rows, []string{d.Name, "", "", d.Description})
 
 			continue
@@ -130,6 +132,10 @@ func runDatasets(cmd *cobra.Command, args []string) error {
 		for _, n := range notes {
 			fmt.Printf("  %s: %s\n", n.key, n.note)
 		}
+	}
+
+	if blankPlacementRows {
+		fmt.Println("\nBlank datasource means this server did not advertise dataset placement metadata. Use the `Target` shown by `panda search examples \"<topic>\"`, or inspect concrete datasources with `panda resources datasources://clickhouse`.")
 	}
 
 	fmt.Println("\nRead a dataset's guide: panda datasets <name>")

@@ -79,7 +79,7 @@ func runDocs(cmd *cobra.Command, args []string) error {
 
 			doc, ok := allDocs[args[0]]
 			if !ok {
-				return fmt.Errorf("module %q not found", args[0])
+				return docsModuleNotFoundError(allDocs, args[0])
 			}
 
 			return printJSON(map[string]any{args[0]: doc})
@@ -131,7 +131,7 @@ func listModules(docs map[string]types.ModuleDoc) error {
 func showModule(docs map[string]types.ModuleDoc, name string) error {
 	doc, ok := docs[name]
 	if !ok {
-		return fmt.Errorf("module %q not found", name)
+		return docsModuleNotFoundError(docs, name)
 	}
 
 	fmt.Printf("Module: %s\n%s\n\n", name, doc.Description)
@@ -148,6 +148,42 @@ func showModule(docs map[string]types.ModuleDoc, name string) error {
 	}
 
 	return nil
+}
+
+func docsModuleNotFoundError(docs map[string]types.ModuleDoc, name string) error {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "module %q not found in Python API docs", name)
+	if isRootCommandName(name) {
+		fmt.Fprintf(&b, "; for CLI command help use 'panda %s --help'", name)
+	}
+
+	names := make([]string, 0, len(docs))
+	for moduleName := range docs {
+		names = append(names, moduleName)
+	}
+	sort.Strings(names)
+	if len(names) > 0 {
+		fmt.Fprintf(&b, ". Available Python modules: %s", strings.Join(names, ", "))
+	}
+
+	return fmt.Errorf("%s", b.String())
+}
+
+func isRootCommandName(name string) bool {
+	for _, cmd := range rootCmd.Commands() {
+		if cmd.Name() == name {
+			return true
+		}
+
+		for _, alias := range cmd.Aliases {
+			if alias == name {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func showFunction(docs map[string]types.ModuleDoc, moduleName, functionName string) error {

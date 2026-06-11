@@ -112,11 +112,11 @@ func schemaArgumentError(ctx context.Context, args []string, err error) error {
 	}
 
 	if isActiveDatasetName(ctx, args[0]) {
-		return fmt.Errorf("schema argument %q is a dataset, not a ClickHouse cluster. Read 'panda datasets %s' for placement, then inspect tables with 'panda schema <cluster> [database] [table]'", args[0], args[0])
+		return fmt.Errorf("schema argument %q is a dataset guide name, not a ClickHouse cluster. Read 'panda datasets %s' for placement/syntax, then use an example Target or 'panda datasources --type clickhouse' value as <cluster>", args[0], args[0])
 	}
 
 	if len(args) >= 2 && isActiveDatasetName(ctx, args[1]) {
-		return fmt.Errorf("schema database argument %q is a dataset, not a ClickHouse database. Read 'panda datasets %s' for placement, then substitute concrete database and table identifiers", args[1], args[1])
+		return fmt.Errorf("schema database argument %q is a dataset guide name, not a ClickHouse database. Read 'panda datasets %s' for placement/syntax, then substitute concrete database and table identifiers", args[1], args[1])
 	}
 
 	return err
@@ -391,6 +391,9 @@ func renderSchemaClusterIndex(ctx context.Context) error {
 	sort.Slice(rows, func(i, j int) bool { return rows[i][0] < rows[j][0] })
 
 	printTable([]string{"CLUSTER", "DESCRIPTION"}, rows)
+	fmt.Println("\nUse: panda schema <cluster> <database> [--contains <term>]")
+	fmt.Println("Or read schema resources directly: panda resources clickhouse://tables/<cluster>/<database>/<table>")
+	fmt.Println("Cluster names are ClickHouse datasource names, not dataset names.")
 
 	return nil
 }

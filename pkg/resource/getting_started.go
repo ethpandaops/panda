@@ -65,11 +65,11 @@ panda clickhouse query-raw <Target> "<SQL from the example, adjusted for the que
 For Python workflows:
 
 ` + "```" + `
-panda execute --code '
+panda execute <<'PY'
 from ethpandaops import clickhouse
 df = clickhouse.query("<datasource>", "SELECT ...")
 print(df)
-'
+PY
 ` + "```" + `
 
 `
@@ -115,21 +115,21 @@ const gettingStartedFooterCLI = `
 
 **Example — Multi-step workflow:**
 ` + "```" + `
-panda execute --code '
+panda execute <<'PY'
 df = clickhouse.query("<datasource>", "SELECT ...")
 df.to_parquet("/workspace/data.parquet")
-'
+PY
 ` + "```" + `
 
 ` + "```" + `
-panda execute --code '
+panda execute --session <id> <<'PY'
 import pandas as pd
 df = pd.read_parquet("/workspace/data.parquet")
 plt.plot(df["time"], df["value"])
 plt.savefig("/workspace/chart.png")
 url = storage.upload("/workspace/chart.png")
 print(url)
-'
+PY
 ` + "```" + `
 
 Use ` + "`storage.upload()`" + ` for permanent public URLs (see ` + "`panda docs storage`" + ` for API details).

@@ -376,6 +376,7 @@ func printExampleUsageHints(results []*serverapi.SearchExampleResult) {
 	}
 
 	var hasDataset, hasSQL bool
+	targets := make(map[string]struct{})
 	for _, result := range results {
 		if result == nil {
 			continue
@@ -383,15 +384,21 @@ func printExampleUsageHints(results []*serverapi.SearchExampleResult) {
 
 		hasDataset = hasDataset || result.Dataset != ""
 		hasSQL = hasSQL || looksLikeSQLExample(result.Query)
+		if result.Target != "" {
+			targets[result.Target] = struct{}{}
+		}
 	}
 
 	fmt.Println("Tips:")
 	fmt.Println("  Search examples are reusable patterns; replace placeholders and concrete network/time filters before executing.")
 	if hasSQL {
-		fmt.Println("  For SQL examples, Target is the ClickHouse datasource: panda clickhouse query-raw <Target> \"<SQL>\"")
+		fmt.Println("  For SQL examples, Target is the ClickHouse datasource/cluster: panda clickhouse query-raw <Target> \"<SQL>\"")
+	}
+	if len(targets) > 1 {
+		fmt.Println("  Results span multiple Targets; query each Target separately and combine bounded results with panda execute or another client-side step.")
 	}
 	if hasDataset {
-		fmt.Println("  Dataset names point to syntax/placement guides: panda datasets <Dataset>")
+		fmt.Println("  Dataset is a guide name, not a datasource or database. Read it for syntax/placement: panda datasets <Dataset>")
 	}
 }
 

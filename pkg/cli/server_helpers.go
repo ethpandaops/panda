@@ -465,7 +465,7 @@ func serverErrorHint(status int, message string) string {
 	// owns the command-idiom wording per class.
 	switch clickhousemodule.ClassifyQueryError(message) {
 	case clickhousemodule.QueryErrorPrimaryKeyFilterRequired:
-		return "ClickHouse requires a query shape that can use the table's partition or primary-key columns; inspect key clauses with 'panda schema <cluster> <database> <table>' and add selective WHERE filters. Do not disable force_primary_key on an unbounded scan; only append 'SETTINGS force_primary_key=0' when the query is otherwise tightly bounded and you can explain why the key cannot be used"
+		return "ClickHouse requires a query shape that can use the table's primary-key/order-key columns; inspect key clauses with 'panda schema <cluster> <database> <table>' and add selective WHERE filters on those keys. Partition filters help bound work but may not satisfy force_primary_key. Do not disable force_primary_key on an unbounded scan; only append 'SETTINGS force_primary_key=0' when the query is otherwise tightly bounded and you can explain why the key cannot be used"
 	case clickhousemodule.QueryErrorUnknownIdentifier:
 		return "the SQL references a column or expression that is not available in the selected table; inspect the table with 'panda schema <cluster> <database> <table>' and adjust the SELECT, WHERE, and GROUP BY clauses"
 	case clickhousemodule.QueryErrorNotAggregate:
@@ -492,13 +492,13 @@ func serverErrorHint(status int, message string) string {
 	normalized := strings.ToLower(message)
 	if strings.Contains(normalized, "clickhouse://tables/") &&
 		strings.Contains(normalized, "invalid identifier") {
-		return "schema resource paths use concrete ClickHouse identifiers in /<cluster>/<database>/<table>; dataset names, placeholders, and SQL clauses are not identifiers. Read 'panda datasets <name>' for placement, then substitute concrete names"
+		return "schema resource paths use concrete ClickHouse identifiers in /<cluster>/<database>/<table>; dataset names, placeholders, and SQL clauses are not identifiers. Read 'panda datasets <name>' for placement/syntax, then substitute concrete names"
 	}
 
 	if strings.Contains(normalized, "clickhouse://tables/") &&
 		strings.Contains(normalized, "cluster ") &&
 		strings.Contains(normalized, "not found") {
-		return "schema expects a ClickHouse datasource/cluster name; list clusters with 'panda datasources --type clickhouse'. If starting from a dataset, read 'panda datasets <name>' for placement"
+		return "schema expects a ClickHouse datasource/cluster name, not a dataset name; list clusters with 'panda datasources --type clickhouse'. If starting from an example, use its Target and read 'panda datasets <name>' for placement/syntax"
 	}
 
 	if strings.Contains(normalized, "unknown dataset") {
