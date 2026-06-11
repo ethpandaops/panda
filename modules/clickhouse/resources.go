@@ -3,7 +3,9 @@ package clickhouse
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -25,9 +27,17 @@ type TablesListResponse struct {
 
 // ClusterTablesSummary is a compact summary of tables in a cluster.
 type ClusterTablesSummary struct {
-	Tables      []*TableSummary `json:"tables"`
-	TableCount  int             `json:"table_count"`
-	LastUpdated string          `json:"last_updated"`
+	Databases     []*DatabaseSummary `json:"databases,omitempty"`
+	Tables        []*TableSummary    `json:"tables,omitempty"`
+	TableCount    int                `json:"table_count"`
+	DatabaseCount int                `json:"database_count,omitempty"`
+	LastUpdated   string             `json:"last_updated"`
+}
+
+// DatabaseSummary is a compact overview of a database/table namespace.
+type DatabaseSummary struct {
+	Name       string `json:"name"`
+	TableCount int    `json:"table_count"`
 }
 
 // TableSummary is a compact overview of a table for the list view.
@@ -55,8 +65,8 @@ func RegisterSchemaResources(
 	reg.RegisterTemplate(types.TemplateResource{
 		Template: mcp.NewResourceTemplate(
 			"clickhouse://tables/{cluster}",
-			"ClickHouse Cluster Tables",
-			mcp.WithTemplateDescription("List the tables in a single ClickHouse cluster, keyed by (database, table)."),
+			"ClickHouse Cluster Databases",
+			mcp.WithTemplateDescription("Compact database/table-namespace summary for a ClickHouse datasource/cluster. {cluster} is a datasource name, not a dataset id. Read clickhouse://tables/{cluster}/{database} for table names."),
 			mcp.WithTemplateMIMEType("application/json"),
 			mcp.WithTemplateAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.6, ""),
 		),
@@ -68,7 +78,7 @@ func RegisterSchemaResources(
 		Template: mcp.NewResourceTemplate(
 			"clickhouse://tables/{cluster}/{database}",
 			"ClickHouse Database Tables",
-			mcp.WithTemplateDescription("List the tables in a single database within a ClickHouse cluster."),
+			mcp.WithTemplateDescription("List the tables in a single ClickHouse database/namespace within a datasource/cluster. Dataset ids are guides; use concrete database names here."),
 			mcp.WithTemplateMIMEType("application/json"),
 			mcp.WithTemplateAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.6, ""),
 		),
@@ -80,7 +90,7 @@ func RegisterSchemaResources(
 		Template: mcp.NewResourceTemplate(
 			"clickhouse://tables/{cluster}/{database}/{table_name}",
 			"ClickHouse Table Schema",
-			mcp.WithTemplateDescription("Full schema for a specific ClickHouse table identified by (cluster, database, table) — columns, types, comments, engine, and key clauses."),
+			mcp.WithTemplateDescription("Full schema for a specific ClickHouse table identified by concrete (cluster, database, table) names — columns, types, comments, engine, and key clauses."),
 			mcp.WithTemplateMIMEType("application/json"),
 			mcp.WithTemplateAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.6, ""),
 		),
@@ -92,7 +102,7 @@ func RegisterSchemaResources(
 }
 
 func createClusterTablesHandler(client SchemaClient) types.ReadHandler {
-	return func(_ context.Context, uri string) (string, error) {
+	return func(ctx context.Context, uri string) (string, error) {
 		parts := tableURISegments(uri)
 		if len(parts) != 1 {
 			return "", fmt.Errorf("invalid cluster URI: %s", uri)
@@ -102,13 +112,27 @@ func createClusterTablesHandler(client SchemaClient) types.ReadHandler {
 
 		cluster, ok := client.GetClusterTables(clusterName)
 		if !ok {
-			return "", clusterNotFoundError(client, clusterName)
+			var fetchErr error
+			cluster, fetchErr = client.FetchTablesInCluster(ctx, clusterName, "")
+			if fetchErr != nil {
+				if errors.Is(fetchErr, ErrSchemaClusterNotConfigured) {
+					return "", clusterNotFoundError(client, clusterName)
+				}
+
+				return "", fmt.Errorf("listing live tables in cluster %q: %w", clusterName, fetchErr)
+			}
 		}
 
 		response := &TablesListResponse{
-			Description: fmt.Sprintf("Tables in ClickHouse cluster %q, keyed by (database, table).", clusterName),
-			Clusters:    map[string]*ClusterTablesSummary{clusterName: buildClusterSummary(cluster, "")},
-			Usage:       "Read clickhouse://tables/{cluster}/{database} or clickhouse://tables/{cluster}/{database}/{table_name} to narrow the result.",
+			Description: fmt.Sprintf("Databases in ClickHouse cluster %q.", clusterName),
+			Clusters:    map[string]*ClusterTablesSummary{clusterName: buildClusterDatabaseSummary(cluster)},
+			Usage:       "Use concrete ClickHouse identifiers: {cluster} is a datasource name, and {database} is a ClickHouse database/namespace. Read clickhouse://tables/{cluster}/{database} for table names, then clickhouse://tables/{cluster}/{database}/{table_name} for detailed schema. The cluster view intentionally omits table names to keep output bounded.",
+		}
+
+		if clusterTablesIncludeTables(uri) {
+			response.Description = fmt.Sprintf("Tables in ClickHouse cluster %q, keyed by (database, table).", clusterName)
+			response.Clusters[clusterName] = buildClusterSummary(cluster, "")
+			response.Usage = "Read clickhouse://tables/{cluster}/{database}/{table_name} for detailed schema. Prefer the compact cluster URI or database-scoped URI unless you need every table name. Dataset ids are guide names, not schema path segments."
 		}
 
 		return marshalResource(response, "cluster tables")
@@ -116,7 +140,7 @@ func createClusterTablesHandler(client SchemaClient) types.ReadHandler {
 }
 
 func createDatabaseTablesHandler(client SchemaClient) types.ReadHandler {
-	return func(_ context.Context, uri string) (string, error) {
+	return func(ctx context.Context, uri string) (string, error) {
 		parts := tableURISegments(uri)
 		if len(parts) != 2 {
 			return "", fmt.Errorf("invalid database URI: %s", uri)
@@ -126,13 +150,21 @@ func createDatabaseTablesHandler(client SchemaClient) types.ReadHandler {
 
 		cluster, ok := client.GetClusterTables(clusterName)
 		if !ok {
-			return "", clusterNotFoundError(client, clusterName)
+			var fetchErr error
+			cluster, fetchErr = client.FetchTablesInCluster(ctx, clusterName, database)
+			if fetchErr != nil {
+				if errors.Is(fetchErr, ErrSchemaClusterNotConfigured) {
+					return "", clusterNotFoundError(client, clusterName)
+				}
+
+				return "", fmt.Errorf("listing live tables in database %q of cluster %q: %w", database, clusterName, fetchErr)
+			}
 		}
 
 		response := &TablesListResponse{
 			Description: fmt.Sprintf("Tables in database %q of ClickHouse cluster %q.", database, clusterName),
 			Clusters:    map[string]*ClusterTablesSummary{clusterName: buildClusterSummary(cluster, database)},
-			Usage:       "Read clickhouse://tables/{cluster}/{database}/{table_name} for the detailed schema.",
+			Usage:       "Read clickhouse://tables/{cluster}/{database}/{table_name} for the detailed schema. Use concrete table names from this list.",
 		}
 
 		return marshalResource(response, "database tables")
@@ -140,7 +172,7 @@ func createDatabaseTablesHandler(client SchemaClient) types.ReadHandler {
 }
 
 func createTableDetailHandler(log logrus.FieldLogger, client SchemaClient) types.ReadHandler {
-	return func(_ context.Context, uri string) (string, error) {
+	return func(ctx context.Context, uri string) (string, error) {
 		parts := tableURISegments(uri)
 		if len(parts) != 3 {
 			return "", fmt.Errorf("invalid table URI: %s", uri)
@@ -150,11 +182,30 @@ func createTableDetailHandler(log logrus.FieldLogger, client SchemaClient) types
 
 		schema, ok := client.GetTableInCluster(clusterName, database, tableName)
 		if !ok {
-			if _, clusterOK := client.GetClusterTables(clusterName); !clusterOK {
-				return "", clusterNotFoundError(client, clusterName)
+			var fetchErr error
+			schema, fetchErr = client.FetchTableInCluster(ctx, clusterName, database, tableName)
+			if fetchErr == nil {
+				data, err := marshalResource(&TableDetailResponse{Cluster: clusterName, Table: schema}, "table detail")
+				if err != nil {
+					return "", err
+				}
+
+				log.WithFields(logrus.Fields{
+					"cluster":  clusterName,
+					"database": database,
+					"table":    tableName,
+				}).Debug("Returned live table schema")
+
+				return data, nil
 			}
 
-			return "", fmt.Errorf("table %q in database %q not found in cluster %q", tableName, database, clusterName)
+			if _, clusterOK := client.GetClusterTables(clusterName); !clusterOK {
+				if errors.Is(fetchErr, ErrSchemaClusterNotConfigured) {
+					return "", clusterNotFoundError(client, clusterName)
+				}
+			}
+
+			return "", fmt.Errorf("table %q in database %q not found in cluster %q: %w", tableName, database, clusterName, fetchErr)
 		}
 
 		data, err := marshalResource(&TableDetailResponse{Cluster: clusterName, Table: schema}, "table detail")
@@ -193,6 +244,9 @@ func buildClusterSummary(cluster *ClusterTables, databaseFilter string) *Cluster
 	}
 
 	summary.TableCount = len(summary.Tables)
+	if databaseFilter != "" && summary.TableCount > 0 {
+		summary.DatabaseCount = 1
+	}
 
 	sort.Slice(summary.Tables, func(i, j int) bool {
 		if summary.Tables[i].Database != summary.Tables[j].Database {
@@ -201,6 +255,41 @@ func buildClusterSummary(cluster *ClusterTables, databaseFilter string) *Cluster
 
 		return summary.Tables[i].Name < summary.Tables[j].Name
 	})
+
+	return summary
+}
+
+// buildClusterDatabaseSummary returns a compact view that avoids dumping every
+// table in large multi-network clusters.
+func buildClusterDatabaseSummary(cluster *ClusterTables) *ClusterTablesSummary {
+	counts := make(map[string]int)
+	for _, schema := range cluster.Tables {
+		if schema == nil {
+			continue
+		}
+
+		counts[schema.Database]++
+	}
+
+	names := make([]string, 0, len(counts))
+	for name := range counts {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	summary := &ClusterTablesSummary{
+		Databases:     make([]*DatabaseSummary, 0, len(names)),
+		TableCount:    len(cluster.Tables),
+		DatabaseCount: len(names),
+		LastUpdated:   cluster.LastUpdated.Format("2006-01-02T15:04:05Z"),
+	}
+
+	for _, name := range names {
+		summary.Databases = append(summary.Databases, &DatabaseSummary{
+			Name:       name,
+			TableCount: counts[name],
+		})
+	}
 
 	return summary
 }
@@ -215,7 +304,7 @@ func clusterNotFoundError(client SchemaClient, clusterName string) error {
 	sort.Strings(available)
 
 	if len(available) == 0 {
-		return fmt.Errorf("cluster %q not found: no ClickHouse clusters are available", clusterName)
+		return fmt.Errorf("cluster %q not found: no ClickHouse schema cache is available yet; list live datasources with 'panda datasources --type clickhouse' and retry schema after discovery warms up", clusterName)
 	}
 
 	return fmt.Errorf("cluster %q not found: available clusters are %s", clusterName, strings.Join(available, ", "))
@@ -240,6 +329,7 @@ func tableURISegments(uri string) []string {
 	}
 
 	rest := strings.TrimPrefix(uri, prefix)
+	rest, _, _ = strings.Cut(rest, "?")
 	if rest == "" {
 		return nil
 	}
@@ -252,4 +342,18 @@ func tableURISegments(uri string) []string {
 	}
 
 	return parts
+}
+
+func clusterTablesIncludeTables(uri string) bool {
+	_, rawQuery, ok := strings.Cut(uri, "?")
+	if !ok {
+		return false
+	}
+
+	values, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		return false
+	}
+
+	return values.Get("include") == "tables" || values.Get("view") == "tables"
 }

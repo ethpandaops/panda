@@ -242,7 +242,7 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 				},
 				"query": {
 					Signature:   "clickhouse.query(datasource: str, sql: str, parameters: dict | None = None) -> pandas.DataFrame",
-					Description: "Execute SQL query, return DataFrame",
+					Description: "Execute SQL query and materialize the result as a DataFrame. Keep results bounded with SQL filters, aggregation, or LIMIT before loading them into Python.",
 					Parameters: map[string]string{
 						"datasource": "a ClickHouse datasource name from clickhouse.list_datasources() or datasources://clickhouse",
 						"sql":        "SQL query string; reference tables as database.table and inspect schemas via clickhouse://tables/{cluster}/{database}",
@@ -252,7 +252,7 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 				},
 				"query_raw": {
 					Signature:   "clickhouse.query_raw(datasource: str, sql: str, parameters: dict | None = None) -> tuple[list[tuple], list[str]]",
-					Description: "Execute SQL query, return raw tuples",
+					Description: "Execute SQL query and materialize raw rows plus column names. Prefer aggregation or LIMIT for row inspection; avoid pulling unbounded tables into the sandbox.",
 					Parameters: map[string]string{
 						"datasource": "a ClickHouse datasource name from clickhouse.list_datasources() or datasources://clickhouse",
 						"sql":        "SQL query string",

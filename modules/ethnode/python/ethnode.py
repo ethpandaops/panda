@@ -26,10 +26,11 @@ def list_datasources() -> list[dict[str, Any]]:
 
 
 def list_networks() -> list[dict[str, Any]]:
-    """List networks reachable for direct node access.
+    """List active network ids reachable for direct node access.
 
-    Entries include at least name and type. The per-node instance label cannot
-    be enumerated and must be supplied by the caller.
+    Entries include at least name and type. The name is the network id accepted
+    by ethnode calls. The per-node instance label cannot be enumerated and must
+    be supplied by the caller.
     """
     _require_ethnode_available()
     data = _runtime.invoke_data("ethnode.list_networks") or {}

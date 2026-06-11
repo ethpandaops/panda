@@ -37,11 +37,22 @@ the ethpandaops library for Ethereum data analysis. All data access
 flows through the credential proxy.
 
 Code can be provided via --code, --file, or stdin.
+Use --code for short one-liners. For multiline Python, prefer --file or stdin
+so shell quoting does not change the program.
+
+For a single SQL or PromQL answer, direct datasource commands are usually
+simpler and avoid Python quoting/session overhead:
+  panda clickhouse query-raw <datasource> "<SQL>"
+  panda prometheus query <datasource> "<promql>"
+
+Use execute when you need Python libraries, files, plots, cross-source joins,
+or multi-step analysis.
 
 Examples:
   panda execute --code 'print("hello")'
   panda execute --file script.py
   panda execute --file script.py --session abc123
+  panda execute < script.py
   echo 'print("hello")' | panda execute
   panda execute --json --code 'import pandas; print(pandas.__version__)'`,
 	RunE: runExecute,

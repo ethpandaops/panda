@@ -297,6 +297,7 @@ func runSearchExamples(cmd *cobra.Command, args []string) error {
 	}
 
 	printExampleResults(response.Results)
+	printExampleUsageHints(response.Results)
 
 	return nil
 }
@@ -361,8 +362,60 @@ func printExampleResults(results []*serverapi.SearchExampleResult) {
 			fmt.Printf("  Target: %s\n", result.Target)
 		}
 
+		if result.Dataset != "" {
+			fmt.Printf("  Dataset: %s\n", result.Dataset)
+		}
+
 		fmt.Printf("\n%s\n\n", result.Query)
 	}
+}
+
+func printExampleUsageHints(results []*serverapi.SearchExampleResult) {
+	if len(results) == 0 {
+		return
+	}
+
+	var hasDataset, hasSQL bool
+	targets := make(map[string]struct{})
+	for _, result := range results {
+		if result == nil {
+			continue
+		}
+
+		hasDataset = hasDataset || result.Dataset != ""
+		hasSQL = hasSQL || looksLikeSQLExample(result.Query)
+		if result.Target != "" {
+			targets[result.Target] = struct{}{}
+		}
+	}
+
+	fmt.Println("Tips:")
+	fmt.Println("  Search examples are reusable patterns; replace placeholders and concrete network/time filters before executing.")
+	if hasSQL {
+		fmt.Println("  For SQL examples, Target is the ClickHouse datasource/cluster: panda clickhouse query-raw <Target> \"<SQL>\"")
+	}
+	if len(targets) > 1 {
+		fmt.Println("  Results span multiple Targets; query each Target separately and combine bounded results with panda execute or another client-side step.")
+	}
+	if hasDataset {
+		fmt.Println("  Dataset is a guide name, not a datasource or database. Read it for syntax/placement: panda datasets <Dataset>")
+	}
+}
+
+func looksLikeSQLExample(query string) bool {
+	trimmed := strings.TrimSpace(query)
+	if trimmed == "" {
+		return false
+	}
+
+	lower := strings.ToLower(trimmed)
+	for _, prefix := range []string{"select ", "with ", "show ", "describe ", "explain "} {
+		if strings.HasPrefix(lower, prefix) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func printRunbookResults(results []*serverapi.SearchRunbookResult) {

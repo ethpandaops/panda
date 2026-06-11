@@ -2,6 +2,39 @@ prometheus_basics:
   name: Prometheus Basics
   description: Common PromQL query patterns for Ethereum infrastructure monitoring
   examples:
+    - name: Discover datasource metric names
+      description: List metric names for an unfamiliar Prometheus datasource, filtering by the concept you need before writing PromQL.
+      target: prometheus
+      query: |
+        # CLI:
+        #   panda prometheus list-datasources
+        #   panda prometheus label-values <datasource> __name__ --contains '<term>' --limit 50
+        #
+        # Python:
+        from ethpandaops import prometheus
+
+        datasource = prometheus.list_datasources()[0]["name"]
+        matches = prometheus.get_label_values(
+            datasource,
+            "__name__",
+            contains="<term>",
+            limit=50,
+        )
+        print(matches)
+    - name: Inspect labels before filtering
+      description: Inspect available labels for a datasource so PromQL filters use labels that actually exist in that deployment.
+      target: prometheus
+      query: |
+        # CLI:
+        #   panda prometheus labels <datasource>
+        #   panda prometheus label-values <datasource> <label>
+        #
+        # Python:
+        from ethpandaops import prometheus
+
+        datasource = prometheus.list_datasources()[0]["name"]
+        labels = prometheus.get_labels(datasource)
+        print(labels)
     - name: Check service health
       description: Check if monitored services are up and running
       target: prometheus

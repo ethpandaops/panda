@@ -90,6 +90,7 @@ type SearchExamplesResponse struct {
 	TotalMatches        int                    `json:"total_matches"`
 	Results             []*SearchExampleResult `json:"results"`
 	AvailableCategories []string               `json:"available_categories"`
+	Guidance            []string               `json:"guidance,omitempty"`
 }
 
 type SearchRunbookResult struct {
@@ -324,7 +325,46 @@ func (s *Service) SearchExamples(query, categoryFilter, datasetFilter string, li
 		TotalMatches:        len(searchResults),
 		Results:             searchResults,
 		AvailableCategories: categories,
+		Guidance:            exampleSearchGuidance(searchResults),
 	}, nil
+}
+
+func exampleSearchGuidance(results []*SearchExampleResult) []string {
+	if len(results) == 0 {
+		return nil
+	}
+
+	var hasDataset, hasTarget bool
+	targets := make(map[string]struct{})
+	for _, result := range results {
+		if result == nil {
+			continue
+		}
+
+		hasDataset = hasDataset || result.Dataset != ""
+		hasTarget = hasTarget || result.Target != ""
+		if result.Target != "" {
+			targets[result.Target] = struct{}{}
+		}
+	}
+
+	guidance := []string{
+		"Examples are reusable patterns: replace placeholders and concrete filters for the user's network, time window, or object before executing.",
+	}
+
+	if hasTarget {
+		guidance = append(guidance, "The target field is the datasource name the example is intended to run against.")
+	}
+
+	if len(targets) > 1 {
+		guidance = append(guidance, "When relevant examples span multiple targets, run each SQL query against its own target; combine bounded intermediate results in Python or another client-side step instead of writing one cross-datasource SQL query.")
+	}
+
+	if hasDataset {
+		guidance = append(guidance, "The dataset field identifies the knowledge pack; read datasets://<dataset> only when you need placement or syntax rules.")
+	}
+
+	return guidance
 }
 
 func (s *Service) SearchRunbooks(query, tagFilter string, limit int) (*SearchRunbooksResponse, error) {

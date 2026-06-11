@@ -152,7 +152,7 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 				},
 				"query": {
 					Signature:   "prometheus.query(instance_name: str, promql: str, time: str = None) -> dict",
-					Description: "Execute instant PromQL query",
+					Description: "Execute instant PromQL query. Datasource names, metric names, and labels are deployment-specific; call list_datasources and use get_label_values(instance_name, \"__name__\", contains=\"...\", limit=50) for concise metric discovery.",
 					Parameters: map[string]string{
 						"instance_name": "Datasource name from datasources://prometheus",
 						"promql":        "PromQL query string",
@@ -183,13 +183,15 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 					Returns: "List of label names",
 				},
 				"get_label_values": {
-					Signature:   "prometheus.get_label_values(instance_name: str, label: str, start: str = None, end: str = None) -> list[str]",
-					Description: "Get all values for a label",
+					Signature:   "prometheus.get_label_values(instance_name: str, label: str, start: str = None, end: str = None, contains: str = None, limit: int = None) -> list[str]",
+					Description: "Get values for a label. Use label=\"__name__\" with contains and limit to discover metric names before writing PromQL against an unfamiliar datasource without dumping every metric.",
 					Parameters: map[string]string{
 						"instance_name": "Datasource name",
 						"label":         "Label name",
 						"start":         "Optional start time",
 						"end":           "Optional end time",
+						"contains":      "Optional case-insensitive substring filter applied locally",
+						"limit":         "Optional maximum number of values returned after filtering",
 					},
 					Returns: "List of label values",
 				},
