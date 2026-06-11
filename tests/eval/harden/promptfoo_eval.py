@@ -205,6 +205,9 @@ async def measure(
     rc, tail = await asyncio.to_thread(run)
     if not results_path.exists():
         raise RuntimeError(f"promptfoo produced no results (exit {rc}):\n{tail[-1500:]}")
+    # promptfoo writes the raw results itself (full traces in metadata), so it bypasses
+    # the scrub the trace files get — scrub the file in place before anything ships it.
+    results_path.write_text(scrub_secrets(results_path.read_text()))
     return _parse(results_path, rd)
 
 
