@@ -212,6 +212,7 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           MCP_EVAL_REASONING_EFFORT: high
           MCP_EVAL_OPENCODE_TIMEOUT: "120"
+          MCP_EVAL_RUN_LABEL: smoke
           # Ship traces to the dedicated prod Langfuse (shitpit-backed). Enables when
           # the LANGFUSE_HOST repo var + keys are set. GitHub auto-sets the GITHUB_*
           # vars the agent turns into the trace's ci_run_url link.
@@ -240,6 +241,11 @@ jobs:
         run: |
           echo "===== panda-server log (last 150 lines) ====="
           tail -150 server.log 2>/dev/null || echo "(no server.log)"
+          # Full log into the uploaded artifact: agents intermittently hit
+          # connection-refused against the server mid-eval, and diagnosing that
+          # needs the server's own view of the run.
+          mkdir -p tests/eval/reports
+          if [ -f server.log ]; then cp server.log tests/eval/reports/server.log; fi
           echo "===== docker ps (sandbox containers?) ====="
           docker ps -a --format '{{.Image}} {{.Status}} {{.Names}}' 2>/dev/null | head || true
 

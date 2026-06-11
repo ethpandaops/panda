@@ -224,6 +224,7 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           MCP_EVAL_REASONING_EFFORT: high
           MCP_EVAL_OPENCODE_TIMEOUT: "180"
+          MCP_EVAL_RUN_LABEL: full-eval
           MCP_EVAL_LANGFUSE_ENABLED: ${{ vars.LANGFUSE_HOST != '' && 'true' || 'false' }}
           MCP_EVAL_LANGFUSE_HOST: ${{ vars.LANGFUSE_HOST }}
           MCP_EVAL_LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
@@ -250,6 +251,11 @@ jobs:
         run: |
           echo "===== panda-server log (last 150 lines) ====="
           tail -150 server.log 2>/dev/null || echo "(no server.log)"
+          # Full log into the uploaded artifact: agents intermittently hit
+          # connection-refused against the server mid-eval, and diagnosing that
+          # needs the server's own view of the run.
+          mkdir -p tests/eval/reports
+          if [ -f server.log ]; then cp server.log tests/eval/reports/server.log; fi
 
       - name: Upload test results
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

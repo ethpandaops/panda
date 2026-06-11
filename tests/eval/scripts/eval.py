@@ -247,6 +247,9 @@ def main() -> None:
     subject_specs = args.subject or DEFAULT_SUBJECTS
     grader = args.grader or f"openrouter:{args.judge_model}"
     os.environ.setdefault("PROMPTFOO_PYTHON", sys.executable)
+    # Langfuse trace name for this run's traces (workflows override it with a more
+    # specific label, e.g. release-qualification:<tag>); harden keeps "harden".
+    os.environ.setdefault("MCP_EVAL_RUN_LABEL", f"eval:{Path(args.cases).stem}")
     eval_dir = str(Path(__file__).resolve().parents[1])
 
     if args.sandbox:

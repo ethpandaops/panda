@@ -14,9 +14,38 @@ Langfuse keys it's a no-op and everything still works in-process.
 
 from __future__ import annotations
 
+import asyncio
+import os
+import urllib.request
 from typing import Protocol, runtime_checkable
 
 from harden.trace import RunTrace, ToolCall
+
+
+def _server_health_url() -> str:
+    """The panda server health endpoint the CLI route depends on. Scratch runs and
+    workflows export MCP_EVAL_SERVER_URL; the default matches the CI/local server."""
+    base = os.environ.get("MCP_EVAL_SERVER_URL", "http://localhost:2480").rstrip("/")
+    return f"{base}/health"
+
+
+def _health_ok() -> bool:
+    try:
+        with urllib.request.urlopen(_server_health_url(), timeout=3) as resp:
+            return 200 <= resp.status < 300
+    except Exception:  # noqa: BLE001 - any failure is "not healthy"
+        return False
+
+
+async def _wait_server_healthy(attempts: int = 15, delay: float = 2.0) -> bool:
+    """Poll the server health endpoint until it answers (default ~30s). Runs in a
+    thread so concurrent subjects don't block the event loop."""
+    for i in range(attempts):
+        if await asyncio.to_thread(_health_ok):
+            return True
+        if i < attempts - 1:
+            await asyncio.sleep(delay)
+    return False
 
 
 @runtime_checkable
@@ -87,12 +116,31 @@ class OpencodeSubject:
 
     async def run(self, prompts: list[str]) -> RunTrace:
         question = " ⟶ ".join(prompts)
+        # Gate on the panda server actually answering /health before the agent
+        # launches: a run must measure the agent, not the harness's server coming
+        # and going underneath it. If the server never turns up, the run records a
+        # crash with an unambiguous harness-side reason (instead of the agent
+        # burning tokens against connection-refused errors).
+        if not await _wait_server_healthy():
+            return RunTrace(
+                question=question,
+                subject=self.name,
+                output="",
+                crashed=True,
+                error=f"harness: panda server at {_server_health_url()} not healthy "
+                "before run start",
+            )
+        # The Langfuse trace name. Every harness entry point (harden loop, scripts.eval,
+        # CI smoke, release qualification) shares this measurement core, so the label
+        # comes from the environment — historically it was hardcoded to "harden", which
+        # made release-qualification traces show up in Langfuse as harden runs.
+        label = os.environ.get("MCP_EVAL_RUN_LABEL", "harden")
         try:
             if len(prompts) == 1:
-                results = [await self._agent.execute(prompts[0], test_id="harden")]
+                results = [await self._agent.execute(prompts[0], test_id=label)]
             else:
                 # Reuse one session across turns so later prompts see earlier state.
-                results = await self._agent.execute_multi_turn(prompts, test_id="harden")
+                results = await self._agent.execute_multi_turn(prompts, test_id=label)
         except Exception as exc:  # noqa: BLE001 - a crashed run is a 0-score datum, not a loop failure
             return RunTrace(
                 question=question,
