@@ -91,6 +91,13 @@ func (s *service) runtimeAuthMiddleware(next http.Handler) http.Handler {
 		}
 
 		ctx := context.WithValue(r.Context(), runtimeExecutionIDKey, executionID)
+
+		// Sandbox callbacks inherit the attribution of the execution that
+		// spawned them, so proxy-bound requests stay attributed end to end.
+		if s.execService != nil {
+			ctx = attribution.WithValue(ctx, s.execService.Attribution(executionID))
+		}
+
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

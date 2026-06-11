@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 
+	"github.com/ethpandaops/panda/pkg/attribution"
 	"github.com/ethpandaops/panda/pkg/config"
 	"github.com/ethpandaops/panda/pkg/module"
 	"github.com/ethpandaops/panda/pkg/sandbox"
@@ -35,6 +37,12 @@ type Service struct {
 	cfg           *config.Config
 	moduleReg     *module.Registry
 	runtimeTokens *tokenstore.Store
+
+	// attrMu guards executionAttribution, which carries the caller
+	// attribution of an in-flight execution so sandbox callbacks
+	// authenticated by its runtime token inherit it.
+	attrMu               sync.RWMutex
+	executionAttribution map[string]string
 }
 
 // New creates a new execution service.
@@ -46,11 +54,12 @@ func New(
 	runtimeTokens *tokenstore.Store,
 ) *Service {
 	return &Service{
-		log:           log.WithField("component", "exec-service"),
-		sandboxSvc:    sandboxSvc,
-		cfg:           cfg,
-		moduleReg:     moduleReg,
-		runtimeTokens: runtimeTokens,
+		log:                  log.WithField("component", "exec-service"),
+		sandboxSvc:           sandboxSvc,
+		cfg:                  cfg,
+		moduleReg:            moduleReg,
+		runtimeTokens:        runtimeTokens,
+		executionAttribution: make(map[string]string, 16),
 	}
 }
 
@@ -79,6 +88,11 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*sandbox.Exe
 	env[sandbox.EnvAPIToken] = runtimeToken
 	defer s.runtimeTokens.Revoke(executionID)
 
+	if v := attribution.FromContext(ctx); v != "" {
+		s.setAttribution(executionID, v)
+		defer s.clearAttribution(executionID)
+	}
+
 	if req.SessionID == "" && s.sandboxSvc.SessionsEnabled() {
 		canCreate, count, maxAllowed := s.sandboxSvc.CanCreateSession(ctx, req.OwnerID)
 		if !canCreate {
@@ -98,6 +112,15 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*sandbox.Exe
 		SessionID:   req.SessionID,
 		OwnerID:     req.OwnerID,
 	})
+}
+
+// Attribution returns the caller attribution of the in-flight execution, or
+// an empty string when the execution is unknown or carries none.
+func (s *Service) Attribution(executionID string) string {
+	s.attrMu.RLock()
+	defer s.attrMu.RUnlock()
+
+	return s.executionAttribution[executionID]
 }
 
 // SessionsEnabled reports whether the sandbox supports persistent sessions.
@@ -130,6 +153,22 @@ func (s *Service) CreateSession(ctx context.Context, ownerID string) (string, er
 // DestroySession destroys a persistent sandbox session.
 func (s *Service) DestroySession(ctx context.Context, sessionID, ownerID string) error {
 	return s.sandboxSvc.DestroySession(ctx, sessionID, ownerID)
+}
+
+// setAttribution records the caller attribution for an in-flight execution.
+func (s *Service) setAttribution(executionID, value string) {
+	s.attrMu.Lock()
+	defer s.attrMu.Unlock()
+
+	s.executionAttribution[executionID] = value
+}
+
+// clearAttribution drops the attribution of a finished execution.
+func (s *Service) clearAttribution(executionID string) {
+	s.attrMu.Lock()
+	defer s.attrMu.Unlock()
+
+	delete(s.executionAttribution, executionID)
 }
 
 // BuildSandboxEnv collects environment variables from all initialized modules
