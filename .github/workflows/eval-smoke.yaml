@@ -52,7 +52,10 @@ jobs:
       (github.actor != 'dependabot[bot]' &&
       contains(github.event.pull_request.labels.*.name, 'run-smoke'))
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Ceiling must fit the worst case the inner timeouts allow: sandbox image
+    # build (~6-8m) + one slow question at --subject-timeout 600s plus its
+    # in-worker retry (~21m total). 20m silently cancelled exactly that case.
+    timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
