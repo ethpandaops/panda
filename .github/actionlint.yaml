@@ -1,0 +1,6 @@
+# Custom runner labels for actionlint (the ethpandaops self-hosted GitHub runners).
+self-hosted-runner:
+  labels:
+    - self-hosted-ghr
+    - size-m-x64
+    - size-l-x64
