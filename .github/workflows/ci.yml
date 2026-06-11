@@ -141,7 +141,10 @@ jobs:
 
           sandbox:
             backend: docker
-            image: "ethpandaops-panda-sandbox:latest"
+            # The sandbox backend pulls this at startup. Use the published image
+            # (public, no auth) — the asserts below never execute sandbox code,
+            # the server just refuses to start without a pullable image.
+            image: "ethpandaops/panda:sandbox-latest"
 
           proxy:
             url: "http://127.0.0.1:18081"
@@ -166,12 +169,14 @@ jobs:
       - name: Start server (built from this commit)
         run: |
           ./panda-server serve --config config.ci.yaml > server.log 2>&1 &
-          for i in $(seq 1 60); do
+          # Startup includes the sandbox image pull (~1GB from Docker Hub), so give
+          # it the same 4m window the eval workflows use.
+          for i in $(seq 1 120); do
             curl -sf http://localhost:2480/health >/dev/null 2>&1 && { echo "server ready after $((i*2))s"; break; }
-            echo "waiting for server... ($i/60)"; sleep 2
+            echo "waiting for server... ($i/120)"; sleep 2
           done
           curl -sf http://localhost:2480/health >/dev/null 2>&1 || {
-            echo "ERROR: server not ready after 120s"; tail -60 server.log; exit 1; }
+            echo "ERROR: server not ready after 240s"; tail -60 server.log; exit 1; }
 
       - name: Assert CLI -> server -> proxy -> ClickHouse round-trip
         run: |
