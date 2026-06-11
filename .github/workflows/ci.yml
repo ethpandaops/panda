@@ -145,6 +145,7 @@ jobs:
             # (public, no auth) — the asserts below never execute sandbox code,
             # the server just refuses to start without a pullable image.
             image: "ethpandaops/panda:sandbox-latest"
+            network: "host"
 
           proxy:
             url: "http://127.0.0.1:18081"
