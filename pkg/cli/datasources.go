@@ -8,7 +8,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var datasourcesType string
+var (
+	datasourcesType    string
+	datasourcesDetails bool
+)
 
 var datasourcesCmd = &cobra.Command{
 	GroupID: groupDiscovery,
@@ -20,6 +23,7 @@ ClickHouse, Prometheus, Loki, Ethnode, and other discovered types.
 Examples:
   panda datasources                     # List all datasources
   panda datasources --type clickhouse   # List only ClickHouse datasources
+  panda datasources --details           # Include descriptions
   panda datasources --json              # Output as JSON`,
 	RunE: runDatasources,
 }
@@ -27,6 +31,7 @@ Examples:
 func init() {
 	rootCmd.AddCommand(datasourcesCmd)
 	datasourcesCmd.Flags().StringVar(&datasourcesType, "type", "", "Filter by type (clickhouse, prometheus, loki, ethnode)")
+	datasourcesCmd.Flags().BoolVar(&datasourcesDetails, "details", false, "Include datasource descriptions in text output")
 
 	_ = datasourcesCmd.RegisterFlagCompletionFunc("type", cobra.FixedCompletions(
 		[]string{"clickhouse", "prometheus", "loki", "ethnode"}, cobra.ShellCompDirectiveNoFileComp,
@@ -52,11 +57,6 @@ func runDatasources(cmd *cobra.Command, _ []string) error {
 	rows := make([][]string, 0, len(response.Datasources))
 
 	for _, info := range response.Datasources {
-		desc := info.Description
-		if desc == "" {
-			desc = info.Name
-		}
-
 		// Dataset names only, deduplicated: a dataset bound more than once
 		// (e.g. otel-logs in two databases) is one entry here. Placement
 		// detail lives in `panda datasets`.
@@ -73,20 +73,30 @@ func runDatasources(cmd *cobra.Command, _ []string) error {
 			datasets = append(datasets, b.Dataset)
 		}
 
-		rows = append(rows, []string{info.Type, info.Name, strings.Join(datasets, ", "), desc})
+		row := []string{info.Name, info.Type, strings.Join(datasets, ", ")}
+		if datasourcesDetails {
+			row = append(row, info.Description)
+		}
+
+		rows = append(rows, row)
 	}
 
 	sort.Slice(rows, func(i, j int) bool {
-		if rows[i][0] != rows[j][0] {
-			return rows[i][0] < rows[j][0]
+		if rows[i][1] != rows[j][1] {
+			return rows[i][1] < rows[j][1]
 		}
 
-		return rows[i][1] < rows[j][1]
+		return rows[i][0] < rows[j][0]
 	})
 
-	printTable([]string{"TYPE", "NAME", "DATASETS", "DESCRIPTION"}, rows)
+	headers := []string{"DATASOURCE", "TYPE", "DATASETS"}
+	if datasourcesDetails {
+		headers = append(headers, "DESCRIPTION")
+	}
 
-	fmt.Println("\nDataset placements and notes: panda datasets")
+	printTable(headers, rows)
+
+	fmt.Println("\nDataset placements and notes: panda datasets · descriptions: panda datasources --details")
 
 	return nil
 }

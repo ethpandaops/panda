@@ -90,9 +90,11 @@ type SearchExamplesResponse struct {
 	Type                string                 `json:"type"`
 	Query               string                 `json:"query"`
 	CategoryFilter      string                 `json:"category_filter,omitempty"`
+	DatasetFilter       string                 `json:"dataset_filter,omitempty"`
 	TotalMatches        int                    `json:"total_matches"`
 	Results             []*SearchExampleResult `json:"results"`
 	AvailableCategories []string               `json:"available_categories"`
+	Guidance            []string               `json:"guidance,omitempty"`
 }
 
 type SearchRunbookResult struct {

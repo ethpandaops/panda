@@ -62,7 +62,13 @@ func newEthNodeOperationService(ethnodeAvailable bool) *service {
 func newEthNodeOpRequest(t *testing.T) *http.Request {
 	t.Helper()
 
-	body, err := json.Marshal(operations.Request{})
+	return newEthNodeOpRequestWithArgs(t, nil)
+}
+
+func newEthNodeOpRequestWithArgs(t *testing.T, args map[string]any) *http.Request {
+	t.Helper()
+
+	body, err := json.Marshal(operations.Request{Args: args})
 	require.NoError(t, err)
 
 	req := httptest.NewRequest(

@@ -3,18 +3,21 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 )
 
 var (
-	promQueryTime  string
-	promRangeStart string
-	promRangeEnd   string
-	promRangeStep  string
-	promLabelStart string
-	promLabelEnd   string
+	promQueryTime     string
+	promRangeStart    string
+	promRangeEnd      string
+	promRangeStep     string
+	promLabelStart    string
+	promLabelEnd      string
+	promLabelContains string
+	promLabelLimit    int
 )
 
 var prometheusCmd = &cobra.Command{
@@ -23,12 +26,17 @@ var prometheusCmd = &cobra.Command{
 	Short:   "Query Prometheus metrics",
 	Long: `Query Prometheus for infrastructure metrics.
 
+Prometheus datasource names are deployment-specific. List them before querying.
+If you do not know the metric name, discover names through the __name__ label
+with --contains and --limit so the output stays small.
+
 Examples:
   panda prometheus list-datasources
-  panda prometheus query ethpandaops "up"
-  panda prometheus query-range ethpandaops "rate(http_requests_total[5m])" --start now-1h --end now --step 1m
-  panda prometheus labels ethpandaops
-  panda prometheus label-values ethpandaops job`,
+  panda prometheus label-values <datasource> __name__ --contains '<term>' --limit 50
+  panda prometheus labels <datasource>
+  panda prometheus label-values <datasource> job --contains '<term>' --limit 50
+  panda prometheus query <datasource> "up"
+  panda prometheus query-range <datasource> "rate(http_requests_total[5m])" --start now-1h --end now --step 1m`,
 }
 
 func init() {
@@ -51,6 +59,8 @@ func init() {
 	prometheusCmd.AddCommand(promLabelValuesCmd)
 	promLabelValuesCmd.Flags().StringVar(&promLabelStart, "start", "", "Start time (RFC3339, unix, or 'now-1h')")
 	promLabelValuesCmd.Flags().StringVar(&promLabelEnd, "end", "", "End time (RFC3339, unix, or 'now')")
+	promLabelValuesCmd.Flags().StringVar(&promLabelContains, "contains", "", "Case-insensitive substring filter applied before printing")
+	promLabelValuesCmd.Flags().IntVar(&promLabelLimit, "limit", 0, "Maximum values to print after filtering (0 = all)")
 
 	promQueryCmd.ValidArgsFunction = completeDatasourceNames("prometheus")
 	promQueryRangeCmd.ValidArgsFunction = completeDatasourceNames("prometheus")
@@ -74,7 +84,12 @@ var promListDatasourcesCmd = &cobra.Command{
 var promQueryCmd = &cobra.Command{
 	Use:   "query <datasource> <promql>",
 	Short: "Execute an instant PromQL query",
-	Args:  cobra.ExactArgs(2),
+	Long: `Execute an instant PromQL query.
+
+Datasource names come from 'panda prometheus list-datasources'. Metric names
+and labels are deployment-specific; discover metric names with:
+  panda prometheus label-values <datasource> __name__ --contains '<term>' --limit 50`,
+	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		response, err := runServerOperationRaw(cmd, "prometheus.query", map[string]any{
 			"datasource": args[0],
@@ -120,7 +135,10 @@ var promQueryRangeCmd = &cobra.Command{
 var promLabelsCmd = &cobra.Command{
 	Use:   "labels <datasource>",
 	Short: "List all label names",
-	Args:  cobra.ExactArgs(1),
+	Long: `List all label names for a Prometheus datasource.
+
+Datasource names come from 'panda prometheus list-datasources'.`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		response, err := runServerOperationRaw(cmd, "prometheus.get_labels", map[string]any{
 			"datasource": args[0],
@@ -142,7 +160,12 @@ var promLabelsCmd = &cobra.Command{
 var promLabelValuesCmd = &cobra.Command{
 	Use:   "label-values <datasource> <label>",
 	Short: "Get all values for a label",
-	Args:  cobra.ExactArgs(2),
+	Long: `Get all values for a Prometheus label.
+
+Use label '__name__' to discover metric names. Use --contains and --limit for
+broad labels, then query a metric after checking labels with
+'panda prometheus labels <datasource>'.`,
+	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		response, err := runServerOperationRaw(cmd, "prometheus.get_label_values", map[string]any{
 			"datasource": args[0],
@@ -158,8 +181,37 @@ var promLabelValuesCmd = &cobra.Command{
 			return printJSONBytes(response.Body)
 		}
 
-		return printAPIStringValues(response.Body)
+		return printFilteredAPIStringValues(response.Body, promLabelContains, promLabelLimit)
 	},
+}
+
+func printFilteredAPIStringValues(data []byte, contains string, limit int) error {
+	if strings.TrimSpace(contains) == "" && limit <= 0 {
+		return printAPIStringValues(data)
+	}
+
+	values, err := apiStringValues(data)
+	if err != nil {
+		return printJSONBytes(data)
+	}
+
+	needle := strings.ToLower(strings.TrimSpace(contains))
+	printed := 0
+
+	for _, value := range values {
+		if needle != "" && !strings.Contains(strings.ToLower(value), needle) {
+			continue
+		}
+
+		fmt.Println(value)
+		printed++
+
+		if limit > 0 && printed >= limit {
+			break
+		}
+	}
+
+	return nil
 }
 
 // printPromResult formats a Prometheus API response for human output.

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -46,11 +47,20 @@ var skipUpdateCheckCommands = map[string]bool{
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "panda",
-	Short: "Ethereum network analytics CLI",
+	Use:     "panda",
+	Short:   "Ethereum network analytics CLI",
+	Version: fmt.Sprintf("%s (commit: %s, built: %s)", version.Version, version.GitCommit, version.BuildTime),
 	Long: `Ethereum network analytics CLI.
 
-New? Start here: panda getting-started`,
+New? Start here: panda getting-started
+
+For data questions, use this workflow:
+  panda resources                             # list live metadata resources
+  panda datasets
+  panda datasets <name>
+  panda search examples "<topic>"
+  panda clickhouse query-raw <Target> "<SQL>"   # for one SQL answer
+  panda execute --file script.py                # for multi-step Python analysis`,
 	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 		level, err := logrus.ParseLevel(logLevel)
 		if err != nil {
@@ -92,6 +102,11 @@ func Execute() {
 		return
 	}
 
+	if hint := unknownCommandHint(err); hint != "" {
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, hint)
+	}
+
 	var exitErr *exitCodeError
 	if errors.As(err, &exitErr) {
 		os.Exit(exitErr.code)
@@ -109,7 +124,17 @@ func executeWithSignals() error {
 	return rootCmd.ExecuteContext(ctx)
 }
 
+func unknownCommandHint(err error) string {
+	if err == nil || !strings.Contains(err.Error(), "unknown command") {
+		return ""
+	}
+
+	return `Tip: panda has fixed workflow, discovery, and datasource commands; most topic words are search terms, not commands. Use 'panda resources' to list live metadata resources, 'panda datasets' for dataset guides, and 'panda search examples "<topic>"' for query patterns.`
+}
+
 func init() {
+	rootCmd.SetVersionTemplate("panda version {{.Version}}\n")
+
 	rootCmd.AddGroup(
 		&cobra.Group{ID: groupWorkflow, Title: "Workflow:"},
 		&cobra.Group{ID: groupDiscovery, Title: "Discovery:"},

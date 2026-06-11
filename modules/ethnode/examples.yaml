@@ -7,8 +7,12 @@ ethnode_sync_status:
       query: |
         from ethpandaops import ethnode
 
-        network = "dencun-devnet-12"
-        instance = "lighthouse-geth-1"
+        networks = ethnode.list_networks()
+        if not networks:
+            raise RuntimeError("no ethnode-reachable active networks")
+
+        network = networks[0]["name"]
+        instance = "<instance-name>"  # replace with an instance in that network
 
         syncing = ethnode.get_node_syncing(network, instance)
         print(f"Node {instance} sync status:")
@@ -21,8 +25,12 @@ ethnode_sync_status:
       query: |
         from ethpandaops import ethnode
 
-        network = "dencun-devnet-12"
-        instance = "lighthouse-geth-1"
+        networks = ethnode.list_networks()
+        if not networks:
+            raise RuntimeError("no ethnode-reachable active networks")
+
+        network = networks[0]["name"]
+        instance = "<instance-name>"  # replace with an instance in that network
 
         syncing = ethnode.eth_syncing(network, instance)
         block_number = ethnode.eth_block_number(network, instance)
@@ -34,8 +42,12 @@ ethnode_sync_status:
       query: |
         from ethpandaops import ethnode
 
-        network = "dencun-devnet-12"
-        instances = ["lighthouse-geth-1", "prysm-geth-1", "teku-geth-1"]
+        networks = ethnode.list_networks()
+        if not networks:
+            raise RuntimeError("no ethnode-reachable active networks")
+
+        network = networks[0]["name"]
+        instances = ["<instance-a>", "<instance-b>", "<instance-c>"]  # replace with instances in that network
 
         for instance in instances:
             try:
@@ -54,8 +66,12 @@ ethnode_node_info:
       query: |
         from ethpandaops import ethnode
 
-        network = "dencun-devnet-12"
-        instance = "lighthouse-geth-1"
+        networks = ethnode.list_networks()
+        if not networks:
+            raise RuntimeError("no ethnode-reachable active networks")
+
+        network = networks[0]["name"]
+        instance = "<instance-name>"  # replace with an instance in that network
 
         # Beacon node version
         version = ethnode.get_node_version(network, instance)
@@ -70,8 +86,12 @@ ethnode_node_info:
       query: |
         from ethpandaops import ethnode
 
-        network = "dencun-devnet-12"
-        instance = "lighthouse-geth-1"
+        networks = ethnode.list_networks()
+        if not networks:
+            raise RuntimeError("no ethnode-reachable active networks")
+
+        network = networks[0]["name"]
+        instance = "<instance-name>"  # replace with an instance in that network
 
         # CL peers
         peer_count = ethnode.get_peer_count(network, instance)
@@ -90,8 +110,12 @@ ethnode_chain_status:
       query: |
         from ethpandaops import ethnode
 
-        network = "dencun-devnet-12"
-        instance = "lighthouse-geth-1"
+        networks = ethnode.list_networks()
+        if not networks:
+            raise RuntimeError("no ethnode-reachable active networks")
+
+        network = networks[0]["name"]
+        instance = "<instance-name>"  # replace with an instance in that network
 
         checkpoints = ethnode.get_finality_checkpoints(network, instance)
         data = checkpoints['data']
@@ -104,8 +128,12 @@ ethnode_chain_status:
       query: |
         from ethpandaops import ethnode
 
-        network = "dencun-devnet-12"
-        instance = "lighthouse-geth-1"
+        networks = ethnode.list_networks()
+        if not networks:
+            raise RuntimeError("no ethnode-reachable active networks")
+
+        network = networks[0]["name"]
+        instance = "<instance-name>"  # replace with an instance in that network
 
         spec = ethnode.get_config_spec(network, instance)
         print(f"Config name: {spec['data'].get('CONFIG_NAME', 'unknown')}")
@@ -120,8 +148,12 @@ ethnode_chain_status:
       query: |
         from ethpandaops import ethnode
 
-        network = "dencun-devnet-12"
-        instance = "lighthouse-geth-1"
+        networks = ethnode.list_networks()
+        if not networks:
+            raise RuntimeError("no ethnode-reachable active networks")
+
+        network = networks[0]["name"]
+        instance = "<instance-name>"  # replace with an instance in that network
 
         # Latest beacon header
         header = ethnode.get_beacon_headers(network, instance)
@@ -141,8 +173,12 @@ ethnode_advanced:
       query: |
         from ethpandaops import ethnode
 
-        network = "dencun-devnet-12"
-        instance = "lighthouse-geth-1"
+        networks = ethnode.list_networks()
+        if not networks:
+            raise RuntimeError("no ethnode-reachable active networks")
+
+        network = networks[0]["name"]
+        instance = "<instance-name>"  # replace with an instance in that network
 
         # Get deposit contract info
         deposit = ethnode.beacon_get(network, instance, "/eth/v1/config/deposit_contract")
@@ -157,8 +193,12 @@ ethnode_advanced:
       query: |
         from ethpandaops import ethnode
 
-        network = "dencun-devnet-12"
-        instance = "lighthouse-geth-1"
+        networks = ethnode.list_networks()
+        if not networks:
+            raise RuntimeError("no ethnode-reachable active networks")
+
+        network = networks[0]["name"]
+        instance = "<instance-name>"  # replace with an instance in that network
 
         # Get a specific block
         block = ethnode.execution_rpc(network, instance, "eth_getBlockByNumber", ["latest", False])
