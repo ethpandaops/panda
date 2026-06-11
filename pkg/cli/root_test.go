@@ -11,10 +11,11 @@ func TestUnknownCommandHint(t *testing.T) {
 	hint := unknownCommandHint(errors.New(`unknown command "topic" for "panda"`))
 
 	assert.Contains(t, hint, "most topic words are search terms")
-	assert.Contains(t, hint, "panda resources")
-	assert.NotContains(t, hint, "networks://active")
-	assert.Contains(t, hint, "panda datasets")
-	assert.Contains(t, hint, "panda search examples")
+	// The generic unknown-command path must not steer product workflow: one
+	// pointer to the next hop only.
+	assert.Contains(t, hint, "panda getting-started")
+	assert.NotContains(t, hint, "panda search examples")
+	assert.NotContains(t, hint, "panda datasets")
 	assert.Empty(t, unknownCommandHint(errors.New("connection refused")))
 }
 
