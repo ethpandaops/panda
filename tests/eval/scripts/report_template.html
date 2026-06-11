@@ -1,0 +1,1183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>panda · release qualification</title>
+<style>
+  /* ── tokens ──────────────────────────────────────────────────────────── */
+  :root {
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --bg: #f3f1ea;
+    --panel: #fbfaf6;
+    --panel2: #f6f4ed;
+    --line: #d9d5c8;
+    --line2: #e6e3d8;
+    --ink: #22262c;
+    --mut: #62686f;
+    --faint: #989d8f;
+    --ok: #15803d;
+    --ok-dim: rgba(21, 128, 61, .12);
+    --bad: #be123c;
+    --bad-dim: rgba(190, 18, 60, .10);
+    --amber: #9a6700;
+    --amber-dim: rgba(154, 103, 0, .14);
+    --blue: #1d63c4;
+    --sel: #1d63c4;
+    --dot: rgba(34, 38, 44, .07);
+    --shadow: 0 18px 50px rgba(30, 28, 18, .22);
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0a0d12;
+      --panel: #10151d;
+      --panel2: #141a24;
+      --line: #232c3a;
+      --line2: #1a212c;
+      --ink: #d8dfe9;
+      --mut: #8b95a4;
+      --faint: #596474;
+      --ok: #3fd684;
+      --ok-dim: rgba(63, 214, 132, .13);
+      --bad: #ff6478;
+      --bad-dim: rgba(255, 100, 120, .12);
+      --amber: #e6b04e;
+      --amber-dim: rgba(230, 176, 78, .14);
+      --blue: #5fb2ff;
+      --sel: #5fb2ff;
+      --dot: rgba(216, 223, 233, .05);
+      --shadow: 0 18px 60px rgba(0, 0, 0, .65);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+  body {
+    margin: 0;
+    background: var(--bg);
+    background-image: radial-gradient(var(--dot) 1px, transparent 1px);
+    background-size: 26px 26px;
+    color: var(--ink);
+    font: 14px/1.5 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--blue); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, .mono { font-family: var(--mono); }
+  button { font: inherit; color: inherit; }
+
+  main { max-width: 1180px; margin: 0 auto; padding: 0 22px 40px; }
+  section { margin-top: 34px; animation: rise .45s ease both; }
+  section:nth-of-type(2) { animation-delay: .04s; }
+  section:nth-of-type(3) { animation-delay: .08s; }
+  section:nth-of-type(4) { animation-delay: .12s; }
+  section:nth-of-type(5) { animation-delay: .16s; }
+  section:nth-of-type(6) { animation-delay: .20s; }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+  h2 {
+    display: flex;
+    align-items: center;
+    gap: .9em;
+    margin: 0 0 12px;
+    font: 600 11px/1 var(--mono);
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--mut);
+  }
+  h2 .no { color: var(--ok); }
+  h2 .hint { letter-spacing: .02em; text-transform: none; font-weight: 400; color: var(--faint); }
+  h2::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+  }
+  .note { font-size: 12px; color: var(--faint); margin: 8px 2px 0; }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  /* ── topbar ──────────────────────────────────────────────────────────── */
+  #topbar {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    border-bottom: 1px solid var(--line);
+    background: color-mix(in srgb, var(--bg) 86%, transparent);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+  #topbar .bar {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 10px 22px;
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  #topbar .brand {
+    font: 700 12px/1 var(--mono);
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  #topbar .brand .dim { color: var(--mut); font-weight: 500; }
+  #tag { font: 700 17px/1 var(--mono); letter-spacing: .01em; }
+  .badge {
+    font: 600 9.5px/1 var(--mono);
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    padding: 3px 7px;
+    border-radius: 2px;
+    border: 1px solid;
+  }
+  .badge.pre { color: var(--amber); border-color: var(--amber); background: var(--amber-dim); }
+  #nav { margin-left: auto; display: flex; gap: 14px; font: 500 11px/1 var(--mono); letter-spacing: .06em; }
+  #nav a { color: var(--mut); }
+  #nav a:hover { color: var(--ink); text-decoration: none; }
+  #meta {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 7px 22px 9px;
+    font: 11.5px/1.5 var(--mono);
+    color: var(--mut);
+    border-top: 1px dashed var(--line2);
+    overflow-wrap: anywhere;
+  }
+  #meta b { color: var(--ink); font-weight: 600; }
+
+  /* ── headline cards ──────────────────────────────────────────────────── */
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+    gap: 10px;
+    margin-top: 22px;
+  }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 3px; padding: 12px 14px 10px; }
+  .card .k {
+    font: 600 9.5px/1 var(--mono);
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--mut);
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .card .v {
+    margin-top: 8px;
+    font: 600 26px/1.05 var(--mono);
+    font-variant-numeric: tabular-nums;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .card .s { margin-top: 5px; font-size: 11px; color: var(--faint); }
+  .delta {
+    font: 600 11px/1 var(--mono);
+    padding: 2px 5px;
+    border-radius: 2px;
+    white-space: nowrap;
+  }
+  .delta.good { color: var(--ok); background: var(--ok-dim); }
+  .delta.badd { color: var(--bad); background: var(--bad-dim); }
+  .delta.flat { color: var(--mut); background: var(--line2); }
+
+  /* ── charts ──────────────────────────────────────────────────────────── */
+  .chart-wrap { padding: 14px 10px 8px; position: relative; }
+  svg { display: block; }
+  svg text { font-family: var(--mono); fill: var(--mut); }
+  .axis line, .grid line { stroke: var(--line2); }
+  .axis-strong line { stroke: var(--line); }
+  .line-pass { stroke: var(--ok); fill: none; stroke-width: 1.8; }
+  .line-score { stroke: var(--blue); fill: none; stroke-width: 1.8; }
+  .line-tok { stroke: var(--amber); fill: none; stroke-width: 1.8; }
+  .pt-pass { fill: var(--ok); }
+  .pt-score { fill: var(--blue); }
+  .pt-tok { fill: var(--amber); }
+  .pt-hollow { fill: var(--panel); stroke: var(--amber); stroke-width: 1.6; }
+  .pt-ring { fill: none; stroke-width: 1.4; }
+  .guide { stroke: var(--mut); stroke-dasharray: 3 3; opacity: 0; }
+  .hover-zone { fill: transparent; cursor: crosshair; }
+  .legend { display: flex; gap: 18px; padding: 2px 12px 8px; font: 11px/1 var(--mono); color: var(--mut); flex-wrap: wrap; }
+  .legend .sw { display: inline-block; width: 14px; height: 3px; vertical-align: middle; margin-right: 6px; border-radius: 1px; }
+  .legend .sw.dotc { width: 9px; height: 9px; border-radius: 50%; }
+
+  .dot-run { cursor: pointer; stroke: transparent; stroke-width: 1.4; }
+  .dot-run.ok { fill: var(--ok); fill-opacity: .82; }
+  .dot-run.bad { fill: var(--bad); fill-opacity: .88; }
+  .dot-run:hover { stroke: var(--ink); }
+  .dot-run.selected { stroke: var(--sel); stroke-width: 2.4; }
+  .pct-rule { stroke: var(--mut); stroke-dasharray: 2 4; opacity: .7; }
+
+  /* categories */
+  .cat-row { cursor: pointer; }
+  .cat-track { fill: var(--line2); }
+  .cat-fill.hi { fill: var(--ok); }
+  .cat-fill.mid { fill: var(--amber); }
+  .cat-fill.lo { fill: var(--bad); }
+  .cat-row text.lbl { fill: var(--ink); }
+  .cat-row:hover text.lbl { fill: var(--blue); }
+  .cat-row.active .cat-track { stroke: var(--sel); stroke-width: 1.2; }
+  .cat-row.active text.lbl { fill: var(--sel); }
+
+  /* ── tables ──────────────────────────────────────────────────────────── */
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line2); vertical-align: top; }
+  th {
+    font: 600 10px/1.4 var(--mono);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--mut);
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  td.r, th.r { text-align: right; }
+  td.r { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  tr.current td { background: var(--ok-dim); }
+  .tbl-scroll { overflow-x: auto; }
+
+  th.sortable { cursor: pointer; user-select: none; }
+  th.sortable:hover { color: var(--ink); }
+  th.sortable::after { content: "·"; margin-left: 5px; color: var(--faint); }
+  th.sortable.asc::after { content: "▲"; color: var(--ink); font-size: 8px; }
+  th.sortable.desc::after { content: "▼"; color: var(--ink); font-size: 8px; }
+
+  .qid { font-family: var(--mono); font-size: 12px; color: var(--ink); }
+  button.qid { background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+  button.qid:hover { color: var(--blue); }
+
+  /* matrix run cells */
+  .mx-cells { display: flex; gap: 4px; flex-wrap: wrap; }
+  .mx-cell {
+    width: 26px; height: 21px;
+    border: 1px solid transparent;
+    border-radius: 2px;
+    font: 700 11px/19px var(--mono);
+    text-align: center;
+    cursor: pointer;
+    padding: 0;
+  }
+  .mx-cell.ok { background: var(--ok-dim); color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, transparent); }
+  .mx-cell.bad { background: var(--bad-dim); color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, transparent); }
+  .mx-cell:hover { border-color: var(--ink); }
+  .mx-cell.selected { border-color: var(--sel); box-shadow: 0 0 0 1px var(--sel); }
+  .verdict { font-family: var(--mono); font-size: 11px; white-space: nowrap; }
+  .verdict.up { color: var(--ok); }
+  .verdict.down { color: var(--bad); font-weight: 700; }
+  .verdict.flat, .verdict.na { color: var(--faint); }
+  .verdict.new { color: var(--blue); }
+
+  /* ── explorer ────────────────────────────────────────────────────────── */
+  #filters { padding: 12px 12px 10px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border-bottom: 1px solid var(--line2); }
+  #filters input[type=search], #filters select {
+    background: var(--panel2);
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    color: var(--ink);
+    font: 12px var(--mono);
+    padding: 6px 9px;
+  }
+  #filters input[type=search] { flex: 1 1 220px; min-width: 170px; }
+  #filters input[type=search]:focus, #filters select:focus { outline: 1px solid var(--sel); outline-offset: 0; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 2px; overflow: hidden; }
+  .seg button {
+    background: var(--panel2);
+    border: 0;
+    border-right: 1px solid var(--line);
+    padding: 6px 12px;
+    font: 600 10.5px/1 var(--mono);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--mut);
+    cursor: pointer;
+  }
+  .seg button:last-child { border-right: 0; }
+  .seg button.on { background: var(--ink); color: var(--bg); }
+  #chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--line2); }
+  .chip {
+    background: var(--panel2);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 3px 10px;
+    font: 11px var(--mono);
+    color: var(--mut);
+    cursor: pointer;
+  }
+  .chip:hover { color: var(--ink); border-color: var(--mut); }
+  .chip.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .chip .n { opacity: .6; margin-left: 4px; }
+  #reset-filters {
+    background: none;
+    border: 1px dashed var(--line);
+    border-radius: 2px;
+    padding: 6px 10px;
+    font: 600 10.5px/1 var(--mono);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--mut);
+    cursor: pointer;
+  }
+  #reset-filters:hover { color: var(--bad); border-color: var(--bad); }
+  #agg {
+    padding: 9px 12px;
+    font: 12px/1.4 var(--mono);
+    color: var(--mut);
+    border-bottom: 1px solid var(--line2);
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+  }
+  #agg b { color: var(--ink); font-weight: 600; }
+  #run-table tbody tr { cursor: pointer; }
+  #run-table tbody tr:hover td { background: color-mix(in srgb, var(--sel) 7%, transparent); }
+  #run-table tbody tr.selected td { background: color-mix(in srgb, var(--sel) 14%, transparent); }
+  #run-table tbody tr.flash td { animation: flash 1.6s ease; }
+  @keyframes flash { 0%, 35% { background: color-mix(in srgb, var(--sel) 30%, transparent); } 100% { background: transparent; } }
+  .pill {
+    display: inline-block;
+    font: 700 10px/1 var(--mono);
+    letter-spacing: .1em;
+    padding: 3px 7px;
+    border-radius: 2px;
+  }
+  .pill.ok { color: var(--ok); background: var(--ok-dim); }
+  .pill.bad { color: var(--bad); background: var(--bad-dim); }
+  .pill.crash { color: var(--bg); background: var(--bad); }
+  td.reason-cell { max-width: 340px; color: var(--mut); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tagset { display: flex; gap: 4px; flex-wrap: wrap; }
+  .tagset span { font: 10px var(--mono); color: var(--mut); background: var(--panel2); border: 1px solid var(--line2); border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
+  td.subj { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 11.5px; color: var(--mut); }
+
+  /* ── drawer ──────────────────────────────────────────────────────────── */
+  #drawer {
+    position: fixed;
+    top: 0; right: 0;
+    height: 100dvh;
+    width: min(460px, 94vw);
+    background: var(--panel);
+    border-left: 1px solid var(--line);
+    box-shadow: var(--shadow);
+    z-index: 60;
+    transform: translateX(103%);
+    transition: transform .22s ease;
+    display: flex;
+    flex-direction: column;
+  }
+  #drawer.open { transform: none; }
+  #drawer header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  #drawer header .qid { font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
+  #drawer-close {
+    margin-left: auto;
+    background: none;
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    width: 26px; height: 26px;
+    line-height: 1;
+    cursor: pointer;
+    color: var(--mut);
+    flex: none;
+  }
+  #drawer-close:hover { color: var(--bad); border-color: var(--bad); }
+  #drawer-body { overflow-y: auto; padding: 14px 16px 24px; }
+  .kv { display: grid; grid-template-columns: 92px 1fr; gap: 5px 12px; font-size: 12.5px; margin: 12px 0; }
+  .kv dt { font: 600 10px/1.7 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--mut); margin: 0; }
+  .kv dd { margin: 0; font-family: var(--mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .reason {
+    background: var(--panel2);
+    border: 1px solid var(--line2);
+    border-left: 3px solid var(--line);
+    border-radius: 2px;
+    padding: 10px 12px;
+    font: 12px/1.6 var(--mono);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    margin: 6px 0 14px;
+  }
+  .reason.bad { border-left-color: var(--bad); }
+  .reason.ok { border-left-color: var(--ok); }
+  .drawer-label { font: 600 10px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--mut); margin: 16px 0 6px; }
+  .sibs { display: flex; gap: 5px; flex-wrap: wrap; }
+  .trace-btn {
+    display: inline-block;
+    font: 600 11px/1 var(--mono);
+    letter-spacing: .06em;
+    border: 1px solid var(--blue);
+    color: var(--blue);
+    border-radius: 2px;
+    padding: 7px 12px;
+    margin-top: 4px;
+  }
+  .trace-btn:hover { background: var(--blue); color: var(--bg); text-decoration: none; }
+
+  /* ── tooltip ─────────────────────────────────────────────────────────── */
+  #tip {
+    position: absolute;
+    z-index: 80;
+    pointer-events: none;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    box-shadow: var(--shadow);
+    padding: 8px 11px;
+    font: 11.5px/1.6 var(--mono);
+    max-width: 340px;
+    color: var(--mut);
+  }
+  #tip b { color: var(--ink); }
+  #tip .ok { color: var(--ok); }
+  #tip .bad { color: var(--bad); }
+
+  footer { max-width: 1180px; margin: 0 auto; padding: 26px 22px 40px; font: 11.5px/1.7 var(--mono); color: var(--faint); }
+  .err { max-width: 700px; margin: 80px auto; font: 13px var(--mono); color: var(--bad); padding: 0 22px; }
+</style>
+</head>
+<body>
+<script>/*__PANDA_EVAL_DATA__*/</script>
+
+<header id="topbar">
+  <div class="bar">
+    <span class="brand">🐼 panda <span class="dim">/ release qualification</span></span>
+    <span id="tag" class="num"></span>
+    <span id="prerelease-badge" class="badge pre" hidden>pre-release</span>
+    <nav id="nav">
+      <a href="#trend">releases</a>
+      <a href="#tokens">tokens</a>
+      <a href="#categories">categories</a>
+      <a href="#matrix">questions</a>
+      <a href="#explorer">runs</a>
+    </nav>
+  </div>
+  <div id="meta"></div>
+</header>
+
+<main>
+  <section id="headline" style="margin-top:0">
+    <div class="cards" id="cards"></div>
+  </section>
+
+  <section id="trend">
+    <h2><span class="no">01</span> releases <span class="hint">hover for numbers</span></h2>
+    <div class="panel">
+      <div class="chart-wrap"><div id="trend-chart"></div></div>
+      <div class="legend" id="trend-legend"></div>
+    </div>
+    <div class="panel tbl-scroll" style="margin-top:10px"><table id="rel-table"></table></div>
+    <p class="note" id="trend-note"></p>
+  </section>
+
+  <section id="tokens">
+    <h2><span class="no">02</span> token distribution <span class="hint">every run · click a point to inspect it</span></h2>
+    <div class="panel">
+      <div class="chart-wrap"><div id="swarm-chart"></div></div>
+      <div class="legend" id="swarm-legend"></div>
+    </div>
+  </section>
+
+  <section id="categories">
+    <h2><span class="no">03</span> categories <span class="hint">click a bar to filter the run explorer</span></h2>
+    <div class="panel"><div class="chart-wrap"><div id="cat-chart"></div></div></div>
+  </section>
+
+  <section id="matrix">
+    <h2><span class="no">04</span> questions × runs <span class="hint">click any cell for the full grader verdict</span></h2>
+    <div class="panel tbl-scroll"><table id="mx-table"></table></div>
+  </section>
+
+  <section id="explorer">
+    <h2><span class="no">05</span> run explorer <span class="hint">filtering is analysis — the aggregate follows the filter</span></h2>
+    <div class="panel">
+      <div id="filters">
+        <input id="f-search" type="search" placeholder="search grader reasons, question ids, subjects…" autocomplete="off">
+        <select id="f-question"></select>
+        <span class="seg" id="f-status">
+          <button data-v="all" class="on">all</button>
+          <button data-v="pass">pass</button>
+          <button data-v="fail">fail</button>
+        </span>
+        <button id="reset-filters" hidden>× reset</button>
+      </div>
+      <div id="chips"></div>
+      <div id="agg"></div>
+      <div class="tbl-scroll"><table id="run-table"></table></div>
+    </div>
+  </section>
+</main>
+
+<aside id="drawer" aria-label="run detail">
+  <header>
+    <span class="qid" id="drawer-title"></span>
+    <button id="drawer-close" title="close (esc)">×</button>
+  </header>
+  <div id="drawer-body"></div>
+</aside>
+
+<div id="tip" hidden></div>
+
+<footer id="foot"></footer>
+
+<script>
+"use strict";
+(() => {
+  const RAW = window.__PANDA_EVAL_DATA__;
+  if (!RAW || !RAW.record) {
+    document.body.innerHTML = '<div class="err">no payload injected — this template must be built by scripts/release_report.py</div>';
+    return;
+  }
+
+  /* ── data ─────────────────────────────────────────────────────────────── */
+  const record = RAW.record;
+  const runs = RAW.runs.map((r, i) => ({
+    ...r,
+    _i: i,
+    tags: (r.tags && r.tags.length) ? r.tags : ["untagged"],
+  }));
+  const history = [...(RAW.history || [])].sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
+  const prev = history.length ? history[history.length - 1] : null;
+  const releases = [...history, record];
+
+  const byQ = new Map();
+  for (const r of runs) {
+    if (!byQ.has(r.id)) byQ.set(r.id, []);
+    byQ.get(r.id).push(r);
+  }
+  const passFrac = (rs) => rs.reduce((n, r) => n + (r.correct ? 1 : 0), 0) / rs.length;
+  const questionIds = [...byQ.keys()].sort((a, b) =>
+    passFrac(byQ.get(a)) - passFrac(byQ.get(b)) || (a < b ? -1 : 1));
+
+  const cats = (() => {
+    const m = new Map();
+    for (const r of runs) for (const t of r.tags) {
+      if (!m.has(t)) m.set(t, { tag: t, qids: new Set(), runs: 0, correct: 0, toks: [] });
+      const c = m.get(t);
+      c.runs++; c.qids.add(r.id);
+      if (r.correct) { c.correct++; if (r.tokens > 0) c.toks.push(r.tokens); }
+    }
+    return [...m.values()]
+      .map(c => ({ ...c, rate: c.correct / c.runs, medTok: median(c.toks) }))
+      .sort((a, b) => a.rate - b.rate || (a.tag < b.tag ? -1 : 1));
+  })();
+
+  /* ── helpers ──────────────────────────────────────────────────────────── */
+  function median(xs) {
+    if (!xs.length) return 0;
+    const o = [...xs].sort((a, b) => a - b), m = o.length >> 1;
+    return o.length % 2 ? o[m] : (o[m - 1] + o[m]) / 2;
+  }
+  function pctl(xs, q) {
+    if (!xs.length) return 0;
+    const o = [...xs].sort((a, b) => a - b);
+    if (o.length === 1) return o[0];
+    const pos = (o.length - 1) * q, lo = Math.floor(pos), hi = Math.min(lo + 1, o.length - 1);
+    return o[lo] + (o[hi] - o[lo]) * (pos - lo);
+  }
+  const nf = new Intl.NumberFormat("en-US");
+  const fInt = n => nf.format(Math.round(n));
+  const fTok = n => n >= 9999.5 ? (n / 1000).toFixed(1).replace(/\.0$/, "") + "k" : fInt(n);
+  const fPct = x => (x * 100).toFixed(x * 100 % 1 ? 1 : 0) + "%";
+  const fDate = s => (s || "").slice(0, 10);
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const $ = (sel, el) => (el || document).querySelector(sel);
+
+  function el(tag, attrs, html) {
+    const e = document.createElement(tag);
+    if (attrs) for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    if (html != null) e.innerHTML = html;
+    return e;
+  }
+  const SVGNS = "http://www.w3.org/2000/svg";
+  function sv(tag, attrs) {
+    const e = document.createElementNS(SVGNS, tag);
+    if (attrs) for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    return e;
+  }
+  function svText(x, y, str, attrs) {
+    const t = sv("text", { x, y, "font-size": 10, ...(attrs || {}) });
+    t.textContent = str;
+    return t;
+  }
+
+  /* shared tooltip */
+  const tip = $("#tip");
+  function showTip(html, cx, cy) {
+    tip.innerHTML = html;
+    tip.hidden = false;
+    const r = tip.getBoundingClientRect();
+    let x = cx + window.scrollX + 14, y = cy + window.scrollY + 14;
+    if (cx + 14 + r.width > window.innerWidth - 8) x = cx + window.scrollX - r.width - 12;
+    if (cy + 14 + r.height > window.innerHeight - 8) y = cy + window.scrollY - r.height - 12;
+    tip.style.left = x + "px";
+    tip.style.top = y + "px";
+  }
+  const hideTip = () => { tip.hidden = true; };
+
+  const tokenLabel = (e) => {
+    const p = e.token_percentiles;
+    return (p && p.p50) ? { v: p.p50, isP50: true } : { v: e.mean_tokens_correct || 0, isP50: false };
+  };
+  const runStatus = r => r.crashed ? "crash" : (r.correct ? "pass" : "fail");
+  const shortSubject = s => String(s || "").replace(/^[a-z0-9_-]+:/i, "");
+
+  /* ── topbar ───────────────────────────────────────────────────────────── */
+  document.title = `panda eval — ${record.tag}`;
+  $("#tag").textContent = record.tag;
+  $("#prerelease-badge").hidden = !record.prerelease;
+  $("#meta").innerHTML =
+    `commit <b>${esc((record.commit || "").slice(0, 9) || "—")}</b>` +
+    ` · ${esc((record.created_at || "").replace("T", " ").slice(0, 16))} UTC` +
+    ` · cases <b>${esc(record.cases || "—")}</b>` +
+    ` · subject <b>${esc((record.subjects || []).join(", "))}</b>` +
+    ` · ${byQ.size} questions · ${runs.length} runs` +
+    (prev ? ` · vs <b>${esc(prev.tag)}</b>` : " · first qualified release");
+
+  /* ── headline cards ───────────────────────────────────────────────────── */
+  function deltaChip(cur, prv, { fmt, goodWhen = "up", neutral = false } = {}) {
+    if (prv == null || !isFinite(prv)) return "";
+    const d = cur - prv;
+    if (Math.abs(d) < 1e-9) return `<span class="delta flat">=</span>`;
+    const arrow = d > 0 ? "▲" : "▼";
+    const cls = neutral ? "flat" : ((d > 0) === (goodWhen === "up") ? "good" : "badd");
+    return `<span class="delta ${cls}" title="vs ${esc(prev ? prev.tag : "")}">${arrow} ${fmt(Math.abs(d))}</span>`;
+  }
+  function card(k, v, sub, chip) {
+    return `<div class="card"><div class="k"><span>${k}</span></div>` +
+      `<div class="v">${v}${chip || ""}</div><div class="s">${sub}</div></div>`;
+  }
+  (() => {
+    const nOk = runs.filter(r => r.correct).length;
+    const tp = record.token_percentiles || {};
+    const ptp = prev && prev.token_percentiles;
+    const fmtPP = d => (d * 100).toFixed(1) + "pp";
+    const fmtAbs = d => d.toFixed(3);
+    const fmtRel = base => d => Math.round(d / base * 100) + "%";
+    const html = [
+      card("pass rate", fPct(record.pass_rate), `${nOk}/${runs.length} runs correct`,
+        deltaChip(record.pass_rate, prev && prev.pass_rate, { fmt: fmtPP })),
+      card("mean score", record.mean_score.toFixed(3), "token-efficiency, correctness-gated",
+        deltaChip(record.mean_score, prev && prev.mean_score, { fmt: fmtAbs })),
+      card("questions", String(byQ.size), esc(record.cases || ""),
+        deltaChip(byQ.size, prev && Object.keys(prev.questions || {}).length, { fmt: d => String(d), neutral: true })),
+      card("runs", String(runs.length), "canonical + paraphrase variations, single pass",
+        deltaChip(runs.length, prev && prev.runs, { fmt: d => String(d), neutral: true })),
+      card("tokens p50", fTok(tp.p50 || 0), "per correct run",
+        ptp && ptp.p50 ? deltaChip(tp.p50, ptp.p50, { fmt: fmtRel(ptp.p50), goodWhen: "down" }) : ""),
+      card("tokens p90", fTok(tp.p90 || 0), "per correct run",
+        ptp && ptp.p90 ? deltaChip(tp.p90, ptp.p90, { fmt: fmtRel(ptp.p90), goodWhen: "down" }) : ""),
+    ].join("");
+    $("#cards").innerHTML = html;
+  })();
+
+  /* ── trend chart ──────────────────────────────────────────────────────── */
+  function renderTrend() {
+    const host = $("#trend-chart");
+    host.innerHTML = "";
+    const W = Math.max(340, host.parentElement.getBoundingClientRect().width - 20);
+    const ml = 46, mr = 18;
+    const p1t = 14, p1b = 178;          /* pane 1: rates */
+    const p2t = 206, p2b = 286;         /* pane 2: tokens */
+    const lblH = 58;
+    const H = p2b + lblH;
+    const svg = sv("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}` });
+    const n = releases.length;
+    const x = i => n === 1 ? (ml + (W - ml - mr) / 2) : ml + (W - ml - mr) * i / (n - 1);
+    const y1 = v => p1b - (p1b - p1t) * v;
+    const toks = releases.map(tokenLabel);
+    const tokMax = Math.max(1, ...toks.map(t => t.v)) * 1.15;
+    const y2 = v => p2b - (p2b - p2t) * (v / tokMax);
+
+    /* gridlines pane 1 */
+    for (const v of [0, .25, .5, .75, 1]) {
+      const g = sv("g", { class: "grid" });
+      g.appendChild(sv("line", { x1: ml, x2: W - mr, y1: y1(v), y2: y1(v) }));
+      svg.appendChild(g);
+      svg.appendChild(svText(ml - 7, y1(v) + 3, Math.round(v * 100) + "%", { "text-anchor": "end", "font-size": 9 }));
+    }
+    /* gridlines pane 2 */
+    for (const v of [0, tokMax / 1.15]) {
+      const g = sv("g", { class: "grid" });
+      g.appendChild(sv("line", { x1: ml, x2: W - mr, y1: y2(v), y2: y2(v) }));
+      svg.appendChild(g);
+      svg.appendChild(svText(ml - 7, y2(v) + 3, fTok(v), { "text-anchor": "end", "font-size": 9 }));
+    }
+    svg.appendChild(svText(ml, p2t - 7, "tokens p50 (correct runs)", { "font-size": 9 }));
+
+    /* series */
+    const path = (vals, yfn, cls) => {
+      if (n === 1) return;
+      const d = vals.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${yfn(v).toFixed(1)}`).join("");
+      svg.appendChild(sv("path", { d, class: cls }));
+    };
+    path(releases.map(e => e.pass_rate), y1, "line-pass");
+    path(releases.map(e => e.mean_score), y1, "line-score");
+    path(toks.map(t => t.v), y2, "line-tok");
+
+    releases.forEach((e, i) => {
+      svg.appendChild(sv("circle", { cx: x(i), cy: y1(e.pass_rate), r: 3.2, class: "pt-pass" }));
+      svg.appendChild(sv("circle", { cx: x(i), cy: y1(e.mean_score), r: 3.2, class: "pt-score" }));
+      svg.appendChild(sv("circle", {
+        cx: x(i), cy: y2(toks[i].v), r: 3.2,
+        class: toks[i].isP50 ? "pt-tok" : "pt-hollow",
+      }));
+      if (i === n - 1) { /* ring the current release */
+        for (const cy of [y1(e.pass_rate), y1(e.mean_score), y2(toks[i].v)]) {
+          svg.appendChild(sv("circle", { cx: x(i), cy, r: 6.2, class: "pt-ring", stroke: "currentColor", opacity: .55 }));
+        }
+      }
+      /* x labels */
+      const showLbl = n <= 14 || i % 2 === (n - 1) % 2;
+      if (showLbl) {
+        const t = svText(0, 0, e.tag, { "font-size": 9.5, "text-anchor": "end", transform: `translate(${x(i) + 3},${p2b + 14}) rotate(-42)` });
+        if (i === n - 1) t.setAttribute("font-weight", "700");
+        svg.appendChild(t);
+      }
+    });
+
+    /* hover */
+    const guide = sv("line", { y1: p1t, y2: p2b, class: "guide" });
+    svg.appendChild(guide);
+    const zone = sv("rect", { x: ml - 10, y: p1t, width: W - ml - mr + 20, height: p2b - p1t, class: "hover-zone" });
+    zone.addEventListener("mousemove", ev => {
+      const bx = svg.getBoundingClientRect();
+      const px = ev.clientX - bx.left;
+      let best = 0, bd = Infinity;
+      for (let i = 0; i < n; i++) { const d = Math.abs(px - x(i)); if (d < bd) { bd = d; best = i; } }
+      const e = releases[best], t = toks[best];
+      guide.setAttribute("x1", x(best)); guide.setAttribute("x2", x(best));
+      guide.style.opacity = 1;
+      const nOk = Math.round(e.pass_rate * e.runs);
+      showTip(
+        `<b>${esc(e.tag)}</b>${best === n - 1 ? " · current" : ""}${e.prerelease ? " · pre" : ""}<br>` +
+        `${fDate(e.created_at)} · ${e.runs} runs · ${esc(e.cases || "")}<br>` +
+        `pass <b class="ok">${fPct(e.pass_rate)}</b> (${nOk}/${e.runs}) · score <b>${e.mean_score.toFixed(3)}</b><br>` +
+        `tokens ${t.isP50 ? "p50" : "≈mean"} <b>${fTok(t.v)}</b> per correct run`,
+        ev.clientX, ev.clientY);
+    });
+    zone.addEventListener("mouseleave", () => { guide.style.opacity = 0; hideTip(); });
+    svg.appendChild(zone);
+    host.appendChild(svg);
+
+    $("#trend-legend").innerHTML =
+      `<span><span class="sw" style="background:var(--ok)"></span>pass rate</span>` +
+      `<span><span class="sw" style="background:var(--blue)"></span>mean score</span>` +
+      `<span><span class="sw" style="background:var(--amber)"></span>tokens p50 (correct)</span>` +
+      (toks.some(t => !t.isP50) ? `<span><span class="sw dotc" style="border:1.5px solid var(--amber)"></span>mean fallback (older record)</span>` : "");
+    $("#trend-note").textContent = prev
+      ? "Single-pass runs: small headline moves are noise — per-question flips (section 04) are the signal."
+      : "First qualified release — no prior eval-qualification.json records to compare against.";
+  }
+
+  /* releases table */
+  (() => {
+    const rows = [...releases].reverse().map((e, i) => {
+      const cur = i === 0;
+      const t = tokenLabel(e);
+      const nOk = Math.round(e.pass_rate * e.runs);
+      return `<tr${cur ? ' class="current"' : ""}>` +
+        `<td class="qid">${esc(e.tag)}${cur ? " <span style='color:var(--ok)'>●</span>" : ""}${e.prerelease ? ' <span class="badge pre">pre</span>' : ""}</td>` +
+        `<td class="num">${fDate(e.created_at)}</td>` +
+        `<td class="r">${fPct(e.pass_rate)} <span style="color:var(--faint)">(${nOk}/${e.runs})</span></td>` +
+        `<td class="r">${e.mean_score.toFixed(3)}</td>` +
+        `<td class="r">${t.isP50 ? "" : "≈"}${fTok(t.v)}</td>` +
+        `<td class="r">${e.runs}</td>` +
+        `<td class="num" style="color:var(--mut)">${esc((e.commit || "").slice(0, 9))}</td>` +
+        `<td class="num" style="color:var(--mut)">${esc(e.cases || "")}</td></tr>`;
+    }).join("");
+    $("#rel-table").innerHTML =
+      `<thead><tr><th>release</th><th>date</th><th class="r">pass rate</th><th class="r">mean score</th>` +
+      `<th class="r">tok p50</th><th class="r">runs</th><th>commit</th><th>cases</th></tr></thead>` +
+      `<tbody>${rows}</tbody>`;
+  })();
+
+  /* ── token beeswarm ───────────────────────────────────────────────────── */
+  function renderSwarm() {
+    const host = $("#swarm-chart");
+    host.innerHTML = "";
+    const W = Math.max(340, host.parentElement.getBoundingClientRect().width - 20);
+    const ml = 16, mr = 16, R = 5;
+    const tokMax = Math.max(1, ...runs.map(r => r.tokens || 0)) * 1.04;
+    const x = v => ml + (W - ml - mr) * (v / tokMax);
+
+    /* greedy beeswarm placement */
+    const pts = [...runs].sort((a, b) => (a.tokens || 0) - (b.tokens || 0)).map(r => ({ r, px: x(r.tokens || 0), py: 0 }));
+    const placed = [];
+    for (const p of pts) {
+      const cands = [0];
+      for (const q of placed) {
+        const dx = Math.abs(p.px - q.px);
+        if (dx < 2 * R + 1) {
+          const dy = Math.sqrt(Math.max(0, (2 * R + 1) ** 2 - dx * dx));
+          cands.push(q.py + dy, q.py - dy);
+        }
+      }
+      cands.sort((a, b) => Math.abs(a) - Math.abs(b));
+      for (const c of cands) {
+        if (placed.every(q => (p.px - q.px) ** 2 + (c - q.py) ** 2 >= (2 * R) ** 2)) { p.py = c; break; }
+      }
+      placed.push(p);
+    }
+    const ext = Math.max(20, ...placed.map(p => Math.abs(p.py) + R));
+    const axisY = ext * 2 + 26;
+    const H = axisY + 22;
+    const cy0 = ext + 8;
+    const svg = sv("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}` });
+
+    /* axis + ticks */
+    const ax = sv("g", { class: "axis-strong" });
+    ax.appendChild(sv("line", { x1: ml, x2: W - mr, y1: axisY, y2: axisY }));
+    svg.appendChild(ax);
+    const step = tokMax > 60000 ? 20000 : 10000;
+    for (let v = 0; v <= tokMax; v += step) {
+      svg.appendChild(sv("line", { x1: x(v), x2: x(v), y1: axisY, y2: axisY + 4, class: "axis-strong", stroke: "var(--line)" }));
+      svg.appendChild(svText(x(v), axisY + 15, fTok(v), { "text-anchor": "middle", "font-size": 9 }));
+    }
+    /* percentile rules (correct runs, matches the record) */
+    const tp = record.token_percentiles || {};
+    for (const [k, lift] of [["p50", 0], ["p90", 0], ["p99", 0]]) {
+      if (!tp[k]) continue;
+      const px = x(tp[k]);
+      svg.appendChild(sv("line", { x1: px, x2: px, y1: 4 + lift, y2: axisY, class: "pct-rule" }));
+      svg.appendChild(svText(px + 4, 11 + lift, k + " " + fTok(tp[k]), { "font-size": 9 }));
+    }
+
+    for (const p of placed) {
+      const c = sv("circle", {
+        cx: p.px.toFixed(1), cy: (cy0 + p.py).toFixed(1), r: R,
+        class: `dot-run ${p.r.correct ? "ok" : "bad"}`, "data-i": p.r._i,
+      });
+      c.addEventListener("mousemove", ev => showTip(
+        `<b>${esc(p.r.id)}</b><br>` +
+        `<span class="${p.r.correct ? "ok" : "bad"}">${runStatus(p.r)}</span>` +
+        ` · ${fInt(p.r.tokens || 0)} tok · ${p.r.tools ?? "?"} tools · score ${(p.r.score ?? 0).toFixed(3)}<br>` +
+        `<span style="color:var(--faint)">click to inspect</span>`,
+        ev.clientX, ev.clientY));
+      c.addEventListener("mouseleave", hideTip);
+      c.addEventListener("click", () => { hideTip(); selectRun(p.r._i, { scroll: true }); });
+      svg.appendChild(c);
+    }
+    host.appendChild(svg);
+    syncSelectionDots();
+
+    const nOk = runs.filter(r => r.correct).length;
+    $("#swarm-legend").innerHTML =
+      `<span><span class="sw dotc" style="background:var(--ok)"></span>correct (${nOk})</span>` +
+      `<span><span class="sw dotc" style="background:var(--bad)"></span>failed (${runs.length - nOk})</span>` +
+      `<span style="color:var(--faint)">percentile rules computed over correct runs</span>`;
+  }
+
+  /* ── categories ───────────────────────────────────────────────────────── */
+  function renderCats() {
+    const host = $("#cat-chart");
+    host.innerHTML = "";
+    if (!cats.length) { host.innerHTML = '<p class="note">no tag metadata for this cases file</p>'; return; }
+    const W = Math.max(340, host.parentElement.getBoundingClientRect().width - 20);
+    const rowH = 27, lblW = Math.min(180, W * .25), valW = 250;
+    const barX = lblW + 12, barW = Math.max(60, W - barX - valW);
+    const H = cats.length * rowH + 6;
+    const svg = sv("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}` });
+    cats.forEach((c, i) => {
+      const y = i * rowH + 4;
+      const g = sv("g", { class: "cat-row", "data-tag": c.tag });
+      const lbl = svText(lblW, y + 13, c.tag, { "text-anchor": "end", class: "lbl", "font-size": 11 });
+      g.appendChild(lbl);
+      g.appendChild(sv("rect", { x: barX, y: y + 3, width: barW, height: 13, class: "cat-track", rx: 1 }));
+      const cls = c.rate >= .999 ? "hi" : (c.rate >= .5 ? "mid" : "lo");
+      g.appendChild(sv("rect", { x: barX, y: y + 3, width: Math.max(2, barW * c.rate), height: 13, class: `cat-fill ${cls}`, rx: 1 }));
+      g.appendChild(svText(barX + barW + 10, y + 13,
+        `${c.correct}/${c.runs} · ${fPct(c.rate)} · ${c.qids.size}q · med ${fTok(c.medTok)} tok`,
+        { "font-size": 10 }));
+      g.addEventListener("click", () => {
+        const on = state.tags.has(c.tag);
+        state.tags.clear();
+        if (!on) state.tags.add(c.tag);
+        renderExplorer();
+        document.getElementById("explorer").scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      g.addEventListener("mousemove", ev => showTip(
+        `<b>${esc(c.tag)}</b><br>${c.correct}/${c.runs} runs pass (${fPct(c.rate)}) across ${c.qids.size} question${c.qids.size > 1 ? "s" : ""}<br>` +
+        `median ${fTok(c.medTok)} tok per correct run · click to filter`,
+        ev.clientX, ev.clientY));
+      g.addEventListener("mouseleave", hideTip);
+      svg.appendChild(g);
+    });
+    host.appendChild(svg);
+    syncCatActive();
+  }
+  function syncCatActive() {
+    document.querySelectorAll(".cat-row").forEach(g =>
+      g.classList.toggle("active", state.tags.has(g.dataset.tag)));
+  }
+
+  /* ── question matrix ──────────────────────────────────────────────────── */
+  function renderMatrix() {
+    const prevQ = (prev && prev.questions) || {};
+    const rows = questionIds.map(qid => {
+      const rs = byQ.get(qid);
+      const nOk = rs.filter(r => r.correct).length;
+      const cells = rs.map((r, j) =>
+        `<button class="mx-cell ${r.correct ? "ok" : "bad"}" data-i="${r._i}" ` +
+        `aria-label="run ${j + 1} ${runStatus(r)}">${r.correct ? "✓" : "✕"}</button>`).join("");
+      let verdict;
+      const p = prevQ[qid];
+      if (!prev) verdict = `<span class="verdict na">—</span>`;
+      else if (!p) verdict = `<span class="verdict new">NEW</span>`;
+      else {
+        const pf = p.runs ? p.correct / p.runs : 0, cf = nOk / rs.length;
+        if (cf > pf) verdict = `<span class="verdict up" title="was ${p.correct}/${p.runs}">▲ ${p.correct}/${p.runs} → ${nOk}/${rs.length}</span>`;
+        else if (cf < pf) verdict = `<span class="verdict down" title="was ${p.correct}/${p.runs}">▼ ${p.correct}/${p.runs} → ${nOk}/${rs.length}</span>`;
+        else verdict = `<span class="verdict flat">·</span>`;
+      }
+      const tagsHtml = byQ.get(qid)[0].tags.map(t => esc(t)).join(" · ");
+      return `<tr><td><button class="qid" data-q="${esc(qid)}" title="filter run explorer to this question">${esc(qid)}</button>` +
+        `<div style="font:10px var(--mono);color:var(--faint);margin-top:2px">${tagsHtml}</div></td>` +
+        `<td class="r" style="color:${nOk === rs.length ? "var(--ok)" : "var(--bad)"}">${nOk}/${rs.length}</td>` +
+        `<td><div class="mx-cells">${cells}</div></td>` +
+        `<td>${verdict}</td></tr>`;
+    }).join("");
+    $("#mx-table").innerHTML =
+      `<thead><tr><th>question</th><th class="r">pass</th><th>runs · canonical + variations</th>` +
+      `<th>Δ vs ${prev ? esc(prev.tag) : "—"}</th></tr></thead><tbody>${rows}</tbody>`;
+
+    $("#mx-table").querySelectorAll(".mx-cell").forEach(b => {
+      const r = runs[+b.dataset.i];
+      b.addEventListener("click", () => { hideTip(); selectRun(r._i, { scroll: false }); });
+      b.addEventListener("mousemove", ev => showTip(
+        `<b>${esc(r.id)}</b> · <span class="${r.correct ? "ok" : "bad"}">${runStatus(r)}</span>` +
+        ` · ${fInt(r.tokens || 0)} tok · ${r.tools ?? "?"} tools<br>` +
+        `${esc((r.grader_reason || "").slice(0, 220))}${(r.grader_reason || "").length > 220 ? "…" : ""}<br>` +
+        `<span style="color:var(--faint)">click for full verdict</span>`,
+        ev.clientX, ev.clientY));
+      b.addEventListener("mouseleave", hideTip);
+    });
+    $("#mx-table").querySelectorAll("button.qid").forEach(b =>
+      b.addEventListener("click", () => {
+        state.q = b.dataset.q;
+        renderExplorer();
+        document.getElementById("explorer").scrollIntoView({ behavior: "smooth", block: "start" });
+      }));
+  }
+
+  /* ── run explorer ─────────────────────────────────────────────────────── */
+  const state = { q: "", status: "all", tags: new Set(), search: "" };
+  const sort = { key: "id", dir: 1 };
+  const SORTKEY = {
+    id: r => r.id,
+    subject: r => r.subject || "",
+    status: r => r.crashed ? 2 : (r.correct ? 0 : 1),
+    score: r => r.score ?? 0,
+    tokens: r => r.tokens ?? 0,
+    tools: r => r.tools ?? 0,
+  };
+
+  function filteredRuns() {
+    const s = state.search.trim().toLowerCase();
+    return runs.filter(r => {
+      if (state.q && r.id !== state.q) return false;
+      if (state.status === "pass" && !r.correct) return false;
+      if (state.status === "fail" && r.correct) return false;
+      if (state.tags.size && ![...state.tags].some(t => r.tags.includes(t))) return false;
+      if (s && !(`${r.id} ${r.subject} ${r.grader_reason || ""}`).toLowerCase().includes(s)) return false;
+      return true;
+    });
+  }
+
+  function renderFilters() {
+    /* question select */
+    const sel = $("#f-question");
+    sel.innerHTML = `<option value="">all questions (${byQ.size})</option>` +
+      questionIds.map(q => {
+        const rs = byQ.get(q), nOk = rs.filter(r => r.correct).length;
+        return `<option value="${esc(q)}"${state.q === q ? " selected" : ""}>${esc(q)} · ${nOk}/${rs.length}</option>`;
+      }).join("");
+    /* status segmented */
+    $("#f-status").querySelectorAll("button").forEach(b =>
+      b.classList.toggle("on", b.dataset.v === state.status));
+    /* tag chips */
+    $("#chips").innerHTML = cats.map(c =>
+      `<button class="chip${state.tags.has(c.tag) ? " on" : ""}" data-tag="${esc(c.tag)}">` +
+      `${esc(c.tag)}<span class="n">${c.runs}</span></button>`).join("");
+    $("#chips").querySelectorAll(".chip").forEach(b =>
+      b.addEventListener("click", () => {
+        const t = b.dataset.tag;
+        state.tags.has(t) ? state.tags.delete(t) : state.tags.add(t);
+        renderExplorer();
+      }));
+    const active = state.q || state.search || state.status !== "all" || state.tags.size;
+    $("#reset-filters").hidden = !active;
+  }
+
+  function renderTable(rows) {
+    const arrow = k => k === sort.key ? (sort.dir === 1 ? " asc" : " desc") : "";
+    const head =
+      `<thead><tr>` +
+      `<th class="sortable${arrow("id")}" data-key="id">question</th>` +
+      `<th class="sortable${arrow("subject")}" data-key="subject">subject</th>` +
+      `<th class="sortable${arrow("status")}" data-key="status">status</th>` +
+      `<th class="sortable r${arrow("score")}" data-key="score">score</th>` +
+      `<th class="sortable r${arrow("tokens")}" data-key="tokens">tokens</th>` +
+      `<th class="sortable r${arrow("tools")}" data-key="tools">tools</th>` +
+      `<th>grader reason</th><th>trace</th></tr></thead>`;
+    const body = rows.map(r => {
+      const st = runStatus(r);
+      return `<tr data-i="${r._i}" class="${selectedIdx === r._i ? "selected" : ""}">` +
+        `<td class="qid">${esc(r.id)}</td>` +
+        `<td class="subj" title="${esc(r.subject)}">${esc(shortSubject(r.subject))}</td>` +
+        `<td><span class="pill ${st === "pass" ? "ok" : (st === "crash" ? "crash" : "bad")}">${st === "pass" ? "✓ pass" : (st === "crash" ? "✕ crash" : "✕ fail")}</span></td>` +
+        `<td class="r">${(r.score ?? 0).toFixed(3)}</td>` +
+        `<td class="r">${fInt(r.tokens || 0)}</td>` +
+        `<td class="r">${r.tools ?? ""}</td>` +
+        `<td class="reason-cell" title="${esc((r.grader_reason || "").slice(0, 500))}">${esc(r.grader_reason || "")}</td>` +
+        `<td>${r.trace_url ? `<a href="${esc(r.trace_url)}" target="_blank" rel="noopener">↗</a>` : ""}</td></tr>`;
+    }).join("");
+    $("#run-table").innerHTML = head + `<tbody>${body || `<tr><td colspan="8" style="color:var(--faint);font-family:var(--mono)">no runs match the current filter</td></tr>`}</tbody>`;
+
+    $("#run-table").querySelectorAll("th.sortable").forEach(th =>
+      th.addEventListener("click", () => {
+        const k = th.dataset.key;
+        if (sort.key === k) sort.dir = -sort.dir;
+        else { sort.key = k; sort.dir = k === "tokens" || k === "score" || k === "tools" ? -1 : 1; }
+        renderExplorer();
+      }));
+    $("#run-table").querySelectorAll("tbody tr[data-i]").forEach(tr => {
+      tr.addEventListener("click", ev => {
+        if (ev.target.closest("a")) return;
+        selectRun(+tr.dataset.i, { scroll: false });
+      });
+    });
+  }
+
+  function renderAgg(rows) {
+    const nOk = rows.filter(r => r.correct).length;
+    const toks = rows.map(r => r.tokens || 0).filter(t => t > 0);
+    const p50 = pctl(toks, .5);
+    const sum = toks.reduce((a, b) => a + b, 0);
+    $("#agg").innerHTML =
+      `<span><b>${rows.length}</b> / ${runs.length} runs</span>` +
+      `<span>pass <b>${rows.length ? fPct(nOk / rows.length) : "—"}</b> (${nOk}/${rows.length})</span>` +
+      `<span>tokens p50 <b>${fTok(p50)}</b></span>` +
+      `<span>Σ tokens <b>${fTok(sum)}</b></span>` +
+      (state.tags.size ? `<span style="color:var(--faint)">tags: any of [${[...state.tags].map(esc).join(", ")}]</span>` : "");
+  }
+
+  function renderExplorer() {
+    renderFilters();
+    const rows = filteredRuns().sort((a, b) => {
+      const ka = SORTKEY[sort.key](a), kb = SORTKEY[sort.key](b);
+      const c = ka < kb ? -1 : ka > kb ? 1 : (a._i - b._i);
+      return c * sort.dir;
+    });
+    renderAgg(rows);
+    renderTable(rows);
+    syncCatActive();
+  }
+
+  $("#f-search").addEventListener("input", ev => { state.search = ev.target.value; renderExplorer(); });
+  $("#f-question").addEventListener("change", ev => { state.q = ev.target.value; renderExplorer(); });
+  $("#f-status").querySelectorAll("button").forEach(b =>
+    b.addEventListener("click", () => { state.status = b.dataset.v; renderExplorer(); }));
+  $("#reset-filters").addEventListener("click", () => {
+    state.q = ""; state.status = "all"; state.tags.clear(); state.search = "";
+    $("#f-search").value = "";
+    renderExplorer();
+  });
+
+  /* ── selection + drawer ───────────────────────────────────────────────── */
+  let selectedIdx = -1;
+  function syncSelectionDots() {
+    document.querySelectorAll(".dot-run").forEach(c =>
+      c.classList.toggle("selected", +c.dataset.i === selectedIdx));
+    document.querySelectorAll(".mx-cell").forEach(c =>
+      c.classList.toggle("selected", +c.dataset.i === selectedIdx));
+  }
+
+  function selectRun(i, { scroll } = {}) {
+    selectedIdx = i;
+    const r = runs[i];
+    /* make sure the run is visible in the explorer */
+    if (!filteredRuns().some(x => x._i === i)) {
+      state.q = ""; state.status = "all"; state.tags.clear(); state.search = "";
+      $("#f-search").value = "";
+    }
+    renderExplorer();
+    syncSelectionDots();
+    openDrawer(r);
+    if (scroll) {
+      const tr = $(`#run-table tr[data-i="${i}"]`);
+      if (tr) {
+        tr.scrollIntoView({ behavior: "smooth", block: "center" });
+        tr.classList.add("flash");
+        setTimeout(() => tr.classList.remove("flash"), 1700);
+      }
+    }
+  }
+
+  const drawer = $("#drawer");
+  function openDrawer(r) {
+    const st = runStatus(r);
+    $("#drawer-title").textContent = r.id;
+    const sibs = byQ.get(r.id).map((s, j) =>
+      `<button class="mx-cell ${s.correct ? "ok" : "bad"}${s._i === r._i ? " selected" : ""}" data-i="${s._i}" title="run ${j + 1}: ${runStatus(s)} · ${fInt(s.tokens || 0)} tok">${s.correct ? "✓" : "✕"}</button>`).join("");
+    $("#drawer-body").innerHTML =
+      `<span class="pill ${st === "pass" ? "ok" : (st === "crash" ? "crash" : "bad")}">${st === "pass" ? "✓ pass" : "✕ " + st}</span>` +
+      `<dl class="kv">` +
+      `<dt>subject</dt><dd>${esc(r.subject)}</dd>` +
+      `<dt>score</dt><dd>${(r.score ?? 0).toFixed(4)}</dd>` +
+      `<dt>correctness</dt><dd>${(r.correctness ?? 0).toFixed(2)}</dd>` +
+      `<dt>tokens</dt><dd>${fInt(r.tokens || 0)}</dd>` +
+      `<dt>tool calls</dt><dd>${r.tools ?? "—"}</dd>` +
+      `<dt>tags</dt><dd><div class="tagset">${r.tags.map(t => `<span>${esc(t)}</span>`).join("")}</div></dd>` +
+      `</dl>` +
+      `<div class="drawer-label">grader verdict</div>` +
+      `<div class="reason ${r.correct ? "ok" : "bad"}">${esc(r.grader_reason || (r.crashed ? "run crashed — no grader output" : "no reason recorded"))}</div>` +
+      (r.trace_url ? `<a class="trace-btn" href="${esc(r.trace_url)}" target="_blank" rel="noopener">open langfuse trace ↗</a>` : "") +
+      `<div class="drawer-label">runs of this question</div>` +
+      `<div class="sibs">${sibs}</div>`;
+    $("#drawer-body").querySelectorAll(".sibs .mx-cell").forEach(b =>
+      b.addEventListener("click", () => selectRun(+b.dataset.i, { scroll: true })));
+    drawer.classList.add("open");
+  }
+  function closeDrawer() {
+    drawer.classList.remove("open");
+    selectedIdx = -1;
+    syncSelectionDots();
+    document.querySelectorAll("#run-table tr.selected").forEach(tr => tr.classList.remove("selected"));
+  }
+  $("#drawer-close").addEventListener("click", closeDrawer);
+  document.addEventListener("keydown", ev => { if (ev.key === "Escape") closeDrawer(); });
+
+  /* ── footer ───────────────────────────────────────────────────────────── */
+  $("#foot").innerHTML =
+    `Single-pass qualification of <b>${esc(record.tag)}</b> — small headline-score moves are noise; ` +
+    `per-question flips are the signal. History comes from prior releases' ` +
+    `<code>eval-qualification.json</code> assets. This page is fully self-contained: no external fetches.`;
+
+  /* ── boot + resize ────────────────────────────────────────────────────── */
+  renderTrend();
+  renderSwarm();
+  renderCats();
+  renderMatrix();
+  renderExplorer();
+
+  let rT;
+  window.addEventListener("resize", () => {
+    clearTimeout(rT);
+    rT = setTimeout(() => { renderTrend(); renderSwarm(); renderCats(); }, 140);
+  });
+})();
+</script>
+</body>
+</html>
