@@ -164,6 +164,10 @@ def _write_junit(path: str, result: CandidateResult, *, suite: str) -> None:
 
 
 def _write_json(path: str, result: CandidateResult, *, cases: str, subjects: list[str]) -> None:
+    # ``question`` is the exact prompt this run was asked (a paraphrase variation is
+    # its own wording); ``answer`` is the agent's final response. Both are scrubbed
+    # like every other artifact sink; the answer is capped — the full text lives in
+    # the trace files, the summary just needs the response as the human read it.
     payload = {
         "cases": cases,
         "subjects": subjects,
@@ -174,10 +178,12 @@ def _write_json(path: str, result: CandidateResult, *, cases: str, subjects: lis
             {
                 "id": r.score.question_id,
                 "subject": r.score.subject,
+                "question": scrub_secrets(r.trace.question or ""),
+                "answer": scrub_secrets((r.trace.output or "")[:6000]),
                 "correct": r.score.correct,
                 "correctness": r.score.correctness,
                 "score": r.score.score,
-                "grader_reason": r.score.reason,
+                "grader_reason": scrub_secrets(r.score.reason or ""),
                 "tokens": r.score.tokens,
                 "tools": r.score.n_tools,
                 "crashed": r.trace.crashed,

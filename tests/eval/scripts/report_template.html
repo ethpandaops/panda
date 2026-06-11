@@ -255,6 +255,23 @@
   .qid { font-family: var(--mono); font-size: 12px; color: var(--ink); }
   button.qid { background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
   button.qid:hover { color: var(--blue); }
+  td.qcell { max-width: 320px; }
+  td.qcell .qid { font-size: 11px; color: var(--mut); }
+  .qtext {
+    display: block;
+    margin-top: 1px;
+    font-size: 12px;
+    color: var(--ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .canon {
+    font: 700 12px/1 var(--mono);
+    color: var(--amber);
+    cursor: help;
+    margin-left: 3px;
+  }
 
   /* matrix run cells */
   .mx-cells { display: flex; gap: 4px; flex-wrap: wrap; }
@@ -411,6 +428,30 @@
   }
   .reason.bad { border-left-color: var(--bad); }
   .reason.ok { border-left-color: var(--ok); }
+  .qblock {
+    background: var(--panel2);
+    border: 1px solid var(--line2);
+    border-radius: 2px;
+    padding: 10px 12px;
+    font: 13px/1.55 var(--sans);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    margin: 6px 0 2px;
+  }
+  .canon-note { font: 10.5px/1.5 var(--mono); color: var(--amber); margin: 4px 2px 0; }
+  .answer {
+    background: var(--panel2);
+    border: 1px solid var(--line2);
+    border-radius: 2px;
+    padding: 10px 12px;
+    font: 12px/1.6 var(--mono);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-height: 300px;
+    overflow-y: auto;
+    margin: 6px 0 2px;
+  }
+  .answer.empty { color: var(--faint); }
   .drawer-label { font: 600 10px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--mut); margin: 16px 0 6px; }
   .sibs { display: flex; gap: 5px; flex-wrap: wrap; }
   .trace-btn {
@@ -504,7 +545,7 @@
     <h2><span class="no">05</span> run explorer <span class="hint">filtering is analysis — the aggregate follows the filter</span></h2>
     <div class="panel">
       <div id="filters">
-        <input id="f-search" type="search" placeholder="search grader reasons, question ids, subjects…" autocomplete="off">
+        <input id="f-search" type="search" placeholder="search questions, answers, grader reasons, subjects…" autocomplete="off">
         <select id="f-question"></select>
         <span class="seg" id="f-status">
           <button data-v="all" class="on">all</button>
@@ -651,6 +692,8 @@
   };
   const runStatus = r => r.crashed ? "crash" : (r.correct ? "pass" : "fail");
   const shortSubject = s => String(s || "").replace(/^[a-z0-9_-]+:/i, "");
+  const CANON_TIP = "exact per-run phrasing unavailable for this record; canonical wording shown";
+  const canonMark = r => r.question_canonical ? `<span class="canon" title="${CANON_TIP}">°</span>` : "";
 
   /* ── topbar ───────────────────────────────────────────────────────────── */
   document.title = `panda eval — ${record.tag}`;
@@ -1051,6 +1094,9 @@
       const r = runs[+b.dataset.i];
       b.addEventListener("click", () => { hideTip(); selectRun(r._i, { scroll: false }); });
       b.addEventListener("mousemove", ev => showTip(
+        (r.question
+          ? `<span style="color:var(--ink)">“${esc(r.question.slice(0, 160))}${r.question.length > 160 ? "…" : ""}”</span>${r.question_canonical ? " °" : ""}<br>`
+          : "") +
         `<b>${esc(r.id)}</b> · <span class="${r.correct ? "ok" : "bad"}">${runStatus(r)}</span>` +
         ` · ${fInt(r.tokens || 0)} tok · ${r.tools ?? "?"} tools<br>` +
         `${esc((r.grader_reason || "").slice(0, 220))}${(r.grader_reason || "").length > 220 ? "…" : ""}<br>` +
@@ -1086,7 +1132,7 @@
       if (state.status === "pass" && !r.correct) return false;
       if (state.status === "fail" && r.correct) return false;
       if (state.tags.size && ![...state.tags].some(t => r.tags.includes(t))) return false;
-      if (s && !(`${r.id} ${r.subject} ${r.grader_reason || ""}`).toLowerCase().includes(s)) return false;
+      if (s && !(`${r.id} ${r.subject} ${r.grader_reason || ""} ${r.question || ""} ${r.answer || ""}`).toLowerCase().includes(s)) return false;
       return true;
     });
   }
@@ -1132,7 +1178,8 @@
       const st = runStatus(r);
       const eff = runEff(r);
       return `<tr data-i="${r._i}" class="${selectedIdx === r._i ? "selected" : ""}">` +
-        `<td class="qid">${esc(r.id)}</td>` +
+        `<td class="qcell"><span class="qid">${esc(r.id)}</span>${canonMark(r)}` +
+        `<span class="qtext" title="${esc(r.question || "")}">${esc(r.question || "")}</span></td>` +
         `<td class="subj" title="${esc(r.subject)}">${esc(shortSubject(r.subject))}</td>` +
         `<td><span class="pill ${st === "pass" ? "ok" : (st === "crash" ? "crash" : "bad")}">${st === "pass" ? "✓ pass" : (st === "crash" ? "✕ crash" : "✕ fail")}</span></td>` +
         `<td class="r">${(r.score ?? 0).toFixed(3)}</td>` +
@@ -1241,6 +1288,15 @@
       `<button class="mx-cell ${s.correct ? "ok" : "bad"}${s._i === r._i ? " selected" : ""}" data-i="${s._i}" title="run ${j + 1}: ${runStatus(s)} · ${fInt(s.tokens || 0)} tok">${s.correct ? "✓" : "✕"}</button>`).join("");
     $("#drawer-body").innerHTML =
       `<span class="pill ${st === "pass" ? "ok" : (st === "crash" ? "crash" : "bad")}">${st === "pass" ? "✓ pass" : "✕ " + st}</span>` +
+      `<div class="drawer-label">question${r.question_canonical ? ' <span class="canon" title="' + CANON_TIP + '">°</span>' : ""}</div>` +
+      `<div class="qblock">${esc(r.question || "(question text not recorded)")}</div>` +
+      (r.question_canonical ? `<div class="canon-note">° ${CANON_TIP}</div>` : "") +
+      `<div class="drawer-label">final answer</div>` +
+      (r.answer
+        ? `<div class="answer">${esc(r.answer)}</div>`
+        : `<div class="answer empty">${r.answer == null
+            ? "final answer not recorded for this record"
+            : "no output — the run produced no final response"}</div>`) +
       `<dl class="kv">` +
       `<dt>subject</dt><dd>${esc(r.subject)}</dd>` +
       `<dt>score</dt><dd>${(r.score ?? 0).toFixed(4)}</dd>` +

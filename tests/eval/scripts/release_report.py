@@ -78,15 +78,19 @@ def category_breakdown(runs: list[dict], tags_by_question: dict[str, list[str]])
     return out
 
 
-def _question_tags(cases_file: str) -> dict[str, list[str]]:
-    """Question-id -> tags from the cases file. Empty on any failure — the suite may
-    have changed since this record's run, and a report must not die over tag metadata."""
+def _case_meta(cases_file: str) -> dict[str, dict]:
+    """Question-id -> {tags, input} from the cases file. Empty on any failure — the
+    suite may have changed since this record's run, and a report must not die over
+    case metadata."""
     try:
         from cases.loader import load_test_cases
 
-        return {c.id: list(c.tags or []) for c in load_test_cases(cases_file)}
+        return {
+            c.id: {"tags": list(c.tags or []), "input": c.input}
+            for c in load_test_cases(cases_file)
+        }
     except Exception as exc:
-        print(f"no tag metadata for report ({exc}); runs will carry empty tags")
+        print(f"no case metadata for report ({exc}); runs will carry empty tags")
         return {}
 
 
@@ -104,8 +108,17 @@ def build_html(
     derives per-question cells from the raw runs and draws every chart from data.
     """
     del questions, trend_png
-    tags = _question_tags(record.get("cases", ""))
-    enriched = [dict(run, tags=tags.get(run["id"], [])) for run in runs]
+    meta = _case_meta(record.get("cases", ""))
+    enriched = []
+    for run in runs:
+        m = meta.get(run["id"], {})
+        out = dict(run, tags=m.get("tags", []))
+        # Older eval.json files predate per-run prompt capture: fall back to the
+        # case's canonical wording and say so (paraphrase runs differ from it).
+        if not out.get("question"):
+            out["question"] = m.get("input", "")
+            out["question_canonical"] = True
+        enriched.append(out)
     payload = {"record": record, "runs": enriched, "history": history}
     # ``<\/`` is a valid JSON string escape, and breaking up ``</`` guarantees the
     # blob can never close the surrounding <script> tag (or open an HTML comment).
