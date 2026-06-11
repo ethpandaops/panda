@@ -84,11 +84,10 @@ def _case_meta(cases_file: str) -> dict[str, dict]:
     case metadata."""
     try:
         from cases.loader import load_test_cases
+        from scripts.release_scorecard import _load_case_set
 
-        return {
-            c.id: {"tags": list(c.tags or []), "input": c.input}
-            for c in load_test_cases(cases_file)
-        }
+        cases = _load_case_set(load_test_cases, cases_file)
+        return {c.id: {"tags": list(c.tags or []), "input": c.input} for c in cases}
     except Exception as exc:
         print(f"no case metadata for report ({exc}); runs will carry empty tags")
         return {}

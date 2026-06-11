@@ -150,10 +150,25 @@ def _question_tags(cases_file: str) -> dict[str, list[str]]:
     try:
         from cases.loader import load_test_cases
 
-        return {c.id: list(c.tags or []) for c in load_test_cases(cases_file)}
+        cases = _load_case_set(load_test_cases, cases_file)
+        return {c.id: list(c.tags or []) for c in cases}
     except Exception as exc:  # noqa: BLE001
         print(f"no tag metadata ({exc}); category breakdown will be empty")
         return {}
+
+
+def _load_case_set(load_test_cases, cases_field: str):
+    """The record's ``cases`` field is a selection description (e.g. "all files
+    tags=smoke"), not necessarily a filename. If it names a real cases file, load
+    that; otherwise load every file — ids are unique across files, so id-joins
+    don't care which selection actually ran."""
+    name = (cases_field or "").split()[0] if cases_field else ""
+    if name.endswith((".yaml", ".yml")):
+        try:
+            return load_test_cases(name)
+        except Exception:  # noqa: BLE001 - the file may predate the current suite
+            pass
+    return load_test_cases(None)
 
 
 def _build_record(
