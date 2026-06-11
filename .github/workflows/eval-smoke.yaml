@@ -184,6 +184,10 @@ jobs:
           restore-keys: panda-embed-cache-
 
       - name: Start server
+        env:
+          # Resolved by panda's ${ENV} config substitution at load time — the
+          # same mechanism the chat deployment uses.
+          PANDA_CI_SVC_TOKEN: ${{ secrets.PANDA_CI_SVC_TOKEN }}
         run: |
           ./panda-server serve --config config.ci.yaml > server.log 2>&1 &
           # Cold runners (no embedding cache) build the semantic-search indexes via
