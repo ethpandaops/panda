@@ -46,13 +46,27 @@ def _followups(vars_: dict) -> list:
     return list(raw or [])
 
 
+def _clip(text: str, limit: int) -> str:
+    """Whitespace-flatten and bound `text`, keeping the head AND the tail when over
+    budget. The decisive part of a tool output often sits at the end (`a || b` fallback
+    chains where the error prints first, query results below a banner), so head-only
+    truncation can destroy exactly the evidence the grader needs. The elision marker
+    tells the grader content was cut, not that the tool returned nothing."""
+    s = " ".join((text or "").split())
+    if len(s) <= limit:
+        return s
+    head, tail = s[: limit * 2 // 3], s[-(limit // 3) :]
+    return f"{head} …[{len(s) - len(head) - len(tail)} chars elided]… {tail}"
+
+
 def _graded_output(trace) -> str:
     """What the grader judges: the agent's answer PLUS the tool calls it actually made to
     reach it. Those calls are harness-captured ground truth (the real query/command + its
     result), NOT the agent's self-report — so a rubric can verify the answer was sourced
     from a real query (which datasource, which table) rather than hallucinated, and the
-    agent can't game it by merely claiming it queried. Args/results are truncated to keep
-    the grading prompt bounded; the full untruncated trace is still in `metadata`/on disk.
+    agent can't game it by merely claiming it queried. Args/results are clipped (head+tail)
+    to keep the grading prompt bounded; the full untruncated trace is still in
+    `metadata`/on disk.
 
     Anti-forgery: any imitation of the marker inside the agent's own answer is stripped,
     so the grader can rely on "everything after the marker is harness ground truth" —
@@ -63,8 +77,8 @@ def _graded_output(trace) -> str:
         return answer
     lines = [answer, "", TOOLS_MARKER]
     for t in trace.tool_calls:
-        arg = " ".join((t.arguments or "").split())[:600]
-        res = " ".join((t.output or "").split())[:240]
+        arg = _clip(t.arguments, 1200)
+        res = _clip(t.output, 2400)
         mark = " [ERROR]" if t.is_error else ""
         line = f"- {t.name}{mark}: {arg}"
         if res:
