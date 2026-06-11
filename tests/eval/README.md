@@ -125,7 +125,7 @@ tests/eval/
   production proxy (as the `panda-ci` service account). Runs `scripts.eval --cases smoke.yaml`
   and publishes the JUnit results as a PR comment/check.
 - **`eval.yaml`** — opt-in (the `run-evals` PR label, manual dispatch). Runs a full cases
-  file against a locally-built server + proxy.
+  file against the hosted production proxy (as `panda-ci`), same data plane as the smoke.
 - **`release-eval.yaml`** — every `v*` tag (releases and `-rc.N` pre-releases). Single pass
   over `baseline_all.yaml` (variations included) against the hosted proxy, then
   `scripts.release_scorecard` splices a scorecard into the GitHub release description:

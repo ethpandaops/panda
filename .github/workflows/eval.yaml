@@ -2,9 +2,11 @@ name: LLM Evaluation
 
 # Full eval: run a whole cases/*.yaml through the unified harness (scripts.eval) against
 # the opencode-go agent over the panda CLI route, graded by promptfoo llm-rubric asserts.
-# Builds server + proxy locally (proxy fronts the raw/refined ClickHouse clusters). Opt-in
-# per PR via the `run-evals` label; also runs on manual dispatch. Release tags run the
-# full-suite scorecard in release-eval.yaml instead.
+# Runs against the hosted production proxy as the external-scoped `panda-ci` service
+# account — the same data plane as eval-smoke and release-eval, so results are
+# comparable and no upstream credentials exist in this repo. Opt-in per PR via the
+# `run-evals` label; also runs on manual dispatch. Release tags run the full-suite
+# scorecard in release-eval.yaml instead.
 
 on:
   pull_request:
@@ -41,8 +43,15 @@ on:
 
 permissions:
   contents: read
+  packages: write        # push/pull the content-addressed sandbox image to GHCR
   checks: write          # publish-unit-test-result-action creates a check run
   pull-requests: write   # ...and posts results on PRs
+
+env:
+  # Hosted production proxy + its Authentik issuer (dual-issuer: Dex humans + Authentik CI).
+  PANDA_PROXY_URL: ${{ vars.PANDA_PROXY_URL || 'https://panda-proxy.ethpandaops.io' }}
+  PANDA_PROXY_OIDC_ISSUER: ${{ vars.PANDA_PROXY_OIDC_ISSUER || 'https://authentik.analytics.production.platform.ethpandaops.io/application/o/panda-proxy/' }}
+  SANDBOX_IMAGE: ${{ vars.SANDBOX_IMAGE || 'ghcr.io/ethpandaops/panda-sandbox' }}
 
 jobs:
   evaluate:
@@ -51,27 +60,25 @@ jobs:
     if: >-
       github.event_name != 'pull_request' ||
       contains(github.event.pull_request.labels.*.name, 'run-evals')
-    runs-on:
-      - self-hosted-ghr
-      - size-m-x64
-    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    # A full cases file with paraphrase variations (~48 runs for coverage.yaml) at
+    # --concurrency 6 with a 900s per-question ceiling needs real headroom.
+    timeout-minutes: 150
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Set up Go
+      - name: Set up Go (module + build cache)
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version-file: go.mod
+          cache: true
 
       - name: Build binaries (server + panda CLI)
         run: |
           make build
           echo "$GITHUB_WORKSPACE" >> "$GITHUB_PATH"   # put `panda` on PATH for the CLI route
-
-      - name: Build proxy
-        run: make build-proxy
 
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -81,19 +88,26 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
-          version: "latest"
+          # Keep in sync with the uv pinned in sandbox/Dockerfile.
+          version: "0.11.17"
+          enable-cache: true
 
       - name: Install Python dependencies
         working-directory: tests/eval
         run: uv sync
 
       - name: Set up Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: '22'
 
-      - name: Install opencode
-        run: npm install -g opencode-ai@1.15.0
+      # npm ci against the committed lockfile: transitive deps and the platform
+      # binary are integrity-hashed, so nothing resolves live from the registry.
+      - name: Install opencode (locked)
+        working-directory: .github/opencode
+        run: |
+          npm ci --no-audit --no-fund
+          echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
 
       - name: Configure opencode auth (opencode-go)
         env:
@@ -110,42 +124,37 @@ jobs:
           print("configured opencode-go auth")
           PY
 
-      - name: Create CI configs
+      - name: Log in to GHCR (sandbox image cache)
+        run: echo "${{ github.token }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Sandbox image (build only if its inputs changed)
         run: |
-          cat > proxy-config.ci.yaml << 'EOF'
-          server:
-            listen_addr: ":18081"
+          set -euo pipefail
+          HASH=$(make sandbox-hash)
+          IMG="${SANDBOX_IMAGE}:${HASH}"
+          echo "Sandbox image: $IMG"
+          if docker image inspect "$IMG" >/dev/null 2>&1; then
+            echo "Already present on this runner — no build, no pull."
+          elif docker manifest inspect "$IMG" >/dev/null 2>&1; then
+            echo "In registry — pulling."
+            docker pull "$IMG"
+          else
+            echo "Sandbox inputs changed — building $IMG and publishing it."
+            docker build -t "$IMG" -f sandbox/Dockerfile .
+            docker push "$IMG" || echo "WARNING: push failed (registry creds?); using local image."
+          fi
+          # Name the eval config references.
+          docker tag "$IMG" ethpandaops-panda-sandbox:latest
 
-          auth:
-            mode: none
+      - name: Mint panda-ci service-account credential
+        working-directory: tests/eval
+        env:
+          PANDA_CI_SVC_TOKEN: ${{ secrets.PANDA_CI_SVC_TOKEN }}
+        run: uv run python -m scripts.ci_auth
 
-          clickhouse:
-            - name: clickhouse-raw
-              description: "Raw ClickHouse cluster with raw Ethereum event data"
-              host: "${{ secrets.CLICKHOUSE_XATU_HOST }}"
-              port: 8443
-              database: default
-              username: "${{ secrets.CLICKHOUSE_XATU_USERNAME }}"
-              password: "${{ secrets.CLICKHOUSE_XATU_PASSWORD }}"
-              secure: true
-            - name: clickhouse-refined
-              description: "Refined ClickHouse cluster with pre-aggregated datasets"
-              host: "${{ secrets.CLICKHOUSE_CBT_HOST }}"
-              port: 8443
-              database: default
-              username: "${{ secrets.CLICKHOUSE_CBT_USERNAME }}"
-              password: "${{ secrets.CLICKHOUSE_CBT_PASSWORD }}"
-              secure: true
-
-          s3:
-            endpoint: "${{ secrets.S3_ENDPOINT }}"
-            access_key: "${{ secrets.S3_ACCESS_KEY_ID }}"
-            secret_key: "${{ secrets.S3_SECRET_ACCESS_KEY }}"
-            bucket: "${{ secrets.S3_BUCKET }}"
-            region: "${{ secrets.S3_REGION }}"
-          EOF
-
-          cat > config.ci.yaml << 'EOF'
+      - name: Write server config (talks to the hosted production proxy as panda-ci)
+        run: |
+          cat > config.ci.yaml << EOF
           server:
             host: "0.0.0.0"
             port: 2480
@@ -154,11 +163,18 @@ jobs:
 
           sandbox:
             backend: docker
-            image: "ethpandaops/panda:sandbox-latest"
+            image: "ethpandaops-panda-sandbox:latest"
             network: "host"
 
           proxy:
-            url: "http://127.0.0.1:18081"
+            url: "${PANDA_PROXY_URL}"
+            auth:
+              # oidc mode = externally-minted token (ci_auth), empty resource. Without
+              # this the server defaults resource to the proxy URL, changing the
+              # credential-store digest so it never finds the token ci_auth wrote.
+              mode: "oidc"
+              issuer_url: "${PANDA_PROXY_OIDC_ISSUER}"
+              client_id: "panda-proxy"
           EOF
 
       - name: Configure panda CLI (CLI route shells out to `panda` -> local server)
@@ -169,23 +185,19 @@ jobs:
             base_url: "http://localhost:2480"
           EOF
 
-      - name: Start proxy
-        run: |
-          ./panda-proxy --config proxy-config.ci.yaml &
-          for i in {1..30}; do
-            if curl -s http://localhost:18081/health > /dev/null 2>&1; then
-              echo "Proxy is ready"
-              break
-            fi
-            echo "Waiting for proxy... ($i/30)"
-            sleep 2
-          done
+      - name: Cache embedding vectors (server's local vector cache)
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.panda/data/cache
+          key: panda-embed-cache-${{ github.run_id }}
+          restore-keys: panda-embed-cache-
 
       - name: Start server
         run: |
           ./panda-server serve --config config.ci.yaml > server.log 2>&1 &
-          # Cold start builds the semantic-search indexes before /health is ready; wait
-          # up to 4m and fail fast (don't run the eval against a not-ready server).
+          # Cold runners (no embedding cache) build the semantic-search indexes via
+          # the proxy at startup (~2-3 min) before /health is ready, so wait up to 4m
+          # and fail fast (don't run the eval against a not-ready server).
           for i in $(seq 1 120); do
             if curl -sf http://localhost:2480/health >/dev/null 2>&1; then echo "server ready after $((i*2))s"; break; fi
             echo "waiting for server... ($i/120)"; sleep 2
@@ -208,12 +220,15 @@ jobs:
           MCP_EVAL_LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
         run: |
           # --subject + --judge-model default to the harness defaults (config/settings.py);
-          # only override --subject when the dispatch input is set.
+          # only override --subject when the dispatch input is set. --concurrency 6: the
+          # local default (16) starves a 4-vCPU runner. --save-dir reports/run puts the
+          # per-run trace files inside the uploaded artifact, so failing runs are
+          # diagnosable from CI without Langfuse access.
           ARGS=(--cases "${{ inputs.cases || 'coverage.yaml' }}" --repeat "${{ inputs.repeat || '1' }}")
           [ -n "${{ inputs.subject }}" ] && ARGS+=(--subject "${{ inputs.subject }}")
-          # --save-dir reports/run puts the per-run trace files inside the uploaded
-          # artifact, so failing runs are diagnosable from CI without Langfuse access.
           uv run python -m scripts.eval "${ARGS[@]}" \
+            --concurrency 6 \
+            --subject-timeout 900 \
             --save-dir reports/run \
             --junit reports/junit.xml --json reports/eval.json \
             || true   # don't fail the job before uploading results
@@ -242,7 +257,7 @@ jobs:
 
       - name: Comment Langfuse trace links
         if: ${{ always() && github.event_name == 'pull_request' && hashFiles('tests/eval/reports/langfuse_links.md') != '' }}
-        uses: marocchino/sticky-pull-request-comment@773744901bac0e8cbb5a0dc842800d45e9b2b405 # v2.9.4
+        uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
         with:
           header: langfuse-traces
           path: tests/eval/reports/langfuse_links.md
