@@ -13,17 +13,7 @@
 # script will then fail if the entry is left behind, which is the intended nudge.
 set -euo pipefail
 
-# GO-2026-4887 (CVE-2026-34040) and GO-2026-4883 (CVE-2026-33997): moby daemon
-# AuthZ-plugin CVEs. The fix exists only on the new github.com/moby/moby/v2
-# module path (2.0.0-beta.8, a beta); the github.com/docker/docker path we
-# import (also pulled transitively by testcontainers-go) has no fixed release
-# above v28.5.2. Both are daemon-side, exploitable only on a daemon running
-# authorization plugins — panda is a client of the daemon, not a host for it.
-# Drop these once a stable fix lands on a usable import path.
-ALLOWLIST=(
-  GO-2026-4887
-  GO-2026-4883
-)
+ALLOWLIST=()
 
 # Human-readable report for the logs. govulncheck exits non-zero when it finds
 # affecting vulnerabilities, so don't let that abort the script here — the gate

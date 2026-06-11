@@ -11,8 +11,7 @@ import (
 	"strings"
 	"time"
 
-	dockercontainer "github.com/docker/docker/api/types/container"
-	dockerfilters "github.com/docker/docker/api/types/filters"
+	dockerclient "github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 
 	"github.com/ethpandaops/panda/pkg/config"
@@ -473,10 +472,9 @@ func cleanupSandboxContainers() {
 	}
 	defer func() { _ = cli.Close() }()
 
-	filterArgs := dockerfilters.NewArgs()
-	filterArgs.Add("label", sandbox.LabelManaged+"=true")
+	filterArgs := make(dockerclient.Filters).Add("label", sandbox.LabelManaged+"=true")
 
-	containers, err := cli.ContainerList(ctx, dockercontainer.ListOptions{
+	list, err := cli.ContainerList(ctx, dockerclient.ContainerListOptions{
 		All:     true,
 		Filters: filterArgs,
 	})
@@ -484,14 +482,14 @@ func cleanupSandboxContainers() {
 		return
 	}
 
-	if len(containers) == 0 {
+	if len(list.Items) == 0 {
 		return
 	}
 
-	fmt.Printf("Cleaning up %d sandbox container(s)...\n", len(containers))
+	fmt.Printf("Cleaning up %d sandbox container(s)...\n", len(list.Items))
 
-	for _, c := range containers {
-		if err := cli.ContainerRemove(ctx, c.ID, dockercontainer.RemoveOptions{Force: true}); err != nil {
+	for _, c := range list.Items {
+		if _, err := cli.ContainerRemove(ctx, c.ID, dockerclient.ContainerRemoveOptions{Force: true}); err != nil {
 			log.WithField("container", c.ID[:12]).WithError(err).Warn("Failed to remove sandbox container")
 		}
 	}

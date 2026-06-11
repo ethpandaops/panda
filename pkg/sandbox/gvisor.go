@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/docker/docker/api/types/system"
+	"github.com/moby/moby/api/types/system"
+	"github.com/moby/moby/client"
 	"github.com/sirupsen/logrus"
 
 	"github.com/ethpandaops/panda/pkg/config"
@@ -50,16 +51,16 @@ func (b *GVisorBackend) Name() string {
 
 // verifyGVisorRuntime checks that the gVisor (runsc) runtime is available.
 func (b *GVisorBackend) verifyGVisorRuntime(ctx context.Context) error {
-	info, err := b.client.Info(ctx)
+	res, err := b.client.Info(ctx, client.InfoOptions{})
 	if err != nil {
 		return fmt.Errorf("getting docker info: %w", err)
 	}
 
-	if !hasRuntime(info, gVisorRuntimeName) {
+	if !hasRuntime(res.Info, gVisorRuntimeName) {
 		return fmt.Errorf(
 			"gVisor runtime '%s' not available; available runtimes: %v",
 			gVisorRuntimeName,
-			getRuntimeNames(info),
+			getRuntimeNames(res.Info),
 		)
 	}
 

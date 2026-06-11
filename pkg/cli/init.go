@@ -15,8 +15,7 @@ import (
 	"syscall"
 	"time"
 
-	dockerimage "github.com/docker/docker/api/types/image"
-	dockerclient "github.com/docker/docker/client"
+	dockerclient "github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 
 	"github.com/ethpandaops/panda/internal/version"
@@ -377,10 +376,7 @@ volumes:
 // newDockerClient constructs a Docker client from the environment with API
 // version negotiation enabled.
 func newDockerClient() (*dockerclient.Client, error) {
-	cli, err := dockerclient.NewClientWithOpts(
-		dockerclient.FromEnv,
-		dockerclient.WithAPIVersionNegotiation(),
-	)
+	cli, err := dockerclient.New(dockerclient.FromEnv)
 	if err != nil {
 		return nil, fmt.Errorf("creating docker client: %w", err)
 	}
@@ -400,7 +396,7 @@ func checkDockerAndPullImages(ctx context.Context) error {
 	}
 	defer func() { _ = cli.Close() }()
 
-	if _, err := cli.Ping(pingCtx); err != nil {
+	if _, err := cli.Ping(pingCtx, dockerclient.PingOptions{}); err != nil {
 		return fmt.Errorf("docker is not running: %w", err)
 	}
 
@@ -444,7 +440,7 @@ func pullImage(ctx context.Context, cli *dockerclient.Client, image string) erro
 	pullCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 
-	reader, err := cli.ImagePull(pullCtx, image, dockerimage.PullOptions{})
+	reader, err := cli.ImagePull(pullCtx, image, dockerclient.ImagePullOptions{})
 	if err != nil {
 		return fmt.Errorf("pulling image %s: %w", image, err)
 	}
@@ -486,12 +482,12 @@ func daemonOperatingSystem() string {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	info, err := cli.Info(ctx)
+	res, err := cli.Info(ctx, dockerclient.InfoOptions{})
 	if err != nil {
 		return ""
 	}
 
-	return info.OperatingSystem
+	return res.Info.OperatingSystem
 }
 
 // resolveDockerSocketPathFor honors DOCKER_HOST when it points at an absolute

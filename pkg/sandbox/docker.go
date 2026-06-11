@@ -15,13 +15,10 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/client"
-	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/google/uuid"
+	"github.com/moby/moby/api/pkg/stdcopy"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 	"github.com/sirupsen/logrus"
 
 	"github.com/ethpandaops/panda/pkg/config"
@@ -113,13 +110,13 @@ func (b *DockerBackend) Name() string {
 func (b *DockerBackend) Start(ctx context.Context) error {
 	b.log.Info("Starting Docker sandbox backend")
 
-	dockerClient, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	dockerClient, err := client.New(client.FromEnv)
 	if err != nil {
 		return fmt.Errorf("creating docker client: %w", err)
 	}
 
 	// Verify Docker is accessible.
-	if _, err := dockerClient.Ping(ctx); err != nil {
+	if _, err := dockerClient.Ping(ctx, client.PingOptions{}); err != nil {
 		return fmt.Errorf("connecting to docker daemon: %w", err)
 	}
 
@@ -276,7 +273,10 @@ func (b *DockerBackend) executeEphemeral(ctx context.Context, req ExecuteRequest
 	defer cancel()
 
 	// Create container.
-	resp, err := b.client.ContainerCreate(execCtx, containerConfig, hostConfig, nil, nil, "")
+	resp, err := b.client.ContainerCreate(execCtx, client.ContainerCreateOptions{
+		Config:     containerConfig,
+		HostConfig: hostConfig,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("creating container: %w", err)
 	}
@@ -295,7 +295,7 @@ func (b *DockerBackend) executeEphemeral(ctx context.Context, req ExecuteRequest
 	// Start container.
 	startTime := time.Now()
 
-	if err := b.client.ContainerStart(execCtx, containerID, container.StartOptions{}); err != nil {
+	if _, err := b.client.ContainerStart(execCtx, containerID, client.ContainerStartOptions{}); err != nil {
 		return nil, fmt.Errorf("starting container: %w", err)
 	}
 
@@ -499,13 +499,16 @@ func (b *DockerBackend) createSessionContainer(ctx context.Context, sessionID st
 	securityCfg.ApplyToHostConfig(hostConfig)
 
 	// Create container.
-	resp, err := b.client.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
+	resp, err := b.client.ContainerCreate(ctx, client.ContainerCreateOptions{
+		Config:     containerConfig,
+		HostConfig: hostConfig,
+	})
 	if err != nil {
 		return "", fmt.Errorf("creating container: %w", err)
 	}
 
 	// Start container.
-	if err := b.client.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
+	if _, err := b.client.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); err != nil {
 		_ = b.forceRemoveContainer(ctx, resp.ID)
 		return "", fmt.Errorf("starting container: %w", err)
 	}
@@ -539,19 +542,19 @@ func filterSessionEnv(env map[string]string) map[string]string {
 func (b *DockerBackend) createSessionDirs(ctx context.Context, containerID string) error {
 	// Create directories and set permissions so nobody user can write.
 	// We need to run as root to create dirs in /, then chmod for nobody.
-	execConfig := container.ExecOptions{
+	execConfig := client.ExecCreateOptions{
 		Cmd:          []string{"sh", "-c", "mkdir -p /workspace /output && chmod 777 /workspace /output"},
 		AttachStdout: true,
 		AttachStderr: true,
 		User:         "root", // Run as root to create dirs and set permissions
 	}
 
-	execResp, err := b.client.ContainerExecCreate(ctx, containerID, execConfig)
+	execResp, err := b.client.ExecCreate(ctx, containerID, execConfig)
 	if err != nil {
 		return fmt.Errorf("creating exec: %w", err)
 	}
 
-	if err := b.client.ContainerExecStart(ctx, execResp.ID, container.ExecStartOptions{}); err != nil {
+	if _, err := b.client.ExecStart(ctx, execResp.ID, client.ExecStartOptions{}); err != nil {
 		return fmt.Errorf("starting exec: %w", err)
 	}
 
@@ -588,19 +591,19 @@ func (b *DockerBackend) execInContainer(
 	encoded := base64.StdEncoding.EncodeToString([]byte(code))
 	writeCmd := []string{"sh", "-c", fmt.Sprintf("echo %s | base64 -d > %s", encoded, scriptPath)}
 
-	writeConfig := container.ExecOptions{
+	writeConfig := client.ExecCreateOptions{
 		Cmd:          writeCmd,
 		AttachStdout: true,
 		AttachStderr: true,
 	}
 
-	writeResp, err := b.client.ContainerExecCreate(execCtx, session.ContainerID, writeConfig)
+	writeResp, err := b.client.ExecCreate(execCtx, session.ContainerID, writeConfig)
 	if err != nil {
 		return nil, fmt.Errorf("creating write exec: %w", err)
 	}
 
 	// Attach so the write completes and its output is drained before we inspect it.
-	writeAttach, err := b.client.ContainerExecAttach(execCtx, writeResp.ID, container.ExecAttachOptions{})
+	writeAttach, err := b.client.ExecAttach(execCtx, writeResp.ID, client.ExecAttachOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("attaching to write exec: %w", err)
 	}
@@ -613,7 +616,7 @@ func (b *DockerBackend) execInContainer(
 
 	writeAttach.Close()
 
-	writeInspect, err := b.client.ContainerExecInspect(execCtx, writeResp.ID)
+	writeInspect, err := b.client.ExecInspect(execCtx, writeResp.ID, client.ExecInspectOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("inspecting write exec: %w", err)
 	}
@@ -638,20 +641,20 @@ func (b *DockerBackend) execInContainer(
 	}
 	execEnv = append(execEnv, EnvExecutionID+"="+executionID)
 
-	execConfig := container.ExecOptions{
+	execConfig := client.ExecCreateOptions{
 		Cmd:          []string{"python", scriptPath},
 		AttachStdout: true,
 		AttachStderr: true,
 		Env:          execEnv,
 	}
 
-	execResp, err := b.client.ContainerExecCreate(execCtx, session.ContainerID, execConfig)
+	execResp, err := b.client.ExecCreate(execCtx, session.ContainerID, execConfig)
 	if err != nil {
 		return nil, fmt.Errorf("creating exec: %w", err)
 	}
 
 	// Attach to get output.
-	attachResp, err := b.client.ContainerExecAttach(execCtx, execResp.ID, container.ExecAttachOptions{})
+	attachResp, err := b.client.ExecAttach(execCtx, execResp.ID, client.ExecAttachOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("attaching to exec: %w", err)
 	}
@@ -681,19 +684,19 @@ func (b *DockerBackend) execInContainer(
 		defer cleanupCancel()
 
 		cleanupCmd := []string{"rm", "-f", scriptPath}
-		cleanupConfig := container.ExecOptions{
+		cleanupConfig := client.ExecCreateOptions{
 			Cmd: cleanupCmd,
 		}
 
-		if cleanupResp, err := b.client.ContainerExecCreate(cleanupCtx, session.ContainerID, cleanupConfig); err == nil {
-			_ = b.client.ContainerExecStart(cleanupCtx, cleanupResp.ID, container.ExecStartOptions{})
+		if cleanupResp, err := b.client.ExecCreate(cleanupCtx, session.ContainerID, cleanupConfig); err == nil {
+			_, _ = b.client.ExecStart(cleanupCtx, cleanupResp.ID, client.ExecStartOptions{})
 		}
 
 		return nil, fmt.Errorf("execution timed out after %s", timeout)
 	}
 
 	// Get exit code.
-	inspectResp, err := b.client.ContainerExecInspect(ctx, execResp.ID)
+	inspectResp, err := b.client.ExecInspect(ctx, execResp.ID, client.ExecInspectOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("inspecting exec: %w", err)
 	}
@@ -703,13 +706,13 @@ func (b *DockerBackend) execInContainer(
 	// Cleanup the script file.
 	cleanupCmd := []string{"rm", "-f", scriptPath}
 
-	cleanupConfig := container.ExecOptions{
+	cleanupConfig := client.ExecCreateOptions{
 		Cmd: cleanupCmd,
 	}
 
-	cleanupResp, err := b.client.ContainerExecCreate(ctx, session.ContainerID, cleanupConfig)
+	cleanupResp, err := b.client.ExecCreate(ctx, session.ContainerID, cleanupConfig)
 	if err == nil {
-		_ = b.client.ContainerExecStart(ctx, cleanupResp.ID, container.ExecStartOptions{})
+		_, _ = b.client.ExecStart(ctx, cleanupResp.ID, client.ExecStartOptions{})
 	}
 
 	log.WithFields(logrus.Fields{
@@ -728,19 +731,19 @@ func (b *DockerBackend) execInContainer(
 
 // collectSessionFiles lists files in the session's /workspace directory.
 func (b *DockerBackend) collectSessionFiles(ctx context.Context, containerID string) []SessionFile {
-	execConfig := container.ExecOptions{
+	execConfig := client.ExecCreateOptions{
 		Cmd:          []string{"find", "/workspace", "-maxdepth", "1", "-type", "f", "-printf", "%f\\t%s\\t%T@\\n"},
 		AttachStdout: true,
 		AttachStderr: true,
 	}
 
-	execResp, err := b.client.ContainerExecCreate(ctx, containerID, execConfig)
+	execResp, err := b.client.ExecCreate(ctx, containerID, execConfig)
 	if err != nil {
 		b.log.WithError(err).Debug("Failed to create exec for listing session files")
 		return nil
 	}
 
-	attachResp, err := b.client.ContainerExecAttach(ctx, execResp.ID, container.ExecAttachOptions{})
+	attachResp, err := b.client.ExecAttach(ctx, execResp.ID, client.ExecAttachOptions{})
 	if err != nil {
 		b.log.WithError(err).Debug("Failed to attach to exec for listing session files")
 		return nil
@@ -908,14 +911,16 @@ func (b *DockerBackend) waitForContainer(
 	defer cancel()
 
 	// Wait for container to exit.
-	statusCh, errCh := b.client.ContainerWait(waitCtx, containerID, container.WaitConditionNotRunning)
+	waitResult := b.client.ContainerWait(waitCtx, containerID, client.ContainerWaitOptions{
+		Condition: container.WaitConditionNotRunning,
+	})
 
 	select {
-	case err := <-errCh:
+	case err := <-waitResult.Error:
 		if err != nil {
 			return nil, fmt.Errorf("waiting for container: %w", err)
 		}
-	case status := <-statusCh:
+	case status := <-waitResult.Result:
 		// Container exited, get logs.
 		stdout, stderr, err := b.getContainerLogs(ctx, containerID)
 		if err != nil {
@@ -936,7 +941,7 @@ func (b *DockerBackend) waitForContainer(
 
 // getContainerLogs retrieves stdout and stderr from a container.
 func (b *DockerBackend) getContainerLogs(ctx context.Context, containerID string) (string, string, error) {
-	logReader, err := b.client.ContainerLogs(ctx, containerID, container.LogsOptions{
+	logReader, err := b.client.ContainerLogs(ctx, containerID, client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 	})
@@ -1008,7 +1013,7 @@ func (b *DockerBackend) untrackContainer(executionID string) {
 
 // forceKillContainer forcefully kills a running container.
 func (b *DockerBackend) forceKillContainer(ctx context.Context, containerID string) error {
-	if err := b.client.ContainerKill(ctx, containerID, "SIGKILL"); err != nil {
+	if _, err := b.client.ContainerKill(ctx, containerID, client.ContainerKillOptions{Signal: "SIGKILL"}); err != nil {
 		// Ignore "not found" errors.
 		if !errdefs.IsNotFound(err) {
 			return fmt.Errorf("killing container: %w", err)
@@ -1020,7 +1025,7 @@ func (b *DockerBackend) forceKillContainer(ctx context.Context, containerID stri
 
 // forceRemoveContainer forcefully removes a container.
 func (b *DockerBackend) forceRemoveContainer(ctx context.Context, containerID string) error {
-	if err := b.client.ContainerRemove(ctx, containerID, container.RemoveOptions{Force: true}); err != nil {
+	if _, err := b.client.ContainerRemove(ctx, containerID, client.ContainerRemoveOptions{Force: true}); err != nil {
 		if !errdefs.IsNotFound(err) {
 			return fmt.Errorf("removing container: %w", err)
 		}
@@ -1037,11 +1042,11 @@ func (b *DockerBackend) getSessionContainer(ctx context.Context, sessionID strin
 	}
 
 	// Filter by session ID label.
-	filterArgs := filters.NewArgs()
-	filterArgs.Add("label", LabelManaged+"=true")
-	filterArgs.Add("label", LabelSessionID+"="+sessionID)
+	filterArgs := make(client.Filters).
+		Add("label", LabelManaged+"=true").
+		Add("label", LabelSessionID+"="+sessionID)
 
-	containers, err := b.client.ContainerList(ctx, container.ListOptions{
+	list, err := b.client.ContainerList(ctx, client.ContainerListOptions{
 		All:     true,
 		Filters: filterArgs,
 	})
@@ -1049,11 +1054,11 @@ func (b *DockerBackend) getSessionContainer(ctx context.Context, sessionID strin
 		return nil, fmt.Errorf("listing containers: %w", err)
 	}
 
-	if len(containers) == 0 {
+	if len(list.Items) == 0 {
 		return nil, nil
 	}
 
-	c := containers[0]
+	c := list.Items[0]
 
 	return &SessionContainer{
 		ContainerID: c.ID,
@@ -1070,11 +1075,11 @@ func (b *DockerBackend) listAllSessionContainers(ctx context.Context) ([]*Sessio
 	}
 
 	// Filter by managed label and session ID label (only session containers have session IDs).
-	filterArgs := filters.NewArgs()
-	filterArgs.Add("label", LabelManaged+"=true")
-	filterArgs.Add("label", LabelSessionID)
+	filterArgs := make(client.Filters).
+		Add("label", LabelManaged+"=true").
+		Add("label", LabelSessionID)
 
-	containers, err := b.client.ContainerList(ctx, container.ListOptions{
+	list, err := b.client.ContainerList(ctx, client.ContainerListOptions{
 		All:     true,
 		Filters: filterArgs,
 	})
@@ -1082,9 +1087,9 @@ func (b *DockerBackend) listAllSessionContainers(ctx context.Context) ([]*Sessio
 		return nil, fmt.Errorf("listing containers: %w", err)
 	}
 
-	result := make([]*SessionContainer, 0, len(containers))
+	result := make([]*SessionContainer, 0, len(list.Items))
 
-	for _, c := range containers {
+	for _, c := range list.Items {
 		sessionID := c.Labels[LabelSessionID]
 		if sessionID == "" {
 			continue
@@ -1221,10 +1226,9 @@ func (b *DockerBackend) SessionsEnabled() bool {
 // This handles orphaned containers from previous server instances that were killed abruptly.
 func (b *DockerBackend) cleanupExpiredContainers(ctx context.Context) error {
 	// Find all containers with our managed label.
-	filterArgs := filters.NewArgs()
-	filterArgs.Add("label", LabelManaged+"=true")
+	filterArgs := make(client.Filters).Add("label", LabelManaged+"=true")
 
-	containers, err := b.client.ContainerList(ctx, container.ListOptions{
+	list, err := b.client.ContainerList(ctx, client.ContainerListOptions{
 		All:     true,
 		Filters: filterArgs,
 	})
@@ -1232,7 +1236,7 @@ func (b *DockerBackend) cleanupExpiredContainers(ctx context.Context) error {
 		return fmt.Errorf("listing managed containers: %w", err)
 	}
 
-	if len(containers) == 0 {
+	if len(list.Items) == 0 {
 		return nil
 	}
 
@@ -1241,7 +1245,7 @@ func (b *DockerBackend) cleanupExpiredContainers(ctx context.Context) error {
 	now := time.Now()
 	var cleaned int
 
-	for _, c := range containers {
+	for _, c := range list.Items {
 		createdAt := parseContainerCreatedAt(c.Labels, c.Created)
 		if now.Sub(createdAt) <= maxAge {
 			continue
@@ -1290,7 +1294,7 @@ func (b *DockerBackend) ensureImage(ctx context.Context) error {
 	// Image not found, try to pull it.
 	b.log.WithField("image", b.cfg.Image).Info("Pulling sandbox image")
 
-	reader, err := b.client.ImagePull(ctx, b.cfg.Image, image.PullOptions{})
+	reader, err := b.client.ImagePull(ctx, b.cfg.Image, client.ImagePullOptions{})
 	if err != nil {
 		return fmt.Errorf("pulling image: %w", err)
 	}
@@ -1321,7 +1325,7 @@ func (b *DockerBackend) ensureNetwork(ctx context.Context) error {
 	log := b.log.WithField("network", networkName)
 
 	// Check if the network already exists.
-	_, err := b.client.NetworkInspect(ctx, networkName, network.InspectOptions{})
+	_, err := b.client.NetworkInspect(ctx, networkName, client.NetworkInspectOptions{})
 	if err == nil {
 		log.Debug("Sandbox network exists")
 		return nil
@@ -1334,7 +1338,7 @@ func (b *DockerBackend) ensureNetwork(ctx context.Context) error {
 	// Network not found, create it.
 	log.Info("Creating sandbox network")
 
-	_, err = b.client.NetworkCreate(ctx, networkName, network.CreateOptions{
+	_, err = b.client.NetworkCreate(ctx, networkName, client.NetworkCreateOptions{
 		Driver: "bridge",
 		Labels: map[string]string{
 			LabelManaged: "true",
