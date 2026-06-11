@@ -1,0 +1,308 @@
+name: Release Qualification
+
+# Full-suite eval for every release and pre-release tag: a single pass over
+# baseline_all.yaml (every question + its paraphrase variations) against the hosted
+# production proxy — the same path a released CLI uses. The scorecard (headline
+# numbers, per-question flips vs the previous qualified release, trend chart,
+# Langfuse traces) is spliced into the GitHub release description, and the run's
+# eval-qualification.json is attached as a release asset so future runs compare
+# against it.
+#
+# This is a scorecard, not a gate: a human reads the release notes and decides
+# whether an -rc.N pre-release graduates to a real tag. The job only fails if the
+# harness itself breaks (no answer-quality threshold).
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# One qualification per tag; never cancel a run mid-measurement.
+concurrency:
+  group: release-eval-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write        # upload release assets + edit the release body
+  packages: write        # push/pull the content-addressed sandbox image to GHCR
+  checks: write          # publish-unit-test-result-action creates a check run
+
+env:
+  # Hosted production proxy + its Authentik issuer (dual-issuer: Dex humans + Authentik CI).
+  PANDA_PROXY_URL: ${{ vars.PANDA_PROXY_URL || 'https://panda-proxy.ethpandaops.io' }}
+  PANDA_PROXY_OIDC_ISSUER: ${{ vars.PANDA_PROXY_OIDC_ISSUER || 'https://authentik.analytics.production.platform.ethpandaops.io/application/o/panda-proxy/' }}
+  SANDBOX_IMAGE: ${{ vars.SANDBOX_IMAGE || 'ghcr.io/ethpandaops/panda-sandbox' }}
+
+jobs:
+  qualify:
+    runs-on: ubuntu-latest
+    # ~84 runs at --concurrency 6 with a 900s per-question ceiling: the typical run is
+    # well under an hour, but a pathological tail (several slow questions + in-worker
+    # retries) needs real headroom before the artifacts are written.
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Derive tag
+        id: meta
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          # Semver pre-release suffix (v1.2.3-rc.1) == what goreleaser's
+          # `prerelease: auto` marks as a GitHub pre-release.
+          if [[ "$TAG" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Go (module + build cache)
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build binaries (server + panda CLI)
+        run: |
+          make build
+          echo "$GITHUB_WORKSPACE" >> "$GITHUB_PATH"   # put `panda` on PATH for the CLI route
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          # Keep in sync with the uv pinned in sandbox/Dockerfile.
+          version: "0.11.17"
+          enable-cache: true
+
+      - name: Install eval deps
+        working-directory: tests/eval
+        run: uv sync
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '22'
+
+      # npm ci against the committed lockfile: transitive deps and the platform
+      # binary are integrity-hashed, so nothing resolves live from the registry.
+      - name: Install opencode (locked)
+        working-directory: .github/opencode
+        run: |
+          npm ci --no-audit --no-fund
+          echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
+
+      - name: Configure opencode auth (opencode-go)
+        env:
+          OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib
+          p = pathlib.Path.home() / ".local/share/opencode/auth.json"
+          p.parent.mkdir(parents=True, exist_ok=True)
+          auth = json.loads(p.read_text()) if p.exists() else {}
+          auth["opencode-go"] = {"type": "api", "key": os.environ["OPENCODE_GO_API_KEY"]}
+          p.write_text(json.dumps(auth))
+          p.chmod(0o600)
+          print("configured opencode-go auth")
+          PY
+
+      - name: Log in to GHCR (sandbox image cache)
+        run: echo "${{ github.token }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Sandbox image (build only if its inputs changed)
+        run: |
+          set -euo pipefail
+          HASH=$(make sandbox-hash)
+          IMG="${SANDBOX_IMAGE}:${HASH}"
+          echo "Sandbox image: $IMG"
+          if docker image inspect "$IMG" >/dev/null 2>&1; then
+            echo "Already present on this runner — no build, no pull."
+          elif docker manifest inspect "$IMG" >/dev/null 2>&1; then
+            echo "In registry — pulling."
+            docker pull "$IMG"
+          else
+            echo "Sandbox inputs changed — building $IMG and publishing it."
+            docker build -t "$IMG" -f sandbox/Dockerfile .
+            docker push "$IMG" || echo "WARNING: push failed (registry creds?); using local image."
+          fi
+          # Name the eval config references.
+          docker tag "$IMG" ethpandaops-panda-sandbox:latest
+
+      - name: Mint panda-ci service-account credential
+        working-directory: tests/eval
+        env:
+          PANDA_CI_SVC_TOKEN: ${{ secrets.PANDA_CI_SVC_TOKEN }}
+        run: uv run python -m scripts.ci_auth
+
+      - name: Write server config (talks to the hosted production proxy as panda-ci)
+        run: |
+          cat > config.ci.yaml << EOF
+          server:
+            host: "0.0.0.0"
+            port: 2480
+            base_url: "http://127.0.0.1:2480"
+            sandbox_url: "http://127.0.0.1:2480"
+
+          sandbox:
+            backend: docker
+            image: "ethpandaops-panda-sandbox:latest"
+            network: "host"
+
+          proxy:
+            url: "${PANDA_PROXY_URL}"
+            auth:
+              # oidc mode = externally-minted token (ci_auth), empty resource. Without
+              # this the server defaults resource to the proxy URL, changing the
+              # credential-store digest so it never finds the token ci_auth wrote.
+              mode: "oidc"
+              issuer_url: "${PANDA_PROXY_OIDC_ISSUER}"
+              client_id: "panda-proxy"
+          EOF
+
+      - name: Configure panda CLI (CLI route shells out to `panda` -> local server)
+        run: |
+          mkdir -p "$HOME/.config/panda"
+          cat > "$HOME/.config/panda/config.yaml" << 'EOF'
+          server:
+            base_url: "http://localhost:2480"
+          EOF
+
+      - name: Cache embedding vectors (server's local vector cache)
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.panda/data/cache
+          key: panda-embed-cache-${{ github.run_id }}
+          restore-keys: panda-embed-cache-
+
+      - name: Start server
+        run: |
+          ./panda-server serve --config config.ci.yaml > server.log 2>&1 &
+          # Cold runners (no embedding cache) build the semantic-search indexes via
+          # the proxy at startup (~2-3 min) before /health is ready, so wait up to 4m
+          # and fail fast (don't let the eval run against a not-ready server).
+          for i in $(seq 1 120); do
+            if curl -sf http://localhost:2480/health >/dev/null 2>&1; then echo "server ready after $((i*2))s"; break; fi
+            echo "waiting for server... ($i/120)"; sleep 2
+          done
+          if ! curl -sf http://localhost:2480/health >/dev/null 2>&1; then
+            echo "ERROR: server not ready after 240s; last 60 log lines:"; tail -60 server.log; exit 1
+          fi
+
+      - name: Run qualification eval (full baseline, variations included)
+        working-directory: tests/eval
+        env:
+          OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
+          # promptfoo grades each case's llm-rubric asserts via the judge model (OpenRouter).
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          MCP_EVAL_REASONING_EFFORT: high
+          MCP_EVAL_OPENCODE_TIMEOUT: "180"
+          MCP_EVAL_LANGFUSE_ENABLED: ${{ vars.LANGFUSE_HOST != '' && 'true' || 'false' }}
+          MCP_EVAL_LANGFUSE_HOST: ${{ vars.LANGFUSE_HOST }}
+          MCP_EVAL_LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          MCP_EVAL_LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+        run: |
+          # The full frozen baseline, paraphrase variations included, k=1, one subject:
+          # the same measurement the harden loop calls its reference number. --min-pass 0
+          # because qualification is a human-reviewed scorecard, not a gate — the job
+          # should only go red when the harness itself breaks. --concurrency 6: the
+          # local default (16) starves a 4-vCPU runner.
+          uv run python -m scripts.eval \
+            --cases baseline_all.yaml --concurrency 6 \
+            --subject opencode-go/deepseek-v4-flash:cli \
+            --subject-timeout 900 \
+            --min-pass 0 \
+            --junit reports/junit.xml --json reports/eval.json
+
+      - name: Server log (sandbox / proxy activity)
+        if: always()
+        run: |
+          echo "===== panda-server log (last 150 lines) ====="
+          tail -150 server.log 2>/dev/null || echo "(no server.log)"
+
+      - name: Download prior qualification records
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p history
+          # Releases that predate qualification have no eval-qualification.json asset;
+          # those downloads just fail quietly and the release is absent from comparisons.
+          for t in $(gh release list --limit 30 --json tagName --jq '.[].tagName'); do
+            [ "$t" = "$TAG" ] && continue
+            if gh release download "$t" --pattern eval-qualification.json \
+                 --output "history/${t}.json" 2>/dev/null; then
+              echo "fetched qualification record for $t"
+            fi
+          done
+          ls -la history/ || true
+
+      - name: Build scorecard
+        working-directory: tests/eval
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+          PRERELEASE: ${{ steps.meta.outputs.prerelease }}
+        run: |
+          ARGS=(--eval-json reports/eval.json --tag "$TAG" --commit "$GITHUB_SHA"
+                --history-dir "$GITHUB_WORKSPACE/history" --out-dir reports/release
+                --langfuse-links reports/langfuse_links.md --repo "$GITHUB_REPOSITORY")
+          [ "$PRERELEASE" = "true" ] && ARGS+=(--prerelease)
+          uv run python -m scripts.release_scorecard "${ARGS[@]}"
+          cat reports/release/scorecard.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Attach scorecard to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # The Release workflow (goreleaser) runs off the same tag push and usually
+          # finishes well before an ~hour of evals — but don't race it.
+          for i in $(seq 1 60); do
+            gh release view "$TAG" --json tagName >/dev/null 2>&1 && break
+            echo "waiting for goreleaser to publish release $TAG... ($i/60)"; sleep 30
+          done
+          gh release view "$TAG" --json tagName >/dev/null 2>&1 || {
+            echo "ERROR: release $TAG never appeared (did the Release workflow fail?)"; exit 1; }
+
+          gh release upload "$TAG" --clobber \
+            tests/eval/reports/release/eval-qualification.json \
+            tests/eval/reports/release/eval-trend.png
+
+          gh release view "$TAG" --json body --jq .body > body.md
+          python3 - <<'PY'
+          from pathlib import Path
+
+          body = Path("body.md").read_text()
+          card = Path("tests/eval/reports/release/scorecard.md").read_text()
+          start, end = "<!-- eval-scorecard:start -->", "<!-- eval-scorecard:end -->"
+          if start in body and end in body:
+              body = body.split(start)[0] + card + body.split(end, 1)[1]
+          else:
+              body = body.rstrip() + "\n\n" + card
+          Path("body.md").write_text(body)
+          PY
+          gh release edit "$TAG" --notes-file body.md
+          echo "scorecard attached to release $TAG"
+
+      - name: Upload results
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: release-eval-${{ steps.meta.outputs.tag }}
+          path: tests/eval/reports/
+          retention-days: 90
+
+      - name: Publish qualification results
+        uses: EnricoMi/publish-unit-test-result-action@c950f6fb443cb5af20a377fd0dfaa78838901040 # v2.23.0
+        if: always()
+        with:
+          files: tests/eval/reports/junit.xml
+          check_name: "Release Qualification"
+          comment_mode: "off"

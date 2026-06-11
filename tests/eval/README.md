@@ -124,8 +124,16 @@ tests/eval/
 - **`eval-smoke.yaml`** — every PR + master push. A couple of fast cases against the hosted
   production proxy (as the `panda-ci` service account). Runs `scripts.eval --cases smoke.yaml`
   and publishes the JUnit results as a PR comment/check.
-- **`eval.yaml`** — opt-in (the `run-evals` PR label, release tags, manual dispatch). Runs a
-  full cases file against a locally-built server + proxy.
+- **`eval.yaml`** — opt-in (the `run-evals` PR label, manual dispatch). Runs a full cases
+  file against a locally-built server + proxy.
+- **`release-eval.yaml`** — every `v*` tag (releases and `-rc.N` pre-releases). Single pass
+  over `baseline_all.yaml` (variations included) against the hosted proxy, then
+  `scripts.release_scorecard` splices a scorecard into the GitHub release description:
+  headline pass-rate/score, per-question flips vs the previous qualified release, a trend
+  chart, and Langfuse trace links. Each run's `eval-qualification.json` is attached as a
+  release asset — that's the history future runs compare against. It's a human-reviewed
+  scorecard, not a gate: cut a `vX.Y.Z-rc.N` tag (published as a GitHub pre-release, so
+  `panda upgrade` users never see it), read the scorecard, then push the final tag.
 
 ## Langfuse
 

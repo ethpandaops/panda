@@ -3,13 +3,10 @@ name: LLM Evaluation
 # Full eval: run a whole cases/*.yaml through the unified harness (scripts.eval) against
 # the opencode-go agent over the panda CLI route, graded by promptfoo llm-rubric asserts.
 # Builds server + proxy locally (proxy fronts the raw/refined ClickHouse clusters). Opt-in
-# per PR via the `run-evals` label; also runs on release tags + manual dispatch.
+# per PR via the `run-evals` label; also runs on manual dispatch. Release tags run the
+# full-suite scorecard in release-eval.yaml instead.
 
 on:
-  push:
-    tags:
-      - '*'
-
   pull_request:
     types: [labeled, synchronize]
 
@@ -49,8 +46,8 @@ permissions:
 
 jobs:
   evaluate:
-    # On a PR, only run when the `run-evals` label is present. Releases (tag push),
-    # manual dispatch, and workflow_call always run.
+    # On a PR, only run when the `run-evals` label is present. Manual dispatch and
+    # workflow_call always run.
     if: >-
       github.event_name != 'pull_request' ||
       contains(github.event.pull_request.labels.*.name, 'run-evals')
