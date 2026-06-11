@@ -4,11 +4,13 @@
         --tag v0.32.0 --commit abc1234 --history-dir history --out-dir reports/release
 
 Reads the JSON summary written by ``scripts.eval``, pools runs per question, and emits
-three artifacts for the release-eval workflow:
+four artifacts for the release-eval workflow:
 
   - ``eval-qualification.json`` — this release's record, uploaded as a release asset so
     future qualification runs can fetch it for comparison
   - ``eval-trend.png`` — pass-rate / score / token trend across qualified releases
+  - ``eval-report.html`` — self-contained full report (per-run matrix, percentiles,
+    category breakdowns; see ``scripts.release_report``), published to GitHub Pages
   - ``scorecard.md`` — marker-delimited markdown the workflow splices into the GitHub
     release body
 
@@ -30,7 +32,9 @@ import statistics
 from datetime import UTC, datetime
 from pathlib import Path
 
-SCHEMA = 1
+from scripts.release_report import build_html, category_breakdown, token_percentiles
+
+SCHEMA = 2
 MARKER_START = "<!-- eval-scorecard:start -->"
 MARKER_END = "<!-- eval-scorecard:end -->"
 TABLE_HISTORY = 8  # releases shown in the comparison table
@@ -60,6 +64,11 @@ def _parse_args() -> argparse.Namespace:
     )
     ap.add_argument(
         "--repo", default="", help="owner/name, for the trend-chart asset URL in the markdown"
+    )
+    ap.add_argument(
+        "--report-url",
+        default="",
+        help="public URL where eval-report.html will be served (linked from the scorecard)",
     )
     return ap.parse_args()
 
@@ -92,6 +101,19 @@ def _pool_questions(runs: list[dict]) -> dict[str, dict]:
     }
 
 
+def _question_tags(cases_file: str) -> dict[str, list[str]]:
+    """Question-id -> tags from the cases file, for category breakdowns. Empty on any
+    failure — the suite may have changed since this record's run, and a scorecard must
+    not die over missing tag metadata."""
+    try:
+        from cases.loader import load_test_cases
+
+        return {c.id: list(c.tags or []) for c in load_test_cases(cases_file)}
+    except Exception as exc:  # noqa: BLE001
+        print(f"no tag metadata ({exc}); category breakdown will be empty")
+        return {}
+
+
 def _build_record(args: argparse.Namespace, summary: dict, questions: dict[str, dict]) -> dict:
     correct_tokens = [
         r["tokens"] for r in summary["runs"] if r["correct"] and r.get("tokens", 0) > 0
@@ -110,6 +132,10 @@ def _build_record(args: argparse.Namespace, summary: dict, questions: dict[str, 
         "mean_tokens_correct": round(statistics.mean(correct_tokens), 1)
         if correct_tokens
         else 0.0,
+        "token_percentiles": token_percentiles(summary["runs"]),
+        "categories": category_breakdown(
+            summary["runs"], _question_tags(summary.get("cases", ""))
+        ),
         # fail_reasons are scorecard detail, not part of the durable comparison record
         "questions": {
             qid: {k: v for k, v in cell.items() if k != "fail_reasons"}
@@ -235,6 +261,16 @@ def _build_markdown(
     lines.append(row(record, bold=True))
     lines += [row(e) for e in reversed(history[-TABLE_HISTORY:])]
 
+    pcts = record["token_percentiles"]
+    lines += [
+        "",
+        f"Tokens per correct run: p50 {pcts['p50']:,.0f} · p90 {pcts['p90']:,.0f} · "
+        f"p99 {pcts['p99']:,.0f}.",
+    ]
+    if args.report_url:
+        lines += ["", f"**[📊 Full report]({args.report_url})** — per-run matrix, "
+                  "category breakdowns, token distributions, every grader reason."]
+
     if history:
         prev = history[-1]
         flips = _question_flips(prev, questions)
@@ -246,6 +282,21 @@ def _build_markdown(
             lines.append(f"No per-question changes vs {prev['tag']}.")
     else:
         lines += ["", "_First qualified release — no prior records to compare against._"]
+
+    weak = [c for c in record["categories"] if c["pass_rate"] < 1.0]
+    if weak:
+        lines += [
+            "",
+            "### Categories with failures",
+            "",
+            "| category | questions | pass rate | median tokens (correct) |",
+            "|---|---|---|---|",
+        ]
+        lines += [
+            f"| `{c['tag']}` | {c['questions']} | {c['correct']}/{c['runs']} "
+            f"({c['pass_rate']:.0%}) | {c['median_tokens_correct']:,.0f} |"
+            for c in weak
+        ]
 
     failed = {qid: c for qid, c in questions.items() if c["correct"] < c["runs"]}
     if failed:
@@ -292,6 +343,15 @@ def main() -> None:
     (out_dir / "eval-qualification.json").write_text(json.dumps(record, indent=2) + "\n")
     _render_trend(history[-CHART_HISTORY:] + [record], out_dir / "eval-trend.png")
     (out_dir / "scorecard.md").write_text(_build_markdown(args, record, questions, history))
+    (out_dir / "eval-report.html").write_text(
+        build_html(
+            record=record,
+            runs=summary["runs"],
+            questions=questions,
+            history=history,
+            trend_png=out_dir / "eval-trend.png",
+        )
+    )
 
     print(
         f"qualified {record['tag']}: pass-rate {record['pass_rate']:.0%} "

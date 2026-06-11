@@ -261,10 +261,46 @@ jobs:
         run: |
           ARGS=(--eval-json reports/eval.json --tag "$TAG" --commit "$GITHUB_SHA"
                 --history-dir "$GITHUB_WORKSPACE/history" --out-dir reports/release
-                --langfuse-links reports/langfuse_links.md --repo "$GITHUB_REPOSITORY")
+                --langfuse-links reports/langfuse_links.md --repo "$GITHUB_REPOSITORY"
+                --report-url "https://ethpandaops.github.io/panda/eval/${TAG}/")
           [ "$PRERELEASE" = "true" ] && ARGS+=(--prerelease)
           uv run python -m scripts.release_scorecard "${ARGS[@]}"
           cat reports/release/scorecard.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish HTML report to GitHub Pages (gh-pages branch)
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # First run creates the branch; later runs append one dir per release.
+          if git fetch origin gh-pages 2>/dev/null; then
+            git worktree add /tmp/pages origin/gh-pages
+            git -C /tmp/pages checkout -B gh-pages
+          else
+            git worktree add --detach /tmp/pages
+            git -C /tmp/pages checkout --orphan gh-pages
+            git -C /tmp/pages rm -rfq . 2>/dev/null || true
+            touch /tmp/pages/.nojekyll
+          fi
+          mkdir -p "/tmp/pages/eval/${TAG}"
+          cp tests/eval/reports/release/eval-report.html "/tmp/pages/eval/${TAG}/index.html"
+          # Regenerate the eval index from the directories actually present.
+          {
+            echo '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+            echo '<title>panda release qualification reports</title>'
+            echo '<style>body{font:16px/1.6 system-ui;max-width:640px;margin:3rem auto;padding:0 1rem}</style>'
+            echo '</head><body><h1>🐼 Release qualification reports</h1><ul>'
+            find /tmp/pages/eval -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | \
+              sort -rV | sed 's|.*|<li><a href="&/">&</a></li>|'
+            echo '</ul></body></html>'
+          } > /tmp/pages/eval/index.html
+          git -C /tmp/pages add -A
+          git -C /tmp/pages commit -m "eval report: ${TAG}"
+          git -C /tmp/pages push origin gh-pages
+          git worktree remove --force /tmp/pages
+          echo "report published: https://ethpandaops.github.io/panda/eval/${TAG}/"
 
       - name: Attach scorecard to release
         env:
@@ -283,7 +319,8 @@ jobs:
 
           gh release upload "$TAG" --clobber \
             tests/eval/reports/release/eval-qualification.json \
-            tests/eval/reports/release/eval-trend.png
+            tests/eval/reports/release/eval-trend.png \
+            tests/eval/reports/release/eval-report.html
 
           gh release view "$TAG" --json body --jq .body > body.md
           python3 - <<'PY'
