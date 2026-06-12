@@ -156,6 +156,12 @@ type ProxyConfig struct {
 	// Auth configures authentication for the proxy.
 	// Optional - if not set, the proxy must allow unauthenticated access.
 	Auth *ProxyAuthConfig `yaml:"auth,omitempty"`
+
+	// Optional makes an unreachable proxy non-fatal at startup: the server logs
+	// a warning and continues without it (datasource-backed features are
+	// unavailable until the proxy is reachable; background refresh retries).
+	// Useful for a lean local-dev server that doesn't need the credential proxy.
+	Optional bool `yaml:"optional,omitempty"`
 }
 
 // ProxyAuthConfig configures authentication for the proxy.
@@ -571,7 +577,9 @@ const MaxSandboxTimeout = 7_776_000
 
 // Validate validates the configuration.
 func (c *Config) Validate() error {
-	if c.Sandbox.Image == "" {
+	// A disabled sandbox ("none") needs no image — lean dev servers run without
+	// code execution.
+	if c.Sandbox.Backend != "none" && c.Sandbox.Image == "" {
 		return errors.New("sandbox.image is required")
 	}
 

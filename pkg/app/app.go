@@ -127,13 +127,19 @@ func (a *App) Build(ctx context.Context) error {
 	}
 
 	if err := proxyClient.Start(ctx); err != nil {
-		_ = a.stop(ctx)
+		if !a.cfg.Proxy.Optional {
+			_ = a.stop(ctx)
 
-		return fmt.Errorf("starting proxy client: %w", err)
+			return fmt.Errorf("starting proxy client: %w", err)
+		}
+
+		a.log.WithError(err).Warn("Proxy unreachable at startup; continuing without it (proxy.optional=true). " +
+			"Datasource-backed features are unavailable until the proxy is reachable; background refresh will retry.")
+	} else {
+		a.log.WithField("url", proxyClient.URL()).Info("Proxy client connected")
 	}
 
 	a.ProxyClient = proxyClient
-	a.log.WithField("url", proxyClient.URL()).Info("Proxy client connected")
 
 	// 4. Initialize modules.
 	if err := a.initModules(proxyClient); err != nil {
@@ -161,13 +167,14 @@ func (a *App) Build(ctx context.Context) error {
 	})
 
 	if err := cartographoorClient.Start(ctx); err != nil {
-		_ = a.stop(ctx)
-
-		return fmt.Errorf("starting cartographoor client: %w", err)
+		// Cartographoor is best-effort network metadata (with its own caching and
+		// retry); a startup failure shouldn't take the whole server down.
+		a.log.WithError(err).Warn("Cartographoor client startup failed; continuing without it")
+	} else {
+		a.log.Info("Cartographoor client started")
 	}
 
 	a.Cartographoor = cartographoorClient
-	a.log.Info("Cartographoor client started")
 
 	// 7. Inject cartographoor client into modules.
 	a.injectCartographoorClient()

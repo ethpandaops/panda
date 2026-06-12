@@ -65,8 +65,17 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 
 	searchRuntime, err := searchruntime.Build(ctx, b.log, application.ModuleRegistry, application.ProxyClient, b.cfg.Storage.CacheDir, b.cfg.ConsensusSpecs)
 	if err != nil {
-		_ = application.Stop(ctx)
-		return nil, fmt.Errorf("building search runtime: %w", err)
+		// Semantic search needs the proxy's embedding service. When the proxy is
+		// optional (lean dev server), degrade to an empty runtime — search
+		// endpoints return gracefully (the search service guards nil indices)
+		// rather than taking the server down.
+		if !b.cfg.Proxy.Optional {
+			_ = application.Stop(ctx)
+			return nil, fmt.Errorf("building search runtime: %w", err)
+		}
+
+		b.log.WithError(err).Warn("Search runtime unavailable; semantic search disabled (proxy.optional=true)")
+		searchRuntime = &searchruntime.Runtime{}
 	}
 
 	// searchruntime returns concrete typed pointers that are nil when semantic

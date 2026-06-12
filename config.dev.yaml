@@ -1,0 +1,31 @@
+# Lean local-dev panda config — runs the server on the host for `panda devnet`
+# work, without the production code-execution sandbox or the cloud proxy.
+#
+#   panda-server serve --config config.dev.yaml      # (or: go run ./cmd/server serve --config config.dev.yaml)
+#   panda devnet ls --config config.dev.yaml
+
+server:
+  host: "127.0.0.1"
+  port: 2480
+  url: "http://localhost:2480"
+
+# Sandbox is panda's code-execution backend — not needed for devnets.
+sandbox:
+  backend: none
+
+# No credential proxy in local dev. `optional: true` lets the server boot even
+# though nothing is listening (the default url is unreachable).
+proxy:
+  optional: true
+
+# The single Kubernetes cluster to use. Switch rails by editing this block.
+cluster:
+  name: bruno
+  kubeconfig_context: bruno
+
+devnet:
+  package: github.com/ethpandaops/ethereum-package
+  docker_cache: docker.ethquokkaops.io
+
+observability:
+  metrics_enabled: false
