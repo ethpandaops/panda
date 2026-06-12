@@ -91,3 +91,14 @@
         mainnet during 8 June 2026 (UTC), and what was the overall count of 
         observations?
 
+
+  # Minted by panda case studio on 2026-06-12T05:57:46+00:00 (question q_d08481c46e, human-reviewed).
+  - id: mainnet_average_base_fee_per_gas_jun_10_2026
+    description: "checks the average mainnet base fee per gas for june 10, 2026"
+    input: "What was the average base fee per gas on mainnet on jun 10 2026?"
+    network: mainnet
+    tags: [clickhouse, mainnet, base_fee, fees]
+    assert:
+      - type: llm-rubric
+        value: >
+          Reports the average base fee per gas on Ethereum mainnet for June 10, 2026 at roughly 0.263 gwei (about 263 million wei). Answers that give no numeric value, a clearly different magnitude, or a value far outside the low-gwei range fail.
