@@ -189,15 +189,15 @@ network_health:
   description: Queries used for monitoring Ethereum network health, derived from production alerting rules
   examples:
   - name: Attestation participation rate
-    description: Calculate attestation participation using pre-aggregated correctness data. votes_head
-      shows attestations for the current slot's block vs votes_max (total scheduled).
+    description: Calculate attestation participation using pre-aggregated vote totals. votes_max
+      is scheduled duties; votes_head plus votes_other is observed attestations.
     target: clickhouse-refined
     query: |
       SELECT
         slot_start_date_time,
         slot,
         votes_max AS total_scheduled_votes,
-        votes_head AS votes_for_head_block,
+        votes_head AS votes_for_current_slot_block,
         votes_other AS votes_for_other_blocks,
         (votes_head + votes_other) AS total_votes,
         ((votes_head + votes_other) / votes_max) AS participation_rate
@@ -205,35 +205,38 @@ network_health:
       WHERE slot_start_date_time >= now() - INTERVAL 1 HOUR
       ORDER BY slot_start_date_time DESC
   - name: Attestation correctness rate
-    description: Calculate the percentage of attestations voting for the correct (head) block vs other
-      blocks. Low correctness may indicate forks or reorgs.
+    description: Calculate the percentage of observed attestations whose head vote was correct using
+      the vote-correctness outcome columns.
     target: clickhouse-refined
     query: |
       SELECT
         slot_start_date_time,
         slot,
-        votes_head,
-        votes_other,
-        (votes_head + votes_other) AS total_votes,
-        if((votes_head + votes_other) > 0,
-           votes_head / (votes_head + votes_other) * 100,
+        COUNT() AS total_duties,
+        countIf(attested = 1) AS observed_attestations,
+        countIf(head_correct = 1) AS correct_head_votes,
+        countIf(head_correct = 0) AS incorrect_head_votes,
+        countIf(attested = 0) AS missed_duties,
+        if(observed_attestations > 0,
+           correct_head_votes * 100.0 / observed_attestations,
            0) AS correctness_percentage
-      FROM {network}.fct_attestation_correctness_head FINAL
+      FROM {network}.fct_attestation_vote_correctness_by_validator FINAL
       WHERE slot_start_date_time >= now() - INTERVAL 1 HOUR
-        AND votes_max > 0
+      GROUP BY slot_start_date_time, slot
       ORDER BY slot_start_date_time DESC
-  - name: Attestation agreement rate
-    description: Calculate attestation agreement — what fraction of attestations pointed to the same head
-      block. This is the same as head correctness rate. Use fct_attestation_correctness_head which has
-      votes_head (agreed on head) vs votes_other (disagreed).
+  - name: Current-slot vote share
+    description: Calculate what fraction of observed attestations pointed to the current slot's block.
+      This is a vote-distance metric, not head-vote correctness.
     target: clickhouse-refined
     query: |
       SELECT
         toStartOfHour(slot_start_date_time) AS hour,
-        SUM(votes_head) AS total_head_votes,
+        SUM(votes_head) AS total_current_slot_votes,
         SUM(votes_other) AS total_other_votes,
         SUM(votes_head + votes_other) AS total_votes,
-        SUM(votes_head) / SUM(votes_head + votes_other) * 100 AS agreement_pct
+        if(total_votes > 0,
+           total_current_slot_votes * 100.0 / total_votes,
+           0) AS current_slot_vote_pct
       FROM {network}.fct_attestation_correctness_head FINAL
       WHERE slot_start_date_time >= now() - INTERVAL 6 HOUR
         AND votes_max > 0
@@ -338,11 +341,13 @@ network_health:
         epoch,
         epoch_start_date_time,
         SUM(votes_max) AS total_scheduled,
-        SUM(votes_head) AS total_head_votes,
+        SUM(votes_head) AS total_current_slot_votes,
         SUM(votes_other) AS total_other_votes,
         SUM(votes_head + votes_other) AS total_actual_votes,
         SUM(votes_head + votes_other) / SUM(votes_max) AS participation_rate,
-        SUM(votes_head) / SUM(votes_head + votes_other) AS correctness_rate
+        if(total_actual_votes > 0,
+           total_current_slot_votes / total_actual_votes,
+           0) AS current_slot_vote_share
       FROM {network}.fct_attestation_correctness_head FINAL
       WHERE epoch_start_date_time >= now() - INTERVAL 1 DAY
         AND slot_start_date_time >= now() - INTERVAL 1 DAY
@@ -380,7 +385,7 @@ entity_analysis:
   name: Entity Analysis
   description: Queries for analyzing staking entities (operators, pools, exchanges) and their performance.
     For entity-level liveness, use fct_attestation_liveness_by_entity_head (pre-aggregated by entity).
-    For entity-level correctness, aggregate fct_attestation_correctness_by_validator_head joined with
+    For entity-level head correctness, aggregate fct_attestation_vote_correctness_by_validator joined with
     ethseer_validator_entity — there is no pre-aggregated correctness-by-entity table. For block proposals
     by entity, use fct_block_proposer_entity.
   examples:
@@ -415,10 +420,8 @@ entity_analysis:
       ORDER BY hour DESC, attestations DESC
   - name: Entity performance comparison (liveness + correctness)
     description: Compare staking entities by both attestation liveness and head correctness. Use fct_attestation_liveness_by_entity_head
-      for liveness. For entity-level correctness, aggregate fct_attestation_correctness_by_validator_head
+      for liveness. For entity-level correctness, aggregate fct_attestation_vote_correctness_by_validator
       joined with ethseer_validator_entity (there is no pre-aggregated correctness-by-entity table).
-      Correctness-by-validator rows include missed duties, so filter out null slot_distance before
-      treating rows as observed attestations.
     target: clickhouse-refined
     query: |
       WITH liveness AS (
@@ -434,21 +437,21 @@ entity_analysis:
       correctness AS (
         SELECT
           e.entity,
-          countIf(c.slot_distance = 0) AS correct_head_votes,
-          count() AS observed_attestations,
-          correct_head_votes / observed_attestations AS correctness_rate
+          countIf(c.attested = 1) AS observed_attestations,
+          countIf(c.head_correct = 1) AS correct_head_votes,
+          if(observed_attestations > 0, correct_head_votes / observed_attestations, 0) AS correctness_rate
         FROM (
-          SELECT slot_distance, attesting_validator_index
-          FROM {network}.fct_attestation_correctness_by_validator_head FINAL
+          SELECT validator_index, attested, head_correct
+          FROM {network}.fct_attestation_vote_correctness_by_validator FINAL
           WHERE slot_start_date_time >= now() - INTERVAL 1 DAY
-            AND slot_distance IS NOT NULL
         ) c
         GLOBAL INNER JOIN (
           SELECT validator_index, source AS entity
           FROM {network}.dim_node FINAL
           WHERE validator_index > 0
-        ) e ON c.attesting_validator_index = e.validator_index
+        ) e ON c.validator_index = e.validator_index
         GROUP BY e.entity
+        HAVING observed_attestations > 0
       )
       SELECT
         l.entity,
@@ -528,29 +531,29 @@ entity_analysis:
       LIMIT 30
   - name: Head vote accuracy by entity vs blob count
     description: Correlate head vote correctness with blob count per entity (e.g., Lido CSM, Rocketpool).
-      Uses fct_attestation_correctness_by_validator_head for per-validator correctness, ethseer_validator_entity
-      to map validators to entities, and fct_block_blob_count_head for blob counts per slot. Filter
-      missed duties (null slot_distance) before calculating vote correctness.
+      Uses fct_attestation_vote_correctness_by_validator for per-validator correctness,
+      ethseer_validator_entity to map validators to entities, and fct_block_blob_count_head for blob
+      counts per slot.
     target: clickhouse-refined
     query: |
       WITH entity_correctness AS (
         SELECT
           c.slot,
           e.entity,
-          countIf(c.slot_distance = 0) AS correct_head_votes,
-          count() AS observed_attestations
+          countIf(c.attested = 1) AS observed_attestations,
+          countIf(c.head_correct = 1) AS correct_head_votes
         FROM (
-          SELECT slot, slot_distance, attesting_validator_index
-          FROM {network}.fct_attestation_correctness_by_validator_head FINAL
+          SELECT slot, validator_index, attested, head_correct
+          FROM {network}.fct_attestation_vote_correctness_by_validator FINAL
           WHERE slot_start_date_time >= now() - INTERVAL 6 HOUR
-            AND slot_distance IS NOT NULL
         ) c
         GLOBAL INNER JOIN (
           SELECT validator_index, source AS entity
           FROM {network}.dim_node FINAL
           WHERE validator_index > 0 AND source IN ('lido', 'rocketpool', 'solo_stakers')
-        ) e ON c.attesting_validator_index = e.validator_index
+        ) e ON c.validator_index = e.validator_index
         GROUP BY c.slot, e.entity
+        HAVING observed_attestations > 0
       )
       SELECT
         b.blob_count,
@@ -738,26 +741,24 @@ mev_analysis:
       ORDER BY hour DESC
 head_accuracy:
   name: Head Vote Accuracy
-  description: Queries for analyzing attestation duty outcomes, head vote accuracy among observed attestations,
-    inclusion delays, and propagation timing. Correctness-by-validator tables include missed duty rows;
-    do not treat a raw COUNT() as made attestations unless missed outcomes are filtered out.
+  description: Queries for analyzing attestation duty outcomes, head vote correctness among observed
+    attestations, inclusion delays, and propagation timing. Use explicit correctness outcomes for
+    correctness rates; distance fields are for distance and timing analysis.
   examples:
   - name: Head vote accuracy by slot
-    description: Calculate the percentage of observed attestations that voted for the correct head (slot_distance=0)
-      per slot. Rows with null slot_distance are missed duties, not made attestations.
+    description: Calculate the percentage of observed attestations whose head vote was correct per slot.
     target: clickhouse-refined
     query: |
       SELECT
         slot_start_date_time,
         slot,
         COUNT() AS total_duties,
-        countIf(slot_distance IS NOT NULL) AS observed_attestations,
-        countIf(slot_distance = 0) AS correct_head_votes,
-        countIf(slot_distance = 1) AS one_slot_behind,
-        countIf(slot_distance > 1) AS more_than_one_behind,
-        countIf(slot_distance IS NULL) AS missed_duties,
+        countIf(attested = 1) AS observed_attestations,
+        countIf(head_correct = 1) AS correct_head_votes,
+        countIf(head_correct = 0) AS incorrect_head_votes,
+        countIf(attested = 0) AS missed_duties,
         if(observed_attestations > 0, correct_head_votes * 100.0 / observed_attestations, 0) AS head_accuracy_pct
-      FROM {network}.fct_attestation_correctness_by_validator_head FINAL
+      FROM {network}.fct_attestation_vote_correctness_by_validator FINAL
       WHERE slot_start_date_time >= now() - INTERVAL 1 HOUR
       GROUP BY slot_start_date_time, slot
       ORDER BY slot_start_date_time DESC
@@ -768,17 +769,15 @@ head_accuracy:
     query: |
       SELECT
         COUNT() AS total_duties,
-        countIf(slot_distance IS NOT NULL) AS observed_attestations,
-        countIf(slot_distance = 0) AS correct_head_votes,
+        countIf(attested = 1) AS observed_attestations,
+        countIf(head_correct = 1) AS correct_head_votes,
+        countIf(head_correct = 0) AS incorrect_head_votes,
         if(observed_attestations > 0, correct_head_votes * 100.0 / observed_attestations, 0) AS head_accuracy_pct,
-        if(observed_attestations > 0, countIf(slot_distance = 1) * 100.0 / observed_attestations, 0) AS one_slot_behind_pct,
-        if(observed_attestations > 0, countIf(slot_distance > 1) * 100.0 / observed_attestations, 0) AS multiple_slots_behind_pct,
-        countIf(slot_distance IS NULL) * 100.0 / COUNT() AS missed_duty_pct
-      FROM {network}.fct_attestation_correctness_by_validator_head FINAL
+        countIf(attested = 0) * 100.0 / COUNT() AS missed_duty_pct
+      FROM {network}.fct_attestation_vote_correctness_by_validator FINAL
       WHERE slot_start_date_time >= now() - INTERVAL 1 HOUR
   - name: Slot distance distribution
-    description: Distribution of duty outcomes by head-vote distance. A null slot_distance bucket is a missed
-      duty, not an attestation.
+    description: Distribution of head-vote distances. Use this for distance analysis, not correctness.
     target: clickhouse-refined
     query: |
       SELECT
@@ -835,14 +834,16 @@ head_accuracy:
     target: clickhouse-refined
     query: |
       SELECT
-        toStartOfHour(slot_start_date_time) AS hour,
-        COUNT() AS total_duties,
-        countIf(slot_distance IS NOT NULL) AS observed_attestations,
-        if(observed_attestations > 0, countIf(slot_distance = 0) * 100.0 / observed_attestations, 0) AS head_accuracy_pct,
-        countIf(slot_distance IS NULL) * 100.0 / COUNT() AS missed_duty_pct,
-        AVG(slot_distance) AS avg_slot_distance
-      FROM {network}.fct_attestation_correctness_by_validator_head FINAL
-      WHERE slot_start_date_time >= now() - INTERVAL 1 DAY
+        hour_start_date_time AS hour,
+        SUM(total_duties) AS total_duties,
+        SUM(attested_count) AS observed_attestations,
+        SUM(head_correct_count) AS correct_head_votes,
+        observed_attestations - correct_head_votes AS incorrect_head_votes,
+        SUM(missed_count) AS missed_duties,
+        if(observed_attestations > 0, correct_head_votes * 100.0 / observed_attestations, 0) AS head_accuracy_pct,
+        missed_duties * 100.0 / total_duties AS missed_duty_pct
+      FROM {network}.fct_attestation_vote_correctness_by_validator_hourly FINAL
+      WHERE hour_start_date_time >= now() - INTERVAL 1 DAY
       GROUP BY hour
       ORDER BY hour DESC
   - name: Validators with poor head accuracy
@@ -850,15 +851,16 @@ head_accuracy:
     target: clickhouse-refined
     query: |
       SELECT
-        attesting_validator_index,
-        COUNT() AS total_duties,
-        countIf(slot_distance IS NOT NULL) AS observed_attestations,
-        countIf(slot_distance = 0) AS correct_head_votes,
-        countIf(slot_distance IS NULL) AS missed_duties,
+        validator_index,
+        SUM(total_duties) AS total_duties,
+        SUM(attested_count) AS observed_attestations,
+        SUM(head_correct_count) AS correct_head_votes,
+        observed_attestations - correct_head_votes AS incorrect_head_votes,
+        SUM(missed_count) AS missed_duties,
         if(observed_attestations > 0, correct_head_votes * 100.0 / observed_attestations, 0) AS head_accuracy_pct
-      FROM {network}.fct_attestation_correctness_by_validator_head FINAL
-      WHERE slot_start_date_time >= now() - INTERVAL 1 DAY
-      GROUP BY attesting_validator_index
+      FROM {network}.fct_attestation_vote_correctness_by_validator_hourly FINAL
+      WHERE hour_start_date_time >= now() - INTERVAL 1 DAY
+      GROUP BY validator_index
       HAVING observed_attestations > 0 AND head_accuracy_pct < 95
       ORDER BY head_accuracy_pct ASC
       LIMIT 100
@@ -884,17 +886,18 @@ head_accuracy:
     target: clickhouse-refined
     query: |
       SELECT
-        epoch,
-        epoch_start_date_time,
+        intDiv(slot, 32) AS epoch,
+        MIN(slot_start_date_time) AS first_slot_start_date_time,
         COUNT() AS total_duties,
-        countIf(slot_distance IS NOT NULL) AS observed_attestations,
-        if(observed_attestations > 0, countIf(slot_distance = 0) * 100.0 / observed_attestations, 0) AS head_accuracy_pct,
-        countIf(slot_distance IS NULL) * 100.0 / COUNT() AS missed_duty_pct,
-        AVG(slot_distance) AS avg_slot_distance
-      FROM {network}.fct_attestation_correctness_by_validator_head FINAL
-      WHERE epoch_start_date_time >= now() - INTERVAL 1 DAY
-        AND slot_start_date_time >= now() - INTERVAL 1 DAY
-      GROUP BY epoch, epoch_start_date_time
+        countIf(attested = 1) AS observed_attestations,
+        countIf(head_correct = 1) AS correct_head_votes,
+        countIf(head_correct = 0) AS incorrect_head_votes,
+        countIf(attested = 0) AS missed_duties,
+        if(observed_attestations > 0, correct_head_votes * 100.0 / observed_attestations, 0) AS head_accuracy_pct,
+        missed_duties * 100.0 / total_duties AS missed_duty_pct
+      FROM {network}.fct_attestation_vote_correctness_by_validator FINAL
+      WHERE slot_start_date_time >= now() - INTERVAL 1 DAY
+      GROUP BY epoch
       ORDER BY epoch DESC
   - name: Slots with low head accuracy
     description: Identify slots where head vote accuracy dropped significantly (potential reorgs or issues).
@@ -904,12 +907,12 @@ head_accuracy:
         slot_start_date_time,
         slot,
         COUNT() AS total_duties,
-        countIf(slot_distance IS NOT NULL) AS observed_attestations,
-        countIf(slot_distance = 0) AS correct_head_votes,
-        countIf(slot_distance > 0) AS incorrect_head_votes,
-        countIf(slot_distance IS NULL) AS missed_duties,
+        countIf(attested = 1) AS observed_attestations,
+        countIf(head_correct = 1) AS correct_head_votes,
+        countIf(head_correct = 0) AS incorrect_head_votes,
+        countIf(attested = 0) AS missed_duties,
         if(observed_attestations > 0, correct_head_votes * 100.0 / observed_attestations, 0) AS head_accuracy_pct
-      FROM {network}.fct_attestation_correctness_by_validator_head FINAL
+      FROM {network}.fct_attestation_vote_correctness_by_validator FINAL
       WHERE slot_start_date_time >= now() - INTERVAL 1 DAY
       GROUP BY slot_start_date_time, slot
       HAVING observed_attestations > 0 AND head_accuracy_pct < 95
@@ -924,11 +927,13 @@ head_accuracy:
           slot,
           slot_start_date_time,
           COUNT() AS total_duties,
-          countIf(slot_distance IS NOT NULL) AS observed_attestations,
-          if(observed_attestations > 0, countIf(slot_distance = 0) * 100.0 / observed_attestations, 0) AS head_accuracy_pct,
-          countIf(slot_distance IS NULL) * 100.0 / COUNT() AS missed_duty_pct,
-          AVG(slot_distance) AS avg_slot_distance
-        FROM {network}.fct_attestation_correctness_by_validator_head FINAL
+          countIf(attested = 1) AS observed_attestations,
+          countIf(head_correct = 1) AS correct_head_votes,
+          countIf(head_correct = 0) AS incorrect_head_votes,
+          countIf(attested = 0) AS missed_duties,
+          if(observed_attestations > 0, correct_head_votes * 100.0 / observed_attestations, 0) AS head_accuracy_pct,
+          missed_duties * 100.0 / total_duties AS missed_duty_pct
+        FROM {network}.fct_attestation_vote_correctness_by_validator FINAL
         WHERE slot_start_date_time >= now() - INTERVAL 1 HOUR
         GROUP BY slot, slot_start_date_time
       ),
@@ -950,7 +955,6 @@ head_accuracy:
         h.observed_attestations,
         h.head_accuracy_pct,
         h.missed_duty_pct,
-        h.avg_slot_distance,
         c.inclusion_rate_pct,
         c.avg_inclusion_delay
       FROM head_stats h
