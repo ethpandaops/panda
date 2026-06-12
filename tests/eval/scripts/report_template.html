@@ -1278,14 +1278,26 @@
       m.addEventListener("mouseleave", hideTip);
       svg.appendChild(m);
       const left = px > W - mr - 76;
-      let ly = py + 4;
-      while (placedLbl.some(b => Math.abs(b.y - ly) < 13 && b.left === left && Math.abs(b.x - px) < 90)) ly += 13;
-      placedLbl.push({ x: px, y: ly, left });
-      svg.appendChild(svText(left ? px - 11 : px + 11, ly, entryLabel(pt.i), {
+      /* a label only renders if it fits beside its own dot — in a dense
+         same-pass-rate stack the anchors (current, release, baselines) win
+         and plain -N commits stay hover-only rather than drifting away */
+      const anchor = cur || KIND(pt.e) !== "branch";
+      const ly = Math.min(bot - 2, Math.max(top + 10, py + 4));
+      const collides = placedLbl.some(b => Math.abs(b.y - ly) < 13 && b.left === left && Math.abs(b.x - px) < 90);
+      if (collides && !anchor) return;
+      if (collides && anchor) {
+        /* evict the non-anchor label occupying the slot */
+        const i = placedLbl.findIndex(b => Math.abs(b.y - ly) < 13 && b.left === left && Math.abs(b.x - px) < 90 && !b.anchor);
+        if (i >= 0) { placedLbl[i].el.remove(); placedLbl.splice(i, 1); }
+        else return;
+      }
+      const el2 = svText(left ? px - 11 : px + 11, ly, entryLabel(pt.i), {
         "text-anchor": left ? "end" : "start",
         "font-family": "var(--mono)",
         ...(cur ? { "font-weight": 700, fill: "var(--ink)" } : {}),
-      }));
+      });
+      placedLbl.push({ x: px, y: ly, left, anchor, el: el2 });
+      svg.appendChild(el2);
     });
     host.appendChild(svg);
 
