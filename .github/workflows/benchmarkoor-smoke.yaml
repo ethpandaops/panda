@@ -1,0 +1,57 @@
+name: Benchmarkoor smoke
+
+# End-to-end test of the benchmarkoor integration: CLI -> server -> proxy
+# (API-key injection) -> a real benchmarkoor API over fixture results. Also
+# asserts the vendored contract-test OpenAPI spec matches the pinned
+# benchmarkoor image, covering the routes the offline contract test can't.
+#
+# Path-filtered (NOT a required status check — required checks must run on
+# every PR, see ci.yml): only the surfaces the e2e actually exercises
+# trigger it.
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [master]
+    paths:
+      - "modules/benchmarkoor/**"
+      - "pkg/cli/benchmarkoor.go"
+      - "pkg/proxy/**"
+      - "pkg/server/operations_benchmarkoor*.go"
+      - "pkg/server/testdata/benchmarkoor_openapi.yaml"
+      - "scripts/e2e-benchmarkoor.sh"
+      - ".github/workflows/benchmarkoor-smoke.yaml"
+  push:
+    branches: [master]
+    paths:
+      - "modules/benchmarkoor/**"
+      - "pkg/cli/benchmarkoor.go"
+      - "pkg/proxy/**"
+      - "pkg/server/operations_benchmarkoor*.go"
+      - "pkg/server/testdata/benchmarkoor_openapi.yaml"
+      - "scripts/e2e-benchmarkoor.sh"
+      - ".github/workflows/benchmarkoor-smoke.yaml"
+
+concurrency:
+  group: benchmarkoor-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  benchmarkoor-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # The python-lib leg auto-skips while the published sandbox image
+      # predates the benchmarkoor module; it activates once a sandbox image
+      # containing modules/benchmarkoor/python ships.
+      - name: Run benchmarkoor e2e
+        run: ./scripts/e2e-benchmarkoor.sh
