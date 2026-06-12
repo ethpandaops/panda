@@ -297,6 +297,29 @@
   .dot-run.selected { stroke: var(--sel); stroke-width: 2.2; }
   .pct-rule { stroke: var(--mut); stroke-dasharray: 2 4; opacity: .7; }
 
+  /* run history chart grid */
+  .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .chart-grid .wide { grid-column: 1 / -1; }
+  @media (max-width: 920px) { .chart-grid { grid-template-columns: 1fr; } }
+  .chart-head { display: flex; align-items: center; gap: 9px; padding: 14px 18px 0; font: 600 12.5px/1.3 var(--sans); color: var(--ink); flex-wrap: wrap; }
+  .chart-head .sw { width: 14px; height: 4px; border-radius: 1px; flex: none; }
+  .chart-controls { margin-left: auto; display: flex; gap: 8px; }
+  .seg.mini button { padding: 5px 9px; font-size: 10px; }
+
+  /* run-details expander (doc head) */
+  #run-details { margin-top: 16px; max-width: 620px; }
+  #run-details summary { cursor: pointer; padding: 9px 14px; font: 600 10.5px/1 var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--mut); user-select: none; }
+  #run-details summary:hover { color: var(--accent); }
+  #run-details .kv { padding: 2px 14px 12px; margin: 0; }
+
+  /* matrix history cells */
+  td.mxh, th.mxh-lbl { text-align: center; }
+  td.mxh { font: 700 11.5px/1.6 var(--mono); white-space: nowrap; }
+  td.mxh.ok { color: var(--ok); background: var(--ok-dim); }
+  td.mxh.bad { color: var(--bad); background: var(--bad-dim); }
+  td.mxh.mid { color: var(--amber); background: var(--amber-dim); }
+  td.mxh.none { color: var(--faint); }
+
   /* categories */
   .cat-row { cursor: pointer; }
   .cat-track { fill: var(--panel2); }
@@ -618,21 +641,47 @@
       <span id="prerelease-badge" class="badge pre" hidden>Pre-release</span>
     </div>
     <div id="meta"></div>
+    <details id="run-details" class="panel">
+      <summary>run details</summary>
+      <dl class="kv" id="run-details-kv"></dl>
+    </details>
   </section>
 
   <section id="headline" style="margin-top:30px">
     <div class="cards" id="cards"></div>
-    <p class="note" id="cards-note"></p>
   </section>
 
   <section id="trend">
     <h2><span class="no">1.</span><span id="trend-title">Release history</span></h2>
     <p class="sub" id="trend-sub">Pass rate and token cost across every qualified release, oldest to newest. Hover any point for its full detail.</p>
-    <div class="panel">
-      <div class="chart-wrap"><div id="trend-chart"></div></div>
-      <div class="legend" id="trend-legend"></div>
+    <div class="chart-grid">
+      <div class="panel chart-card">
+        <div class="chart-head"><span class="sw" style="background:var(--ok)"></span>Pass rate</div>
+        <div class="chart-wrap"><div id="pass-chart"></div></div>
+      </div>
+      <div class="panel chart-card">
+        <div class="chart-head"><span class="sw" style="background:var(--amber)"></span>Tokens per correct run (p50)</div>
+        <div class="chart-wrap"><div id="tok-chart"></div></div>
+      </div>
+      <div class="panel chart-card wide">
+        <div class="chart-head"><span class="sw" style="background:var(--blue)"></span>Cost vs correctness
+          <span class="chart-controls">
+            <span class="seg mini" id="sc-agg" title="token aggregation on the x-axis">
+              <button data-v="p50" class="on">p50</button>
+              <button data-v="p90">p90</button>
+              <button data-v="solve">per solve</button>
+            </span>
+            <span class="seg mini" id="sc-scale" title="x-axis scale">
+              <button data-v="lin" class="on">linear</button>
+              <button data-v="log">log</button>
+            </span>
+          </span>
+        </div>
+        <div class="chart-wrap"><div id="scatter-chart"></div></div>
+        <div class="legend" id="scatter-legend"></div>
+      </div>
     </div>
-    <div class="panel tbl-scroll" style="margin-top:12px"><table id="rel-table"></table></div>
+    <div class="panel tbl-scroll" style="margin-top:14px"><table id="rel-table"></table></div>
     <p class="note" id="trend-note"></p>
   </section>
 
@@ -647,13 +696,13 @@
 
   <section id="categories">
     <h2><span class="no">3.</span>Category performance</h2>
-    <p class="sub">Pass rate by case tag. Click a bar to filter the run explorer to that category.</p>
+    <p class="sub">Token cost per case tag — box/dots are the cost of correct runs (quartiles when there are enough), color is the pass rate. Click a row to filter the run explorer.</p>
     <div class="panel"><div class="chart-wrap"><div id="cat-chart"></div></div></div>
   </section>
 
   <section id="matrix">
     <h2><span class="no">4.</span>Questions across runs</h2>
-    <p class="sub">Each cell is one run — click it for the full grader verdict. The last column compares against the previous release.</p>
+    <p class="sub">Each question across the comparison history, oldest to newest — the final column is this run's cells; click one for the full grader verdict.</p>
     <div class="panel tbl-scroll"><table id="mx-table"></table></div>
   </section>
 
@@ -868,11 +917,11 @@
     return (p && p.p50) ? { v: p.p50, isP50: true } : { v: e.mean_tokens_correct || 0, isP50: false };
   };
   const runStatus = r => r.crashed ? "crash" : (r.correct ? "pass" : "fail");
-  const shortSubject = s => String(s || "").replace(/^[a-z0-9_-]+:/i, "");
+  const shortSubject = s => String(s || "").split("/").pop();
   const CANON_TIP = "exact per-run phrasing unavailable for this record; canonical wording shown";
   const canonMark = r => r.question_canonical ? `<span class="canon" title="${CANON_TIP}">°</span>` : "";
 
-  /* ── topbar ───────────────────────────────────────────────────────────── */
+  /* ── topbar + doc head ────────────────────────────────────────────────── */
   const CI = record.kind === "ci";
   const UNIT = CI ? "run" : "release";
   document.title = CI ? `Panda CI eval — ${record.tag}` : `Panda release qualification — ${record.tag}`;
@@ -886,21 +935,40 @@
   }
   $("#tag").textContent = record.tag;
   $("#prerelease-badge").hidden = !record.prerelease;
+
+  /* one quiet line; everything deeper lives in the run-details expander */
   const commitHtml = record.repo && record.commit
     ? `<a href="https://github.com/${esc(record.repo)}/commit/${esc(record.commit)}"><b>${esc(record.commit.slice(0, 9))}</b></a>`
     : `<b>${esc((record.commit || "").slice(0, 9) || "—")}</b>`;
-  $("#meta").innerHTML =
-    `commit ${commitHtml}` +
-    (CI && record.branch ? ` · branch <b>${esc(record.branch)}</b>` : "") +
-    ` · ${esc((record.created_at || "").replace("T", " ").slice(0, 16))} UTC` +
-    ` · cases <b>${esc(record.cases || "—")}</b>` +
-    ` · subject <b>${esc((record.subjects || []).join(", "))}</b>` +
-    ` · ${byQ.size} questions · ${runs.length} runs` +
-    (prev ? ` · vs <b>${esc(prev.tag)}</b>` : (CI ? " · first recorded run" : " · first qualified release")) +
-    (CI && record.pr && record.repo ? ` · <a href="https://github.com/${esc(record.repo)}/pull/${esc(record.pr)}">PR #${esc(record.pr)}</a>` : "") +
-    (CI && record.run_url ? ` · <a href="${esc(record.run_url)}">CI run ↗</a>` : "");
+  $("#meta").innerHTML = [
+    CI && record.branch ? `branch <b>${esc(record.branch)}</b>` : "",
+    `commit ${commitHtml}`,
+    esc((record.created_at || "").replace("T", " ").slice(0, 16)) + " UTC",
+    `subject <b>${esc((record.subjects || []).map(shortSubject).join(", "))}</b>`,
+  ].filter(Boolean).join(" · ");
 
-  /* ── headline cards ───────────────────────────────────────────────────── */
+  (() => {
+    const tp = record.token_percentiles || {};
+    const links = [
+      CI && record.pr && record.repo
+        ? `<a href="https://github.com/${esc(record.repo)}/pull/${esc(record.pr)}">PR #${esc(record.pr)}</a>` : "",
+      CI && record.run_url ? `<a href="${esc(record.run_url)}">CI run ↗</a>` : "",
+    ].filter(Boolean).join(" · ");
+    const rows = [
+      ["cases", esc(record.cases || "—")],
+      ["subjects", esc((record.subjects || []).join(", "))],
+      ["coverage", `${byQ.size} questions · ${runs.length} runs`],
+      ["compared to", prev ? esc(prev.tag) : (CI ? "first recorded run" : "first qualified release")],
+      CI && record.event ? ["trigger", esc(record.event)] : null,
+      links ? ["links", links] : null,
+      ["mean score", record.mean_score != null ? record.mean_score.toFixed(3) : "—"],
+      ["tokens", `p50 ${fTok(tp.p50 || 0)} · p90 ${fTok(tp.p90 || 0)} · max ${fTok(tp.max || 0)} per correct run`],
+      ["scoring", "score = correctness-gated token efficiency: a correct run at reference cost ≈ 0.25, leaner runs score higher, wrong runs score 0. " + EFF_EXPLAIN],
+    ].filter(Boolean);
+    $("#run-details-kv").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+  })();
+
+  /* ── headline cards: four numbers, one row ────────────────────────────── */
   function deltaChip(cur, prv, { fmt, goodWhen = "up", neutral = false } = {}) {
     if (prv == null || !isFinite(prv)) return "";
     const d = cur - prv;
@@ -918,168 +986,262 @@
     const tp = record.token_percentiles || {};
     const ptp = prev && prev.token_percentiles;
     const fmtPP = d => (d * 100).toFixed(1) + "pp";
-    const fmtAbs = d => d.toFixed(3);
     const fmtRel = base => d => Math.round(d / base * 100) + "%";
     const eff = record.efficiency_vs;
     const parity = 0.25 * record.pass_rate;
     const effCard = eff
       ? card("efficiency",
           `<span style="color:${eff.score >= parity ? "var(--ok)" : "var(--bad)"}">${eff.score.toFixed(3)}</span>`,
-          `vs ${esc(eff.ref_tag)} · ${parity.toFixed(3)} = parity` +
-            (eff.skipped ? ` · ${eff.skipped} runs w/o ref` : ""),
+          `vs ${esc(eff.ref_tag)} · ${parity.toFixed(3)} = same per-question cost`,
           "", EFF_EXPLAIN)
-      : card("efficiency", `<span style="color:var(--faint)">—</span>`, "no reference release", "", EFF_EXPLAIN);
+      : card("efficiency", `<span style="color:var(--faint)">—</span>`, "no reference to compare against", "", EFF_EXPLAIN);
     const tps = record.tokens_per_solve ||
       (nOk ? runs.reduce((a, r) => a + (r.tokens || 0), 0) / nOk : 0);
     const ptps = prev && prev.tokens_per_solve;
-    const html = [
+    $("#cards").innerHTML = [
       card("pass rate", fPct(record.pass_rate), `${nOk}/${runs.length} runs correct`,
         deltaChip(record.pass_rate, prev && prev.pass_rate, { fmt: fmtPP })),
-      card("mean score", record.mean_score.toFixed(3), "token-efficiency, correctness-gated",
-        deltaChip(record.mean_score, prev && prev.mean_score, { fmt: fmtAbs })),
       effCard,
-      card("tokens / solve", fTok(tps), "all spend ÷ correct answers",
-        ptps ? deltaChip(tps, ptps, { fmt: fmtRel(ptps), goodWhen: "down" }) : ""),
       card("tokens p50", fTok(tp.p50 || 0), "per correct run",
         ptp && ptp.p50 ? deltaChip(tp.p50, ptp.p50, { fmt: fmtRel(ptp.p50), goodWhen: "down" }) : ""),
-      card("tokens p90", fTok(tp.p90 || 0), "per correct run",
-        ptp && ptp.p90 ? deltaChip(tp.p90, ptp.p90, { fmt: fmtRel(ptp.p90), goodWhen: "down" }) : ""),
-      card("questions", String(byQ.size), esc(record.cases || ""),
-        deltaChip(byQ.size, prev && Object.keys(prev.questions || {}).length, { fmt: d => String(d), neutral: true })),
-      card("runs", String(runs.length), "phrasings \u00d7 repeats per question",
-        deltaChip(runs.length, prev && prev.runs, { fmt: d => String(d), neutral: true })),
+      card("tokens / solve", fTok(tps), "all spend ÷ correct answers",
+        ptps ? deltaChip(tps, ptps, { fmt: fmtRel(ptps), goodWhen: "down" }) : ""),
     ].join("");
-    $("#cards").innerHTML = html;
-    $("#cards-note").textContent = "efficiency = " + EFF_EXPLAIN +
-      " · refs come from the previous release's per-question median tokens over correct runs";
   })();
 
-  /* ── trend chart ──────────────────────────────────────────────────────── */
-  function renderTrend() {
-    const host = $("#trend-chart");
+  /* ── run history: two timelines + cost-vs-correctness scatter ─────────── */
+  /* Short name for an entry on the x-axis and scatter: the current commit gets
+     its sha, prior commits on the same branch count back ("-1", "-2", …),
+     other-branch CI baselines show their branch, releases keep their tag. */
+  const entryLabel = i => {
+    const e = releases[i];
+    if (i === releases.length - 1) return CI ? ((e.commit || "").slice(0, 7) || e.tag) : e.tag;
+    if (e.kind === "ci") {
+      if (e.branch === record.branch) {
+        return "-" + releases.slice(i + 1).filter(o => o.kind === "ci" && o.branch === record.branch).length;
+      }
+      return e.branch || "ci";
+    }
+    return e.tag;
+  };
+  const toks = releases.map(tokenLabel);
+  const parityOf = e => 0.25 * e.pass_rate;
+
+  function trendTip(i, ev) {
+    const e = releases[i], t = toks[i];
+    const nOk = Math.round(e.pass_rate * e.runs);
+    showTip(
+      `<b>${esc(e.tag)}</b>${i === releases.length - 1 ? " · current" : ""}${e.prerelease ? " · pre" : ""}<br>` +
+      `${fDate(e.created_at)} · ${e.runs} runs · ${esc(e.cases || "")}<br>` +
+      `pass <b class="ok">${fPct(e.pass_rate)}</b> (${nOk}/${e.runs}) · score <b>${e.mean_score != null ? e.mean_score.toFixed(3) : "—"}</b><br>` +
+      `tokens ${t.isP50 ? "p50" : "≈mean"} <b>${fTok(t.v)}</b> per correct run` +
+      (e.efficiency_vs
+        ? `<br>eff vs ${esc(e.efficiency_vs.ref_tag)} <b class="${e.efficiency_vs.score >= parityOf(e) ? "ok" : "bad"}">${e.efficiency_vs.score.toFixed(3)}</b>`
+        : ""),
+      ev.clientX, ev.clientY);
+  }
+
+  function lineChart(host, { val, fmt, yMax, yTicks, lineCls, ptCls, hollow }) {
     host.innerHTML = "";
-    const W = Math.max(340, host.parentElement.getBoundingClientRect().width - 20);
-    const ml = 58, mr = 30;
-    const p1t = 40, p1b = 190;          /* pane 1: pass rate */
-    const p2t = 262, p2b = 368;         /* pane 2: tokens p50 */
-    const H = p2b + 40;
+    const W = Math.max(260, host.parentElement.getBoundingClientRect().width - 16);
+    const ml = 52, mr = 22, top = 24, bot = 174, H = 212;
     const svg = sv("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}` });
     const n = releases.length;
     const x = i => n === 1 ? (ml + (W - ml - mr) / 2) : ml + (W - ml - mr) * i / (n - 1);
-    const y1 = v => p1b - (p1b - p1t) * v;
-    const toks = releases.map(tokenLabel);
-    const tokTop = Math.max(1, ...toks.map(t => t.v));
-    const y2 = v => p2b - (p2b - p2t) * (v / (tokTop * 1.15));
-    /* CI entries are commits — the short sha is the name; releases keep their tag */
-    const shortLabel = e => e.kind === "ci" ? (e.commit || e.tag).slice(0, 7) : e.tag;
-    const showVals = n <= 14;           /* direct labels beat hover at this density */
+    const y = v => bot - (bot - top) * (v / yMax);
+    const clampX = (px, half) => Math.max(ml + half + 4, Math.min(px, W - mr - half + 18));
 
-    const paneTitle = (y, color, label) => {
-      svg.appendChild(sv("rect", { x: ml, y: y - 4, width: 14, height: 4, rx: 1, fill: color }));
-      svg.appendChild(svText(ml + 22, y, label, { fill: "var(--ink)", "font-size": 12, "font-weight": 600 }));
-    };
-    paneTitle(p1t - 16, "var(--ok)", "Pass rate");
-    paneTitle(p2t - 16, "var(--amber)", "Tokens per correct run (p50)");
-
-    /* pane 1 grid: just enough to read levels off */
-    for (const v of [0, .5, 1]) {
+    for (const [v, lbl] of yTicks) {
       const g = sv("g", { class: "grid" });
-      g.appendChild(sv("line", { x1: ml, x2: W - mr, y1: y1(v), y2: y1(v) }));
+      g.appendChild(sv("line", { x1: ml, x2: W - mr, y1: y(v), y2: y(v) }));
       svg.appendChild(g);
-      svg.appendChild(svText(ml - 10, y1(v) + 4, Math.round(v * 100) + "%", { "text-anchor": "end" }));
-    }
-    /* pane 2 grid: zero line + the scale's top */
-    for (const [v, lbl] of [[0, "0"], [tokTop, fTok(tokTop)]]) {
-      const g = sv("g", { class: "grid" });
-      g.appendChild(sv("line", { x1: ml, x2: W - mr, y1: y2(v), y2: y2(v) }));
-      svg.appendChild(g);
-      svg.appendChild(svText(ml - 10, y2(v) + 4, lbl, { "text-anchor": "end" }));
+      svg.appendChild(svText(ml - 9, y(v) + 4, lbl, { "text-anchor": "end" }));
     }
 
-    const path = (vals, yfn, cls) => {
-      if (n === 1) return;
+    if (n > 1) {
       let d = "", pen = false;
-      vals.forEach((v, i) => {
+      releases.forEach((e, i) => {
+        const v = val(i);
         if (v == null) { pen = false; return; }
-        d += `${pen ? "L" : "M"}${x(i).toFixed(1)},${yfn(v).toFixed(1)}`;
+        d += `${pen ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`;
         pen = true;
       });
-      if (d) svg.appendChild(sv("path", { d, class: cls }));
-    };
-    path(releases.map(e => e.pass_rate), y1, "line-pass");
-    path(toks.map(t => t.v), y2, "line-tok");
+      if (d) svg.appendChild(sv("path", { d, class: lineCls }));
+    }
 
-    /* x labels: horizontal, anchored from the newest entry, clamped into the frame */
-    const step = Math.max(1, Math.ceil(n / Math.max(2, Math.floor((W - ml - mr) / 92) + 1)));
-    const clampX = (px, halfWidth) => Math.max(ml + halfWidth + 4, Math.min(px, W - mr - halfWidth + 24));
-
+    const step = Math.max(1, Math.ceil(n / Math.max(2, Math.floor((W - ml - mr) / 64) + 1)));
     releases.forEach((e, i) => {
+      const v = val(i);
+      if (v == null) return;
       const cur = i === n - 1;
-      svg.appendChild(sv("circle", { cx: x(i), cy: y1(e.pass_rate), r: 3.6, class: "pt-pass" }));
       svg.appendChild(sv("circle", {
-        cx: x(i), cy: y2(toks[i].v), r: 3.6,
-        class: toks[i].isP50 ? "pt-tok" : "pt-hollow",
+        cx: x(i), cy: y(v), r: 3.6,
+        class: hollow && hollow(i) ? "pt-hollow" : ptCls,
       }));
-      if (cur) {
-        for (const cy of [y1(e.pass_rate), y2(toks[i].v)]) {
-          svg.appendChild(sv("circle", { cx: x(i), cy, r: 6.8, class: "pt-ring", stroke: "currentColor", opacity: .55 }));
-        }
-      }
-      if (showVals) {
-        /* labels sit above their point unless the point is at the top of the
-           pane, where they would collide with the pane title — then below */
-        const dy1 = y1(e.pass_rate) > p1t + 24 ? -11 : 22;
-        const dy2 = y2(toks[i].v) > p2t + 24 ? -11 : 22;
-        svg.appendChild(svText(clampX(x(i), 18), y1(e.pass_rate) + dy1, fPct(e.pass_rate),
-          { "text-anchor": "middle", fill: "var(--ok)", class: "pt-val" }));
-        svg.appendChild(svText(clampX(x(i), 18), y2(toks[i].v) + dy2, fTok(toks[i].v),
-          { "text-anchor": "middle", fill: "var(--amber)", class: "pt-val" }));
+      if (cur) svg.appendChild(sv("circle", { cx: x(i), cy: y(v), r: 6.8, class: "pt-ring", stroke: "currentColor", opacity: .55 }));
+      if (n <= 14) {
+        const dy = y(v) > top + 22 ? -11 : 22;
+        svg.appendChild(svText(clampX(x(i), 18), y(v) + dy, fmt(v), { "text-anchor": "middle", class: "pt-val", fill: "var(--mut)" }));
       }
       if ((n - 1 - i) % step === 0) {
-        const t = svText(clampX(x(i), 34), p2b + 26, shortLabel(e),
-          { "text-anchor": "middle", "font-size": 12, "font-family": "var(--mono)" });
+        const t = svText(clampX(x(i), 26), H - 8, entryLabel(i), { "text-anchor": "middle", "font-family": "var(--mono)" });
         if (cur) { t.setAttribute("font-weight", "700"); t.setAttribute("fill", "var(--ink)"); }
         svg.appendChild(t);
       }
     });
 
-    /* hover: one guide through both panes, full detail in the tooltip */
-    const guide = sv("line", { y1: p1t, y2: p2b, class: "guide" });
+    const guide = sv("line", { y1: top, y2: bot, class: "guide" });
     svg.appendChild(guide);
-    const zone = sv("rect", { x: ml - 10, y: p1t, width: W - ml - mr + 20, height: p2b - p1t, class: "hover-zone" });
-    const parityOf = e => 0.25 * e.pass_rate;
+    const zone = sv("rect", { x: ml - 10, y: top, width: W - ml - mr + 20, height: bot - top, class: "hover-zone" });
     zone.addEventListener("mousemove", ev => {
       const bx = svg.getBoundingClientRect();
-      const px = ev.clientX - bx.left;
       let best = 0, bd = Infinity;
-      for (let i = 0; i < n; i++) { const d = Math.abs(px - x(i)); if (d < bd) { bd = d; best = i; } }
-      const e = releases[best], t = toks[best];
+      for (let i = 0; i < n; i++) { const d = Math.abs(ev.clientX - bx.left - x(i)); if (d < bd) { bd = d; best = i; } }
       guide.setAttribute("x1", x(best)); guide.setAttribute("x2", x(best));
       guide.style.opacity = 1;
-      const nOk = Math.round(e.pass_rate * e.runs);
-      showTip(
-        `<b>${esc(e.tag)}</b>${best === n - 1 ? " · current" : ""}${e.prerelease ? " · pre" : ""}<br>` +
-        `${fDate(e.created_at)} · ${e.runs} runs · ${esc(e.cases || "")}<br>` +
-        `pass <b class="ok">${fPct(e.pass_rate)}</b> (${nOk}/${e.runs}) · score <b>${e.mean_score != null ? e.mean_score.toFixed(3) : "—"}</b><br>` +
-        `tokens ${t.isP50 ? "p50" : "≈mean"} <b>${fTok(t.v)}</b> per correct run` +
-        (e.efficiency_vs
-          ? `<br>eff vs ${esc(e.efficiency_vs.ref_tag)} <b class="${e.efficiency_vs.score >= parityOf(e) ? "ok" : "bad"}">${e.efficiency_vs.score.toFixed(3)}</b> · parity ${parityOf(e).toFixed(3)}`
-          : ""),
-        ev.clientX, ev.clientY);
+      trendTip(best, ev);
     });
     zone.addEventListener("mouseleave", () => { guide.style.opacity = 0; hideTip(); });
     svg.appendChild(zone);
     host.appendChild(svg);
+  }
 
-    $("#trend-legend").innerHTML = toks.some(t => !t.isP50)
-      ? `<span><span class="sw dotc" style="border:1.5px solid var(--amber)"></span>hollow = approximate tokens (no percentiles in that record)</span>`
-      : "";
+  function renderTimelines() {
+    lineChart($("#pass-chart"), {
+      val: i => releases[i].pass_rate,
+      fmt: fPct, yMax: 1,
+      yTicks: [[0, "0%"], [.5, "50%"], [1, "100%"]],
+      lineCls: "line-pass", ptCls: "pt-pass",
+    });
+    const tokMax = Math.max(1, ...toks.map(t => t.v));
+    lineChart($("#tok-chart"), {
+      val: i => toks[i].v > 0 ? toks[i].v : null,
+      fmt: fTok, yMax: tokMax * 1.15,
+      yTicks: [[0, "0"], [tokMax, fTok(tokMax)]],
+      lineCls: "line-tok", ptCls: "pt-tok",
+      hollow: i => !toks[i].isP50,
+    });
+  }
+
+  /* scatter: where each run sits on cost (x) vs correctness (y) */
+  const scState = { agg: "p50", scale: "lin" };
+  const scatterVal = e => {
+    const pcts = e.token_percentiles;
+    if (scState.agg === "solve" && e.tokens_per_solve) return { v: e.tokens_per_solve, approx: false };
+    if (scState.agg !== "solve" && pcts && pcts[scState.agg]) return { v: pcts[scState.agg], approx: false };
+    return { v: e.mean_tokens_correct || 0, approx: true };
+  };
+  const KIND = e => e.kind === "ci"
+    ? (e.branch === record.branch ? "branch" : "baseline")
+    : "release";
+
+  function renderScatter() {
+    const host = $("#scatter-chart");
+    host.innerHTML = "";
+    const pts = releases.map((e, i) => ({ e, i, ...scatterVal(e) })).filter(pt => pt.v > 0);
+    if (!pts.length) {
+      host.innerHTML = '<p class="note" style="padding:4px 4px 12px">no token data to place</p>';
+      return;
+    }
+    const W = Math.max(340, host.parentElement.getBoundingClientRect().width - 16);
+    const ml = 56, mr = 34, top = 26, bot = 236, H = 282;
+    const svg = sv("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}` });
+    const vals = pts.map(pt => pt.v);
+    const vMax = Math.max(...vals), vMin = Math.min(...vals);
+    let xOf, xTicks;
+    if (scState.scale === "log") {
+      const l0 = Math.log10(vMin / 1.3), l1 = Math.log10(vMax * 1.3);
+      xOf = v => ml + (W - ml - mr) * (Math.log10(v) - l0) / (l1 - l0);
+      xTicks = [];
+      for (let d = Math.ceil(l0); d <= Math.floor(l1); d++) xTicks.push(10 ** d);
+      if (!xTicks.includes(vMax)) xTicks.push(vMax);
+    } else {
+      const xm = vMax * 1.1;
+      xOf = v => ml + (W - ml - mr) * (v / xm);
+      const nice = xm > 40000 ? 10000 : xm > 8000 ? 5000 : 1000;
+      xTicks = [0, xm / 4, xm / 2, (3 * xm) / 4].map(v => Math.round(v / nice) * nice);
+      xTicks.push(vMax);
+    }
+    const yOf = v => bot - (bot - top) * v;
+
+    for (const v of [0, .5, 1]) {
+      const g = sv("g", { class: "grid" });
+      g.appendChild(sv("line", { x1: ml, x2: W - mr, y1: yOf(v), y2: yOf(v) }));
+      svg.appendChild(g);
+      svg.appendChild(svText(ml - 9, yOf(v) + 4, Math.round(v * 100) + "%", { "text-anchor": "end" }));
+    }
+    for (const v of xTicks) {
+      const px = xOf(v);
+      if (px < ml - 1 || px > W - mr + 1) continue;
+      if (v !== vMax && Math.abs(px - xOf(vMax)) < 52) continue;
+      svg.appendChild(sv("line", { x1: px, x2: px, y1: bot, y2: bot + 5, class: "axis-strong", stroke: "var(--line)" }));
+      svg.appendChild(svText(px, bot + 18, fTok(v), {
+        "text-anchor": "middle",
+        ...(v === vMax ? { "font-weight": 700, fill: "var(--ink)" } : {}),
+      }));
+    }
+    svg.appendChild(svText(W - mr, top - 12, "tokens →", { "text-anchor": "end", "font-size": 11 }));
+
+    const mark = (pt, px, py) => {
+      const kind = KIND(pt.e);
+      const cur = pt.i === releases.length - 1;
+      const color = cur ? "var(--accent)" : kind === "release" ? "var(--blue)" : kind === "baseline" ? "var(--mut)" : "var(--ok)";
+      const common = { fill: pt.approx ? "var(--panel)" : color, stroke: color, "stroke-width": 1.8, "data-i": pt.i, cursor: "pointer" };
+      if (kind === "release") return sv("rect", { x: px - 4.5, y: py - 4.5, width: 9, height: 9, ...common });
+      if (kind === "baseline") return sv("rect", { x: px - 5, y: py - 5, width: 10, height: 10, transform: `rotate(45 ${px} ${py})`, ...common });
+      return sv("circle", { cx: px, cy: py, r: 5, ...common });
+    };
+
+    /* labels flip to the left near the right edge; stacked labels nudge apart */
+    const placedLbl = [];
+    pts.forEach(pt => {
+      const px = xOf(pt.v), py = yOf(pt.e.pass_rate);
+      const cur = pt.i === releases.length - 1;
+      if (cur) svg.appendChild(sv("circle", { cx: px, cy: py, r: 9, class: "pt-ring", stroke: "var(--accent)", opacity: .6 }));
+      const m = mark(pt, px, py);
+      m.addEventListener("mousemove", ev => trendTip(pt.i, ev));
+      m.addEventListener("mouseleave", hideTip);
+      svg.appendChild(m);
+      const left = px > W - mr - 70;
+      let ly = py + 4;
+      while (placedLbl.some(b => Math.abs(b.y - ly) < 13 && b.left === left && Math.abs(b.x - px) < 90)) ly += 13;
+      placedLbl.push({ x: px, y: ly, left });
+      const t = svText(left ? px - 11 : px + 11, ly, entryLabel(pt.i), {
+        "text-anchor": left ? "end" : "start",
+        "font-family": "var(--mono)",
+        ...(cur ? { "font-weight": 700, fill: "var(--ink)" } : {}),
+      });
+      svg.appendChild(t);
+    });
+    host.appendChild(svg);
+
+    const anyApprox = pts.some(pt => pt.approx);
+    $("#scatter-legend").innerHTML =
+      `<span><span class="sw dotc" style="background:var(--ok)"></span>this branch (-1, -2 = commits back)</span>` +
+      (pts.some(pt => KIND(pt.e) === "baseline" && pt.i !== releases.length - 1) ? `<span><span class="sw dotc" style="background:var(--mut);border-radius:1px"></span>baseline branch</span>` : "") +
+      (pts.some(pt => KIND(pt.e) === "release") ? `<span><span class="sw dotc" style="background:var(--blue);border-radius:1px"></span>release</span>` : "") +
+      `<span><span class="sw dotc" style="border:1.5px solid var(--accent)"></span>ring = current</span>` +
+      (anyApprox ? `<span><span class="sw dotc" style="border:1.5px solid var(--ok)"></span>hollow = approximate (record lacks ${scState.agg === "solve" ? "a per-solve figure" : scState.agg})</span>` : "");
+  }
+
+  for (const [sel, key] of [["#sc-agg", "agg"], ["#sc-scale", "scale"]]) {
+    document.querySelectorAll(`${sel} button`).forEach(b =>
+      b.addEventListener("click", () => {
+        scState[key] = b.dataset.v;
+        document.querySelectorAll(`${sel} button`).forEach(o => o.classList.toggle("on", o === b));
+        renderScatter();
+      }));
+  }
+
+  function renderTrend() {
+    renderTimelines();
+    renderScatter();
     $("#trend-note").textContent = (prev
       ? "Small headline moves are noise — per-question flips (section 4) are the signal."
       : (CI
         ? "First recorded run for this branch — no master baseline, release record, or prior commits to compare against yet."
         : "First qualified release — no prior eval-qualification.json records to compare against."))
-      + " Mean score and efficiency live in the table below; hover the chart for per-point detail.";
+      + " Mean score and efficiency live in the table; hover any point for full detail.";
   }
 
   /* releases table */
@@ -1112,7 +1274,7 @@
     const host = $("#swarm-chart");
     host.innerHTML = "";
     const W = Math.max(340, host.parentElement.getBoundingClientRect().width - 20);
-    const ml = 16, mr = 16, R = 5;
+    const ml = 16, mr = 36, R = 6;
     const tokMax = Math.max(1, ...runs.map(r => r.tokens || 0)) * 1.04;
     const x = v => ml + (W - ml - mr) * (v / tokMax);
 
@@ -1134,7 +1296,7 @@
       }
       placed.push(p);
     }
-    const ext = Math.max(20, ...placed.map(p => Math.abs(p.py) + R));
+    const ext = Math.max(40, ...placed.map(p => Math.abs(p.py) + R));
     const axisY = ext * 2 + 62;
     const H = axisY + 24;
     const cy0 = ext + 44;
@@ -1144,11 +1306,16 @@
     const ax = sv("g", { class: "axis-strong" });
     ax.appendChild(sv("line", { x1: ml, x2: W - mr, y1: axisY, y2: axisY }));
     svg.appendChild(ax);
+    const dataMax = Math.max(1, ...runs.map(r => r.tokens || 0));
     const step = tokMax > 60000 ? 20000 : 10000;
     for (let v = 0; v <= tokMax; v += step) {
+      if (x(dataMax) - x(v) < 52 && v !== 0) continue;
       svg.appendChild(sv("line", { x1: x(v), x2: x(v), y1: axisY, y2: axisY + 4, class: "axis-strong", stroke: "var(--line)" }));
       svg.appendChild(svText(x(v), axisY + 17, fTok(v), { "text-anchor": "middle" }));
     }
+    /* the true max is always on the scale */
+    svg.appendChild(sv("line", { x1: x(dataMax), x2: x(dataMax), y1: axisY, y2: axisY + 5, class: "axis-strong", stroke: "var(--line)" }));
+    svg.appendChild(svText(x(dataMax), axisY + 17, fTok(dataMax), { "text-anchor": "middle", "font-weight": 700, fill: "var(--ink)" }));
     /* percentile rules (correct runs, matches the record) */
     const tp = record.token_percentiles || {};
     for (const [k, lift] of [["p50", 0], ["p90", 15], ["p99", 30]]) {
@@ -1183,25 +1350,42 @@
       `<span>percentile rules computed over correct runs</span>`;
   }
 
-  /* ── categories ───────────────────────────────────────────────────────── */
+  /* ── categories: token box plots, color = pass rate ──────────────────── */
   function renderCats() {
     const host = $("#cat-chart");
     host.innerHTML = "";
     if (!cats.length) { host.innerHTML = '<p class="note">no tag metadata for this cases file</p>'; return; }
     const W = Math.max(340, host.parentElement.getBoundingClientRect().width - 20);
-    const rowH = 31, lblW = Math.min(200, W * .25), valW = 270;
-    const barX = lblW + 12, barW = Math.max(60, W - barX - valW);
-    const H = cats.length * rowH + 6;
+    const rowH = 36, lblW = Math.min(200, W * .25), valW = 290;
+    const barX = lblW + 14, barW = Math.max(80, W - barX - valW);
+    const axisH = 30;
+    const H = cats.length * rowH + 8 + axisH;
     const svg = sv("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}` });
+    const maxTok = Math.max(1, ...runs.filter(r => r.correct).map(r => r.tokens || 0));
+    const x = v => barX + barW * (v / (maxTok * 1.06));
+    /* pass rate as a 3-stop color ramp: green ≥ all pass, through amber, to red */
+    const colorOf = rate => rate >= .999 ? "var(--ok)" :
+      rate >= .5 ? `color-mix(in srgb, var(--ok) ${Math.round((rate - .5) * 160)}%, var(--amber))`
+                 : `color-mix(in srgb, var(--amber) ${Math.round(rate * 160)}%, var(--bad))`;
+
     cats.forEach((c, i) => {
-      const y = i * rowH + 4;
+      const yTop = i * rowH + 4, mid = yTop + 14;
       const g = sv("g", { class: "cat-row", "data-tag": c.tag });
-      const lbl = svText(lblW, y + 14, c.tag, { "text-anchor": "end", class: "lbl", "font-size": 12 });
-      g.appendChild(lbl);
-      g.appendChild(sv("rect", { x: barX, y: y + 3, width: barW, height: 15, class: "cat-track", rx: 1 }));
-      const cls = c.rate >= .999 ? "hi" : (c.rate >= .5 ? "mid" : "lo");
-      g.appendChild(sv("rect", { x: barX, y: y + 3, width: Math.max(2, barW * c.rate), height: 15, class: `cat-fill ${cls}`, rx: 1 }));
-      g.appendChild(svText(barX + barW + 10, y + 14,
+      g.appendChild(svText(lblW, mid + 4, c.tag, { "text-anchor": "end", class: "lbl", "font-size": 12 }));
+      g.appendChild(sv("rect", { x: barX, y: yTop, width: barW, height: rowH - 8, fill: "transparent" }));
+      const col = colorOf(c.rate);
+      const vals = [...c.toks].sort((a, b) => a - b);
+      if (!vals.length) {
+        g.appendChild(svText(barX + 2, mid + 4, "no correct runs", { fill: "var(--bad)", "font-size": 11 }));
+      } else if (vals.length < 4) {
+        for (const v of vals) g.appendChild(sv("circle", { cx: x(v), cy: mid, r: 5.5, fill: col, "fill-opacity": .85 }));
+      } else {
+        const q1 = pctl(vals, .25), q3 = pctl(vals, .75), med = median(vals);
+        g.appendChild(sv("line", { x1: x(vals[0]), x2: x(vals[vals.length - 1]), y1: mid, y2: mid, stroke: col, "stroke-width": 1.6, opacity: .7 }));
+        g.appendChild(sv("rect", { x: x(q1), y: mid - 8, width: Math.max(3, x(q3) - x(q1)), height: 16, fill: col, "fill-opacity": .8, rx: 2 }));
+        g.appendChild(sv("line", { x1: x(med), x2: x(med), y1: mid - 9, y2: mid + 9, stroke: "var(--ink)", "stroke-width": 2 }));
+      }
+      g.appendChild(svText(barX + barW + 12, mid + 4,
         `${c.correct}/${c.runs} · ${fPct(c.rate)} · ${c.qids.size}q` + (c.medTok > 0 ? ` · med ${fTok(c.medTok)} tok` : ""),
         { "font-size": 11.5 }));
       g.addEventListener("click", () => {
@@ -1213,11 +1397,23 @@
       });
       g.addEventListener("mousemove", ev => showTip(
         `<b>${esc(c.tag)}</b><br>${c.correct}/${c.runs} runs pass (${fPct(c.rate)}) across ${c.qids.size} question${c.qids.size > 1 ? "s" : ""}<br>` +
-        `median ${fTok(c.medTok)} tok per correct run · click to filter`,
+        (c.toks.length ? `tokens per correct run: median ${fTok(c.medTok)}` : "no correct runs") +
+        `<br><span style="color:var(--faint)">click to filter the run explorer</span>`,
         ev.clientX, ev.clientY));
       g.addEventListener("mouseleave", hideTip);
       svg.appendChild(g);
     });
+
+    /* shared token axis */
+    const axisY = cats.length * rowH + 10;
+    svg.appendChild(sv("line", { x1: barX, x2: barX + barW, y1: axisY, y2: axisY, class: "axis-strong", stroke: "var(--line)" }));
+    for (const v of [0, maxTok / 2, maxTok]) {
+      svg.appendChild(sv("line", { x1: x(v), x2: x(v), y1: axisY, y2: axisY + 5, stroke: "var(--line)" }));
+      svg.appendChild(svText(x(v), axisY + 18, fTok(v), {
+        "text-anchor": "middle",
+        ...(v === maxTok ? { "font-weight": 700, fill: "var(--ink)" } : {}),
+      }));
+    }
     host.appendChild(svg);
     syncCatActive();
   }
@@ -1226,46 +1422,45 @@
       g.classList.toggle("active", state.tags.has(g.dataset.tag)));
   }
 
-  /* ── question matrix ──────────────────────────────────────────────────── */
+  /* ── question matrix: each question across the comparison history ────── */
   function renderMatrix() {
-    const prevQ = (prev && prev.questions) || {};
+    const histIdx = releases.slice(0, -1).map((_, i) => i).slice(-7);
+    const histCell = (entry, qid) => {
+      const q = (entry.questions || {})[qid];
+      if (!q || !q.runs) return `<td class="mxh none">·</td>`;
+      const frac = q.correct / q.runs;
+      const cls = frac >= .999 ? "ok" : (frac <= 0 ? "bad" : "mid");
+      const txt = q.runs > 1 ? `${q.correct}/${q.runs}` : (q.correct ? "✓" : "✕");
+      return `<td class="mxh ${cls}" title="${esc(entry.tag)}: ${q.correct}/${q.runs}">${txt}</td>`;
+    };
     const rows = questionIds.map(qid => {
       const rs = byQ.get(qid);
       const nOk = rs.filter(r => r.correct).length;
       const cells = rs.map((r, j) =>
         `<button class="mx-cell ${r.correct ? "ok" : "bad"}" data-i="${r._i}" ` +
         `aria-label="run ${j + 1} ${runStatus(r)}">${r.correct ? "✓" : "✕"}</button>`).join("");
-      let verdict;
-      const p = prevQ[qid];
-      if (!prev) verdict = `<span class="verdict na">—</span>`;
-      else if (!p) verdict = `<span class="verdict new">NEW</span>`;
-      else {
-        const pf = p.runs ? p.correct / p.runs : 0, cf = nOk / rs.length;
-        if (cf > pf) verdict = `<span class="verdict up" title="was ${p.correct}/${p.runs}">▲ ${p.correct}/${p.runs} → ${nOk}/${rs.length}</span>`;
-        else if (cf < pf) verdict = `<span class="verdict down" title="was ${p.correct}/${p.runs}">▼ ${p.correct}/${p.runs} → ${nOk}/${rs.length}</span>`;
-        else verdict = `<span class="verdict flat">·</span>`;
-      }
-      const tagsHtml = byQ.get(qid)[0].tags.map(t => esc(t)).join(" · ");
+      const tagsHtml = rs[0].tags.map(t => esc(t)).join(" · ");
       const ref = prevRefs.get(qid);
       let effCell = `<td class="r" style="color:var(--faint)">—</td>`;
       if (ref != null) {
         const qEff = rs.reduce((a, r) => a + runEff(r), 0) / rs.length;
         const par = 0.25 * (nOk / rs.length);
         effCell = `<td class="r" style="color:${qEff < par ? "var(--amber)" : "var(--mut)"}" ` +
-          `title="mean over runs vs ref ${fInt(ref)} tok (${esc(prev.tag)})${qEff < par ? " · below parity: heavier than the previous release" : ""}">${qEff.toFixed(3)}</td>`;
+          `title="mean over runs vs ref ${fInt(ref)} tok (${esc(prev.tag)})${qEff < par ? " · below parity: heavier than the reference" : ""}">${qEff.toFixed(3)}</td>`;
       }
       return `<tr><td><button class="qid" data-q="${esc(qid)}" title="filter run explorer to this question">${esc(qid)}</button>` +
         `<div style="font:11px var(--mono);color:var(--mut);margin-top:3px">${tagsHtml}</div></td>` +
+        histIdx.map(i => histCell(releases[i], qid)).join("") +
         `<td class="r" style="color:${nOk === rs.length ? "var(--ok)" : "var(--bad)"}">${nOk}/${rs.length}</td>` +
         effCell +
-        `<td><div class="mx-cells">${cells}</div></td>` +
-        `<td>${verdict}</td></tr>`;
+        `<td><div class="mx-cells">${cells}</div></td></tr>`;
     }).join("");
     $("#mx-table").innerHTML =
-      `<thead><tr><th>question</th><th class="r">pass</th>` +
+      `<thead><tr><th>question</th>` +
+      histIdx.map(i => `<th class="mxh-lbl" title="${esc(releases[i].tag)}">${esc(entryLabel(i))}</th>`).join("") +
+      `<th class="r">pass</th>` +
       `<th class="r" title="${esc(EFF_EXPLAIN)}">eff</th>` +
-      `<th>runs · canonical + variations</th>` +
-      `<th>Δ vs ${prev ? esc(prev.tag) : "—"}</th></tr></thead><tbody>${rows}</tbody>`;
+      `<th>this run</th></tr></thead><tbody>${rows}</tbody>`;
 
     $("#mx-table").querySelectorAll(".mx-cell").forEach(b => {
       const r = runs[+b.dataset.i];
@@ -1346,7 +1541,7 @@
       `<th class="sortable${arrow("id")}" data-key="id">question</th>` +
       `<th class="sortable${arrow("subject")}" data-key="subject">subject</th>` +
       `<th class="sortable${arrow("status")}" data-key="status">status</th>` +
-      `<th class="sortable r${arrow("score")}" data-key="score">score</th>` +
+      `<th class="sortable r${arrow("score")}" data-key="score" title="correctness-gated token efficiency: a correct run at reference cost ≈ 0.25, leaner is higher, wrong = 0">score</th>` +
       `<th class="sortable r${arrow("tokens")}" data-key="tokens">tokens</th>` +
       `<th class="sortable r${arrow("eff")}" data-key="eff" title="${esc(EFF_EXPLAIN)}">eff</th>` +
       `<th class="sortable r${arrow("tools")}" data-key="tools">tools</th>` +
@@ -1457,7 +1652,11 @@
      predate per-run tool capture and simply have no section. */
   function toolCallsHtml(r) {
     const calls = r.tool_calls || [];
-    if (!calls.length) return "";
+    if (!calls.length) {
+      return (r.tools ?? 0) > 0
+        ? `<div class="canon-note" style="color:var(--faint)">tool-call log not captured in this payload (run predates capture)</div>`
+        : "";
+    }
     const nErr = calls.filter(t => t.error).length;
     const more = (r.tools ?? calls.length) - calls.length;
     const rows = calls.map(t =>
