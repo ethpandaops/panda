@@ -139,3 +139,14 @@
         Forky for sepolia, and what consensus clients are they running?
       - Please query Forky for sepolia and report the beacon nodes it has 
         fork-choice snapshots from, including their consensus clients.
+
+  # Minted by panda case studio on 2026-06-12T05:55:15+00:00 (question q_29794adef1, human-reviewed).
+  - id: mainnet_xatu_top_peer_count_node
+    description: "checks which xatu node had the highest peer count on mainnet for june 10 2026"
+    input: "On jun 10 2026, which xatu node had the highest peer count on mainnet?"
+    network: mainnet
+    tags: [clickhouse, xatu, peers, mainnet]
+    assert:
+      - type: llm-rubric
+        value: >
+          Identifies the single xatu node on mainnet with the highest peer count for June 10, 2026: `ethpandaops/mainnet/utility-mainnet-prysm-nethermind-tysm-006` or 003 (somewhere around 7000 to 13000 peers). Answers that name a different node, give no node, or provide a peer count that is far off from the approved result fail.
