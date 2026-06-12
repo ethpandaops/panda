@@ -141,8 +141,9 @@ tests/eval/
 ## CI
 
 - **`eval-smoke.yaml`** — every PR + master push. A couple of fast cases against the hosted
-  production proxy (as the `panda-ci` service account). Runs `scripts.eval --tags smoke`
-  and publishes the JUnit results as a PR comment/check. Each run also gets the interactive
+  production proxy (as the `panda-ci` service account). Runs `scripts.eval --tags smoke`,
+  publishes a check run, and posts one sticky PR comment (report link + per-question
+  results + Langfuse trace links). Each run also gets the interactive
   report: `scripts.ci_report` builds the release-style page for the commit, with history
   assembled from the branch's previous smoke runs, the latest master run, and the most
   recent release record (restricted to the smoke questions). `scripts.ci_pages` publishes

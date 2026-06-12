@@ -328,21 +328,24 @@ jobs:
           BRANCH: ${{ steps.ident.outputs.branch }}
           SHA: ${{ steps.ident.outputs.sha }}
           PR: ${{ steps.ident.outputs.pr }}
+          PUBLISH: ${{ steps.ident.outputs.publish }}
           EVENT: ${{ github.event_name }}
         run: |
           # data.json is what gh-pages serves; eval-report.html is the same payload
           # baked into a self-contained page for the run artifact (fork PRs never
-          # publish, so the artifact is their only copy).
-          uv run python -m scripts.ci_report \
-            --eval-json reports/eval.json \
-            --branch "$BRANCH" --sha "$SHA" --pr "$PR" --event "$EVENT" \
-            --repo "$GITHUB_REPOSITORY" \
-            --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
-            --history-dir "$GITHUB_WORKSPACE/report-history" \
-            --baseline "$GITHUB_WORKSPACE/report-baselines/master.json" \
-            --baseline "$GITHUB_WORKSPACE/report-baselines/release.json" \
-            --pages-url "$EVAL_PAGES_URL" \
-            --out-dir reports/ci
+          # publish, so the artifact is their only copy). --pages-url only when this
+          # run will publish, so the PR comment never links a page that won't exist.
+          ARGS=(--eval-json reports/eval.json
+                --branch "$BRANCH" --sha "$SHA" --pr "$PR" --event "$EVENT"
+                --repo "$GITHUB_REPOSITORY"
+                --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+                --history-dir "$GITHUB_WORKSPACE/report-history"
+                --baseline "$GITHUB_WORKSPACE/report-baselines/master.json"
+                --baseline "$GITHUB_WORKSPACE/report-baselines/release.json"
+                --langfuse-links reports/langfuse_links.md
+                --out-dir reports/ci)
+          [ "$PUBLISH" = "true" ] && ARGS+=(--pages-url "$EVAL_PAGES_URL")
+          uv run python -m scripts.ci_report "${ARGS[@]}"
 
       - name: Publish report to GitHub Pages (gh-pages branch)
         id: publish
@@ -380,15 +383,6 @@ jobs:
           done
           git worktree remove --force /tmp/pages 2>/dev/null || true
 
-      - name: Comment report link
-        # ci_report writes the sticky-comment snippet only when a public URL exists;
-        # gate on the publish step so the comment never links a page that isn't there.
-        if: ${{ always() && github.event_name == 'pull_request' && steps.publish.outcome == 'success' && hashFiles('tests/eval/reports/ci/report_link.md') != '' }}
-        uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
-        with:
-          header: eval-report
-          path: tests/eval/reports/ci/report_link.md
-
       - name: Upload results
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
@@ -397,19 +391,19 @@ jobs:
           path: tests/eval/reports/
           retention-days: 14
 
-      - name: Publish smoke results
+      - name: Publish smoke results check
+        # Check run only — the PR comment below carries the results, the report
+        # link, and the trace links in one place.
         uses: EnricoMi/publish-unit-test-result-action@c950f6fb443cb5af20a377fd0dfaa78838901040 # v2.23.0
         if: always()
         with:
           files: tests/eval/reports/junit.xml
           check_name: "Eval Smoke"
-          comment_mode: ${{ github.event_name == 'pull_request' && 'always' || 'off' }}
+          comment_mode: "off"
 
-      - name: Comment Langfuse trace links
-        # scripts.eval writes reports/langfuse_links.md (one deep-link per case) when
-        # Langfuse is enabled; surface it as a sticky PR comment.
-        if: ${{ always() && github.event_name == 'pull_request' && hashFiles('tests/eval/reports/langfuse_links.md') != '' }}
+      - name: Comment smoke results (report link + per-question results + traces)
+        if: ${{ always() && github.event_name == 'pull_request' && hashFiles('tests/eval/reports/ci/pr_comment.md') != '' }}
         uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
         with:
-          header: langfuse-traces
-          path: tests/eval/reports/langfuse_links.md
+          header: eval-smoke
+          path: tests/eval/reports/ci/pr_comment.md

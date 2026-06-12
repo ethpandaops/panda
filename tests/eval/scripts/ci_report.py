@@ -24,8 +24,8 @@ Emits into ``--out-dir``:
     ``scripts.ci_pages publish`` puts on gh-pages for the fetch-mode viewer
   - ``eval-report.html`` — the same payload baked into a self-contained page, so
     the CI artifact is inspectable offline (fork PRs never publish)
-  - ``report_link.md`` — a sticky-comment snippet linking the published viewer
-    (only when ``--pages-url`` is given)
+  - ``pr_comment.md`` — the single sticky PR comment: headline + viewer link (when
+    ``--pages-url`` is given), per-question results, Langfuse trace links
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ import statistics
 from pathlib import Path
 
 from scripts.release_report import build_payload, render_template
-from scripts.release_scorecard import _build_record, _pool_questions
+from scripts.release_scorecard import _build_record, _fold_langfuse, _pool_questions
 
 
 def sanitize_branch(branch: str) -> str:
@@ -72,7 +72,12 @@ def _parse_args() -> argparse.Namespace:
     ap.add_argument(
         "--pages-url",
         default="",
-        help="public URL of the gh-pages CI viewer; enables report_link.md",
+        help="public URL of the gh-pages CI viewer; adds the report link to pr_comment.md",
+    )
+    ap.add_argument(
+        "--langfuse-links",
+        default="",
+        help="langfuse_links.md from scripts.eval (folded into pr_comment.md when present)",
     )
     return ap.parse_args()
 
@@ -156,6 +161,51 @@ def _assemble_history(args: argparse.Namespace, qids: set[str]) -> list[dict]:
     return sorted(entries, key=lambda e: e["created_at"])
 
 
+def _build_comment(
+    args: argparse.Namespace, record: dict, summary: dict, history: list[dict]
+) -> str:
+    """The single sticky PR comment: headline + report link, per-question results,
+    and the Langfuse trace links folded into a collapsible — one comment instead of
+    a results comment, a traces comment, and a link comment."""
+    n_correct = sum(1 for r in summary["runs"] if r["correct"])
+    short = args.sha[:7]
+    status = "✅" if n_correct == record["runs"] else "❌"
+    lines = [f"### 🐼 Smoke eval — `{short}`: {status} {n_correct}/{record['runs']} pass", ""]
+
+    headline = (
+        f"tokens p50 {record['token_percentiles']['p50']:,.0f} · "
+        f"tokens/solve {record['tokens_per_solve']:,.0f}"
+    )
+    if args.pages_url:
+        run_id = f"{sanitize_branch(args.branch)}/{args.sha}"
+        url = f"{args.pages_url.rstrip('/')}/?run={run_id}"
+        lines.append(f"**[📊 Interactive report]({url})** — {headline}.")
+    else:
+        lines.append(f"{headline} · report not published for this run (see the artifact).")
+
+    anchors = " · ".join(f"`{e['tag']}` {e['pass_rate']:.0%}" for e in history[-3:])
+    if anchors:
+        lines += ["", f"Reference points: {anchors}."]
+
+    lines += ["", "| question | result | tokens | tools |", "|---|---|---|---|"]
+    for run in summary["runs"]:
+        mark = "💥 crash" if run.get("crashed") else ("✅" if run["correct"] else "❌")
+        lines.append(
+            f"| `{run['id']}` | {mark} | {run.get('tokens', 0):,} | {run.get('tools', '—')} |"
+        )
+
+    _fold_langfuse(args.langfuse_links, lines)
+
+    lines += [
+        "",
+        "<sub>The report walks this branch's commits against the master baseline and "
+        "the most recent release. A self-contained copy is in the run's "
+        "<code>eval-smoke-*</code> artifact.</sub>",
+        "",
+    ]
+    return "\n".join(lines)
+
+
 def main() -> None:
     args = _parse_args()
     summary = json.loads(Path(args.eval_json).read_text())
@@ -181,25 +231,7 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "data.json").write_text(json.dumps(payload, separators=(",", ":")) + "\n")
     (out_dir / "eval-report.html").write_text(render_template(payload))
-
-    if args.pages_url:
-        run_id = f"{sanitize_branch(args.branch)}/{args.sha}"
-        url = f"{args.pages_url.rstrip('/')}/?run={run_id}"
-        n_correct = sum(1 for r in summary["runs"] if r["correct"])
-        anchors = (
-            " · ".join(f"`{e['tag']}` {e['pass_rate']:.0%}" for e in history[-3:])
-            or "no prior runs to compare against"
-        )
-        (out_dir / "report_link.md").write_text(
-            f"### 🐼 Smoke eval report — `{short}`\n\n"
-            f"**[📊 Interactive report]({url})** — pass "
-            f"{n_correct}/{record['runs']}, tokens p50 "
-            f"{record['token_percentiles']['p50']:,.0f}.\n\n"
-            f"Recent reference points: {anchors}.\n\n"
-            "<sub>The report page walks this branch's commits against the master "
-            "baseline and the most recent release. A self-contained copy is in the "
-            "run's <code>eval-smoke-*</code> artifact.</sub>\n"
-        )
+    (out_dir / "pr_comment.md").write_text(_build_comment(args, record, summary, history))
 
     print(
         f"ci report for {record['tag']}: pass-rate {record['pass_rate']:.0%} over "
