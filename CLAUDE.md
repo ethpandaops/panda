@@ -97,7 +97,7 @@ uv run python -m scripts.repl
 
 ### Module System
 
-Ten compiled-in modules are registered in `pkg/app/app.go`:
+Eleven compiled-in modules are registered in `pkg/app/app.go`:
 - `clickhouse`
 - `prometheus`
 - `loki`
@@ -106,6 +106,7 @@ Ten compiled-in modules are registered in `pkg/app/app.go`:
 - `ethnode`
 - `cbt`
 - `benchmarkoor`
+- `tracoor`
 - `block_archive`
 - `datasets` (dataset knowledge packs, lives in `datasets/` at the repo root)
 
@@ -165,6 +166,7 @@ CLI commands and groups include:
 - `search`
 - `server`
 - `session`
+- `tracoor`
 - `upgrade`
 - `version`
 
@@ -257,6 +259,7 @@ modules/
   ethnode/         # Ethnode module
   cbt/             # CBT module
   benchmarkoor/    # Benchmarkoor module
+  tracoor/         # Tracoor module
   block_archive/   # Block archive module
 runbooks/          # Embedded markdown runbooks
 sandbox/           # Sandbox Docker image

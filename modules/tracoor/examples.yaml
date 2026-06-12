@@ -1,0 +1,139 @@
+tracoor_capture_discovery:
+  name: Capture Discovery
+  description: >-
+    Discover what Tracoor has captured: which networks have instances, which
+    nodes are contributing, and what beacon states/blocks exist
+  examples:
+    - name: List networks and contributing nodes
+      description: List networks with Tracoor, then see which nodes and client implementations have captures
+      query: |
+        from ethpandaops import tracoor
+
+        networks = tracoor.list_networks()
+        print(f"Networks with Tracoor: {[n['name'] for n in networks]}")
+
+        network = networks[0]["name"]
+        values = tracoor.list_unique_values(network, "beacon_state", ["node", "beacon_implementation"])
+        print(f"Nodes: {values.get('node')}")
+        print(f"Implementations: {values.get('beacon_implementation')}")
+
+    - name: Latest captured beacon states
+      description: Show the most recently captured beacon states across all nodes
+      query: |
+        from ethpandaops import tracoor
+
+        states = tracoor.list_beacon_states("mainnet", limit=10)
+        for s in states:
+            print(f"slot={s['slot']} {s['node']} ({s['beacon_implementation']}) root={s['state_root'][:18]}…")
+
+    - name: Find a beacon state at a specific slot
+      description: Check whether any node captured a state at a given slot, across client implementations
+      query: |
+        from ethpandaops import tracoor
+
+        slot = 14535165
+        states = tracoor.list_beacon_states("mainnet", slot=slot)
+        if not states:
+            print(f"No captured state at slot {slot}")
+        for s in states:
+            print(f"{s['node']}: state_root={s['state_root']} fetched_at={s['fetched_at']}")
+
+tracoor_bad_block_forensics:
+  name: Bad Block and Blob Forensics
+  description: >-
+    Hunt invalid beacon blocks, blob sidecars, and execution blocks that
+    nodes rejected — the primary evidence trail for consensus incidents
+  examples:
+    - name: Recent invalid beacon blocks
+      description: List the latest gossiped-but-invalid beacon blocks with which client rejected them
+      query: |
+        from ethpandaops import tracoor
+
+        bad = tracoor.list_beacon_bad_blocks("mainnet", limit=20)
+        print(f"Total bad blocks: {tracoor.count_beacon_bad_blocks('mainnet')}")
+        for b in bad:
+            print(f"slot={b['slot']} {b['beacon_implementation']} root={b['block_root'][:18]}… at {b['fetched_at']}")
+
+    - name: Bad blocks in a time window
+      description: Count and inspect invalid blocks seen during an incident window
+      query: |
+        from ethpandaops import tracoor
+
+        n = tracoor.count_beacon_bad_blocks(
+            "mainnet",
+            after="2026-06-01T00:00:00Z",
+            before="2026-06-12T00:00:00Z",
+        )
+        print(f"Bad blocks in window: {n}")
+        for b in tracoor.list_beacon_bad_blocks(
+            "mainnet", after="2026-06-01T00:00:00Z", before="2026-06-12T00:00:00Z"
+        ):
+            print(f"slot={b['slot']} node={b['node']} root={b['block_root']}")
+
+    - name: Invalid blob sidecars for a block
+      description: Find rejected blob sidecars by block root, including the blob index
+      query: |
+        from ethpandaops import tracoor
+
+        blobs = tracoor.list_beacon_bad_blobs("mainnet", limit=10)
+        for blob in blobs:
+            print(f"slot={blob['slot']} index={blob['index']} root={blob['block_root'][:18]}…")
+
+    - name: Invalid execution blocks
+      description: List execution-layer bad blocks (debug_getBadBlocks) with extra-data, often identifying the buggy builder
+      query: |
+        from ethpandaops import tracoor
+
+        bad = tracoor.list_execution_bad_blocks("mainnet", limit=10)
+        for b in bad:
+            print(f"#{b['block_number']} {b['execution_implementation']} extra={b.get('block_extra_data')} hash={b['block_hash'][:18]}…")
+
+tracoor_execution_traces:
+  name: Execution Traces
+  description: Find execution-layer debug_traceBlock captures for replaying suspect blocks
+  examples:
+    - name: Traces for a block
+      description: Find which nodes captured an execution trace for a given block number or hash
+      query: |
+        from ethpandaops import tracoor
+
+        traces = tracoor.list_execution_traces("mainnet", block_number=23000000)
+        for t in traces:
+            print(f"#{t['block_number']} {t['node']} ({t['execution_implementation']}) id={t['id']}")
+
+    - name: Trace coverage by implementation
+      description: See which execution clients are contributing traces
+      query: |
+        from ethpandaops import tracoor
+
+        values = tracoor.list_unique_values(
+            "mainnet", "execution_block_trace", ["execution_implementation", "node"]
+        )
+        print(f"Implementations: {values.get('execution_implementation')}")
+        print(f"Nodes: {values.get('node')}")
+
+tracoor_artifact_access:
+  name: Artifact Access
+  description: Get raw artifact download URLs and Tracoor UI deep links for sharing
+  examples:
+    - name: Download URL for a captured state
+      description: Resolve the raw artifact URL (SSZ/JSON, possibly gzip) for offline analysis with zcli/ncli/lcli
+      query: |
+        from ethpandaops import tracoor
+
+        states = tracoor.list_beacon_states("mainnet", limit=1)
+        if states:
+            url = tracoor.get_download_url("mainnet", "beacon_state", states[0]["id"])
+            print(f"slot={states[0]['slot']} {states[0]['node']}")
+            print(f"download: {url}")
+
+    - name: Deep link to the bad-blocks view
+      description: Link a human straight to an artifact listing or a single capture in the Tracoor UI
+      query: |
+        from ethpandaops import tracoor
+
+        print(tracoor.link("mainnet", "beacon_bad_block"))
+
+        bad = tracoor.list_beacon_bad_blocks("mainnet", limit=1)
+        if bad:
+            print(tracoor.link("mainnet", "beacon_bad_block", bad[0]["id"]))

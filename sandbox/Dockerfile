@@ -37,6 +37,7 @@ COPY modules/forky/python/forky.py /opt/ethpandaops-pkg/ethpandaops/forky.py
 COPY modules/loki/python/loki.py /opt/ethpandaops-pkg/ethpandaops/loki.py
 COPY modules/prometheus/python/prometheus.py /opt/ethpandaops-pkg/ethpandaops/prometheus.py
 COPY modules/ethnode/python/ethnode.py /opt/ethpandaops-pkg/ethpandaops/ethnode.py
+COPY modules/tracoor/python/tracoor.py /opt/ethpandaops-pkg/ethpandaops/tracoor.py
 
 # --no-deps: the package's dependencies are already installed (hash-locked)
 # above; resolving them here would bypass the lock.

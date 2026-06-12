@@ -137,8 +137,36 @@
         have fork-choice frames, and what consensus clients are those nodes on?"
       - Which sentry nodes currently have fork-choice snapshots captured in 
         Forky for sepolia, and what consensus clients are they running?
-      - Please query Forky for sepolia and report the beacon nodes it has 
+      - Please query Forky for sepolia and report the beacon nodes it has
         fork-choice snapshots from, including their consensus clients.
+
+  - id: tracoor_node_coverage                             # 💬 forensics capture ask
+    description: live tracoor beacon-state capture coverage on mainnet
+    input: "Which nodes is Tracoor capturing beacon states from on mainnet right
+      now, and what consensus clients are they running?"
+    network: mainnet
+    tags: [smoke, tracoor, mainnet, forensics]
+    assert:
+      - type: llm-rubric
+        value: >
+          Lists the sentry nodes Tracoor has beacon-state captures from on
+          mainnet from a real Tracoor query (node names like
+          utility-mainnet-<client>-<el>-001) and names the consensus clients
+          behind them (e.g. lighthouse, prysm, teku, nimbus, lodestar,
+          grandine). Concrete node names sourced from Tracoor pass; invented
+          node names, an empty hand-wave, or no real query fail.
+    variations:
+      - What nodes are feeding beacon-state snapshots into Tracoor on mainnet
+        at the moment, and which consensus clients do they run?
+      - Using Tracoor, list the nodes with beacon state captures on mainnet
+        right now and the consensus client each one runs.
+      - "I'm trying to see Tracoor's current mainnet coverage: which nodes
+        have beacon state captures, and what consensus clients are those
+        nodes on?"
+      - Which sentry nodes currently have beacon states archived in Tracoor
+        for mainnet, and what consensus clients are they running?
+      - Please query Tracoor for mainnet and report the nodes it has beacon
+        state captures from, including their consensus clients.
 
   # Minted by panda case studio on 2026-06-12T05:55:15+00:00 (question q_29794adef1, human-reviewed).
   - id: mainnet_xatu_top_peer_count_node

@@ -69,6 +69,10 @@ var completeForkyNetworkNames = completeOperationNetworkNames("forky.list_networ
 // that have CBT instances.
 var completeCBTNetworkNames = completeOperationNetworkNames("cbt.list_networks")
 
+// completeTracoorNetworkNames completes the first positional arg with
+// networks that have Tracoor instances.
+var completeTracoorNetworkNames = completeOperationNetworkNames("tracoor.list_networks")
+
 // completeEthNodeArgs completes the ethnode positional args. The first arg
 // (network) is completed from ethnode's own active networks; the second arg
 // (instance) is a per-node DNS label the proxy cannot enumerate, so it is left

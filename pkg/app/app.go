@@ -30,6 +30,7 @@ import (
 	forkymodule "github.com/ethpandaops/panda/modules/forky"
 	lokimodule "github.com/ethpandaops/panda/modules/loki"
 	prometheusmodule "github.com/ethpandaops/panda/modules/prometheus"
+	tracoormodule "github.com/ethpandaops/panda/modules/tracoor"
 )
 
 // refreshActivationTimeout caps Start + OnDiscoveryReloaded calls dispatched
@@ -220,6 +221,7 @@ func (a *App) registerModules() *module.Registry {
 	reg.Add(forkymodule.New())
 	reg.Add(lokimodule.New())
 	reg.Add(prometheusmodule.New())
+	reg.Add(tracoormodule.New())
 
 	return reg
 }
