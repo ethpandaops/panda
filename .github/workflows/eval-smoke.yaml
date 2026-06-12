@@ -94,10 +94,13 @@ jobs:
           if [ "$EVENT" = "pull_request" ] && [ "$HEAD_REPO" != "$GITHUB_REPOSITORY" ]; then
             PUBLISH=false
           fi
-          # Subject line of the measured commit (PR checkouts are merge refs, but
-          # the head commit object is fetched). Heredoc output: subjects are
-          # attacker-chosen text and must not be able to inject further outputs.
+          # Subject line of the measured commit. The depth-1 PR checkout holds only
+          # the merge commit, not the head it points at — fetch the sha itself.
+          # Heredoc output: subjects are attacker-chosen text and must not be able
+          # to inject further outputs.
+          git cat-file -e "$SHA" 2>/dev/null || git fetch --depth 1 origin "$SHA" 2>/dev/null || true
           MSG=$(git log -1 --format=%s "$SHA" 2>/dev/null | head -c 200 || true)
+          echo "commit subject: ${MSG:-<unavailable>}"
           {
             echo "branch=$BRANCH"
             echo "sha=$SHA"
