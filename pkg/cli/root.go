@@ -40,8 +40,9 @@ tables, columns, or query syntax:
   1. Find available data: panda datasets, panda datasources, panda schema
   2. Search prior art: panda search examples "<topic>"
   3. Search procedures when the task is multi-step: panda search runbooks "<topic>"
-  4. Read dataset rules when a search result names one: panda datasets <name>
-  5. Execute with the narrowest command that fits, or use panda execute
+  4. Read protocol constants/specs from consensus specs: panda specs
+  5. Read dataset rules when a search result names one: panda datasets <name>
+  6. Execute with the narrowest command that fits, or use panda execute
 
 Most topic words are search terms, not subcommands. Full guide:
 

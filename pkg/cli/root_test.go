@@ -27,6 +27,7 @@ func TestRootCommandHasVersionFlag(t *testing.T) {
 func TestRootHelpSurfacesDiscoveryWorkflow(t *testing.T) {
 	assert.Contains(t, rootCmd.Long, "panda search examples")
 	assert.Contains(t, rootCmd.Long, "panda search runbooks")
+	assert.Contains(t, rootCmd.Long, "panda specs")
 	assert.Contains(t, rootCmd.Long, "panda datasets")
 	assert.Contains(t, rootCmd.Long, "instead of guessing")
 }
