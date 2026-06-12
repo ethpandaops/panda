@@ -50,6 +50,9 @@ type Service interface {
 	// LokiDatasourceInfo returns detailed Loki datasource info.
 	LokiDatasourceInfo() []types.DatasourceInfo
 
+	// BenchmarkoorDatasourceInfo returns detailed benchmarkoor datasource info.
+	BenchmarkoorDatasourceInfo() []types.DatasourceInfo
+
 	// EthNodeAvailable returns true if ethnode proxy access is configured.
 	EthNodeAvailable() bool
 	// EthNodeDatasourceInfo returns the ethnode datasource info when ethnode

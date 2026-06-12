@@ -246,6 +246,13 @@ func (r *routerClient) LokiDatasourceInfo() []types.DatasourceInfo {
 	return infos
 }
 
+// BenchmarkoorDatasourceInfo returns merged benchmarkoor datasource info.
+func (r *routerClient) BenchmarkoorDatasourceInfo() []types.DatasourceInfo {
+	infos, _ := r.mergeDatasourceInfo("benchmarkoor")
+
+	return infos
+}
+
 // EthNodeAvailable returns primary-proxy ethnode availability.
 func (r *routerClient) EthNodeAvailable() bool {
 	primary := r.Primary()
@@ -365,6 +372,8 @@ func routeDatasourceInfo(client Client, datasourceType string) []types.Datasourc
 		return client.PrometheusDatasourceInfo()
 	case "loki":
 		return client.LokiDatasourceInfo()
+	case "benchmarkoor":
+		return client.BenchmarkoorDatasourceInfo()
 	default:
 		return nil
 	}

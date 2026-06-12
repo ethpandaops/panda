@@ -268,6 +268,8 @@ type fakeRouterClient struct {
 	prometheus []types.DatasourceInfo
 	loki       []types.DatasourceInfo
 
+	benchmarkoor []types.DatasourceInfo
+
 	ethnode   bool
 	embedding bool
 	model     string
@@ -324,6 +326,10 @@ func (f *fakeRouterClient) LokiDatasources() []string {
 
 func (f *fakeRouterClient) LokiDatasourceInfo() []types.DatasourceInfo {
 	return append([]types.DatasourceInfo(nil), f.loki...)
+}
+
+func (f *fakeRouterClient) BenchmarkoorDatasourceInfo() []types.DatasourceInfo {
+	return append([]types.DatasourceInfo(nil), f.benchmarkoor...)
 }
 
 func (f *fakeRouterClient) EthNodeAvailable() bool { return f.ethnode }

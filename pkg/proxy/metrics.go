@@ -268,6 +268,8 @@ func extractDatasourceType(path string) string {
 		return "loki"
 	case "beacon", "execution":
 		return "ethnode"
+	case "benchmarkoor":
+		return "benchmarkoor"
 	case "github":
 		return "github"
 	case "datasources":

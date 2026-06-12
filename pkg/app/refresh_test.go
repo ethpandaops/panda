@@ -314,10 +314,11 @@ func (m *fakeDiscoverableModule) OnDiscoveryReloaded(_ context.Context) error {
 // fakeProxyClient is a stub that returns canned datasources. Only the
 // datasource-getter methods are exercised by refreshModulesFromDiscovery.
 type fakeProxyClient struct {
-	clickhouse []types.DatasourceInfo
-	prometheus []types.DatasourceInfo
-	loki       []types.DatasourceInfo
-	ethnode    bool
+	clickhouse   []types.DatasourceInfo
+	prometheus   []types.DatasourceInfo
+	loki         []types.DatasourceInfo
+	benchmarkoor []types.DatasourceInfo
+	ethnode      bool
 }
 
 func (f *fakeProxyClient) Start(_ context.Context) error               { return nil }
@@ -361,6 +362,10 @@ func (f *fakeProxyClient) LokiDatasources() []string {
 }
 
 func (f *fakeProxyClient) LokiDatasourceInfo() []types.DatasourceInfo { return f.loki }
+
+func (f *fakeProxyClient) BenchmarkoorDatasourceInfo() []types.DatasourceInfo {
+	return f.benchmarkoor
+}
 
 func (f *fakeProxyClient) EthNodeAvailable() bool { return f.ethnode }
 

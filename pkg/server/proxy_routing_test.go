@@ -240,9 +240,10 @@ type routingProxyClient struct {
 	url   string
 	token string
 
-	clickhouse []types.DatasourceInfo
-	prometheus []types.DatasourceInfo
-	loki       []types.DatasourceInfo
+	clickhouse   []types.DatasourceInfo
+	prometheus   []types.DatasourceInfo
+	loki         []types.DatasourceInfo
+	benchmarkoor []types.DatasourceInfo
 }
 
 func (c *routingProxyClient) Start(_ context.Context) error { return nil }
@@ -267,6 +268,9 @@ func (c *routingProxyClient) LokiDatasources() []string {
 }
 func (c *routingProxyClient) LokiDatasourceInfo() []types.DatasourceInfo {
 	return append([]types.DatasourceInfo(nil), c.loki...)
+}
+func (c *routingProxyClient) BenchmarkoorDatasourceInfo() []types.DatasourceInfo {
+	return append([]types.DatasourceInfo(nil), c.benchmarkoor...)
 }
 func (c *routingProxyClient) EthNodeAvailable() bool { return false }
 func (c *routingProxyClient) EthNodeDatasourceInfo() []types.DatasourceInfo {

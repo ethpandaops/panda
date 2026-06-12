@@ -28,6 +28,7 @@ RUN uv pip install --system --no-cache --require-hashes -r /tmp/requirements.txt
 COPY sandbox/ethpandaops /opt/ethpandaops-pkg
 
 # Copy extension Python modules into the package
+COPY modules/benchmarkoor/python/benchmarkoor.py /opt/ethpandaops-pkg/ethpandaops/benchmarkoor.py
 COPY modules/block_archive/python/block_archive.py /opt/ethpandaops-pkg/ethpandaops/block_archive.py
 COPY modules/cbt/python/cbt.py /opt/ethpandaops-pkg/ethpandaops/cbt.py
 COPY modules/clickhouse/python/clickhouse.py /opt/ethpandaops-pkg/ethpandaops/clickhouse.py

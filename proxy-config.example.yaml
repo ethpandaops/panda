@@ -188,6 +188,16 @@ loki:
     # allowed_orgs:
     #   - ethpandaops
 
+# Benchmarkoor: execution-client benchmark results (read-only API key, bmk_...)
+# benchmarkoor:
+#   - name: production
+#     description: "ethPandaOps execution-client benchmark results"
+#     url: "https://benchmarkoor-api.core.ethpandaops.io"
+#     ui_url: "https://benchmarkoor.core.ethpandaops.io"
+#     api_key: "${BENCHMARKOOR_API_KEY}"
+#     # allowed_orgs:
+#     #   - ethpandaops
+
 # Ethereum node API access (beacon and execution nodes)
 # Single credential pair for all bn-*.srv.*.ethpandaops.io and rpc-*.srv.*.ethpandaops.io endpoints
 # ethnode:

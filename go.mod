@@ -10,6 +10,7 @@ require (
 	github.com/ethpandaops/cbt v0.1.6
 	github.com/ethpandaops/forky v1.0.2
 	github.com/gdamore/tcell/v2 v2.13.10
+	github.com/getkin/kin-openapi v0.134.0
 	github.com/go-chi/chi/v5 v5.3.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
@@ -49,7 +50,6 @@ require (
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/gdamore/encoding v1.0.1 // indirect
-	github.com/getkin/kin-openapi v0.134.0 // indirect
 	github.com/ghodss/yaml v1.0.0 // indirect
 	github.com/go-faster/errors v0.7.1 // indirect
 	github.com/go-faster/jx v1.2.0 // indirect

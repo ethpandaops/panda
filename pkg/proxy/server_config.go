@@ -36,6 +36,9 @@ type ServerConfig struct {
 	// EthNode holds Ethereum node API access configuration.
 	EthNode *EthNodeInstanceConfig `yaml:"ethnode,omitempty"`
 
+	// Benchmarkoor holds benchmarkoor API instance configurations.
+	Benchmarkoor []BenchmarkoorInstanceConfig `yaml:"benchmarkoor,omitempty"`
+
 	// RateLimiting holds rate limiting configuration.
 	RateLimiting RateLimitConfig `yaml:"rate_limiting"`
 
@@ -143,6 +146,7 @@ var (
 	_ DatasourceConfig = PrometheusInstanceConfig{}
 	_ DatasourceConfig = LokiInstanceConfig{}
 	_ DatasourceConfig = EthNodeInstanceConfig{}
+	_ DatasourceConfig = BenchmarkoorInstanceConfig{}
 )
 
 // ClickHouseClusterConfig holds ClickHouse cluster configuration.
@@ -250,6 +254,18 @@ type EthNodeInstanceConfig struct {
 	BaseDatasourceConfig `yaml:",inline"`
 	Username             string `yaml:"username"`
 	Password             string `yaml:"password"`
+}
+
+// BenchmarkoorInstanceConfig holds benchmarkoor API instance configuration.
+// Benchmarkoor is the execution-client benchmarking service; APIKey is a
+// read-only benchmarkoor API key (bmk_...) injected as a Bearer token.
+type BenchmarkoorInstanceConfig struct {
+	BaseDatasourceConfig `yaml:",inline"`
+	URL                  string `yaml:"url"`
+	APIKey               string `yaml:"api_key,omitempty"`
+	// UIURL is the public benchmarkoor web UI, used to build deep links to
+	// runs and suites. The UI host is not derivable from the API URL.
+	UIURL string `yaml:"ui_url,omitempty"`
 }
 
 // RateLimitConfig holds rate limiting configuration.
@@ -465,8 +481,8 @@ func (c *ServerConfig) Validate() error {
 	}
 
 	// Validate at least one datasource is configured.
-	if len(c.ClickHouse) == 0 && len(c.Prometheus) == 0 && len(c.Loki) == 0 && c.EthNode == nil {
-		return fmt.Errorf("at least one datasource (clickhouse, prometheus, loki, or ethnode) must be configured")
+	if len(c.ClickHouse) == 0 && len(c.Prometheus) == 0 && len(c.Loki) == 0 && c.EthNode == nil && len(c.Benchmarkoor) == 0 {
+		return fmt.Errorf("at least one datasource (clickhouse, prometheus, loki, ethnode, or benchmarkoor) must be configured")
 	}
 
 	// Validate ClickHouse configs.
@@ -546,6 +562,17 @@ func (c *ServerConfig) Validate() error {
 		}
 	}
 
+	// Validate benchmarkoor configs.
+	for i, bench := range c.Benchmarkoor {
+		if bench.Name == "" {
+			return fmt.Errorf("benchmarkoor[%d].name is required", i)
+		}
+
+		if bench.URL == "" {
+			return fmt.Errorf("benchmarkoor[%d].url is required", i)
+		}
+	}
+
 	// Validate Loki configs.
 	for i, loki := range c.Loki {
 		if loki.Name == "" {
@@ -576,6 +603,26 @@ func (c *ServerConfig) Validate() error {
 	}
 
 	return nil
+}
+
+// ToBenchmarkoorHandlerConfigs converts the benchmarkoor instance configs to
+// handler configs.
+func (c *ServerConfig) ToBenchmarkoorHandlerConfigs() []handlers.BenchmarkoorConfig {
+	if len(c.Benchmarkoor) == 0 {
+		return nil
+	}
+
+	configs := make([]handlers.BenchmarkoorConfig, 0, len(c.Benchmarkoor))
+	for _, bench := range c.Benchmarkoor {
+		configs = append(configs, handlers.BenchmarkoorConfig{
+			Name:        bench.Name,
+			Description: bench.Description,
+			URL:         bench.URL,
+			APIKey:      bench.APIKey,
+		})
+	}
+
+	return configs
 }
 
 // ToHandlerConfigs converts the server config to handler configs.

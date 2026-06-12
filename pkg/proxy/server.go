@@ -66,12 +66,13 @@ type server struct {
 	githubTriggerLimiter *RateLimiter
 	auditor              *Auditor
 
-	clickhouseHandler *handlers.ClickHouseHandler
-	prometheusHandler *handlers.PrometheusHandler
-	lokiHandler       *handlers.LokiHandler
-	ethNodeHandler    *handlers.EthNodeHandler
-	embeddingService  *EmbeddingService
-	githubHandler     *handlers.GitHubHandler
+	clickhouseHandler   *handlers.ClickHouseHandler
+	prometheusHandler   *handlers.PrometheusHandler
+	lokiHandler         *handlers.LokiHandler
+	ethNodeHandler      *handlers.EthNodeHandler
+	benchmarkoorHandler *handlers.BenchmarkoorHandler
+	embeddingService    *EmbeddingService
+	githubHandler       *handlers.GitHubHandler
 
 	autodiscoverHTTPClient  *http.Client
 	autodiscoverCancel      context.CancelFunc
@@ -189,6 +190,10 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 		s.ethNodeHandler = handlers.NewEthNodeHandler(log, *ethNodeConfig)
 	}
 
+	if benchConfigs := cfg.ToBenchmarkoorHandlerConfigs(); len(benchConfigs) > 0 {
+		s.benchmarkoorHandler = handlers.NewBenchmarkoorHandler(log, benchConfigs)
+	}
+
 	// Create embedding service if configured.
 	if cfg.Embedding != nil {
 		embCache, err := buildEmbeddingCache(cfg.Embedding.Cache)
@@ -290,6 +295,10 @@ func (s *server) registerRoutes() {
 		s.handleSubtreeRoute("/execution", s.metricsMiddleware(chain(s.ethNodeHandler)))
 	}
 
+	if s.benchmarkoorHandler != nil {
+		s.handleSubtreeRoute("/benchmarkoor", s.metricsMiddleware(chain(s.benchmarkoorHandler)))
+	}
+
 	if s.githubHandler != nil {
 		s.handleSubtreeRoute("/github", s.metricsMiddleware(chain(s.githubHandler)))
 	}
@@ -342,6 +351,7 @@ type DatasourcesResponse struct {
 	ClickHouseInfo     []types.DatasourceInfo `json:"clickhouse_info,omitempty"`
 	PrometheusInfo     []types.DatasourceInfo `json:"prometheus_info,omitempty"`
 	LokiInfo           []types.DatasourceInfo `json:"loki_info,omitempty"`
+	BenchmarkoorInfo   []types.DatasourceInfo `json:"benchmarkoor_info,omitempty"`
 	EthNodeAvailable   bool                   `json:"ethnode_available,omitempty"`
 	EmbeddingAvailable bool                   `json:"embedding_available,omitempty"`
 	EmbeddingModel     string                 `json:"embedding_model,omitempty"`
@@ -356,6 +366,7 @@ type datasourcesResponseWire struct {
 	ClickHouseInfo     []types.DatasourceInfo `json:"clickhouse_info,omitempty"`
 	PrometheusInfo     []types.DatasourceInfo `json:"prometheus_info,omitempty"`
 	LokiInfo           []types.DatasourceInfo `json:"loki_info,omitempty"`
+	BenchmarkoorInfo   []types.DatasourceInfo `json:"benchmarkoor_info,omitempty"`
 	EthNodeAvailable   bool                   `json:"ethnode_available,omitempty"`
 	EmbeddingAvailable bool                   `json:"embedding_available,omitempty"`
 	EmbeddingModel     string                 `json:"embedding_model,omitempty"`
@@ -371,6 +382,7 @@ func (d DatasourcesResponse) MarshalJSON() ([]byte, error) {
 		ClickHouseInfo:     d.ClickHouseInfo,
 		PrometheusInfo:     d.PrometheusInfo,
 		LokiInfo:           d.LokiInfo,
+		BenchmarkoorInfo:   d.BenchmarkoorInfo,
 		EthNodeAvailable:   d.EthNodeAvailable,
 		EmbeddingAvailable: d.EmbeddingAvailable,
 		EmbeddingModel:     d.EmbeddingModel,
@@ -388,6 +400,7 @@ func (d *DatasourcesResponse) UnmarshalJSON(data []byte) error {
 	d.ClickHouseInfo = infoFromWire("clickhouse", wire.ClickHouseInfo, wire.ClickHouse)
 	d.PrometheusInfo = infoFromWire("prometheus", wire.PrometheusInfo, wire.Prometheus)
 	d.LokiInfo = infoFromWire("loki", wire.LokiInfo, wire.Loki)
+	d.BenchmarkoorInfo = normalizeInfo("benchmarkoor", wire.BenchmarkoorInfo, "")
 	d.EthNodeAvailable = wire.EthNodeAvailable
 	d.EmbeddingAvailable = wire.EmbeddingAvailable
 	d.EmbeddingModel = wire.EmbeddingModel
@@ -428,6 +441,7 @@ func (s *server) handleDatasources(w http.ResponseWriter, r *http.Request) {
 		ClickHouseInfo:     s.ClickHouseDatasourceInfo(),
 		PrometheusInfo:     s.PrometheusDatasourceInfo(),
 		LokiInfo:           s.LokiDatasourceInfo(),
+		BenchmarkoorInfo:   s.BenchmarkoorDatasourceInfo(),
 		EthNodeAvailable:   s.EthNodeAvailable(),
 		EmbeddingAvailable: s.EmbeddingAvailable(),
 		EmbeddingModel:     s.EmbeddingModel(),
@@ -842,6 +856,35 @@ func (s *server) LokiDatasourceInfo() []types.DatasourceInfo {
 			info.Metadata = metadataValue("url", loki.Variants[0].URL)
 		}
 		result = append(result, info)
+	}
+
+	return result
+}
+
+// BenchmarkoorDatasourceInfo returns detailed benchmarkoor datasource info.
+func (s *server) BenchmarkoorDatasourceInfo() []types.DatasourceInfo {
+	if len(s.cfg.Benchmarkoor) == 0 {
+		return nil
+	}
+
+	result := make([]types.DatasourceInfo, 0, len(s.cfg.Benchmarkoor))
+
+	for _, bench := range s.cfg.Benchmarkoor {
+		metadata := metadataValue("url", bench.URL)
+		if bench.UIURL != "" {
+			if metadata == nil {
+				metadata = map[string]string{}
+			}
+
+			metadata["ui_url"] = bench.UIURL
+		}
+
+		result = append(result, types.DatasourceInfo{
+			Type:        "benchmarkoor",
+			Name:        bench.Name,
+			Description: bench.Description,
+			Metadata:    metadata,
+		})
 	}
 
 	return result

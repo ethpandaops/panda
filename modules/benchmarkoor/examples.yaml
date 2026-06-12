@@ -1,0 +1,117 @@
+benchmarkoor_run_discovery:
+  name: Benchmark Run Discovery
+  description: Find execution-client benchmark runs and their pass/fail outcomes
+  examples:
+    - name: List recent benchmark runs
+      description: >-
+        Answer "what benchmark runs exist", "show the latest benchmarks", or
+        "when did geth last get benchmarked" from the run index
+      query: |
+        from ethpandaops import benchmarkoor
+
+        runs = benchmarkoor.list_runs(order="timestamp.desc", limit=20)
+        for r in runs:
+            print(f"{r['run_id']}  {r['client']:12} {r['status']:10} "
+                  f"passed={r['tests_passed']}/{r['tests_total']}")
+
+    - name: Runs for one client
+      description: Filter benchmark runs by execution client (geth, reth, nethermind, besu, erigon...)
+      query: |
+        from ethpandaops import benchmarkoor
+
+        runs = benchmarkoor.list_runs(client="geth", order="timestamp.desc", limit=10)
+        for r in runs:
+            print(f"{r['run_id']}  {r['image']}  {r['status']}")
+
+    - name: Find failing runs
+      description: Find benchmark runs with test failures using a PostgREST-style filter
+      query: |
+        from ethpandaops import benchmarkoor
+
+        failing = benchmarkoor.list_runs(filters={"tests_failed": "gt.0"}, limit=20)
+        for r in failing:
+            print(f"{r['run_id']}  {r['client']}  failed={r['tests_failed']}")
+
+    - name: Inspect one run
+      description: Get a single benchmark run with per-step gas/duration summaries
+      query: |
+        from ethpandaops import benchmarkoor
+
+        runs = benchmarkoor.list_runs(order="timestamp.desc", limit=1)
+        run = benchmarkoor.get_run(runs[0]["run_id"])
+        print(run["client"], run["image"], run["status"])
+        print(run.get("steps_json"))
+        print("UI:", benchmarkoor.link_run(run["run_id"]))
+
+benchmarkoor_performance:
+  name: Client Benchmark Performance
+  description: >-
+    Compare execution-client gas throughput (MGas/s), per-test timings, and
+    per-block EL internals across benchmark runs
+  examples:
+    - name: Per-test throughput for a run
+      description: >-
+        Answer "how fast was this client", "what throughput did the benchmark
+        measure" — per-test gas used, wall time, and MGas/s
+      query: |
+        from ethpandaops import benchmarkoor
+
+        runs = benchmarkoor.list_runs(order="timestamp.desc", limit=1)
+        stats = benchmarkoor.query_test_stats(
+            run_id=runs[0]["run_id"],
+            order="test_mgas_s.desc",
+            limit=20,
+        )
+        for s in stats:
+            print(f"{s['test_name'][:60]:60} {s['test_mgas_s']:8.2f} MGas/s")
+
+    - name: Compare clients on a suite
+      description: >-
+        Compare clients' per-test durations across recent runs of the same
+        test suite (the suite_hash groups runs of identical test sets)
+      query: |
+        from collections import defaultdict
+
+        from ethpandaops import benchmarkoor
+
+        suites = benchmarkoor.list_suites(order="indexed_at.desc", limit=1)
+        stats = benchmarkoor.get_suite_stats(suites[0]["suite_hash"])
+
+        for test_name, entry in list(stats.items())[:5]:
+            best = defaultdict(list)
+            for d in entry["durations"]:
+                best[d["client"]].append(d["time_ns"])
+            line = ", ".join(
+                f"{c}={min(v) / 1e6:.1f}ms" for c, v in sorted(best.items())
+            )
+            print(f"{test_name}: {line}")
+
+    - name: Per-block EL timing breakdown
+      description: >-
+        Where a client spends block time — execution, state read, state hash,
+        commit — plus cache hit rates, from block-level logs
+      query: |
+        from ethpandaops import benchmarkoor
+
+        runs = benchmarkoor.list_runs(order="timestamp.desc", limit=1)
+        logs = benchmarkoor.query_block_logs(
+            run_id=runs[0]["run_id"],
+            order="timing_total_ms.desc",
+            limit=10,
+        )
+        for b in logs:
+            print(f"block={b['block_number']} total={b['timing_total_ms']:.1f}ms "
+                  f"exec={b['timing_execution_ms']:.1f}ms "
+                  f"throughput={b['throughput_mgas_per_sec']:.1f} MGas/s")
+
+    - name: Watch live benchmark runs
+      description: See currently-executing benchmark runs with live pass counts
+      query: |
+        from ethpandaops import benchmarkoor
+
+        live = benchmarkoor.list_live_runs()
+        if not live:
+            print("No benchmark runs currently executing.")
+        for r in live:
+            print(f"{r['run_id']}  {r.get('client')}  "
+                  f"{r['tests_passed']}/{r['tests_total']} passed")

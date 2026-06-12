@@ -419,6 +419,14 @@ func (c *proxyClient) LokiDatasourceInfo() []types.DatasourceInfo {
 	return normalizeInfo("loki", c.datasources.LokiInfo, c.cfg.Name)
 }
 
+// BenchmarkoorDatasourceInfo returns detailed benchmarkoor datasource info.
+func (c *proxyClient) BenchmarkoorDatasourceInfo() []types.DatasourceInfo {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return normalizeInfo("benchmarkoor", c.datasources.BenchmarkoorInfo, c.cfg.Name)
+}
+
 // EthNodeAvailable returns true if the proxy has ethnode credentials configured.
 func (c *proxyClient) EthNodeAvailable() bool {
 	c.mu.RLock()

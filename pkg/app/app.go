@@ -21,6 +21,7 @@ import (
 	"github.com/ethpandaops/panda/pkg/types"
 
 	datasetsmodule "github.com/ethpandaops/panda/datasets"
+	benchmarkoormodule "github.com/ethpandaops/panda/modules/benchmarkoor"
 	blockarchivemodule "github.com/ethpandaops/panda/modules/block_archive"
 	cbtmodule "github.com/ethpandaops/panda/modules/cbt"
 	clickhousemodule "github.com/ethpandaops/panda/modules/clickhouse"
@@ -209,6 +210,7 @@ func (a *App) stop(ctx context.Context) error {
 func (a *App) registerModules() *module.Registry {
 	reg := module.NewRegistry(a.log)
 
+	reg.Add(benchmarkoormodule.New())
 	reg.Add(blockarchivemodule.New())
 	reg.Add(cbtmodule.New())
 	reg.Add(clickhousemodule.New())
@@ -541,6 +543,7 @@ func (a *App) discoveredDatasources(proxyClient proxy.Client) []types.Datasource
 	discovered = append(discovered, proxyClient.PrometheusDatasourceInfo()...)
 	discovered = append(discovered, proxyClient.LokiDatasourceInfo()...)
 	discovered = append(discovered, proxyClient.EthNodeDatasourceInfo()...)
+	discovered = append(discovered, proxyClient.BenchmarkoorDatasourceInfo()...)
 
 	return discovered
 }

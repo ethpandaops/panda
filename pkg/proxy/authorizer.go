@@ -43,6 +43,23 @@ func NewAuthorizer(log logrus.FieldLogger, cfg ServerConfig) *Authorizer {
 		a.rules[ruleKey("loki", ds.Name)] = lokiVariantRules(ds)
 	}
 
+	for _, ds := range cfg.Benchmarkoor {
+		metadata := metadataValue("url", ds.URL)
+		if ds.UIURL != "" {
+			if metadata == nil {
+				metadata = map[string]string{}
+			}
+
+			metadata["ui_url"] = ds.UIURL
+		}
+
+		a.rules[ruleKey("benchmarkoor", ds.Name)] = []datasourceVariantRule{{
+			routeName:   ds.Name,
+			allowedOrgs: append([]string(nil), ds.AllowedOrgs...),
+			metadata:    metadata,
+		}}
+	}
+
 	if cfg.EthNode != nil && len(cfg.EthNode.AllowedOrgs) > 0 {
 		a.rules[ruleKey("ethnode", "")] = []datasourceVariantRule{{
 			allowedOrgs: append([]string(nil), cfg.EthNode.AllowedOrgs...),
@@ -92,6 +109,7 @@ func (a *Authorizer) FilterDatasources(ctx context.Context, resp DatasourcesResp
 	filtered.ClickHouseInfo = a.filterDatasourceList(userOrgs, hasUser, "clickhouse", resp.ClickHouseInfo)
 	filtered.PrometheusInfo = a.filterDatasourceList(userOrgs, hasUser, "prometheus", resp.PrometheusInfo)
 	filtered.LokiInfo = a.filterDatasourceList(userOrgs, hasUser, "loki", resp.LokiInfo)
+	filtered.BenchmarkoorInfo = a.filterDatasourceList(userOrgs, hasUser, "benchmarkoor", resp.BenchmarkoorInfo)
 
 	return filtered
 }

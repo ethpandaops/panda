@@ -17,6 +17,7 @@ func (s *service) dispatchOperation(operationID string, w http.ResponseWriter, r
 		s.handleForkyOperation,
 		s.handleEthNodeOperation,
 		s.handleCBTOperation,
+		s.handleBenchmarkoorOperation,
 		s.handleSpecsOperation,
 		s.handleBlockArchiveOperation,
 	} {
