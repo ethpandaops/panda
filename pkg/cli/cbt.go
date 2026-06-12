@@ -33,13 +33,14 @@ Examples:
 }
 
 var (
-	cbtModelsType      string
-	cbtModelsDatabase  string
-	cbtModelsSearch    string
-	cbtTransformsType  string
-	cbtTransformsDB    string
-	cbtTransformsState string
-	cbtCoverageAt      int64
+	cbtModelsType       string
+	cbtModelsDatabase   string
+	cbtModelsSearch     string
+	cbtExternalDatabase string
+	cbtTransformsType   string
+	cbtTransformsDB     string
+	cbtTransformsState  string
+	cbtCoverageAt       int64
 )
 
 func init() {
@@ -75,6 +76,8 @@ func init() {
 	cbtModelsCmd.Flags().StringVar(&cbtModelsType, "type", "", "Filter by model type (external, transformation)")
 	cbtModelsCmd.Flags().StringVar(&cbtModelsDatabase, "database", "", "Filter by database")
 	cbtModelsCmd.Flags().StringVar(&cbtModelsSearch, "search", "", "Search models by name")
+
+	cbtExternalCmd.Flags().StringVar(&cbtExternalDatabase, "database", "", "Filter the listing by database")
 
 	cbtTransformationsCmd.Flags().StringVar(&cbtTransformsType, "type", "", "Filter by type (scheduled, incremental)")
 	cbtTransformationsCmd.Flags().StringVar(&cbtTransformsDB, "database", "", "Filter by database")
@@ -130,19 +133,43 @@ var cbtModelsCmd = &cobra.Command{
 }
 
 var cbtExternalCmd = &cobra.Command{
-	Use:   "external <network> <id>",
-	Short: "Get an external source model by ID (always JSON)",
-	Args:  cobra.ExactArgs(2),
+	Use:   "external <network> [id]",
+	Short: "List external source models, or get one by ID (detail is always JSON)",
+	Args:  cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		response, err := runServerOperationRaw(cmd, "cbt.get_external_model", map[string]any{
-			"network": args[0],
-			"id":      args[1],
-		})
-		if err != nil {
+		if len(args) == 2 {
+			response, err := runServerOperationRaw(cmd, "cbt.get_external_model", map[string]any{
+				"network": args[0],
+				"id":      args[1],
+			})
+			if err != nil {
+				return err
+			}
+
+			return printJSONBytes(response.Body)
+		}
+
+		opArgs := map[string]any{"network": args[0]}
+		setIfNotEmpty(opArgs, "database", cbtExternalDatabase)
+
+		body, err := runCBTPassthrough(cmd, "cbt.list_external_models", opArgs)
+		if err != nil || body == nil {
 			return err
 		}
 
-		return printJSONBytes(response.Body)
+		models, _ := body["models"].([]any)
+		if len(models) == 0 {
+			fmt.Println("No external models found.")
+			return nil
+		}
+
+		fmt.Printf("External models (%v total):\n", formatJSONNumber(body["total"]))
+		for _, item := range models {
+			model, _ := item.(map[string]any)
+			fmt.Printf("  %v\n", model["id"])
+		}
+
+		return nil
 	},
 }
 
