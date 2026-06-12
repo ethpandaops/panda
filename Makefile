@@ -1,4 +1,4 @@
-.PHONY: build build-server build-panda build-proxy install install-server install-panda install-proxy test lint clean docker docker-push docker-sandbox test-sandbox run help setup-hooks govulncheck
+.PHONY: build build-server build-panda build-proxy install install-server install-panda install-proxy test lint clean docker docker-push docker-sandbox test-sandbox run studio help setup-hooks govulncheck
 
 # Build variables
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -95,6 +95,9 @@ test-sandbox: ## Run sandbox package tests
 
 run: build-server ## Run the server
 	./panda-server serve
+
+studio: ## Run panda case studio (eval-case minting + codex fix dispatch UI)
+	cd tests/eval && uv sync --group studio -q && uv run --group studio python -m studio
 
 run-docker: docker ## Run with docker compose
 	docker compose up -d

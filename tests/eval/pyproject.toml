@@ -63,3 +63,7 @@ opencode-ai = { git = "https://github.com/anomalyco/opencode-sdk-python" }
 dev = [
     "pytest-xdist>=3.8.0",
 ]
+studio = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+]
