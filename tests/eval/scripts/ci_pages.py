@@ -108,6 +108,7 @@ def _entry(record: dict, run_id: str) -> dict:
     return {
         "id": run_id,
         "branch": record.get("branch", ""),
+        "tag": record.get("tag", ""),
         "sha": record.get("commit", ""),
         "created_at": record.get("created_at", ""),
         "pass_rate": record.get("pass_rate", 0.0),
@@ -130,10 +131,11 @@ def _prune(entries: list[dict], now: datetime) -> tuple[list[dict], list[dict]]:
     cutoff = (now - timedelta(days=MAX_BRANCH_AGE_DAYS)).isoformat()
     for branch, group in by_branch.items():
         group.sort(key=lambda e: e["created_at"], reverse=True)
-        if branch != "master" and group[0]["created_at"] < cutoff:
+        durable = branch in ("master", "releases")
+        if not durable and group[0]["created_at"] < cutoff:
             dropped += group
             continue
-        cap = KEEP_MASTER if branch == "master" else KEEP_BRANCH
+        cap = KEEP_MASTER if durable else KEEP_BRANCH
         kept += group[:cap]
         dropped += group[cap:]
     kept.sort(key=lambda e: e["created_at"], reverse=True)
@@ -143,7 +145,13 @@ def _prune(entries: list[dict], now: datetime) -> tuple[list[dict], list[dict]]:
 def publish(args: argparse.Namespace) -> None:
     payload = json.loads(Path(args.payload).read_text())
     record = payload["record"]
-    run_id = f"{sanitize_branch(record['branch'])}/{record['commit']}"
+    # CI payloads key by branch/sha; release payloads form a "releases"
+    # pseudo-branch keyed by tag, so the viewer walks them like commits.
+    if record.get("kind") == "ci":
+        run_id = f"{sanitize_branch(record['branch'])}/{record['commit']}"
+    else:
+        record.setdefault("branch", "releases")
+        run_id = f"releases/{sanitize_branch(record['tag'])}"
 
     ci_dir = Path(args.pages_dir) / "eval" / "ci"
     dst = ci_dir / "runs" / f"{run_id}.json"

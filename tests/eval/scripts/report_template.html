@@ -791,7 +791,10 @@
     const all = (manifest.runs || []).filter(r => r.id && r.created_at);
     if (!all.length) throw new Error("manifest has no runs");
     const want = new URLSearchParams(location.search).get("run");
+    /* bare page: the newest qualified release is the canonical state of the
+       world; fall back to master, then anything */
     const sel = all.find(r => r.id === want) ||
+      all.find(r => r.branch === "releases") ||
       all.find(r => r.branch === "master") || all[0];
     buildSwitcher(all, sel);
     return get(`runs/${sel.id}.json`);
@@ -804,8 +807,9 @@
       sp.set("run", id);
       location.search = "?" + sp.toString();
     };
+    const rank = b => b === "releases" ? 0 : b === "master" ? 1 : 2;
     const branches = [...new Set(all.map(r => r.branch))]
-      .sort((a, b) => (a === "master" ? -1 : b === "master" ? 1 : (a < b ? -1 : 1)));
+      .sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : 1));
     /* newest first within the selected branch */
     const sibs = all.filter(r => r.branch === sel.branch)
       .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
@@ -817,7 +821,7 @@
       `<select id="sw-branch" title="branch">${branches.map(b =>
         opt(b, b, b === sel.branch)).join("")}</select>` +
       `<select id="sw-commit" title="commit">${sibs.map(r =>
-        opt(r.id, `${(r.sha || "").slice(0, 7)} · ${(r.created_at || "").slice(5, 10)} · ${Math.round((r.pass_rate || 0) * 100)}%`, r.id === sel.id)).join("")}</select>` +
+        opt(r.id, `${r.branch === "releases" ? (r.tag || r.id.split("/")[1]) : (r.sha || "").slice(0, 7)} · ${(r.created_at || "").slice(5, 10)} · ${Math.round((r.pass_rate || 0) * 100)}%`, r.id === sel.id)).join("")}</select>` +
       `<button id="sw-prev" title="older commit"${at >= sibs.length - 1 ? " disabled" : ""}>‹</button>` +
       `<button id="sw-next" title="newer commit"${at <= 0 ? " disabled" : ""}>›</button>`;
     host.hidden = false;

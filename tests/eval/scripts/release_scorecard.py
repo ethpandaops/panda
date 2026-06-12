@@ -32,7 +32,12 @@ import statistics
 from datetime import UTC, datetime
 from pathlib import Path
 
-from scripts.release_report import build_html, category_breakdown, token_percentiles
+from scripts.release_report import (
+    build_payload,
+    category_breakdown,
+    render_template,
+    token_percentiles,
+)
 
 SCHEMA = 3
 MARKER_START = "<!-- eval-scorecard:start -->"
@@ -193,17 +198,13 @@ def _build_record(
         "runs": len(summary["runs"]),
         "pass_rate": round(summary["pass_rate"], 4),
         "mean_score": round(summary["mean_score"], 4),
-        "mean_tokens_correct": round(statistics.mean(correct_tokens), 1)
-        if correct_tokens
-        else 0.0,
+        "mean_tokens_correct": round(statistics.mean(correct_tokens), 1) if correct_tokens else 0.0,
         "token_percentiles": token_percentiles(summary["runs"]),
         # Total spend (all runs, failures included) per correct answer — the blunt
         # "what does a right answer cost" number.
         "tokens_per_solve": round(total_tokens / n_correct, 1) if n_correct else 0.0,
         "efficiency_vs": efficiency_vs(summary["runs"], prev),
-        "categories": category_breakdown(
-            summary["runs"], _question_tags(summary.get("cases", ""))
-        ),
+        "categories": category_breakdown(summary["runs"], _question_tags(summary.get("cases", ""))),
         # fail_reasons are scorecard detail, not part of the durable comparison record
         "questions": {
             qid: {k: v for k, v in cell.items() if k != "fail_reasons"}
@@ -239,10 +240,12 @@ def _render_trend(entries: list[dict], out: Path) -> None:
     fig, (ax_rate, ax_tok) = plt.subplots(2, 1, figsize=(9, 6), sharex=True, height_ratios=[2, 1])
     fig.suptitle("release qualification trend", fontsize=11)
 
-    ax_rate.plot(xs, [e["pass_rate"] for e in entries], marker="o", color="tab:green",
-                 label="pass rate")
-    ax_rate.plot(xs, [e["mean_score"] for e in entries], marker="o", color="tab:blue",
-                 label="mean score")
+    ax_rate.plot(
+        xs, [e["pass_rate"] for e in entries], marker="o", color="tab:green", label="pass rate"
+    )
+    ax_rate.plot(
+        xs, [e["mean_score"] for e in entries], marker="o", color="tab:blue", label="mean score"
+    )
     ax_rate.set_ylim(-0.05, 1.05)
     ax_rate.legend(fontsize=8, loc="lower left")
     ax_rate.grid(alpha=0.25)
@@ -347,8 +350,11 @@ def _build_markdown(
             "higher is leaner, lower is heavier.",
         ]
     if args.report_url:
-        lines += ["", f"**[📊 Full report]({args.report_url})** — per-run matrix, "
-                  "category breakdowns, token distributions, every grader reason."]
+        lines += [
+            "",
+            f"**[📊 Full report]({args.report_url})** — per-run matrix, "
+            "category breakdowns, token distributions, every grader reason.",
+        ]
 
     if history:
         prev = history[-1]
@@ -422,15 +428,11 @@ def main() -> None:
     (out_dir / "eval-qualification.json").write_text(json.dumps(record, indent=2) + "\n")
     _render_trend(history[-CHART_HISTORY:] + [record], out_dir / "eval-trend.png")
     (out_dir / "scorecard.md").write_text(_build_markdown(args, record, questions, history))
-    (out_dir / "eval-report.html").write_text(
-        build_html(
-            record=record,
-            runs=summary["runs"],
-            questions=questions,
-            history=history,
-            trend_png=out_dir / "eval-trend.png",
-        )
-    )
+    payload = build_payload(record=record, runs=summary["runs"], history=history)
+    # data.json feeds the gh-pages CI viewer (releases appear there as a
+    # walkable pseudo-branch); eval-report.html is the same payload baked in.
+    (out_dir / "data.json").write_text(json.dumps(payload, separators=(",", ":")) + "\n")
+    (out_dir / "eval-report.html").write_text(render_template(payload))
 
     print(
         f"qualified {record['tag']}: pass-rate {record['pass_rate']:.0%} "

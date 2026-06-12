@@ -290,6 +290,10 @@ jobs:
           fi
           mkdir -p "/tmp/pages/eval/${TAG}"
           cp tests/eval/reports/release/eval-report.html "/tmp/pages/eval/${TAG}/index.html"
+          # Register the qualification in the CI viewer's manifest as the
+          # "releases" pseudo-branch — the bare viewer page defaults to the
+          # newest release, and the branch switcher walks releases like commits.
+          (cd tests/eval && uv run python -m scripts.ci_pages publish             --pages-dir /tmp/pages --payload reports/release/data.json)
           # Regenerate the eval index from the directories actually present
           # (eval/ci/ is the smoke-run viewer, not a release — keep it out of the list).
           {
