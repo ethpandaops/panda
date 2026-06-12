@@ -312,6 +312,16 @@
   #run-details summary:hover { color: var(--accent); }
   #run-details .kv { padding: 2px 14px 12px; margin: 0; }
 
+  .commit-msg {
+    font: 12px/1.5 var(--sans);
+    color: var(--mut);
+    max-width: 340px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-top: 2px;
+  }
+
   /* matrix history cells */
   td.mxh, th.mxh-lbl { text-align: center; }
   td.mxh { font: 700 11.5px/1.6 var(--mono); white-space: nowrap; }
@@ -1214,7 +1224,7 @@
       return;
     }
     const W = Math.max(340, host.parentElement.getBoundingClientRect().width - 16);
-    const ml = 64, mr = 30, top = 24, bot = 252, H = 296;
+    const ml = 64, mr = 56, top = 24, bot = 252, H = 296;
     const svg = sv("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}` });
     const vals = pts.map(pt => pt.v);
     const vMax = Math.max(...vals), vMin = Math.min(...vals);
@@ -1249,11 +1259,22 @@
     }
     svg.appendChild(svText(ml - 9, top - 9, "tokens ↑", { "text-anchor": "end", "font-size": 11 }));
 
-    /* x = pass rate */
-    const xOf = v => ml + (W - ml - mr) * v;
-    for (const v of [0, .25, .5, .75, 1]) {
+    /* x = pass rate, zoomed to the data: a 0-100% axis wastes the whole plot
+       when every run passes. Domain snaps to 5pp steps with >=15pp of span,
+       clamped to [0,100]; an axis-break marker shows when 0% is cropped. */
+    const prMin = Math.min(...pts.map(pt => pt.e.pass_rate));
+    const prMax = Math.max(...pts.map(pt => pt.e.pass_rate));
+    let xLo = Math.max(0, Math.floor((prMin - .05) * 20) / 20);
+    const xHi = Math.min(1, Math.ceil((prMax + .03) * 20) / 20);
+    if (xHi - xLo < .15) xLo = Math.max(0, xHi - .15);
+    const xOf = v => ml + (W - ml - mr) * ((v - xLo) / (xHi - xLo));
+    const xStep = (xHi - xLo) > .5 ? .25 : (xHi - xLo) > .2 ? .1 : .05;
+    for (let v = Math.ceil(xLo / xStep) * xStep; v <= xHi + 1e-9; v += xStep) {
       svg.appendChild(sv("line", { x1: xOf(v), x2: xOf(v), y1: bot, y2: bot + 5, class: "axis-strong", stroke: "var(--line)" }));
       svg.appendChild(svText(xOf(v), bot + 18, Math.round(v * 100) + "%", { "text-anchor": "middle" }));
+    }
+    if (xLo > 0) {
+      svg.appendChild(svText(ml - 22, bot + 18, "⌁0", { "text-anchor": "middle", fill: "var(--faint)", "font-size": 11 }));
     }
     svg.appendChild(svText(W - mr, bot + 34, "pass rate →", { "text-anchor": "end", "font-size": 11 }));
 
@@ -1347,12 +1368,19 @@
 
   /* releases table */
   (() => {
+    const repoOf = e => e.repo || record.repo || "";
     const rows = [...releases].reverse().map((e, i) => {
       const cur = i === 0;
       const t = tokenLabel(e);
       const nOk = Math.round(e.pass_rate * e.runs);
+      const sha = (e.commit || "").slice(0, 9);
+      const shaCell = sha && repoOf(e)
+        ? `<a class="num" href="https://github.com/${esc(repoOf(e))}/commit/${esc(e.commit)}">${esc(sha)}</a>`
+        : `<span class="num" style="color:var(--mut)">${esc(sha || "—")}</span>`;
       return `<tr${cur ? ' class="current"' : ""}>` +
-        `<td class="qid">${esc(e.tag)}${cur ? " <span style='color:var(--ok)'>●</span>" : ""}${e.prerelease ? ' <span class="badge pre">pre</span>' : ""}</td>` +
+        `<td><span class="qid">${esc(e.tag)}</span>${cur ? " <span style='color:var(--ok)'>●</span>" : ""}${e.prerelease ? ' <span class="badge pre">pre</span>' : ""}` +
+        (e.commit_message ? `<div class="commit-msg" title="${esc(e.commit_message)}">${esc(e.commit_message)}</div>` : "") +
+        `</td>` +
         `<td class="num">${fDate(e.created_at)}</td>` +
         `<td class="r">${fPct(e.pass_rate)} <span style="color:var(--faint)">(${nOk}/${e.runs})</span></td>` +
         `<td class="r">${e.mean_score != null ? e.mean_score.toFixed(3) : '<span style="color:var(--faint)">—</span>'}</td>` +
@@ -1360,7 +1388,7 @@
         `${e.efficiency_vs ? e.efficiency_vs.score.toFixed(3) : '<span style="color:var(--faint)">—</span>'}</td>` +
         `<td class="r">${t.isP50 ? "" : "≈"}${fTok(t.v)}</td>` +
         `<td class="r">${e.runs}</td>` +
-        `<td class="num" style="color:var(--mut)">${esc((e.commit || "").slice(0, 9))}</td>` +
+        `<td>${shaCell}</td>` +
         `<td class="num" style="color:var(--mut)">${esc(e.cases || "")}</td></tr>`;
     }).join("");
     $("#rel-table").innerHTML =

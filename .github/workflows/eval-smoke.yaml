@@ -94,11 +94,18 @@ jobs:
           if [ "$EVENT" = "pull_request" ] && [ "$HEAD_REPO" != "$GITHUB_REPOSITORY" ]; then
             PUBLISH=false
           fi
+          # Subject line of the measured commit (PR checkouts are merge refs, but
+          # the head commit object is fetched). Heredoc output: subjects are
+          # attacker-chosen text and must not be able to inject further outputs.
+          MSG=$(git log -1 --format=%s "$SHA" 2>/dev/null | head -c 200 || true)
           {
             echo "branch=$BRANCH"
             echo "sha=$SHA"
             echo "pr=$PR"
             echo "publish=$PUBLISH"
+            echo "msg<<PANDA_EOF"
+            echo "$MSG"
+            echo "PANDA_EOF"
           } >> "$GITHUB_OUTPUT"
           echo "measuring $BRANCH@$SHA (publish=$PUBLISH)"
 
@@ -331,6 +338,7 @@ jobs:
           SHA: ${{ steps.ident.outputs.sha }}
           PR: ${{ steps.ident.outputs.pr }}
           PUBLISH: ${{ steps.ident.outputs.publish }}
+          COMMIT_MSG: ${{ steps.ident.outputs.msg }}
           EVENT: ${{ github.event_name }}
         run: |
           # data.json is what gh-pages serves; eval-report.html is the same payload
@@ -339,6 +347,7 @@ jobs:
           # run will publish, so the PR comment never links a page that won't exist.
           ARGS=(--eval-json reports/eval.json
                 --branch "$BRANCH" --sha "$SHA" --pr "$PR" --event "$EVENT"
+                --commit-message "$COMMIT_MSG"
                 --repo "$GITHUB_REPOSITORY"
                 --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
                 --history-dir "$GITHUB_WORKSPACE/report-history"

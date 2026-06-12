@@ -59,6 +59,7 @@ def _parse_args() -> argparse.Namespace:
     ap.add_argument("--run-url", default="", help="CI run URL, linked from the page")
     ap.add_argument("--pr", default="", help="PR number, when triggered by one")
     ap.add_argument("--repo", default="", help="owner/name, for commit links on the page")
+    ap.add_argument("--commit-message", default="", help="subject line of the measured commit")
     ap.add_argument(
         "--history-dir",
         default="",
@@ -226,6 +227,7 @@ def main() -> None:
     record.update(
         kind="ci",
         branch=args.branch,
+        commit_message=args.commit_message[:200],
         event=args.event,
         run_url=args.run_url,
         repo=args.repo,
