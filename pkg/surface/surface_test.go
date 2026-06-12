@@ -72,7 +72,7 @@ func TestCLIGuideDiscouragesGuessing(t *testing.T) {
 
 	assert.Contains(t, guide, "Do not guess command names")
 	assert.Contains(t, guide, "examples and runbooks first")
-	assert.Contains(t, guide, "panda specs constant")
+	assert.Contains(t, guide, "panda search consensus-specs")
 }
 
 func TestDiscoveryGuide(t *testing.T) {
@@ -100,6 +100,6 @@ func TestDiscoveryGuide(t *testing.T) {
 
 	cliGuide := CLI.DiscoveryGuide(d)
 	assert.Contains(t, cliGuide, "panda --help")
-	assert.Contains(t, cliGuide, "panda specs")
+	assert.Contains(t, cliGuide, "panda search consensus-specs")
 	assert.Contains(t, cliGuide, "panda search runbooks")
 }

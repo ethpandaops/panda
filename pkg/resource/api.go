@@ -62,42 +62,10 @@ func createAPIHandler(moduleReg *module.Registry) ReadHandler {
 				},
 			},
 		}
-		modules["specs"] = types.ModuleDoc{
-			Description: "Read consensus-specs protocol constants and documents",
-			Functions: map[string]types.FunctionDoc{
-				"get_constant": {
-					Signature:   "specs.get_constant(name: str, fork: str | None = None) -> dict",
-					Description: "Get a consensus-specs protocol constant by name",
-					Parameters: map[string]string{
-						"name": "Constant name, case-insensitive",
-						"fork": "Optional consensus fork filter; when omitted, returns the latest fork that defines the constant",
-					},
-					Returns: "Dict with 'name', 'value', and 'fork'",
-				},
-				"list_constants": {
-					Signature:   "specs.list_constants(fork: str | None = None, prefix: str | None = None) -> list[dict]",
-					Description: "List consensus-specs protocol constants",
-					Parameters: map[string]string{
-						"fork":   "Optional consensus fork filter",
-						"prefix": "Optional case-insensitive constant name prefix filter",
-					},
-					Returns: "List of dicts with 'name', 'value', and 'fork'",
-				},
-				"get_spec": {
-					Signature:   "specs.get_spec(fork: str, topic: str) -> dict",
-					Description: "Get a consensus spec document",
-					Parameters: map[string]string{
-						"fork":  "Consensus fork name",
-						"topic": "Spec topic name",
-					},
-					Returns: "Dict with 'fork', 'topic', 'title', 'content', and 'url'",
-				},
-			},
-		}
 
 		response := serverapi.APIDocResponse{
 			Library:     "ethpandaops",
-			Description: "Data access library for Ethereum network analytics. Import: from ethpandaops import clickhouse, prometheus, loki, specs, storage",
+			Description: "Data access library for Ethereum network analytics. Import: from ethpandaops import clickhouse, prometheus, loki, storage",
 			Modules:     modules,
 		}
 

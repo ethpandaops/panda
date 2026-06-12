@@ -163,7 +163,6 @@ CLI commands and groups include:
 - `search`
 - `server`
 - `session`
-- `specs`
 - `upgrade`
 - `version`
 
