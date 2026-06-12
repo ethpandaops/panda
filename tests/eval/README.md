@@ -142,7 +142,14 @@ tests/eval/
 
 - **`eval-smoke.yaml`** — every PR + master push. A couple of fast cases against the hosted
   production proxy (as the `panda-ci` service account). Runs `scripts.eval --tags smoke`
-  and publishes the JUnit results as a PR comment/check.
+  and publishes the JUnit results as a PR comment/check. Each run also gets the interactive
+  report: `scripts.ci_report` builds the release-style page for the commit, with history
+  assembled from the branch's previous smoke runs, the latest master run, and the most
+  recent release record (restricted to the smoke questions). `scripts.ci_pages` publishes
+  the payload JSON to `eval/ci/` on gh-pages, where one shared copy of the report page
+  fetches per-commit payloads — the branch/commit switcher walks runs without re-shipping
+  the UI. Fork PRs can't push gh-pages; their report ships only as the self-contained
+  `eval-report.html` in the run artifact.
 - **`eval.yaml`** — opt-in (the `run-evals` PR label, manual dispatch). Runs the whole
   suite (narrow with the `tags`/`cases` dispatch inputs) against the hosted production
   proxy (as `panda-ci`), same data plane as the smoke.

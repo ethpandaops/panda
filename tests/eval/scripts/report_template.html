@@ -171,6 +171,29 @@
   }
   #theme-toggle:hover { color: var(--accent); border-color: var(--accent); }
 
+  /* ── run switcher (fetch-mode viewer only) ───────────────────────────── */
+  #run-switcher { display: flex; align-items: center; gap: 6px; }
+  #run-switcher select {
+    max-width: 200px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 4px 6px;
+    font: 600 11px/1.2 var(--mono);
+    color: var(--ink);
+  }
+  #run-switcher button {
+    background: none;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 4px 8px;
+    font: 600 11px/1.2 var(--mono);
+    color: var(--mut);
+    cursor: pointer;
+  }
+  #run-switcher button:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+  #run-switcher button:disabled { opacity: .35; cursor: default; }
+
   /* ── document head ───────────────────────────────────────────────────── */
   #doc-head { margin-top: 44px; }
   .eyebrow {
@@ -568,9 +591,10 @@
 
 <header id="topbar">
   <div class="bar">
-    <span class="brand">🐼 Panda <span class="dim">· Release qualification</span></span>
+    <span class="brand">🐼 Panda <span class="dim" id="brand-context">· Release qualification</span></span>
+    <span id="run-switcher" hidden></span>
     <nav id="nav">
-      <a href="#trend">Releases</a>
+      <a href="#trend" id="nav-history">Releases</a>
       <a href="#tokens">Tokens</a>
       <a href="#categories">Categories</a>
       <a href="#matrix">Questions</a>
@@ -582,7 +606,7 @@
 
 <main>
   <section id="doc-head" style="margin-top:44px">
-    <p class="eyebrow">Release qualification report</p>
+    <p class="eyebrow" id="eyebrow">Release qualification report</p>
     <div class="tag-line">
       <h1 id="tag"></h1>
       <span id="prerelease-badge" class="badge pre" hidden>Pre-release</span>
@@ -596,8 +620,8 @@
   </section>
 
   <section id="trend">
-    <h2><span class="no">1.</span>Release history</h2>
-    <p class="sub">Pass rate, score, and token cost across every qualified release, oldest to newest. Hover the chart for exact numbers.</p>
+    <h2><span class="no">1.</span><span id="trend-title">Release history</span></h2>
+    <p class="sub" id="trend-sub">Pass rate, score, and token cost across every qualified release, oldest to newest. Hover the chart for exact numbers.</p>
     <div class="panel">
       <div class="chart-wrap"><div id="trend-chart"></div></div>
       <div class="legend" id="trend-legend"></div>
@@ -662,8 +686,68 @@
 
 <script>
 "use strict";
-(() => {
-  const RAW = window.__PANDA_EVAL_DATA__;
+(async () => {
+  /* Two ways onto this page: a payload baked in at build time (release reports,
+     CI artifacts — fully offline), or fetch mode (the gh-pages CI viewer): one
+     shared copy of this page plus a manifest of runs, each commit a small JSON
+     fetched on demand — walking commits never re-ships the UI. */
+  async function fetchMode() {
+    const here = new URL(".", location.href);
+    const get = async (name) => {
+      const res = await fetch(new URL(name, here), { cache: "no-store" });
+      if (!res.ok) throw new Error(`${name}: HTTP ${res.status}`);
+      return res.json();
+    };
+    const manifest = await get("manifest.json");
+    const all = (manifest.runs || []).filter(r => r.id && r.created_at);
+    if (!all.length) throw new Error("manifest has no runs");
+    const want = new URLSearchParams(location.search).get("run");
+    const sel = all.find(r => r.id === want) ||
+      all.find(r => r.branch === "master") || all[0];
+    buildSwitcher(all, sel);
+    return get(`runs/${sel.id}.json`);
+  }
+
+  function buildSwitcher(all, sel) {
+    const host = document.getElementById("run-switcher");
+    const go = id => { location.search = "?run=" + encodeURIComponent(id); };
+    const branches = [...new Set(all.map(r => r.branch))]
+      .sort((a, b) => (a === "master" ? -1 : b === "master" ? 1 : (a < b ? -1 : 1)));
+    /* newest first within the selected branch */
+    const sibs = all.filter(r => r.branch === sel.branch)
+      .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+    const at = sibs.findIndex(r => r.id === sel.id);
+
+    const opt = (v, label, on) =>
+      `<option value="${v.replace(/"/g, "&quot;")}"${on ? " selected" : ""}>${label}</option>`;
+    host.innerHTML =
+      `<select id="sw-branch" title="branch">${branches.map(b =>
+        opt(b, b, b === sel.branch)).join("")}</select>` +
+      `<select id="sw-commit" title="commit">${sibs.map(r =>
+        opt(r.id, `${(r.sha || "").slice(0, 7)} · ${(r.created_at || "").slice(5, 10)} · ${Math.round((r.pass_rate || 0) * 100)}%`, r.id === sel.id)).join("")}</select>` +
+      `<button id="sw-prev" title="older commit"${at >= sibs.length - 1 ? " disabled" : ""}>‹</button>` +
+      `<button id="sw-next" title="newer commit"${at <= 0 ? " disabled" : ""}>›</button>`;
+    host.hidden = false;
+    host.querySelector("#sw-branch").addEventListener("change", ev => {
+      const newest = all.filter(r => r.branch === ev.target.value)
+        .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0];
+      if (newest) go(newest.id);
+    });
+    host.querySelector("#sw-commit").addEventListener("change", ev => go(ev.target.value));
+    host.querySelector("#sw-prev").addEventListener("click", () => sibs[at + 1] && go(sibs[at + 1].id));
+    host.querySelector("#sw-next").addEventListener("click", () => sibs[at - 1] && go(sibs[at - 1].id));
+  }
+
+  let RAW = window.__PANDA_EVAL_DATA__;
+  if (!RAW) {
+    try {
+      RAW = await fetchMode();
+    } catch (err) {
+      document.body.innerHTML = `<div class="err">no payload injected and fetch mode failed (${err.message}) — ` +
+        "built pages come from scripts/release_report.py; the fetch-mode viewer needs manifest.json + runs/ alongside this file</div>";
+      return;
+    }
+  }
   if (!RAW || !RAW.record) {
     document.body.innerHTML = '<div class="err">no payload injected — this template must be built by scripts/release_report.py</div>';
     return;
@@ -783,16 +867,32 @@
   const canonMark = r => r.question_canonical ? `<span class="canon" title="${CANON_TIP}">°</span>` : "";
 
   /* ── topbar ───────────────────────────────────────────────────────────── */
-  document.title = `Panda release qualification — ${record.tag}`;
+  const CI = record.kind === "ci";
+  const UNIT = CI ? "run" : "release";
+  document.title = CI ? `Panda CI eval — ${record.tag}` : `Panda release qualification — ${record.tag}`;
+  if (CI) {
+    $("#brand-context").textContent = "· CI eval";
+    $("#eyebrow").textContent = "CI smoke report";
+    $("#nav-history").textContent = "History";
+    $("#trend-title").textContent = "Run history";
+    $("#trend-sub").textContent = "Pass rate, score, and token cost across this branch's measured commits, " +
+      "with the master baseline and the most recent release as reference points. Hover the chart for exact numbers.";
+  }
   $("#tag").textContent = record.tag;
   $("#prerelease-badge").hidden = !record.prerelease;
+  const commitHtml = record.repo && record.commit
+    ? `<a href="https://github.com/${esc(record.repo)}/commit/${esc(record.commit)}"><b>${esc(record.commit.slice(0, 9))}</b></a>`
+    : `<b>${esc((record.commit || "").slice(0, 9) || "—")}</b>`;
   $("#meta").innerHTML =
-    `commit <b>${esc((record.commit || "").slice(0, 9) || "—")}</b>` +
+    `commit ${commitHtml}` +
+    (CI && record.branch ? ` · branch <b>${esc(record.branch)}</b>` : "") +
     ` · ${esc((record.created_at || "").replace("T", " ").slice(0, 16))} UTC` +
     ` · cases <b>${esc(record.cases || "—")}</b>` +
     ` · subject <b>${esc((record.subjects || []).join(", "))}</b>` +
     ` · ${byQ.size} questions · ${runs.length} runs` +
-    (prev ? ` · vs <b>${esc(prev.tag)}</b>` : " · first qualified release");
+    (prev ? ` · vs <b>${esc(prev.tag)}</b>` : (CI ? " · first recorded run" : " · first qualified release")) +
+    (CI && record.pr && record.repo ? ` · <a href="https://github.com/${esc(record.repo)}/pull/${esc(record.pr)}">PR #${esc(record.pr)}</a>` : "") +
+    (CI && record.run_url ? ` · <a href="${esc(record.run_url)}">CI run ↗</a>` : "");
 
   /* ── headline cards ───────────────────────────────────────────────────── */
   function deltaChip(cur, prv, { fmt, goodWhen = "up", neutral = false } = {}) {
@@ -923,11 +1023,17 @@
       });
     }
 
-    /* series */
+    /* series — restricted baseline records carry no mean score, so the score
+       line skips them (segments break across the gap) */
     const path = (vals, yfn, cls) => {
       if (n === 1) return;
-      const d = vals.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${yfn(v).toFixed(1)}`).join("");
-      svg.appendChild(sv("path", { d, class: cls }));
+      let d = "", pen = false;
+      vals.forEach((v, i) => {
+        if (v == null) { pen = false; return; }
+        d += `${pen ? "L" : "M"}${x(i).toFixed(1)},${yfn(v).toFixed(1)}`;
+        pen = true;
+      });
+      if (d) svg.appendChild(sv("path", { d, class: cls }));
     };
     path(releases.map(e => e.pass_rate), y1, "line-pass");
     path(releases.map(e => e.mean_score), y1, "line-score");
@@ -935,13 +1041,17 @@
 
     releases.forEach((e, i) => {
       svg.appendChild(sv("circle", { cx: x(i), cy: y1(e.pass_rate), r: 3.2, class: "pt-pass" }));
-      svg.appendChild(sv("circle", { cx: x(i), cy: y1(e.mean_score), r: 3.2, class: "pt-score" }));
+      if (e.mean_score != null) {
+        svg.appendChild(sv("circle", { cx: x(i), cy: y1(e.mean_score), r: 3.2, class: "pt-score" }));
+      }
       svg.appendChild(sv("circle", {
         cx: x(i), cy: y2(toks[i].v), r: 3.2,
         class: toks[i].isP50 ? "pt-tok" : "pt-hollow",
       }));
       if (i === n - 1) { /* ring the current release */
-        for (const cy of [y1(e.pass_rate), y1(e.mean_score), y2(toks[i].v)]) {
+        const cys = [y1(e.pass_rate), y2(toks[i].v)];
+        if (e.mean_score != null) cys.push(y1(e.mean_score));
+        for (const cy of cys) {
           svg.appendChild(sv("circle", { cx: x(i), cy, r: 6.2, class: "pt-ring", stroke: "currentColor", opacity: .55 }));
         }
       }
@@ -970,7 +1080,7 @@
       showTip(
         `<b>${esc(e.tag)}</b>${best === n - 1 ? " · current" : ""}${e.prerelease ? " · pre" : ""}<br>` +
         `${fDate(e.created_at)} · ${e.runs} runs · ${esc(e.cases || "")}<br>` +
-        `pass <b class="ok">${fPct(e.pass_rate)}</b> (${nOk}/${e.runs}) · score <b>${e.mean_score.toFixed(3)}</b><br>` +
+        `pass <b class="ok">${fPct(e.pass_rate)}</b> (${nOk}/${e.runs}) · score <b>${e.mean_score != null ? e.mean_score.toFixed(3) : "—"}</b><br>` +
         `tokens ${t.isP50 ? "p50" : "≈mean"} <b>${fTok(t.v)}</b> per correct run` +
         (e.efficiency_vs
           ? `<br>eff vs ${esc(e.efficiency_vs.ref_tag)} <b class="${e.efficiency_vs.score >= parityOf(e) ? "ok" : "bad"}">${e.efficiency_vs.score.toFixed(3)}</b> · parity ${parityOf(e).toFixed(3)}`
@@ -989,7 +1099,9 @@
       (hasEff ? `<span><span class="sw dotc" style="background:var(--ok)"></span>efficiency vs prev (dashed tick = parity; chained, not a level)</span>` : "");
     $("#trend-note").textContent = prev
       ? "Small headline moves are noise — per-question flips (section 4) are the signal."
-      : "First qualified release — no prior eval-qualification.json records to compare against.";
+      : (CI
+        ? "First recorded run for this branch — no master baseline, release record, or prior commits to compare against yet."
+        : "First qualified release — no prior eval-qualification.json records to compare against.");
   }
 
   /* releases table */
@@ -1002,7 +1114,7 @@
         `<td class="qid">${esc(e.tag)}${cur ? " <span style='color:var(--ok)'>●</span>" : ""}${e.prerelease ? ' <span class="badge pre">pre</span>' : ""}</td>` +
         `<td class="num">${fDate(e.created_at)}</td>` +
         `<td class="r">${fPct(e.pass_rate)} <span style="color:var(--faint)">(${nOk}/${e.runs})</span></td>` +
-        `<td class="r">${e.mean_score.toFixed(3)}</td>` +
+        `<td class="r">${e.mean_score != null ? e.mean_score.toFixed(3) : '<span style="color:var(--faint)">—</span>'}</td>` +
         `<td class="r"${e.efficiency_vs ? ` title="vs ${esc(e.efficiency_vs.ref_tag)} · parity ${(0.25 * e.pass_rate).toFixed(3)}"` : ""}>` +
         `${e.efficiency_vs ? e.efficiency_vs.score.toFixed(3) : '<span style="color:var(--faint)">—</span>'}</td>` +
         `<td class="r">${t.isP50 ? "" : "≈"}${fTok(t.v)}</td>` +
@@ -1011,7 +1123,7 @@
         `<td class="num" style="color:var(--mut)">${esc(e.cases || "")}</td></tr>`;
     }).join("");
     $("#rel-table").innerHTML =
-      `<thead><tr><th>release</th><th>date</th><th class="r">pass rate</th><th class="r">mean score</th>` +
+      `<thead><tr><th>${UNIT}</th><th>date</th><th class="r">pass rate</th><th class="r">mean score</th>` +
       `<th class="r" title="${esc(EFF_EXPLAIN)} (each release vs its own predecessor)">eff vs prev</th>` +
       `<th class="r">tok p50</th><th class="r">runs</th><th>commit</th><th>cases</th></tr></thead>` +
       `<tbody>${rows}</tbody>`;
@@ -1412,10 +1524,14 @@
   document.addEventListener("keydown", ev => { if (ev.key === "Escape") closeDrawer(); });
 
   /* ── footer ───────────────────────────────────────────────────────────── */
-  $("#foot").innerHTML =
-    `Qualification of <b>${esc(record.tag)}</b> — small headline-score moves are noise; ` +
-    `per-question flips are the signal. History comes from prior releases' ` +
-    `<code>eval-qualification.json</code> assets. This page is fully self-contained: no external fetches.`;
+  $("#foot").innerHTML = CI
+    ? `Single-pass smoke run of <b>${esc(record.tag)}</b> — small headline-score moves are noise; ` +
+      `per-question flips are the signal. History comes from this branch's published smoke runs, ` +
+      `the master baseline, and the most recent release's qualification record (restricted to the ` +
+      `questions this run asked).`
+    : `Qualification of <b>${esc(record.tag)}</b> — small headline-score moves are noise; ` +
+      `per-question flips are the signal. History comes from prior releases' ` +
+      `<code>eval-qualification.json</code> assets. This page is fully self-contained: no external fetches.`;
 
   /* ── theme toggle ─────────────────────────────────────────────────────── */
   (() => {

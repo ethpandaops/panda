@@ -5,6 +5,12 @@ name: Eval Smoke
 # plausible answer. Runs as the external-scoped `panda-ci` service account against
 # the hosted production proxy.
 #
+# Every run also builds the interactive eval report (the same page a release
+# qualification gets) anchored to this branch's previous runs, the latest master
+# run, and the most recent release record. Published runs land under eval/ci/ on
+# gh-pages, where a single shared viewer page fetches per-commit payload JSONs —
+# walking commits never re-downloads the UI.
+#
 # Triggers: `pull_request` covers PR branches (checks + the results/Langfuse-trace
 # comments); `push` is master-only so we don't double-run every PR commit (a push to
 # a PR branch already fires pull_request) — the master run also populates the embedding
@@ -23,7 +29,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write        # push the smoke report payload to the gh-pages branch
   packages: write        # push/pull the content-addressed sandbox image to GHCR
   checks: write          # publish-unit-test-result-action creates a check run
   pull-requests: write   # ...and posts the smoke results comment on PRs
@@ -35,6 +41,9 @@ env:
   # Sandbox image is content-addressed (tag = hash of its build inputs); only built
   # when those inputs change, and cached in GHCR. See sandbox-image-cleanup.yaml.
   SANDBOX_IMAGE: ${{ vars.SANDBOX_IMAGE || 'ghcr.io/ethpandaops/panda-sandbox' }}
+  # Where the gh-pages CI report viewer is served from (eval/ci/ on the gh-pages
+  # branch — one shared page that fetches per-commit payload JSONs).
+  EVAL_PAGES_URL: ${{ vars.EVAL_PAGES_URL || 'https://ethpandaops.github.io/panda/eval/ci/' }}
 
 jobs:
   smoke:
@@ -59,6 +68,37 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Resolve report identity (branch / commit / publish target)
+        id: ident
+        # Env indirection, not ${{ }} inside run: branch names are attacker-chosen
+        # on fork PRs and must not be interpolated into shell source.
+        env:
+          EVENT: ${{ github.event_name }}
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "pull_request" ]; then
+            BRANCH="$HEAD_REF"; SHA="$HEAD_SHA"; PR="$PR_NUMBER"
+          else
+            BRANCH="$GITHUB_REF_NAME"; SHA="$GITHUB_SHA"; PR=""
+          fi
+          # Fork PRs run with a read-only token and can't push gh-pages; their
+          # report stays in the run artifact only.
+          PUBLISH=true
+          if [ "$EVENT" = "pull_request" ] && [ "$HEAD_REPO" != "$GITHUB_REPOSITORY" ]; then
+            PUBLISH=false
+          fi
+          {
+            echo "branch=$BRANCH"
+            echo "sha=$SHA"
+            echo "pr=$PR"
+            echo "publish=$PUBLISH"
+          } >> "$GITHUB_OUTPUT"
+          echo "measuring $BRANCH@$SHA (publish=$PUBLISH)"
 
       - name: Set up Go (module + build cache)
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
@@ -247,6 +287,107 @@ jobs:
           if [ -f server.log ]; then cp server.log tests/eval/reports/server.log; fi
           echo "===== docker ps (sandbox containers?) ====="
           docker ps -a --format '{{.Image}} {{.Status}} {{.Names}}' 2>/dev/null | head || true
+
+      # ── interactive report ──────────────────────────────────────────────
+      # The same page a release qualification gets, built for this commit and
+      # anchored to this branch's previous smoke runs, the latest master run,
+      # and the most recent release record. always(): a red smoke run is exactly
+      # the one worth inspecting, and eval.json is written before the gate exits.
+
+      - name: Collect report baselines (gh-pages history + latest release record)
+        if: always() && hashFiles('tests/eval/reports/eval.json') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ steps.ident.outputs.branch }}
+          SHA: ${{ steps.ident.outputs.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p report-history report-baselines
+          # Most recent release's qualification record. Absent when no release has
+          # been qualified yet — the report just loses that reference point.
+          gh release download --pattern eval-qualification.json \
+              --output report-baselines/release.json 2>/dev/null \
+            && echo "fetched latest release qualification record" \
+            || echo "no release qualification record available"
+          # This branch's previous payloads + the latest master payload, from gh-pages.
+          if git fetch --depth 1 origin gh-pages 2>/dev/null; then
+            git worktree add --detach /tmp/pages-read FETCH_HEAD
+            (cd tests/eval && uv run python -m scripts.ci_pages collect \
+              --pages-dir /tmp/pages-read --branch "$BRANCH" --sha "$SHA" \
+              --history-out "$GITHUB_WORKSPACE/report-history" \
+              --master-baseline-out "$GITHUB_WORKSPACE/report-baselines/master.json")
+            git worktree remove --force /tmp/pages-read
+          else
+            echo "no gh-pages branch yet — first publish creates it"
+          fi
+
+      - name: Build smoke report
+        if: always() && hashFiles('tests/eval/reports/eval.json') != ''
+        working-directory: tests/eval
+        env:
+          BRANCH: ${{ steps.ident.outputs.branch }}
+          SHA: ${{ steps.ident.outputs.sha }}
+          PR: ${{ steps.ident.outputs.pr }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          # data.json is what gh-pages serves; eval-report.html is the same payload
+          # baked into a self-contained page for the run artifact (fork PRs never
+          # publish, so the artifact is their only copy).
+          uv run python -m scripts.ci_report \
+            --eval-json reports/eval.json \
+            --branch "$BRANCH" --sha "$SHA" --pr "$PR" --event "$EVENT" \
+            --repo "$GITHUB_REPOSITORY" \
+            --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --history-dir "$GITHUB_WORKSPACE/report-history" \
+            --baseline "$GITHUB_WORKSPACE/report-baselines/master.json" \
+            --baseline "$GITHUB_WORKSPACE/report-baselines/release.json" \
+            --pages-url "$EVAL_PAGES_URL" \
+            --out-dir reports/ci
+
+      - name: Publish report to GitHub Pages (gh-pages branch)
+        id: publish
+        if: always() && steps.ident.outputs.publish == 'true' && hashFiles('tests/eval/reports/ci/data.json') != ''
+        env:
+          BRANCH: ${{ steps.ident.outputs.branch }}
+          SHA: ${{ steps.ident.outputs.sha }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Concurrent smoke runs (and release qualifications) race on gh-pages:
+          # rebuild from a fresh fetch and retry the push instead of failing.
+          for attempt in 1 2 3; do
+            git worktree remove --force /tmp/pages 2>/dev/null || true
+            rm -rf /tmp/pages
+            if git fetch --depth 1 origin gh-pages 2>/dev/null; then
+              git worktree add --detach /tmp/pages FETCH_HEAD
+            else
+              git worktree add --detach /tmp/pages
+              git -C /tmp/pages checkout --orphan gh-pages
+              git -C /tmp/pages rm -rfq . 2>/dev/null || true
+              touch /tmp/pages/.nojekyll
+            fi
+            (cd tests/eval && uv run python -m scripts.ci_pages publish \
+              --pages-dir /tmp/pages --payload reports/ci/data.json)
+            git -C /tmp/pages add -A
+            git -C /tmp/pages commit -m "ci eval report: ${BRANCH}@${SHA:0:7}"
+            if git -C /tmp/pages push origin HEAD:gh-pages; then
+              echo "report published: ${EVAL_PAGES_URL}"
+              break
+            fi
+            echo "push raced another publisher (attempt $attempt)"
+            [ "$attempt" = 3 ] && exit 1
+          done
+          git worktree remove --force /tmp/pages 2>/dev/null || true
+
+      - name: Comment report link
+        # ci_report writes the sticky-comment snippet only when a public URL exists;
+        # gate on the publish step so the comment never links a page that isn't there.
+        if: ${{ always() && github.event_name == 'pull_request' && steps.publish.outcome == 'success' && hashFiles('tests/eval/reports/ci/report_link.md') != '' }}
+        uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
+        with:
+          header: eval-report
+          path: tests/eval/reports/ci/report_link.md
 
       - name: Upload results
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

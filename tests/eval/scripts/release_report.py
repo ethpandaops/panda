@@ -93,6 +93,36 @@ def _case_meta(cases_file: str) -> dict[str, dict]:
         return {}
 
 
+def build_payload(*, record: dict, runs: list[dict], history: list[dict]) -> dict:
+    """The data the report page renders from: the record, every run enriched with
+    its case tags, and the comparison history. Injected into the template by
+    ``build_html``, or published as a bare JSON file the template fetches at view
+    time (the gh-pages CI viewer)."""
+    meta = _case_meta(record.get("cases", ""))
+    enriched = []
+    for run in runs:
+        m = meta.get(run["id"], {})
+        out = dict(run, tags=m.get("tags", []))
+        # Older eval.json files predate per-run prompt capture: fall back to the
+        # case's canonical wording and say so (paraphrase runs differ from it).
+        if not out.get("question"):
+            out["question"] = m.get("input", "")
+            out["question_canonical"] = True
+        enriched.append(out)
+    return {"record": record, "runs": enriched, "history": history}
+
+
+def render_template(payload: dict) -> str:
+    """Inject a payload into the report template, producing the self-contained page."""
+    # ``<\/`` is a valid JSON string escape, and breaking up ``</`` guarantees the
+    # blob can never close the surrounding <script> tag (or open an HTML comment).
+    blob = json.dumps(payload, separators=(",", ":")).replace("</", "<\\/")
+    template = _TEMPLATE.read_text()
+    if _PLACEHOLDER not in template:
+        raise ValueError(f"placeholder {_PLACEHOLDER!r} missing from {_TEMPLATE}")
+    return template.replace(_PLACEHOLDER, f"window.__PANDA_EVAL_DATA__ = {blob};", 1)
+
+
 def build_html(
     *,
     record: dict,
@@ -107,22 +137,4 @@ def build_html(
     derives per-question cells from the raw runs and draws every chart from data.
     """
     del questions, trend_png
-    meta = _case_meta(record.get("cases", ""))
-    enriched = []
-    for run in runs:
-        m = meta.get(run["id"], {})
-        out = dict(run, tags=m.get("tags", []))
-        # Older eval.json files predate per-run prompt capture: fall back to the
-        # case's canonical wording and say so (paraphrase runs differ from it).
-        if not out.get("question"):
-            out["question"] = m.get("input", "")
-            out["question_canonical"] = True
-        enriched.append(out)
-    payload = {"record": record, "runs": enriched, "history": history}
-    # ``<\/`` is a valid JSON string escape, and breaking up ``</`` guarantees the
-    # blob can never close the surrounding <script> tag (or open an HTML comment).
-    blob = json.dumps(payload, separators=(",", ":")).replace("</", "<\\/")
-    template = _TEMPLATE.read_text()
-    if _PLACEHOLDER not in template:
-        raise ValueError(f"placeholder {_PLACEHOLDER!r} missing from {_TEMPLATE}")
-    return template.replace(_PLACEHOLDER, f"window.__PANDA_EVAL_DATA__ = {blob};", 1)
+    return render_template(build_payload(record=record, runs=runs, history=history))

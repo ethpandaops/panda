@@ -288,15 +288,18 @@ jobs:
           fi
           mkdir -p "/tmp/pages/eval/${TAG}"
           cp tests/eval/reports/release/eval-report.html "/tmp/pages/eval/${TAG}/index.html"
-          # Regenerate the eval index from the directories actually present.
+          # Regenerate the eval index from the directories actually present
+          # (eval/ci/ is the smoke-run viewer, not a release — keep it out of the list).
           {
             echo '<!doctype html><html lang="en"><head><meta charset="utf-8">'
             echo '<title>panda release qualification reports</title>'
             echo '<style>body{font:16px/1.6 system-ui;max-width:640px;margin:3rem auto;padding:0 1rem}</style>'
             echo '</head><body><h1>🐼 Release qualification reports</h1><ul>'
-            find /tmp/pages/eval -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | \
+            find /tmp/pages/eval -mindepth 1 -maxdepth 1 -type d ! -name ci -exec basename {} \; | \
               sort -rV | sed 's|.*|<li><a href="&/">&</a></li>|'
-            echo '</ul></body></html>'
+            echo '</ul>'
+            echo '<p><a href="ci/">CI smoke-run reports →</a></p>'
+            echo '</body></html>'
           } > /tmp/pages/eval/index.html
           git -C /tmp/pages add -A
           git -C /tmp/pages commit -m "eval report: ${TAG}"
