@@ -1227,25 +1227,33 @@
       host.innerHTML = '<p class="note" style="padding:4px 4px 12px">no token data to place</p>';
       return;
     }
+    /* pass rate is discrete (n-of-5 smoke runs), so it gets lanes, and the
+       continuous axis goes to cost: an all-pass history reads as one clean
+       cost ladder; failures open lower lanes and regressions drop down */
+    const laneKeys = [...new Set(pts.map(pt => Math.round(pt.e.pass_rate * 1000)))]
+      .sort((a, b) => b - a);
+    const laneH = laneKeys.length === 1 ? 96 : 64;
     const W = Math.max(340, host.parentElement.getBoundingClientRect().width - 16);
-    const ml = 64, mr = 56, top = 24, bot = 252, H = 296;
+    const ml = 64, mr = 56, top = 18;
+    const bot = top + laneKeys.length * laneH;
+    const H = bot + 44;
     const svg = sv("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}` });
+    const laneMid = k => top + laneKeys.indexOf(k) * laneH + laneH / 2;
+
+    /* x = tokens */
     const vals = pts.map(pt => pt.v);
     const vMax = Math.max(...vals), vMin = Math.min(...vals);
-
-    /* y = tokens */
-    let yOf, domLo, domHi;
+    let xOf, domLo, domHi;
     if (view.scale === "log") {
-      domLo = vMin / 1.25; domHi = vMax * 1.25;
+      domLo = vMin / 1.3; domHi = vMax * 1.3;
       const l0 = Math.log10(domLo), l1 = Math.log10(domHi);
-      yOf = v => bot - (bot - top) * (Math.log10(v) - l0) / (l1 - l0);
+      xOf = v => ml + (W - ml - mr) * (Math.log10(v) - l0) / (l1 - l0);
     } else {
       domLo = 0; domHi = vMax * 1.12;
-      yOf = v => bot - (bot - top) * (v / domHi);
+      xOf = v => ml + (W - ml - mr) * (v / domHi);
     }
     let ticks = niceTicks(Math.max(1, domLo), domHi);
     if (ticks.length < 3 || ticks.length > 7) {
-      /* tight or busy domain: a stepped series sized to ~5 ticks */
       const span = domHi - domLo;
       const rawStep = span / 5;
       const mag = 10 ** Math.floor(Math.log10(rawStep));
@@ -1254,33 +1262,29 @@
       for (let v = Math.ceil(domLo / step) * step; v <= domHi; v += step) ticks.push(v);
     }
     for (const v of ticks) {
-      const py = yOf(v);
-      if (py < top - 1 || py > bot + 1) continue;
+      const px = xOf(v);
+      if (px < ml - 1 || px > W - mr + 1) continue;
       const g = sv("g", { class: "grid" });
-      g.appendChild(sv("line", { x1: ml, x2: W - mr, y1: py, y2: py }));
+      g.appendChild(sv("line", { x1: px, x2: px, y1: top, y2: bot }));
       svg.appendChild(g);
-      svg.appendChild(svText(ml - 9, py + 4, fTok(v), { "text-anchor": "end" }));
+      svg.appendChild(svText(px, bot + 18, fTok(v), { "text-anchor": "middle" }));
     }
-    svg.appendChild(svText(ml - 9, top - 9, "tokens ↑", { "text-anchor": "end", "font-size": 11 }));
+    svg.appendChild(svText(W - mr, bot + 34, "tokens →", { "text-anchor": "end", "font-size": 11 }));
 
-    /* x = pass rate, zoomed to the data: a 0-100% axis wastes the whole plot
-       when every run passes. Domain snaps to 5pp steps with >=15pp of span,
-       clamped to [0,100]; an axis-break marker shows when 0% is cropped. */
-    const prMin = Math.min(...pts.map(pt => pt.e.pass_rate));
-    const prMax = Math.max(...pts.map(pt => pt.e.pass_rate));
-    let xLo = Math.max(0, Math.floor((prMin - .05) * 20) / 20);
-    const xHi = Math.min(1, Math.ceil((prMax + .03) * 20) / 20);
-    if (xHi - xLo < .15) xLo = Math.max(0, xHi - .15);
-    const xOf = v => ml + (W - ml - mr) * ((v - xLo) / (xHi - xLo));
-    const xStep = (xHi - xLo) > .5 ? .25 : (xHi - xLo) > .2 ? .1 : .05;
-    for (let v = Math.ceil(xLo / xStep) * xStep; v <= xHi + 1e-9; v += xStep) {
-      svg.appendChild(sv("line", { x1: xOf(v), x2: xOf(v), y1: bot, y2: bot + 5, class: "axis-strong", stroke: "var(--line)" }));
-      svg.appendChild(svText(xOf(v), bot + 18, Math.round(v * 100) + "%", { "text-anchor": "middle" }));
-    }
-    if (xLo > 0) {
-      svg.appendChild(svText(ml - 22, bot + 18, "⌁0", { "text-anchor": "middle", fill: "var(--faint)", "font-size": 11 }));
-    }
-    svg.appendChild(svText(W - mr, bot + 34, "pass rate →", { "text-anchor": "end", "font-size": 11 }));
+    /* lanes: separators + pass-rate labels */
+    laneKeys.forEach((k, li) => {
+      if (li > 0) {
+        svg.appendChild(sv("line", {
+          x1: ml, x2: W - mr, y1: top + li * laneH, y2: top + li * laneH,
+          stroke: "var(--line2)",
+        }));
+      }
+      const ok = k === 1000;
+      svg.appendChild(svText(ml - 10, laneMid(k) + 4, (k / 10).toFixed(0) + "%", {
+        "text-anchor": "end", "font-weight": 600,
+        fill: ok ? "var(--ok)" : (k >= 500 ? "var(--amber)" : "var(--bad)"),
+      }));
+    });
 
     const mark = (pt, px, py) => {
       const kind = KIND(pt.e);
@@ -1292,36 +1296,47 @@
       return sv("circle", { cx: px, cy: py, r: 5, ...common });
     };
 
-    /* labels right of the dot; flip left near the right edge; nudge stacked ones */
+    /* within a lane, dots spread by cost; labels go above/below alternating
+       when neighbours crowd, anchors (current/release/baseline) win slots */
     const placedLbl = [];
+    /* beeswarm-lite: dots sharing a lane displace vertically when they would
+       overlap, so dense cost clusters stay individually clickable */
+    const placedDot = [];
+    const dotY = (px, base) => {
+      for (const off of [0, -12, 12, -24, 24]) {
+        const py = base + off;
+        if (!placedDot.some(d => Math.abs(d.x - px) < 11 && Math.abs(d.y - py) < 11)) return py;
+      }
+      return base;
+    };
     pts.forEach(pt => {
-      const px = xOf(pt.e.pass_rate), py = yOf(pt.v);
+      const px = xOf(pt.v);
+      const py = dotY(px, laneMid(Math.round(pt.e.pass_rate * 1000)));
+      placedDot.push({ x: px, y: py });
       const cur = pt.i === releases.length - 1;
       if (cur) svg.appendChild(sv("circle", { cx: px, cy: py, r: 9, class: "pt-ring", stroke: "var(--accent)", opacity: .6 }));
       const m = mark(pt, px, py);
       m.addEventListener("mousemove", ev => trendTip(pt.i, ev));
       m.addEventListener("mouseleave", hideTip);
       svg.appendChild(m);
-      const left = px > W - mr - 76;
-      /* a label only renders if it fits beside its own dot — in a dense
-         same-pass-rate stack the anchors (current, release, baselines) win
-         and plain -N commits stay hover-only rather than drifting away */
       const anchor = cur || KIND(pt.e) !== "branch";
-      const ly = Math.min(bot - 2, Math.max(top + 10, py + 4));
-      const collides = placedLbl.some(b => Math.abs(b.y - ly) < 13 && b.left === left && Math.abs(b.x - px) < 90);
-      if (collides && !anchor) return;
-      if (collides && anchor) {
-        /* evict the non-anchor label occupying the slot */
-        const i = placedLbl.findIndex(b => Math.abs(b.y - ly) < 13 && b.left === left && Math.abs(b.x - px) < 90 && !b.anchor);
-        if (i >= 0) { placedLbl[i].el.remove(); placedLbl.splice(i, 1); }
+      /* candidate label slots around the dot, nearest first */
+      const slots = [py - 15, py + 23, py - 27, py + 35, py - 39, py + 47];
+      const fits = ly => !placedLbl.some(b => Math.abs(b.y - ly) < 12 && Math.abs(b.x - px) < 64)
+        && !placedDot.some(d => Math.abs(d.y - ly + 4) < 10 && Math.abs(d.x - px) < 28);
+      let ly = slots.find(fits);
+      if (ly == null) {
+        if (!anchor) return;
+        const i = placedLbl.findIndex(b => Math.abs(b.y - slots[0]) < 12 && Math.abs(b.x - px) < 64 && !b.anchor);
+        if (i >= 0) { placedLbl[i].el.remove(); placedLbl.splice(i, 1); ly = slots[0]; }
         else return;
       }
-      const el2 = svText(left ? px - 11 : px + 11, ly, entryLabel(pt.i), {
-        "text-anchor": left ? "end" : "start",
+      const el2 = svText(px, ly, entryLabel(pt.i), {
+        "text-anchor": "middle",
         "font-family": "var(--mono)",
         ...(cur ? { "font-weight": 700, fill: "var(--ink)" } : {}),
       });
-      placedLbl.push({ x: px, y: ly, left, anchor, el: el2 });
+      placedLbl.push({ x: px, y: ly, anchor, el: el2 });
       svg.appendChild(el2);
     });
     host.appendChild(svg);
