@@ -20,23 +20,7 @@ Examples:
   panda block-archive networks
   panda block-archive download mainnet 9000000 0x... --out block.ssz
   panda block-archive get mainnet 9000000 0x...
-  panda block-archive link mainnet 9000000 0x...
-
-For a URL to downloaded SSZ bytes, use the Python sandbox so the file can be
-uploaded with storage.upload:
-panda execute <<'PY'
-from ethpandaops import block_archive, storage
-
-network = "<network>"
-slot = <slot>
-block_root = "0x..."
-path = f"/workspace/{network}-{slot}.ssz"
-
-with open(path, "wb") as f:
-    f.write(block_archive.download_ssz(network, slot, block_root))
-
-print(storage.upload(path))
-PY`,
+  panda block-archive link mainnet 9000000 0x...`,
 }
 
 var blockArchiveNetworksAll bool
@@ -67,9 +51,7 @@ var blockArchiveDownloadCmd = &cobra.Command{
 	Short: "Download the SSZ bytes for a block",
 	Long: `Download the SSZ bytes for a block.
 
-Use --out to write the bytes to a local file. When the user needs a shareable
-URL to the downloaded file, run the workflow through panda execute and call
-storage.upload() after writing the SSZ file under /workspace.`,
+Use --out to write the bytes to a local file; otherwise bytes are written to stdout.`,
 	Args: cobra.ExactArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		response, err := runServerOperationRaw(cmd, "block_archive.download_ssz", map[string]any{

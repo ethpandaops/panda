@@ -109,9 +109,9 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 			Functions: map[string]types.FunctionDoc{
 				"list_networks":  {Signature: "list_networks(active_only=True) -> list[dict]", Description: "List networks the archive knows about. Each entry: {name, description, url (tracoor explorer), type, extra} where extra carries {status, source, chain_id, polling}. Defaults to active+polling networks; pass active_only=False to include inactive devnets that still have historical blocks."},
 				"get_base_url":   {Signature: "get_base_url() -> str", Description: "Get the block-archiver base URL"},
-				"download_ssz":   {Signature: "download_ssz(network, slot, block_root) -> bytes", Description: "Download the SSZ-encoded SignedBeaconBlock bytes. To return a shareable URL, write the bytes to a file under /workspace and call storage.upload()."},
+				"download_ssz":   {Signature: "download_ssz(network, slot, block_root) -> bytes", Description: "Download the SSZ-encoded SignedBeaconBlock bytes for clients that need the canonical binary payload."},
 				"get_block_json": {Signature: "get_block_json(network, slot, block_root) -> dict", Description: "Get the decoded JSON representation of the SignedBeaconBlock. Raises ValueError (HTTP 501 no_fork_schedule) for networks without an embedded fork schedule (most devnets) — use download_ssz instead for those."},
-				"link":           {Signature: "link(network, slot, block_root) -> str", Description: "Build a browser link to the block's UI page in the archive; this is not a URL to uploaded SSZ bytes."},
+				"link":           {Signature: "link(network, slot, block_root) -> str", Description: "Build a browser link to the block's UI page in the archive."},
 			},
 		},
 	}
