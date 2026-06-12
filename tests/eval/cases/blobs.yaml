@@ -120,3 +120,16 @@
         gossip on mainnet on 8 June 2026 (UTC) came in more than 5 minutes after
         their slot started, and from how many distinct sending peers?
 
+
+  # Minted by panda case studio on 2026-06-12T05:38:14+00:00 (question q_29794adef1, human-reviewed).
+  - id: on_jun_10_2026_which_xatu_node_had_the_highest_p
+    description: "On jun 10 2026, which xatu node had the highest peer count on mainnet?"
+    input: "On jun 10 2026, which xatu node had the highest peer count on mainnet?"
+    network: mainnet
+    tags: []
+    assert:
+      - type: llm-rubric
+        value: >
+          TODO: refine into a real rubric. Approved answers for reference:
+          
+          - [opencode/big-pickle] The node with the highest peer count on mainnet on June 10, 2026 was: **`ethpandaops/mainnet/utility-mainnet-prysm-nethermind-tysm-006`** with **9,659** distinct peers. This was significantly ahead of the second-highest node (`utility-mainnet-prysm-geth-tysm-003` at 8,852 peers).
