@@ -1278,33 +1278,46 @@ data_column_sidecars:
       LIMIT 100
 engine_api:
   name: Engine API (CL-EL Communication)
-  description: Queries for analyzing consensus-execution layer communication timing and performance
+  description: >-
+    Queries for analyzing consensus-execution layer communication timing and performance. The
+    engine_newPayload aggregate tables are grouped by Engine API response status; use only VALID rows
+    for execution-duration analysis because SYNCING, ACCEPTED, ERROR, INVALID, and INVALID_BLOCK_HASH
+    are non-success outcomes.
   examples:
   - name: Engine newPayload duration by slot
-    description: Get newPayload execution times per slot.
+    description: >-
+      Get VALID newPayload execution times per slot. This table is grouped by status and node_class;
+      filter status = 'VALID' before treating duration columns as execution time. Use
+      int_engine_new_payload for individual node/client observations instead of slot aggregates.
     target: clickhouse-refined
     query: |
       SELECT
         slot,
+        node_class,
         block_number,
         gas_used,
         tx_count,
         blob_count,
         observation_count,
+        unique_node_count,
         avg_duration_ms,
         median_duration_ms,
         p95_duration_ms,
         max_duration_ms
       FROM {network}.fct_engine_new_payload_by_slot FINAL
       WHERE slot_start_date_time >= now() - INTERVAL 1 HOUR
-      ORDER BY slot DESC
+        AND status = 'VALID'
+      ORDER BY slot DESC, node_class
       LIMIT 100
   - name: Engine newPayload by execution client
-    description: Compare newPayload performance across execution layer clients.
+    description: >-
+      Compare VALID newPayload performance across execution layer clients. Filter status = 'VALID';
+      rows with SYNCING or other non-success statuses did not successfully execute the payload.
     target: clickhouse-refined
     query: |
       SELECT
         meta_execution_implementation AS el_client,
+        node_class,
         COUNT() AS slots,
         AVG(avg_duration_ms) AS avg_duration_ms,
         AVG(median_duration_ms) AS median_duration_ms,
@@ -1312,28 +1325,35 @@ engine_api:
         MAX(max_duration_ms) AS max_duration_ms
       FROM {network}.fct_engine_new_payload_by_el_client FINAL
       WHERE slot_start_date_time >= now() - INTERVAL 1 HOUR
-      GROUP BY el_client
+        AND status = 'VALID'
+      GROUP BY el_client, node_class
       ORDER BY avg_duration_ms
   - name: Engine newPayload hourly trend by client
-    description: Hourly trend of newPayload duration per execution client.
+    description: Hourly trend of VALID newPayload duration per execution client.
     target: clickhouse-refined
     query: |
       SELECT
         toStartOfHour(slot_start_date_time) AS hour,
         meta_execution_implementation AS el_client,
+        node_class,
         COUNT() AS observations,
         AVG(avg_duration_ms) AS avg_duration_ms,
         AVG(p95_duration_ms) AS p95_duration_ms
       FROM {network}.fct_engine_new_payload_by_el_client FINAL
       WHERE slot_start_date_time >= now() - INTERVAL 24 HOUR
-      GROUP BY hour, el_client
-      ORDER BY hour DESC, el_client
+        AND status = 'VALID'
+      GROUP BY hour, el_client, node_class
+      ORDER BY hour DESC, el_client, node_class
   - name: Slowest newPayload executions
-    description: Find slots with the slowest newPayload execution times.
+    description: >-
+      Find slots with the slowest VALID newPayload execution times. Exclude SYNCING and other
+      non-success statuses so duration reflects successful execution, not a rejected or unavailable
+      engine response.
     target: clickhouse-refined
     query: |
       SELECT
         slot,
+        node_class,
         block_number,
         gas_used,
         tx_count,
@@ -1343,6 +1363,7 @@ engine_api:
         observation_count
       FROM {network}.fct_engine_new_payload_by_slot FINAL
       WHERE slot_start_date_time >= now() - INTERVAL 1 HOUR
+        AND status = 'VALID'
       ORDER BY max_duration_ms DESC
       LIMIT 20
   - name: Engine getBlobs by slot
@@ -1380,19 +1401,20 @@ engine_api:
       GROUP BY el_client
       ORDER BY avg_duration_ms
   - name: Engine API duration percentile distribution
-    description: Distribution of newPayload durations in 50ms buckets.
+    description: Distribution of VALID newPayload durations in 50ms buckets.
     target: clickhouse-refined
     query: |
       SELECT
         duration_bucket_ms,
-        SUM(observation_count) AS total_observations,
-        SUM(observation_count) * 100.0 / SUM(SUM(observation_count)) OVER () AS percentage
+        SUM(valid_count) AS valid_observations,
+        SUM(valid_count) * 100.0 / SUM(SUM(valid_count)) OVER () AS percentage
       FROM {network}.fct_engine_new_payload_duration_chunked_50ms FINAL
       WHERE slot_start_date_time >= now() - INTERVAL 1 HOUR
+        AND valid_count > 0
       GROUP BY duration_bucket_ms
       ORDER BY duration_bucket_ms
   - name: Correlation between gas usage and newPayload duration
-    description: Analyze how block gas usage affects newPayload execution time.
+    description: Analyze how block gas usage affects VALID newPayload execution time.
     target: clickhouse-refined
     query: |
       SELECT
@@ -1403,11 +1425,12 @@ engine_api:
         AVG(tx_count) AS avg_tx_count
       FROM {network}.fct_engine_new_payload_by_slot FINAL
       WHERE slot_start_date_time >= now() - INTERVAL 6 HOUR
+        AND status = 'VALID'
         AND gas_used > 0
       GROUP BY gas_millions
       ORDER BY gas_millions
   - name: Engine API performance by blob count
-    description: Analyze how blob count affects newPayload and getBlobs duration.
+    description: Analyze how blob count affects VALID newPayload and getBlobs duration.
     target: clickhouse-refined
     query: |
       SELECT
@@ -1417,6 +1440,7 @@ engine_api:
         AVG(p95_duration_ms) AS p95_newpayload_ms
       FROM {network}.fct_engine_new_payload_by_slot FINAL
       WHERE slot_start_date_time >= now() - INTERVAL 6 HOUR
+        AND status = 'VALID'
       GROUP BY blob_count
       ORDER BY blob_count
   - name: Engine getBlobs success rate distribution

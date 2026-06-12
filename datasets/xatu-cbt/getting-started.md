@@ -17,3 +17,4 @@ table and network.
 - **Use `FINAL`** to read the merged/deduplicated rows.
 - **Always filter the partition column** (usually `slot_start_date_time`) to avoid timeouts.
 - **Canonical vs head:** finalized tables have a `_canonical` variant (no reorgs, for historical analysis); live tables have a `_head` variant (may reorg, for real-time monitoring) — e.g. `fct_block_canonical` vs `fct_block_head`.
+- **Interpret status columns before using duration metrics:** Engine API tables often include one row per response status. For `engine_newPayload` execution-time questions, count only `status = 'VALID'` rows or tables whose schema/comment explicitly says they are valid-only. Rows with `SYNCING`, `ACCEPTED`, `ERROR`, `INVALID`, or `INVALID_BLOCK_HASH` describe non-success outcomes and must not be treated as successfully executed payloads.
