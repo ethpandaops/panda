@@ -149,7 +149,11 @@ tests/eval/
   recent release record (restricted to the smoke questions). `scripts.ci_pages` publishes
   the payload JSON to `eval/ci/` on gh-pages, where one shared copy of the report page
   fetches per-commit payloads — the branch/commit switcher walks runs without re-shipping
-  the UI. Fork PRs can't push gh-pages; their report ships only as the self-contained
+  the UI. Size stays bounded everywhere: a view fetches the manifest plus one payload
+  (tens of KB), payloads embed at most `MAX_BRANCH_HISTORY` comparison records, pruning
+  caps runs per branch and expires idle branches, and every publish force-pushes gh-pages
+  as a single parentless snapshot commit so deleted payloads don't pile up in git history.
+  Fork PRs can't push gh-pages; their report ships only as the self-contained
   `eval-report.html` in the run artifact.
 - **`eval.yaml`** — opt-in (the `run-evals` PR label, manual dispatch). Runs the whole
   suite (narrow with the `tags`/`cases` dispatch inputs) against the hosted production

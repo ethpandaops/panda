@@ -126,7 +126,9 @@ def _report(result: CandidateResult) -> None:
         table.add_column(col, overflow="fold")
     for rec in sorted(result.records, key=lambda r: (r.score.correct, r.score.score)):
         rs, tr = rec.score, rec.trace
-        answer = "CRASHED: " + (tr.error or "") if tr.crashed else " ".join((tr.output or "").split())
+        answer = (
+            "CRASHED: " + (tr.error or "") if tr.crashed else " ".join((tr.output or "").split())
+        )
         table.add_row(
             rec.question.id,
             rs.subject,
@@ -179,6 +181,9 @@ def _write_json(path: str, result: CandidateResult, *, cases: str, subjects: lis
     # its own wording); ``answer`` is the agent's final response. Both are scrubbed
     # like every other artifact sink; the answer is capped — the full text lives in
     # the trace files, the summary just needs the response as the human read it.
+    # ``tool_calls`` is the run's tool log in headline form (name + the head of the
+    # arguments, hard-capped): enough for the report page to show what the agent
+    # did, while full arguments and outputs stay in the trace files.
     payload = {
         "cases": cases,
         "subjects": subjects,
@@ -197,6 +202,14 @@ def _write_json(path: str, result: CandidateResult, *, cases: str, subjects: lis
                 "grader_reason": scrub_secrets(r.score.reason or ""),
                 "tokens": r.score.tokens,
                 "tools": r.score.n_tools,
+                "tool_calls": [
+                    {
+                        "name": t.name,
+                        "args": scrub_secrets(" ".join((t.arguments or "").split())[:160]),
+                        "error": t.is_error,
+                    }
+                    for t in r.trace.tool_calls[:40]
+                ],
                 "crashed": r.trace.crashed,
                 "trace_id": r.trace.trace_id,
                 "trace_url": r.trace.trace_url,
@@ -350,8 +363,10 @@ def main() -> None:
     if args.json_out:
         _write_json(args.json_out, result, cases=selection, subjects=subject_specs)
     # Langfuse links go next to the JUnit/JSON (the reports dir CI uploads + comments from).
-    reports_dir = Path(args.junit).parent if args.junit else (
-        Path(args.json_out).parent if args.json_out else Path("reports")
+    reports_dir = (
+        Path(args.junit).parent
+        if args.junit
+        else (Path(args.json_out).parent if args.json_out else Path("reports"))
     )
     _write_langfuse_links(reports_dir / "langfuse_links.md", result)
 

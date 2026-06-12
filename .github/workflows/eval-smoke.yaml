@@ -357,24 +357,35 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          # Concurrent smoke runs (and release qualifications) race on gh-pages:
-          # rebuild from a fresh fetch and retry the push instead of failing.
+          # gh-pages holds generated artifacts only, so each publish pushes a single
+          # parentless snapshot commit of the whole tree — the branch never accumulates
+          # git history (per-commit payloads would otherwise pile up in pack files
+          # forever, long after pruning removed them from the tree). Concurrent
+          # publishers race on the push: the lease detects it; rebuild from a fresh
+          # fetch and retry instead of failing.
           for attempt in 1 2 3; do
             git worktree remove --force /tmp/pages 2>/dev/null || true
             rm -rf /tmp/pages
+            BASE=""
             if git fetch --depth 1 origin gh-pages 2>/dev/null; then
+              BASE=$(git rev-parse FETCH_HEAD)
               git worktree add --detach /tmp/pages FETCH_HEAD
             else
               git worktree add --detach /tmp/pages
-              git -C /tmp/pages checkout --orphan gh-pages
               git -C /tmp/pages rm -rfq . 2>/dev/null || true
               touch /tmp/pages/.nojekyll
             fi
             (cd tests/eval && uv run python -m scripts.ci_pages publish \
               --pages-dir /tmp/pages --payload reports/ci/data.json)
             git -C /tmp/pages add -A
-            git -C /tmp/pages commit -m "ci eval report: ${BRANCH}@${SHA:0:7}"
-            if git -C /tmp/pages push origin HEAD:gh-pages; then
+            SNAP=$(git -C /tmp/pages commit-tree "$(git -C /tmp/pages write-tree)" \
+              -m "eval reports: ${BRANCH}@${SHA:0:7}")
+            if [ -n "$BASE" ]; then
+              LEASE=(--force-with-lease=refs/heads/gh-pages:"$BASE")
+            else
+              LEASE=()
+            fi
+            if git -C /tmp/pages push "${LEASE[@]}" origin "${SNAP}:refs/heads/gh-pages"; then
               echo "report published: ${EVAL_PAGES_URL}"
               break
             fi

@@ -39,6 +39,8 @@ from pathlib import Path
 from scripts.release_report import build_payload, render_template
 from scripts.release_scorecard import _build_record, _fold_langfuse, _pool_questions
 
+MAX_BRANCH_HISTORY = 30
+
 
 def sanitize_branch(branch: str) -> str:
     """Branch name -> filesystem/URL-safe path segment."""
@@ -141,6 +143,10 @@ def _assemble_history(args: argparse.Namespace, qids: set[str]) -> list[dict]:
             record = _load_record(path)
             if record and record.get("commit") != args.sha:
                 entries.append(record)
+    # Every payload embeds its comparison history, so an uncapped branch would make
+    # payload size grow with branch age. The chart only usefully shows ~30 points;
+    # baselines are appended after the cap so they always survive it.
+    entries = sorted(entries, key=lambda e: e["created_at"])[-MAX_BRANCH_HISTORY:]
     for raw in args.baseline:
         path = Path(raw)
         if not path.exists():

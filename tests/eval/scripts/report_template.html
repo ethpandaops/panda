@@ -17,7 +17,7 @@
     --line2: #e3dfd2;
     --ink: #211f1a;
     --mut: #6f6a5d;
-    --faint: #9b9585;
+    --faint: #8b8473;
     --accent: #bf5a3c;
     --ok: #3f7350;
     --ok-dim: rgba(63, 115, 80, .11);
@@ -41,7 +41,7 @@
     --line2: #2f2c24;
     --ink: #e9e4d6;
     --mut: #a59e8c;
-    --faint: #746e5e;
+    --faint: #847d6a;
     --accent: #e08e6d;
     --ok: #79b58c;
     --ok-dim: rgba(121, 181, 140, .13);
@@ -63,7 +63,7 @@
     --line2: #2f2c24;
     --ink: #e9e4d6;
     --mut: #a59e8c;
-    --faint: #746e5e;
+    --faint: #847d6a;
     --accent: #e08e6d;
     --ok: #79b58c;
     --ok-dim: rgba(121, 181, 140, .13);
@@ -119,14 +119,14 @@
     font-variant-numeric: tabular-nums;
     margin-right: 14px;
   }
-  .sub { margin: 4px 0 18px; font: 13px/1.55 var(--sans); color: var(--mut); max-width: 70ch; }
+  .sub { margin: 4px 0 18px; font: 13.5px/1.55 var(--sans); color: var(--mut); max-width: 70ch; }
 
   .panel {
     background: var(--panel);
     border: 1px solid var(--line2);
     border-radius: 4px;
   }
-  .note { margin: 10px 2px 0; font: 12px/1.65 var(--sans); color: var(--mut); max-width: 90ch; }
+  .note { margin: 10px 2px 0; font: 12.5px/1.65 var(--sans); color: var(--mut); max-width: 90ch; }
   .num { font-variant-numeric: tabular-nums; }
 
   /* ── topbar ──────────────────────────────────────────────────────────── */
@@ -174,7 +174,7 @@
   /* ── run switcher (fetch-mode viewer only) ───────────────────────────── */
   #run-switcher { display: flex; align-items: center; gap: 6px; }
   #run-switcher select {
-    max-width: 200px;
+    max-width: 280px;
     background: var(--panel);
     border: 1px solid var(--line);
     border-radius: 3px;
@@ -220,7 +220,7 @@
   .badge.pre { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 55%, transparent); background: var(--amber-dim); }
   #meta {
     margin-top: 12px;
-    font: 13px/1.7 var(--sans);
+    font: 13.5px/1.7 var(--sans);
     color: var(--mut);
     overflow-wrap: anywhere;
   }
@@ -243,7 +243,7 @@
     .card:nth-child(n + 3) { border-top: 1px solid var(--line2); }
   }
   .card .k {
-    font: 600 10px/1.3 var(--sans);
+    font: 600 10.5px/1.3 var(--sans);
     letter-spacing: .16em;
     text-transform: uppercase;
     color: var(--mut);
@@ -261,7 +261,7 @@
     gap: 10px;
     flex-wrap: wrap;
   }
-  .card .s { margin-top: 7px; font-size: 11.5px; color: var(--faint); }
+  .card .s { margin-top: 7px; font-size: 12px; color: var(--mut); }
   .delta {
     font: 600 11.5px/1 var(--sans);
     font-variant-numeric: tabular-nums;
@@ -274,20 +274,19 @@
   /* ── charts ──────────────────────────────────────────────────────────── */
   .chart-wrap { padding: 18px 14px 10px; position: relative; }
   svg { display: block; }
-  svg text { font-family: var(--sans); fill: var(--mut); }
+  svg text { font-family: var(--sans); font-size: 11.5px; fill: var(--mut); }
   .axis line, .grid line { stroke: var(--line2); }
   .axis-strong line { stroke: var(--line); }
-  .line-pass { stroke: var(--ok); fill: none; stroke-width: 1.8; }
-  .line-score { stroke: var(--blue); fill: none; stroke-width: 1.8; }
-  .line-tok { stroke: var(--amber); fill: none; stroke-width: 1.8; }
+  .line-pass { stroke: var(--ok); fill: none; stroke-width: 2; }
+  .line-tok { stroke: var(--amber); fill: none; stroke-width: 2; }
   .pt-pass { fill: var(--ok); }
-  .pt-score { fill: var(--blue); }
   .pt-tok { fill: var(--amber); }
+  .pt-val { font: 600 11px var(--sans); }
   .pt-hollow { fill: var(--panel); stroke: var(--amber); stroke-width: 1.6; }
   .pt-ring { fill: none; stroke-width: 1.4; }
   .guide { stroke: var(--mut); stroke-dasharray: 3 3; opacity: 0; }
   .hover-zone { fill: transparent; cursor: crosshair; }
-  .legend { display: flex; gap: 20px; padding: 4px 16px 12px; font: 11.5px/1 var(--sans); color: var(--mut); flex-wrap: wrap; }
+  .legend { display: flex; gap: 20px; padding: 4px 16px 12px; font: 12.5px/1.4 var(--sans); color: var(--mut); flex-wrap: wrap; }
   .legend .sw { display: inline-block; width: 14px; height: 3px; vertical-align: middle; margin-right: 7px; border-radius: 1px; }
   .legend .sw.dotc { width: 9px; height: 9px; border-radius: 50%; }
 
@@ -311,10 +310,10 @@
   .cat-row.active text.lbl { fill: var(--accent); }
 
   /* ── tables ──────────────────────────────────────────────────────────── */
-  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
   th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line2); vertical-align: top; }
   th {
-    font: 600 10px/1.5 var(--sans);
+    font: 600 10.5px/1.5 var(--sans);
     letter-spacing: .13em;
     text-transform: uppercase;
     color: var(--mut);
@@ -332,15 +331,15 @@
   th.sortable.asc::after { content: "▲"; color: var(--ink); font-size: 8px; }
   th.sortable.desc::after { content: "▼"; color: var(--ink); font-size: 8px; }
 
-  .qid { font-family: var(--mono); font-size: 12px; color: var(--ink); }
+  .qid { font-family: var(--mono); font-size: 12.5px; color: var(--ink); }
   button.qid { background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
   button.qid:hover { color: var(--accent); }
   td.qcell { max-width: 320px; }
-  td.qcell .qid { font-size: 11px; color: var(--mut); }
+  td.qcell .qid { font-size: 11.5px; color: var(--mut); }
   .qtext {
     display: block;
     margin-top: 2px;
-    font: 12.5px/1.4 var(--sans);
+    font: 13px/1.4 var(--sans);
     color: var(--ink);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -368,7 +367,7 @@
   .mx-cell.bad { background: var(--bad-dim); color: var(--bad); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
   .mx-cell:hover { border-color: var(--ink); }
   .mx-cell.selected { border-color: var(--sel); box-shadow: 0 0 0 1px var(--sel); }
-  .verdict { font: 11.5px/1.4 var(--sans); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .verdict { font: 12px/1.4 var(--sans); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .verdict.up { color: var(--ok); }
   .verdict.down { color: var(--bad); font-weight: 700; }
   .verdict.flat, .verdict.na { color: var(--faint); }
@@ -392,7 +391,7 @@
     border: 0;
     border-right: 1px solid var(--line);
     padding: 7px 13px;
-    font: 600 10.5px/1 var(--sans);
+    font: 600 11px/1 var(--sans);
     letter-spacing: .1em;
     text-transform: uppercase;
     color: var(--mut);
@@ -406,7 +405,7 @@
     border: 1px solid var(--line);
     border-radius: 999px;
     padding: 4px 12px;
-    font: 11.5px var(--sans);
+    font: 12px var(--sans);
     color: var(--mut);
     cursor: pointer;
   }
@@ -427,7 +426,7 @@
   #reset-filters:hover { color: var(--bad); border-color: var(--bad); }
   #agg {
     padding: 10px 14px;
-    font: 12.5px/1.5 var(--sans);
+    font: 13px/1.5 var(--sans);
     font-variant-numeric: tabular-nums;
     color: var(--mut);
     border-bottom: 1px solid var(--line2);
@@ -443,7 +442,7 @@
   @keyframes flash { 0%, 35% { background: color-mix(in srgb, var(--accent) 24%, transparent); } 100% { background: transparent; } }
   .pill {
     display: inline-block;
-    font: 700 10px/1 var(--sans);
+    font: 700 10.5px/1 var(--sans);
     letter-spacing: .1em;
     text-transform: uppercase;
     padding: 4px 8px;
@@ -452,7 +451,7 @@
   .pill.ok { color: var(--ok); background: var(--ok-dim); }
   .pill.bad { color: var(--bad); background: var(--bad-dim); }
   .pill.crash { color: var(--bg); background: var(--bad); }
-  td.reason-cell { max-width: 340px; color: var(--mut); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  td.reason-cell { max-width: 340px; color: var(--mut); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tagset { display: flex; gap: 4px; flex-wrap: wrap; }
   .tagset span { font: 10.5px var(--sans); color: var(--mut); border: 1px solid var(--line2); border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
   td.subj { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 11px; color: var(--mut); }
@@ -494,8 +493,8 @@
   }
   #drawer-close:hover { color: var(--bad); border-color: var(--bad); }
   #drawer-body { overflow-y: auto; padding: 16px 20px 28px; }
-  .kv { display: grid; grid-template-columns: 100px 1fr; gap: 6px 14px; font-size: 13px; margin: 16px 0; }
-  .kv dt { font: 600 10px/1.8 var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--mut); margin: 0; }
+  .kv { display: grid; grid-template-columns: 100px 1fr; gap: 6px 14px; font-size: 13.5px; margin: 16px 0; }
+  .kv dt { font: 600 10.5px/1.8 var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--mut); margin: 0; }
   .kv dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
   .reason {
     background: var(--bg);
@@ -534,7 +533,14 @@
     margin: 6px 0 2px;
   }
   .answer.empty { color: var(--faint); font: 12.5px/1.6 var(--sans); }
-  .drawer-label { font: 600 10px/1 var(--sans); letter-spacing: .16em; text-transform: uppercase; color: var(--mut); margin: 18px 0 6px; }
+  .drawer-label { font: 600 10.5px/1 var(--sans); letter-spacing: .16em; text-transform: uppercase; color: var(--mut); margin: 18px 0 6px; }
+  .toolcalls { margin: 12px 0 0; border: 1px solid var(--line2); border-radius: 3px; background: var(--panel2); }
+  .toolcalls summary { cursor: pointer; padding: 8px 11px; font: 600 11px/1 var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--mut); user-select: none; }
+  .toolcalls summary:hover { color: var(--accent); }
+  .toolcalls .tc { display: flex; gap: 9px; padding: 4px 11px; font: 12px/1.6 var(--mono); border-top: 1px solid var(--line2); white-space: nowrap; overflow: hidden; }
+  .toolcalls .tc-name { color: var(--ink); font-weight: 700; flex: none; }
+  .toolcalls .tc-args { color: var(--mut); overflow: hidden; text-overflow: ellipsis; }
+  .toolcalls .tc.is-err .tc-name { color: var(--bad); }
   .sibs { display: flex; gap: 5px; flex-wrap: wrap; }
   .trace-btn {
     display: inline-block;
@@ -564,7 +570,7 @@
     border-radius: 4px;
     box-shadow: var(--shadow);
     padding: 9px 12px;
-    font: 12px/1.65 var(--sans);
+    font: 12.5px/1.65 var(--sans);
     max-width: 360px;
     color: var(--mut);
   }
@@ -621,7 +627,7 @@
 
   <section id="trend">
     <h2><span class="no">1.</span><span id="trend-title">Release history</span></h2>
-    <p class="sub" id="trend-sub">Pass rate, score, and token cost across every qualified release, oldest to newest. Hover the chart for exact numbers.</p>
+    <p class="sub" id="trend-sub">Pass rate and token cost across every qualified release, oldest to newest. Hover any point for its full detail.</p>
     <div class="panel">
       <div class="chart-wrap"><div id="trend-chart"></div></div>
       <div class="legend" id="trend-legend"></div>
@@ -875,8 +881,8 @@
     $("#eyebrow").textContent = "CI smoke report";
     $("#nav-history").textContent = "History";
     $("#trend-title").textContent = "Run history";
-    $("#trend-sub").textContent = "Pass rate, score, and token cost across this branch's measured commits, " +
-      "with the master baseline and the most recent release as reference points. Hover the chart for exact numbers.";
+    $("#trend-sub").textContent = "Pass rate and token cost across this branch's measured commits, " +
+      "with the master baseline and the most recent release as reference points. Hover any point for its full detail.";
   }
   $("#tag").textContent = record.tag;
   $("#prerelease-badge").hidden = !record.prerelease;
@@ -953,78 +959,43 @@
     const host = $("#trend-chart");
     host.innerHTML = "";
     const W = Math.max(340, host.parentElement.getBoundingClientRect().width - 20);
-    const ml = 46, mr = 18;
-    const p1t = 14, p1b = 178;          /* pane 1: rates */
-    const p2t = 206, p2b = 286;         /* pane 2: tokens */
-    const effs = releases.map(e => e.efficiency_vs || null);
-    const hasEff = effs.some(Boolean);
-    const p3t = 312, p3b = 360;         /* pane 3: chained efficiency (when present) */
-    const axisB = hasEff ? p3b : p2b;
-    const lblH = 58;
-    const H = axisB + lblH;
+    const ml = 58, mr = 30;
+    const p1t = 40, p1b = 190;          /* pane 1: pass rate */
+    const p2t = 262, p2b = 368;         /* pane 2: tokens p50 */
+    const H = p2b + 40;
     const svg = sv("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}` });
     const n = releases.length;
     const x = i => n === 1 ? (ml + (W - ml - mr) / 2) : ml + (W - ml - mr) * i / (n - 1);
     const y1 = v => p1b - (p1b - p1t) * v;
     const toks = releases.map(tokenLabel);
-    const tokMax = Math.max(1, ...toks.map(t => t.v)) * 1.15;
-    const y2 = v => p2b - (p2b - p2t) * (v / tokMax);
-    const parityOf = e => 0.25 * e.pass_rate;
-    const effMax = Math.max(0.3,
-      ...effs.map(f => f ? f.score : 0),
-      ...releases.filter((e, i) => effs[i]).map(parityOf)) * 1.2;
-    const y3 = v => p3b - (p3b - p3t) * (v / effMax);
+    const tokTop = Math.max(1, ...toks.map(t => t.v));
+    const y2 = v => p2b - (p2b - p2t) * (v / (tokTop * 1.15));
+    /* CI entries are commits — the short sha is the name; releases keep their tag */
+    const shortLabel = e => e.kind === "ci" ? (e.commit || e.tag).slice(0, 7) : e.tag;
+    const showVals = n <= 14;           /* direct labels beat hover at this density */
 
-    /* gridlines pane 1 */
-    for (const v of [0, .25, .5, .75, 1]) {
+    const paneTitle = (y, color, label) => {
+      svg.appendChild(sv("rect", { x: ml, y: y - 4, width: 14, height: 4, rx: 1, fill: color }));
+      svg.appendChild(svText(ml + 22, y, label, { fill: "var(--ink)", "font-size": 12, "font-weight": 600 }));
+    };
+    paneTitle(p1t - 16, "var(--ok)", "Pass rate");
+    paneTitle(p2t - 16, "var(--amber)", "Tokens per correct run (p50)");
+
+    /* pane 1 grid: just enough to read levels off */
+    for (const v of [0, .5, 1]) {
       const g = sv("g", { class: "grid" });
       g.appendChild(sv("line", { x1: ml, x2: W - mr, y1: y1(v), y2: y1(v) }));
       svg.appendChild(g);
-      svg.appendChild(svText(ml - 7, y1(v) + 3, Math.round(v * 100) + "%", { "text-anchor": "end", "font-size": 9 }));
+      svg.appendChild(svText(ml - 10, y1(v) + 4, Math.round(v * 100) + "%", { "text-anchor": "end" }));
     }
-    /* gridlines pane 2 */
-    for (const v of [0, tokMax / 1.15]) {
+    /* pane 2 grid: zero line + the scale's top */
+    for (const [v, lbl] of [[0, "0"], [tokTop, fTok(tokTop)]]) {
       const g = sv("g", { class: "grid" });
       g.appendChild(sv("line", { x1: ml, x2: W - mr, y1: y2(v), y2: y2(v) }));
       svg.appendChild(g);
-      svg.appendChild(svText(ml - 7, y2(v) + 3, fTok(v), { "text-anchor": "end", "font-size": 9 }));
-    }
-    svg.appendChild(svText(ml, p2t - 7, "tokens p50 (correct runs)", { "font-size": 9 }));
-
-    /* pane 3: efficiency vs prev — each point is anchored to ITS previous release,
-       so this is a per-step indicator, not a level; no connecting line on purpose */
-    if (hasEff) {
-      const g0 = sv("g", { class: "grid" });
-      g0.appendChild(sv("line", { x1: ml, x2: W - mr, y1: y3(0), y2: y3(0) }));
-      svg.appendChild(g0);
-      svg.appendChild(svText(ml - 7, y3(0) + 3, "0", { "text-anchor": "end", "font-size": 9 }));
-      svg.appendChild(svText(ml - 7, y3(effMax / 1.2) + 3, (effMax / 1.2).toFixed(2),
-        { "text-anchor": "end", "font-size": 9 }));
-      svg.appendChild(svText(ml, p3t - 7,
-        "efficiency vs prev release (chained — each dot scored against its own predecessor)",
-        { "font-size": 9 }));
-      releases.forEach((e, i) => {
-        const f = effs[i];
-        if (!f) return;
-        const px = x(i), par = parityOf(e);
-        const good = f.score >= par;
-        svg.appendChild(sv("line", {
-          x1: px, x2: px, y1: y3(0), y2: y3(f.score),
-          stroke: good ? "var(--ok)" : "var(--bad)", "stroke-width": 1, opacity: .45,
-        }));
-        svg.appendChild(sv("line", {
-          x1: px - 6, x2: px + 6, y1: y3(par), y2: y3(par),
-          stroke: "var(--mut)", "stroke-width": 1.4, "stroke-dasharray": "2 2",
-        }));
-        svg.appendChild(sv("circle", {
-          cx: px, cy: y3(f.score), r: 3.4,
-          fill: good ? "var(--ok)" : "var(--bad)",
-        }));
-      });
+      svg.appendChild(svText(ml - 10, y2(v) + 4, lbl, { "text-anchor": "end" }));
     }
 
-    /* series — restricted baseline records carry no mean score, so the score
-       line skips them (segments break across the gap) */
     const path = (vals, yfn, cls) => {
       if (n === 1) return;
       let d = "", pen = false;
@@ -1036,38 +1007,43 @@
       if (d) svg.appendChild(sv("path", { d, class: cls }));
     };
     path(releases.map(e => e.pass_rate), y1, "line-pass");
-    path(releases.map(e => e.mean_score), y1, "line-score");
     path(toks.map(t => t.v), y2, "line-tok");
 
+    /* x labels: horizontal, anchored from the newest entry, clamped into the frame */
+    const step = Math.max(1, Math.ceil(n / Math.max(2, Math.floor((W - ml - mr) / 92) + 1)));
+    const clampX = (px, halfWidth) => Math.max(ml + halfWidth + 4, Math.min(px, W - mr - halfWidth + 24));
+
     releases.forEach((e, i) => {
-      svg.appendChild(sv("circle", { cx: x(i), cy: y1(e.pass_rate), r: 3.2, class: "pt-pass" }));
-      if (e.mean_score != null) {
-        svg.appendChild(sv("circle", { cx: x(i), cy: y1(e.mean_score), r: 3.2, class: "pt-score" }));
-      }
+      const cur = i === n - 1;
+      svg.appendChild(sv("circle", { cx: x(i), cy: y1(e.pass_rate), r: 3.6, class: "pt-pass" }));
       svg.appendChild(sv("circle", {
-        cx: x(i), cy: y2(toks[i].v), r: 3.2,
+        cx: x(i), cy: y2(toks[i].v), r: 3.6,
         class: toks[i].isP50 ? "pt-tok" : "pt-hollow",
       }));
-      if (i === n - 1) { /* ring the current release */
-        const cys = [y1(e.pass_rate), y2(toks[i].v)];
-        if (e.mean_score != null) cys.push(y1(e.mean_score));
-        for (const cy of cys) {
-          svg.appendChild(sv("circle", { cx: x(i), cy, r: 6.2, class: "pt-ring", stroke: "currentColor", opacity: .55 }));
+      if (cur) {
+        for (const cy of [y1(e.pass_rate), y2(toks[i].v)]) {
+          svg.appendChild(sv("circle", { cx: x(i), cy, r: 6.8, class: "pt-ring", stroke: "currentColor", opacity: .55 }));
         }
       }
-      /* x labels */
-      const showLbl = n <= 14 || i % 2 === (n - 1) % 2;
-      if (showLbl) {
-        const t = svText(0, 0, e.tag, { "font-size": 9.5, "text-anchor": "end", transform: `translate(${x(i) + 3},${axisB + 14}) rotate(-42)` });
-        if (i === n - 1) t.setAttribute("font-weight", "700");
+      if (showVals) {
+        svg.appendChild(svText(clampX(x(i), 18), y1(e.pass_rate) - 11, fPct(e.pass_rate),
+          { "text-anchor": "middle", fill: "var(--ok)", class: "pt-val" }));
+        svg.appendChild(svText(clampX(x(i), 18), y2(toks[i].v) - 11, fTok(toks[i].v),
+          { "text-anchor": "middle", fill: "var(--amber)", class: "pt-val" }));
+      }
+      if ((n - 1 - i) % step === 0) {
+        const t = svText(clampX(x(i), 34), p2b + 26, shortLabel(e),
+          { "text-anchor": "middle", "font-size": 12, "font-family": "var(--mono)" });
+        if (cur) { t.setAttribute("font-weight", "700"); t.setAttribute("fill", "var(--ink)"); }
         svg.appendChild(t);
       }
     });
 
-    /* hover */
-    const guide = sv("line", { y1: p1t, y2: axisB, class: "guide" });
+    /* hover: one guide through both panes, full detail in the tooltip */
+    const guide = sv("line", { y1: p1t, y2: p2b, class: "guide" });
     svg.appendChild(guide);
-    const zone = sv("rect", { x: ml - 10, y: p1t, width: W - ml - mr + 20, height: axisB - p1t, class: "hover-zone" });
+    const zone = sv("rect", { x: ml - 10, y: p1t, width: W - ml - mr + 20, height: p2b - p1t, class: "hover-zone" });
+    const parityOf = e => 0.25 * e.pass_rate;
     zone.addEventListener("mousemove", ev => {
       const bx = svg.getBoundingClientRect();
       const px = ev.clientX - bx.left;
@@ -1091,17 +1067,15 @@
     svg.appendChild(zone);
     host.appendChild(svg);
 
-    $("#trend-legend").innerHTML =
-      `<span><span class="sw" style="background:var(--ok)"></span>pass rate</span>` +
-      `<span><span class="sw" style="background:var(--blue)"></span>mean score</span>` +
-      `<span><span class="sw" style="background:var(--amber)"></span>tokens p50 (correct)</span>` +
-      (toks.some(t => !t.isP50) ? `<span><span class="sw dotc" style="border:1.5px solid var(--amber)"></span>mean fallback (older record)</span>` : "") +
-      (hasEff ? `<span><span class="sw dotc" style="background:var(--ok)"></span>efficiency vs prev (dashed tick = parity; chained, not a level)</span>` : "");
-    $("#trend-note").textContent = prev
+    $("#trend-legend").innerHTML = toks.some(t => !t.isP50)
+      ? `<span><span class="sw dotc" style="border:1.5px solid var(--amber)"></span>hollow = approximate tokens (no percentiles in that record)</span>`
+      : "";
+    $("#trend-note").textContent = (prev
       ? "Small headline moves are noise — per-question flips (section 4) are the signal."
       : (CI
         ? "First recorded run for this branch — no master baseline, release record, or prior commits to compare against yet."
-        : "First qualified release — no prior eval-qualification.json records to compare against.");
+        : "First qualified release — no prior eval-qualification.json records to compare against."))
+      + " Mean score and efficiency live in the table below; hover the chart for per-point detail.";
   }
 
   /* releases table */
@@ -1157,9 +1131,9 @@
       placed.push(p);
     }
     const ext = Math.max(20, ...placed.map(p => Math.abs(p.py) + R));
-    const axisY = ext * 2 + 26;
-    const H = axisY + 22;
-    const cy0 = ext + 8;
+    const axisY = ext * 2 + 62;
+    const H = axisY + 24;
+    const cy0 = ext + 44;
     const svg = sv("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}` });
 
     /* axis + ticks */
@@ -1169,15 +1143,15 @@
     const step = tokMax > 60000 ? 20000 : 10000;
     for (let v = 0; v <= tokMax; v += step) {
       svg.appendChild(sv("line", { x1: x(v), x2: x(v), y1: axisY, y2: axisY + 4, class: "axis-strong", stroke: "var(--line)" }));
-      svg.appendChild(svText(x(v), axisY + 15, fTok(v), { "text-anchor": "middle", "font-size": 9 }));
+      svg.appendChild(svText(x(v), axisY + 17, fTok(v), { "text-anchor": "middle" }));
     }
     /* percentile rules (correct runs, matches the record) */
     const tp = record.token_percentiles || {};
-    for (const [k, lift] of [["p50", 0], ["p90", 0], ["p99", 0]]) {
+    for (const [k, lift] of [["p50", 0], ["p90", 15], ["p99", 30]]) {
       if (!tp[k]) continue;
       const px = x(tp[k]);
       svg.appendChild(sv("line", { x1: px, x2: px, y1: 4 + lift, y2: axisY, class: "pct-rule" }));
-      svg.appendChild(svText(px + 4, 11 + lift, k + " " + fTok(tp[k]), { "font-size": 9 }));
+      svg.appendChild(svText(px + 5, 12 + lift, k + " " + fTok(tp[k]), { "font-size": 11 }));
     }
 
     for (const p of placed) {
@@ -1202,7 +1176,7 @@
     $("#swarm-legend").innerHTML =
       `<span><span class="sw dotc" style="background:var(--ok)"></span>correct (${nOk})</span>` +
       `<span><span class="sw dotc" style="background:var(--bad)"></span>failed (${runs.length - nOk})</span>` +
-      `<span style="color:var(--faint)">percentile rules computed over correct runs</span>`;
+      `<span>percentile rules computed over correct runs</span>`;
   }
 
   /* ── categories ───────────────────────────────────────────────────────── */
@@ -1211,21 +1185,21 @@
     host.innerHTML = "";
     if (!cats.length) { host.innerHTML = '<p class="note">no tag metadata for this cases file</p>'; return; }
     const W = Math.max(340, host.parentElement.getBoundingClientRect().width - 20);
-    const rowH = 27, lblW = Math.min(180, W * .25), valW = 250;
+    const rowH = 31, lblW = Math.min(200, W * .25), valW = 270;
     const barX = lblW + 12, barW = Math.max(60, W - barX - valW);
     const H = cats.length * rowH + 6;
     const svg = sv("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}` });
     cats.forEach((c, i) => {
       const y = i * rowH + 4;
       const g = sv("g", { class: "cat-row", "data-tag": c.tag });
-      const lbl = svText(lblW, y + 13, c.tag, { "text-anchor": "end", class: "lbl", "font-size": 11 });
+      const lbl = svText(lblW, y + 14, c.tag, { "text-anchor": "end", class: "lbl", "font-size": 12 });
       g.appendChild(lbl);
-      g.appendChild(sv("rect", { x: barX, y: y + 3, width: barW, height: 13, class: "cat-track", rx: 1 }));
+      g.appendChild(sv("rect", { x: barX, y: y + 3, width: barW, height: 15, class: "cat-track", rx: 1 }));
       const cls = c.rate >= .999 ? "hi" : (c.rate >= .5 ? "mid" : "lo");
-      g.appendChild(sv("rect", { x: barX, y: y + 3, width: Math.max(2, barW * c.rate), height: 13, class: `cat-fill ${cls}`, rx: 1 }));
-      g.appendChild(svText(barX + barW + 10, y + 13,
-        `${c.correct}/${c.runs} · ${fPct(c.rate)} · ${c.qids.size}q · med ${fTok(c.medTok)} tok`,
-        { "font-size": 10 }));
+      g.appendChild(sv("rect", { x: barX, y: y + 3, width: Math.max(2, barW * c.rate), height: 15, class: `cat-fill ${cls}`, rx: 1 }));
+      g.appendChild(svText(barX + barW + 10, y + 14,
+        `${c.correct}/${c.runs} · ${fPct(c.rate)} · ${c.qids.size}q` + (c.medTok > 0 ? ` · med ${fTok(c.medTok)} tok` : ""),
+        { "font-size": 11.5 }));
       g.addEventListener("click", () => {
         const on = state.tags.has(c.tag);
         state.tags.clear();
@@ -1277,7 +1251,7 @@
           `title="mean over runs vs ref ${fInt(ref)} tok (${esc(prev.tag)})${qEff < par ? " · below parity: heavier than the previous release" : ""}">${qEff.toFixed(3)}</td>`;
       }
       return `<tr><td><button class="qid" data-q="${esc(qid)}" title="filter run explorer to this question">${esc(qid)}</button>` +
-        `<div style="font:10px var(--mono);color:var(--faint);margin-top:2px">${tagsHtml}</div></td>` +
+        `<div style="font:11px var(--mono);color:var(--mut);margin-top:3px">${tagsHtml}</div></td>` +
         `<td class="r" style="color:${nOk === rs.length ? "var(--ok)" : "var(--bad)"}">${nOk}/${rs.length}</td>` +
         effCell +
         `<td><div class="mx-cells">${cells}</div></td>` +
@@ -1475,6 +1449,22 @@
   }
 
   const drawer = $("#drawer");
+  /* compact tool-call log: name + the head of its arguments. Older payloads
+     predate per-run tool capture and simply have no section. */
+  function toolCallsHtml(r) {
+    const calls = r.tool_calls || [];
+    if (!calls.length) return "";
+    const nErr = calls.filter(t => t.error).length;
+    const more = (r.tools ?? calls.length) - calls.length;
+    const rows = calls.map(t =>
+      `<div class="tc${t.error ? " is-err" : ""}"><span class="tc-name">${esc(t.name)}</span>` +
+      `<span class="tc-args">${esc((t.args || "").slice(0, 90))}${(t.args || "").length > 90 ? "…" : ""}</span></div>`).join("");
+    return `<details class="toolcalls"><summary>${calls.length} tool call${calls.length === 1 ? "" : "s"}` +
+      (nErr ? ` · <span style="color:var(--bad)">${nErr} error${nErr === 1 ? "" : "s"}</span>` : "") +
+      (more > 0 ? ` · first ${calls.length} of ${r.tools}` : "") +
+      `</summary>${rows}</details>`;
+  }
+
   function openDrawer(r) {
     const st = runStatus(r);
     const eff = runEff(r);
@@ -1490,6 +1480,7 @@
       `<div class="drawer-label">question${r.question_canonical ? ' <span class="canon" title="' + CANON_TIP + '">°</span>' : ""}</div>` +
       `<div class="qblock">${esc(r.question || "(question text not recorded)")}</div>` +
       (r.question_canonical ? `<div class="canon-note">° ${CANON_TIP}</div>` : "") +
+      toolCallsHtml(r) +
       `<div class="drawer-label">final answer</div>` +
       (r.answer
         ? `<div class="answer">${esc(r.answer)}</div>`
