@@ -37,11 +37,15 @@ concurrency:
 
 permissions:
   contents: read
+  packages: write
+
+env:
+  SANDBOX_IMAGE: ${{ vars.SANDBOX_IMAGE || 'ghcr.io/ethpandaops/panda-sandbox' }}
 
 jobs:
   benchmarkoor-smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -50,8 +54,31 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # The python-lib leg auto-skips while the published sandbox image
-      # predates the benchmarkoor module; it activates once a sandbox image
-      # containing modules/benchmarkoor/python ships.
+      - name: Log in to GHCR (sandbox image cache)
+        run: echo "${{ github.token }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      # Same content-hash cache as the eval workflows: the candidate sandbox
+      # image (with this commit's python modules) is pulled when its inputs
+      # are unchanged and built+published only when they changed. This keeps
+      # the e2e's python-sandbox leg mandatory (E2E_PYTHON=1) instead of
+      # skipping on a stale published image.
+      - name: Sandbox image (build only if its inputs changed)
+        run: |
+          set -euo pipefail
+          HASH=$(make sandbox-hash)
+          IMG="${SANDBOX_IMAGE}:${HASH}"
+          echo "Sandbox image: $IMG"
+          if docker image inspect "$IMG" >/dev/null 2>&1; then
+            echo "Already present on this runner — no build, no pull."
+          elif docker manifest inspect "$IMG" >/dev/null 2>&1; then
+            echo "In registry — pulling."
+            docker pull "$IMG"
+          else
+            echo "Sandbox inputs changed — building $IMG and publishing it."
+            docker build -t "$IMG" -f sandbox/Dockerfile .
+            docker push "$IMG" || echo "WARNING: push failed (registry creds?); using local image."
+          fi
+          echo "E2E_SANDBOX_IMAGE=$IMG" >> "$GITHUB_ENV"
+
       - name: Run benchmarkoor e2e
-        run: ./scripts/e2e-benchmarkoor.sh
+        run: E2E_PYTHON=1 SANDBOX_IMAGE="$E2E_SANDBOX_IMAGE" ./scripts/e2e-benchmarkoor.sh
