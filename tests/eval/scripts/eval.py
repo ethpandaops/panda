@@ -33,7 +33,7 @@ from rich.console import Console
 from rich.table import Table
 
 from cases.loader import load_test_cases
-from config.settings import DEFAULT_EVALUATOR_MODEL, DEFAULT_SUBJECTS
+from config.settings import DEFAULT_EVALUATOR_MODEL, DEFAULT_SUBJECTS, grader_for
 from harness.logsetup import setup_logging
 from harness.promptfoo_eval import measure_candidate, scrub_secrets
 from harness.runner import CandidateResult, Question
@@ -70,10 +70,21 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="run only each case's canonical phrasing (CI smoke: fast, cheap)",
     )
+    ap.add_argument(
+        "--max-variations",
+        type=int,
+        default=-1,
+        help="cap paraphrase variations per case (-1 = all). Pair with -k to trade "
+        "wording diversity for repeats at the same budget, e.g. --max-variations 1 -k 3 "
+        "= 2 phrasings x 3 runs each: repeats separate run-to-run noise from wording "
+        "sensitivity, which a phrasings-x-1 design conflates",
+    )
     ap.add_argument("-k", "--repeat", type=int, default=1, help="runs per (case, subject)")
     ap.add_argument("--judge-model", default=DEFAULT_EVALUATOR_MODEL)
     ap.add_argument(
-        "--grader", default="", help="promptfoo grading provider (default openrouter:<judge-model>)"
+        "--grader",
+        default="",
+        help="promptfoo grading provider string (default: <judge-model> via opencode-go)",
     )
     ap.add_argument("--concurrency", type=int, default=16, help="max agent runs in flight")
     ap.add_argument(
@@ -240,7 +251,11 @@ def main() -> None:
             text=c.input,
             followups=c.followups,
             asserts=c.asserts,
-            variations=[] if args.no_variations else c.variations,
+            variations=[]
+            if args.no_variations
+            else c.variations[: args.max_variations]
+            if args.max_variations >= 0
+            else c.variations,
         )
         for c in load_test_cases(args.cases or None, tags=tags, exclude_tags=exclude_tags)
     ]
@@ -251,7 +266,7 @@ def main() -> None:
         raise SystemExit(f"no cases matched ({selection})")
 
     subject_specs = args.subject or DEFAULT_SUBJECTS
-    grader = args.grader or f"openrouter:{args.judge_model}"
+    grader = args.grader or grader_for(args.judge_model)
     os.environ.setdefault("PROMPTFOO_PYTHON", sys.executable)
     # Langfuse trace name for this run's traces (workflows override it with a more
     # specific label, e.g. release-qualification:<tag>); harden keeps "harden".

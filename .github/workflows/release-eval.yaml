@@ -198,8 +198,8 @@ jobs:
         working-directory: tests/eval
         env:
           OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
-          # promptfoo grades each case's llm-rubric asserts via the judge model (OpenRouter).
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # promptfoo grades each case's llm-rubric asserts via the judge model, served
+          # by the same opencode-go gateway the subjects ride (one key for the whole eval).
           MCP_EVAL_REASONING_EFFORT: high
           MCP_EVAL_OPENCODE_TIMEOUT: "180"
           MCP_EVAL_RUN_LABEL: release-qualification:${{ steps.meta.outputs.tag }}
@@ -208,9 +208,10 @@ jobs:
           MCP_EVAL_LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           MCP_EVAL_LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
         run: |
-          # The whole suite (every cases/*.yaml), paraphrase variations included, k=1,
-          # one subject: the same measurement the harden loop calls its reference
-          # number. --min-pass 0
+          # The whole suite (every cases/*.yaml), one subject. --max-variations 1 -k 3
+          # = 2 phrasings x 3 runs each (same 6-run budget per question as the old
+          # phrasings-x-1 design, but repeats separate run-to-run noise from wording
+          # sensitivity). --min-pass 0
           # because qualification is a human-reviewed scorecard, not a gate — the job
           # should only go red when the harness itself breaks. --concurrency 6: the
           # local default (16) starves a 4-vCPU runner. --save-dir reports/run puts
@@ -218,6 +219,7 @@ jobs:
           # diagnosable from CI without Langfuse access.
           uv run python -m scripts.eval \
             --concurrency 6 \
+            --max-variations 1 -k 3 \
             --subject opencode-go/deepseek-v4-flash:cli \
             --subject-timeout 900 \
             --min-pass 0 \

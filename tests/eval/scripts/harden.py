@@ -31,7 +31,7 @@ import time
 from pathlib import Path
 
 from cases.loader import load_test_cases
-from config.settings import DEFAULT_EVALUATOR_MODEL, DEFAULT_SUBJECTS
+from config.settings import DEFAULT_EVALUATOR_MODEL, DEFAULT_SUBJECTS, grader_for
 from harden.auditor import CodexAuditor
 from harden.journal import DEFAULT_NAME as JOURNAL_NAME
 from harden.journal import Journal
@@ -175,7 +175,7 @@ def main() -> None:
     ap.add_argument(
         "--grader",
         default="",
-        help="promptfoo grading provider for llm-rubric asserts (default openrouter:<judge-model>)",
+        help="promptfoo grading provider for llm-rubric asserts (default: <judge-model> via opencode-go)",
     )
     ap.add_argument("--rounds", type=int, default=3)
     ap.add_argument(
@@ -309,7 +309,7 @@ def main() -> None:
     eval_dir = str(Path(__file__).resolve().parents[1])
 
     subject_specs = args.subject or DEFAULT_SUBJECTS
-    grader = args.grader or f"openrouter:{args.judge_model}"
+    grader = args.grader or grader_for(args.judge_model)
     proposer = CodexProposer(
         repo_dir,
         model=args.proposer_model,

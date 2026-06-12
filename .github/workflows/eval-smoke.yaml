@@ -208,8 +208,7 @@ jobs:
         env:
           OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
           # promptfoo grades each case's llm-rubric asserts via the judge model, routed
-          # through OpenRouter (--judge-model below -> openrouter:<model>).
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # through the opencode-go gateway (same key as the subjects).
           MCP_EVAL_REASONING_EFFORT: high
           MCP_EVAL_OPENCODE_TIMEOUT: "120"
           MCP_EVAL_RUN_LABEL: smoke

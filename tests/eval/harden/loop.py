@@ -285,7 +285,7 @@ async def optimize(
     steepness: float = 2.0,
     min_cells: int = 3,
     concurrency: int = 16,
-    grader: str = DEFAULT_GRADER,
+    grader: str | dict = DEFAULT_GRADER,
     subject_timeout: int = 300,
     cwd: str | None = None,
     held_out_ids: set[str] | None = None,

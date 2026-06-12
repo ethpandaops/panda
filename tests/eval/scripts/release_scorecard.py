@@ -311,7 +311,7 @@ def _build_markdown(
         "## 🐼 Release qualification",
         "",
         f"Full eval `{record['cases']}`: {n_questions} questions, {record['runs']} runs "
-        f"(canonical + paraphrase variations, single pass) against the hosted proxy. "
+        f"(phrasings x repeats) against the hosted proxy. "
         f"Subject `{', '.join(record['subjects'])}`, commit `{record['commit'][:7]}`.",
         "",
         "| release | pass rate | mean score | mean tokens (correct) |",
@@ -401,7 +401,7 @@ def _build_markdown(
 
     lines += [
         "",
-        "<sub>Single-pass run: small headline-score moves are noise — the per-question "
+        "<sub>Small headline-score moves are noise — the per-question "
         "flips are the signal. History comes from prior releases' "
         "<code>eval-qualification.json</code> assets.</sub>",
         MARKER_END,

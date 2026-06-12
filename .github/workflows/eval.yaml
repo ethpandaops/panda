@@ -220,8 +220,8 @@ jobs:
         working-directory: tests/eval
         env:
           OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
-          # promptfoo grades each case's llm-rubric asserts via the judge model (OpenRouter).
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # promptfoo grades each case's llm-rubric asserts via the judge model, served
+          # by the same opencode-go gateway the subjects ride (one key for the whole eval).
           MCP_EVAL_REASONING_EFFORT: high
           MCP_EVAL_OPENCODE_TIMEOUT: "180"
           MCP_EVAL_RUN_LABEL: full-eval

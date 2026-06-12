@@ -840,7 +840,7 @@
         ptp && ptp.p90 ? deltaChip(tp.p90, ptp.p90, { fmt: fmtRel(ptp.p90), goodWhen: "down" }) : ""),
       card("questions", String(byQ.size), esc(record.cases || ""),
         deltaChip(byQ.size, prev && Object.keys(prev.questions || {}).length, { fmt: d => String(d), neutral: true })),
-      card("runs", String(runs.length), "canonical + paraphrase variations, single pass",
+      card("runs", String(runs.length), "phrasings \u00d7 repeats per question",
         deltaChip(runs.length, prev && prev.runs, { fmt: d => String(d), neutral: true })),
     ].join("");
     $("#cards").innerHTML = html;
@@ -988,7 +988,7 @@
       (toks.some(t => !t.isP50) ? `<span><span class="sw dotc" style="border:1.5px solid var(--amber)"></span>mean fallback (older record)</span>` : "") +
       (hasEff ? `<span><span class="sw dotc" style="background:var(--ok)"></span>efficiency vs prev (dashed tick = parity; chained, not a level)</span>` : "");
     $("#trend-note").textContent = prev
-      ? "Single-pass runs: small headline moves are noise — per-question flips (section 4) are the signal."
+      ? "Small headline moves are noise — per-question flips (section 4) are the signal."
       : "First qualified release — no prior eval-qualification.json records to compare against.";
   }
 
@@ -1413,7 +1413,7 @@
 
   /* ── footer ───────────────────────────────────────────────────────────── */
   $("#foot").innerHTML =
-    `Single-pass qualification of <b>${esc(record.tag)}</b> — small headline-score moves are noise; ` +
+    `Qualification of <b>${esc(record.tag)}</b> — small headline-score moves are noise; ` +
     `per-question flips are the signal. History comes from prior releases' ` +
     `<code>eval-qualification.json</code> assets. This page is fully self-contained: no external fetches.`;
 

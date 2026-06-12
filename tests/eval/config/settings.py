@@ -1,5 +1,6 @@
 """Pydantic settings for ethpandaops-panda evaluation harness."""
 
+import os
 from pathlib import Path
 
 from pydantic import Field
@@ -15,12 +16,37 @@ DEFAULT_SUBJECT = f"{DEFAULT_AGENT_MODEL}:{DEFAULT_AGENT_ROUTE}"
 # help BOTH (it can't overfit to one) — and two subjects double the confidence gate's cells.
 # Both ride the opencode-go provider, so one API key covers them (CI included).
 DEFAULT_SUBJECTS = [DEFAULT_SUBJECT, f"opencode-go/mimo-v2.5:{DEFAULT_AGENT_ROUTE}"]
-# Judge quality matters more than judge cost (~$0.004/grade): the lite tier produced
-# false-negatives on clearly-correct answers, and a flaky judge contaminates the harden
-# gates. gpt-5.4-mini is a strong rubric-follower, family-distinct from the subjects.
-DEFAULT_EVALUATOR_MODEL = "openai/gpt-5.4-mini"
-# The promptfoo grading provider: the evaluator model via OpenRouter.
-DEFAULT_GRADER = f"openrouter:{DEFAULT_EVALUATOR_MODEL}"
+# Judge quality matters more than judge cost (~$0.003/grade): a flaky judge contaminates
+# the harden gates, so the judge must be a reliable rubric-follower AND family-distinct
+# from the subjects (a judge scoring its own family is a self-preference risk — that rules
+# out deepseek-* and mimo-* here). qwen3.7-plus rides the same opencode-go gateway as the
+# subjects, so one API key covers the whole eval; benched clean over 60 smoke grades,
+# where minimax-m3 and deepseek-v4-pro both emitted malformed rubric JSON (false
+# negatives) through this same path.
+DEFAULT_EVALUATOR_MODEL = "qwen3.7-plus"
+# The zen gateway is OpenAI-compatible; promptfoo grades through its generic
+# openai:chat driver pointed at this base URL.
+OPENCODE_ZEN_BASE_URL = "https://opencode.ai/zen/go/v1"
+
+
+def _opencode_key_envar() -> str:
+    """The env var holding the opencode-go key: CI exports OPENCODE_GO_API_KEY, local
+    dev typically has OPENCODE_API_KEY. promptfoo reads exactly one name."""
+    return "OPENCODE_GO_API_KEY" if os.environ.get("OPENCODE_GO_API_KEY") else "OPENCODE_API_KEY"
+
+
+def grader_for(model: str) -> dict:
+    """A promptfoo grading-provider spec for an opencode-go model."""
+    return {
+        "id": f"openai:chat:{model}",
+        "config": {
+            "apiBaseUrl": OPENCODE_ZEN_BASE_URL,
+            "apiKeyEnvar": _opencode_key_envar(),
+        },
+    }
+
+
+DEFAULT_GRADER = grader_for(DEFAULT_EVALUATOR_MODEL)
 
 
 class EvalSettings(BaseSettings):

@@ -8,6 +8,7 @@ from config.settings import (
     DEFAULT_SUBJECT,
     DEFAULT_SUBJECTS,
     EvalSettings,
+    grader_for,
 )
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "DEFAULT_SUBJECT",
     "DEFAULT_SUBJECTS",
     "EvalSettings",
+    "grader_for",
 ]
