@@ -1026,9 +1026,13 @@
         }
       }
       if (showVals) {
-        svg.appendChild(svText(clampX(x(i), 18), y1(e.pass_rate) - 11, fPct(e.pass_rate),
+        /* labels sit above their point unless the point is at the top of the
+           pane, where they would collide with the pane title — then below */
+        const dy1 = y1(e.pass_rate) > p1t + 24 ? -11 : 22;
+        const dy2 = y2(toks[i].v) > p2t + 24 ? -11 : 22;
+        svg.appendChild(svText(clampX(x(i), 18), y1(e.pass_rate) + dy1, fPct(e.pass_rate),
           { "text-anchor": "middle", fill: "var(--ok)", class: "pt-val" }));
-        svg.appendChild(svText(clampX(x(i), 18), y2(toks[i].v) - 11, fTok(toks[i].v),
+        svg.appendChild(svText(clampX(x(i), 18), y2(toks[i].v) + dy2, fTok(toks[i].v),
           { "text-anchor": "middle", fill: "var(--amber)", class: "pt-val" }));
       }
       if ((n - 1 - i) % step === 0) {
