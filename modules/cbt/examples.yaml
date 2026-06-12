@@ -105,12 +105,10 @@ cbt_transformation_status:
         for t in transformations:
             print(f"  - {t.get('id', 'unknown')}: type={t.get('type', 'unknown')}")
 
-    - name: Inspect what feeds a transformation
+    - name: Inspect a transformation
       description: >-
-        For provenance questions such as what source tables feed, build, or
-        define a transformed table, fetch the authoritative transformation
-        definition. Use both `depends_on` and the raw `content`; preserve CBT
-        template placeholders, including any `{{ ... }}` blocks, exactly.
+        Fetch details for a transformation when you need its metadata,
+        schedule, or definition while debugging CBT pipeline behavior.
       query: |
         from ethpandaops import cbt
 
@@ -120,7 +118,6 @@ cbt_transformation_status:
         print(f"ID: {t.get('id')}")
         print(f"Type: {t.get('type')}")
         print(f"Content type: {t.get('content_type')}")
-        print(f"Depends on: {t.get('depends_on')}")
         print(f"Schedules: {t.get('schedules')}")
         print("\nDefinition:")
         print(t.get("content", ""))
