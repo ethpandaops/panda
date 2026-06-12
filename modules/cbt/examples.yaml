@@ -18,33 +18,82 @@ cbt_model_discovery:
         for m in models:
             print(f"  - {m.get('id', 'unknown')}: {m.get('type', 'unknown')}")
 
-    - name: List external models
-      description: List external ClickHouse tables managed by CBT
+    - name: Find the model behind a table
+      description: Search models by name to find the transformation that builds a table
       query: |
         from ethpandaops import cbt
 
         network = "mainnet"
-        externals = cbt.list_external_models(network)
-        print(f"External models for {network}:")
-        for ext in externals:
-            print(f"  - {ext.get('id', 'unknown')}")
+        matches = cbt.list_models(network, search="fct_block")
+        for m in matches:
+            print(f"  - {m['id']} ({m['type']})")
 
     - name: Get external model details
-      description: Get details of a specific external model by ID (database.table)
+      description: Get details of a raw source table by ID (database.table)
       query: |
         from ethpandaops import cbt
 
         network = "mainnet"
         model = cbt.get_external_model(network, "default.beacon_api_eth_v1_events_block")
         print(f"Model: {model.get('id')}")
-        print(f"Details: {model}")
+        print(f"Interval type: {model.get('interval', {}).get('type')}")
+        print(f"Lag: {model.get('lag')}")
+
+cbt_table_bounds:
+  name: Table Bounds and Coverage
+  description: >-
+    Check which positions a table actually has data for before querying it
+    or concluding data is missing
+  examples:
+    - name: Check coverage of an aggregated table
+      description: >-
+        Get the processed (position, interval) ranges for a transformation
+        like {network}.fct_block. Positions for slot-type models are unix
+        seconds; multiple ranges mean there are gaps.
+      query: |
+        from datetime import datetime, timezone
+
+        from ethpandaops import cbt
+
+        network = "mainnet"
+        coverage = cbt.get_transformation_coverage(network, f"{network}.fct_block")
+        for r in coverage.get("ranges", []):
+            start = datetime.fromtimestamp(r["position"], tz=timezone.utc)
+            end = datetime.fromtimestamp(r["position"] + r["interval"], tz=timezone.utc)
+            print(f"  {start} -> {end}")
+
+    - name: Check raw data bounds
+      description: Get the min/max available positions for every external source table
+      query: |
+        from ethpandaops import cbt
+
+        network = "mainnet"
+        bounds = cbt.get_external_bounds(network)
+        for b in bounds:
+            print(f"  - {b['id']}: {b.get('min')}..{b.get('max')}")
+
+    - name: Debug why data is missing at a position
+      description: >-
+        Explain whether a transformation can process a position — shows the
+        model's coverage window, each dependency's bounds and gaps, and the
+        blocking reasons
+      query: |
+        from ethpandaops import cbt
+
+        network = "mainnet"
+        position = 1749600000  # unix seconds for slot-type models
+        debug = cbt.debug_coverage(network, f"{network}.fct_block", position)
+        print(f"Can process: {debug.get('can_process')}")
+        print(f"Validation: {debug.get('validation')}")
+        for dep in debug.get("dependencies", []):
+            print(f"  dep {dep.get('id')}: {dep.get('coverage_status')} bounds={dep.get('bounds')}")
 
 cbt_transformation_status:
   name: Transformation Status
-  description: Check the status and coverage of data transformations
+  description: Check the status and definitions of data transformations
   examples:
     - name: List transformations
-      description: List all data transformations and their status
+      description: List all data transformations and their types
       query: |
         from ethpandaops import cbt
 
@@ -52,36 +101,25 @@ cbt_transformation_status:
         transformations = cbt.list_transformations(network)
         print(f"Transformations for {network}:")
         for t in transformations:
-            print(f"  - {t.get('id', 'unknown')}: status={t.get('status', 'unknown')}")
+            print(f"  - {t.get('id', 'unknown')}: type={t.get('type', 'unknown')}")
 
-    - name: Check transformation coverage
-      description: Check how much data a transformation has processed
+    - name: Inspect a transformation
+      description: Get a transformation's SQL content, schedules, and dependencies
       query: |
         from ethpandaops import cbt
 
         network = "mainnet"
-        coverage = cbt.get_transformation_coverage(network)
-        print(f"Transformation coverage for {network}:")
-        for c in coverage:
-            print(f"  - {c.get('id', 'unknown')}: {c}")
-
-    - name: Check external model bounds
-      description: Get the data bounds (time/slot ranges) for external models
-      query: |
-        from ethpandaops import cbt
-
-        network = "mainnet"
-        bounds = cbt.get_external_bounds(network)
-        print(f"External model bounds for {network}:")
-        for b in bounds:
-            print(f"  - {b.get('id', 'unknown')}: {b}")
+        t = cbt.get_transformation(network, f"{network}.fct_block")
+        print(f"Type: {t.get('type')}")
+        print(f"Depends on: {t.get('depends_on')}")
+        print(f"Schedules: {t.get('schedules')}")
 
 cbt_scheduled_runs:
   name: Scheduled Runs
   description: Monitor scheduled transformation runs
   examples:
     - name: Check scheduled runs
-      description: View scheduled transformation run information
+      description: View last-run times for scheduled transformations
       query: |
         from ethpandaops import cbt
 
@@ -89,10 +127,12 @@ cbt_scheduled_runs:
         runs = cbt.get_scheduled_runs(network)
         print(f"Scheduled runs for {network}:")
         for r in runs:
-            print(f"  - {r}")
+            print(f"  - {r.get('id', 'unknown')}: last_run={r.get('last_run')}")
 
     - name: Get interval types
-      description: Get the interval type configurations used by transformations
+      description: >-
+        Get the interval type definitions that map positions to human units
+        (e.g. slot positions are unix seconds)
       query: |
         from ethpandaops import cbt
 
@@ -111,5 +151,5 @@ cbt_deep_links:
         from ethpandaops import cbt
 
         network = "mainnet"
-        link = cbt.link_model(network, "default.beacon_api_eth_v1_events_block")
+        link = cbt.link_model(network, f"{network}.fct_block")
         print(f"View in CBT: {link}")

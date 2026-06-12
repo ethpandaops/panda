@@ -36,6 +36,85 @@ func TestCBTIDPassthroughEscapesIdentifier(t *testing.T) {
 	assert.Empty(t, transport.last.URL.RawQuery)
 }
 
+func TestCBTDebugCoverageBuildsPositionPath(t *testing.T) {
+	t.Parallel()
+
+	transport := &recordingTransport{body: `{"can_process":true}`, contentType: "application/json"}
+	svc := newCBTOperationService(transport)
+	rec := httptest.NewRecorder()
+
+	handled := svc.handleCBTOperation("cbt.debug_coverage", rec, newCBTOpRequest(t, map[string]any{
+		"network":  "testnet",
+		"id":       "mainnet.fct_block",
+		"position": 1749600000,
+	}))
+
+	require.True(t, handled)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NotNil(t, transport.last)
+	assert.Equal(t,
+		"/api/v1/models/transformations/mainnet.fct_block/coverage/1749600000",
+		transport.last.URL.EscapedPath())
+}
+
+func TestCBTDebugCoverageRequiresPosition(t *testing.T) {
+	t.Parallel()
+
+	transport := &recordingTransport{body: `{}`, contentType: "application/json"}
+	svc := newCBTOperationService(transport)
+	rec := httptest.NewRecorder()
+
+	handled := svc.handleCBTOperation("cbt.debug_coverage", rec, newCBTOpRequest(t, map[string]any{
+		"network": "testnet",
+		"id":      "mainnet.fct_block",
+	}))
+
+	require.True(t, handled)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Nil(t, transport.last)
+}
+
+// TestCBTExternalBoundsIgnoresDatabaseArg pins that the bounds listing does
+// not forward a database query param: the CBT spec declares none on
+// /models/external/bounds.
+func TestCBTExternalBoundsIgnoresDatabaseArg(t *testing.T) {
+	t.Parallel()
+
+	transport := &recordingTransport{body: `{"bounds":[]}`, contentType: "application/json"}
+	svc := newCBTOperationService(transport)
+	rec := httptest.NewRecorder()
+
+	handled := svc.handleCBTOperation("cbt.get_external_bounds", rec, newCBTOpRequest(t, map[string]any{
+		"network":  "testnet",
+		"database": "mainnet",
+	}))
+
+	require.True(t, handled)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NotNil(t, transport.last)
+	assert.Equal(t, "/api/v1/models/external/bounds", transport.last.URL.EscapedPath())
+	assert.Empty(t, transport.last.URL.RawQuery)
+}
+
+func TestCBTScheduledRunsForwardsDatabaseArg(t *testing.T) {
+	t.Parallel()
+
+	transport := &recordingTransport{body: `{"runs":[]}`, contentType: "application/json"}
+	svc := newCBTOperationService(transport)
+	rec := httptest.NewRecorder()
+
+	handled := svc.handleCBTOperation("cbt.get_scheduled_runs", rec, newCBTOpRequest(t, map[string]any{
+		"network":  "testnet",
+		"database": "mainnet",
+	}))
+
+	require.True(t, handled)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NotNil(t, transport.last)
+	assert.Equal(t, "/api/v1/models/transformations/runs", transport.last.URL.EscapedPath())
+	assert.Equal(t, "database=mainnet", transport.last.URL.RawQuery)
+}
+
 func TestCBTLinkModelEscapesPathSegments(t *testing.T) {
 	t.Parallel()
 

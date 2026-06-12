@@ -27,56 +27,47 @@ func completeDatasourceNames(dsType string) func(*cobra.Command, []string, strin
 	}
 }
 
-// completeNetworkNames completes the first positional arg with network names.
-func completeNetworkNames(cmd *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
-	if len(args) > 0 {
-		return nil, cobra.ShellCompDirectiveNoFileComp
-	}
-
-	response, err := runServerOperation(cmd, "dora.list_networks", map[string]any{})
-	if err != nil {
-		return nil, cobra.ShellCompDirectiveNoFileComp
-	}
-
-	data, _ := response.Data.(map[string]any)
-	items, _ := data["networks"].([]any)
-
-	names := make([]string, 0, len(items))
-	for _, item := range items {
-		network, _ := item.(map[string]any)
-		if name, _ := network["name"].(string); name != "" {
-			names = append(names, name)
+// completeOperationNetworkNames builds a completion function that fills the
+// first positional arg with network names from a module's list_networks
+// operation.
+func completeOperationNetworkNames(
+	operationID string,
+) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+	return func(cmd *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
+		if len(args) > 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
-	}
 
-	return names, cobra.ShellCompDirectiveNoFileComp
+		response, err := runServerOperation(cmd, operationID, map[string]any{})
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		data, _ := response.Data.(map[string]any)
+		items, _ := data["networks"].([]any)
+
+		names := make([]string, 0, len(items))
+		for _, item := range items {
+			network, _ := item.(map[string]any)
+			if name, _ := network["name"].(string); name != "" {
+				names = append(names, name)
+			}
+		}
+
+		return names, cobra.ShellCompDirectiveNoFileComp
+	}
 }
+
+// completeNetworkNames completes the first positional arg with network names.
+var completeNetworkNames = completeOperationNetworkNames("dora.list_networks")
 
 // completeForkyNetworkNames completes the first positional arg with networks
 // that have Forky instances.
-func completeForkyNetworkNames(cmd *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
-	if len(args) > 0 {
-		return nil, cobra.ShellCompDirectiveNoFileComp
-	}
+var completeForkyNetworkNames = completeOperationNetworkNames("forky.list_networks")
 
-	response, err := runServerOperation(cmd, "forky.list_networks", map[string]any{})
-	if err != nil {
-		return nil, cobra.ShellCompDirectiveNoFileComp
-	}
-
-	data, _ := response.Data.(map[string]any)
-	items, _ := data["networks"].([]any)
-
-	names := make([]string, 0, len(items))
-	for _, item := range items {
-		network, _ := item.(map[string]any)
-		if name, _ := network["name"].(string); name != "" {
-			names = append(names, name)
-		}
-	}
-
-	return names, cobra.ShellCompDirectiveNoFileComp
-}
+// completeCBTNetworkNames completes the first positional arg with networks
+// that have CBT instances.
+var completeCBTNetworkNames = completeOperationNetworkNames("cbt.list_networks")
 
 // completeEthNodeArgs completes the ethnode positional args. The first arg
 // (network) is completed from ethnode's own active networks; the second arg

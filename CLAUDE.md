@@ -144,6 +144,7 @@ CLI commands and groups include:
 - `auth`
 - `block-archive`
 - `build` (GitHub Actions Docker image builder)
+- `cbt`
 - `clickhouse`
 - `config`
 - `datasets`
@@ -164,8 +165,6 @@ CLI commands and groups include:
 - `session`
 - `upgrade`
 - `version`
-
-`cbt` is a data module exposed through `execute_python`; it is not a top-level CLI command group.
 
 The proxy is a separate binary, built with `make build-proxy`.
 

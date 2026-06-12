@@ -151,8 +151,8 @@ var forkyNowCmd = &cobra.Command{
 		data, _ := response.Data.(map[string]any)
 		printKeyValue([][2]string{
 			{"Network", args[0]},
-			{"Slot", formatForkyValue(data["slot"])},
-			{"Epoch", formatForkyValue(data["epoch"])},
+			{"Slot", formatJSONNumber(data["slot"])},
+			{"Epoch", formatJSONNumber(data["epoch"])},
 		})
 
 		return nil
@@ -221,13 +221,13 @@ var forkyFramesCmd = &cobra.Command{
 			return nil
 		}
 
-		fmt.Printf("Frames (%v total):\n", formatForkyValue(data["total"]))
+		fmt.Printf("Frames (%v total):\n", formatJSONNumber(data["total"]))
 		for _, item := range frames {
 			frame, _ := item.(map[string]any)
 			fmt.Printf(
 				"  %v  slot=%v  node=%v  client=%v  source=%v  fetched=%v\n",
 				frame["id"],
-				formatForkyValue(frame["wall_clock_slot"]),
+				formatJSONNumber(frame["wall_clock_slot"]),
 				frame["node"],
 				frame["consensus_client"],
 				frame["event_source"],
@@ -337,16 +337,16 @@ func runForkyValueListing(
 	}
 
 	for _, value := range values {
-		fmt.Printf("%v\n", formatForkyValue(value))
+		fmt.Printf("%v\n", formatJSONNumber(value))
 	}
 
 	return nil
 }
 
-// formatForkyValue renders a decoded JSON value, keeping integral float64
+// formatJSONNumber renders a decoded JSON value, keeping integral float64
 // numbers (slots, epochs, totals) in plain decimal notation instead of the
 // scientific form %v would use.
-func formatForkyValue(value any) string {
+func formatJSONNumber(value any) string {
 	number, ok := value.(float64)
 	if !ok {
 		return fmt.Sprintf("%v", value)

@@ -31,9 +31,11 @@ func (s *service) handleCBTOperation(operationID string, w http.ResponseWriter, 
 	case "cbt.get_transformation":
 		s.handleCBTIDPassthrough(w, r, "/api/v1/models/transformations/%s")
 	case "cbt.get_transformation_coverage":
-		s.handleCBTOptionalIDPassthrough(w, r, "/api/v1/models/transformations/coverage", "/api/v1/models/transformations/%s/coverage")
+		s.handleCBTOptionalIDPassthrough(w, r, "/api/v1/models/transformations/coverage", "/api/v1/models/transformations/%s/coverage", "database")
+	case "cbt.debug_coverage":
+		s.handleCBTCoverageDebug(w, r)
 	case "cbt.get_scheduled_runs":
-		s.handleCBTOptionalIDPassthrough(w, r, "/api/v1/models/transformations/runs", "/api/v1/models/transformations/%s/runs")
+		s.handleCBTOptionalIDPassthrough(w, r, "/api/v1/models/transformations/runs", "/api/v1/models/transformations/%s/runs", "database")
 	case "cbt.get_interval_types":
 		s.handleCBTPassthrough(w, r, "/api/v1/interval/types")
 	case "cbt.link_model":
@@ -140,11 +142,14 @@ func (s *service) handleCBTIDPassthrough(
 }
 
 // handleCBTOptionalIDPassthrough forwards to allPath when no ID is given,
-// or to idPathTemplate (with ID substituted) when an ID is provided.
+// or to idPathTemplate (with ID substituted) when an ID is provided. The
+// listParams query parameters apply only to the collection path; the CBT
+// spec declares no query parameters on the per-model paths.
 func (s *service) handleCBTOptionalIDPassthrough(
 	w http.ResponseWriter,
 	r *http.Request,
 	allPath, idPathTemplate string,
+	listParams ...string,
 ) {
 	req, err := decodeOperationRequest(r)
 	if err != nil {
@@ -163,11 +168,54 @@ func (s *service) handleCBTOptionalIDPassthrough(
 
 	if id := optionalStringArg(req.Args, "id"); id != "" {
 		path = fmt.Sprintf(idPathTemplate, url.PathEscape(id))
-	} else if database := optionalStringArg(req.Args, "database"); database != "" {
-		params.Set("database", database)
+	} else {
+		for _, param := range listParams {
+			if value := optionalStringArg(req.Args, param); value != "" {
+				params.Set(param, value)
+			}
+		}
 	}
 
 	body, contentType, status, err := s.cbtAPIGetRaw(r.Context(), baseURL, path, params)
+	if err != nil {
+		writeAPIError(w, status, err.Error())
+		return
+	}
+
+	writePassthroughResponse(w, http.StatusOK, contentType, body)
+}
+
+// handleCBTCoverageDebug forwards to the coverage debug endpoint, which
+// explains whether a transformation can process a given position and which
+// dependency bounds or gaps block it.
+func (s *service) handleCBTCoverageDebug(w http.ResponseWriter, r *http.Request) {
+	req, err := decodeOperationRequest(r)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	baseURL, status, err := s.cbtBaseURL(req.Args)
+	if err != nil {
+		writeAPIError(w, status, err.Error())
+		return
+	}
+
+	id, err := requiredStringArg(req.Args, "id")
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	position, err := parseInt64Arg(req.Args["position"], "position")
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	path := fmt.Sprintf("/api/v1/models/transformations/%s/coverage/%d", url.PathEscape(id), position)
+
+	body, contentType, status, err := s.cbtAPIGetRaw(r.Context(), baseURL, path, nil)
 	if err != nil {
 		writeAPIError(w, status, err.Error())
 		return
