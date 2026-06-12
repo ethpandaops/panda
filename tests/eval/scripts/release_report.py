@@ -42,6 +42,7 @@ def token_percentiles(runs: list[dict]) -> dict[str, float]:
         "p10": round(_pct(tokens, 0.10), 1),
         "p50": round(_pct(tokens, 0.50), 1),
         "p90": round(_pct(tokens, 0.90), 1),
+        "p95": round(_pct(tokens, 0.95), 1),
         "p99": round(_pct(tokens, 0.99), 1),
         "max": round(max(tokens), 1) if tokens else 0.0,
     }

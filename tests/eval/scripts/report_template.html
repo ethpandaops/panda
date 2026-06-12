@@ -660,19 +660,29 @@
         <div class="chart-wrap"><div id="pass-chart"></div></div>
       </div>
       <div class="panel chart-card">
-        <div class="chart-head"><span class="sw" style="background:var(--amber)"></span>Tokens per correct run (p50)</div>
+        <div class="chart-head"><span class="sw" style="background:var(--amber)"></span><span id="tok-title">Tokens per correct run</span>
+          <span class="chart-controls">
+            <span class="seg mini agg-seg" title="token aggregation (shared with the scatter)">
+              <button data-v="p50">p50</button>
+              <button data-v="p90">p90</button>
+              <button data-v="p95">p95</button>
+              <button data-v="solve">per solve</button>
+            </span>
+          </span>
+        </div>
         <div class="chart-wrap"><div id="tok-chart"></div></div>
       </div>
       <div class="panel chart-card wide">
         <div class="chart-head"><span class="sw" style="background:var(--blue)"></span>Cost vs correctness
           <span class="chart-controls">
-            <span class="seg mini" id="sc-agg" title="token aggregation on the x-axis">
-              <button data-v="p50" class="on">p50</button>
+            <span class="seg mini agg-seg" title="token aggregation (shared with the timeline)">
+              <button data-v="p50">p50</button>
               <button data-v="p90">p90</button>
+              <button data-v="p95">p95</button>
               <button data-v="solve">per solve</button>
             </span>
-            <span class="seg mini" id="sc-scale" title="x-axis scale">
-              <button data-v="lin" class="on">linear</button>
+            <span class="seg mini" id="sc-scale" title="token-axis scale">
+              <button data-v="lin">linear</button>
               <button data-v="log">log</button>
             </span>
           </span>
@@ -779,7 +789,11 @@
 
   function buildSwitcher(all, sel) {
     const host = document.getElementById("run-switcher");
-    const go = id => { location.search = "?run=" + encodeURIComponent(id); };
+    const go = id => {
+      const sp = new URLSearchParams(location.search);
+      sp.set("run", id);
+      location.search = "?" + sp.toString();
+    };
     const branches = [...new Set(all.map(r => r.branch))]
       .sort((a, b) => (a === "master" ? -1 : b === "master" ? 1 : (a < b ? -1 : 1)));
     /* newest first within the selected branch */
@@ -1038,17 +1052,50 @@
     }
     return e.tag;
   };
-  const toks = releases.map(tokenLabel);
+  /* ── view state: every tweak lives in the URL so views are linkable ───── */
+  const VIEW_DEFAULTS = { agg: "p95", scale: "log" };
+  const view = (() => {
+    const sp = new URLSearchParams(location.search);
+    return {
+      agg: ["p50", "p90", "p95", "solve"].includes(sp.get("agg")) ? sp.get("agg") : VIEW_DEFAULTS.agg,
+      scale: ["lin", "log"].includes(sp.get("scale")) ? sp.get("scale") : VIEW_DEFAULTS.scale,
+    };
+  })();
+  function syncURL(updates) {
+    const sp = new URLSearchParams(location.search);
+    for (const [k, v, dflt] of updates) {
+      if (v == null || v === "" || v === dflt) sp.delete(k);
+      else sp.set(k, v);
+    }
+    const qs = sp.toString();
+    /* `history` is shadowed by the payload's comparison records — go via window */
+    window.history.replaceState(null, "", location.pathname + (qs ? "?" + qs : "") + location.hash);
+  }
+
+  /* token aggregation shared by the timeline and the scatter; older records
+     predate p95 and fall back (p90, then mean), marked approximate */
+  const AGG_LABEL = { p50: "p50", p90: "p90", p95: "p95", solve: "per solve" };
+  const aggOf = e => {
+    if (view.agg === "solve") {
+      return e.tokens_per_solve
+        ? { v: e.tokens_per_solve, approx: false }
+        : { v: e.mean_tokens_correct || 0, approx: true };
+    }
+    const pcts = e.token_percentiles || {};
+    if (pcts[view.agg]) return { v: pcts[view.agg], approx: false };
+    if (view.agg === "p95" && pcts.p90) return { v: pcts.p90, approx: true };
+    return { v: e.mean_tokens_correct || 0, approx: true };
+  };
   const parityOf = e => 0.25 * e.pass_rate;
 
   function trendTip(i, ev) {
-    const e = releases[i], t = toks[i];
+    const e = releases[i], t = aggOf(e);
     const nOk = Math.round(e.pass_rate * e.runs);
     showTip(
       `<b>${esc(e.tag)}</b>${i === releases.length - 1 ? " · current" : ""}${e.prerelease ? " · pre" : ""}<br>` +
       `${fDate(e.created_at)} · ${e.runs} runs · ${esc(e.cases || "")}<br>` +
       `pass <b class="ok">${fPct(e.pass_rate)}</b> (${nOk}/${e.runs}) · score <b>${e.mean_score != null ? e.mean_score.toFixed(3) : "—"}</b><br>` +
-      `tokens ${t.isP50 ? "p50" : "≈mean"} <b>${fTok(t.v)}</b> per correct run` +
+      `tokens ${t.approx ? "≈" : ""}${AGG_LABEL[view.agg]} <b>${fTok(t.v)}</b>` +
       (e.efficiency_vs
         ? `<br>eff vs ${esc(e.efficiency_vs.ref_tag)} <b class="${e.efficiency_vs.score >= parityOf(e) ? "ok" : "bad"}">${e.efficiency_vs.score.toFixed(3)}</b>`
         : ""),
@@ -1127,74 +1174,88 @@
       yTicks: [[0, "0%"], [.5, "50%"], [1, "100%"]],
       lineCls: "line-pass", ptCls: "pt-pass",
     });
-    const tokMax = Math.max(1, ...toks.map(t => t.v));
+    const agg = releases.map(aggOf);
+    const tokMax = Math.max(1, ...agg.map(t => t.v));
+    $("#tok-title").textContent = view.agg === "solve"
+      ? "Tokens per solve" : `Tokens per correct run (${view.agg})`;
     lineChart($("#tok-chart"), {
-      val: i => toks[i].v > 0 ? toks[i].v : null,
+      val: i => agg[i].v > 0 ? agg[i].v : null,
       fmt: fTok, yMax: tokMax * 1.15,
       yTicks: [[0, "0"], [tokMax, fTok(tokMax)]],
       lineCls: "line-tok", ptCls: "pt-tok",
-      hollow: i => !toks[i].isP50,
+      hollow: i => agg[i].approx,
     });
   }
 
-  /* scatter: where each run sits on cost (x) vs correctness (y) */
-  const scState = { agg: "p50", scale: "lin" };
-  const scatterVal = e => {
-    const pcts = e.token_percentiles;
-    if (scState.agg === "solve" && e.tokens_per_solve) return { v: e.tokens_per_solve, approx: false };
-    if (scState.agg !== "solve" && pcts && pcts[scState.agg]) return { v: pcts[scState.agg], approx: false };
-    return { v: e.mean_tokens_correct || 0, approx: true };
-  };
+  /* scatter: X = pass rate, Y = tokens spent (up = costlier) */
   const KIND = e => e.kind === "ci"
     ? (e.branch === record.branch ? "branch" : "baseline")
     : "release";
 
+  /* 1-2-5 tick series covering [lo, hi] — consistent ticks on linear AND log */
+  function niceTicks(lo, hi) {
+    const out = [];
+    let mag = 10 ** Math.floor(Math.log10(Math.max(1, lo)));
+    for (; mag <= hi; mag *= 10) {
+      for (const m of [1, 2, 5]) {
+        const v = m * mag;
+        if (v >= lo && v <= hi) out.push(v);
+      }
+    }
+    return out;
+  }
+
   function renderScatter() {
     const host = $("#scatter-chart");
     host.innerHTML = "";
-    const pts = releases.map((e, i) => ({ e, i, ...scatterVal(e) })).filter(pt => pt.v > 0);
+    const pts = releases.map((e, i) => ({ e, i, ...aggOf(e) })).filter(pt => pt.v > 0);
     if (!pts.length) {
       host.innerHTML = '<p class="note" style="padding:4px 4px 12px">no token data to place</p>';
       return;
     }
     const W = Math.max(340, host.parentElement.getBoundingClientRect().width - 16);
-    const ml = 56, mr = 34, top = 26, bot = 236, H = 282;
+    const ml = 64, mr = 30, top = 24, bot = 252, H = 296;
     const svg = sv("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}` });
     const vals = pts.map(pt => pt.v);
     const vMax = Math.max(...vals), vMin = Math.min(...vals);
-    let xOf, xTicks;
-    if (scState.scale === "log") {
-      const l0 = Math.log10(vMin / 1.3), l1 = Math.log10(vMax * 1.3);
-      xOf = v => ml + (W - ml - mr) * (Math.log10(v) - l0) / (l1 - l0);
-      xTicks = [];
-      for (let d = Math.ceil(l0); d <= Math.floor(l1); d++) xTicks.push(10 ** d);
-      if (!xTicks.includes(vMax)) xTicks.push(vMax);
-    } else {
-      const xm = vMax * 1.1;
-      xOf = v => ml + (W - ml - mr) * (v / xm);
-      const nice = xm > 40000 ? 10000 : xm > 8000 ? 5000 : 1000;
-      xTicks = [0, xm / 4, xm / 2, (3 * xm) / 4].map(v => Math.round(v / nice) * nice);
-      xTicks.push(vMax);
-    }
-    const yOf = v => bot - (bot - top) * v;
 
-    for (const v of [0, .5, 1]) {
+    /* y = tokens */
+    let yOf, domLo, domHi;
+    if (view.scale === "log") {
+      domLo = vMin / 1.25; domHi = vMax * 1.25;
+      const l0 = Math.log10(domLo), l1 = Math.log10(domHi);
+      yOf = v => bot - (bot - top) * (Math.log10(v) - l0) / (l1 - l0);
+    } else {
+      domLo = 0; domHi = vMax * 1.12;
+      yOf = v => bot - (bot - top) * (v / domHi);
+    }
+    let ticks = niceTicks(Math.max(1, domLo), domHi);
+    if (ticks.length < 3 || ticks.length > 7) {
+      /* tight or busy domain: a stepped series sized to ~5 ticks */
+      const span = domHi - domLo;
+      const rawStep = span / 5;
+      const mag = 10 ** Math.floor(Math.log10(rawStep));
+      const step = [1, 2, 5, 10].map(m => m * mag).find(v => v >= rawStep) || 10 * mag;
+      ticks = [];
+      for (let v = Math.ceil(domLo / step) * step; v <= domHi; v += step) ticks.push(v);
+    }
+    for (const v of ticks) {
+      const py = yOf(v);
+      if (py < top - 1 || py > bot + 1) continue;
       const g = sv("g", { class: "grid" });
-      g.appendChild(sv("line", { x1: ml, x2: W - mr, y1: yOf(v), y2: yOf(v) }));
+      g.appendChild(sv("line", { x1: ml, x2: W - mr, y1: py, y2: py }));
       svg.appendChild(g);
-      svg.appendChild(svText(ml - 9, yOf(v) + 4, Math.round(v * 100) + "%", { "text-anchor": "end" }));
+      svg.appendChild(svText(ml - 9, py + 4, fTok(v), { "text-anchor": "end" }));
     }
-    for (const v of xTicks) {
-      const px = xOf(v);
-      if (px < ml - 1 || px > W - mr + 1) continue;
-      if (v !== vMax && Math.abs(px - xOf(vMax)) < 52) continue;
-      svg.appendChild(sv("line", { x1: px, x2: px, y1: bot, y2: bot + 5, class: "axis-strong", stroke: "var(--line)" }));
-      svg.appendChild(svText(px, bot + 18, fTok(v), {
-        "text-anchor": "middle",
-        ...(v === vMax ? { "font-weight": 700, fill: "var(--ink)" } : {}),
-      }));
+    svg.appendChild(svText(ml - 9, top - 9, "tokens ↑", { "text-anchor": "end", "font-size": 11 }));
+
+    /* x = pass rate */
+    const xOf = v => ml + (W - ml - mr) * v;
+    for (const v of [0, .25, .5, .75, 1]) {
+      svg.appendChild(sv("line", { x1: xOf(v), x2: xOf(v), y1: bot, y2: bot + 5, class: "axis-strong", stroke: "var(--line)" }));
+      svg.appendChild(svText(xOf(v), bot + 18, Math.round(v * 100) + "%", { "text-anchor": "middle" }));
     }
-    svg.appendChild(svText(W - mr, top - 12, "tokens →", { "text-anchor": "end", "font-size": 11 }));
+    svg.appendChild(svText(W - mr, bot + 34, "pass rate →", { "text-anchor": "end", "font-size": 11 }));
 
     const mark = (pt, px, py) => {
       const kind = KIND(pt.e);
@@ -1206,26 +1267,25 @@
       return sv("circle", { cx: px, cy: py, r: 5, ...common });
     };
 
-    /* labels flip to the left near the right edge; stacked labels nudge apart */
+    /* labels right of the dot; flip left near the right edge; nudge stacked ones */
     const placedLbl = [];
     pts.forEach(pt => {
-      const px = xOf(pt.v), py = yOf(pt.e.pass_rate);
+      const px = xOf(pt.e.pass_rate), py = yOf(pt.v);
       const cur = pt.i === releases.length - 1;
       if (cur) svg.appendChild(sv("circle", { cx: px, cy: py, r: 9, class: "pt-ring", stroke: "var(--accent)", opacity: .6 }));
       const m = mark(pt, px, py);
       m.addEventListener("mousemove", ev => trendTip(pt.i, ev));
       m.addEventListener("mouseleave", hideTip);
       svg.appendChild(m);
-      const left = px > W - mr - 70;
+      const left = px > W - mr - 76;
       let ly = py + 4;
       while (placedLbl.some(b => Math.abs(b.y - ly) < 13 && b.left === left && Math.abs(b.x - px) < 90)) ly += 13;
       placedLbl.push({ x: px, y: ly, left });
-      const t = svText(left ? px - 11 : px + 11, ly, entryLabel(pt.i), {
+      svg.appendChild(svText(left ? px - 11 : px + 11, ly, entryLabel(pt.i), {
         "text-anchor": left ? "end" : "start",
         "font-family": "var(--mono)",
         ...(cur ? { "font-weight": 700, fill: "var(--ink)" } : {}),
-      });
-      svg.appendChild(t);
+      }));
     });
     host.appendChild(svg);
 
@@ -1235,17 +1295,32 @@
       (pts.some(pt => KIND(pt.e) === "baseline" && pt.i !== releases.length - 1) ? `<span><span class="sw dotc" style="background:var(--mut);border-radius:1px"></span>baseline branch</span>` : "") +
       (pts.some(pt => KIND(pt.e) === "release") ? `<span><span class="sw dotc" style="background:var(--blue);border-radius:1px"></span>release</span>` : "") +
       `<span><span class="sw dotc" style="border:1.5px solid var(--accent)"></span>ring = current</span>` +
-      (anyApprox ? `<span><span class="sw dotc" style="border:1.5px solid var(--ok)"></span>hollow = approximate (record lacks ${scState.agg === "solve" ? "a per-solve figure" : scState.agg})</span>` : "");
+      (anyApprox ? `<span><span class="sw dotc" style="border:1.5px solid var(--ok)"></span>hollow = approximate (record predates ${AGG_LABEL[view.agg]})</span>` : "");
   }
 
-  for (const [sel, key] of [["#sc-agg", "agg"], ["#sc-scale", "scale"]]) {
-    document.querySelectorAll(`${sel} button`).forEach(b =>
-      b.addEventListener("click", () => {
-        scState[key] = b.dataset.v;
-        document.querySelectorAll(`${sel} button`).forEach(o => o.classList.toggle("on", o === b));
-        renderScatter();
-      }));
+  /* control wiring: both agg segments mirror each other; everything syncs to the URL */
+  function syncControls() {
+    document.querySelectorAll(".agg-seg button").forEach(b =>
+      b.classList.toggle("on", b.dataset.v === view.agg));
+    document.querySelectorAll("#sc-scale button").forEach(b =>
+      b.classList.toggle("on", b.dataset.v === view.scale));
   }
+  document.querySelectorAll(".agg-seg button").forEach(b =>
+    b.addEventListener("click", () => {
+      view.agg = b.dataset.v;
+      syncURL([["agg", view.agg, VIEW_DEFAULTS.agg]]);
+      syncControls();
+      renderTimelines();
+      renderScatter();
+    }));
+  document.querySelectorAll("#sc-scale button").forEach(b =>
+    b.addEventListener("click", () => {
+      view.scale = b.dataset.v;
+      syncURL([["scale", view.scale, VIEW_DEFAULTS.scale]]);
+      syncControls();
+      renderScatter();
+    }));
+  syncControls();
 
   function renderTrend() {
     renderTimelines();
@@ -1499,7 +1574,23 @@
   }
 
   /* ── run explorer ─────────────────────────────────────────────────────── */
-  const state = { q: "", status: "all", tags: new Set(), search: "" };
+  const state = (() => {
+    const sp = new URLSearchParams(location.search);
+    return {
+      q: sp.get("q") || "",
+      status: ["pass", "fail"].includes(sp.get("status")) ? sp.get("status") : "all",
+      tags: new Set((sp.get("tags") || "").split(",").filter(Boolean)),
+      search: sp.get("search") || "",
+    };
+  })();
+  function syncExplorerURL() {
+    syncURL([
+      ["q", state.q, ""],
+      ["status", state.status, "all"],
+      ["tags", [...state.tags].join(","), ""],
+      ["search", state.search, ""],
+    ]);
+  }
   const sort = { key: "id", dir: 1 };
   const SORTKEY = {
     id: r => r.id,
@@ -1610,6 +1701,7 @@
   }
 
   function renderExplorer() {
+    syncExplorerURL();
     renderFilters();
     const rows = filteredRuns().sort((a, b) => {
       const ka = SORTKEY[sort.key](a), kb = SORTKEY[sort.key](b);
@@ -1621,6 +1713,7 @@
     syncCatActive();
   }
 
+  $("#f-search").value = state.search;
   $("#f-search").addEventListener("input", ev => { state.search = ev.target.value; renderExplorer(); });
   $("#f-question").addEventListener("change", ev => { state.q = ev.target.value; renderExplorer(); });
   $("#f-status").querySelectorAll("button").forEach(b =>
