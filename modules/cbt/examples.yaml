@@ -92,7 +92,7 @@ cbt_table_bounds:
 
 cbt_transformation_status:
   name: Transformation Status
-  description: Check the status and definitions of data transformations
+  description: Check transformation status, definitions, and the source/dependency tables that feed transformed models
   examples:
     - name: List transformations
       description: List all data transformations and their types
@@ -105,16 +105,25 @@ cbt_transformation_status:
         for t in transformations:
             print(f"  - {t.get('id', 'unknown')}: type={t.get('type', 'unknown')}")
 
-    - name: Inspect a transformation
-      description: Get a transformation's SQL content, schedules, and dependencies
+    - name: Inspect what feeds a transformation
+      description: >-
+        For provenance questions such as what source tables feed, build, or
+        define a transformed table, fetch the authoritative transformation
+        definition. Use both `depends_on` and the raw `content`; preserve CBT
+        template placeholders, including any `{{ ... }}` blocks, exactly.
       query: |
         from ethpandaops import cbt
 
         network = "mainnet"
-        t = cbt.get_transformation(network, f"{network}.fct_block")
+        model_id = f"{network}.fct_block"  # replace with the target transformation ID
+        t = cbt.get_transformation(network, model_id)
+        print(f"ID: {t.get('id')}")
         print(f"Type: {t.get('type')}")
+        print(f"Content type: {t.get('content_type')}")
         print(f"Depends on: {t.get('depends_on')}")
         print(f"Schedules: {t.get('schedules')}")
+        print("\nDefinition:")
+        print(t.get("content", ""))
 
 cbt_scheduled_runs:
   name: Scheduled Runs
