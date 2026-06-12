@@ -569,8 +569,10 @@ const MaxSandboxTimeout = 7_776_000
 
 // Validate validates the configuration.
 func (c *Config) Validate() error {
-	if c.Sandbox.Image == "" {
-		return errors.New("sandbox.image is required")
+	// The docker and gvisor backends require a sandbox image; the direct
+	// backend runs code as a subprocess and doesn't need one.
+	if c.Sandbox.Backend != "direct" && c.Sandbox.Image == "" {
+		return errors.New("sandbox.image is required for docker/gvisor backends")
 	}
 
 	// Validate sandbox timeout is within bounds.
