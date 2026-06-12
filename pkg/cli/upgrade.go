@@ -121,6 +121,17 @@ func runUpgrade(cmd *cobra.Command, _ []string) error {
 		fmt.Printf("  Server container:  pull %s\n", serverImageForVersion(targetVersion))
 		fmt.Printf("  Sandbox container: pull %s\n", sandboxImageForVersion(targetVersion))
 		fmt.Println("  Docker Compose:    regenerate (pinned to this version)")
+
+		if outcome, current, err := pinSandboxImageInConfig(targetVersion, true); err == nil {
+			switch outcome {
+			case sandboxPinUpdated:
+				fmt.Printf("  Server config:     pin sandbox image (%s -> %s)\n",
+					current, sandboxImageForVersion(targetVersion))
+			case sandboxPinCustomImage:
+				fmt.Printf("  Server config:     keep custom sandbox image (%s)\n", current)
+			case sandboxPinAlreadyPinned, sandboxPinNotApplicable:
+			}
+		}
 	}
 
 	fmt.Println()
@@ -226,6 +237,10 @@ func upgradeServer(ctx context.Context) error {
 	if err := regenerateComposeFile(); err != nil {
 		return err
 	}
+
+	// The compose file pins the server image, but sandbox.image lives in the
+	// server config — pin it too so sessions run this release's sandbox.
+	pinSandboxImage()
 
 	compose := resolveComposeFile()
 
