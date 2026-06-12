@@ -1,0 +1,351 @@
+package cli
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"time"
+
+	"github.com/spf13/cobra"
+
+	"github.com/ethpandaops/panda/pkg/devnet"
+	"github.com/ethpandaops/panda/pkg/operations"
+)
+
+var (
+	devnetArgsFile    string
+	devnetPackage     string
+	devnetAlwaysPull  bool
+	devnetDryRun      bool
+	devnetDockerCache string
+	devnetDownAll     bool
+)
+
+var devnetCmd = &cobra.Command{
+	GroupID: groupWorkflow,
+	Use:     "devnet",
+	Short:   "Spin up Kurtosis Ethereum devnets",
+	Long: `Spin up and manage multi-client Ethereum devnets as Kurtosis enclaves.
+
+The panda server drives a Kurtosis engine (Docker or Kubernetes backend) to run
+the ethpandaops ethereum-package; the CLI dispatches devnet operations to it, so
+the server is what holds the cluster connection. The backend, package, and an
+optional pull-through image cache are configured server-side under "devnet:":
+
+  devnet:
+    cluster: bruno                      # Kurtosis backend (docker | <k8s cluster>)
+    package: github.com/ethpandaops/ethereum-package
+    docker_cache: docker.ethquokkaops.io  # avoids Docker Hub rate limits
+
+Debug a running devnet with the kurtosis CLI directly (the server already points
+it at the right backend), e.g. ` + "`kurtosis service logs <enclave> <service> -f`" + `.
+
+Examples:
+  panda devnet up my-devnet --args ./network_params.yaml
+  panda devnet ls
+  panda devnet inspect my-devnet
+  panda devnet down my-devnet`,
+}
+
+func init() {
+	rootCmd.AddCommand(devnetCmd)
+
+	devnetCmd.AddCommand(
+		devnetUpCmd,
+		devnetLsCmd,
+		devnetInspectCmd,
+		devnetDownCmd,
+	)
+
+	devnetUpCmd.Flags().StringVar(&devnetArgsFile, "args", "",
+		"path to an ethereum-package args file (YAML or JSON); '-' reads stdin")
+	devnetUpCmd.Flags().StringVar(&devnetPackage, "package", "",
+		"Kurtosis package to run (overrides devnet.package in server config)")
+	devnetUpCmd.Flags().BoolVar(&devnetAlwaysPull, "always-pull", false,
+		"always re-pull images (use for devnet branches with mutable tags)")
+	devnetUpCmd.Flags().BoolVar(&devnetDryRun, "dry-run", false,
+		"validate and plan the run without applying it")
+	devnetUpCmd.Flags().StringVar(&devnetDockerCache, "docker-cache", "",
+		"pull-through registry cache host for all images (overrides devnet.docker_cache)")
+	_ = devnetUpCmd.MarkFlagFilename("args", "yaml", "yml", "json")
+
+	devnetDownCmd.Flags().BoolVar(&devnetDownAll, "all", false,
+		"destroy every devnet enclave")
+
+	devnetInspectCmd.ValidArgsFunction = completeEnclaveNames
+	devnetDownCmd.ValidArgsFunction = completeEnclaveNames
+}
+
+var devnetUpCmd = &cobra.Command{
+	Use:   "up [enclave-name]",
+	Short: "Create an enclave and launch a devnet",
+	Long: `Create a Kurtosis enclave and run the ethereum-package in it.
+
+If no enclave name is given, Kurtosis generates one. Package configuration is
+read from the file passed with --args (the ethereum-package network_params
+format); without it the package defaults are used.`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		serializedArgs, err := readArgsFile(devnetArgsFile)
+		if err != nil {
+			return err
+		}
+
+		opArgs := map[string]any{}
+		if len(args) == 1 {
+			opArgs["name"] = args[0]
+		}
+		if serializedArgs != "" {
+			opArgs["args"] = serializedArgs
+		}
+		if cmd.Flags().Changed("package") {
+			opArgs["package"] = devnetPackage
+		}
+		if cmd.Flags().Changed("docker-cache") {
+			opArgs["docker_cache"] = devnetDockerCache
+		}
+		if devnetAlwaysPull {
+			opArgs["always_pull"] = true
+		}
+		if devnetDryRun {
+			opArgs["dry_run"] = true
+		}
+
+		out := cmd.OutOrStdout()
+		fmt.Fprintln(out, "Launching devnet (this can take a few minutes)…")
+
+		resp, err := runServerOperation("devnet.up", opArgs)
+		if err != nil {
+			return err
+		}
+
+		var result struct {
+			Enclave string `json:"enclave"`
+			Output  string `json:"output"`
+			Error   string `json:"error"`
+		}
+		if err := decodeOperationData(resp, &result); err != nil {
+			return err
+		}
+
+		if result.Output != "" {
+			fmt.Fprint(out, result.Output)
+		}
+
+		if result.Error != "" {
+			if result.Enclave != "" {
+				fmt.Fprintf(out, "\nEnclave %q left in place; remove it with: panda devnet down %s\n", result.Enclave, result.Enclave)
+			}
+			return fmt.Errorf("%s", result.Error)
+		}
+
+		fmt.Fprintf(out, "\nDevnet %q is up.\n", result.Enclave)
+		fmt.Fprintf(out, "  inspect:  panda devnet inspect %s\n", result.Enclave)
+		fmt.Fprintf(out, "  logs:     kurtosis service logs %s <service> -f\n", result.Enclave)
+		fmt.Fprintf(out, "  destroy:  panda devnet down %s\n", result.Enclave)
+
+		return nil
+	},
+}
+
+var devnetLsCmd = &cobra.Command{
+	Use:     "ls",
+	Aliases: []string{"list"},
+	Short:   "List devnet enclaves",
+	Args:    cobra.NoArgs,
+	RunE: func(_ *cobra.Command, _ []string) error {
+		enclaves, err := fetchEnclaves()
+		if err != nil {
+			return err
+		}
+
+		if isJSON() {
+			return printJSON(enclaves)
+		}
+
+		if len(enclaves) == 0 {
+			fmt.Println("No devnets found.")
+			return nil
+		}
+
+		rows := make([][]string, 0, len(enclaves))
+		for _, e := range enclaves {
+			rows = append(rows, []string{
+				e.Name,
+				e.Status,
+				e.APIContainer,
+				shortUUID(e.UUID),
+				formatCreated(e.CreationTime),
+			})
+		}
+		printTable([]string{"NAME", "STATUS", "API CONTAINER", "UUID", "CREATED"}, rows)
+
+		return nil
+	},
+}
+
+var devnetInspectCmd = &cobra.Command{
+	Use:   "inspect <enclave>",
+	Short: "Show details for a devnet enclave",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(_ *cobra.Command, args []string) error {
+		resp, err := runServerOperation("devnet.inspect", map[string]any{"enclave": args[0]})
+		if err != nil {
+			return err
+		}
+
+		var enclave devnet.Enclave
+		if err := decodeOperationData(resp, &enclave); err != nil {
+			return err
+		}
+
+		if isJSON() {
+			return printJSON(enclave)
+		}
+
+		printTable(
+			[]string{"FIELD", "VALUE"},
+			[][]string{
+				{"Name", enclave.Name},
+				{"UUID", enclave.UUID},
+				{"Status", enclave.Status},
+				{"API container", enclave.APIContainer},
+				{"Created", formatCreated(enclave.CreationTime)},
+			},
+		)
+
+		return nil
+	},
+}
+
+var devnetDownCmd = &cobra.Command{
+	Use:     "down [enclave]",
+	Aliases: []string{"rm", "destroy"},
+	Short:   "Destroy a devnet enclave (or all with --all)",
+	Long: `Destroy a devnet enclave, tearing down its namespace, pods and volumes.
+
+Pass an enclave name to destroy one, or --all to prune every devnet — useful for
+reclaiming cluster resources when no devnets are needed anymore.`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: func(_ *cobra.Command, args []string) error {
+		opArgs := map[string]any{}
+		switch {
+		case devnetDownAll:
+			if len(args) != 0 {
+				return fmt.Errorf("--all takes no enclave name")
+			}
+			opArgs["all"] = true
+		case len(args) == 1:
+			opArgs["enclave"] = args[0]
+		default:
+			return fmt.Errorf("requires an enclave name, or --all to destroy every devnet")
+		}
+
+		resp, err := runServerOperation("devnet.down", opArgs)
+		if err != nil {
+			return err
+		}
+
+		var result struct {
+			Destroyed []string `json:"destroyed"`
+		}
+		if err := decodeOperationData(resp, &result); err != nil {
+			return err
+		}
+
+		if len(result.Destroyed) == 0 {
+			fmt.Println("No devnets to destroy.")
+			return nil
+		}
+		for _, name := range result.Destroyed {
+			fmt.Printf("Destroyed devnet %q.\n", name)
+		}
+
+		return nil
+	},
+}
+
+// decodeOperationData re-decodes the generic operation Data payload into a typed
+// target via a JSON round-trip.
+func decodeOperationData(resp *operations.Response, target any) error {
+	raw, err := json.Marshal(resp.Data)
+	if err != nil {
+		return fmt.Errorf("encoding response data: %w", err)
+	}
+	if err := json.Unmarshal(raw, target); err != nil {
+		return fmt.Errorf("decoding response data: %w", err)
+	}
+
+	return nil
+}
+
+// fetchEnclaves lists enclaves via the server.
+func fetchEnclaves() ([]devnet.Enclave, error) {
+	resp, err := runServerOperation("devnet.ls", map[string]any{})
+	if err != nil {
+		return nil, err
+	}
+
+	var enclaves []devnet.Enclave
+	if err := decodeOperationData(resp, &enclaves); err != nil {
+		return nil, err
+	}
+
+	return enclaves, nil
+}
+
+// readArgsFile reads ethereum-package args from path. An empty path means no
+// args (package defaults); "-" reads from stdin.
+func readArgsFile(path string) (string, error) {
+	if path == "" {
+		return "", nil
+	}
+
+	var (
+		data []byte
+		err  error
+	)
+	if path == "-" {
+		data, err = io.ReadAll(os.Stdin)
+	} else {
+		data, err = os.ReadFile(path)
+	}
+	if err != nil {
+		return "", fmt.Errorf("reading args file %q: %w", path, err)
+	}
+
+	return string(data), nil
+}
+
+// completeEnclaveNames provides shell completion of existing enclave names.
+func completeEnclaveNames(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+	enclaves, err := fetchEnclaves()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	names := make([]string, 0, len(enclaves))
+	for _, e := range enclaves {
+		names = append(names, e.Name)
+	}
+
+	return names, cobra.ShellCompDirectiveNoFileComp
+}
+
+func shortUUID(uuid string) string {
+	const shortLen = 12
+	if len(uuid) <= shortLen {
+		return uuid
+	}
+
+	return uuid[:shortLen]
+}
+
+func formatCreated(t time.Time) string {
+	if t.IsZero() {
+		return "-"
+	}
+
+	return t.Local().Format("2006-01-02 15:04:05")
+}

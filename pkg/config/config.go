@@ -40,6 +40,8 @@ type Config struct {
 	Storage        StorageConfig        `yaml:"storage"`
 	Observability  ObservabilityConfig  `yaml:"observability"`
 	ConsensusSpecs ConsensusSpecsConfig `yaml:"consensus_specs,omitempty"`
+	Cluster        ClusterConfig        `yaml:"cluster,omitempty"`
+	Devnet         DevnetConfig         `yaml:"devnet,omitempty"`
 
 	path string `yaml:"-"`
 }

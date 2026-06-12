@@ -86,3 +86,26 @@ proxies:
 observability:
   metrics_enabled: true
   metrics_port: 2490  # in-container bind port; docker-compose publishes it on the host via MCP_METRICS_PORT
+
+# Kubernetes cluster used by `panda devnet` (optional — only needed to run
+# devnets). panda uses ONE cluster at a time; switch between a local and a cloud
+# cluster by editing this block (or pointing panda at another config file).
+#
+# The cluster's engine-level settings (storage class, enclave size) live in
+# Kurtosis's own config (~/.config/kurtosis/kurtosis-config.yml), since Kurtosis
+# fixes them when that cluster's engine starts. panda only selects the cluster.
+#
+#   --- LOCAL rail (e.g. a local k3s named "bruno") ---
+# cluster:
+#   name: bruno                 # a key under kurtosis-clusters in kurtosis-config.yml
+#   kubeconfig_context: bruno   # kube context Kurtosis connects through
+#
+#   --- CLOUD rail ---
+# cluster:
+#   name: cloud
+#   kubeconfig_context: ethpandaops-cloud
+
+# devnet configuration (optional).
+# devnet:
+#   package: github.com/ethpandaops/ethereum-package
+#   docker_cache: docker.ethquokkaops.io   # pull-through cache; avoids Docker Hub rate limits

@@ -187,6 +187,8 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 	return NewService(
 		b.log,
 		b.cfg.Server,
+		b.cfg.Cluster,
+		b.cfg.Devnet,
 		toolReg,
 		resourceReg,
 		searchSvc,

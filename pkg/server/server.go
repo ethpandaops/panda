@@ -45,6 +45,8 @@ type Service interface {
 type service struct {
 	log                  logrus.FieldLogger
 	cfg                  config.ServerConfig
+	clusterCfg           config.ClusterConfig
+	devnetCfg            config.DevnetConfig
 	toolRegistry         tool.Registry
 	resourceRegistry     resource.Registry
 	searchService        *searchsvc.Service
@@ -76,6 +78,8 @@ type service struct {
 func NewService(
 	log logrus.FieldLogger,
 	cfg config.ServerConfig,
+	clusterCfg config.ClusterConfig,
+	devnetCfg config.DevnetConfig,
 	toolRegistry tool.Registry,
 	resourceRegistry resource.Registry,
 	searchSvc *searchsvc.Service,
@@ -94,6 +98,8 @@ func NewService(
 	return &service{
 		log:                 log.WithField("component", "server"),
 		cfg:                 cfg,
+		clusterCfg:          clusterCfg,
+		devnetCfg:           devnetCfg,
 		toolRegistry:        toolRegistry,
 		resourceRegistry:    resourceRegistry,
 		searchService:       searchSvc,
