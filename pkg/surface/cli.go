@@ -8,6 +8,7 @@ import (
 // is preferred over the generic `panda resources <uri>` form.
 var cliResourceCommands = map[string]string{
 	"datasets://list":      "panda datasets",
+	"networks://active":    "panda networks",
 	"python://ethpandaops": "panda docs",
 }
 
@@ -109,7 +110,7 @@ func (cliDialect) DiscoveryGuide(_ Discovery) string {
 - ` + "`panda datasets`" + ` — datasets in this deployment and where they live
 - ` + "`panda datasets <name>`" + ` — **read before querying a dataset**: required syntax rules and placement
 - ` + "`panda datasources`" + ` — connections and the datasets each one holds
-- ` + "`panda resources read networks://active`" + ` — live network/devnet ids; use the id, not the display name, when reading ` + "`networks://<id>`" + `
+- ` + "`panda networks`" + ` — live Cartographoor network/devnet ids; use ` + "`panda networks --devnets`" + ` for active devnets only
 - ` + "`panda schema`" + ` — live ClickHouse schemas
 - ` + "`panda docs`" + ` — Python module APIs
 

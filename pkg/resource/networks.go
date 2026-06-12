@@ -26,14 +26,17 @@ type NetworkSummary struct {
 	Name        string `json:"name"`
 	ChainID     uint64 `json:"chain_id,omitempty"`
 	Status      string `json:"status"`
+	IsDevnet    bool   `json:"is_devnet"`
+	DevnetGroup string `json:"devnet_group,omitempty"`
 	ResourceURI string `json:"resource_uri"`
 }
 
 // NetworksActiveResponse is the response for networks://active.
 type NetworksActiveResponse struct {
-	Networks []NetworkSummary `json:"networks"`
-	Groups   []string         `json:"groups"`
-	Usage    string           `json:"usage"`
+	Networks           []NetworkSummary    `json:"networks"`
+	Groups             []string            `json:"groups"`
+	ActiveDevnetGroups map[string][]string `json:"active_devnet_groups"`
+	Usage              string              `json:"usage"`
 }
 
 // NetworksAllResponse is the response for networks://all.
@@ -66,7 +69,7 @@ func RegisterNetworksResources(log logrus.FieldLogger, reg Registry, client cart
 		Resource: mcp.NewResource(
 			"networks://active",
 			"Active Networks",
-			mcp.WithResourceDescription("Compact list of active Ethereum networks and available devnet groups"),
+			mcp.WithResourceDescription("Compact Cartographoor list of active Ethereum networks and active devnet groups"),
 			mcp.WithMIMEType("application/json"),
 			mcp.WithAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.7, ""),
 		),
@@ -105,16 +108,22 @@ func RegisterNetworksResources(log logrus.FieldLogger, reg Registry, client cart
 func createActiveNetworksHandler(client cartographoor.CartographoorClient) ReadHandler {
 	return func(_ context.Context, _ string, _ surface.Dialect) (string, error) {
 		networks := client.GetActiveNetworks()
-		groups := client.GetGroups()
+		activeGroups := client.GetActiveGroups()
+		groups := sortedGroupNames(activeGroups)
+		networkGroups := networkGroupIndex(activeGroups)
 
 		summaries := make([]NetworkSummary, 0, len(networks))
 
 		for id, network := range networks {
+			group := networkGroups[id]
+
 			summaries = append(summaries, NetworkSummary{
 				ID:          id,
 				Name:        network.Name,
 				ChainID:     network.ChainID,
 				Status:      network.Status,
+				IsDevnet:    group != "",
+				DevnetGroup: group,
 				ResourceURI: "networks://" + id,
 			})
 		}
@@ -124,9 +133,10 @@ func createActiveNetworksHandler(client cartographoor.CartographoorClient) ReadH
 		})
 
 		response := NetworksActiveResponse{
-			Networks: summaries,
-			Groups:   groups,
-			Usage:    "Use each network's resource_uri, or networks://{id}, for full network details. The name field is a display label and may be short or duplicated. Use networks://{group} for all networks in a devnet group.",
+			Networks:           summaries,
+			Groups:             groups,
+			ActiveDevnetGroups: activeGroups,
+			Usage:              "This is the authoritative live Cartographoor inventory for current network and devnet ids. For active devnets, use active_devnet_groups or filter networks where is_devnet is true. Use each network's resource_uri, or networks://{id}, for full network details. The name field is a display label and may be short or duplicated. Use networks://{group} for all networks in a devnet group.",
 		}
 
 		data, err := json.MarshalIndent(response, "", "  ")
@@ -263,4 +273,28 @@ func matchingNetworkIDsByDisplayName(networks map[string]discovery.Network, disp
 	sort.Strings(matches)
 
 	return matches
+}
+
+func sortedGroupNames(groups map[string][]string) []string {
+	names := make([]string, 0, len(groups))
+
+	for name := range groups {
+		names = append(names, name)
+	}
+
+	sort.Strings(names)
+
+	return names
+}
+
+func networkGroupIndex(groups map[string][]string) map[string]string {
+	index := make(map[string]string)
+
+	for group, networks := range groups {
+		for _, network := range networks {
+			index[network] = group
+		}
+	}
+
+	return index
 }

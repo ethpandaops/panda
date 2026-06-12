@@ -207,6 +207,9 @@ func (c doraOperationCartographoor) GetGroup(_ string) (map[string]discovery.Net
 	return nil, false
 }
 func (c doraOperationCartographoor) GetGroups() []string { return nil }
+func (c doraOperationCartographoor) GetActiveGroups() map[string][]string {
+	return nil
+}
 func (c doraOperationCartographoor) IsDevnet(_ discovery.Network) bool {
 	return false
 }

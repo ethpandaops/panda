@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"sort"
 	"testing"
 
 	"github.com/ethpandaops/cartographoor/pkg/discovery"
@@ -44,7 +45,35 @@ func (f *fakeNetworkClient) GetGroup(name string) (map[string]discovery.Network,
 	return group, ok
 }
 func (f *fakeNetworkClient) GetGroups() []string {
-	return []string{"group-a"}
+	groups := make([]string, 0, len(f.groups))
+	for group := range f.groups {
+		groups = append(groups, group)
+	}
+
+	sort.Strings(groups)
+
+	return groups
+}
+func (f *fakeNetworkClient) GetActiveGroups() map[string][]string {
+	out := make(map[string][]string, len(f.groups))
+
+	for group, networks := range f.groups {
+		names := make([]string, 0, len(networks))
+		for id, network := range networks {
+			if network.Status == "active" {
+				names = append(names, id)
+			}
+		}
+
+		if len(names) == 0 {
+			continue
+		}
+
+		sort.Strings(names)
+		out[group] = names
+	}
+
+	return out
 }
 
 func TestActiveNetworksIncludesStableIDs(t *testing.T) {
@@ -54,6 +83,14 @@ func TestActiveNetworksIncludesStableIDs(t *testing.T) {
 		networks: map[string]discovery.Network{
 			"group-a-devnet-1": {Name: "devnet-1", ChainID: 11, Status: "active"},
 			"group-b-devnet-1": {Name: "devnet-1", ChainID: 12, Status: "active"},
+		},
+		groups: map[string]map[string]discovery.Network{
+			"group-a": {
+				"group-a-devnet-1": {Name: "devnet-1", ChainID: 11, Status: "active"},
+			},
+			"group-b": {
+				"group-b-devnet-1": {Name: "devnet-1", ChainID: 12, Status: "active"},
+			},
 		},
 	}
 
@@ -65,7 +102,54 @@ func TestActiveNetworksIncludesStableIDs(t *testing.T) {
 	require.Len(t, response.Networks, 2)
 	require.Equal(t, "group-a-devnet-1", response.Networks[0].ID)
 	require.Equal(t, "networks://group-a-devnet-1", response.Networks[0].ResourceURI)
+	require.True(t, response.Networks[0].IsDevnet)
+	require.Equal(t, "group-a", response.Networks[0].DevnetGroup)
+	require.Equal(t, []string{"group-a", "group-b"}, response.Groups)
+	require.Equal(t, map[string][]string{
+		"group-a": {"group-a-devnet-1"},
+		"group-b": {"group-b-devnet-1"},
+	}, response.ActiveDevnetGroups)
 	require.Contains(t, response.Usage, "display label")
+	require.Contains(t, response.Usage, "authoritative live Cartographoor inventory")
+}
+
+func TestActiveNetworksOnlyListsActiveDevnetGroups(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeNetworkClient{
+		networks: map[string]discovery.Network{
+			"mainnet":            {Name: "mainnet", ChainID: 1, Status: "active"},
+			"group-a-devnet-1":   {Name: "devnet-1", ChainID: 11, Status: "active"},
+			"group-a-devnet-old": {Name: "devnet-old", ChainID: 10, Status: "inactive"},
+			"group-b-devnet-old": {Name: "devnet-old", ChainID: 20, Status: "inactive"},
+		},
+		groups: map[string]map[string]discovery.Network{
+			"group-a": {
+				"group-a-devnet-1":   {Name: "devnet-1", ChainID: 11, Status: "active"},
+				"group-a-devnet-old": {Name: "devnet-old", ChainID: 10, Status: "inactive"},
+			},
+			"group-b": {
+				"group-b-devnet-old": {Name: "devnet-old", ChainID: 20, Status: "inactive"},
+			},
+		},
+	}
+
+	out, err := createActiveNetworksHandler(client)(context.Background(), "networks://active", surface.MCP)
+	require.NoError(t, err)
+
+	var response NetworksActiveResponse
+	require.NoError(t, json.Unmarshal([]byte(out), &response))
+	require.Equal(t, []string{"group-a"}, response.Groups)
+	require.Equal(t, map[string][]string{"group-a": {"group-a-devnet-1"}}, response.ActiveDevnetGroups)
+
+	byID := make(map[string]NetworkSummary, len(response.Networks))
+	for _, network := range response.Networks {
+		byID[network.ID] = network
+	}
+
+	require.False(t, byID["mainnet"].IsDevnet)
+	require.True(t, byID["group-a-devnet-1"].IsDevnet)
+	require.NotContains(t, byID, "group-a-devnet-old")
 }
 
 func TestNetworkDetailErrorSuggestsIDForDisplayName(t *testing.T) {

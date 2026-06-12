@@ -50,6 +50,8 @@ type CartographoorClient interface {
 	GetGroup(name string) (map[string]discovery.Network, bool)
 	// GetGroups returns all available devnet group names.
 	GetGroups() []string
+	// GetActiveGroups returns active network ids grouped by devnet family.
+	GetActiveGroups() map[string][]string
 }
 
 // cartographoorClient adapts the upstream cartographoor client library to panda's
@@ -242,6 +244,14 @@ func (c *cartographoorClient) GetGroups() []string {
 	return groups
 }
 
+// GetActiveGroups returns active network ids grouped by devnet family.
+func (c *cartographoorClient) GetActiveGroups() map[string][]string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return activeGroups(c.networks, c.groups)
+}
+
 // watch rebuilds the derived state whenever the provider reports new data.
 func (c *cartographoorClient) watch(ctx context.Context) {
 	defer c.wg.Done()
@@ -306,4 +316,21 @@ func buildGroups(networks map[string]discovery.Network) map[string][]string {
 	}
 
 	return groups
+}
+
+func activeGroups(networks map[string]discovery.Network, groups map[string][]string) map[string][]string {
+	result := make(map[string][]string, len(groups))
+
+	for group, names := range groups {
+		for _, name := range names {
+			network, ok := networks[name]
+			if !ok || network.Status != "active" {
+				continue
+			}
+
+			result[group] = append(result[group], name)
+		}
+	}
+
+	return result
 }

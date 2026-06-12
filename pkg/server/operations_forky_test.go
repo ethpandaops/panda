@@ -245,6 +245,9 @@ func (c forkyOperationCartographoor) GetGroup(_ string) (map[string]discovery.Ne
 	return nil, false
 }
 func (c forkyOperationCartographoor) GetGroups() []string { return nil }
+func (c forkyOperationCartographoor) GetActiveGroups() map[string][]string {
+	return nil
+}
 func (c forkyOperationCartographoor) IsDevnet(_ discovery.Network) bool {
 	return false
 }

@@ -76,4 +76,10 @@ func TestClientAccessors(t *testing.T) {
 	t.Run("GetGroups returns sorted group names", func(t *testing.T) {
 		assert.Equal(t, []string{"fusaka"}, c.GetGroups())
 	})
+
+	t.Run("GetActiveGroups filters inactive networks", func(t *testing.T) {
+		assert.Equal(t, map[string][]string{
+			"fusaka": {"active-net"},
+		}, c.GetActiveGroups())
+	})
 }

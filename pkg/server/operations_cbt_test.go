@@ -116,6 +116,9 @@ func (c cbtOperationCartographoor) GetGroup(_ string) (map[string]discovery.Netw
 	return nil, false
 }
 func (c cbtOperationCartographoor) GetGroups() []string { return nil }
+func (c cbtOperationCartographoor) GetActiveGroups() map[string][]string {
+	return nil
+}
 func (c cbtOperationCartographoor) IsDevnet(_ discovery.Network) bool {
 	return false
 }
