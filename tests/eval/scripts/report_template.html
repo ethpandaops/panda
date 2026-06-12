@@ -753,7 +753,9 @@
       if (!res.ok) throw new Error(`${name}: HTTP ${res.status}`);
       return res.json();
     };
-    const manifest = await get("manifest.json");
+    /* the manifest is the one mutable file — dodge the Pages CDN's ~10-minute
+       cache for it; payloads are sha-addressed and can cache forever */
+    const manifest = await get("manifest.json?cb=" + Date.now());
     const all = (manifest.runs || []).filter(r => r.id && r.created_at);
     if (!all.length) throw new Error("manifest has no runs");
     const want = new URLSearchParams(location.search).get("run");
