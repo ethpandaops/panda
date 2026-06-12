@@ -34,11 +34,11 @@ Examples:
 
 func init() {
 	rootCmd.AddCommand(datasourcesCmd)
-	datasourcesCmd.Flags().StringVar(&datasourcesType, "type", "", "Filter by type (clickhouse, prometheus, loki, ethnode)")
+	datasourcesCmd.Flags().StringVar(&datasourcesType, "type", "", "Filter by type (clickhouse, prometheus, loki, ethnode, benchmarkoor)")
 	datasourcesCmd.Flags().BoolVar(&datasourcesDetails, "details", false, "Include datasource descriptions in text output")
 
 	_ = datasourcesCmd.RegisterFlagCompletionFunc("type", cobra.FixedCompletions(
-		[]string{"clickhouse", "prometheus", "loki", "ethnode"}, cobra.ShellCompDirectiveNoFileComp,
+		[]string{"clickhouse", "prometheus", "loki", "ethnode", "benchmarkoor"}, cobra.ShellCompDirectiveNoFileComp,
 	))
 }
 

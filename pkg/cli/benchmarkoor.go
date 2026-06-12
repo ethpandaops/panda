@@ -84,6 +84,9 @@ func init() {
 	} {
 		cmd.Flags().StringVar(&benchmarkoorDatasource, "datasource", "",
 			"Benchmarkoor datasource name (optional when only one is configured)")
+		_ = cmd.RegisterFlagCompletionFunc("datasource", func(cmd *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			return completeDatasourceNames("benchmarkoor")(cmd, nil, toComplete)
+		})
 	}
 
 	for _, cmd := range []*cobra.Command{
