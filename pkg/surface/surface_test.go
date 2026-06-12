@@ -67,6 +67,13 @@ func TestPythonBlocks(t *testing.T) {
 		CLI.PythonBlockInSession(code))
 }
 
+func TestCLIGuideDiscouragesGuessing(t *testing.T) {
+	guide := CLI.GettingStartedIntro()
+
+	assert.Contains(t, guide, "Do not guess command names")
+	assert.Contains(t, guide, "examples and runbooks first")
+}
+
 func TestDiscoveryGuide(t *testing.T) {
 	d := Discovery{
 		Tools: []Item{

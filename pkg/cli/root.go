@@ -32,6 +32,21 @@ var (
 	log      = logrus.New()
 )
 
+const rootLong = `Ethereum network analytics CLI.
+
+For data questions, follow the discovery workflow instead of guessing commands,
+tables, columns, or query syntax:
+
+  1. Find available data: panda datasets, panda datasources, panda schema
+  2. Search prior art: panda search examples "<topic>"
+  3. Search procedures when the task is multi-step: panda search runbooks "<topic>"
+  4. Read dataset rules when a search result names one: panda datasets <name>
+  5. Execute with the narrowest command that fits, or use panda execute
+
+Most topic words are search terms, not subcommands. Full guide:
+
+  panda getting-started`
+
 // updateResult carries the latest version from the background check.
 // A nil value means the check failed or was skipped.
 var updateResult = make(chan *string, 1)
@@ -50,9 +65,7 @@ var rootCmd = &cobra.Command{
 	Use:     "panda",
 	Short:   "Ethereum network analytics CLI",
 	Version: fmt.Sprintf("%s (commit: %s, built: %s)", version.Version, version.GitCommit, version.BuildTime),
-	Long: `Ethereum network analytics CLI.
-
-New? Start here: panda getting-started — it walks the data-discovery workflow.`,
+	Long:    rootLong,
 	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 		level, err := logrus.ParseLevel(logLevel)
 		if err != nil {

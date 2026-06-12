@@ -71,8 +71,10 @@ Use the narrowest surface that fits the question:
 - **One PromQL answer**: ` + "`panda prometheus query <datasource> \"<promql>\"`" + `
 - **Python, plots, files, or cross-source joins**: ` + "`panda execute`" + `
 
-Search examples name the target datasource for SQL snippets. Read the dataset
-guide first when an example names a dataset.
+Do not guess command names, table names, columns, or query syntax. Search
+examples and runbooks first, then adapt a matching pattern. Search examples
+name the target datasource for SQL snippets. Read the dataset guide first when
+an example names a dataset.
 
 ` + "`panda execute`" + ` is the Python sandbox — the same engine used by MCP clients via
 ` + "`execute_python`" + `. It provides workspace persistence between calls, multi-step
