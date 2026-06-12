@@ -29,9 +29,10 @@ func TestExamplesPreserveTotalCount(t *testing.T) {
 		total += len(cat.Examples)
 	}
 
-	// The packs were split from the original clickhouse examples.yaml (164 examples).
-	if total != 164 {
-		t.Fatalf("total examples = %d, want 164", total)
+	// The packs were split from the original clickhouse examples.yaml
+	// (164 examples); xatu-cbt later gained the table_coverage example.
+	if total != 165 {
+		t.Fatalf("total examples = %d, want 165", total)
 	}
 }
 
@@ -154,8 +155,8 @@ func TestInitFromDiscoveryNoBindingsShowsAll(t *testing.T) {
 		total += len(cat.Examples)
 	}
 
-	if total != 164 {
-		t.Fatalf("no bindings: total examples = %d, want 164 (all packs)", total)
+	if total != 165 {
+		t.Fatalf("no bindings: total examples = %d, want 165 (all packs)", total)
 	}
 }
 

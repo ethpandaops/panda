@@ -1,5 +1,32 @@
 # Query examples for the xatu-cbt dataset.
-# Each example's `target` is the ClickHouse datasource (cluster) it runs against.
+# SQL examples set `target` to the ClickHouse datasource (cluster) they run
+# against; Python examples (sandbox) omit it.
+
+table_coverage:
+  name: Table Coverage and Freshness
+  description: >-
+    How far back a table goes, how current it is, and whether it has gaps —
+    ask the CBT pipeline that builds these tables instead of scanning them
+  examples:
+  - name: How far back does a table go and how fresh is it
+    description: >-
+      Get a table's covered time range (earliest data, latest data, gaps) from
+      the pipeline's coverage metadata. Works for any table in this dataset;
+      never answer "is data missing?" or "how far back does it go?" with a
+      MIN/MAX table scan.
+    query: |
+      from datetime import datetime, timezone
+
+      from ethpandaops import cbt
+
+      network = "mainnet"
+      coverage = cbt.get_transformation_coverage(network, f"{network}.fct_block")
+      ranges = coverage.get("ranges", [])
+      print(f"{len(ranges)} processed range(s); gaps between ranges are unprocessed")
+      for r in ranges:
+          start = datetime.fromtimestamp(r["position"], tz=timezone.utc)
+          end = datetime.fromtimestamp(r["position"] + r["interval"], tz=timezone.utc)
+          print(f"  {start} -> {end}")
 
 block_timing:
   name: Block Timing Analysis

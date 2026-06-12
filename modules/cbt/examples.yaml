@@ -42,14 +42,16 @@ cbt_model_discovery:
 cbt_table_bounds:
   name: Table Bounds and Coverage
   description: >-
-    Check which positions a table actually has data for before querying it
-    or concluding data is missing
+    How far back a table goes, how fresh it is, and whether it has gaps —
+    from pipeline coverage metadata, without scanning the table
   examples:
-    - name: Check coverage of an aggregated table
+    - name: How far back does a table go and how current is it
       description: >-
-        Get the processed (position, interval) ranges for a transformation
-        like {network}.fct_block. Positions for slot-type models are unix
-        seconds; multiple ranges mean there are gaps.
+        Answer "what time range does this table cover", "how far back does it
+        go", or "how fresh is it" from the pipeline's processed (position,
+        interval) ranges instead of running MIN/MAX scans. Positions for
+        slot-type models are unix seconds; multiple ranges mean there are
+        gaps.
       query: |
         from datetime import datetime, timezone
 

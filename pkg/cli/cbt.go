@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -184,8 +185,18 @@ var cbtBoundsCmd = &cobra.Command{
 		}
 
 		body, err := runCBTPassthrough(cmd, "cbt.get_external_bounds", opArgs)
-		if err != nil || body == nil {
+		if err != nil {
+			if len(args) == 2 {
+				return fmt.Errorf(
+					"%w\n\n  hint: 'bounds' covers external source models; for transformations (fct_*/int_*/dim_*) use 'panda cbt coverage %s %s'",
+					err, args[0], args[1])
+			}
+
 			return err
+		}
+
+		if body == nil {
+			return nil
 		}
 
 		bounds, ok := body["bounds"].([]any)
@@ -202,10 +213,11 @@ var cbtBoundsCmd = &cobra.Command{
 		for _, item := range bounds {
 			entry, _ := item.(map[string]any)
 			fmt.Printf(
-				"  %v  %v..%v  last_scan=%v\n",
+				"  %v  %v..%v%s  last_scan=%v\n",
 				entry["id"],
 				formatJSONNumber(entry["min"]),
 				formatJSONNumber(entry["max"]),
+				formatCBTRangeTime(entry["min"], entry["max"]),
 				entry["last_incremental_scan"],
 			)
 		}
@@ -290,8 +302,18 @@ var cbtCoverageCmd = &cobra.Command{
 		}
 
 		body, err := runCBTPassthrough(cmd, "cbt.get_transformation_coverage", opArgs)
-		if err != nil || body == nil {
+		if err != nil {
+			if len(args) == 2 {
+				return fmt.Errorf(
+					"%w\n\n  hint: 'coverage' covers transformations; for external source tables use 'panda cbt bounds %s %s'",
+					err, args[0], args[1])
+			}
+
 			return err
+		}
+
+		if body == nil {
+			return nil
 		}
 
 		coverage, ok := body["coverage"].([]any)
@@ -310,12 +332,19 @@ var cbtCoverageCmd = &cobra.Command{
 			fmt.Printf("  %v\n", entry["id"])
 
 			ranges, _ := entry["ranges"].([]any)
+			if len(ranges) > 1 {
+				fmt.Printf("    (%d ranges — gaps between them are unprocessed)\n", len(ranges))
+			}
+
 			for _, r := range ranges {
 				coverageRange, _ := r.(map[string]any)
+				position, _ := coverageRange["position"].(float64)
+				interval, _ := coverageRange["interval"].(float64)
 				fmt.Printf(
-					"    position=%v interval=%v\n",
+					"    position=%v interval=%v%s\n",
 					formatJSONNumber(coverageRange["position"]),
 					formatJSONNumber(coverageRange["interval"]),
+					formatCBTRangeTime(position, position+interval),
 				)
 			}
 		}
@@ -425,4 +454,30 @@ func setIfNotEmpty(args map[string]any, key, value string) {
 	if value != "" {
 		args[key] = value
 	}
+}
+
+// formatCBTRangeTime renders a position range as UTC datetimes when both ends
+// look like unix-second positions (slot- and second-type models use unix
+// seconds). Block-number and entity positions fall outside the window and get
+// no annotation.
+func formatCBTRangeTime(minValue, maxValue any) string {
+	start, okStart := cbtPositionTime(minValue)
+	end, okEnd := cbtPositionTime(maxValue)
+
+	if !okStart || !okEnd {
+		return ""
+	}
+
+	return fmt.Sprintf("  (%s → %s)", start, end)
+}
+
+// cbtPositionTime interprets a position as a unix-second timestamp, accepting
+// only values between 2010 and 2096 so non-time positions are left alone.
+func cbtPositionTime(value any) (string, bool) {
+	number, ok := value.(float64)
+	if !ok || number < 1.26e9 || number > 4e9 {
+		return "", false
+	}
+
+	return time.Unix(int64(number), 0).UTC().Format(time.RFC3339), true
 }
