@@ -747,14 +747,26 @@
      shared copy of this page plus a manifest of runs, each commit a small JSON
      fetched on demand — walking commits never re-ships the UI. */
   async function fetchMode() {
-    const here = new URL(".", location.href);
+    /* Pages serves this shell; the DATA comes straight off the gh-pages branch
+       via raw.githubusercontent — fresh seconds after a publish, no Pages deploy
+       in the path. Same-origin fallback covers local serving; ?src= overrides. */
+    const dataBase = (() => {
+      const override = new URLSearchParams(location.search).get("src");
+      if (override) return new URL(override.endsWith("/") ? override : override + "/", location.href);
+      const m = location.hostname.match(/^([a-z0-9-]+)\.github\.io$/i);
+      const repo = location.pathname.split("/").filter(Boolean)[0];
+      if (m && repo) {
+        return new URL(`https://raw.githubusercontent.com/${m[1]}/${repo}/gh-pages/eval/ci/`);
+      }
+      return new URL(".", location.href);
+    })();
     const get = async (name) => {
-      const res = await fetch(new URL(name, here), { cache: "no-store" });
+      const res = await fetch(new URL(name, dataBase), { cache: "no-store" });
       if (!res.ok) throw new Error(`${name}: HTTP ${res.status}`);
       return res.json();
     };
-    /* the manifest is the one mutable file — dodge the Pages CDN's ~10-minute
-       cache for it; payloads are sha-addressed and can cache forever */
+    /* the manifest is the one mutable file — bust CDN caches for it; payloads
+       are sha-addressed and can cache forever */
     const manifest = await get("manifest.json?cb=" + Date.now());
     const all = (manifest.runs || []).filter(r => r.id && r.created_at);
     if (!all.length) throw new Error("manifest has no runs");

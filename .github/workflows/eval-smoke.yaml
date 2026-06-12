@@ -30,6 +30,8 @@ concurrency:
 
 permissions:
   contents: write        # push the smoke report payload to the gh-pages branch
+  pages: write           # ...and deploy the site from this run (workflow-driven Pages)
+  id-token: write        # deploy-pages authenticates the deployment via OIDC
   packages: write        # push/pull the content-addressed sandbox image to GHCR
   checks: write          # publish-unit-test-result-action creates a check run
   pull-requests: write   # ...and posts the smoke results comment on PRs
@@ -387,12 +389,39 @@ jobs:
             fi
             if git -C /tmp/pages push "${LEASE[@]}" origin "${SNAP}:refs/heads/gh-pages"; then
               echo "report published: ${EVAL_PAGES_URL}"
+              # Export the exact tree we just made the branch tip; the deploy steps
+              # below serve it (Pages is workflow-driven — no legacy branch builder).
+              rm -rf /tmp/pages-site
+              cp -R /tmp/pages /tmp/pages-site
+              rm -f /tmp/pages-site/.git
               break
             fi
             echo "push raced another publisher (attempt $attempt)"
             [ "$attempt" = 3 ] && exit 1
           done
           git worktree remove --force /tmp/pages 2>/dev/null || true
+
+      # Deploys carry only the UI shell: the viewer reads data straight off the
+      # gh-pages branch via raw.githubusercontent, so a deploy race can at worst
+      # briefly serve an older shell, never stale data. Self-gating: deploys are
+      # skipped until the repo's Pages config is build_type=workflow.
+      - name: Check Pages deploy mode
+        id: pagesmode
+        if: always() && steps.publish.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "workflow=$(gh api "repos/$GITHUB_REPOSITORY/pages" --jq '.build_type == "workflow"' 2>/dev/null || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload site artifact
+        if: always() && steps.pagesmode.outputs.workflow == 'true'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: /tmp/pages-site
+
+      - name: Deploy to GitHub Pages
+        if: always() && steps.pagesmode.outputs.workflow == 'true'
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
 
       - name: Upload results
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
