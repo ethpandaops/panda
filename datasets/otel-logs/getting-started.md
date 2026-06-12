@@ -9,4 +9,5 @@ section above shows which datasources carry this dataset here):
 Tips:
 - **Always filter `Timestamp`** (e.g. `Timestamp >= now() - INTERVAL 1 HOUR`).
 - `SeverityText` is often empty for raw Docker logs — match severity on `Body`, e.g. `match(Body, '(?i)(crit|err|error|fatal|warn)')`.
-- A node VM mixes CL/EL/validator/sidecar containers — use `LogAttributes['log.file.name']` to tell them apart.
+- Hosted devnet rows carry container metadata in `ResourceAttributes`, including `container.name`, `container.image.name`, and client labels such as `ethereum_cl` / `ethereum_el` when emitted. Prefer `container.image.name` for image/tag/digest questions.
+- A node VM mixes CL/EL/validator/sidecar containers — use `ResourceAttributes['container.name']` and `LogAttributes['log.file.name']` to tell them apart.

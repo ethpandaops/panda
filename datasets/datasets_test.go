@@ -29,9 +29,10 @@ func TestExamplesPreserveTotalCount(t *testing.T) {
 		total += len(cat.Examples)
 	}
 
-	// The packs were split from the original clickhouse examples.yaml (164 examples).
-	if total != 164 {
-		t.Fatalf("total examples = %d, want 164", total)
+	// The packs were split from the original clickhouse examples.yaml and then
+	// extended with dataset-owned guidance.
+	if total != 165 {
+		t.Fatalf("total examples = %d, want 165", total)
 	}
 }
 
@@ -83,8 +84,8 @@ func TestInitFromDiscoveryScopesToDeclaredDatasets(t *testing.T) {
 		total += len(cat.Examples)
 	}
 
-	if total != 6 {
-		t.Fatalf("scoped to otel-logs: total examples = %d, want 6", total)
+	if total != 7 {
+		t.Fatalf("scoped to otel-logs: total examples = %d, want 7", total)
 	}
 
 	if _, ok := ex["block_timing"]; ok {
@@ -154,8 +155,8 @@ func TestInitFromDiscoveryNoBindingsShowsAll(t *testing.T) {
 		total += len(cat.Examples)
 	}
 
-	if total != 164 {
-		t.Fatalf("no bindings: total examples = %d, want 164 (all packs)", total)
+	if total != 165 {
+		t.Fatalf("no bindings: total examples = %d, want 165 (all packs)", total)
 	}
 }
 

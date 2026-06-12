@@ -66,6 +66,38 @@ production_devnet_logs:
       WHERE ResourceAttributes['network'] = {network:String}
         AND Timestamp >= now() - INTERVAL 1 HOUR
       ORDER BY host
+  - name: Client container images
+    description: Find Docker image metadata for a consensus or execution client on a hosted devnet.
+      Use this for image/tag/digest questions because ResourceAttributes['container.image.name'] is
+      scraped from the running container metadata. Set client to a CL or EL client name.
+    target: clickhouse-raw
+    query: |
+      SELECT
+        ResourceAttributes['host.name'] AS host,
+        ResourceAttributes['container.name'] AS container,
+        ResourceAttributes['ethereum_cl'] AS consensus_client,
+        ResourceAttributes['ethereum_el'] AS execution_client,
+        ResourceAttributes['container.image.name'] AS image,
+        max(Timestamp) AS last_seen,
+        count() AS log_lines
+      FROM {db}.otel_logs
+      WHERE ResourceAttributes['network'] = {network:String}
+        AND Timestamp >= now() - INTERVAL 1 HOUR
+        AND ResourceAttributes['container.image.name'] != ''
+        AND (
+          (ResourceAttributes['container.name'] = 'beacon' AND lower(ResourceAttributes['ethereum_cl']) = lower({client:String}))
+          OR (ResourceAttributes['container.name'] = 'execution' AND lower(ResourceAttributes['ethereum_el']) = lower({client:String}))
+          OR positionCaseInsensitive(ResourceAttributes['container.image.name'], {client:String}) > 0
+          OR positionCaseInsensitive(ResourceAttributes['container.name'], {client:String}) > 0
+        )
+      GROUP BY
+        host,
+        container,
+        consensus_client,
+        execution_client,
+        image
+      ORDER BY host, container, image
+      LIMIT 200
   - name: Recent node errors
     description: Fetch recent error-class logs for one devnet node by matching the raw log body. A node
       VM mixes its CL, EL, validator and sidecar containers — use LogAttributes['log.file.name'] to tell
