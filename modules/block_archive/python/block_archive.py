@@ -53,7 +53,11 @@ def get_base_url() -> str:
 
 
 def download_ssz(network: str, slot: int, block_root: str) -> bytes:
-    """Fetch the SSZ-encoded SignedBeaconBlock as raw bytes."""
+    """Fetch the SSZ-encoded SignedBeaconBlock as raw bytes.
+
+    To return a shareable URL, write the bytes to a file under /workspace and
+    upload it with ethpandaops.storage.upload().
+    """
     _require_block_archive_available()
     body, _ = _runtime._invoke_bytes(  # noqa: SLF001
         "block_archive.download_ssz",
@@ -75,7 +79,10 @@ def get_block_json(network: str, slot: int, block_root: str) -> dict[str, Any]:
 
 
 def link(network: str, slot: int, block_root: str) -> str:
-    """Build a browser link to view the block in the archive UI."""
+    """Build a browser link to view the block in the archive UI.
+
+    This is not a URL to uploaded SSZ bytes.
+    """
     _require_block_archive_available()
     data = _runtime.invoke_data(
         "block_archive.link",

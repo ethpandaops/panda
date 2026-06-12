@@ -20,10 +20,10 @@ block_archive_fetch:
         inactive = [n for n in all_nets if not n["polling"]]
         print(f"active polling: {len(active)}, archived-only: {len(inactive)}")
 
-    - name: Download SSZ for a block
-      description: Fetch the SSZ-encoded SignedBeaconBlock as raw bytes
+    - name: Download SSZ for a block and publish a storage URL
+      description: Fetch the SSZ-encoded SignedBeaconBlock bytes, save them, and upload the file when a shareable URL is needed
       query: |
-        from ethpandaops import block_archive
+        from ethpandaops import block_archive, storage
 
         network = "mainnet"
         slot = 9000000
@@ -32,9 +32,13 @@ block_archive_fetch:
         raw = block_archive.download_ssz(network, slot, block_root)
         print(f"{len(raw)} bytes (SSZ)")
 
-        # Save to disk for offline processing.
-        with open("/tmp/block.ssz", "wb") as f:
+        # Save under /workspace so it persists for this execution/session.
+        path = f"/workspace/{network}-{slot}.ssz"
+        with open(path, "wb") as f:
             f.write(raw)
+
+        # Use storage when the user asks for a URL to the downloaded file.
+        print(storage.upload(path))
 
     - name: Get decoded JSON for a block
       description: Server-side decode of the SSZ into the canonical JSON SignedBeaconBlock (mainnet/sepolia/hoodi only; devnets need download_ssz + local decode)
@@ -65,7 +69,7 @@ block_archive_fetch:
               f"{block['block']['message']['proposer_index']}")
 
     - name: Browser link to a block
-      description: Build a link to the block archive UI for a (network, slot, root)
+      description: Build a link to the block archive UI page; this is not a URL to uploaded SSZ bytes
       query: |
         from ethpandaops import block_archive
 
