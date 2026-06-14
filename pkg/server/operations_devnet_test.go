@@ -61,6 +61,45 @@ func TestHandleDevnetOperation_InspectRequiresEnclave(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
+func TestHandleDevnetOperation_ServicesRequiresEnclave(t *testing.T) {
+	s := newDevnetTestService()
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/operations/devnet.services", strings.NewReader(`{"args":{}}`))
+
+	handled := s.handleDevnetOperation("devnet.services", w, r)
+	require.True(t, handled)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestHandleDevnetOperation_LogsRequiresEnclave(t *testing.T) {
+	s := newDevnetTestService()
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/operations/devnet.logs", strings.NewReader(`{"args":{}}`))
+
+	handled := s.handleDevnetOperation("devnet.logs", w, r)
+	require.True(t, handled)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestHandleDevnetLogsStream_RequiresEnclave(t *testing.T) {
+	s := newDevnetTestService()
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/devnet/logs", nil)
+
+	s.handleDevnetLogsStream(w, r)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestHandleDevnetLogsStream_RejectsBadTail(t *testing.T) {
+	s := newDevnetTestService()
+	w := httptest.NewRecorder()
+	// A non-numeric tail must be rejected before any engine call.
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/devnet/logs?enclave=x&tail=abc", nil)
+
+	s.handleDevnetLogsStream(w, r)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
 // TestHandleDevnetLs_Integration exercises the full handler path against a live
 // Kurtosis engine (decode → connect → list → JSON response). It skips when no
 // engine/gateway is reachable, so it is safe in CI but validates locally.
@@ -156,6 +195,34 @@ func TestDevnetLifecycle_Live(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &insp))
 	assert.Equal(t, enclave, insp.Data.Name)
+
+	// services — the EL should be present with an rpc port endpoint.
+	w = callDevnet(s, "devnet.services", map[string]any{"enclave": enclave})
+	require.Equal(t, http.StatusOK, w.Code, "services failed: %s", w.Body.String())
+	var svc struct {
+		Data []devnet.Service `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &svc))
+	var elName, rpcEndpoint string
+	for _, sx := range svc.Data {
+		if strings.HasPrefix(sx.Name, "el-1") {
+			elName = sx.Name
+			rpcEndpoint = sx.Endpoint("rpc")
+		}
+	}
+	require.NotEmpty(t, elName, "el-1 service not found")
+	assert.NotEmpty(t, rpcEndpoint, "el-1 rpc endpoint not found")
+
+	// logs — recent logs for the EL should be non-empty.
+	w = callDevnet(s, "devnet.logs", map[string]any{"enclave": enclave, "services": []any{elName}, "tail": 20})
+	require.Equal(t, http.StatusOK, w.Code, "logs failed: %s", w.Body.String())
+	var lg struct {
+		Data struct {
+			Logs string `json:"logs"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &lg))
+	assert.NotEmpty(t, strings.TrimSpace(lg.Data.Logs), "no logs returned for el-1")
 
 	// down.
 	w = callDevnet(s, "devnet.down", map[string]any{"enclave": enclave})
