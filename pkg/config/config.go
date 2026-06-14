@@ -452,6 +452,15 @@ func applyDefaults(cfg *Config) {
 		cfg.ConsensusSpecs.Repository = "ethereum/consensus-specs"
 	}
 
+	// Devnet ingress defaults.
+	if cfg.Devnet.Ingress.IngressClass == "" {
+		cfg.Devnet.Ingress.IngressClass = "traefik"
+	}
+
+	if cfg.Devnet.Ingress.Entrypoint == "" {
+		cfg.Devnet.Ingress.Entrypoint = "web"
+	}
+
 	// Storage defaults.
 	if cfg.Storage.BaseDir == "" {
 		cfg.Storage.BaseDir = pandaDataDir("storage")

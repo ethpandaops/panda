@@ -92,6 +92,7 @@ panda devnet logs my-devnet                           # recent logs, all service
 panda devnet logs my-devnet el-1-geth-lighthouse --tail 500
 panda devnet logs my-devnet -f                         # follow all services live
 panda devnet logs my-devnet el-1-geth-lighthouse -f    # follow one (Ctrl-C to stop)
+panda devnet endpoints my-devnet                       # external URLs per service
 panda devnet down my-devnet        # or: panda devnet down --all
 ```
 
@@ -102,6 +103,59 @@ locally. Logs are read straight from the pods, so they're available even though
 this fork ships container logs to OTel/ClickHouse (which leaves the engine's
 log API empty). `-f` streams chunked text live; non-`-f` rides the plain
 request/response operation path.
+
+## External access to services (RPC, dora, …)
+
+When `devnet.ingress.enabled` is set, `up` creates a Traefik `Ingress` per HTTP/WS
+service port so each is reachable at a stable, **GitHub-user-scoped** hostname:
+
+```
+<service>.<enclave>.<owner>.<base>             # primary port, e.g. dora.my-devnet.qu0b.k3s.bruno
+                                               #                    el-1-geth-lighthouse.my-devnet.qu0b.k3s.bruno (rpc)
+<port>-<service>.<enclave>.<owner>.<base>      # other ports, e.g. ws-el-1-geth-lighthouse.my-devnet.qu0b.k3s.bruno
+```
+
+Names are clean dotted labels. This works because the devnet zone is served by a
+self-hosted **authoritative DNS** (on bruno, dnsmasq's `*.k3s.bruno` wildcard
+already resolves at any depth; in prod, NS-delegate the zone to a self-hosted DNS
+like the `ethpandaops.general.dns_server` role) and certs come from **ZeroSSL
+DNS-01** (no Let's Encrypt rate limits) via cert-manager — a per-enclave wildcard
+`*.<enclave>.<owner>.<base>` covers every host above, since the left-most label is
+the only variable part below it.
+
+`panda devnet endpoints my-devnet` lists them (`--json` for scripting). Web UIs
+(dora, grafana) load at the host root; EL JSON-RPC, WebSocket (`ws--…`) and the
+CL beacon API are reached the same way — straight through Traefik, so there are
+no proxy body/timeout limits on RPC or large responses.
+
+The `<owner>` segment is **server-derived** (the authenticated GitHub login, never
+client-supplied; `local_owner` is used in lean dev). That makes it the multi-tenant
+boundary: a single per-user wildcard cert `*.<owner>.<base>` covers all of a user's
+devnets, and a Traefik forward-auth middleware can enforce *authenticated user ==
+`<owner>`* so users only reach their own services.
+
+```yaml
+devnet:
+  ingress:
+    enabled: true
+    base_domain: k3s.bruno      # bruno (LAN; dnsmasq *.k3s.bruno wildcard already routes to Traefik)
+    entrypoint: web             # plain HTTP on the trusted LAN
+    ingress_class: traefik
+    local_owner: qu0b           # owner when the request carries no identity (lean dev)
+```
+
+Flip to production by changing only this block — no code or hostname-scheme change:
+
+```yaml
+devnet:
+  ingress:
+    enabled: true
+    base_domain: devnet.ethpandaops.io
+    entrypoint: websecure
+    tls_secret: devnet-wildcard-tls          # *.<owner>.devnet.ethpandaops.io (cert-manager DNS-01)
+    auth_middleware: devnet-forward-auth@kubernetescrd
+    # local_owner unset → owner comes from the authenticated identity
+```
 
 ## Roadmap: cloud rail behind the proxy
 

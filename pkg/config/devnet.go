@@ -29,4 +29,50 @@ type DevnetConfig struct {
 	// through it, which avoids Docker Hub rate limits — especially important on
 	// a multi-node Kubernetes backend. Empty disables it.
 	DockerCache string `yaml:"docker_cache,omitempty"`
+
+	// Ingress configures GitHub-user-scoped external access to a devnet's
+	// services via Traefik Ingress objects panda creates on Kubernetes. Disabled
+	// by default; see IngressConfig.
+	Ingress IngressConfig `yaml:"ingress,omitempty"`
+}
+
+// IngressConfig configures how panda exposes a devnet's services externally by
+// creating Traefik Ingress objects in the enclave's namespace. Each exposed
+// service port becomes reachable at a stable, owner-scoped hostname of the form
+// <port>--<service>--<enclave>.<owner>.<base_domain>, with a primary alias of
+// <service>--<enclave>.<owner>.<base_domain>. The left-most segment is a single
+// DNS label so one wildcard certificate (*.<owner>.<base_domain>) covers every
+// host.
+type IngressConfig struct {
+	// Enabled turns ingress creation on. When false, panda creates no Ingress
+	// objects and the endpoints operation still computes hostnames for display.
+	Enabled bool `yaml:"enabled"`
+
+	// BaseDomain is the apex the per-owner subdomains hang off, e.g. "k3s.bruno"
+	// (bruno) or "devnet.ethpandaops.io" (prod).
+	BaseDomain string `yaml:"base_domain"`
+
+	// IngressClass is the spec.ingressClassName set on created Ingresses.
+	// Defaults to "traefik" when empty.
+	IngressClass string `yaml:"ingress_class"`
+
+	// Entrypoint is the Traefik entrypoint routers attach to (the
+	// traefik.ingress.kubernetes.io/router.entrypoints annotation), e.g. "web"
+	// (bruno, plain http) or "websecure" (prod). Defaults to "web" when empty.
+	Entrypoint string `yaml:"entrypoint"`
+
+	// TLSSecret is the wildcard TLS secret name to attach to every host. Empty
+	// means plain http (bruno); a non-empty value switches computed endpoint
+	// URLs to https.
+	TLSSecret string `yaml:"tls_secret"`
+
+	// AuthMiddleware is an optional Traefik middleware reference (e.g.
+	// "devnet-forward-auth@kubernetescrd") added via the
+	// traefik.ingress.kubernetes.io/router.middlewares annotation. Empty on
+	// bruno; set in prod to enforce auth at the edge.
+	AuthMiddleware string `yaml:"auth_middleware"`
+
+	// LocalOwner is the owner label used when the request carries no
+	// authenticated identity (bruno/lean dev). Never sourced from client args.
+	LocalOwner string `yaml:"local_owner"`
 }

@@ -29,6 +29,8 @@ func (s *service) handleDevnetOperation(operationID string, w http.ResponseWrite
 		s.handleDevnetInspect(w, r)
 	case "devnet.services":
 		s.handleDevnetServices(w, r)
+	case "devnet.endpoints":
+		s.handleDevnetEndpoints(w, r)
 	case "devnet.logs":
 		s.handleDevnetLogs(w, r)
 	case "devnet.down":
@@ -123,10 +125,90 @@ func (s *service) handleDevnetUp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Expose the devnet's services externally (owner-scoped Traefik Ingresses)
+	// and surface the computed endpoints. Reconcile failures must NOT fail 'up':
+	// the devnet is already running, so we log a warning and report the error in
+	// the response rather than aborting.
+	if s.devnetCfg.Ingress.Enabled {
+		ownerID := s.resolveOwner(r)
+
+		svcs, svcErr := client.Services(r.Context(), enclaveName)
+		if svcErr != nil {
+			s.log.WithError(svcErr).WithField("enclave", enclaveName).Warn("ingress: listing services failed")
+			data["ingress_error"] = svcErr.Error()
+		} else {
+			data["endpoints"] = devnet.Endpoints(svcs, enclaveName, ownerID, s.devnetCfg.Ingress)
+
+			// ReconcileIngresses needs the enclave UUID (the namespace label),
+			// which Up does not return — resolve it via Inspect.
+			info, inspErr := client.Inspect(r.Context(), enclaveName)
+			if inspErr != nil {
+				s.log.WithError(inspErr).WithField("enclave", enclaveName).Warn("ingress: resolving enclave UUID failed")
+				data["ingress_error"] = inspErr.Error()
+			} else if recErr := devnet.ReconcileIngresses(r.Context(), info.UUID, enclaveName, ownerID, svcs, s.devnetCfg.Ingress); recErr != nil {
+				s.log.WithError(recErr).WithField("enclave", enclaveName).Warn("ingress: reconcile failed")
+				data["ingress_error"] = recErr.Error()
+			}
+		}
+	}
+
 	writeOperationResponse(s.log, w, http.StatusOK, operations.Response{
 		Kind: "devnet.up",
 		Data: data,
 		Meta: map[string]any{"success": true},
+	})
+}
+
+// resolveOwner derives the owner used to scope a devnet's ingress hostnames. It
+// is always server-derived, never taken from client-supplied args: the
+// authenticated GitHub identity in production, the configured LocalOwner in
+// bruno/lean dev, or "local" as a last resort.
+func (s *service) resolveOwner(r *http.Request) string {
+	if owner := authOwnerID(r); owner != "" {
+		return owner
+	}
+	if owner := s.devnetCfg.Ingress.LocalOwner; owner != "" {
+		return owner
+	}
+
+	return "local"
+}
+
+// handleDevnetEndpoints returns the external URLs for a running devnet's
+// services (the primary URL and per-port URLs). It mirrors handleDevnetServices:
+// the enclave arg is required (400 if missing, before any engine call), and the
+// owner is resolved server-side.
+func (s *service) handleDevnetEndpoints(w http.ResponseWriter, r *http.Request) {
+	req, err := decodeOperationRequest(r)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	enclave, err := requiredStringArg(req.Args, "enclave")
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	owner := s.resolveOwner(r)
+
+	var out bytes.Buffer
+	client, err := s.devnetClient(&out)
+	if err != nil {
+		writeAPIError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+
+	svcs, err := client.Services(r.Context(), enclave)
+	if err != nil {
+		writeAPIError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+
+	writeOperationResponse(s.log, w, http.StatusOK, operations.Response{
+		Kind: "devnet.endpoints",
+		Data: devnet.Endpoints(svcs, enclave, owner, s.devnetCfg.Ingress),
 	})
 }
 

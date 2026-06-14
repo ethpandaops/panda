@@ -26,6 +26,12 @@ cluster:
 devnet:
   package: github.com/ethpandaops/ethereum-package
   docker_cache: docker.ethquokkaops.io
+  ingress:
+    enabled: true
+    base_domain: k3s.bruno
+    entrypoint: web
+    ingress_class: traefik
+    local_owner: qu0b
 
 observability:
   metrics_enabled: false

@@ -71,6 +71,13 @@ func TestHandleDevnetOperation_ServicesRequiresEnclave(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
+func TestHandleDevnetOperation_EndpointsRequiresEnclave(t *testing.T) {
+	s := newDevnetTestService()
+	// The 400 must come from requiredStringArg before any engine call.
+	w := callDevnet(s, "devnet.endpoints", map[string]any{})
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
 func TestHandleDevnetOperation_LogsRequiresEnclave(t *testing.T) {
 	s := newDevnetTestService()
 	w := httptest.NewRecorder()

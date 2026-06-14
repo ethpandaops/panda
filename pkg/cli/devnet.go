@@ -63,6 +63,7 @@ func init() {
 		devnetLsCmd,
 		devnetInspectCmd,
 		devnetServicesCmd,
+		devnetEndpointsCmd,
 		devnetLogsCmd,
 		devnetDownCmd,
 	)
@@ -89,6 +90,7 @@ func init() {
 
 	devnetInspectCmd.ValidArgsFunction = completeEnclaveNames
 	devnetServicesCmd.ValidArgsFunction = completeEnclaveNames
+	devnetEndpointsCmd.ValidArgsFunction = completeEnclaveNames
 	devnetLogsCmd.ValidArgsFunction = completeEnclaveNames
 	devnetDownCmd.ValidArgsFunction = completeEnclaveNames
 }
@@ -137,9 +139,11 @@ format); without it the package defaults are used.`,
 		}
 
 		var result struct {
-			Enclave string `json:"enclave"`
-			Output  string `json:"output"`
-			Error   string `json:"error"`
+			Enclave      string                    `json:"enclave"`
+			Output       string                    `json:"output"`
+			Error        string                    `json:"error"`
+			Endpoints    []devnet.ServiceEndpoints `json:"endpoints"`
+			IngressError string                    `json:"ingress_error"`
 		}
 		if err := decodeOperationData(resp, &result); err != nil {
 			return err
@@ -161,6 +165,18 @@ format); without it the package defaults are used.`,
 		fmt.Fprintf(out, "  services:  panda devnet services %s\n", result.Enclave)
 		fmt.Fprintf(out, "  logs:      panda devnet logs %s [service] [-f]\n", result.Enclave)
 		fmt.Fprintf(out, "  destroy:   panda devnet down %s\n", result.Enclave)
+
+		if len(result.Endpoints) > 0 {
+			fmt.Fprintln(out, "\nendpoints:")
+			for _, e := range result.Endpoints {
+				if e.PrimaryURL != "" {
+					fmt.Fprintf(out, "  %-28s %s\n", e.Service, e.PrimaryURL)
+				}
+			}
+		}
+		if result.IngressError != "" {
+			fmt.Fprintf(out, "\n(ingress not fully configured: %s)\n", result.IngressError)
+		}
 
 		return nil
 	},
@@ -216,6 +232,45 @@ func formatPorts(ports []devnet.Port) string {
 	}
 
 	return strings.Join(parts, " ")
+}
+
+var devnetEndpointsCmd = &cobra.Command{
+	Use:   "endpoints <enclave>",
+	Short: "Show external URLs for a devnet's services",
+	Long: `Show the stable external URLs panda assigns to a devnet's services.
+
+Each exposed service is reachable at an owner-scoped hostname; this lists the
+primary URL per service (the dora UI and EL rpc are the headline ones). Pass
+--json for the full per-port detail.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(_ *cobra.Command, args []string) error {
+		resp, err := runServerOperation("devnet.endpoints", map[string]any{"enclave": args[0]})
+		if err != nil {
+			return err
+		}
+
+		var eps []devnet.ServiceEndpoints
+		if err := decodeOperationData(resp, &eps); err != nil {
+			return err
+		}
+
+		if isJSON() {
+			return printJSON(eps)
+		}
+
+		if len(eps) == 0 {
+			fmt.Println("No exposed services found.")
+			return nil
+		}
+
+		rows := make([][]string, 0, len(eps))
+		for _, e := range eps {
+			rows = append(rows, []string{e.Service, e.PrimaryURL})
+		}
+		printTable([]string{"SERVICE", "URL"}, rows)
+
+		return nil
+	},
 }
 
 var devnetLogsCmd = &cobra.Command{
