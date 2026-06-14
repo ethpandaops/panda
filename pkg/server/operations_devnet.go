@@ -24,6 +24,10 @@ func (s *service) handleDevnetOperation(operationID string, w http.ResponseWrite
 		s.handleDevnetLs(w, r)
 	case "devnet.inspect":
 		s.handleDevnetInspect(w, r)
+	case "devnet.services":
+		s.handleDevnetServices(w, r)
+	case "devnet.logs":
+		s.handleDevnetLogs(w, r)
 	case "devnet.down":
 		s.handleDevnetDown(w, r)
 	default:
@@ -172,6 +176,85 @@ func (s *service) handleDevnetInspect(w http.ResponseWriter, r *http.Request) {
 	writeOperationResponse(s.log, w, http.StatusOK, operations.Response{
 		Kind: "devnet.inspect",
 		Data: info,
+	})
+}
+
+func (s *service) handleDevnetServices(w http.ResponseWriter, r *http.Request) {
+	req, err := decodeOperationRequest(r)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	enclave, err := requiredStringArg(req.Args, "enclave")
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	var out bytes.Buffer
+	client, err := s.devnetClient(&out)
+	if err != nil {
+		writeAPIError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+
+	svcs, err := client.Services(r.Context(), enclave)
+	if err != nil {
+		writeAPIError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+
+	writeOperationResponse(s.log, w, http.StatusOK, operations.Response{
+		Kind: "devnet.services",
+		Data: svcs,
+	})
+}
+
+func (s *service) handleDevnetLogs(w http.ResponseWriter, r *http.Request) {
+	req, err := decodeOperationRequest(r)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	enclave, err := requiredStringArg(req.Args, "enclave")
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	var serviceNames []string
+	for _, v := range optionalSliceArg(req.Args, "services") {
+		if name, ok := v.(string); ok && name != "" {
+			serviceNames = append(serviceNames, name)
+		}
+	}
+
+	tail := optionalIntArg(req.Args, "tail", 0)
+	if tail < 0 {
+		tail = 0
+	}
+
+	var out bytes.Buffer
+	client, err := s.devnetClient(&out)
+	if err != nil {
+		writeAPIError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+
+	var logs bytes.Buffer
+	if err := client.Logs(r.Context(), enclave, devnet.LogOptions{
+		Services:  serviceNames,
+		TailLines: uint32(tail),
+	}, &logs); err != nil {
+		writeAPIError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+
+	writeOperationResponse(s.log, w, http.StatusOK, operations.Response{
+		Kind: "devnet.logs",
+		Data: map[string]any{"logs": logs.String()},
 	})
 }
 

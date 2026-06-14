@@ -20,6 +20,7 @@ var (
 	devnetDryRun      bool
 	devnetDockerCache string
 	devnetDownAll     bool
+	devnetLogsTail    int
 )
 
 var devnetCmd = &cobra.Command{
@@ -55,6 +56,8 @@ func init() {
 		devnetUpCmd,
 		devnetLsCmd,
 		devnetInspectCmd,
+		devnetServicesCmd,
+		devnetLogsCmd,
 		devnetDownCmd,
 	)
 
@@ -73,7 +76,12 @@ func init() {
 	devnetDownCmd.Flags().BoolVar(&devnetDownAll, "all", false,
 		"destroy every devnet enclave")
 
+	devnetLogsCmd.Flags().IntVar(&devnetLogsTail, "tail", 0,
+		"number of recent log lines per service (0 = server default)")
+
 	devnetInspectCmd.ValidArgsFunction = completeEnclaveNames
+	devnetServicesCmd.ValidArgsFunction = completeEnclaveNames
+	devnetLogsCmd.ValidArgsFunction = completeEnclaveNames
 	devnetDownCmd.ValidArgsFunction = completeEnclaveNames
 }
 
@@ -141,9 +149,94 @@ format); without it the package defaults are used.`,
 		}
 
 		fmt.Fprintf(out, "\nDevnet %q is up.\n", result.Enclave)
-		fmt.Fprintf(out, "  inspect:  panda devnet inspect %s\n", result.Enclave)
-		fmt.Fprintf(out, "  logs:     kurtosis service logs %s <service> -f\n", result.Enclave)
-		fmt.Fprintf(out, "  destroy:  panda devnet down %s\n", result.Enclave)
+		fmt.Fprintf(out, "  inspect:   panda devnet inspect %s\n", result.Enclave)
+		fmt.Fprintf(out, "  services:  panda devnet services %s\n", result.Enclave)
+		fmt.Fprintf(out, "  logs:      panda devnet logs %s [service]\n", result.Enclave)
+		fmt.Fprintf(out, "  destroy:   panda devnet down %s\n", result.Enclave)
+
+		return nil
+	},
+}
+
+var devnetServicesCmd = &cobra.Command{
+	Use:   "services <enclave>",
+	Short: "List services running in a devnet",
+	Long: `List the services (EL/CL/VC clients and tools) running in a devnet enclave.
+
+The names shown are what 'panda devnet logs' accepts to select services.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(_ *cobra.Command, args []string) error {
+		resp, err := runServerOperation("devnet.services", map[string]any{"enclave": args[0]})
+		if err != nil {
+			return err
+		}
+
+		var svcs []devnet.Service
+		if err := decodeOperationData(resp, &svcs); err != nil {
+			return err
+		}
+
+		if isJSON() {
+			return printJSON(svcs)
+		}
+
+		if len(svcs) == 0 {
+			fmt.Println("No services found.")
+			return nil
+		}
+
+		rows := make([][]string, 0, len(svcs))
+		for _, s := range svcs {
+			rows = append(rows, []string{s.Name, shortUUID(s.UUID)})
+		}
+		printTable([]string{"SERVICE", "UUID"}, rows)
+
+		return nil
+	},
+}
+
+var devnetLogsCmd = &cobra.Command{
+	Use:   "logs <enclave> [service...]",
+	Short: "Show recent logs for devnet services",
+	Long: `Fetch recent logs for services in a devnet enclave.
+
+With no service names, logs for every service are returned. Each line is
+prefixed with its service name. Use 'panda devnet services <enclave>' to see
+the available service names.
+
+Logs are fetched through the panda server (which holds the cluster connection),
+so this works wherever 'panda devnet ls' works — including remotely through the
+cloud proxy — without needing the kurtosis CLI or a gateway locally.`,
+	Example: `  panda devnet logs my-devnet
+  panda devnet logs my-devnet el-1-geth-lighthouse cl-1-lighthouse-geth
+  panda devnet logs my-devnet el-1-geth-lighthouse --tail 500`,
+	Args: cobra.MinimumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		opArgs := map[string]any{"enclave": args[0]}
+		if len(args) > 1 {
+			services := make([]any, 0, len(args)-1)
+			for _, s := range args[1:] {
+				services = append(services, s)
+			}
+			opArgs["services"] = services
+		}
+		if cmd.Flags().Changed("tail") {
+			opArgs["tail"] = devnetLogsTail
+		}
+
+		resp, err := runServerOperation("devnet.logs", opArgs)
+		if err != nil {
+			return err
+		}
+
+		var result struct {
+			Logs string `json:"logs"`
+		}
+		if err := decodeOperationData(resp, &result); err != nil {
+			return err
+		}
+
+		fmt.Fprint(cmd.OutOrStdout(), result.Logs)
 
 		return nil
 	},

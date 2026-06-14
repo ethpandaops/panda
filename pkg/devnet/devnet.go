@@ -27,6 +27,10 @@ import (
 // other package is specified.
 const DefaultPackage = "github.com/ethpandaops/ethereum-package"
 
+// defaultLogTailLines is how many recent lines per service `Logs` returns when
+// the caller doesn't ask for a specific tail.
+const defaultLogTailLines = 200
+
 // Client wraps a connection to a Kurtosis engine.
 type Client struct {
 	kurtosis *kurtosis_context.KurtosisContext
@@ -231,6 +235,91 @@ func (c *Client) Down(ctx context.Context, identifier string) error {
 	}
 
 	return nil
+}
+
+// Service is a service (EL/CL/VC client or tool) running in a devnet enclave.
+type Service struct {
+	Name string `json:"name"`
+	UUID string `json:"uuid"`
+}
+
+// Services lists the services running in an enclave, sorted by name. The names
+// are what `Logs` accepts to select services.
+func (c *Client) Services(ctx context.Context, enclave string) ([]Service, error) {
+	enclaveCtx, err := c.kurtosis.GetEnclaveContext(ctx, enclave)
+	if err != nil {
+		return nil, fmt.Errorf("getting enclave %q: %w", enclave, err)
+	}
+
+	svcs, err := enclaveCtx.GetServices()
+	if err != nil {
+		return nil, fmt.Errorf("listing services in %q: %w", enclave, err)
+	}
+
+	out := make([]Service, 0, len(svcs))
+	for name, uuid := range svcs {
+		out = append(out, Service{Name: string(name), UUID: string(uuid)})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+
+	return out, nil
+}
+
+// LogOptions configures a logs fetch.
+type LogOptions struct {
+	// Services selects services by name; empty means every service.
+	Services []string
+	// TailLines is the number of recent lines per service. 0 uses
+	// defaultLogTailLines.
+	TailLines uint32
+}
+
+// Logs writes recent logs for the selected services (or all) to out, each line
+// prefixed with its service name. It does not follow: it returns once the
+// requested history has been written, so it works over the plain
+// request/response operation path (and thus through the cloud proxy).
+//
+// On the Kubernetes backend it reads pod logs directly from the cluster: this
+// fork ships container logs to OTel/ClickHouse, so the engine's file-based log
+// store (what the Kurtosis log API reads) is empty. Raw pod logs are always
+// available and need no aggregator.
+func (c *Client) Logs(ctx context.Context, enclave string, opts LogOptions, out io.Writer) error {
+	info, err := c.kurtosis.GetEnclave(ctx, enclave)
+	if err != nil {
+		return fmt.Errorf("inspecting enclave %q: %w", enclave, err)
+	}
+
+	all, err := c.Services(ctx, enclave)
+	if err != nil {
+		return err
+	}
+
+	wanted := opts.Services
+	if len(wanted) == 0 {
+		for _, s := range all {
+			wanted = append(wanted, s.Name)
+		}
+	} else {
+		known := map[string]bool{}
+		for _, s := range all {
+			known[s.Name] = true
+		}
+		for _, w := range wanted {
+			if !known[w] {
+				return fmt.Errorf("service %q not found in enclave %q", w, enclave)
+			}
+		}
+	}
+	if len(wanted) == 0 {
+		return fmt.Errorf("enclave %q has no services", enclave)
+	}
+
+	tail := opts.TailLines
+	if tail == 0 {
+		tail = defaultLogTailLines
+	}
+
+	return podLogs(ctx, info.GetEnclaveUuid(), wanted, int64(tail), out)
 }
 
 func toEnclave(info *kurtosis_engine_rpc_api_bindings.EnclaveInfo) Enclave {
