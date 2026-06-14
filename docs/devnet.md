@@ -90,6 +90,8 @@ panda devnet inspect my-devnet
 panda devnet services my-devnet                       # list service names
 panda devnet logs my-devnet                           # recent logs, all services
 panda devnet logs my-devnet el-1-geth-lighthouse --tail 500
+panda devnet logs my-devnet -f                         # follow all services live
+panda devnet logs my-devnet el-1-geth-lighthouse -f    # follow one (Ctrl-C to stop)
 panda devnet down my-devnet        # or: panda devnet down --all
 ```
 
@@ -98,14 +100,8 @@ connection), so they work wherever `panda devnet ls` works — including remotel
 through the cloud proxy — without needing the `kurtosis` CLI or a gateway
 locally. Logs are read straight from the pods, so they're available even though
 this fork ships container logs to OTel/ClickHouse (which leaves the engine's
-log API empty).
-
-For live following, use the `kurtosis` CLI directly (the server already points
-it at the right backend):
-
-```bash
-kurtosis service logs my-devnet el-1-geth-lighthouse -f
-```
+log API empty). `-f` streams chunked text live; non-`-f` rides the plain
+request/response operation path.
 
 ## Roadmap: cloud rail behind the proxy
 

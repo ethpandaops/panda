@@ -4,7 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
+	"os/signal"
+	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -21,6 +25,7 @@ var (
 	devnetDockerCache string
 	devnetDownAll     bool
 	devnetLogsTail    int
+	devnetLogsFollow  bool
 )
 
 var devnetCmd = &cobra.Command{
@@ -78,6 +83,8 @@ func init() {
 
 	devnetLogsCmd.Flags().IntVar(&devnetLogsTail, "tail", 0,
 		"number of recent log lines per service (0 = server default)")
+	devnetLogsCmd.Flags().BoolVarP(&devnetLogsFollow, "follow", "f", false,
+		"stream logs live until interrupted (Ctrl-C)")
 
 	devnetInspectCmd.ValidArgsFunction = completeEnclaveNames
 	devnetServicesCmd.ValidArgsFunction = completeEnclaveNames
@@ -151,7 +158,7 @@ format); without it the package defaults are used.`,
 		fmt.Fprintf(out, "\nDevnet %q is up.\n", result.Enclave)
 		fmt.Fprintf(out, "  inspect:   panda devnet inspect %s\n", result.Enclave)
 		fmt.Fprintf(out, "  services:  panda devnet services %s\n", result.Enclave)
-		fmt.Fprintf(out, "  logs:      panda devnet logs %s [service]\n", result.Enclave)
+		fmt.Fprintf(out, "  logs:      panda devnet logs %s [service] [-f]\n", result.Enclave)
 		fmt.Fprintf(out, "  destroy:   panda devnet down %s\n", result.Enclave)
 
 		return nil
@@ -212,6 +219,10 @@ cloud proxy — without needing the kurtosis CLI or a gateway locally.`,
   panda devnet logs my-devnet el-1-geth-lighthouse --tail 500`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if devnetLogsFollow {
+			return followDevnetLogs(cmd, args[0], args[1:])
+		}
+
 		opArgs := map[string]any{"enclave": args[0]}
 		if len(args) > 1 {
 			services := make([]any, 0, len(args)-1)
@@ -240,6 +251,24 @@ cloud proxy — without needing the kurtosis CLI or a gateway locally.`,
 
 		return nil
 	},
+}
+
+// followDevnetLogs streams logs live from the server's streaming endpoint until
+// the user interrupts (Ctrl-C). It uses a raw GET (not the JSON operation path)
+// because the response is an open-ended chunked text stream.
+func followDevnetLogs(cmd *cobra.Command, enclave string, serviceNames []string) error {
+	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	query := url.Values{"enclave": []string{enclave}}
+	for _, name := range serviceNames {
+		query.Add("service", name)
+	}
+	if cmd.Flags().Changed("tail") {
+		query.Set("tail", strconv.Itoa(devnetLogsTail))
+	}
+
+	return serverStreamGet(ctx, "/api/v1/devnet/logs", query, cmd.OutOrStdout())
 }
 
 var devnetLsCmd = &cobra.Command{

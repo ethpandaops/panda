@@ -284,14 +284,38 @@ type LogOptions struct {
 // store (what the Kurtosis log API reads) is empty. Raw pod logs are always
 // available and need no aggregator.
 func (c *Client) Logs(ctx context.Context, enclave string, opts LogOptions, out io.Writer) error {
+	uuid, wanted, tail, err := c.resolveLogTargets(ctx, enclave, opts)
+	if err != nil {
+		return err
+	}
+
+	return podLogs(ctx, uuid, wanted, tail, out)
+}
+
+// FollowLogs streams logs for the selected services (or all) to out until ctx is
+// cancelled, each line prefixed with its service name. flush, if non-nil, is
+// called after each line so an HTTP handler can push it to the client
+// immediately. Like Logs it reads pod logs directly from the cluster.
+func (c *Client) FollowLogs(ctx context.Context, enclave string, opts LogOptions, out io.Writer, flush func()) error {
+	uuid, wanted, tail, err := c.resolveLogTargets(ctx, enclave, opts)
+	if err != nil {
+		return err
+	}
+
+	return followPodLogs(ctx, uuid, wanted, tail, out, flush)
+}
+
+// resolveLogTargets validates the enclave and selected services, returning the
+// enclave UUID, the resolved service names, and the per-service tail count.
+func (c *Client) resolveLogTargets(ctx context.Context, enclave string, opts LogOptions) (string, []string, int64, error) {
 	info, err := c.kurtosis.GetEnclave(ctx, enclave)
 	if err != nil {
-		return fmt.Errorf("inspecting enclave %q: %w", enclave, err)
+		return "", nil, 0, fmt.Errorf("inspecting enclave %q: %w", enclave, err)
 	}
 
 	all, err := c.Services(ctx, enclave)
 	if err != nil {
-		return err
+		return "", nil, 0, err
 	}
 
 	wanted := opts.Services
@@ -306,12 +330,12 @@ func (c *Client) Logs(ctx context.Context, enclave string, opts LogOptions, out 
 		}
 		for _, w := range wanted {
 			if !known[w] {
-				return fmt.Errorf("service %q not found in enclave %q", w, enclave)
+				return "", nil, 0, fmt.Errorf("service %q not found in enclave %q", w, enclave)
 			}
 		}
 	}
 	if len(wanted) == 0 {
-		return fmt.Errorf("enclave %q has no services", enclave)
+		return "", nil, 0, fmt.Errorf("enclave %q has no services", enclave)
 	}
 
 	tail := opts.TailLines
@@ -319,7 +343,7 @@ func (c *Client) Logs(ctx context.Context, enclave string, opts LogOptions, out 
 		tail = defaultLogTailLines
 	}
 
-	return podLogs(ctx, info.GetEnclaveUuid(), wanted, int64(tail), out)
+	return info.GetEnclaveUuid(), wanted, int64(tail), nil
 }
 
 func toEnclave(info *kurtosis_engine_rpc_api_bindings.EnclaveInfo) Enclave {

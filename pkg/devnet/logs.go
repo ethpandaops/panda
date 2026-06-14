@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sync"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -39,7 +40,8 @@ func podLogs(ctx context.Context, enclaveUUID string, services []string, tail in
 	}
 
 	for _, svc := range services {
-		if err := writePodLogs(ctx, clientset, namespace, svc, tail, out); err != nil {
+		write := func(line string) { fmt.Fprintln(out, line) }
+		if err := streamPodLogs(ctx, clientset, namespace, svc, tail, false, write); err != nil {
 			fmt.Fprintf(out, "%s | <logs unavailable: %v>\n", svc, err)
 		}
 	}
@@ -47,10 +49,52 @@ func podLogs(ctx context.Context, enclaveUUID string, services []string, tail in
 	return nil
 }
 
-func writePodLogs(ctx context.Context, clientset kubernetes.Interface, namespace, service string, tail int64, out io.Writer) error {
+// followPodLogs streams each service's pod log concurrently until ctx is
+// cancelled, serializing writes (and flushes) through a mutex so interleaved
+// lines stay intact. flush may be nil.
+func followPodLogs(ctx context.Context, enclaveUUID string, services []string, tail int64, out io.Writer, flush func()) error {
+	clientset, err := newK8sClient()
+	if err != nil {
+		return err
+	}
+
+	namespace, err := enclaveNamespace(ctx, clientset, enclaveUUID)
+	if err != nil {
+		return err
+	}
+
+	var mu sync.Mutex
+	write := func(line string) {
+		mu.Lock()
+		defer mu.Unlock()
+		fmt.Fprintln(out, line)
+		if flush != nil {
+			flush()
+		}
+	}
+
+	var wg sync.WaitGroup
+	for _, svc := range services {
+		wg.Add(1)
+		go func(svc string) {
+			defer wg.Done()
+			if err := streamPodLogs(ctx, clientset, namespace, svc, tail, true, write); err != nil && ctx.Err() == nil {
+				write(fmt.Sprintf("%s | <log stream ended: %v>", svc, err))
+			}
+		}(svc)
+	}
+	wg.Wait()
+
+	return nil
+}
+
+// streamPodLogs reads a single service pod's log (optionally following) and
+// hands each line, already prefixed with the service name, to write.
+func streamPodLogs(ctx context.Context, clientset kubernetes.Interface, namespace, service string, tail int64, follow bool, write func(line string)) error {
 	req := clientset.CoreV1().Pods(namespace).GetLogs(service, &corev1.PodLogOptions{
 		Container: userServiceContainer,
 		TailLines: &tail,
+		Follow:    follow,
 	})
 
 	stream, err := req.Stream(ctx)
@@ -62,7 +106,7 @@ func writePodLogs(ctx context.Context, clientset kubernetes.Interface, namespace
 	scanner := bufio.NewScanner(stream)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
-		fmt.Fprintf(out, "%s | %s\n", service, scanner.Text())
+		write(fmt.Sprintf("%s | %s", service, scanner.Text()))
 	}
 
 	return scanner.Err()

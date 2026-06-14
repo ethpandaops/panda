@@ -2,7 +2,10 @@ package server
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/ethpandaops/panda/pkg/devnet"
 	"github.com/ethpandaops/panda/pkg/operations"
@@ -256,6 +259,84 @@ func (s *service) handleDevnetLogs(w http.ResponseWriter, r *http.Request) {
 		Kind: "devnet.logs",
 		Data: map[string]any{"logs": logs.String()},
 	})
+}
+
+// handleDevnetLogsStream follows service logs and streams them to the client as
+// chunked plain text (one prefixed line at a time), flushing each line so a
+// remote viewer sees logs live. It runs until the client disconnects (which
+// cancels the request context and stops the upstream pod log streams).
+func (s *service) handleDevnetLogsStream(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+
+	enclave := strings.TrimSpace(q.Get("enclave"))
+	if enclave == "" {
+		writeAPIError(w, http.StatusBadRequest, "enclave is required")
+		return
+	}
+
+	var serviceNames []string
+	for _, name := range q["service"] {
+		if name = strings.TrimSpace(name); name != "" {
+			serviceNames = append(serviceNames, name)
+		}
+	}
+
+	tail := 0
+	if t := strings.TrimSpace(q.Get("tail")); t != "" {
+		n, err := strconv.Atoi(t)
+		if err != nil || n < 0 {
+			writeAPIError(w, http.StatusBadRequest, "tail must be a non-negative integer")
+			return
+		}
+		tail = n
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeAPIError(w, http.StatusInternalServerError, "response writer does not support streaming")
+		return
+	}
+
+	var out bytes.Buffer
+	client, err := s.devnetClient(&out)
+	if err != nil {
+		writeAPIError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+
+	// Validate the enclave (and any named services) before committing to a 200
+	// stream, so genuine errors come back as proper status codes.
+	known, err := client.Services(r.Context(), enclave)
+	if err != nil {
+		writeAPIError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	knownNames := map[string]bool{}
+	for _, svc := range known {
+		knownNames[svc.Name] = true
+	}
+	for _, name := range serviceNames {
+		if !knownNames[name] {
+			writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("service %q not found in enclave %q", name, enclave))
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	s.log.WithField("owner", authOwnerID(r)).WithField("enclave", enclave).Info("devnet logs follow")
+
+	if err := client.FollowLogs(r.Context(), enclave, devnet.LogOptions{
+		Services:  serviceNames,
+		TailLines: uint32(tail),
+	}, w, flusher.Flush); err != nil && r.Context().Err() == nil {
+		fmt.Fprintf(w, "<log stream error: %v>\n", err)
+		flusher.Flush()
+	}
 }
 
 func (s *service) handleDevnetDown(w http.ResponseWriter, r *http.Request) {

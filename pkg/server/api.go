@@ -46,6 +46,10 @@ func (s *service) mountAPIRoutes(r chi.Router) {
 		r.Post("/build/status", s.handleAPIBuildStatus)
 		r.HandleFunc("/operations/{operationID}", s.handleAPIOperation)
 
+		// Streaming devnet log follow. Raw chunked text rather than the JSON
+		// operation envelope, so it can't ride the operations route.
+		r.Get("/devnet/logs", s.handleDevnetLogsStream)
+
 		// Public file serving (no auth — same as MinIO anonymous download).
 		r.Get("/storage/files/*", s.handleStorageServeFile)
 

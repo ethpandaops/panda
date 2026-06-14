@@ -289,3 +289,50 @@ func isConnectionRefused(err error) bool {
 	// Fallback: some wrapped errors don't propagate the syscall errno.
 	return strings.Contains(err.Error(), "connection refused")
 }
+
+// serverStreamGet performs a GET and copies the streamed response body to out
+// as it arrives, without buffering, until the stream ends or ctx is cancelled
+// (e.g. Ctrl-C). Used for following devnet logs.
+func serverStreamGet(ctx context.Context, path string, query url.Values, out io.Writer) error {
+	baseURL, err := serverBaseURL()
+	if err != nil {
+		return err
+	}
+
+	reqURL := strings.TrimRight(baseURL, "/") + path
+	if len(query) > 0 {
+		reqURL += "?" + query.Encode()
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+
+	resp, err := serverHTTP.Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil // cancelled (Ctrl-C) — clean stop
+		}
+		if isConnectionRefused(err) {
+			return fmt.Errorf(
+				"server is not running at %s — run 'panda init' or 'panda server start' first",
+				baseURL,
+			)
+		}
+
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(resp.Body)
+		return decodeAPIError(resp.StatusCode, data)
+	}
+
+	if _, err := io.Copy(out, resp.Body); err != nil && ctx.Err() == nil {
+		return fmt.Errorf("reading log stream: %w", err)
+	}
+
+	return nil
+}
