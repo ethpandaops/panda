@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/kurtosis-tech/kurtosis/api/golang/core/kurtosis_core_rpc_api_bindings"
+	"github.com/kurtosis-tech/kurtosis/api/golang/core/lib/services"
 	"github.com/kurtosis-tech/kurtosis/api/golang/core/lib/starlark_run_config"
 	"github.com/kurtosis-tech/kurtosis/api/golang/engine/kurtosis_engine_rpc_api_bindings"
 	"github.com/kurtosis-tech/kurtosis/api/golang/engine/lib/kurtosis_context"
@@ -237,32 +238,82 @@ func (c *Client) Down(ctx context.Context, identifier string) error {
 	return nil
 }
 
+// Port is a network port exposed by a service.
+type Port struct {
+	// Name is the port's logical name (e.g. "rpc", "engine-rpc", "metrics").
+	Name string `json:"name"`
+	// Number is the in-cluster (private) container port.
+	Number uint16 `json:"number"`
+	// Transport is the L4 protocol ("TCP"/"UDP").
+	Transport string `json:"transport"`
+	// Application is the L7 protocol if known (e.g. "http", "ws"); may be empty.
+	Application string `json:"application,omitempty"`
+}
+
 // Service is a service (EL/CL/VC client or tool) running in a devnet enclave.
 type Service struct {
 	Name string `json:"name"`
 	UUID string `json:"uuid"`
+	// PrivateIP is the service's in-cluster IP.
+	PrivateIP string `json:"private_ip,omitempty"`
+	// Ports are the in-cluster ports the service exposes, sorted by name.
+	Ports []Port `json:"ports,omitempty"`
 }
 
-// Services lists the services running in an enclave, sorted by name. The names
-// are what `Logs` accepts to select services.
+// Endpoint returns the in-cluster address for a named port (e.g.
+// "el-1-geth-lighthouse:8545"), or "" if the service has no such port.
+func (s Service) Endpoint(portName string) string {
+	for _, p := range s.Ports {
+		if p.Name == portName {
+			return fmt.Sprintf("%s:%d", s.Name, p.Number)
+		}
+	}
+
+	return ""
+}
+
+// Services lists the services running in an enclave, sorted by name, with their
+// in-cluster ports. The names are what `Logs` accepts to select services.
 func (c *Client) Services(ctx context.Context, enclave string) ([]Service, error) {
 	enclaveCtx, err := c.kurtosis.GetEnclaveContext(ctx, enclave)
 	if err != nil {
 		return nil, fmt.Errorf("getting enclave %q: %w", enclave, err)
 	}
 
-	svcs, err := enclaveCtx.GetServices()
+	// An empty identifier set asks for every service.
+	ctxs, err := enclaveCtx.GetServiceContexts(map[string]bool{})
 	if err != nil {
 		return nil, fmt.Errorf("listing services in %q: %w", enclave, err)
 	}
 
-	out := make([]Service, 0, len(svcs))
-	for name, uuid := range svcs {
-		out = append(out, Service{Name: string(name), UUID: string(uuid)})
+	out := make([]Service, 0, len(ctxs))
+	for name, sc := range ctxs {
+		out = append(out, Service{
+			Name:      string(name),
+			UUID:      string(sc.GetServiceUUID()),
+			PrivateIP: sc.GetPrivateIPAddress(),
+			Ports:     toPorts(sc.GetPrivatePorts()),
+		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 
 	return out, nil
+}
+
+// toPorts flattens a Kurtosis port-spec map into a name-sorted []Port.
+func toPorts(specs map[string]*services.PortSpec) []Port {
+	ports := make([]Port, 0, len(specs))
+	for name, spec := range specs {
+		ports = append(ports, Port{
+			Name:        name,
+			Number:      spec.GetNumber(),
+			Transport:   kurtosis_core_rpc_api_bindings.Port_TransportProtocol(spec.GetTransportProtocol()).String(),
+			Application: spec.GetMaybeApplicationProtocol(),
+		})
+	}
+	sort.Slice(ports, func(i, j int) bool { return ports[i].Name < ports[j].Name })
+
+	return ports
 }
 
 // LogOptions configures a logs fetch.

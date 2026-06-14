@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -194,12 +195,27 @@ The names shown are what 'panda devnet logs' accepts to select services.`,
 
 		rows := make([][]string, 0, len(svcs))
 		for _, s := range svcs {
-			rows = append(rows, []string{s.Name, shortUUID(s.UUID)})
+			rows = append(rows, []string{s.Name, formatPorts(s.Ports), s.PrivateIP})
 		}
-		printTable([]string{"SERVICE", "UUID"}, rows)
+		printTable([]string{"SERVICE", "PORTS", "PRIVATE IP"}, rows)
 
 		return nil
 	},
+}
+
+// formatPorts renders a service's ports compactly as "name:number" entries,
+// e.g. "rpc:8545 ws:8546 engine-rpc:8551".
+func formatPorts(ports []devnet.Port) string {
+	if len(ports) == 0 {
+		return "-"
+	}
+
+	parts := make([]string, 0, len(ports))
+	for _, p := range ports {
+		parts = append(parts, fmt.Sprintf("%s:%d", p.Name, p.Number))
+	}
+
+	return strings.Join(parts, " ")
 }
 
 var devnetLogsCmd = &cobra.Command{

@@ -87,7 +87,7 @@ Add a `cloud` entry the same way for the cloud rail.
 panda devnet up my-devnet --args ./network_params.yaml
 panda devnet ls
 panda devnet inspect my-devnet
-panda devnet services my-devnet                       # list service names
+panda devnet services my-devnet                       # list services + ports
 panda devnet logs my-devnet                           # recent logs, all services
 panda devnet logs my-devnet el-1-geth-lighthouse --tail 500
 panda devnet logs my-devnet -f                         # follow all services live
