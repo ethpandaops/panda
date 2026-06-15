@@ -174,3 +174,7 @@ which holds the cloud kubeconfig and gates enclave creation on GitHub-org
 membership; enclaves are owner-stamped and filtered per authenticated user. The
 operation contract already derives the caller's identity server-side, so this is
 an additive change — the CLI and the `cluster:` switch stay the same.
+
+For the concrete production rollout on the ethpandaops platform (GitOps Kurtosis
+engine, DNS, certs, Dex/OIDC auth, and the hosted panda-proxy), see
+[`devnet-production.md`](./devnet-production.md).
