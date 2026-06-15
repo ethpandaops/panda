@@ -456,6 +456,9 @@ func applyDefaults(cfg *Config) {
 	if cfg.Devnet.Ingress.IngressClass == "" {
 		cfg.Devnet.Ingress.IngressClass = "traefik"
 	}
+	if cfg.Devnet.Ingress.HostStyle == "" {
+		cfg.Devnet.Ingress.HostStyle = "dotted"
+	}
 
 	// Storage defaults.
 	if cfg.Storage.BaseDir == "" {

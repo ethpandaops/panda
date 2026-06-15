@@ -155,35 +155,53 @@ func shortenLabel(label string) string {
 	return prefix + suffix
 }
 
-// leftLabel builds the left-most DNS label of a host. For a service's primary
-// port it is just the sanitized service name (the clean, headline URL); for any
-// other port it is "<port>-<service>" — a single label so a per-enclave wildcard
-// certificate still covers it. The label is shortened deterministically if it
-// would exceed one DNS label.
-func leftLabel(portName, service string, primary bool) string {
-	if primary {
-		return sanitizeLabel(service)
-	}
-
-	label := sanitizeLabel(portName) + "-" + sanitizeLabel(service)
+// boundLabel shortens an over-long DNS label deterministically.
+func boundLabel(label string) string {
 	if len(label) > maxDNSLabel {
-		label = shortenLabel(label)
+		return shortenLabel(label)
 	}
 
 	return label
 }
 
-// host assembles a full dotted hostname from the left-most label and the
-// enclave, owner and base labels, e.g. "dora.bal3.qu0b.k3s.bruno". The enclave
-// and owner are sanitized into their own labels; base is appended verbatim (it
-// may itself be multi-label, e.g. "devnet.ethpandaops.io").
-func host(label, enclave, owner, base string) string {
-	parts := []string{label, sanitizeLabel(enclave), sanitizeLabel(owner)}
-	if base != "" {
-		parts = append(parts, base)
+// dotBase prefixes a non-empty base domain with a dot (base may itself be
+// multi-label, e.g. "ethpandaops.io").
+func dotBase(base string) string {
+	if base == "" {
+		return ""
 	}
 
-	return strings.Join(parts, ".")
+	return "." + base
+}
+
+// serviceHost builds a service port's hostname per the configured host style.
+//
+//	dotted (default; dev/self-hosted DNS that resolves any depth):
+//	  <service>.<enclave>.<owner>.<base>            (primary port)
+//	  <port>-<service>.<enclave>.<owner>.<base>     (other ports)
+//	flat (prod behind a single-label wildcard / cloudflare tunnel + edge cert):
+//	  <service>--<enclave>--<owner>.<base>          (primary port)
+//	  <port>--<service>--<enclave>--<owner>.<base>  (other ports)
+//
+// Flat folds everything into one DNS label so it sits one level under the apex
+// (what a *.<base> wildcard cert / tunnel rule covers).
+func serviceHost(portName, service, enclave, owner string, primary bool, cfg config.IngressConfig) string {
+	if cfg.HostStyle == "flat" {
+		parts := make([]string, 0, 4)
+		if !primary {
+			parts = append(parts, sanitizeLabel(portName))
+		}
+		parts = append(parts, sanitizeLabel(service), sanitizeLabel(enclave), sanitizeLabel(owner))
+
+		return boundLabel(strings.Join(parts, "--")) + dotBase(cfg.BaseDomain)
+	}
+
+	left := sanitizeLabel(service)
+	if !primary {
+		left = boundLabel(sanitizeLabel(portName) + "-" + sanitizeLabel(service))
+	}
+
+	return left + "." + sanitizeLabel(enclave) + "." + sanitizeLabel(owner) + dotBase(cfg.BaseDomain)
 }
 
 // scheme returns the URL scheme implied by the ingress config for canonical
@@ -230,7 +248,7 @@ func Endpoints(services []Service, enclaveName, owner string, cfg config.Ingress
 		primaryURL := ""
 		for _, p := range exposed {
 			isPrimary := hasPrimary && p.Name == primary.Name && p.Number == primary.Number
-			h := host(leftLabel(p.Name, svc.Name, isPrimary), enclaveName, owner, cfg.BaseDomain)
+			h := serviceHost(p.Name, svc.Name, enclaveName, owner, isPrimary, cfg)
 			url := sch + "://" + h
 			ports = append(ports, PortEndpoint{Name: p.Name, URL: url})
 			if isPrimary {
@@ -262,15 +280,16 @@ func aliasScheme(cfg config.IngressConfig) string {
 	return "http"
 }
 
-// aliasHostname builds the short default-devnet alias host for a service:
-// <service>.<owner>.<base>, e.g. "dora.qu0b.k3s.bruno".
-func aliasHostname(service, owner, base string) string {
-	parts := []string{sanitizeLabel(service), sanitizeLabel(owner)}
-	if base != "" {
-		parts = append(parts, base)
+// aliasHostname builds the short default-devnet alias host for a service per the
+// configured host style: dotted "<service>.<owner>.<base>" (e.g.
+// "dora.qu0b.k3s.bruno") or flat "<service>--<owner>.<base>" (one label, e.g.
+// "dora--qu0b.ethpandaops.io").
+func aliasHostname(service, owner string, cfg config.IngressConfig) string {
+	if cfg.HostStyle == "flat" {
+		return boundLabel(sanitizeLabel(service)+"--"+sanitizeLabel(owner)) + dotBase(cfg.BaseDomain)
 	}
 
-	return strings.Join(parts, ".")
+	return sanitizeLabel(service) + "." + sanitizeLabel(owner) + dotBase(cfg.BaseDomain)
 }
 
 // AliasEndpoints computes the short default-devnet alias URLs — one per service
@@ -284,7 +303,7 @@ func AliasEndpoints(services []Service, owner string, cfg config.IngressConfig) 
 		if _, ok := primaryPort(exposedPorts(svc)); !ok {
 			continue
 		}
-		url := sch + "://" + aliasHostname(svc.Name, owner, cfg.BaseDomain)
+		url := sch + "://" + aliasHostname(svc.Name, owner, cfg)
 		out = append(out, ServiceEndpoints{
 			Service:    svc.Name,
 			PrimaryURL: url,
@@ -360,7 +379,7 @@ func buildAliasIngress(namespace, enclaveUUID, owner string, svc Service, cfg co
 
 	pathType := networkingv1.PathTypePrefix
 	ingressClass := cfg.IngressClass
-	h := aliasHostname(svc.Name, owner, cfg.BaseDomain)
+	h := aliasHostname(svc.Name, owner, cfg)
 
 	annotations := copyAnnotations(cfg)
 
@@ -482,7 +501,7 @@ func buildIngress(namespace, enclaveUUID, enclaveName, owner string, svc Service
 		// The primary port gets the clean <service>.<enclave>.<owner>.<base>
 		// host; other ports get a <port>-<service> left label.
 		isPrimary := hasPrimary && p.Name == primary.Name && p.Number == primary.Number
-		h := host(leftLabel(p.Name, svc.Name, isPrimary), enclaveName, owner, cfg.BaseDomain)
+		h := serviceHost(p.Name, svc.Name, enclaveName, owner, isPrimary, cfg)
 		hosts = append(hosts, h)
 		rules = append(rules, rule(h, p.Number))
 	}

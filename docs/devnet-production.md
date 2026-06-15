@@ -2,26 +2,55 @@
 
 This guide takes the `panda devnet` feature (multi-client Kurtosis devnets +
 owner-scoped external access to their services — RPC, dora, beacon API, …) from
-the local **bruno** setup to the ethpandaops **platform**, reusing the platform's
-existing building blocks instead of standing up new ones.
+the local **bruno** setup to the ethpandaops **platform**.
+
+The guiding principle is **maintainability**: reuse the platform's existing
+building blocks and add as few new, stateful components as possible. The design
+below adds exactly **two** GitOps apps (the Kurtosis engine and `panda-server`)
+and **nothing else** on the DNS/cert/tunnel side — devnet hosts ride the
+platform's existing `*.ethpandaops.io` Cloudflare tunnel + edge cert + nginx.
 
 It assumes the feature from PR #213 (`services`, `logs`/`-f`, `endpoints`,
-user-scoped Traefik `Ingress`, `devnet use`). For the local design and the
+user-scoped `Ingress`, `devnet use`, `host_style`). For the local design and the
 bruno setup see [`devnet.md`](./devnet.md).
+
+## The hostname decision (why flat, not a self-hosted zone)
+
+Devnet hosts are user-scoped. The depth question is: how do we get TLS + routing
+for them without standing up new infrastructure?
+
+- A self-hosted authoritative DNS zone (RFC2136) + a ZeroSSL DNS-01 issuer would
+  give clean **dotted** names at any depth — but it's a new stateful DNS server,
+  a new ACME account, TSIG secrets, and an NS delegation to operate **forever**.
+  That's a lot of maintenance surface for cosmetic hostnames. **Rejected.**
+- The platform already routes `*.ethpandaops.io` through a Cloudflare tunnel to
+  `ingress-nginx-devnets`, with TLS terminated at the Cloudflare edge by the
+  universal-SSL cert. That wildcard covers exactly **one label** under the apex.
+
+So in prod panda uses **`host_style: flat`** — it folds service/enclave/owner into
+a single DNS label:
+
+```
+<service>--<enclave>--<owner>.ethpandaops.io          dora--bal3--qu0b.ethpandaops.io
+<port>--<service>--<enclave>--<owner>.ethpandaops.io  ws--el-1-geth-lighthouse--bal3--qu0b.ethpandaops.io
+<service>--<owner>.ethpandaops.io                     dora--qu0b.ethpandaops.io   (default-devnet alias)
+```
+
+One label ⇒ covered by the **existing** wildcard cert + tunnel rule + nginx. The
+cost is `--`-separated names instead of dotted ones; the benefit is **zero new
+DNS/cert/tunnel components**. Maintainability wins.
 
 ## TL;DR — what's already there vs net-new
 
-The platform already provides everything in the "Platform-provided" column; we
-only add the "Net-new" pieces.
-
 | Concern | Platform-provided | Net-new for devnets |
 |---|---|---|
-| GitOps | ArgoCD (root-app + ApplicationSet) | one ArgoCD `Application` for the Kurtosis engine, one for `panda-server` |
-| Ingress | Traefik | — (panda creates the per-service `Ingress` objects at runtime) |
-| DNS | Cloudflare (+ external-dns / terraform wildcards) | a record/wildcard for the devnet subdomain |
-| Certs | cert-manager + a DNS-01 `ClusterIssuer` | reuse it (per-host, or a ZeroSSL issuer for churn — see TLS) |
-| Auth | Dex/Keycloak OIDC; **hosted panda-proxy** at `panda-proxy.analytics.production.platform.ethpandaops.io` | a Traefik forward-auth middleware that ties the request to the `<owner>` host label |
-| Kurtosis engine | — | GitOps engine on the prod cluster (mirror the bruno engine) |
+| GitOps | ArgoCD (root-app + ApplicationSet) | one `Application` for the Kurtosis engine, one for `panda-server` |
+| Ingress | ingress-nginx-devnets | — (panda creates per-service `Ingress` objects at runtime) |
+| DNS | Cloudflare `*.ethpandaops.io` → tunnel | — (flat hosts fall under the existing wildcard) |
+| Certs | Cloudflare edge universal-SSL on `*.ethpandaops.io` | — (TLS terminates at the edge; panda Ingresses serve HTTP) |
+| Tunnel | cloudflare-tunnel-devnets `*.ethpandaops.io` → nginx | — (flat hosts match the existing rule) |
+| Auth | Dex/OIDC; **hosted panda-proxy** | gate the create/manage path at panda-server; (optional) Cloudflare Access at the edge for service hosts |
+| Kurtosis engine | — | GitOps engine on the analytics cluster (mirror the bruno engine) |
 
 ## Architecture in production
 
@@ -34,92 +63,56 @@ panda CLI ──HTTPS──▶ panda-proxy (hosted, OIDC/Dex)         identity (
                           ▼
                  Kurtosis engine (GitOps)  ──▶  enclave namespace (EL/CL/VC/dora …)
                           ▲
-   browser / cast / wallet ──HTTPS──▶ Traefik ──▶ forward-auth ──▶ Ingress ──▶ service
-        dora.<owner>.<base> / el-1-….<enclave>.<owner>.<base>
+   browser / cast / wallet ──HTTPS──▶ Cloudflare edge ──tunnel──▶ ingress-nginx-devnets ──▶ service
+        dora--bal3--qu0b.ethpandaops.io / el-1-…--bal3--qu0b.ethpandaops.io
 ```
 
 Key alignment points:
-- **panda-server runs in the prod cluster** (Deployment + ServiceAccount), with a
-  `kurtosis gateway` sidecar to the in-cluster engine (`:9710`). That gives it the
-  Kurtosis SDK connection *and* the k8s API access it needs to create `Ingress`
-  objects. It does **not** need a kubeconfig file — an in-cluster SA + RBAC is
-  enough.
-- **Identity is server-derived from the hosted proxy** (`AuthUser` →
-  GitHub login). The owner is never client-supplied; it's the multi-tenant
-  boundary for both hostnames and authz.
-- panda creates Ingresses **at runtime** per devnet; the platform's
-  Traefik/cert-manager/DNS pick them up — no per-devnet GitOps changes.
+- **panda-server runs in the analytics cluster** (Deployment + ServiceAccount),
+  with a `kurtosis gateway` sidecar to the in-cluster engine (`:9710`). That gives
+  it the Kurtosis SDK connection *and* the k8s API access to create `Ingress`
+  objects. No kubeconfig file — an in-cluster SA + RBAC is enough.
+- **Identity is server-derived from the hosted proxy** (`AuthUser` → GitHub
+  login). The owner is never client-supplied; it's the multi-tenant namespace.
+- panda creates Ingresses **at runtime** per devnet; the existing tunnel + nginx
+  pick them up by Host match — **no per-devnet GitOps, DNS or cert changes**.
 
-## Required code changes (before prod)
+## Required code changes — done (on PR #213)
 
-- **Controller-agnostic ingress + cert-manager TLS — done (on PR #213).** The
-  ingress is configured by `ingress_class` + a verbatim `annotations` map + a `tls`
-  toggle; with `tls: true` and no fixed `tls_secret`, panda derives a per-Ingress
-  secret name and cert-manager issues it from the `cluster-issuer` annotation. This
-  is what lets prod use nginx + cert-manager instead of bruno's Traefik.
-- **Owner label = GitHub login, not numeric ID — still TODO.** `authOwnerID`
-  returns `user.GitHubID`; `AuthUser` also has `GitHubLogin`. Resolve the devnet
-  owner to the login (in `resolveOwner`, leaving the global `authOwnerID` untouched)
-  so hostnames read `dora.qu0b.<base>` not `dora.583231.<base>`. Keep the ID for
-  authz comparisons.
+- **Controller-agnostic ingress.** `ingress_class` + a verbatim `annotations` map
+  + a `tls` toggle, so prod uses nginx with `tls: false` (edge TLS).
+- **`host_style: flat`.** Single-label hosts that fall under `*.ethpandaops.io`.
+- **Owner label = GitHub login** (`resolveOwner` prefers `GitHubLogin`), so hosts
+  read `dora--…--qu0b` not `dora--…--583231`. Numeric ID kept for authz.
 
-## DNS + TLS: the one decision to make
+## Auth
 
-Devnet hostnames are dotted and **user-scoped**:
+- **Create / manage path (the important one):** gated at **panda-server** via the
+  hosted proxy's OIDC (GitHub-org membership) — only authorized members can spin
+  up enclaves. This is the "only authorized people" boundary.
+- **Service hosts (dora/RPC/beacon):** carry **no per-Ingress auth**, so `cast`,
+  wallets and scripts reach RPC without an interactive browser SSO flow. If the
+  org wants these gated too, do it **uniformly at the edge with Cloudflare Access**
+  (which supports service tokens for programmatic RPC) — not a bespoke per-owner
+  forward-auth service to build and maintain. The `<owner>` label remains the
+  namespace; edge access policy is a platform-level config, not panda's concern.
 
-```
-<service>.<enclave>.<owner>.<base>          el-1-geth-lighthouse.bal3.qu0b.devnets.ethpandaops.io
-<port>-<service>.<enclave>.<owner>.<base>   ws-el-1-geth-lighthouse.bal3.qu0b.devnets.ethpandaops.io
-<service>.<owner>.<base>                    dora.qu0b.devnets.ethpandaops.io   (default-devnet alias)
-```
+## Kurtosis engine on the analytics cluster
 
-`<base>` is platform-chosen (e.g. `devnets.ethpandaops.io`, or a `devnet.`
-subdomain of the panda-proxy zone). A wildcard at any *single* level covers only
-one label below it, so there are two ways to satisfy the dotted depth — pick per
-how the platform already does DNS/certs:
+Mirror the bruno GitOps engine (`applications/kurtosis-engine/`): an ArgoCD
+`Application` deploying the engine (+ logs components) into a `kurtosis-engine`
+namespace, carrying the fork's bruno learnings — grace-period fast teardown, the
+enclave warm-pool self-heal, the v9 `SERIALIZED_ARGS` with `poolSize: 2`, and a
+`WaitForFirstConsumer` storage class.
 
-- **Per-host (recommended, fully clean dotted, any depth):** let **external-dns**
-  create an `A`/`CNAME` per Ingress host (→ Traefik LB) and **cert-manager**
-  (ingress-shim) issue a cert per host. No flattening, no per-enclave wildcard
-  management. Because devnets are ephemeral and churn fast, point the issuer at
-  **ZeroSSL** (no Let's Encrypt 50/week limit) — the platform already runs this
-  ACME flow for template-devnets (`ethpandaops.general.wildcard_cert_issuer`,
-  ZeroSSL EAB + RFC2136). DNS-01 over Cloudflare works too if churn is low.
-- **Per-owner wildcard (fewer certs, flattens multi-devnet):** one
-  `*.<owner>.<base>` record + cert per user (cert-manager DNS-01/Cloudflare). This
-  covers the clean default alias `dora.qu0b.<base>` and `<service>.<owner>`, but the
-  enclave-qualified form must collapse to one label (`<service>--<enclave>.<owner>`)
-  to stay under the wildcard. Cheapest on stock Cloudflare DNS-01 + Let's Encrypt.
+**The one real platform dependency:** the engine + APIC + files-artifacts-expander
++ logs images are a **fork** (they carry the patches above). They must be hosted
+where the analytics cluster can pull them — build them through the platform's
+existing image pipeline and set `engine.image` / `engine.imageOrg` accordingly.
+The bruno build lives on a private registry the platform can't reach.
 
-Either way, keep the devnet records **DNS-only / grey-cloud** (not proxied) so
-RPC, WebSocket and large `eth_getLogs`/trace responses bypass Cloudflare's body
-and timeout limits.
-
-## Auth: owner enforcement at the edge
-
-The hostname carries `<owner>` and every Ingress is labeled
-`panda.devnet/owner=<owner>`. Enforce that only that user reaches it with a
-Traefik **forward-auth middleware** (referenced via `devnet.ingress.auth_middleware`,
-e.g. `devnet-forward-auth@kubernetescrd`) that:
-1. authenticates the caller through the platform's Dex/OIDC (same IdP as the proxy), and
-2. checks the authenticated GitHub identity equals the `<owner>` segment of the host.
-
-This closes the only residual gap from the feature review (the operation layer
-derives the owner correctly but does not itself check enclave ownership — the
-edge middleware is where prod enforces it).
-
-## Kurtosis engine on the prod cluster
-
-Mirror the bruno GitOps engine: an ArgoCD `Application` that deploys the Kurtosis
-engine (+ logs aggregator/collector) into a `kurtosis-engine` namespace. Carry
-forward the bruno learnings already in the fork:
-- the grace-period patches (fast teardown) and the **enclave warm-pool self-heal**
-  (so the pool refills after the logs components bootstrap),
-- `KURTOSIS_IMAGE_ORG` / image cache pointed at the platform registry,
-- a `WaitForFirstConsumer` storage class.
-
-`panda-server` reaches it via the `kurtosis gateway` sidecar; no public exposure
-of the engine itself.
+`panda-server` reaches the engine via the `kurtosis gateway` sidecar; the engine
+itself is never publicly exposed.
 
 ## Config (prod `devnet.ingress`)
 
@@ -127,51 +120,46 @@ bruno → prod is config-only — no code or hostname-scheme change:
 
 ```yaml
 cluster:
-  name: <prod-kurtosis-cluster>
-  kubeconfig_context: ""        # in-cluster SA; leave empty
+  name: ""                      # in-cluster SA + gateway sidecar; leave empty
+  kubeconfig_context: ""
 
 devnet:
   package: github.com/ethpandaops/ethereum-package
   docker_cache: docker.ethquokkaops.io
   ingress:
     enabled: true
-    base_domain: devnet.ethpandaops.io         # platform-chosen (delegated zone, option B)
+    host_style: flat                           # single label fits *.ethpandaops.io
+    base_domain: ethpandaops.io
     ingress_class: ingress-nginx-devnets       # the platform's devnet ingress controller
-    tls: true                                  # per-Ingress secret, cert-manager issues it
-    annotations:
-      cert-manager.io/cluster-issuer: zerossl-devnet         # ZeroSSL DNS-01, no LE rate limits
-      nginx.ingress.kubernetes.io/auth-url: https://…        # edge auth: authed user == <owner>
+    tls: false                                 # TLS terminates at the Cloudflare edge
     # local_owner unset → owner = authenticated GitHub login
-    # tls_secret / alias_tls_secret only if pre-provisioning wildcards instead
 ```
 
-> The ingress is **controller-agnostic**: `ingress_class` + an `annotations` map
-> (applied verbatim) + a `tls` toggle. On the platform that's nginx
-> (`ingress-nginx-devnets`) rather than bruno's Traefik. With `tls: true` and no
-> fixed `tls_secret`, panda derives a per-Ingress secret name and cert-manager
-> issues the cert from the `cluster-issuer` annotation.
+> No `cert-manager.io/cluster-issuer`, no DNS-01 issuer, no TSIG, no NS
+> delegation, no `tls_secret`. The Cloudflare edge cert on `*.ethpandaops.io`
+> serves TLS; the existing tunnel rule routes to nginx; nginx matches the flat
+> Host. That's the whole maintainability payoff.
 
 ## Rollout
 
-1. **Code:** merge PR #213 + the two changes above; tag a release → goreleaser
-   builds the `panda` CLI and the `panda-server`/`panda-proxy` images.
-2. **Infra (GitOps):** add ArgoCD `Application`s for the Kurtosis engine and
-   `panda-server` (Deployment + SA + RBAC for Ingress + gateway sidecar). Add the
-   cert-manager `ClusterIssuer` (ZeroSSL or reuse the Cloudflare DNS-01 one), the
-   external-dns config (or the Cloudflare wildcard), and the Traefik forward-auth
-   `Middleware`.
-3. **Proxy:** point the hosted panda-proxy's devnet routes at the in-cluster
-   `panda-server` (it already fronts panda for the org).
-4. **CLI:** users install `panda` from the release and target the prod proxy URL.
+1. **Code:** merge PR #213; tag a release → goreleaser builds the `panda` CLI and
+   the `panda-server`/`panda-proxy` images.
+2. **Fork images:** build the kurtosis-engine fork images via the platform image
+   pipeline; set `engine.image`/`engine.imageOrg` in `applications/kurtosis-engine/`.
+3. **Infra (GitOps):** the two ArgoCD `Application`s — `kurtosis-engine` and
+   `panda-server` (Deployment + SA + RBAC for Ingress + gateway sidecar) — are in
+   the platform PR. Nothing to add on DNS/cert/tunnel.
+4. **Proxy:** point the hosted panda-proxy's devnet routes at the in-cluster
+   `panda-server`.
+5. **CLI:** users install `panda` from the release and target the prod proxy URL.
 
 ## Validation
 
 As a real GitHub user, through the proxy:
 - `panda devnet up smoke --args ...` → `panda devnet endpoints smoke`
-- `https://dora.qu0b.devnets.ethpandaops.io` loads in a browser with a valid cert
-- `https://el-1-geth-lighthouse.smoke.qu0b.devnets.ethpandaops.io` serves
-  `eth_blockNumber`; WS upgrades; a large `eth_getLogs` returns (no proxy limits)
-- a **different** GitHub user gets `403` from the forward-auth middleware
+- `https://dora--smoke--qu0b.ethpandaops.io` loads in a browser with a valid cert
+- `https://el-1-geth-lighthouse--smoke--qu0b.ethpandaops.io` serves
+  `eth_blockNumber`; WS upgrades; a large `eth_getLogs` returns
 - `panda devnet down smoke` removes the enclave (and its Ingresses with it)
 
 ## Rollback

@@ -50,8 +50,20 @@ type IngressConfig struct {
 	Enabled bool `yaml:"enabled"`
 
 	// BaseDomain is the apex the per-owner subdomains hang off, e.g. "k3s.bruno"
-	// (bruno) or "devnet.ethpandaops.io" (prod).
+	// (bruno) or "ethpandaops.io" (prod).
 	BaseDomain string `yaml:"base_domain"`
+
+	// HostStyle selects how a host is assembled below BaseDomain:
+	//   "dotted" (default) — multi-label <service>.<enclave>.<owner>.<base>.
+	//     Clean, readable names; needs DNS that resolves arbitrary depth (a
+	//     self-hosted/dnsmasq zone, e.g. bruno) since a *.<base> wildcard cert
+	//     and a single-label tunnel rule only cover one label.
+	//   "flat" — single-label <service>--<enclave>--<owner>.<base> (and
+	//     <port>--<service>--… for non-primary ports). Folds everything into one
+	//     DNS label so it sits exactly one level under the apex — which is what a
+	//     *.<base> wildcard cert and a Cloudflare tunnel rule + edge cert cover.
+	//     Use in prod to reuse existing wildcard infra with zero new components.
+	HostStyle string `yaml:"host_style"`
 
 	// IngressClass is the spec.ingressClassName set on created Ingresses, e.g.
 	// "traefik" (bruno) or "ingress-nginx-devnets" (prod). Defaults to "traefik".

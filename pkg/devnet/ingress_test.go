@@ -38,32 +38,48 @@ func TestSanitizeLabel(t *testing.T) {
 	})
 }
 
-func TestLeftLabel(t *testing.T) {
-	t.Run("primary port -> bare service label", func(t *testing.T) {
-		assert.Equal(t, "el-1-geth-lighthouse", leftLabel("rpc", "el-1-geth-lighthouse", true))
-		assert.Equal(t, "dora", leftLabel("http", "dora", true))
+func TestServiceHost(t *testing.T) {
+	dotted := config.IngressConfig{HostStyle: "dotted", BaseDomain: "k3s.bruno"}
+	flat := config.IngressConfig{HostStyle: "flat", BaseDomain: "ethpandaops.io"}
+
+	t.Run("dotted primary -> <service>.<enclave>.<owner>.<base>", func(t *testing.T) {
+		assert.Equal(t, "dora.bal3.qu0b.k3s.bruno",
+			serviceHost("http", "dora", "bal3", "qu0b", true, dotted))
 	})
 
-	t.Run("non-primary port -> <port>-<service>", func(t *testing.T) {
-		assert.Equal(t, "ws-el-1-geth-lighthouse", leftLabel("ws", "el-1-geth-lighthouse", false))
-		assert.Equal(t, "metrics-dora", leftLabel("metrics", "dora", false))
+	t.Run("dotted non-primary -> <port>-<service>.<enclave>.<owner>.<base>", func(t *testing.T) {
+		assert.Equal(t, "metrics-dora.bal3.qu0b.k3s.bruno",
+			serviceHost("metrics", "dora", "bal3", "qu0b", false, dotted))
 	})
 
-	t.Run("over-long label is shortened to one DNS label", func(t *testing.T) {
-		got := leftLabel("metrics", strings.Repeat("x", 80), false)
-		require.LessOrEqual(t, len(got), maxDNSLabel)
-		assert.NotContains(t, got, ".")
+	t.Run("dotted sanitizes each label; base appended verbatim", func(t *testing.T) {
+		cfg := config.IngressConfig{HostStyle: "dotted", BaseDomain: "devnet.ethpandaops.io"}
+		assert.Equal(t, "x.my-dev.q-u-0b.devnet.ethpandaops.io",
+			serviceHost("rpc", "x", "my.dev", "q.u_0b", true, cfg))
 	})
-}
 
-func TestHost(t *testing.T) {
-	// Clean dotted: <label>.<enclave>.<owner>.<base>.
-	assert.Equal(t, "dora.bal3.qu0b.k3s.bruno", host("dora", "bal3", "qu0b", "k3s.bruno"))
-	// enclave + owner sanitized as their own labels; base appended verbatim.
-	assert.Equal(t, "x.my-dev.q-u-0b.devnet.ethpandaops.io",
-		host("x", "my.dev", "q.u_0b", "devnet.ethpandaops.io"))
-	// empty base.
-	assert.Equal(t, "dora.bal3.qu0b", host("dora", "bal3", "qu0b", ""))
+	t.Run("flat primary -> single label <service>--<enclave>--<owner>.<base>", func(t *testing.T) {
+		got := serviceHost("http", "dora", "bal3", "qu0b", true, flat)
+		assert.Equal(t, "dora--bal3--qu0b.ethpandaops.io", got)
+		// Everything below the base is one DNS label (no dots).
+		assert.Equal(t, "dora--bal3--qu0b", strings.SplitN(got, ".", 2)[0])
+	})
+
+	t.Run("flat non-primary -> <port>--<service>--<enclave>--<owner>.<base>", func(t *testing.T) {
+		assert.Equal(t, "metrics--dora--bal3--qu0b.ethpandaops.io",
+			serviceHost("metrics", "dora", "bal3", "qu0b", false, flat))
+	})
+
+	t.Run("flat over-long label is shortened to one DNS label", func(t *testing.T) {
+		got := serviceHost("metrics", strings.Repeat("x", 80), "bal3", "qu0b", false, flat)
+		label := strings.SplitN(got, ".", 2)[0]
+		require.LessOrEqual(t, len(label), maxDNSLabel)
+	})
+
+	t.Run("empty base omits trailing dot", func(t *testing.T) {
+		cfg := config.IngressConfig{HostStyle: "dotted"}
+		assert.Equal(t, "dora.bal3.qu0b", serviceHost("http", "dora", "bal3", "qu0b", true, cfg))
+	})
 }
 
 func TestIsExposed(t *testing.T) {
@@ -254,10 +270,16 @@ func TestBuildIngress(t *testing.T) {
 }
 
 func TestAliasHostname(t *testing.T) {
-	assert.Equal(t, "dora.qu0b.k3s.bruno", aliasHostname("dora", "qu0b", "k3s.bruno"))
+	dotted := config.IngressConfig{HostStyle: "dotted", BaseDomain: "k3s.bruno"}
+	assert.Equal(t, "dora.qu0b.k3s.bruno", aliasHostname("dora", "qu0b", dotted))
 	assert.Equal(t, "el-1-geth.q-u-0b.devnet.ethpandaops.io",
-		aliasHostname("el-1-geth", "q.u_0b", "devnet.ethpandaops.io"))
-	assert.Equal(t, "dora.qu0b", aliasHostname("dora", "qu0b", ""))
+		aliasHostname("el-1-geth", "q.u_0b",
+			config.IngressConfig{HostStyle: "dotted", BaseDomain: "devnet.ethpandaops.io"}))
+	assert.Equal(t, "dora.qu0b", aliasHostname("dora", "qu0b", config.IngressConfig{HostStyle: "dotted"}))
+
+	// Flat: single label <service>--<owner>.<base>.
+	flat := config.IngressConfig{HostStyle: "flat", BaseDomain: "ethpandaops.io"}
+	assert.Equal(t, "dora--qu0b.ethpandaops.io", aliasHostname("dora", "qu0b", flat))
 }
 
 func TestAliasEndpoints(t *testing.T) {
