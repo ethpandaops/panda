@@ -173,7 +173,9 @@ func (s *service) handleDevnetUp(w http.ResponseWriter, r *http.Request) {
 // authenticated GitHub identity in production, the configured LocalOwner in
 // bruno/lean dev, or "local" as a last resort.
 func (s *service) resolveOwner(r *http.Request) string {
-	if owner := authOwnerID(r); owner != "" {
+	// Prefer the GitHub login for readable owner-scoped hostnames; fall back to
+	// the configured local owner (bruno/lean dev) then "local".
+	if owner := authOwnerLogin(r); owner != "" {
 		return owner
 	}
 	if owner := s.devnetCfg.Ingress.LocalOwner; owner != "" {

@@ -10,6 +10,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -131,12 +132,17 @@ func enclaveNamespace(ctx context.Context, clientset kubernetes.Interface, encla
 // newK8sClient builds a Kubernetes clientset from the current kubeconfig context
 // (which EnsureKubeContext points at the configured cluster).
 func newK8sClient() (*kubernetes.Clientset, error) {
-	cfg, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-		clientcmd.NewDefaultClientConfigLoadingRules(),
-		&clientcmd.ConfigOverrides{},
-	).ClientConfig()
+	// In-cluster first (the prod panda-server runs as a pod with a
+	// ServiceAccount); fall back to a kubeconfig for local/bruno use.
+	cfg, err := rest.InClusterConfig()
 	if err != nil {
-		return nil, fmt.Errorf("loading kubeconfig: %w", err)
+		cfg, err = clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+			clientcmd.NewDefaultClientConfigLoadingRules(),
+			&clientcmd.ConfigOverrides{},
+		).ClientConfig()
+		if err != nil {
+			return nil, fmt.Errorf("loading Kubernetes config (no in-cluster config and no kubeconfig): %w", err)
+		}
 	}
 
 	clientset, err := kubernetes.NewForConfig(cfg)

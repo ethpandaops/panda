@@ -920,6 +920,25 @@ func authOwnerID(r *http.Request) string {
 	return attribution.FromContext(r.Context())
 }
 
+// authOwnerLogin returns the caller's GitHub login — preferred for the
+// human-readable, owner-scoped devnet hostnames (dora.qu0b.… not dora.583231.…)
+// — falling back to the numeric ID, or "" when unauthenticated. Like
+// authOwnerID it is server-derived from the request, never client-supplied.
+func authOwnerLogin(r *http.Request) string {
+	user := auth.GetAuthUser(r.Context())
+	if user == nil {
+		return ""
+	}
+	if user.GitHubLogin != "" {
+		return user.GitHubLogin
+	}
+	if user.GitHubID != 0 {
+		return fmt.Sprintf("%d", user.GitHubID)
+	}
+
+	return ""
+}
+
 func parseOptionalInt(r *http.Request, key string) (int, error) {
 	value := strings.TrimSpace(r.URL.Query().Get(key))
 	if value == "" {
