@@ -185,11 +185,13 @@ func TestEndpoints(t *testing.T) {
 
 func TestBuildIngress(t *testing.T) {
 	cfg := config.IngressConfig{
-		BaseDomain:     "k3s.bruno",
-		IngressClass:   "traefik",
-		Entrypoint:     "web",
-		AuthMiddleware: "auth@kubernetescrd",
-		TLSSecret:      "wildcard",
+		BaseDomain:   "k3s.bruno",
+		IngressClass: "traefik",
+		Annotations: map[string]string{
+			"traefik.ingress.kubernetes.io/router.entrypoints": "web",
+			"cert-manager.io/cluster-issuer":                   "zerossl-devnet",
+		},
+		TLSSecret: "wildcard",
 	}
 	svc := Service{
 		Name: "el-1",
@@ -208,8 +210,9 @@ func TestBuildIngress(t *testing.T) {
 	assert.Equal(t, "panda", ing.Labels["app.kubernetes.io/managed-by"])
 	assert.Equal(t, "qu0b", ing.Labels["panda.devnet/owner"])
 	assert.Equal(t, "uuid-1", ing.Labels["panda.devnet/enclave"])
+	// Configured annotations are applied verbatim (controller-agnostic).
 	assert.Equal(t, "web", ing.Annotations["traefik.ingress.kubernetes.io/router.entrypoints"])
-	assert.Equal(t, "auth@kubernetescrd", ing.Annotations["traefik.ingress.kubernetes.io/router.middlewares"])
+	assert.Equal(t, "zerossl-devnet", ing.Annotations["cert-manager.io/cluster-issuer"])
 	require.NotNil(t, ing.Spec.IngressClassName)
 	assert.Equal(t, "traefik", *ing.Spec.IngressClassName)
 
@@ -233,12 +236,20 @@ func TestBuildIngress(t *testing.T) {
 		assert.Nil(t, nilIng)
 	})
 
-	t.Run("no TLS secret omits TLS", func(t *testing.T) {
+	t.Run("no TLS disables TLS", func(t *testing.T) {
 		plain := buildIngress("ns", "uuid", "dev", "qu0b", svc,
-			config.IngressConfig{BaseDomain: "k3s.bruno", IngressClass: "traefik", Entrypoint: "web"})
+			config.IngressConfig{BaseDomain: "k3s.bruno", IngressClass: "traefik"})
 		require.NotNil(t, plain)
 		assert.Empty(t, plain.Spec.TLS)
-		assert.NotContains(t, plain.Annotations, "traefik.ingress.kubernetes.io/router.middlewares")
+		assert.Empty(t, plain.Annotations)
+	})
+
+	t.Run("TLS without a fixed secret derives a per-ingress secret", func(t *testing.T) {
+		auto := buildIngress("ns", "uuid", "dev", "qu0b", svc,
+			config.IngressConfig{BaseDomain: "k3s.bruno", IngressClass: "nginx", TLS: true})
+		require.NotNil(t, auto)
+		require.Len(t, auto.Spec.TLS, 1)
+		assert.Equal(t, "panda-el-1-tls", auto.Spec.TLS[0].SecretName)
 	})
 }
 
@@ -271,7 +282,7 @@ func TestAliasEndpoints(t *testing.T) {
 }
 
 func TestBuildAliasIngress(t *testing.T) {
-	cfg := config.IngressConfig{BaseDomain: "k3s.bruno", IngressClass: "traefik", Entrypoint: "web"}
+	cfg := config.IngressConfig{BaseDomain: "k3s.bruno", IngressClass: "traefik"}
 	svc := Service{Name: "el-1", Ports: []Port{
 		{Name: "engine-rpc", Number: 8551},
 		{Name: "rpc", Number: 8545, Application: "http"},

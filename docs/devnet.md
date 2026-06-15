@@ -142,13 +142,18 @@ boundary: a single per-user wildcard cert `*.<owner>.<base>` covers all of a use
 devnets, and a Traefik forward-auth middleware can enforce *authenticated user ==
 `<owner>`* so users only reach their own services.
 
+The ingress is controller-agnostic: `ingress_class` plus an `annotations` map
+applied verbatim to every Ingress (routing, cert-manager issuer, edge auth), and
+a `tls` toggle.
+
 ```yaml
 devnet:
   ingress:
     enabled: true
     base_domain: k3s.bruno      # bruno (LAN; dnsmasq *.k3s.bruno wildcard already routes to Traefik)
-    entrypoint: web             # plain HTTP on the trusted LAN
     ingress_class: traefik
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: web   # plain HTTP on the trusted LAN
     local_owner: qu0b           # owner when the request carries no identity (lean dev)
 ```
 
@@ -159,9 +164,11 @@ devnet:
   ingress:
     enabled: true
     base_domain: devnet.ethpandaops.io
-    entrypoint: websecure
-    tls_secret: devnet-wildcard-tls          # *.<owner>.devnet.ethpandaops.io (cert-manager DNS-01)
-    auth_middleware: devnet-forward-auth@kubernetescrd
+    ingress_class: ingress-nginx-devnets
+    tls: true                                  # per-Ingress secret, issued by cert-manager
+    annotations:
+      cert-manager.io/cluster-issuer: zerossl-devnet         # ZeroSSL DNS-01 (no LE rate limits)
+      nginx.ingress.kubernetes.io/auth-url: https://…        # edge auth: authed user == <owner>
     # local_owner unset → owner comes from the authenticated identity
 ```
 

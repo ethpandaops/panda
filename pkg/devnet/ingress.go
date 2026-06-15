@@ -186,14 +186,27 @@ func host(label, enclave, owner, base string) string {
 	return strings.Join(parts, ".")
 }
 
-// scheme returns the URL scheme implied by the ingress config: https when a TLS
-// secret is configured, http otherwise.
+// scheme returns the URL scheme implied by the ingress config for canonical
+// hosts: https when TLS is enabled (or a fixed secret is pinned), http otherwise.
 func scheme(cfg config.IngressConfig) string {
-	if cfg.TLSSecret != "" {
+	if cfg.TLS || cfg.TLSSecret != "" {
 		return "https"
 	}
 
 	return "http"
+}
+
+// copyAnnotations returns a fresh copy of the configured ingress annotations so
+// callers never mutate the shared config map. These are applied verbatim to
+// every Ingress, making panda controller-agnostic (Traefik, nginx, …) and the
+// hook for cert-manager and edge auth.
+func copyAnnotations(cfg config.IngressConfig) map[string]string {
+	out := make(map[string]string, len(cfg.Annotations))
+	for k, v := range cfg.Annotations {
+		out[k] = v
+	}
+
+	return out
 }
 
 // Endpoints computes the external URLs for each service that exposes at least
@@ -239,9 +252,10 @@ func Endpoints(services []Service, enclaveName, owner string, cfg config.Ingress
 // be moved atomically across a user's enclaves.
 const aliasLabel = "panda.devnet/alias"
 
-// aliasScheme returns the URL scheme for alias hosts (their own TLS secret).
+// aliasScheme returns the URL scheme for alias hosts: https when TLS is enabled
+// (or a fixed alias secret is pinned), http otherwise.
 func aliasScheme(cfg config.IngressConfig) string {
-	if cfg.AliasTLSSecret != "" {
+	if cfg.TLS || cfg.AliasTLSSecret != "" {
 		return "https"
 	}
 
@@ -348,12 +362,7 @@ func buildAliasIngress(namespace, enclaveUUID, owner string, svc Service, cfg co
 	ingressClass := cfg.IngressClass
 	h := aliasHostname(svc.Name, owner, cfg.BaseDomain)
 
-	annotations := map[string]string{
-		"traefik.ingress.kubernetes.io/router.entrypoints": cfg.Entrypoint,
-	}
-	if cfg.AuthMiddleware != "" {
-		annotations["traefik.ingress.kubernetes.io/router.middlewares"] = cfg.AuthMiddleware
-	}
+	annotations := copyAnnotations(cfg)
 
 	spec := networkingv1.IngressSpec{
 		IngressClassName: &ingressClass,
@@ -375,8 +384,12 @@ func buildAliasIngress(namespace, enclaveUUID, owner string, svc Service, cfg co
 			},
 		}},
 	}
-	if cfg.AliasTLSSecret != "" {
-		spec.TLS = []networkingv1.IngressTLS{{Hosts: []string{h}, SecretName: cfg.AliasTLSSecret}}
+	if cfg.TLS || cfg.AliasTLSSecret != "" {
+		secret := cfg.AliasTLSSecret
+		if secret == "" {
+			secret = "panda-alias-" + sanitizeLabel(svc.Name) + "-tls"
+		}
+		spec.TLS = []networkingv1.IngressTLS{{Hosts: []string{h}, SecretName: secret}}
 	}
 
 	return &networkingv1.Ingress{
@@ -474,22 +487,18 @@ func buildIngress(namespace, enclaveUUID, enclaveName, owner string, svc Service
 		rules = append(rules, rule(h, p.Number))
 	}
 
-	annotations := map[string]string{
-		"traefik.ingress.kubernetes.io/router.entrypoints": cfg.Entrypoint,
-	}
-	if cfg.AuthMiddleware != "" {
-		annotations["traefik.ingress.kubernetes.io/router.middlewares"] = cfg.AuthMiddleware
-	}
+	annotations := copyAnnotations(cfg)
 
 	spec := networkingv1.IngressSpec{
 		IngressClassName: &ingressClass,
 		Rules:            rules,
 	}
-	if cfg.TLSSecret != "" {
-		spec.TLS = []networkingv1.IngressTLS{{
-			Hosts:      hosts,
-			SecretName: cfg.TLSSecret,
-		}}
+	if cfg.TLS || cfg.TLSSecret != "" {
+		secret := cfg.TLSSecret
+		if secret == "" {
+			secret = "panda-" + sanitizeLabel(svc.Name) + "-tls"
+		}
+		spec.TLS = []networkingv1.IngressTLS{{Hosts: hosts, SecretName: secret}}
 	}
 
 	return &networkingv1.Ingress{

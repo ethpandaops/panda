@@ -50,19 +50,18 @@ Key alignment points:
 - panda creates Ingresses **at runtime** per devnet; the platform's
   Traefik/cert-manager/DNS pick them up — no per-devnet GitOps changes.
 
-## Required code changes (small, before prod)
+## Required code changes (before prod)
 
-These are the only code deltas beyond PR #213. Both are localized and config-gated.
-
-1. **Owner label = GitHub login, not numeric ID.** `authOwnerID` returns
-   `user.GitHubID`; `AuthUser` also has `GitHubLogin`. Resolve the devnet owner to
-   the login so hostnames read `dora.qu0b.<base>` rather than `dora.583231.<base>`
-   (keep the ID for any authz comparison). Scope it to `resolveOwner` so the global
-   `authOwnerID` is untouched.
-2. **cert-manager-driven TLS.** Add `devnet.ingress.cert_cluster_issuer`. When set,
-   panda annotates each Ingress with `cert-manager.io/cluster-issuer: <issuer>` and
-   gives it a per-Ingress TLS `secretName`, so cert-manager issues the cert
-   automatically (instead of pre-provisioning a single static `tls_secret`).
+- **Controller-agnostic ingress + cert-manager TLS — done (on PR #213).** The
+  ingress is configured by `ingress_class` + a verbatim `annotations` map + a `tls`
+  toggle; with `tls: true` and no fixed `tls_secret`, panda derives a per-Ingress
+  secret name and cert-manager issues it from the `cluster-issuer` annotation. This
+  is what lets prod use nginx + cert-manager instead of bruno's Traefik.
+- **Owner label = GitHub login, not numeric ID — still TODO.** `authOwnerID`
+  returns `user.GitHubID`; `AuthUser` also has `GitHubLogin`. Resolve the devnet
+  owner to the login (in `resolveOwner`, leaving the global `authOwnerID` untouched)
+  so hostnames read `dora.qu0b.<base>` not `dora.583231.<base>`. Keep the ID for
+  authz comparisons.
 
 ## DNS + TLS: the one decision to make
 
@@ -136,14 +135,21 @@ devnet:
   docker_cache: docker.ethquokkaops.io
   ingress:
     enabled: true
-    base_domain: devnets.ethpandaops.io       # platform-chosen
-    entrypoint: websecure                      # TLS at Traefik
-    ingress_class: traefik
-    cert_cluster_issuer: zerossl-dns01         # (new field) per-host certs
-    auth_middleware: devnet-forward-auth@kubernetescrd
+    base_domain: devnet.ethpandaops.io         # platform-chosen (delegated zone, option B)
+    ingress_class: ingress-nginx-devnets       # the platform's devnet ingress controller
+    tls: true                                  # per-Ingress secret, cert-manager issues it
+    annotations:
+      cert-manager.io/cluster-issuer: zerossl-devnet         # ZeroSSL DNS-01, no LE rate limits
+      nginx.ingress.kubernetes.io/auth-url: https://…        # edge auth: authed user == <owner>
     # local_owner unset → owner = authenticated GitHub login
     # tls_secret / alias_tls_secret only if pre-provisioning wildcards instead
 ```
+
+> The ingress is **controller-agnostic**: `ingress_class` + an `annotations` map
+> (applied verbatim) + a `tls` toggle. On the platform that's nginx
+> (`ingress-nginx-devnets`) rather than bruno's Traefik. With `tls: true` and no
+> fixed `tls_secret`, panda derives a per-Ingress secret name and cert-manager
+> issues the cert from the `cluster-issuer` annotation.
 
 ## Rollout
 

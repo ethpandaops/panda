@@ -53,31 +53,34 @@ type IngressConfig struct {
 	// (bruno) or "devnet.ethpandaops.io" (prod).
 	BaseDomain string `yaml:"base_domain"`
 
-	// IngressClass is the spec.ingressClassName set on created Ingresses.
-	// Defaults to "traefik" when empty.
+	// IngressClass is the spec.ingressClassName set on created Ingresses, e.g.
+	// "traefik" (bruno) or "ingress-nginx-devnets" (prod). Defaults to "traefik".
 	IngressClass string `yaml:"ingress_class"`
 
-	// Entrypoint is the Traefik entrypoint routers attach to (the
-	// traefik.ingress.kubernetes.io/router.entrypoints annotation), e.g. "web"
-	// (bruno, plain http) or "websecure" (prod). Defaults to "web" when empty.
-	Entrypoint string `yaml:"entrypoint"`
+	// Annotations are applied verbatim to every Ingress panda creates. This is
+	// the controller-agnostic hook for routing, TLS issuance and edge auth — set
+	// whatever the chosen ingress controller / cert-manager / auth layer needs,
+	// e.g.
+	//   traefik: {"traefik.ingress.kubernetes.io/router.entrypoints": "web"}
+	//   nginx:   {"nginx.ingress.kubernetes.io/auth-url": "...", "cert-manager.io/cluster-issuer": "zerossl-devnet"}
+	Annotations map[string]string `yaml:"annotations"`
 
-	// TLSSecret is the per-enclave wildcard TLS secret name attached to every
-	// canonical host. Empty means plain http (bruno); a non-empty value switches
-	// computed endpoint URLs to https.
+	// TLS, when true, makes panda emit a TLS section on every Ingress so the edge
+	// (or cert-manager) serves https and computed URLs use https. With TLSSecret
+	// empty, a per-Ingress secret name is derived (cert-manager issues it via the
+	// issuer named in Annotations). Empty/false means plain http (bruno).
+	TLS bool `yaml:"tls"`
+
+	// TLSSecret optionally pins a fixed (e.g. pre-provisioned wildcard) secret for
+	// the canonical hosts instead of a per-Ingress cert-manager secret. Setting it
+	// implies TLS.
 	TLSSecret string `yaml:"tls_secret"`
 
-	// AliasTLSSecret is the per-owner wildcard TLS secret (*.<owner>.<base>)
-	// attached to the short default-devnet alias hosts (<service>.<owner>.<base>).
-	// Empty means plain http for the alias (bruno). Distinct from TLSSecret
-	// because the alias hangs one label higher than the canonical hosts.
+	// AliasTLSSecret optionally pins a fixed secret (e.g. a per-owner wildcard
+	// *.<owner>.<base>) for the short default-devnet alias hosts. The alias hangs
+	// one label higher than the canonical hosts, so it may need a different cert.
+	// Setting it implies TLS for the alias.
 	AliasTLSSecret string `yaml:"alias_tls_secret"`
-
-	// AuthMiddleware is an optional Traefik middleware reference (e.g.
-	// "devnet-forward-auth@kubernetescrd") added via the
-	// traefik.ingress.kubernetes.io/router.middlewares annotation. Empty on
-	// bruno; set in prod to enforce auth at the edge.
-	AuthMiddleware string `yaml:"auth_middleware"`
 
 	// LocalOwner is the owner label used when the request carries no
 	// authenticated identity (bruno/lean dev). Never sourced from client args.

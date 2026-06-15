@@ -29,8 +29,9 @@ devnet:
   ingress:
     enabled: true
     base_domain: k3s.bruno
-    entrypoint: web
     ingress_class: traefik
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: web
     local_owner: qu0b
 
 observability:

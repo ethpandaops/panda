@@ -457,10 +457,6 @@ func applyDefaults(cfg *Config) {
 		cfg.Devnet.Ingress.IngressClass = "traefik"
 	}
 
-	if cfg.Devnet.Ingress.Entrypoint == "" {
-		cfg.Devnet.Ingress.Entrypoint = "web"
-	}
-
 	// Storage defaults.
 	if cfg.Storage.BaseDir == "" {
 		cfg.Storage.BaseDir = pandaDataDir("storage")

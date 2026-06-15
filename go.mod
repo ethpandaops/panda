@@ -16,7 +16,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.5
-	github.com/kurtosis-tech/kurtosis/api/golang v1.19.0
+	github.com/kurtosis-tech/kurtosis/api/golang v1.18.3
 	github.com/mark3labs/mcp-go v0.54.1
 	github.com/moby/moby/api v1.54.2
 	github.com/moby/moby/client v0.4.1
