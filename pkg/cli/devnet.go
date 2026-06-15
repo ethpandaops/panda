@@ -135,7 +135,7 @@ format); without it the package defaults are used.`,
 		out := cmd.OutOrStdout()
 		fmt.Fprintln(out, "Launching devnet (this can take a few minutes)…")
 
-		resp, err := runServerOperation("devnet.up", opArgs)
+		resp, err := runServerOperation(cmd, "devnet.up", opArgs)
 		if err != nil {
 			return err
 		}
@@ -200,8 +200,8 @@ var devnetServicesCmd = &cobra.Command{
 
 The names shown are what 'panda devnet logs' accepts to select services.`,
 	Args: cobra.ExactArgs(1),
-	RunE: func(_ *cobra.Command, args []string) error {
-		resp, err := runServerOperation("devnet.services", map[string]any{"enclave": args[0]})
+	RunE: func(cmd *cobra.Command, args []string) error {
+		resp, err := runServerOperation(cmd, "devnet.services", map[string]any{"enclave": args[0]})
 		if err != nil {
 			return err
 		}
@@ -254,8 +254,8 @@ Each exposed service is reachable at an owner-scoped hostname; this lists the
 primary URL per service (the dora UI and EL rpc are the headline ones). Pass
 --json for the full per-port detail.`,
 	Args: cobra.ExactArgs(1),
-	RunE: func(_ *cobra.Command, args []string) error {
-		resp, err := runServerOperation("devnet.endpoints", map[string]any{"enclave": args[0]})
+	RunE: func(cmd *cobra.Command, args []string) error {
+		resp, err := runServerOperation(cmd, "devnet.endpoints", map[string]any{"enclave": args[0]})
 		if err != nil {
 			return err
 		}
@@ -295,7 +295,7 @@ back to an earlier devnet. The enclave-qualified URLs (from 'endpoints') keep
 working for every devnet regardless.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		resp, err := runServerOperation("devnet.use", map[string]any{"enclave": args[0]})
+		resp, err := runServerOperation(cmd, "devnet.use", map[string]any{"enclave": args[0]})
 		if err != nil {
 			return err
 		}
@@ -357,7 +357,7 @@ cloud proxy — without needing the kurtosis CLI or a gateway locally.`,
 			opArgs["tail"] = devnetLogsTail
 		}
 
-		resp, err := runServerOperation("devnet.logs", opArgs)
+		resp, err := runServerOperation(cmd, "devnet.logs", opArgs)
 		if err != nil {
 			return err
 		}
@@ -398,8 +398,8 @@ var devnetLsCmd = &cobra.Command{
 	Aliases: []string{"list"},
 	Short:   "List devnet enclaves",
 	Args:    cobra.NoArgs,
-	RunE: func(_ *cobra.Command, _ []string) error {
-		enclaves, err := fetchEnclaves()
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		enclaves, err := fetchEnclaves(cmd)
 		if err != nil {
 			return err
 		}
@@ -433,8 +433,8 @@ var devnetInspectCmd = &cobra.Command{
 	Use:   "inspect <enclave>",
 	Short: "Show details for a devnet enclave",
 	Args:  cobra.ExactArgs(1),
-	RunE: func(_ *cobra.Command, args []string) error {
-		resp, err := runServerOperation("devnet.inspect", map[string]any{"enclave": args[0]})
+	RunE: func(cmd *cobra.Command, args []string) error {
+		resp, err := runServerOperation(cmd, "devnet.inspect", map[string]any{"enclave": args[0]})
 		if err != nil {
 			return err
 		}
@@ -472,7 +472,7 @@ var devnetDownCmd = &cobra.Command{
 Pass an enclave name to destroy one, or --all to prune every devnet — useful for
 reclaiming cluster resources when no devnets are needed anymore.`,
 	Args: cobra.MaximumNArgs(1),
-	RunE: func(_ *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		opArgs := map[string]any{}
 		switch {
 		case devnetDownAll:
@@ -486,7 +486,7 @@ reclaiming cluster resources when no devnets are needed anymore.`,
 			return fmt.Errorf("requires an enclave name, or --all to destroy every devnet")
 		}
 
-		resp, err := runServerOperation("devnet.down", opArgs)
+		resp, err := runServerOperation(cmd, "devnet.down", opArgs)
 		if err != nil {
 			return err
 		}
@@ -525,8 +525,8 @@ func decodeOperationData(resp *operations.Response, target any) error {
 }
 
 // fetchEnclaves lists enclaves via the server.
-func fetchEnclaves() ([]devnet.Enclave, error) {
-	resp, err := runServerOperation("devnet.ls", map[string]any{})
+func fetchEnclaves(cmd *cobra.Command) ([]devnet.Enclave, error) {
+	resp, err := runServerOperation(cmd, "devnet.ls", map[string]any{})
 	if err != nil {
 		return nil, err
 	}
@@ -563,8 +563,8 @@ func readArgsFile(path string) (string, error) {
 }
 
 // completeEnclaveNames provides shell completion of existing enclave names.
-func completeEnclaveNames(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-	enclaves, err := fetchEnclaves()
+func completeEnclaveNames(cmd *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+	enclaves, err := fetchEnclaves(cmd)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}

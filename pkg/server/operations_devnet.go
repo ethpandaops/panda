@@ -499,6 +499,17 @@ func (s *service) handleDevnetDown(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate the target before connecting to the engine, so a missing
+	// enclave/all is a 400 rather than a 502 when the engine is unreachable.
+	var enclave string
+	if !boolOrFalse(all) {
+		enclave, err = requiredStringArg(req.Args, "enclave")
+		if err != nil {
+			writeAPIError(w, http.StatusBadRequest, "enclave is required, or pass all=true")
+			return
+		}
+	}
+
 	var out bytes.Buffer
 	client, err := s.devnetClient(&out)
 	if err != nil {
@@ -517,11 +528,6 @@ func (s *service) handleDevnetDown(w http.ResponseWriter, r *http.Request) {
 			targets = append(targets, e.Name)
 		}
 	} else {
-		enclave, reqErr := requiredStringArg(req.Args, "enclave")
-		if reqErr != nil {
-			writeAPIError(w, http.StatusBadRequest, "enclave is required, or pass all=true")
-			return
-		}
 		targets = []string{enclave}
 	}
 
