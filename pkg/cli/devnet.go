@@ -64,6 +64,7 @@ func init() {
 		devnetInspectCmd,
 		devnetServicesCmd,
 		devnetEndpointsCmd,
+		devnetUseCmd,
 		devnetLogsCmd,
 		devnetDownCmd,
 	)
@@ -91,6 +92,7 @@ func init() {
 	devnetInspectCmd.ValidArgsFunction = completeEnclaveNames
 	devnetServicesCmd.ValidArgsFunction = completeEnclaveNames
 	devnetEndpointsCmd.ValidArgsFunction = completeEnclaveNames
+	devnetUseCmd.ValidArgsFunction = completeEnclaveNames
 	devnetLogsCmd.ValidArgsFunction = completeEnclaveNames
 	devnetDownCmd.ValidArgsFunction = completeEnclaveNames
 }
@@ -139,11 +141,12 @@ format); without it the package defaults are used.`,
 		}
 
 		var result struct {
-			Enclave      string                    `json:"enclave"`
-			Output       string                    `json:"output"`
-			Error        string                    `json:"error"`
-			Endpoints    []devnet.ServiceEndpoints `json:"endpoints"`
-			IngressError string                    `json:"ingress_error"`
+			Enclave        string                    `json:"enclave"`
+			Output         string                    `json:"output"`
+			Error          string                    `json:"error"`
+			Endpoints      []devnet.ServiceEndpoints `json:"endpoints"`
+			AliasEndpoints []devnet.ServiceEndpoints `json:"alias_endpoints"`
+			IngressError   string                    `json:"ingress_error"`
 		}
 		if err := decodeOperationData(resp, &result); err != nil {
 			return err
@@ -169,6 +172,14 @@ format); without it the package defaults are used.`,
 		if len(result.Endpoints) > 0 {
 			fmt.Fprintln(out, "\nendpoints:")
 			for _, e := range result.Endpoints {
+				if e.PrimaryURL != "" {
+					fmt.Fprintf(out, "  %-28s %s\n", e.Service, e.PrimaryURL)
+				}
+			}
+		}
+		if len(result.AliasEndpoints) > 0 {
+			fmt.Fprintf(out, "\ndefault devnet (short URLs, this devnet until the next 'up' or 'devnet use'):\n")
+			for _, e := range result.AliasEndpoints {
 				if e.PrimaryURL != "" {
 					fmt.Fprintf(out, "  %-28s %s\n", e.Service, e.PrimaryURL)
 				}
@@ -268,6 +279,46 @@ primary URL per service (the dora UI and EL rpc are the headline ones). Pass
 			rows = append(rows, []string{e.Service, e.PrimaryURL})
 		}
 		printTable([]string{"SERVICE", "URL"}, rows)
+
+		return nil
+	},
+}
+
+var devnetUseCmd = &cobra.Command{
+	Use:   "use <enclave>",
+	Short: "Make a devnet your default (claim the short <service>.<owner> URLs)",
+	Long: `Point your short hostnames (<service>.<owner>.<base>, e.g. dora.qu0b.k3s.bruno)
+at this devnet.
+
+The newest 'panda devnet up' already becomes your default; use this to switch
+back to an earlier devnet. The enclave-qualified URLs (from 'endpoints') keep
+working for every devnet regardless.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		resp, err := runServerOperation("devnet.use", map[string]any{"enclave": args[0]})
+		if err != nil {
+			return err
+		}
+
+		var result struct {
+			Enclave        string                    `json:"enclave"`
+			AliasEndpoints []devnet.ServiceEndpoints `json:"alias_endpoints"`
+		}
+		if err := decodeOperationData(resp, &result); err != nil {
+			return err
+		}
+
+		if isJSON() {
+			return printJSON(result)
+		}
+
+		out := cmd.OutOrStdout()
+		fmt.Fprintf(out, "Default devnet is now %q. Short URLs:\n", result.Enclave)
+		for _, e := range result.AliasEndpoints {
+			if e.PrimaryURL != "" {
+				fmt.Fprintf(out, "  %-28s %s\n", e.Service, e.PrimaryURL)
+			}
+		}
 
 		return nil
 	},

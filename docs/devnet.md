@@ -93,6 +93,7 @@ panda devnet logs my-devnet el-1-geth-lighthouse --tail 500
 panda devnet logs my-devnet -f                         # follow all services live
 panda devnet logs my-devnet el-1-geth-lighthouse -f    # follow one (Ctrl-C to stop)
 panda devnet endpoints my-devnet                       # external URLs per service
+panda devnet use my-devnet                             # make it your default (short URLs)
 panda devnet down my-devnet        # or: panda devnet down --all
 ```
 
@@ -122,6 +123,13 @@ like the `ethpandaops.general.dns_server` role) and certs come from **ZeroSSL
 DNS-01** (no Let's Encrypt rate limits) via cert-manager — a per-enclave wildcard
 `*.<enclave>.<owner>.<base>` covers every host above, since the left-most label is
 the only variable part below it.
+
+Your **default devnet** also gets short, enclave-less aliases
+`<service>.<owner>.<base>` (e.g. `dora.qu0b.k3s.bruno`). The newest `panda devnet
+up` becomes the default; `panda devnet use <enclave>` switches it back to an
+earlier one. The enclave-qualified URLs keep working for every devnet regardless.
+(The alias hangs one label higher, so in prod it uses a per-owner wildcard —
+`alias_tls_secret` / `*.<owner>.<base>` — separate from the per-enclave cert.)
 
 `panda devnet endpoints my-devnet` lists them (`--json` for scripting). Web UIs
 (dora, grafana) load at the host root; EL JSON-RPC, WebSocket (`ws--…`) and the

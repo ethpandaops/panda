@@ -235,6 +235,166 @@ func Endpoints(services []Service, enclaveName, owner string, cfg config.Ingress
 	return out
 }
 
+// aliasLabel marks an ingress as a short default-devnet alias, so the alias can
+// be moved atomically across a user's enclaves.
+const aliasLabel = "panda.devnet/alias"
+
+// aliasScheme returns the URL scheme for alias hosts (their own TLS secret).
+func aliasScheme(cfg config.IngressConfig) string {
+	if cfg.AliasTLSSecret != "" {
+		return "https"
+	}
+
+	return "http"
+}
+
+// aliasHostname builds the short default-devnet alias host for a service:
+// <service>.<owner>.<base>, e.g. "dora.qu0b.k3s.bruno".
+func aliasHostname(service, owner, base string) string {
+	parts := []string{sanitizeLabel(service), sanitizeLabel(owner)}
+	if base != "" {
+		parts = append(parts, base)
+	}
+
+	return strings.Join(parts, ".")
+}
+
+// AliasEndpoints computes the short default-devnet alias URLs — one per service
+// with a primary port: <service>.<owner>.<base>. These resolve to the owner's
+// current default devnet (the most recent 'up', or one pinned with 'devnet use').
+func AliasEndpoints(services []Service, owner string, cfg config.IngressConfig) []ServiceEndpoints {
+	sch := aliasScheme(cfg)
+
+	out := make([]ServiceEndpoints, 0, len(services))
+	for _, svc := range services {
+		if _, ok := primaryPort(exposedPorts(svc)); !ok {
+			continue
+		}
+		url := sch + "://" + aliasHostname(svc.Name, owner, cfg.BaseDomain)
+		out = append(out, ServiceEndpoints{
+			Service:    svc.Name,
+			PrimaryURL: url,
+			Ports:      []PortEndpoint{{Name: "primary", URL: url}},
+		})
+	}
+
+	return out
+}
+
+// SetDefaultAlias makes the given enclave the owner's default devnet: it removes
+// any existing short-alias ingresses for the owner (across all namespaces), then
+// creates <service>.<owner>.<base> alias ingresses (primary port) in this
+// enclave's namespace. This is how 'up' (newest wins) and 'panda devnet use'
+// point an owner's bare hostnames at exactly one devnet.
+func SetDefaultAlias(ctx context.Context, enclaveUUID, owner string, services []Service, cfg config.IngressConfig) error {
+	clientset, err := newK8sClient()
+	if err != nil {
+		return err
+	}
+
+	namespace, err := enclaveNamespace(ctx, clientset, enclaveUUID)
+	if err != nil {
+		return err
+	}
+
+	if err := clearAliasIngresses(ctx, clientset, owner); err != nil {
+		return err
+	}
+
+	for _, svc := range services {
+		ingress := buildAliasIngress(namespace, enclaveUUID, owner, svc, cfg)
+		if ingress == nil {
+			continue
+		}
+		if err := upsertIngress(ctx, clientset, namespace, ingress); err != nil {
+			return fmt.Errorf("creating alias ingress for service %q: %w", svc.Name, err)
+		}
+	}
+
+	return nil
+}
+
+// clearAliasIngresses deletes every panda alias ingress for the owner across all
+// namespaces, so the default alias only ever resolves to one devnet.
+func clearAliasIngresses(ctx context.Context, clientset kubernetes.Interface, owner string) error {
+	selector := fmt.Sprintf("app.kubernetes.io/managed-by=panda,%s=true,panda.devnet/owner=%s",
+		aliasLabel, sanitizeLabel(owner))
+
+	list, err := clientset.NetworkingV1().Ingresses("").List(ctx, metav1.ListOptions{LabelSelector: selector})
+	if err != nil {
+		return fmt.Errorf("listing alias ingresses for owner %q: %w", owner, err)
+	}
+
+	for i := range list.Items {
+		ing := &list.Items[i]
+		if err := clientset.NetworkingV1().Ingresses(ing.Namespace).Delete(ctx, ing.Name, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("deleting alias ingress %s/%s: %w", ing.Namespace, ing.Name, err)
+		}
+	}
+
+	return nil
+}
+
+// buildAliasIngress constructs the short-alias Ingress for one service (host
+// <service>.<owner>.<base> -> primary port), or nil when the service has no
+// primary port.
+func buildAliasIngress(namespace, enclaveUUID, owner string, svc Service, cfg config.IngressConfig) *networkingv1.Ingress {
+	primary, ok := primaryPort(exposedPorts(svc))
+	if !ok {
+		return nil
+	}
+
+	pathType := networkingv1.PathTypePrefix
+	ingressClass := cfg.IngressClass
+	h := aliasHostname(svc.Name, owner, cfg.BaseDomain)
+
+	annotations := map[string]string{
+		"traefik.ingress.kubernetes.io/router.entrypoints": cfg.Entrypoint,
+	}
+	if cfg.AuthMiddleware != "" {
+		annotations["traefik.ingress.kubernetes.io/router.middlewares"] = cfg.AuthMiddleware
+	}
+
+	spec := networkingv1.IngressSpec{
+		IngressClassName: &ingressClass,
+		Rules: []networkingv1.IngressRule{{
+			Host: h,
+			IngressRuleValue: networkingv1.IngressRuleValue{
+				HTTP: &networkingv1.HTTPIngressRuleValue{
+					Paths: []networkingv1.HTTPIngressPath{{
+						Path:     "/",
+						PathType: &pathType,
+						Backend: networkingv1.IngressBackend{
+							Service: &networkingv1.IngressServiceBackend{
+								Name: svc.Name,
+								Port: networkingv1.ServiceBackendPort{Number: int32(primary.Number)},
+							},
+						},
+					}},
+				},
+			},
+		}},
+	}
+	if cfg.AliasTLSSecret != "" {
+		spec.TLS = []networkingv1.IngressTLS{{Hosts: []string{h}, SecretName: cfg.AliasTLSSecret}}
+	}
+
+	return &networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "panda-alias-" + sanitizeLabel(svc.Name),
+			Namespace: namespace,
+			Labels: map[string]string{
+				"app.kubernetes.io/managed-by": "panda",
+				"panda.devnet/owner":           sanitizeLabel(owner),
+				"panda.devnet/enclave":         enclaveUUID,
+				aliasLabel:                     "true",
+			},
+			Annotations: annotations,
+		},
+		Spec: spec,
+	}
+}
+
 // ReconcileIngresses upserts one Traefik Ingress per service (that exposes
 // ports) in the enclave's Kubernetes namespace, making each devnet service
 // reachable at its stable owner-scoped hostname. It is idempotent: existing

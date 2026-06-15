@@ -241,3 +241,52 @@ func TestBuildIngress(t *testing.T) {
 		assert.NotContains(t, plain.Annotations, "traefik.ingress.kubernetes.io/router.middlewares")
 	})
 }
+
+func TestAliasHostname(t *testing.T) {
+	assert.Equal(t, "dora.qu0b.k3s.bruno", aliasHostname("dora", "qu0b", "k3s.bruno"))
+	assert.Equal(t, "el-1-geth.q-u-0b.devnet.ethpandaops.io",
+		aliasHostname("el-1-geth", "q.u_0b", "devnet.ethpandaops.io"))
+	assert.Equal(t, "dora.qu0b", aliasHostname("dora", "qu0b", ""))
+}
+
+func TestAliasEndpoints(t *testing.T) {
+	services := []Service{
+		{Name: "dora", Ports: []Port{{Name: "http", Number: 8080, Application: "http"}}},
+		{Name: "novel", Ports: []Port{{Name: "p2p", Number: 30303}}}, // no primary -> omitted
+	}
+
+	t.Run("http when no alias TLS", func(t *testing.T) {
+		eps := AliasEndpoints(services, "qu0b", config.IngressConfig{BaseDomain: "k3s.bruno"})
+		require.Len(t, eps, 1)
+		assert.Equal(t, "dora", eps[0].Service)
+		assert.Equal(t, "http://dora.qu0b.k3s.bruno", eps[0].PrimaryURL)
+	})
+
+	t.Run("https when alias TLS set", func(t *testing.T) {
+		eps := AliasEndpoints(services, "qu0b",
+			config.IngressConfig{BaseDomain: "devnet.ethpandaops.io", AliasTLSSecret: "w"})
+		require.Len(t, eps, 1)
+		assert.Equal(t, "https://dora.qu0b.devnet.ethpandaops.io", eps[0].PrimaryURL)
+	})
+}
+
+func TestBuildAliasIngress(t *testing.T) {
+	cfg := config.IngressConfig{BaseDomain: "k3s.bruno", IngressClass: "traefik", Entrypoint: "web"}
+	svc := Service{Name: "el-1", Ports: []Port{
+		{Name: "engine-rpc", Number: 8551},
+		{Name: "rpc", Number: 8545, Application: "http"},
+	}}
+
+	ing := buildAliasIngress("ns", "uuid-1", "qu0b", svc, cfg)
+	require.NotNil(t, ing)
+	assert.Equal(t, "panda-alias-el-1", ing.Name)
+	assert.Equal(t, "true", ing.Labels[aliasLabel])
+	assert.Equal(t, "qu0b", ing.Labels["panda.devnet/owner"])
+	require.Len(t, ing.Spec.Rules, 1)
+	assert.Equal(t, "el-1.qu0b.k3s.bruno", ing.Spec.Rules[0].Host)
+	assert.Equal(t, int32(8545), ing.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Port.Number)
+
+	nilIng := buildAliasIngress("ns", "u", "qu0b",
+		Service{Name: "x", Ports: []Port{{Name: "p2p"}}}, cfg)
+	assert.Nil(t, nilIng)
+}

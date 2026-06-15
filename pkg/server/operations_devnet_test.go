@@ -78,6 +78,20 @@ func TestHandleDevnetOperation_EndpointsRequiresEnclave(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
+func TestHandleDevnetOperation_UseRequiresEnclave(t *testing.T) {
+	s := newDevnetTestService()
+	s.devnetCfg = config.DevnetConfig{Ingress: config.IngressConfig{Enabled: true}}
+	// Ingress is enabled, so the 400 must come from the missing enclave arg.
+	w := callDevnet(s, "devnet.use", map[string]any{})
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestHandleDevnetOperation_UseRequiresIngressEnabled(t *testing.T) {
+	s := newDevnetTestService() // ingress disabled by default
+	w := callDevnet(s, "devnet.use", map[string]any{"enclave": "x"})
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
 func TestHandleDevnetOperation_LogsRequiresEnclave(t *testing.T) {
 	s := newDevnetTestService()
 	w := httptest.NewRecorder()

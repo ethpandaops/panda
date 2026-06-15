@@ -38,11 +38,12 @@ type DevnetConfig struct {
 
 // IngressConfig configures how panda exposes a devnet's services externally by
 // creating Traefik Ingress objects in the enclave's namespace. Each exposed
-// service port becomes reachable at a stable, owner-scoped hostname of the form
-// <port>--<service>--<enclave>.<owner>.<base_domain>, with a primary alias of
-// <service>--<enclave>.<owner>.<base_domain>. The left-most segment is a single
-// DNS label so one wildcard certificate (*.<owner>.<base_domain>) covers every
-// host.
+// service port becomes reachable at a stable, owner-scoped, dotted hostname:
+// <service>.<enclave>.<owner>.<base_domain> for the primary port and
+// <port>-<service>.<enclave>.<owner>.<base_domain> for the rest, so a per-enclave
+// wildcard certificate (*.<enclave>.<owner>.<base_domain>) covers every host.
+// The owner's default devnet additionally gets a short alias
+// <service>.<owner>.<base_domain> (covered by a per-owner wildcard).
 type IngressConfig struct {
 	// Enabled turns ingress creation on. When false, panda creates no Ingress
 	// objects and the endpoints operation still computes hostnames for display.
@@ -61,10 +62,16 @@ type IngressConfig struct {
 	// (bruno, plain http) or "websecure" (prod). Defaults to "web" when empty.
 	Entrypoint string `yaml:"entrypoint"`
 
-	// TLSSecret is the wildcard TLS secret name to attach to every host. Empty
-	// means plain http (bruno); a non-empty value switches computed endpoint
-	// URLs to https.
+	// TLSSecret is the per-enclave wildcard TLS secret name attached to every
+	// canonical host. Empty means plain http (bruno); a non-empty value switches
+	// computed endpoint URLs to https.
 	TLSSecret string `yaml:"tls_secret"`
+
+	// AliasTLSSecret is the per-owner wildcard TLS secret (*.<owner>.<base>)
+	// attached to the short default-devnet alias hosts (<service>.<owner>.<base>).
+	// Empty means plain http for the alias (bruno). Distinct from TLSSecret
+	// because the alias hangs one label higher than the canonical hosts.
+	AliasTLSSecret string `yaml:"alias_tls_secret"`
 
 	// AuthMiddleware is an optional Traefik middleware reference (e.g.
 	// "devnet-forward-auth@kubernetescrd") added via the

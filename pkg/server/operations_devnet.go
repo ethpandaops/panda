@@ -31,6 +31,8 @@ func (s *service) handleDevnetOperation(operationID string, w http.ResponseWrite
 		s.handleDevnetServices(w, r)
 	case "devnet.endpoints":
 		s.handleDevnetEndpoints(w, r)
+	case "devnet.use":
+		s.handleDevnetUse(w, r)
 	case "devnet.logs":
 		s.handleDevnetLogs(w, r)
 	case "devnet.down":
@@ -148,6 +150,13 @@ func (s *service) handleDevnetUp(w http.ResponseWriter, r *http.Request) {
 			} else if recErr := devnet.ReconcileIngresses(r.Context(), info.UUID, enclaveName, ownerID, svcs, s.devnetCfg.Ingress); recErr != nil {
 				s.log.WithError(recErr).WithField("enclave", enclaveName).Warn("ingress: reconcile failed")
 				data["ingress_error"] = recErr.Error()
+			} else if aliasErr := devnet.SetDefaultAlias(r.Context(), info.UUID, ownerID, svcs, s.devnetCfg.Ingress); aliasErr != nil {
+				// The newest 'up' becomes the owner's default devnet (its bare
+				// <service>.<owner> hostnames). Non-fatal like the rest.
+				s.log.WithError(aliasErr).WithField("enclave", enclaveName).Warn("ingress: setting default alias failed")
+				data["ingress_error"] = aliasErr.Error()
+			} else {
+				data["alias_endpoints"] = devnet.AliasEndpoints(svcs, ownerID, s.devnetCfg.Ingress)
 			}
 		}
 	}
@@ -209,6 +218,62 @@ func (s *service) handleDevnetEndpoints(w http.ResponseWriter, r *http.Request) 
 	writeOperationResponse(s.log, w, http.StatusOK, operations.Response{
 		Kind: "devnet.endpoints",
 		Data: devnet.Endpoints(svcs, enclave, owner, s.devnetCfg.Ingress),
+	})
+}
+
+// handleDevnetUse makes the given enclave the caller's default devnet: it points
+// the owner's short <service>.<owner>.<base> hostnames at this enclave (moving
+// them off any other devnet of the same owner). Owner is server-derived.
+func (s *service) handleDevnetUse(w http.ResponseWriter, r *http.Request) {
+	if !s.devnetCfg.Ingress.Enabled {
+		writeAPIError(w, http.StatusBadRequest, "devnet ingress is not enabled")
+		return
+	}
+
+	req, err := decodeOperationRequest(r)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	enclave, err := requiredStringArg(req.Args, "enclave")
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	owner := s.resolveOwner(r)
+
+	var out bytes.Buffer
+	client, err := s.devnetClient(&out)
+	if err != nil {
+		writeAPIError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+
+	info, err := client.Inspect(r.Context(), enclave)
+	if err != nil {
+		writeAPIError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+
+	svcs, err := client.Services(r.Context(), enclave)
+	if err != nil {
+		writeAPIError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+
+	if err := devnet.SetDefaultAlias(r.Context(), info.UUID, owner, svcs, s.devnetCfg.Ingress); err != nil {
+		writeAPIError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+
+	writeOperationResponse(s.log, w, http.StatusOK, operations.Response{
+		Kind: "devnet.use",
+		Data: map[string]any{
+			"enclave":         info.Name,
+			"alias_endpoints": devnet.AliasEndpoints(svcs, owner, s.devnetCfg.Ingress),
+		},
 	})
 }
 
