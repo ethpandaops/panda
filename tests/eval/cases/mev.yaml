@@ -9,7 +9,7 @@
     description: which entities delay block proposals to extract MEV
     input: "Which entities delay their block proposals the most to extract MEV on
       mainnet?"
-    tags: [clickhouse, blocks, mev, timing, entity]
+    tags: [clickhouse, mev, blocks, timing]
     assert:
       - type: llm-rubric
         value: >
@@ -37,7 +37,7 @@
     description: share of recent blocks delivered via an MEV relay
     input: "What share of mainnet blocks over the last 24h were delivered via an MEV
       relay?"
-    tags: [clickhouse, blocks, mev, relay]
+    tags: [clickhouse, mev, blocks]
     assert:
       - type: llm-rubric
         value: >
@@ -64,7 +64,7 @@
     description: most valuable MEV payload delivered during May 2026
     input: "What was the most valuable MEV payload delivered on mainnet during May
       2026 (UTC)? Which slot, and how much was it worth?"
-    tags: [clickhouse, mev, relay, blocks]
+    tags: [clickhouse, mev, blocks]
     assert:
       - type: llm-rubric
         value: >
@@ -94,7 +94,7 @@
     input: "Around the 3rd-4th of December 2025, MEV relay circuit breakers reportedly
       tripped on mainnet and relay-delivered blocks collapsed for a while. Find the
       actual window and quantify how bad it got."
-    tags: [clickhouse, mev, relay, incident]
+    tags: [clickhouse, mev]
     assert:
       - type: llm-rubric
         value: >

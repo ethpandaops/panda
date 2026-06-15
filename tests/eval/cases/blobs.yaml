@@ -9,7 +9,7 @@
     description: who submits blob txs containing empty (zero-data) blobs
     input: "Which entities submit blob transactions containing empty (zero-data) blobs
       on mainnet?"
-    tags: [clickhouse, blobs, execution, entity]
+    tags: [clickhouse, blobs, execution]
     assert:
       - type: llm-rubric
         value: >
@@ -37,7 +37,7 @@
       2026-06-08
     input: "How did engine_getBlobs response time scale with blob count for each execution
       client on mainnet on 8 June 2026 (UTC)?"
-    tags: [clickhouse, blobs, engine, execution]
+    tags: [clickhouse, blobs, execution]
     assert:
       - type: llm-rubric
         value: >
@@ -90,7 +90,7 @@
     input: "Looking at individual libp2p gossip observations of data column sidecars
       on mainnet on 8 June 2026 (UTC): how many observations arrived more than 5 minutes
       after their slot started, and from how many distinct sending peers?"
-    tags: [clickhouse, libp2p, peerdas, timing]
+    tags: [clickhouse, blobs, timing]
     assert:
       - type: llm-rubric
         value: >

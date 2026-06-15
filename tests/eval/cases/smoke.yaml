@@ -31,7 +31,7 @@
   - id: list_datasources
     description: Discover available datasources
     input: "What datasources are available for me to query? List them."
-    tags: [smoke, discovery]
+    tags: [smoke]
     assert:
       - type: llm-rubric
         value: >
@@ -48,7 +48,7 @@
     description: Block production count for the last 24 hours
     input: "How many blocks were produced on mainnet in the last 24 hours?"
     network: mainnet
-    tags: [smoke, basic, blocks]
+    tags: [smoke, clickhouse, blocks]
     assert:
       - type: llm-rubric
         value: >
@@ -69,7 +69,7 @@
     description: Missed slots in the last 24 hours
     input: "How many slots were missed in the last 24 hours on mainnet?"
     network: mainnet
-    tags: [smoke, basic, missed_slots]
+    tags: [smoke, clickhouse, blocks]
     assert:
       - type: llm-rubric
         value: >

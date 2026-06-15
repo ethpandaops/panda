@@ -8,7 +8,7 @@
     input: "Create a histogram showing the distribution of block arrival times for
       the last 1000 blocks on mainnet."
     network: mainnet
-    tags: [visualization, histogram, timing]
+    tags: [visualization, blocks, timing]
     assert:
       - type: llm-rubric
         value: >
@@ -35,7 +35,7 @@
     input: "Chart block arrival times on mainnet on 8 June 2026 (UTC) as seen by observer
       nodes in Australia."
     network: mainnet
-    tags: [visualization, timing, geo]
+    tags: [visualization, blocks, timing]
     assert:
       - type: llm-rubric
         value: >

@@ -8,7 +8,7 @@
   - id: block_size_vs_propagation                         # 📓 block-size-vs-propagation
     description: effect of payload size on propagation time
     input: "How much does block payload size affect block propagation time on mainnet?"
-    tags: [clickhouse, blocks, propagation, size]
+    tags: [clickhouse, blocks, timing]
     assert:
       - type: llm-rubric
         value: >
@@ -36,7 +36,7 @@
     description: blocks built on stale parents during May 2026, and their fate
     input: "On mainnet during May 2026 (UTC), how often did proposers build on a parent
       block more than one slot back — and did those blocks survive?"
-    tags: [clickhouse, blocks, reorgs]
+    tags: [clickhouse, blocks]
     assert:
       - type: llm-rubric
         value: >

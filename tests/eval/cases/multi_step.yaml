@@ -9,7 +9,7 @@
   - id: session_data_analysis
     description: Multi-turn data analysis with session persistence
     network: mainnet
-    tags: [multi_step, session, analysis]
+    tags: [multi_step, clickhouse, blocks, visualization]
     steps:
       - prompt: "Query the last 1000 blocks on mainnet and save the data to a CSV
           file."
@@ -41,7 +41,7 @@
   - id: block_timing_analysis
     description: Detailed block timing analysis workflow
     network: mainnet
-    tags: [multi_step, timing, analysis]
+    tags: [multi_step, clickhouse, blocks, timing, visualization]
     steps:
       - prompt: "Query block arrival times for the last 100 slots on mainnet."
       - prompt: "Group the data by observer consensus client and calculate the mean
@@ -73,7 +73,7 @@
     description: per-day attestation event volume for 1-7 June 2026, per 
       network, charted
     network: mainnet
-    tags: [multi_step, attestations, analysis]
+    tags: [multi_step, clickhouse, attestations, visualization]
     steps:
       - prompt: "How many attestation events per day landed in the raw beacon API
           event stream on mainnet for 1-7 June 2026 (UTC)?"

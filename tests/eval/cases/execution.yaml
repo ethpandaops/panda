@@ -8,7 +8,7 @@
   - id: precompile_usage                                  # 📓 precompile-usage
     description: most-used EVM precompiles on mainnet
     input: "Which EVM precompiles are used most on mainnet?"
-    tags: [clickhouse, execution, evm, precompiles]
+    tags: [clickhouse, execution]
     assert:
       - type: llm-rubric
         value: >
@@ -31,7 +31,7 @@
     input: "Compare engine_newPayload processing times across execution clients on
       mainnet on 8 June 2026 (UTC). Which was fastest, which was slowest — and was
       any client at risk of blowing the slot time?"
-    tags: [clickhouse, execution, engine, timing]
+    tags: [clickhouse, execution, timing]
     assert:
       - type: llm-rubric
         value: >
@@ -65,7 +65,7 @@
     description: distinct clients feeding mempool observations on 2026-06-08
     input: "How many distinct clients contributed mempool transaction observations
       on mainnet on 8 June 2026 (UTC), and how many observations in total?"
-    tags: [clickhouse, mempool, execution]
+    tags: [clickhouse, execution]
     assert:
       - type: llm-rubric
         value: >
@@ -97,7 +97,7 @@
     description: "checks the average mainnet base fee per gas for june 10, 2026"
     input: "What was the average base fee per gas on mainnet on jun 10 2026?"
     network: mainnet
-    tags: [clickhouse, mainnet, base_fee, fees]
+    tags: [clickhouse, execution]
     assert:
       - type: llm-rubric
         value: >

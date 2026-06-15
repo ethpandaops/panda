@@ -8,7 +8,7 @@
   - id: validator_count                                   # 💬 basic validator ask
     description: active validators on mainnet on 2026-06-08
     input: "How many validators had an active status on mainnet on 8 June 2026 (UTC)?"
-    tags: [clickhouse, validators, basic]
+    tags: [clickhouse, validators]
     assert:
       - type: llm-rubric
         value: >
@@ -59,7 +59,7 @@
     input: "What were the status and balance of validator 405 on sepolia on 8 June
       2026 (UTC)?"
     network: sepolia
-    tags: [clickhouse, validators, testnet]
+    tags: [clickhouse, validators, networks]
     assert:
       - type: llm-rubric
         value: >
@@ -85,7 +85,7 @@
       2026-06-08
     input: "What percentage of mainnet attestations voted for the correct head block
       on 8 June 2026 (UTC)? And what was overall participation that day?"
-    tags: [clickhouse, attestations, basic]
+    tags: [clickhouse, validators, attestations]
     assert:
       - type: llm-rubric
         value: >

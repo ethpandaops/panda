@@ -8,7 +8,7 @@
   - id: devnets_running                                  # ✓
     description: which devnets are currently active (network discovery)
     input: "What devnets are currently running?"
-    tags: [discovery, cartographoor, devnets]
+    tags: [networks]
     assert:
       - type: llm-rubric
         value: >
@@ -33,7 +33,7 @@
     input: "What's the current state of the hoodi testnet? Is it finalizing, and how
       does recent block production look?"
     network: hoodi
-    tags: [dora, ethnode, testnet, finality]
+    tags: [networks]
     assert:
       - type: llm-rubric
         value: >
@@ -59,7 +59,7 @@
     description: error-level log summary for a currently-running devnet
     input: "Pick any currently-running devnet and summarize its error-level log volume
       from the last few hours — which services or hosts are noisiest?"
-    tags: [clickhouse, logs, devnets]
+    tags: [clickhouse, networks]
     assert:
       - type: llm-rubric
         value: >
@@ -91,7 +91,7 @@
     input: "How far back does the fct_block table go on mainnet, and how current
       is it?"
     network: mainnet
-    tags: [cbt, mainnet, pipeline, coverage]
+    tags: [networks]
     assert:
       - type: llm-rubric
         value: >
@@ -119,7 +119,7 @@
     input: "Which beacon nodes does Forky have fork-choice snapshots for on sepolia
       right now, and what consensus clients are they running?"
     network: sepolia
-    tags: [smoke, forky, testnet, fork-choice]
+    tags: [smoke, networks]
     assert:
       - type: llm-rubric
         value: >
@@ -145,7 +145,7 @@
     input: "Which nodes is Tracoor capturing beacon states from on mainnet right
       now, and what consensus clients are they running?"
     network: mainnet
-    tags: [smoke, tracoor, mainnet, forensics]
+    tags: [smoke, networks]
     assert:
       - type: llm-rubric
         value: >
@@ -173,7 +173,7 @@
     description: "checks which xatu node had the highest peer count on mainnet for june 10 2026"
     input: "On jun 10 2026, which xatu node had the highest peer count on mainnet?"
     network: mainnet
-    tags: [clickhouse, xatu, peers, mainnet]
+    tags: [clickhouse, networks]
     assert:
       - type: llm-rubric
         value: >

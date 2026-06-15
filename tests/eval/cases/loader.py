@@ -7,6 +7,25 @@ Grading is promptfoo ``assert`` blocks, passed through verbatim.
 Files under ``cases/`` are purely organizational (one domain per file); selection is by
 tags. ``load_test_cases()`` with no filename loads every ``cases/*.yaml`` (case ids must
 be unique across files); ``tags``/``exclude_tags`` filter the result.
+
+Tags are drawn from a fixed corpus so ``--tags`` selection stays predictable. New cases
+must reuse these, not invent new ones:
+
+  Domain (what the question is about):
+    blocks         block production, propagation, size, parents, reorgs
+    blobs          blobs & data columns (PeerDAS): counts, getBlobs, gossip
+    mev            relays, builders, bid value, timing games
+    execution      EL/EVM: precompiles, mempool, fees, engine API
+    validators     validator set, duties, head accuracy
+    attestations   attestation volume / correctness (cross-cuts validators)
+    networks       devnet/testnet discovery, node coverage, finality, peers, pipelines
+
+  Capability / shape (cross-cutting):
+    smoke          fast end-to-end sanity checks (the CI smoke set)
+    clickhouse     answered by querying the clickhouse datasource
+    timing         latency / arrival-time analysis
+    multi_step     multi-turn session (uses ``steps``)
+    visualization  produces a chart / plot
 """
 
 from __future__ import annotations
