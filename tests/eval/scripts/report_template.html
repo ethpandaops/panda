@@ -273,7 +273,7 @@
 
   /* ── charts ──────────────────────────────────────────────────────────── */
   .chart-wrap { padding: 18px 14px 10px; position: relative; }
-  svg { display: block; }
+  svg { display: block; max-width: 100%; height: auto; }
   svg text { font-family: var(--sans); font-size: 11.5px; fill: var(--mut); }
   .axis line, .grid line { stroke: var(--line2); }
   .axis-strong line { stroke: var(--line); }
@@ -622,6 +622,102 @@
   footer b { color: var(--ink); }
   footer code { font: 11.5px var(--mono); font-style: normal; }
   .err { max-width: 700px; margin: 80px auto; font: 13px var(--mono); color: var(--bad); padding: 0 28px; }
+
+  /* ── mobile ──────────────────────────────────────────────────────────── */
+  @media (max-width: 640px) {
+    main { padding: 0 14px 40px; }
+    section { margin-top: 36px; }
+    h2 { font: 600 17px/1.3 var(--sans); }
+
+    /* topbar: brand + toggle on row 1, nav wraps onto its own row */
+    #topbar .bar { padding: 11px 14px; gap: 8px 12px; }
+    #theme-toggle { order: 2; margin-left: auto; }
+    #nav { order: 3; flex-basis: 100%; margin-left: 0; gap: 12px 16px; flex-wrap: wrap; }
+
+    /* document head + headline figures */
+    #doc-head { margin-top: 30px; }
+    h1#tag { font-size: 28px; }
+    #run-details { max-width: none; }
+    .card { padding: 16px 16px 14px; }
+    .card .v { font-size: 23px; }
+
+    /* charts */
+    .chart-wrap { padding: 16px 8px 8px; }
+    .chart-head { padding: 12px 14px 0; }
+    .legend { gap: 10px 16px; padding: 4px 8px 12px; }
+
+    /* explorer filters: stack to full width */
+    #filters { gap: 8px; padding: 12px; }
+    #filters input[type=search] { flex: 1 1 100%; min-width: 0; }
+    #filters select { flex: 1 1 100%; max-width: 100%; }
+    #f-status { flex: 1 1 100%; }
+    #f-status button { flex: 1; text-align: center; }
+    #chips, #agg { padding: 10px 12px; }
+    #agg { gap: 6px 16px; }
+
+    /* run detail drawer: full width */
+    #drawer { width: 100vw; }
+
+    /* ── run + matrix tables → stacked cards ── */
+    #run-table thead, #mx-table thead { display: none; }
+    #matrix .panel.tbl-scroll { border: 0; background: none; }
+    #mx-table td.mxh { display: none; }
+    #run-table tbody tr, #mx-table tbody tr {
+      display: block;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      margin-bottom: 10px;
+      overflow: hidden;
+    }
+    #run-table tbody tr { background: var(--bg); }
+    #mx-table tbody tr { background: var(--panel); }
+    #run-table tbody tr.selected, #mx-table tbody tr.selected { border-color: var(--accent); }
+    #run-table td, #mx-table td {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 6px 14px;
+      border: 0;
+      padding: 6px 14px;
+      text-align: right;
+      overflow-wrap: anywhere;
+    }
+    #run-table td::before, #mx-table td::before {
+      content: attr(data-label);
+      font: 600 10px/1.6 var(--sans);
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--mut);
+      text-align: left;
+      flex: none;
+    }
+    /* empty value cells (no tools / no trace) drop out */
+    #run-table td:empty { display: none; }
+    /* title cells span the card width with no label */
+    #run-table td.qcell, #mx-table td.mxq {
+      display: block;
+      max-width: none;
+      text-align: left;
+      padding: 10px 14px 8px;
+      border-bottom: 1px solid var(--line2);
+    }
+    td.subj { max-width: none; }
+    .qtext { white-space: normal; }
+    /* grader reason: full-width block that wraps */
+    #run-table td.reason-cell {
+      display: block;
+      max-width: none;
+      text-align: left;
+      white-space: normal;
+    }
+    #run-table td.reason-cell::before { display: block; margin-bottom: 3px; }
+    /* matrix run cells: label above, larger tap targets below */
+    #mx-table td[data-label="this run"] { display: block; text-align: left; }
+    #mx-table td[data-label="this run"]::before { display: block; margin-bottom: 6px; }
+    .mx-cells { justify-content: flex-start; }
+    .mx-cell { width: 30px; height: 26px; line-height: 24px; }
+  }
 </style>
 <script>try { const t = localStorage.getItem("panda-eval-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}</script>
 </head>
@@ -1118,7 +1214,7 @@
 
   function lineChart(host, { val, fmt, yMax, yTicks, lineCls, ptCls, hollow }) {
     host.innerHTML = "";
-    const W = Math.max(260, host.parentElement.getBoundingClientRect().width - 16);
+    const W = Math.max(240, Math.round(host.getBoundingClientRect().width));
     const ml = 52, mr = 22, top = 24, bot = 174, H = 212;
     const svg = sv("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}` });
     const n = releases.length;
@@ -1233,7 +1329,7 @@
     const laneKeys = [...new Set(pts.map(pt => Math.round(pt.e.pass_rate * 1000)))]
       .sort((a, b) => b - a);
     const laneH = laneKeys.length === 1 ? 96 : 64;
-    const W = Math.max(340, host.parentElement.getBoundingClientRect().width - 16);
+    const W = Math.max(280, Math.round(host.getBoundingClientRect().width));
     const ml = 64, mr = 56, top = 18;
     const bot = top + laneKeys.length * laneH;
     const H = bot + 44;
@@ -1421,7 +1517,7 @@
   function renderSwarm() {
     const host = $("#swarm-chart");
     host.innerHTML = "";
-    const W = Math.max(340, host.parentElement.getBoundingClientRect().width - 20);
+    const W = Math.max(280, Math.round(host.getBoundingClientRect().width));
     const ml = 16, mr = 36, R = 6;
     const tokMax = Math.max(1, ...runs.map(r => r.tokens || 0)) * 1.04;
     const x = v => ml + (W - ml - mr) * (v / tokMax);
@@ -1503,9 +1599,12 @@
     const host = $("#cat-chart");
     host.innerHTML = "";
     if (!cats.length) { host.innerHTML = '<p class="note">no tag metadata for this cases file</p>'; return; }
-    const W = Math.max(340, host.parentElement.getBoundingClientRect().width - 20);
-    const rowH = 36, lblW = Math.min(200, W * .25), valW = 290;
-    const barX = lblW + 14, barW = Math.max(80, W - barX - valW);
+    const W = Math.max(280, Math.round(host.getBoundingClientRect().width));
+    const narrow = W < 560;
+    const rowH = narrow ? 30 : 36;
+    const lblW = Math.min(narrow ? 92 : 200, W * (narrow ? .3 : .25));
+    const valW = narrow ? 96 : 290;
+    const barX = lblW + (narrow ? 8 : 14), barW = Math.max(narrow ? 36 : 80, W - barX - valW);
     const axisH = 30;
     const H = cats.length * rowH + 8 + axisH;
     const svg = sv("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}` });
@@ -1534,8 +1633,10 @@
         g.appendChild(sv("line", { x1: x(med), x2: x(med), y1: mid - 9, y2: mid + 9, stroke: "var(--ink)", "stroke-width": 2 }));
       }
       g.appendChild(svText(barX + barW + 12, mid + 4,
-        `${c.correct}/${c.runs} · ${fPct(c.rate)} · ${c.qids.size}q` + (c.medTok > 0 ? ` · med ${fTok(c.medTok)} tok` : ""),
-        { "font-size": 11.5 }));
+        narrow
+          ? `${fPct(c.rate)}` + (c.medTok > 0 ? ` · ${fTok(c.medTok)}` : "")
+          : `${c.correct}/${c.runs} · ${fPct(c.rate)} · ${c.qids.size}q` + (c.medTok > 0 ? ` · med ${fTok(c.medTok)} tok` : ""),
+        { "font-size": narrow ? 9.5 : 11.5 }));
       g.addEventListener("click", () => {
         const on = state.tags.has(c.tag);
         state.tags.clear();
@@ -1589,19 +1690,19 @@
         `aria-label="run ${j + 1} ${runStatus(r)}">${r.correct ? "✓" : "✕"}</button>`).join("");
       const tagsHtml = rs[0].tags.map(t => esc(t)).join(" · ");
       const ref = prevRefs.get(qid);
-      let effCell = `<td class="r" style="color:var(--faint)">—</td>`;
+      let effCell = `<td class="r" data-label="eff" style="color:var(--faint)">—</td>`;
       if (ref != null) {
         const qEff = rs.reduce((a, r) => a + runEff(r), 0) / rs.length;
         const par = 0.25 * (nOk / rs.length);
-        effCell = `<td class="r" style="color:${qEff < par ? "var(--amber)" : "var(--mut)"}" ` +
+        effCell = `<td class="r" data-label="eff" style="color:${qEff < par ? "var(--amber)" : "var(--mut)"}" ` +
           `title="mean over runs vs ref ${fInt(ref)} tok (${esc(prev.tag)})${qEff < par ? " · below parity: heavier than the reference" : ""}">${qEff.toFixed(3)}</td>`;
       }
-      return `<tr><td><button class="qid" data-q="${esc(qid)}" title="filter run explorer to this question">${esc(qid)}</button>` +
+      return `<tr><td class="mxq"><button class="qid" data-q="${esc(qid)}" title="filter run explorer to this question">${esc(qid)}</button>` +
         `<div style="font:11px var(--mono);color:var(--mut);margin-top:3px">${tagsHtml}</div></td>` +
         histIdx.map(i => histCell(releases[i], qid)).join("") +
-        `<td class="r" style="color:${nOk === rs.length ? "var(--ok)" : "var(--bad)"}">${nOk}/${rs.length}</td>` +
+        `<td class="r" data-label="pass" style="color:${nOk === rs.length ? "var(--ok)" : "var(--bad)"}">${nOk}/${rs.length}</td>` +
         effCell +
-        `<td><div class="mx-cells">${cells}</div></td></tr>`;
+        `<td data-label="this run"><div class="mx-cells">${cells}</div></td></tr>`;
     }).join("");
     $("#mx-table").innerHTML =
       `<thead><tr><th>question</th>` +
@@ -1716,14 +1817,14 @@
       return `<tr data-i="${r._i}" class="${selectedIdx === r._i ? "selected" : ""}">` +
         `<td class="qcell"><span class="qid">${esc(r.id)}</span>${canonMark(r)}` +
         `<span class="qtext" title="${esc(r.question || "")}">${esc(r.question || "")}</span></td>` +
-        `<td class="subj" title="${esc(r.subject)}">${esc(shortSubject(r.subject))}</td>` +
-        `<td><span class="pill ${st === "pass" ? "ok" : (st === "crash" ? "crash" : "bad")}">${st === "pass" ? "✓ pass" : (st === "crash" ? "✕ crash" : "✕ fail")}</span></td>` +
-        `<td class="r">${(r.score ?? 0).toFixed(3)}</td>` +
-        `<td class="r">${fInt(r.tokens || 0)}</td>` +
-        `<td class="r">${eff == null ? '<span style="color:var(--faint)">—</span>' : eff.toFixed(3)}</td>` +
-        `<td class="r">${r.tools ?? ""}</td>` +
-        `<td class="reason-cell" title="${esc((r.grader_reason || "").slice(0, 500))}">${esc(r.grader_reason || "")}</td>` +
-        `<td>${r.trace_url ? `<a href="${esc(r.trace_url)}" target="_blank" rel="noopener">↗</a>` : ""}</td></tr>`;
+        `<td class="subj" data-label="subject" title="${esc(r.subject)}">${esc(shortSubject(r.subject))}</td>` +
+        `<td data-label="status"><span class="pill ${st === "pass" ? "ok" : (st === "crash" ? "crash" : "bad")}">${st === "pass" ? "✓ pass" : (st === "crash" ? "✕ crash" : "✕ fail")}</span></td>` +
+        `<td class="r" data-label="score">${(r.score ?? 0).toFixed(3)}</td>` +
+        `<td class="r" data-label="tokens">${fInt(r.tokens || 0)}</td>` +
+        `<td class="r" data-label="eff">${eff == null ? '<span style="color:var(--faint)">—</span>' : eff.toFixed(3)}</td>` +
+        `<td class="r" data-label="tools">${r.tools ?? ""}</td>` +
+        `<td class="reason-cell" data-label="grader reason" title="${esc((r.grader_reason || "").slice(0, 500))}">${esc(r.grader_reason || "")}</td>` +
+        `<td data-label="trace">${r.trace_url ? `<a href="${esc(r.trace_url)}" target="_blank" rel="noopener">↗</a>` : ""}</td></tr>`;
     }).join("");
     $("#run-table").innerHTML = head + `<tbody>${body || `<tr><td colspan="9" style="color:var(--faint);font-family:var(--mono)">no runs match the current filter</td></tr>`}</tbody>`;
 
