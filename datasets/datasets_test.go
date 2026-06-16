@@ -230,7 +230,7 @@ func TestDatasetDetailResourceCLIContext(t *testing.T) {
 		t.Errorf("CLI dataset guide should not use MCP tool-call syntax, got:\n%s", out)
 	}
 
-	if !strings.Contains(out, "compatibility mode") || !strings.Contains(out, "panda resources datasources://clickhouse") {
+	if !strings.Contains(out, "compatibility mode") || !strings.Contains(out, "Target") {
 		t.Errorf("CLI dataset guide should explain missing placement metadata, got:\n%s", out)
 	}
 

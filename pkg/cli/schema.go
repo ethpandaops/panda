@@ -113,7 +113,7 @@ func schemaArgumentError(ctx context.Context, args []string, err error) error {
 	}
 
 	if isActiveDatasetName(ctx, args[0]) {
-		return fmt.Errorf("schema argument %q is a dataset guide name, not a ClickHouse cluster. Read 'panda datasets %s' for placement/syntax, then use a 'panda datasources --type clickhouse' value as <cluster>", args[0], args[0])
+		return fmt.Errorf("schema argument %q is a dataset guide name, not a ClickHouse cluster. Read 'panda datasets %s' for placement/syntax, then use an example Target or 'panda datasources --type clickhouse' value as <cluster>", args[0], args[0])
 	}
 
 	if len(args) >= 2 && isActiveDatasetName(ctx, args[1]) {

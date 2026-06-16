@@ -75,8 +75,8 @@ Use the narrowest surface that fits the question:
 
 Do not guess command names, table names, columns, or query syntax. Search
 examples and runbooks first, then adapt a matching pattern. Search examples
-name datasets for dataset-backed SQL snippets. Read the dataset guide first to
-choose a concrete datasource and placement before querying.
+name the target datasource for SQL snippets. Read the dataset guide first when
+an example names a dataset.
 
 ` + "`panda execute`" + ` is the Python sandbox — the same engine used by MCP clients via
 ` + "`execute_python`" + `. It provides workspace persistence between calls, multi-step
@@ -88,7 +88,7 @@ dora, forky, cbt, tracoor, ethnode, benchmarkoor, storage).
 ` + "```" + `
 panda datasets
 panda search examples "<topic>"
-panda clickhouse query-raw <datasource> "<SQL from the example, adjusted for the question>"
+panda clickhouse query-raw <Target> "<SQL from the example, adjusted for the question>"
 ` + "```" + `
 
 For Python workflows:

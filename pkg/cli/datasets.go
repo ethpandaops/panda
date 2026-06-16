@@ -135,7 +135,7 @@ func runDatasets(cmd *cobra.Command, args []string) error {
 	}
 
 	if blankPlacementRows {
-		fmt.Println("\nBlank datasource means this server did not advertise dataset placement metadata. Inspect concrete datasources with `panda resources datasources://clickhouse`.")
+		fmt.Println("\nBlank datasource means this server did not advertise dataset placement metadata. Use the `Target` shown by `panda search examples \"<topic>\"`, or inspect concrete datasources with `panda resources datasources://clickhouse`.")
 	}
 
 	fmt.Println("\nRead a dataset's guide: panda datasets <name>")

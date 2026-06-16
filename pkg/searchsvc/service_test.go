@@ -210,13 +210,14 @@ func TestSearchExamplesScoreAndCategoryFilter(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Len(t, resp.Results, 2)
+		assert.Equal(t, "clickhouse-refined", resp.Results[0].Target)
 		assert.Equal(t, "xatu-cbt", resp.Results[0].Dataset)
 		assert.Equal(t, []string{"attestations", "blocks"}, resp.AvailableCategories)
 		assert.Equal(t, 5, searcher.lastLimit, "no filter uses limit directly")
 
 		encoded, err := json.Marshal(resp.Results[0])
 		require.NoError(t, err)
-		assert.NotContains(t, string(encoded), `"target"`)
+		assert.Contains(t, string(encoded), `"target":"clickhouse-refined"`)
 		assert.NotContains(t, string(encoded), "target_cluster")
 	})
 
@@ -239,8 +240,8 @@ func TestSearchExamplesScoreAndCategoryFilter(t *testing.T) {
 		t.Parallel()
 
 		stamped := []resource.SearchResult{
-			{CategoryKey: "blocks", CategoryName: "Blocks", Example: types.Example{Name: "raw", Dataset: "xatu-raw"}, Score: 0.9},
-			{CategoryKey: "blocks", CategoryName: "Blocks", Example: types.Example{Name: "cbt", Dataset: "xatu-cbt"}, Score: 0.8},
+			{CategoryKey: "blocks", CategoryName: "Blocks", Example: types.Example{Name: "raw", Target: "clickhouse-raw", Dataset: "xatu-raw"}, Score: 0.9},
+			{CategoryKey: "blocks", CategoryName: "Blocks", Example: types.Example{Name: "cbt", Target: "clickhouse-refined", Dataset: "xatu-cbt"}, Score: 0.8},
 		}
 		stampedCategories := map[string]types.ExampleCategory{
 			"blocks": {Name: "Blocks", Examples: []types.Example{
@@ -257,18 +258,20 @@ func TestSearchExamplesScoreAndCategoryFilter(t *testing.T) {
 
 		require.Len(t, resp.Results, 1)
 		assert.Equal(t, "cbt", resp.Results[0].ExampleName)
+		assert.Equal(t, "clickhouse-refined", resp.Results[0].Target)
 		assert.Equal(t, "xatu-cbt", resp.Results[0].Dataset)
 		assert.Equal(t, "xatu-cbt", resp.DatasetFilter)
+		assert.Contains(t, resp.Guidance, "The target field is the datasource name the example is intended to run against.")
 		assert.Contains(t, resp.Guidance, "The dataset field identifies the knowledge pack; read datasets://<dataset> for placement and required syntax before querying that dataset.")
 		assert.Equal(t, 4*exampleFilterOverscan, searcher.lastLimit)
 	})
 
-	t.Run("guidance omits datasource target advice", func(t *testing.T) {
+	t.Run("guidance notes multiple targets", func(t *testing.T) {
 		t.Parallel()
 
 		stamped := []resource.SearchResult{
-			{CategoryKey: "blocks", CategoryName: "Blocks", Example: types.Example{Name: "one", Dataset: "pack-a"}, Score: 0.9},
-			{CategoryKey: "blocks", CategoryName: "Blocks", Example: types.Example{Name: "two", Dataset: "pack-b"}, Score: 0.8},
+			{CategoryKey: "blocks", CategoryName: "Blocks", Example: types.Example{Name: "one", Target: "warehouse-a", Dataset: "pack-a"}, Score: 0.9},
+			{CategoryKey: "blocks", CategoryName: "Blocks", Example: types.Example{Name: "two", Target: "warehouse-b", Dataset: "pack-b"}, Score: 0.8},
 		}
 		stampedCategories := map[string]types.ExampleCategory{
 			"blocks": {Name: "Blocks", Examples: []types.Example{
@@ -283,7 +286,7 @@ func TestSearchExamplesScoreAndCategoryFilter(t *testing.T) {
 		resp, err := svc.SearchExamples("q", "", "", 3)
 		require.NoError(t, err)
 
-		assert.NotContains(t, resp.Guidance, "The target field is the datasource name the example is intended to run against.")
+		assert.Contains(t, resp.Guidance, "When relevant examples span multiple targets, run each SQL query against its own target; combine bounded intermediate results in Python or another client-side step instead of writing one cross-datasource SQL query.")
 	})
 
 	t.Run("unknown dataset errors with available list", func(t *testing.T) {

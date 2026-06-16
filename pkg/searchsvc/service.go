@@ -77,7 +77,7 @@ type SearchExampleResult struct {
 	ExampleName     string  `json:"example_name"`
 	Description     string  `json:"description"`
 	Query           string  `json:"query"`
-	Target          string  `json:"target,omitempty"`
+	Target          string  `json:"target"`
 	Dataset         string  `json:"dataset,omitempty"`
 	SimilarityScore float64 `json:"similarity_score"`
 }
@@ -307,6 +307,7 @@ func (s *Service) SearchExamples(query, categoryFilter, datasetFilter string, li
 			ExampleName:     result.Example.Name,
 			Description:     result.Example.Description,
 			Query:           result.Example.Query,
+			Target:          result.Example.Target,
 			Dataset:         result.Example.Dataset,
 			SimilarityScore: result.Score,
 		})
@@ -333,17 +334,30 @@ func exampleSearchGuidance(results []*SearchExampleResult) []string {
 		return nil
 	}
 
-	var hasDataset bool
+	var hasDataset, hasTarget bool
+	targets := make(map[string]struct{})
 	for _, result := range results {
 		if result == nil {
 			continue
 		}
 
 		hasDataset = hasDataset || result.Dataset != ""
+		hasTarget = hasTarget || result.Target != ""
+		if result.Target != "" {
+			targets[result.Target] = struct{}{}
+		}
 	}
 
 	guidance := []string{
 		"Examples are reusable patterns: replace placeholders and concrete filters for the user's network, time window, or object before executing.",
+	}
+
+	if hasTarget {
+		guidance = append(guidance, "The target field is the datasource name the example is intended to run against.")
+	}
+
+	if len(targets) > 1 {
+		guidance = append(guidance, "When relevant examples span multiple targets, run each SQL query against its own target; combine bounded intermediate results in Python or another client-side step instead of writing one cross-datasource SQL query.")
 	}
 
 	if hasDataset {

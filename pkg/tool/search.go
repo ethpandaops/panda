@@ -18,7 +18,7 @@ const searchDescription = `Search indexed examples, runbooks, EIPs, and consensu
 When ` + "`type`" + ` is omitted, searches across all types and returns compact combined results. Runbook content is omitted in this mode; use ` + "`type=\"runbooks\"`" + ` when you need a full procedure.
 
 For data queries, use ` + "`type=\"examples\"`" + ` first to get SQL/API snippets without unrelated protocol or runbook results.
-Example results include ` + "`dataset`" + ` when a snippet belongs to a dataset knowledge pack; read ` + "`datasets://{name}`" + ` for placement and syntax before querying it.
+Example results include ` + "`target`" + ` (the datasource to query) and, when applicable, ` + "`dataset`" + ` (the knowledge pack to read for placement or syntax).
 
 ` + "`type=\"examples\"`" + ` for query snippets (SQL, PromQL, LogQL), ` + "`type=\"runbooks\"`" + ` for multi-step investigation procedures, ` + "`type=\"eips\"`" + ` for Ethereum Improvement Proposals, ` + "`type=\"consensus-specs\"`" + ` for consensus-specs documents and protocol constants. ` + "`type=\"notebooks\"`" + ` is accepted as an alias for runbooks, ` + "`type=\"specs\"`" + ` as an alias for consensus-specs.
 

@@ -258,7 +258,7 @@ func serverErrorHint(status int, message string) string {
 	if strings.Contains(normalized, "clickhouse://tables/") &&
 		strings.Contains(normalized, "cluster ") &&
 		strings.Contains(normalized, "not found") {
-		return "schema expects a ClickHouse datasource/cluster name, not a dataset name; read 'panda datasets <name>' for placement/syntax and list clusters with 'panda datasources --type clickhouse'"
+		return "schema expects a ClickHouse datasource/cluster name, not a dataset name; list clusters with 'panda datasources --type clickhouse'. If starting from an example, use its Target and read 'panda datasets <name>' for placement/syntax"
 	}
 
 	if strings.Contains(normalized, "unknown dataset") {

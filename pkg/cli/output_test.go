@@ -99,21 +99,21 @@ func TestFormatLabelSet(t *testing.T) {
 	}
 }
 
-func TestPrintExampleResultsShowsDataset(t *testing.T) {
+func TestPrintExampleResultsUsesNeutralTargetLabel(t *testing.T) {
 	output := captureStdout(t, func() {
 		printExampleResults([]*serverapi.SearchExampleResult{{
 			CategoryName:    "Prometheus",
 			ExampleName:     "Validator duty metrics",
 			Description:     "Inspect validator duty latency.",
 			Query:           "up",
-			Target:          "legacy-target",
+			Target:          "prometheus",
 			Dataset:         "metrics",
 			SimilarityScore: 0.8,
 		}})
 	})
 
+	assert.Contains(t, output, "  Target: prometheus")
 	assert.Contains(t, output, "  Dataset: metrics")
-	assert.NotContains(t, output, "legacy-target")
 	assert.NotContains(t, output, "Cluster:")
 }
 
@@ -121,26 +121,28 @@ func TestPrintExampleUsageHintsAreGeneric(t *testing.T) {
 	output := captureStdout(t, func() {
 		printExampleUsageHints([]*serverapi.SearchExampleResult{{
 			Query:   "SELECT count() FROM {network}.example",
+			Target:  "warehouse",
 			Dataset: "example-pack",
 		}})
 	})
 
 	assert.Contains(t, output, "Search examples are reusable patterns")
-	assert.Contains(t, output, "syntax and placement")
+	assert.Contains(t, output, "panda clickhouse query-raw <Target>")
 	assert.Contains(t, output, "panda datasets <Dataset>")
 	assert.NotContains(t, output, "mainnet")
 	assert.NotContains(t, output, "slot")
 }
 
-func TestPrintExampleUsageHintsDoNotMentionTargets(t *testing.T) {
+func TestPrintExampleUsageHintsMentionMultipleTargets(t *testing.T) {
 	output := captureStdout(t, func() {
 		printExampleUsageHints([]*serverapi.SearchExampleResult{
-			{Query: "SELECT 1", Dataset: "pack-a"},
-			{Query: "SELECT 2", Dataset: "pack-b"},
+			{Query: "SELECT 1", Target: "warehouse-a"},
+			{Query: "SELECT 2", Target: "warehouse-b"},
 		})
 	})
 
-	assert.NotContains(t, output, "Target")
+	assert.Contains(t, output, "Results span multiple Targets")
+	assert.Contains(t, output, "combine bounded results")
 }
 
 func TestPrintDatasourceListUsesCompactIdentityColumns(t *testing.T) {
