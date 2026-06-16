@@ -27,6 +27,7 @@ COPY pkg/ pkg/
 COPY modules/ modules/
 COPY internal/ internal/
 COPY runbooks/ runbooks/
+COPY datasets/ datasets/
 
 # Build with version info
 ARG VERSION=dev
