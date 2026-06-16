@@ -331,17 +331,16 @@ network_health:
         AND meta_client_geo_country != ''
       GROUP BY country
       ORDER BY avg_arrival_ms ASC
-  - name: Locally prepared candidate blocks by client
-    description: Track locally prepared candidate payloads per consensus client using fct_prepared_block.
-      These rows describe locally observed preparation activity and may differ from finalized chain
-      inclusion.
+  - name: Node-side payload preparation observations by client
+    description: Track node-side prepared candidate payload observations per consensus client using
+      fct_prepared_block. This is preparation telemetry, not a finalized chain block count.
     target: clickhouse-refined
     query: |
       SELECT
         meta_consensus_implementation AS consensus_client,
-        MAX(slot_start_date_time) AS last_block_time,
-        dateDiff('second', MAX(slot_start_date_time), now()) AS seconds_since_last_block,
-        COUNT() AS blocks_in_window,
+        MAX(slot_start_date_time) AS last_preparation_time,
+        dateDiff('second', MAX(slot_start_date_time), now()) AS seconds_since_last_preparation,
+        COUNT() AS preparations_in_window,
         AVG(execution_payload_gas_used) AS avg_gas_used,
         AVG(execution_payload_transactions_count) AS avg_tx_count
       FROM {network}.fct_prepared_block FINAL
@@ -626,7 +625,9 @@ mev_analysis:
   name: MEV Analysis
   description: Queries for analyzing MEV (Maximal Extractable Value) activity including relays, builders,
     and block values. For finalized historical relay-delivered block counts use fct_block_mev with
-    status = 'canonical'; use fct_block_mev_head only for live monitoring. For individual bid data (values,
+    status = 'canonical'; use fct_block_mev_head only for live monitoring. For canonical blocks without
+    MEV relay attribution, count canonical fct_block rows whose slot is absent from canonical fct_block_mev;
+    do not use fct_prepared_block for chain block totals or provenance. For individual bid data (values,
     builder pubkeys, bid traces) use mev_relay_bid_trace (clickhouse-raw) — the value column is in wei
     (UInt256). For validator registrations use mev_relay_validator_registration (clickhouse-raw). For bid
     count trends use fct_mev_bid_count_by_relay and fct_mev_bid_count_by_builder (clickhouse-refined).
@@ -741,6 +742,33 @@ mev_analysis:
         AND status = 'canonical'
       GROUP BY hour
       ORDER BY hour DESC
+  - name: Canonical blocks by MEV relay attribution
+    description: Count finalized canonical blocks with and without a matching canonical MEV relay record.
+      Use this pattern for MEV-vs-non-MEV chain block counts; fct_prepared_block is only preparation
+      telemetry and should not be used for this comparison.
+    target: clickhouse-refined
+    query: |
+      WITH
+        now() - INTERVAL 1 DAY AS start_time,
+        now() AS end_time
+      SELECT
+        if(isNull(m.slot), 'no_mev_relay_record', 'mev_relay_record') AS mev_attribution,
+        COUNT() AS canonical_blocks,
+        AVG(b.execution_payload_gas_used) AS avg_gas_used,
+        AVG(b.execution_payload_transactions_count) AS avg_tx_count
+      FROM {network}.fct_block AS b FINAL
+      GLOBAL LEFT JOIN (
+          SELECT DISTINCT slot
+          FROM {network}.fct_block_mev FINAL
+          WHERE slot_start_date_time >= start_time
+            AND slot_start_date_time < end_time
+            AND status = 'canonical'
+      ) AS m ON b.slot = m.slot
+      WHERE b.slot_start_date_time >= start_time
+        AND b.slot_start_date_time < end_time
+        AND b.status = 'canonical'
+      GROUP BY mev_attribution
+      ORDER BY mev_attribution
   - name: Hourly MEV activity trend
     description: Track MEV activity trends by hour including bid counts and block values.
     target: clickhouse-refined
@@ -1609,13 +1637,12 @@ execution_traces:
       GROUP BY call_type
       ORDER BY total_gas DESC
 prepared_blocks:
-  name: Prepared Blocks (Local Block Building)
-  description: Queries for analyzing locally prepared candidate payload performance and characteristics.
-    These rows describe local preparation observations and may not have a one-to-one relationship with
-    finalized chain blocks.
+  name: Prepared Payload Observations
+  description: Queries for analyzing node-side prepared candidate payload observations. These rows are
+    preparation telemetry, can repeat per slot, and must not be used as finalized chain block counts.
   examples:
-  - name: Recent prepared blocks
-    description: Get details of recently prepared blocks by local nodes.
+  - name: Recent prepared payload observations
+    description: Get details of recently prepared candidate payload observations from local nodes.
     target: clickhouse-refined
     query: |
       SELECT
@@ -1632,13 +1659,13 @@ prepared_blocks:
       WHERE slot_start_date_time >= now() - INTERVAL 1 HOUR
       ORDER BY slot DESC
       LIMIT 50
-  - name: Prepared blocks by consensus client
-    description: Compare block building across consensus clients.
+  - name: Prepared payload observations by consensus client
+    description: Compare candidate payload preparation observations across consensus clients.
     target: clickhouse-refined
     query: |
       SELECT
         meta_consensus_implementation AS cl_client,
-        COUNT() AS blocks_prepared,
+        COUNT() AS preparations_observed,
         AVG(execution_payload_gas_used) AS avg_gas_used,
         AVG(execution_payload_transactions_count) AS avg_tx_count,
         AVG(block_total_bytes) AS avg_block_bytes,
@@ -1646,28 +1673,28 @@ prepared_blocks:
       FROM {network}.fct_prepared_block FINAL
       WHERE slot_start_date_time >= now() - INTERVAL 6 HOUR
       GROUP BY cl_client
-      ORDER BY blocks_prepared DESC
-  - name: Prepared blocks by country
-    description: Geographic distribution of block preparation.
+      ORDER BY preparations_observed DESC
+  - name: Prepared payload observations by country
+    description: Geographic distribution of candidate payload preparation observations.
     target: clickhouse-refined
     query: |
       SELECT
         meta_client_geo_country AS country,
-        COUNT() AS blocks_prepared,
+        COUNT() AS preparations_observed,
         AVG(execution_payload_gas_used) AS avg_gas_used,
         AVG(execution_payload_transactions_count) AS avg_tx_count
       FROM {network}.fct_prepared_block FINAL
       WHERE slot_start_date_time >= now() - INTERVAL 6 HOUR
       GROUP BY country
-      ORDER BY blocks_prepared DESC
+      ORDER BY preparations_observed DESC
       LIMIT 20
-  - name: Block size distribution
-    description: Distribution of prepared block sizes.
+  - name: Prepared payload size distribution
+    description: Distribution of prepared candidate payload sizes.
     target: clickhouse-refined
     query: |
       SELECT
         intDiv(block_total_bytes, 10000) * 10 AS size_kb_bucket,
-        COUNT() AS block_count,
+        COUNT() AS observations,
         AVG(execution_payload_transactions_count) AS avg_tx_count,
         AVG(execution_payload_gas_used) AS avg_gas_used
       FROM {network}.fct_prepared_block FINAL
@@ -1675,8 +1702,8 @@ prepared_blocks:
         AND block_total_bytes IS NOT NULL
       GROUP BY size_kb_bucket
       ORDER BY size_kb_bucket
-  - name: High value prepared blocks
-    description: Find prepared blocks with highest execution payload values.
+  - name: High value prepared payload observations
+    description: Find prepared candidate payload observations with highest execution payload values.
     target: clickhouse-refined
     query: |
       SELECT
@@ -1691,19 +1718,19 @@ prepared_blocks:
         AND execution_payload_value > 0
       ORDER BY execution_payload_value DESC
       LIMIT 20
-  - name: Block version distribution
-    description: Distribution of block versions (deneb, electra, etc).
+  - name: Prepared payload version distribution
+    description: Distribution of prepared candidate payload versions (deneb, electra, etc).
     target: clickhouse-refined
     query: |
       SELECT
         block_version,
-        COUNT() AS block_count,
+        COUNT() AS observations,
         AVG(block_total_bytes) AS avg_block_bytes,
         AVG(execution_payload_transactions_count) AS avg_tx_count
       FROM {network}.fct_prepared_block FINAL
       WHERE slot_start_date_time >= now() - INTERVAL 24 HOUR
       GROUP BY block_version
-      ORDER BY block_count DESC
+      ORDER BY observations DESC
 node_metadata:
   name: Node Metadata & Diversity
   description: Queries for analyzing sentry node distribution and client diversity

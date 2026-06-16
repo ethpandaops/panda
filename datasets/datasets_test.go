@@ -30,9 +30,9 @@ func TestExamplesPreserveTotalCount(t *testing.T) {
 	}
 
 	// The packs were split from the original clickhouse examples.yaml
-	// (164 examples); xatu-cbt later gained the table_coverage example.
-	if total != 165 {
-		t.Fatalf("total examples = %d, want 165", total)
+	// (164 examples); xatu-cbt later gained coverage and MEV attribution examples.
+	if total != 166 {
+		t.Fatalf("total examples = %d, want 166", total)
 	}
 }
 
@@ -44,7 +44,7 @@ func TestExamplesMergeSplitCategories(t *testing.T) {
 	// merge them rather than let one pack clobber the other.
 	wantMerged := map[string]int{
 		"network_health": 15,
-		"mev_analysis":   11,
+		"mev_analysis":   12,
 		"blob_analysis":  9,
 	}
 
@@ -155,8 +155,8 @@ func TestInitFromDiscoveryNoBindingsShowsAll(t *testing.T) {
 		total += len(cat.Examples)
 	}
 
-	if total != 165 {
-		t.Fatalf("no bindings: total examples = %d, want 165 (all packs)", total)
+	if total != 166 {
+		t.Fatalf("no bindings: total examples = %d, want 166 (all packs)", total)
 	}
 }
 
