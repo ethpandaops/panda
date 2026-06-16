@@ -4,7 +4,6 @@ prometheus_basics:
   examples:
     - name: Discover datasource metric names
       description: List metric names for an unfamiliar Prometheus datasource, filtering by the concept you need before writing PromQL.
-      target: prometheus
       query: |
         # CLI:
         #   panda prometheus list-datasources
@@ -23,7 +22,6 @@ prometheus_basics:
         print(matches)
     - name: Inspect labels before filtering
       description: Inspect available labels for a datasource so PromQL filters use labels that actually exist in that deployment.
-      target: prometheus
       query: |
         # CLI:
         #   panda prometheus labels <datasource>
@@ -37,11 +35,9 @@ prometheus_basics:
         print(labels)
     - name: Check service health
       description: Check if monitored services are up and running
-      target: prometheus
       query: |
         up
     - name: HTTP request rate
       description: Get the rate of HTTP requests over the last 5 minutes
-      target: prometheus
       query: |
         rate(http_requests_total[5m])

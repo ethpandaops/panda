@@ -1,18 +1,15 @@
 # Query examples for the xatu-raw dataset.
-# Each example's `target` is the ClickHouse datasource (cluster) it runs against.
-
 validators:
   name: Validator Analysis
   description: Queries for analyzing validator counts, status distribution, and balances. Use canonical_beacon_validators
-    on the clickhouse-raw datasource — it has one row per validator per epoch with status and balance.
-    This single table is sufficient for validator count, status distribution, and balance queries. Do
-    not join to dim_validator_status or fct_validator_balance for simple count/status queries.
+    in this dataset — it has one row per validator per epoch with status and balance. This single table
+    is sufficient for validator count, status distribution, and balance queries. Do not join to
+    dim_validator_status or fct_validator_balance for simple count/status queries.
   examples:
   - name: Active validator count for most recent finalized epoch
-    description: Get total count of active validators using canonical_beacon_validators on the clickhouse-raw
-      datasource. Filter on status = 'active_ongoing' and the latest epoch. This single table has everything
-      needed for validator counts.
-    target: clickhouse-raw
+    description: Get total count of active validators using canonical_beacon_validators. Filter on status
+      = 'active_ongoing' and the latest epoch. This single table has everything needed for validator
+      counts.
     query: |
       SELECT
         count() as active_validators
@@ -22,10 +19,8 @@ validators:
         AND epoch = (SELECT max(epoch) FROM canonical_beacon_validators WHERE meta_network_name = 'mainnet')
   - name: Validator status distribution for most recent finalized epoch
     description: Count validators grouped by status (active_ongoing, pending_queued, exited_slashed, etc.)
-      using canonical_beacon_validators on the clickhouse-raw datasource. This table has one row per validator
-      per epoch with the current status — no need to join dim_validator_status which tracks lifecycle
-      transitions, not current state.
-    target: clickhouse-raw
+      using canonical_beacon_validators. This table has one row per validator per epoch with the current
+      status — no need to join dim_validator_status which tracks lifecycle transitions, not current state.
     query: |
       SELECT
         status,
@@ -38,7 +33,6 @@ validators:
   - name: Validator balance statistics for most recent finalized epoch
     description: Get balance distribution of active validators using canonical_beacon_validators. The
       balance column is in Gwei — divide by 1e9 for ETH.
-    target: clickhouse-raw
     query: |
       SELECT
         avg(balance) / 1e9 as avg_balance_eth,
@@ -55,7 +49,6 @@ attestations:
   examples:
   - name: Attestation count
     description: Count attestations in the last hour
-    target: clickhouse-raw
     query: |
       SELECT
         count() as attestation_count,
@@ -65,7 +58,6 @@ attestations:
         AND slot_start_date_time >= now() - INTERVAL 1 HOUR
   - name: Attestation propagation time
     description: Analyze attestation propagation delays
-    target: clickhouse-raw
     query: |
       SELECT
         avg(propagation_slot_start_diff) as avg_propagation_ms,
@@ -77,7 +69,6 @@ attestations:
   - name: Average validators per included attestation
     description: Count the average number of validators per included attestation using canonical_beacon_elaborated_attestation.
       This table has a validators array column — use length(validators) to count participants per attestation.
-    target: clickhouse-raw
     query: |
       SELECT
         AVG(length(validators)) AS avg_validators_per_attestation,
@@ -93,9 +84,8 @@ network_health:
   examples:
   - name: Attestation participation rate (raw events)
     description: Calculate the ratio of attesting validators to total validators per slot using raw event
-      data from clickhouse-raw. For a simpler pre-aggregated approach, use fct_attestation_correctness_head
-      on clickhouse-refined instead.
-    target: clickhouse-raw
+      data from this dataset. For a simpler pre-aggregated approach, use the xatu-cbt dataset's
+      fct_attestation_correctness_head.
     query: |
       WITH total_validators AS (
         SELECT
@@ -133,7 +123,6 @@ network_health:
   - name: Finalized epoch distance
     description: Calculate the gap between the current head epoch and the finalized epoch. Use beacon_api_eth_v1_events_finalized_checkpoint
       for the finalized epoch and beacon_api_eth_v1_events_head for the current head epoch.
-    target: clickhouse-raw
     query: |
       WITH latest_finalized AS (
         SELECT MAX(epoch) AS finalized_epoch
@@ -155,7 +144,6 @@ network_health:
   - name: Data pipeline health check
     description: Verify the data pipeline is healthy by checking for sufficient client diversity and event
       volume. Used as a guard condition before other alerts fire.
-    target: clickhouse-raw
     query: |
       SELECT
         COUNT(DISTINCT meta_client_name) AS distinct_clients,
@@ -167,16 +155,16 @@ network_health:
 mev_analysis:
   name: MEV Analysis
   description: Queries for analyzing MEV (Maximal Extractable Value) activity including relays, builders,
-    and block values. For relay-level market share use fct_block_mev_head (clickhouse-refined). For individual
-    bid data (values, builder pubkeys, bid traces) use mev_relay_bid_trace (clickhouse-raw) — the value
-    column is in wei (UInt256). For validator registrations use mev_relay_validator_registration (clickhouse-raw).
-    For bid count trends use fct_mev_bid_count_by_relay and fct_mev_bid_count_by_builder (clickhouse-refined).
-    For highest bid value timing use fct_mev_bid_highest_value_by_builder_chunked_50ms (clickhouse-refined).
+    and block values. For relay-level market share use the xatu-cbt dataset's fct_block_mev_head. For
+    individual bid data (values, builder pubkeys, bid traces) use mev_relay_bid_trace — the value column
+    is in wei (UInt256). For validator registrations use mev_relay_validator_registration. For bid count
+    trends use the xatu-cbt dataset's fct_mev_bid_count_by_relay and fct_mev_bid_count_by_builder. For
+    highest bid value timing use the xatu-cbt dataset's
+    fct_mev_bid_highest_value_by_builder_chunked_50ms.
   examples:
   - name: Top MEV builders by total bid value
     description: Rank builders by total bid value in ETH. Use mev_relay_bid_trace which has the actual
       bid values per builder.
-    target: clickhouse-raw
     query: |
       SELECT
         builder_pub_key,
@@ -192,7 +180,6 @@ mev_analysis:
       LIMIT 10
   - name: MEV validator registrations per relay
     description: Count unique validators registered with each MEV relay using mev_relay_validator_registration.
-    target: clickhouse-raw
     query: |
       SELECT
         relay_name,
@@ -205,8 +192,7 @@ mev_analysis:
       ORDER BY unique_validators DESC
   - name: MEV bid value distribution
     description: Distribution of MEV bid values to understand the value spectrum. Uses mev_relay_bid_trace
-      on the clickhouse-raw datasource which contains individual bid data with value (in wei).
-    target: clickhouse-raw
+      from this dataset, which contains individual bid data with value in wei.
     query: |
       SELECT
         CASE
@@ -226,16 +212,16 @@ mev_analysis:
 blob_analysis:
   name: Blob Analysis
   description: Queries for analyzing EIP-4844 blob data including blob counts, submitters, and L2 rollup
-    activity. For blob counts and submitter identity, use dim_block_blob_submitter (clickhouse-refined).
-    For blob content analysis (empty blobs, blob sizes), use canonical_beacon_blob_sidecar (clickhouse-raw)
-    which has blob_size and blob_empty_size columns. Cross-datasource joins require two separate queries.
+    activity. For blob counts and submitter identity, use the xatu-cbt dataset's dim_block_blob_submitter.
+    For blob content analysis (empty blobs, blob sizes), use canonical_beacon_blob_sidecar, which has
+    blob_size and blob_empty_size columns. When combining datasets, query each placement separately and
+    join bounded results client-side.
   examples:
   - name: Empty blob detection
-    description: Find blobs with zero useful data using canonical_beacon_blob_sidecar (clickhouse-raw
-      datasource). The blob_empty_size column shows how many bytes are empty — when blob_empty_size equals
-      blob_size, the blob is entirely empty. To identify submitters, join these slots to dim_block_blob_submitter
-      on clickhouse-refined (separate query, different datasource).
-    target: clickhouse-raw
+    description: Find blobs with zero useful data using canonical_beacon_blob_sidecar. The blob_empty_size
+      column shows how many bytes are empty — when blob_empty_size equals blob_size, the blob is entirely
+      empty. To identify submitters, fetch matching slots from the xatu-cbt dataset's
+      dim_block_blob_submitter in a separate bounded query.
     query: |
       SELECT
         slot,
@@ -256,7 +242,6 @@ libp2p_gossipsub:
   examples:
   - name: Block gossip propagation timing
     description: Block message propagation times across the gossipsub network.
-    target: clickhouse-raw
     query: |
       SELECT
         slot,
@@ -275,7 +260,6 @@ libp2p_gossipsub:
       LIMIT 50
   - name: Block gossip by consensus client
     description: Compare block propagation across consensus client implementations.
-    target: clickhouse-raw
     query: |
       SELECT
         meta_client_implementation AS client,
@@ -291,7 +275,6 @@ libp2p_gossipsub:
       ORDER BY avg_propagation_ms
   - name: Block gossip by country
     description: Geographic distribution of block propagation timing.
-    target: clickhouse-raw
     query: |
       SELECT
         meta_client_geo_country AS country,
@@ -307,7 +290,6 @@ libp2p_gossipsub:
       LIMIT 20
   - name: Aggregate and proof gossip propagation timing
     description: Analyze aggregate and proof propagation timing using libp2p_gossipsub_aggregate_and_proof.
-    target: clickhouse-raw
     query: |
       SELECT
         slot,
@@ -324,7 +306,6 @@ libp2p_gossipsub:
       LIMIT 50
   - name: Attestation gossip propagation
     description: Attestation propagation times per slot.
-    target: clickhouse-raw
     query: |
       SELECT
         slot,
@@ -341,7 +322,6 @@ libp2p_gossipsub:
       LIMIT 50
   - name: Attestation gossip by committee
     description: Attestation propagation breakdown by committee index.
-    target: clickhouse-raw
     query: |
       SELECT
         committee_index,
@@ -355,7 +335,6 @@ libp2p_gossipsub:
       ORDER BY committee_index
   - name: Blob sidecar gossip propagation
     description: Blob sidecar propagation times by slot and blob index.
-    target: clickhouse-raw
     query: |
       SELECT
         slot,
@@ -373,7 +352,6 @@ libp2p_gossipsub:
       LIMIT 100
   - name: Data column sidecar gossip propagation
     description: Data column sidecar (PeerDAS) propagation times.
-    target: clickhouse-raw
     query: |
       SELECT
         slot,
@@ -391,7 +369,6 @@ libp2p_gossipsub:
       LIMIT 100
   - name: Message size by topic
     description: Average message sizes across different gossipsub topics.
-    target: clickhouse-raw
     query: |
       SELECT
         topic_name,
@@ -410,7 +387,6 @@ libp2p_peers:
   examples:
   - name: Peer connections by client
     description: Distribution of connected peers by client implementation.
-    target: clickhouse-raw
     query: |
       SELECT
         remote_agent_implementation AS peer_client,
@@ -423,7 +399,6 @@ libp2p_peers:
       ORDER BY connection_count DESC
   - name: Peer connections by country
     description: Geographic distribution of peer connections.
-    target: clickhouse-raw
     query: |
       SELECT
         remote_geo_country AS country,
@@ -437,7 +412,6 @@ libp2p_peers:
       LIMIT 20
   - name: Peer connections by ASN
     description: Distribution of peer connections by hosting provider.
-    target: clickhouse-raw
     query: |
       SELECT
         remote_geo_autonomous_system_organization AS asn_org,
@@ -452,7 +426,6 @@ libp2p_peers:
       LIMIT 20
   - name: Connection direction breakdown
     description: Inbound vs outbound peer connections.
-    target: clickhouse-raw
     query: |
       SELECT
         direction,
@@ -464,7 +437,6 @@ libp2p_peers:
       GROUP BY direction
   - name: Client version distribution
     description: Distribution of peer client versions.
-    target: clickhouse-raw
     query: |
       SELECT
         remote_agent_implementation AS client,
@@ -478,7 +450,6 @@ libp2p_peers:
       ORDER BY client, connection_count DESC
   - name: Disconnection events
     description: Recent peer disconnection events.
-    target: clickhouse-raw
     query: |
       SELECT
         remote_agent_implementation AS peer_client,
@@ -494,7 +465,6 @@ libp2p_peers:
       LIMIT 30
   - name: Connection churn rate
     description: Compare connection vs disconnection rates over time.
-    target: clickhouse-raw
     query: |
       SELECT
         toStartOfMinute(event_date_time) AS minute,
@@ -508,7 +478,6 @@ libp2p_peers:
     description: Estimate the number of connected peers per node by counting connection events in libp2p_connected.
       Use this to derive peer counts for correlation analysis (e.g., does high peer count improve block
       arrival time). Join to fct_block_first_seen_by_node on meta_client_name for block timing.
-    target: clickhouse-raw
     query: |
       SELECT
         meta_client_name,
@@ -524,7 +493,6 @@ libp2p_messages:
   examples:
   - name: Message delivery by topic
     description: Message delivery statistics by gossipsub topic.
-    target: clickhouse-raw
     query: |
       SELECT
         topic_name,
@@ -539,7 +507,6 @@ libp2p_messages:
       ORDER BY delivered_count DESC
   - name: Rejected messages by reason
     description: Message rejection reasons and counts.
-    target: clickhouse-raw
     query: |
       SELECT
         reason,
@@ -555,7 +522,6 @@ libp2p_messages:
   - name: Gossipsub duplication factor for aggregates
     description: Calculate the duplication factor for aggregate attestation messages using libp2p_duplicate_message.
       Filter by topic to isolate aggregate messages.
-    target: clickhouse-raw
     query: |
       SELECT
         COUNT() AS total_duplicates,
@@ -567,7 +533,6 @@ libp2p_messages:
         AND topic_name LIKE '%beacon_aggregate_and_proof%'
   - name: Duplicate messages by topic
     description: Duplicate message statistics by gossipsub topic.
-    target: clickhouse-raw
     query: |
       SELECT
         topic_name,
@@ -581,7 +546,6 @@ libp2p_messages:
       ORDER BY duplicate_count DESC
   - name: Duplication ratio by topic
     description: Calculate message duplication ratio (duplicates vs deliveries).
-    target: clickhouse-raw
     query: |
       SELECT
         d.topic_name,
@@ -605,7 +569,6 @@ libp2p_messages:
       ORDER BY duplication_pct DESC
   - name: Topic join/leave activity
     description: Peer topic subscription changes.
-    target: clickhouse-raw
     query: |
       SELECT
         topic_name,
@@ -617,7 +580,6 @@ libp2p_messages:
       ORDER BY joins DESC
   - name: Message rejection rate by client
     description: Which clients are rejecting the most messages.
-    target: clickhouse-raw
     query: |
       SELECT
         meta_client_implementation AS client,

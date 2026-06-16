@@ -14,13 +14,13 @@ func cats(examples ...types.Example) map[string]types.ExampleCategory {
 
 func TestExampleSignatureStable(t *testing.T) {
 	a := cats(
-		types.Example{Name: "x", Target: "clickhouse-raw"},
-		types.Example{Name: "y", Target: "clickhouse-refined"},
+		types.Example{Name: "x", Dataset: "xatu-raw"},
+		types.Example{Name: "y", Dataset: "xatu-cbt"},
 	)
 	// Same content, different example order: signature must match (order-independent).
 	b := cats(
-		types.Example{Name: "y", Target: "clickhouse-refined"},
-		types.Example{Name: "x", Target: "clickhouse-raw"},
+		types.Example{Name: "y", Dataset: "xatu-cbt"},
+		types.Example{Name: "x", Dataset: "xatu-raw"},
 	)
 
 	if exampleSignature(a) != exampleSignature(b) {
@@ -29,19 +29,19 @@ func TestExampleSignatureStable(t *testing.T) {
 }
 
 func TestExampleSignatureChanges(t *testing.T) {
-	base := exampleSignature(cats(types.Example{Name: "x", Target: "clickhouse-raw"}))
+	base := exampleSignature(cats(types.Example{Name: "x", Dataset: "xatu-raw"}))
 
 	added := exampleSignature(cats(
-		types.Example{Name: "x", Target: "clickhouse-raw"},
-		types.Example{Name: "z", Target: "clickhouse-raw"},
+		types.Example{Name: "x", Dataset: "xatu-raw"},
+		types.Example{Name: "z", Dataset: "xatu-raw"},
 	))
 	if base == added {
 		t.Error("adding an example should change the signature")
 	}
 
-	retargeted := exampleSignature(cats(types.Example{Name: "x", Target: "clickhouse-refined"}))
-	if base == retargeted {
-		t.Error("re-targeting an example should change the signature")
+	redataseted := exampleSignature(cats(types.Example{Name: "x", Dataset: "xatu-cbt"}))
+	if base == redataseted {
+		t.Error("moving an example between datasets should change the signature")
 	}
 
 	removed := exampleSignature(cats())

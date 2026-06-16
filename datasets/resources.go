@@ -82,7 +82,7 @@ func (m *Module) handleDatasetsList(_ context.Context, _ string, _ surface.Diale
 
 	usage := "Read datasets://{name} for a dataset's query guide. Placement params/notes also appear in datasources://clickhouse."
 	if !m.hasAnyPlacements() {
-		usage = "This server has not advertised dataset placement metadata; examples still include Target fields and datasources://clickhouse lists concrete datasources. Read datasets://{name} for syntax rules."
+		usage = "This server has not advertised dataset placement metadata. Read datasets://{name} for syntax rules and datasources://clickhouse for concrete datasources."
 	}
 
 	data, err := json.MarshalIndent(map[string]any{
@@ -145,7 +145,7 @@ func (m *Module) renderDatasetGuide(p pack, s surface.Dialect) string {
 				s.ResourceRef("datasets://list"), s.ResourceRef("datasources://clickhouse"))
 		} else {
 			fmt.Fprintf(&b,
-				"This server has not advertised dataset placement metadata, so this guide is shown in compatibility mode. Use search result `Target` fields or %s to choose a concrete datasource.\n",
+				"This server has not advertised dataset placement metadata, so this guide is shown in compatibility mode. Use %s to choose a concrete datasource.\n",
 				s.ResourceRef("datasources://clickhouse"))
 		}
 	}

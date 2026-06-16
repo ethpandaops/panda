@@ -47,9 +47,10 @@ type Example struct {
 	Name        string `json:"name" yaml:"name"`
 	Description string `json:"description" yaml:"description"`
 	Query       string `json:"query" yaml:"query"`
-	// Target identifies the datasource the example runs against: a ClickHouse
-	// cluster name, or a Prometheus/Loki datasource name.
-	Target string `json:"target" yaml:"target"`
+	// Target is a legacy optional hint for examples that still name an execution
+	// target directly. Dataset examples should use Dataset plus placement
+	// metadata instead.
+	Target string `json:"target,omitempty" yaml:"target,omitempty"`
 	// Dataset is the knowledge pack the example ships in (e.g. xatu-raw). It is
 	// stamped by the datasets module at load time, never authored in YAML.
 	Dataset string `json:"dataset,omitempty" yaml:"-"`

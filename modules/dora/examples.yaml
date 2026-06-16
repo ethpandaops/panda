@@ -210,6 +210,13 @@ dora_combined_workflows:
       query: |
         from ethpandaops import dora, clickhouse
 
+        def clickhouse_datasource_for_dataset(dataset):
+            for ds in clickhouse.list_datasources():
+                for binding in ds.get("extra", {}).get("datasets", []):
+                    if binding.get("dataset") == dataset:
+                        return ds["name"]
+            raise RuntimeError(f"No ClickHouse datasource advertises {dataset!r}")
+
         # Get network status from Dora
         network = "sepolia"
         overview = dora.get_network_overview(network)
@@ -220,7 +227,8 @@ dora_combined_workflows:
         print(f"Active validators: {overview['active_validator_count']}")
 
         # Get recent blocks from Xatu for deeper analysis
-        df = clickhouse.query("clickhouse-raw", f'''
+        datasource = clickhouse_datasource_for_dataset("xatu-raw")
+        df = clickhouse.query(datasource, f'''
             SELECT
                 slot,
                 block_root,

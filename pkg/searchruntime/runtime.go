@@ -281,8 +281,8 @@ func (r *Runtime) startExampleRefresh(log logrus.FieldLogger, moduleRegistry *mo
 }
 
 // exampleSignature is a cheap fingerprint of the example set (category, name and
-// target of every example). It changes whenever an example is added, removed, or
-// re-targeted — the cases that warrant rebuilding the index.
+// dataset of every example). It changes whenever an example is added, removed,
+// or moved between datasets — the cases that warrant rebuilding the index.
 func exampleSignature(categories map[string]types.ExampleCategory) uint64 {
 	keys := make([]string, 0, len(categories))
 	for key := range categories {
@@ -296,7 +296,7 @@ func exampleSignature(categories map[string]types.ExampleCategory) uint64 {
 	for _, key := range keys {
 		entries := make([]string, 0, len(categories[key].Examples))
 		for _, ex := range categories[key].Examples {
-			entries = append(entries, ex.Name+"\x00"+ex.Target)
+			entries = append(entries, ex.Name+"\x00"+ex.Dataset)
 		}
 
 		sort.Strings(entries)
