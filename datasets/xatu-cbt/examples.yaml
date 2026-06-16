@@ -333,8 +333,8 @@ network_health:
       ORDER BY avg_arrival_ms ASC
   - name: Locally prepared candidate blocks by client
     description: Track locally prepared candidate payloads per consensus client using fct_prepared_block.
-      This is not an actual chain block count; for canonical local/non-MEV blocks, compare fct_block
-      against fct_block_mev.
+      These rows describe locally observed preparation activity and may differ from finalized chain
+      inclusion.
     target: clickhouse-refined
     query: |
       SELECT
@@ -626,9 +626,7 @@ mev_analysis:
   name: MEV Analysis
   description: Queries for analyzing MEV (Maximal Extractable Value) activity including relays, builders,
     and block values. For finalized historical relay-delivered block counts use fct_block_mev with
-    status = 'canonical'; use fct_block_mev_head only for live monitoring. For actual local/non-MEV
-    block counts, count canonical fct_block rows that have no matching canonical fct_block_mev row on
-    (slot, block_root); do not use fct_prepared_block for chain totals. For individual bid data (values,
+    status = 'canonical'; use fct_block_mev_head only for live monitoring. For individual bid data (values,
     builder pubkeys, bid traces) use mev_relay_bid_trace (clickhouse-raw) — the value column is in wei
     (UInt256). For validator registrations use mev_relay_validator_registration (clickhouse-raw). For bid
     count trends use fct_mev_bid_count_by_relay and fct_mev_bid_count_by_builder (clickhouse-refined).
@@ -727,47 +725,22 @@ mev_analysis:
       GROUP BY builder_pubkey
       ORDER BY blocks_built DESC
       LIMIT 20
-  - name: Finalized MEV vs local non-MEV block counts
-    description: Count canonical blocks delivered by MEV relays versus canonical blocks without a matching
-      relay payload. Use this for historical "locally built without MEV" block counts; fct_prepared_block
-      is for locally prepared candidate payloads, not actual chain totals.
+  - name: Finalized MEV block activity
+    description: Count finalized canonical MEV relay-delivered blocks and summarize their execution payload
+      characteristics.
     target: clickhouse-refined
     query: |
-      WITH
-        now() - INTERVAL 1 DAY AS start_time,
-        now() AS end_time,
-        mev_stats AS (
-          SELECT
-            'mev_relay' AS block_build_source,
-            COUNT() AS block_count,
-            AVG(gas_used) AS avg_gas_used,
-            AVG(transaction_count) AS avg_tx_count
-          FROM {network}.fct_block_mev FINAL
-          WHERE slot_start_date_time >= start_time
-            AND slot_start_date_time < end_time
-            AND status = 'canonical'
-        ),
-        local_stats AS (
-          SELECT
-            'local_non_mev' AS block_build_source,
-            COUNT() AS block_count,
-            AVG(execution_payload_gas_used) AS avg_gas_used,
-            AVG(execution_payload_transactions_count) AS avg_tx_count
-          FROM {network}.fct_block FINAL
-          WHERE slot_start_date_time >= start_time
-            AND slot_start_date_time < end_time
-            AND status = 'canonical'
-            AND (slot, block_root) GLOBAL NOT IN (
-              SELECT slot, block_root
-              FROM {network}.fct_block_mev FINAL
-              WHERE slot_start_date_time >= start_time
-                AND slot_start_date_time < end_time
-                AND status = 'canonical'
-            )
-        )
-      SELECT * FROM mev_stats
-      UNION ALL
-      SELECT * FROM local_stats
+      SELECT
+        toStartOfHour(slot_start_date_time) AS hour,
+        COUNT() AS mev_blocks,
+        AVG(gas_used) AS avg_gas_used,
+        AVG(transaction_count) AS avg_tx_count,
+        SUM(value) / 1e18 AS total_value_eth
+      FROM {network}.fct_block_mev FINAL
+      WHERE slot_start_date_time >= now() - INTERVAL 1 DAY
+        AND status = 'canonical'
+      GROUP BY hour
+      ORDER BY hour DESC
   - name: Hourly MEV activity trend
     description: Track MEV activity trends by hour including bid counts and block values.
     target: clickhouse-refined
@@ -1638,8 +1611,8 @@ execution_traces:
 prepared_blocks:
   name: Prepared Blocks (Local Block Building)
   description: Queries for analyzing locally prepared candidate payload performance and characteristics.
-    These rows are not actual chain block counts; for canonical local/non-MEV block counts, use fct_block
-    minus matching fct_block_mev rows.
+    These rows describe local preparation observations and may not have a one-to-one relationship with
+    finalized chain blocks.
   examples:
   - name: Recent prepared blocks
     description: Get details of recently prepared blocks by local nodes.

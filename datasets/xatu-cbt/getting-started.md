@@ -20,9 +20,6 @@ table and network.
   carry `status` when orphaned rows are included (for example `fct_block` and
   `fct_block_mev` with `status = 'canonical'`); `_head` tables are live views
   that may reorg and are best for real-time monitoring.
-- **Local/non-MEV block counts:** `fct_prepared_block` records locally
-  prepared candidate payloads, not actual chain blocks, and can have multiple
-  observations per slot. For historical "locally built without MEV" counts,
-  count canonical rows in `fct_block` and exclude matching canonical
-  `fct_block_mev` rows on `(slot, block_root)`. Use `_head` tables only for
-  live monitoring where reorgs are acceptable.
+- **Prepared block observations:** `fct_prepared_block` records locally
+  prepared candidate payloads and can have multiple observations per slot; use
+  chain block tables when the question is about finalized block inclusion.
