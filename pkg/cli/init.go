@@ -109,7 +109,7 @@ func runInit(cmd *cobra.Command, _ []string) error {
 	discoverCtx, discoverCancel := context.WithTimeout(ctx, 15*time.Second)
 	defer discoverCancel()
 
-	authCfg := discoverProxyAuth(discoverCtx, initProxyURL)
+	authCfg, authDiscovered := discoverProxyAuth(discoverCtx, initProxyURL)
 
 	fmt.Printf("Auth issuer: %s\n", authCfg.IssuerURL)
 	fmt.Printf("Auth client: %s\n", authCfg.ClientID)
@@ -155,6 +155,22 @@ func runInit(cmd *cobra.Command, _ []string) error {
 		fmt.Printf("Docker Compose written to: %s\n", composePath)
 	} else {
 		fmt.Printf("Docker Compose already exists: %s (use --force to overwrite)\n", composePath)
+	}
+
+	// Reconcile the auth block of an existing (not overwritten) config when the
+	// proxy advertises different settings, so a proxy-side issuer change is
+	// picked up without --force. Runs before authentication so the login below
+	// uses the corrected issuer.
+	if configCreated == 0 && authDiscovered {
+		reconciled, reconcileErr := reconcileProxyAuth(configPath, authCfg)
+
+		switch {
+		case reconcileErr != nil:
+			fmt.Printf("Warning: could not reconcile proxy auth in %s: %v\n", configPath, reconcileErr)
+		case reconciled:
+			fmt.Printf("Updated proxy auth in existing config to issuer %s (client %s)\n",
+				authCfg.IssuerURL, authCfg.ClientID)
+		}
 	}
 
 	// 4. Authenticate against the proxy.
@@ -284,8 +300,11 @@ proxy:
 }
 
 // discoverProxyAuth fetches auth metadata from the proxy's /auth/metadata
-// endpoint. Falls back to using the proxy URL as the issuer if discovery fails.
-func discoverProxyAuth(ctx context.Context, proxyURL string) initAuthConfig {
+// endpoint. It falls back to using the proxy URL as the issuer if discovery
+// fails, and reports whether the returned config came from the proxy (true) or
+// the fallback (false). Callers must not persist fallback values over an
+// existing config, since they are guesses rather than the proxy's real issuer.
+func discoverProxyAuth(ctx context.Context, proxyURL string) (initAuthConfig, bool) {
 	fallback := initAuthConfig{
 		IssuerURL: proxyURL,
 		ClientID:  defaultProxyAuthClientID,
@@ -295,35 +314,35 @@ func discoverProxyAuth(ctx context.Context, proxyURL string) initAuthConfig {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, metadataURL, nil)
 	if err != nil {
-		return fallback
+		return fallback, false
 	}
 
 	httpClient := &http.Client{Timeout: 10 * time.Second}
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return fallback
+		return fallback, false
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return fallback
+		return fallback, false
 	}
 
 	var meta proxy.AuthMetadataResponse
 	if err := json.NewDecoder(resp.Body).Decode(&meta); err != nil {
-		return fallback
+		return fallback, false
 	}
 
 	if meta.IssuerURL == "" || meta.ClientID == "" {
-		return fallback
+		return fallback, false
 	}
 
 	return initAuthConfig{
 		Mode:      meta.Mode,
 		IssuerURL: meta.IssuerURL,
 		ClientID:  meta.ClientID,
-	}
+	}, true
 }
 
 func buildComposeTemplate(serverImage, configDir string) string {
