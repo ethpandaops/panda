@@ -1,16 +1,15 @@
 # Query examples for the otel-logs dataset.
-# Each example's `target` is the ClickHouse datasource (cluster) it runs against.
 
 devnet_logs:
   name: Local Devnet OTel Logs
-  description: Queries for local Kurtosis devnet OTel logs exposed through the autodiscovered local-kurtosis
-    ClickHouse datasource. Replace {db} with the database hosting the otel-logs dataset — given by the
-    datasource's dataset params or its default database (see datasources://).
+  description: Queries for local Kurtosis devnet OTel logs. These live in the otel-logs dataset on a
+    locally autodiscovered ClickHouse datasource — pick the datasource that holds otel-logs for your
+    local devnet (see datasets://otel-logs and datasources://). Replace {db} with the database hosting
+    the otel-logs dataset, given by the datasource's dataset params or its default database.
   examples:
   - name: List local devnet enclaves
     description: List Kurtosis enclave names currently present in the shared local OTel logs table. Run
       this before filtering logs because multiple devnets can share one table.
-    target: local-kurtosis
     query: |
       SELECT DISTINCT EnclaveName
       FROM {db}.otel_logs
@@ -19,7 +18,6 @@ devnet_logs:
   - name: Recent service errors
     description: Fetch recent error-class logs for a specific service in a specific local Kurtosis enclave
       by matching the raw log body.
-    target: local-kurtosis
     query: |
       SELECT
         Timestamp,
@@ -35,7 +33,6 @@ devnet_logs:
   - name: EL warnings and errors
     description: Fetch recent EL warning/error logs for a local Kurtosis enclave by matching the raw log
       body.
-    target: local-kurtosis
     query: |
       SELECT
         Timestamp,
@@ -50,16 +47,17 @@ devnet_logs:
       LIMIT 200
 production_devnet_logs:
   name: Production Devnet OTel Logs
-  description: Queries for hosted (multi-VM) devnet and testnet container logs in the clickhouse-raw datasource,
-    table {db}.otel_logs — replace {db} with the database from the datasource's otel-logs dataset params
-    (see datasources://). Logs are keyed by ResourceAttributes['network'] (devnet name) and ResourceAttributes['host.name']
-    (node, e.g. lighthouse-geth-super-1). SeverityText is usually empty for raw Docker logs, so match
-    severity on Body. This is NOT for local Kurtosis devnets — use the local-kurtosis datasource for those.
+  description: Queries for hosted (multi-VM) devnet and testnet container logs. These live in the otel-logs
+    dataset on the hosted ClickHouse datasource — pick the datasource that holds otel-logs for hosted
+    networks (see datasets://otel-logs and datasources://), table {db}.otel_logs. Replace {db} with the
+    database from the datasource's otel-logs dataset params. Logs are keyed by ResourceAttributes['network']
+    (devnet name) and ResourceAttributes['host.name'] (node, e.g. lighthouse-geth-super-1). SeverityText
+    is usually empty for raw Docker logs, so match severity on Body. This is NOT for local Kurtosis devnets,
+    which use a separate locally autodiscovered datasource.
   examples:
   - name: List devnet nodes shipping logs
     description: List the nodes (host.name) currently shipping container logs for a hosted devnet. Run
       this to discover the node topology before drilling into a specific node.
-    target: clickhouse-raw
     query: |
       SELECT DISTINCT ResourceAttributes['host.name'] AS host
       FROM {db}.otel_logs
@@ -70,7 +68,6 @@ production_devnet_logs:
     description: Fetch recent error-class logs for one devnet node by matching the raw log body. A node
       VM mixes its CL, EL, validator and sidecar containers — use LogAttributes['log.file.name'] to tell
       them apart.
-    target: clickhouse-raw
     query: |
       SELECT
         Timestamp,
@@ -88,7 +85,6 @@ production_devnet_logs:
     description: Sweep error-class logs across all nodes running a given CL client. host.name is <cl>-<el>-<tier>-<n>,
       so a 'lighthouse-%' prefix matches lighthouse-CL nodes. Results still mix each node's EL/sidecar
       lines.
-    target: clickhouse-raw
     query: |
       SELECT
         Timestamp,
