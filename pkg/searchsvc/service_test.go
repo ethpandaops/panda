@@ -190,8 +190,8 @@ func TestSearchExamplesScoreAndCategoryFilter(t *testing.T) {
 	t.Parallel()
 
 	results := []resource.SearchResult{
-		{CategoryKey: "blocks", CategoryName: "Blocks", Example: types.Example{Name: "high", Dataset: "xatu-cbt"}, Score: 0.9},
-		{CategoryKey: "attestations", CategoryName: "Attestations", Example: types.Example{Name: "mid", Dataset: "xatu-raw"}, Score: 0.5},
+		{CategoryKey: "blocks", CategoryName: "Blocks", Example: types.Example{Name: "high", Target: "clickhouse-refined", Dataset: "xatu-cbt"}, Score: 0.9},
+		{CategoryKey: "attestations", CategoryName: "Attestations", Example: types.Example{Name: "mid", Target: "clickhouse-raw", Dataset: "xatu-raw"}, Score: 0.5},
 		{CategoryKey: "blocks", CategoryName: "Blocks", Example: types.Example{Name: "below-threshold"}, Score: 0.1},
 	}
 

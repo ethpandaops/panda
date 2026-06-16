@@ -307,7 +307,6 @@ func (s *Service) SearchExamples(query, categoryFilter, datasetFilter string, li
 			ExampleName:     result.Example.Name,
 			Description:     result.Example.Description,
 			Query:           result.Example.Query,
-			Target:          result.Example.Target,
 			Dataset:         result.Example.Dataset,
 			SimilarityScore: result.Score,
 		})

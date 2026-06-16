@@ -89,7 +89,7 @@ func TestExtractTableNames(t *testing.T) {
 	}
 }
 
-func TestExampleIndexEmbeddingTextUsesDatasetLabel(t *testing.T) {
+func TestExampleIndexEmbeddingTextUsesTargetLabel(t *testing.T) {
 	embedder := &captureEmbedder{}
 	log := logrus.New()
 	log.SetOutput(io.Discard)
@@ -101,12 +101,12 @@ func TestExampleIndexEmbeddingTextUsesDatasetLabel(t *testing.T) {
 				Name:        "Active targets",
 				Description: "Find active scrape targets.",
 				Query:       "up",
-				Dataset:     "metrics",
+				Target:      "prometheus",
 			}},
 		},
 	})
 	require.NoError(t, err)
 	require.Len(t, embedder.texts, 1)
-	assert.Contains(t, embedder.texts[0], "Dataset: metrics")
+	assert.Contains(t, embedder.texts[0], "Target: prometheus")
 	assert.NotContains(t, embedder.texts[0], "Cluster:")
 }

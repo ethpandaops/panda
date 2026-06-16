@@ -1,4 +1,7 @@
 # Query examples for the xatu-cbt dataset.
+# SQL examples set `target` to the ClickHouse datasource (cluster) they run
+# against; Python examples (sandbox) omit it.
+
 table_coverage:
   name: Table Coverage and Freshness
   description: >-
@@ -27,10 +30,12 @@ table_coverage:
 
 block_timing:
   name: Block Timing Analysis
-  description: Queries for analyzing block arrival and propagation times using aggregated CBT data.
+  description: Queries for analyzing block arrival and propagation times using clickhouse-refined aggregated
+    data
   examples:
   - name: Average block arrival time
     description: Get the average block arrival time (seen_slot_start_diff) for recent slots.
+    target: clickhouse-refined
     query: |
       SELECT
         avg(seen_slot_start_diff) as avg_arrival_ms,
@@ -41,6 +46,7 @@ block_timing:
       WHERE slot_start_date_time >= now() - INTERVAL 1 HOUR
   - name: Block arrival time percentiles
     description: Get percentile distribution of block arrival times.
+    target: clickhouse-refined
     query: |
       SELECT
         quantile(0.05)(seen_slot_start_diff) as p5_ms,
@@ -52,6 +58,7 @@ block_timing:
       WHERE slot_start_date_time >= now() - INTERVAL 1 HOUR
   - name: Block arrival time for last N slots
     description: Get block arrival stats aggregated per slot for the last 1000 slots.
+    target: clickhouse-refined
     query: |
       SELECT
         slot,
@@ -64,6 +71,7 @@ block_timing:
       ORDER BY slot DESC
   - name: Block arrival by consensus client
     description: Compare block arrival times across different consensus clients.
+    target: clickhouse-refined
     query: |
       SELECT
         meta_consensus_implementation as client,
@@ -77,12 +85,13 @@ block_timing:
 block_properties:
   name: Block Properties (Execution Payload)
   description: Queries for analyzing block-level execution payload properties (gas, size, transactions)
-    using the fct_block_head table. Use fct_block_head for canonical block properties — NOT
-    canonical_execution_block, fct_prepared_block, or fct_execution_block.
+    using the fct_block_head table on clickhouse-refined. Use fct_block_head for canonical block properties
+    — NOT canonical_execution_block, fct_prepared_block, or fct_execution_block.
   examples:
   - name: Average gas used per block
     description: Get the average gas used per block over a recent time window. Use fct_block_head which
       contains execution_payload_gas_used.
+    target: clickhouse-refined
     query: |
       SELECT
         COUNT() AS block_count,
@@ -94,6 +103,7 @@ block_properties:
       WHERE slot_start_date_time >= now() - INTERVAL 1 HOUR
   - name: Gas used per block over time
     description: Track gas usage per slot over time using fct_block_head.
+    target: clickhouse-refined
     query: |
       SELECT
         slot,
@@ -107,6 +117,7 @@ block_properties:
   - name: Block size statistics
     description: Get block size statistics (in bytes) from fct_block_head. Use this for max/avg/min block
       size queries.
+    target: clickhouse-refined
     query: |
       SELECT
         COUNT() AS block_count,
@@ -118,7 +129,7 @@ block_properties:
       WHERE slot_start_date_time >= now() - INTERVAL 1 HOUR
 block_status:
   name: Block Status (Orphans & Reorgs)
-  description: Queries for analyzing orphaned and reorged blocks using the fct_block table.
+  description: Queries for analyzing orphaned and reorged blocks using the fct_block table on clickhouse-refined.
     Use fct_block for orphan/reorg queries — it has a `status` column with values like 'canonical' and
     'orphaned'. Do NOT use fct_block_canonical or fct_block_head for orphan detection. Note that fct_block
     does NOT include missed slots — only blocks that were actually produced.
@@ -126,6 +137,7 @@ block_status:
   - name: Orphaned block count
     description: Count orphaned (reorged) blocks over a time window using fct_block. Filter on status
       = 'orphaned'.
+    target: clickhouse-refined
     query: |
       SELECT
         count() AS orphaned_blocks
@@ -134,6 +146,7 @@ block_status:
         AND status = 'orphaned'
   - name: Orphaned blocks over time
     description: Track orphaned blocks per hour using fct_block.
+    target: clickhouse-refined
     query: |
       SELECT
         toStartOfHour(slot_start_date_time) AS hour,
@@ -148,6 +161,7 @@ block_status:
     description: Investigate why a specific block was orphaned by checking its status in fct_block and
       arrival timing in fct_block_first_seen_by_node. Use fct_block for finalized chain analysis (has
       status column), fct_block_first_seen_by_node for when nodes saw it.
+    target: clickhouse-refined
     query: |
       SELECT
         b.slot,
@@ -179,6 +193,7 @@ block_status:
     description: Detect stale parent usage by measuring the slot gap between blocks and their parents.
       A parent distance > 1 means missed slots were skipped. Use fct_block with a self-join on parent_root
       to resolve parent slot.
+    target: clickhouse-refined
     query: |
       SELECT
         child.slot - parent.slot AS parent_distance,
@@ -203,6 +218,7 @@ network_health:
   - name: Attestation participation rate
     description: Calculate attestation participation using pre-aggregated vote totals. votes_max
       is scheduled duties; votes_head plus votes_other is observed attestations.
+    target: clickhouse-refined
     query: |
       SELECT
         slot_start_date_time,
@@ -218,6 +234,7 @@ network_health:
   - name: Attestation correctness rate
     description: Calculate the percentage of observed attestations whose head vote was correct using
       the vote-correctness outcome columns.
+    target: clickhouse-refined
     query: |
       SELECT
         slot_start_date_time,
@@ -237,6 +254,7 @@ network_health:
   - name: Current-slot vote share
     description: Calculate what fraction of observed attestations pointed to the current slot's block.
       This is a vote-distance metric, not head-vote correctness.
+    target: clickhouse-refined
     query: |
       SELECT
         toStartOfHour(slot_start_date_time) AS hour,
@@ -254,6 +272,7 @@ network_health:
   - name: Block arrival time by node
     description: Get block arrival times (seen_slot_start_diff) per node. Useful for identifying slow
       nodes or network issues.
+    target: clickhouse-refined
     query: |
       SELECT
         slot_start_date_time,
@@ -267,6 +286,7 @@ network_health:
       ORDER BY slot_start_date_time DESC, arrival_time_ms ASC
   - name: Minimum block arrival time per slot
     description: Get the minimum (fastest) block arrival time per slot across all nodes.
+    target: clickhouse-refined
     query: |
       SELECT
         slot_start_date_time,
@@ -282,6 +302,7 @@ network_health:
   - name: Block arrival comparison across consensus clients
     description: Compare block arrival times across consensus client implementations for network health
       monitoring.
+    target: clickhouse-refined
     query: |
       SELECT
         meta_consensus_implementation AS client,
@@ -296,6 +317,7 @@ network_health:
       ORDER BY avg_arrival_ms ASC
   - name: Block arrival by country
     description: Compare block arrival times across different geographic locations.
+    target: clickhouse-refined
     query: |
       SELECT
         meta_client_geo_country AS country,
@@ -311,8 +333,9 @@ network_health:
       ORDER BY avg_arrival_ms ASC
   - name: Locally prepared candidate blocks by client
     description: Track locally prepared candidate payloads per consensus client using fct_prepared_block.
-      These rows are local preparation observations only; prepared blocks were never proposed and must
-      not be interpreted as finalized chain inclusion.
+      These rows describe locally observed preparation activity and may differ from finalized chain
+      inclusion.
+    target: clickhouse-refined
     query: |
       SELECT
         meta_consensus_implementation AS consensus_client,
@@ -327,6 +350,7 @@ network_health:
       ORDER BY consensus_client
   - name: Validator committee size per slot
     description: Get the total validators scheduled per slot from committee data.
+    target: clickhouse-refined
     query: |
       SELECT
         slot_start_date_time,
@@ -339,6 +363,7 @@ network_health:
       ORDER BY slot_start_date_time DESC
   - name: Epoch participation summary
     description: Summarize attestation participation per epoch using pre-aggregated data.
+    target: clickhouse-refined
     query: |
       SELECT
         epoch,
@@ -360,6 +385,7 @@ network_health:
     description: Count missed slots (where no block was proposed) in a time window. Uses fct_block_head
       alone — compare the expected slot range to actual slots present. No join to proposer entity needed
       for a simple count.
+    target: clickhouse-refined
     query: |
       SELECT
         (max(slot) - min(slot) + 1) AS total_slots_in_range,
@@ -371,6 +397,7 @@ network_health:
   - name: Missed slots per hour
     description: Track missed slot rate per hour using fct_block_head. Each hour has 300 expected slots
       (3600s / 12s).
+    target: clickhouse-refined
     query: |
       SELECT
         toStartOfHour(slot_start_date_time) AS hour,
@@ -392,6 +419,7 @@ entity_analysis:
   examples:
   - name: Entity attestation liveness ranking
     description: Rank staking entities by attestation liveness (attestations vs missed).
+    target: clickhouse-refined
     query: |
       SELECT
         entity,
@@ -405,6 +433,7 @@ entity_analysis:
       ORDER BY total_attestations DESC
   - name: Entity attestation liveness over time
     description: Track attestation liveness per entity over time (hourly).
+    target: clickhouse-refined
     query: |
       SELECT
         toStartOfHour(slot_start_date_time) AS hour,
@@ -421,6 +450,7 @@ entity_analysis:
     description: Compare staking entities by both attestation liveness and head correctness. Use fct_attestation_liveness_by_entity_head
       for liveness. For entity-level correctness, aggregate fct_attestation_vote_correctness_by_validator
       joined with ethseer_validator_entity (there is no pre-aggregated correctness-by-entity table).
+    target: clickhouse-refined
     query: |
       WITH liveness AS (
         SELECT
@@ -463,6 +493,7 @@ entity_analysis:
       LIMIT 10
   - name: Entity block proposals
     description: Count block proposals per staking entity.
+    target: clickhouse-refined
     query: |
       SELECT
         entity,
@@ -476,6 +507,7 @@ entity_analysis:
       ORDER BY blocks_proposed DESC
   - name: Entity missed slots
     description: Identify entities with missed block proposals by comparing scheduled vs proposed.
+    target: clickhouse-refined
     query: |
       WITH scheduled AS (
         SELECT
@@ -512,6 +544,7 @@ entity_analysis:
       ORDER BY missed_blocks DESC
   - name: Top staking entities by validator count
     description: Estimate validator count per entity from attestation duties.
+    target: clickhouse-refined
     query: |
       SELECT
         entity,
@@ -529,6 +562,7 @@ entity_analysis:
       Uses fct_attestation_vote_correctness_by_validator for per-validator correctness,
       ethseer_validator_entity to map validators to entities, and fct_block_blob_count_head for blob
       counts per slot.
+    target: clickhouse-refined
     query: |
       WITH entity_correctness AS (
         SELECT
@@ -566,6 +600,7 @@ entity_analysis:
     description: Identify entities that consistently propose blocks late (timing games to capture more
       MEV). Uses fct_block_first_seen_by_node for arrival timing and fct_block_proposer_entity for entity
       identity. These two tables are sufficient — do not add fct_block_mev_head or fct_prepared_block.
+    target: clickhouse-refined
     query: |
       SELECT
         e.entity,
@@ -592,14 +627,14 @@ mev_analysis:
   description: Queries for analyzing MEV (Maximal Extractable Value) activity including relays, builders,
     and block values. For finalized historical relay-delivered block counts use fct_block_mev with
     status = 'canonical'; use fct_block_mev_head only for live monitoring. For individual bid data (values,
-    builder pubkeys, bid traces) use the xatu-raw dataset's mev_relay_bid_trace — the value column is
-    in wei (UInt256). For validator registrations use the xatu-raw dataset's
-    mev_relay_validator_registration. For bid count trends use fct_mev_bid_count_by_relay and
-    fct_mev_bid_count_by_builder. For highest bid value timing use
-    fct_mev_bid_highest_value_by_builder_chunked_50ms.
+    builder pubkeys, bid traces) use mev_relay_bid_trace (clickhouse-raw) — the value column is in wei
+    (UInt256). For validator registrations use mev_relay_validator_registration (clickhouse-raw). For bid
+    count trends use fct_mev_bid_count_by_relay and fct_mev_bid_count_by_builder (clickhouse-refined).
+    For highest bid value timing use fct_mev_bid_highest_value_by_builder_chunked_50ms (clickhouse-refined).
   examples:
   - name: MEV relay activity
     description: Analyze MEV relay bid activity per slot.
+    target: clickhouse-refined
     query: |
       SELECT
         relay_name,
@@ -612,6 +647,7 @@ mev_analysis:
       ORDER BY total_bids DESC
   - name: MEV builder activity
     description: Analyze MEV builder bid activity.
+    target: clickhouse-refined
     query: |
       SELECT
         builder_pubkey,
@@ -625,6 +661,7 @@ mev_analysis:
       LIMIT 20
   - name: MEV block value distribution
     description: Analyze the distribution of MEV block values.
+    target: clickhouse-refined
     query: |
       SELECT
         toStartOfHour(slot_start_date_time) AS hour,
@@ -641,6 +678,7 @@ mev_analysis:
       ORDER BY hour DESC
   - name: Top MEV blocks by value
     description: Find the highest value MEV blocks.
+    target: clickhouse-refined
     query: |
       SELECT
         slot,
@@ -658,6 +696,7 @@ mev_analysis:
       LIMIT 20
   - name: MEV relay market share
     description: Calculate MEV relay market share by delivered blocks.
+    target: clickhouse-refined
     query: |
       SELECT
         arrayJoin(relay_names) AS relay,
@@ -671,6 +710,7 @@ mev_analysis:
       ORDER BY blocks_delivered DESC
   - name: Builder market share
     description: Calculate builder market share by block count and value.
+    target: clickhouse-refined
     query: |
       SELECT
         builder_pubkey,
@@ -688,6 +728,7 @@ mev_analysis:
   - name: Finalized MEV block activity
     description: Count finalized canonical MEV relay-delivered blocks and summarize their execution payload
       characteristics.
+    target: clickhouse-refined
     query: |
       SELECT
         toStartOfHour(slot_start_date_time) AS hour,
@@ -702,6 +743,7 @@ mev_analysis:
       ORDER BY hour DESC
   - name: Hourly MEV activity trend
     description: Track MEV activity trends by hour including bid counts and block values.
+    target: clickhouse-refined
     query: |
       SELECT
         toStartOfHour(slot_start_date_time) AS hour,
@@ -722,6 +764,7 @@ head_accuracy:
   examples:
   - name: Head vote accuracy by slot
     description: Calculate the percentage of observed attestations whose head vote was correct per slot.
+    target: clickhouse-refined
     query: |
       SELECT
         slot_start_date_time,
@@ -739,6 +782,7 @@ head_accuracy:
   - name: Head vote accuracy summary
     description: Overall head vote accuracy metrics for a time period. Accuracy percentages exclude missed
       duties; missed_duty_pct reports duties with no observed attestation.
+    target: clickhouse-refined
     query: |
       SELECT
         COUNT() AS total_duties,
@@ -751,6 +795,7 @@ head_accuracy:
       WHERE slot_start_date_time >= now() - INTERVAL 1 HOUR
   - name: Slot distance distribution
     description: Distribution of head-vote distances. Use this for distance analysis, not correctness.
+    target: clickhouse-refined
     query: |
       SELECT
         slot_distance,
@@ -763,6 +808,7 @@ head_accuracy:
   - name: Propagation timing distribution
     description: When observed attestations were propagated relative to their duty slot (0 = same slot,
       ideal). Missed duties have null propagation_distance and are excluded.
+    target: clickhouse-refined
     query: |
       SELECT
         propagation_distance,
@@ -776,6 +822,7 @@ head_accuracy:
   - name: Attestation inclusion delay distribution
     description: How many slots after the attestation duty an included canonical attestation was included
       in a block (1 = optimal).
+    target: clickhouse-refined
     query: |
       SELECT
         inclusion_distance,
@@ -789,6 +836,7 @@ head_accuracy:
   - name: Attestation status breakdown
     description: Breakdown of scheduled attestation duty outcomes - canonical (included), missed, orphaned.
       Use this before counting rows from the canonical correctness table.
+    target: clickhouse-refined
     query: |
       SELECT
         status,
@@ -800,6 +848,7 @@ head_accuracy:
       ORDER BY duty_count DESC
   - name: Head accuracy over time (hourly)
     description: Track observed head vote accuracy and missed duty rate by hour.
+    target: clickhouse-refined
     query: |
       SELECT
         hour_start_date_time AS hour,
@@ -816,6 +865,7 @@ head_accuracy:
       ORDER BY hour DESC
   - name: Validators with poor head accuracy
     description: Find validators with below-average head vote accuracy (potential issues).
+    target: clickhouse-refined
     query: |
       SELECT
         validator_index,
@@ -833,6 +883,7 @@ head_accuracy:
       LIMIT 100
   - name: Validators with high inclusion delay
     description: Find validators whose attestations are consistently included late.
+    target: clickhouse-refined
     query: |
       SELECT
         attesting_validator_index,
@@ -849,6 +900,7 @@ head_accuracy:
       LIMIT 100
   - name: Epoch head accuracy summary
     description: Observed head vote accuracy and missed duty rate aggregated by epoch.
+    target: clickhouse-refined
     query: |
       SELECT
         intDiv(slot, 32) AS epoch,
@@ -866,6 +918,7 @@ head_accuracy:
       ORDER BY epoch DESC
   - name: Slots with low head accuracy
     description: Identify slots where head vote accuracy dropped significantly (potential reorgs or issues).
+    target: clickhouse-refined
     query: |
       SELECT
         slot_start_date_time,
@@ -884,6 +937,7 @@ head_accuracy:
       LIMIT 50
   - name: Combined head and inclusion metrics
     description: Comprehensive view combining head accuracy and inclusion timing per slot.
+    target: clickhouse-refined
     query: |
       WITH head_stats AS (
         SELECT
@@ -926,13 +980,13 @@ head_accuracy:
 blob_analysis:
   name: Blob Analysis
   description: Queries for analyzing EIP-4844 blob data including blob counts, submitters, and L2 rollup
-    activity. For blob counts and submitter identity, use dim_block_blob_submitter. For blob content
-    analysis (empty blobs, blob sizes), use the xatu-raw dataset's canonical_beacon_blob_sidecar, which
-    has blob_size and blob_empty_size columns. When combining datasets, query each placement separately
-    and join bounded results client-side.
+    activity. For blob counts and submitter identity, use dim_block_blob_submitter (clickhouse-refined).
+    For blob content analysis (empty blobs, blob sizes), use canonical_beacon_blob_sidecar (clickhouse-raw)
+    which has blob_size and blob_empty_size columns. Cross-datasource joins require two separate queries.
   examples:
   - name: Blob count per slot
     description: Get the number of blobs in each slot.
+    target: clickhouse-refined
     query: |
       SELECT
         slot_start_date_time,
@@ -943,6 +997,7 @@ blob_analysis:
       ORDER BY slot_start_date_time DESC
   - name: Blob count distribution
     description: Distribution of blob counts across slots
+    target: clickhouse-refined
     query: |
       SELECT
         blob_count,
@@ -954,6 +1009,7 @@ blob_analysis:
       ORDER BY blob_count
   - name: Average blobs per slot over time
     description: Track blob usage trends by hour.
+    target: clickhouse-refined
     query: |
       SELECT
         toStartOfHour(slot_start_date_time) AS hour,
@@ -967,6 +1023,7 @@ blob_analysis:
       ORDER BY hour DESC
   - name: Blob submitters ranking
     description: Top blob submitters (L2 rollups and other users) by blob count.
+    target: clickhouse-refined
     query: |
       SELECT
         name,
@@ -981,6 +1038,7 @@ blob_analysis:
       LIMIT 20
   - name: Blob submitters over time
     description: Track blob submission activity by submitter over time (hourly).
+    target: clickhouse-refined
     query: |
       SELECT
         toStartOfHour(updated_date_time) AS hour,
@@ -995,6 +1053,7 @@ blob_analysis:
       ORDER BY hour DESC, blobs DESC
   - name: L2 rollup blob market share
     description: Calculate blob market share by L2 rollup/submitter.
+    target: clickhouse-refined
     query: |
       SELECT
         COALESCE(name, 'Unknown') AS submitter,
@@ -1008,6 +1067,7 @@ blob_analysis:
       ORDER BY total_blobs DESC
   - name: Daily blob statistics
     description: Daily summary of blob activity.
+    target: clickhouse-refined
     query: |
       SELECT
         toDate(slot_start_date_time) AS day,
@@ -1023,6 +1083,7 @@ blob_analysis:
       ORDER BY day DESC
   - name: Blob submitter transaction details
     description: Get detailed transaction info for blob submissions.
+    target: clickhouse-refined
     query: |
       SELECT
         updated_date_time,
@@ -1044,6 +1105,7 @@ data_column_sidecars:
   examples:
   - name: Data column availability by slot
     description: Get data column availability percentage per slot and column index.
+    target: clickhouse-refined
     query: |
       SELECT
         slot,
@@ -1060,6 +1122,7 @@ data_column_sidecars:
       LIMIT 100
   - name: Average column availability by index
     description: Average availability percentage for each column index over recent slots.
+    target: clickhouse-refined
     query: |
       SELECT
         column_index,
@@ -1073,6 +1136,7 @@ data_column_sidecars:
       ORDER BY column_index
   - name: Data column availability by epoch
     description: Epoch-level aggregated data column availability statistics.
+    target: clickhouse-refined
     query: |
       SELECT
         epoch,
@@ -1090,6 +1154,7 @@ data_column_sidecars:
       LIMIT 100
   - name: Hourly data column availability trend
     description: Hourly trend of data column availability across all columns.
+    target: clickhouse-refined
     query: |
       SELECT
         hour_start_date_time,
@@ -1104,6 +1169,7 @@ data_column_sidecars:
       ORDER BY hour_start_date_time DESC, column_index
   - name: Columns with lowest availability
     description: Find data columns with the lowest availability in recent slots.
+    target: clickhouse-refined
     query: |
       SELECT
         column_index,
@@ -1118,6 +1184,7 @@ data_column_sidecars:
       LIMIT 20
   - name: Data column first seen timing
     description: When data columns were first seen across the network.
+    target: clickhouse-refined
     query: |
       SELECT
         slot,
@@ -1133,6 +1200,7 @@ data_column_sidecars:
       LIMIT 100
   - name: Data column propagation by consensus client
     description: Compare data column propagation times across consensus clients.
+    target: clickhouse-refined
     query: |
       SELECT
         meta_consensus_implementation AS client,
@@ -1146,6 +1214,7 @@ data_column_sidecars:
       ORDER BY avg_propagation_ms
   - name: Data column propagation by country
     description: Compare data column propagation times across geographic regions.
+    target: clickhouse-refined
     query: |
       SELECT
         meta_client_geo_country AS country,
@@ -1160,6 +1229,7 @@ data_column_sidecars:
       LIMIT 20
   - name: Slots with data column availability issues
     description: Find slots where any column had less than 100% availability.
+    target: clickhouse-refined
     query: |
       SELECT
         slot,
@@ -1175,6 +1245,7 @@ data_column_sidecars:
       ORDER BY columns_with_issues DESC, slot DESC
   - name: Data column response time distribution
     description: Response time percentiles for data column probes by column index.
+    target: clickhouse-refined
     query: |
       SELECT
         column_index,
@@ -1190,6 +1261,7 @@ data_column_sidecars:
   - name: Node custody count per epoch
     description: Calculate how many columns each node is responsible for per epoch. Identifies supernodes
       (128 custody) vs regular nodes.
+    target: clickhouse-refined
     query: |
       SELECT
         node_id,
@@ -1209,6 +1281,7 @@ data_column_sidecars:
   - name: Column spread per slot
     description: Measure time spread between first and last column received per slot per node. High spread
       indicates slow column acquisition.
+    target: clickhouse-refined
     query: |
       SELECT
         slot,
@@ -1237,6 +1310,7 @@ engine_api:
       Get VALID newPayload execution times per slot. This table is grouped by status and node_class;
       filter status = 'VALID' before treating duration columns as execution time. Use
       int_engine_new_payload for individual node/client observations instead of slot aggregates.
+    target: clickhouse-refined
     query: |
       SELECT
         slot,
@@ -1260,6 +1334,7 @@ engine_api:
     description: >-
       Compare VALID newPayload performance across execution layer clients. Filter status = 'VALID';
       rows with SYNCING or other non-success statuses did not successfully execute the payload.
+    target: clickhouse-refined
     query: |
       SELECT
         meta_execution_implementation AS el_client,
@@ -1276,6 +1351,7 @@ engine_api:
       ORDER BY avg_duration_ms
   - name: Engine newPayload hourly trend by client
     description: Hourly trend of VALID newPayload duration per execution client.
+    target: clickhouse-refined
     query: |
       SELECT
         toStartOfHour(slot_start_date_time) AS hour,
@@ -1294,6 +1370,7 @@ engine_api:
       Find slots with the slowest VALID newPayload execution times. Exclude SYNCING and other
       non-success statuses so duration reflects successful execution, not a rejected or unavailable
       engine response.
+    target: clickhouse-refined
     query: |
       SELECT
         slot,
@@ -1312,6 +1389,7 @@ engine_api:
       LIMIT 20
   - name: Engine getBlobs by slot
     description: Get getBlobs call statistics per slot.
+    target: clickhouse-refined
     query: |
       SELECT
         slot,
@@ -1329,6 +1407,7 @@ engine_api:
       LIMIT 100
   - name: Engine getBlobs by execution client
     description: Compare getBlobs performance across execution layer clients.
+    target: clickhouse-refined
     query: |
       SELECT
         meta_execution_implementation AS el_client,
@@ -1344,6 +1423,7 @@ engine_api:
       ORDER BY avg_duration_ms
   - name: Engine API duration percentile distribution
     description: Distribution of VALID newPayload durations in 50ms buckets.
+    target: clickhouse-refined
     query: |
       SELECT
         duration_bucket_ms,
@@ -1356,6 +1436,7 @@ engine_api:
       ORDER BY duration_bucket_ms
   - name: Correlation between gas usage and newPayload duration
     description: Analyze how block gas usage affects VALID newPayload execution time.
+    target: clickhouse-refined
     query: |
       SELECT
         intDiv(gas_used, 1000000) AS gas_millions,
@@ -1371,6 +1452,7 @@ engine_api:
       ORDER BY gas_millions
   - name: Engine API performance by blob count
     description: Analyze how blob count affects VALID newPayload and getBlobs duration.
+    target: clickhouse-refined
     query: |
       SELECT
         blob_count,
@@ -1386,6 +1468,7 @@ engine_api:
     description: Breakdown of getBlobs call outcomes (SUCCESS, EMPTY, PARTIAL, ERROR). Use fct_engine_get_blobs_by_slot
       which has a status column with the call result. This table alone answers questions about getBlobs
       success/failure rates.
+    target: clickhouse-refined
     query: |
       SELECT
         status,
@@ -1402,6 +1485,7 @@ execution_state:
   examples:
   - name: Daily state size growth
     description: Track daily growth of Ethereum state size.
+    target: clickhouse-refined
     query: |
       SELECT
         day_start_date,
@@ -1417,6 +1501,7 @@ execution_state:
       LIMIT 30
   - name: Hourly state size growth
     description: Track hourly growth of Ethereum state size.
+    target: clickhouse-refined
     query: |
       SELECT
         hour_start_date_time,
@@ -1430,6 +1515,7 @@ execution_state:
       LIMIT 48
   - name: State growth rate
     description: Calculate daily state growth rate over the past week.
+    target: clickhouse-refined
     query: |
       SELECT
         day_start_date,
@@ -1443,6 +1529,7 @@ execution_state:
       LIMIT 8
   - name: State composition breakdown
     description: Breakdown of state size by component type.
+    target: clickhouse-refined
     query: |
       SELECT
         day_start_date,
@@ -1458,7 +1545,7 @@ execution_state:
       LIMIT 1
 execution_traces:
   name: Execution Trace Analysis (Call Frames, Gas Breakdown)
-  description: Queries for analyzing EVM execution traces using int_transaction_call_frame.
+  description: Queries for analyzing EVM execution traces using int_transaction_call_frame on clickhouse-refined.
     This table contains one row per call frame per transaction — use it for gas breakdown by contract,
     precompile usage, call depth analysis, and function-level profiling. Partitioned by block_number —
     always filter on block_number. For opcode-level gas breakdown within a frame, use int_transaction_call_frame_opcode_gas
@@ -1467,6 +1554,7 @@ execution_traces:
   - name: Precompile gas usage for a block
     description: Rank EVM precompiles by gas consumed in a specific block. Precompile contracts live at
       addresses 0x01–0x0a. Uses int_transaction_call_frame which has per-frame gas accounting.
+    target: clickhouse-refined
     query: |
       SELECT
         target_address,
@@ -1493,6 +1581,7 @@ execution_traces:
   - name: Top gas-consuming contracts in a block
     description: Find the contracts consuming the most gas in a specific block. Uses self gas (excludes
       child frames) for accurate per-contract attribution.
+    target: clickhouse-refined
     query: |
       SELECT
         target_address,
@@ -1508,6 +1597,7 @@ execution_traces:
   - name: Call type distribution for a block range
     description: Breakdown of call types (CALL, DELEGATECALL, STATICCALL, CREATE, etc.) and their gas
       usage across a block range.
+    target: clickhouse-refined
     query: |
       SELECT
         call_type,
@@ -1521,11 +1611,12 @@ execution_traces:
 prepared_blocks:
   name: Prepared Blocks (Local Block Building)
   description: Queries for analyzing locally prepared candidate payload performance and characteristics.
-    These rows are local preparation observations only; prepared blocks were never proposed and must
-    not be interpreted as finalized chain blocks.
+    These rows describe local preparation observations and may not have a one-to-one relationship with
+    finalized chain blocks.
   examples:
   - name: Recent prepared blocks
     description: Get details of recently prepared blocks by local nodes.
+    target: clickhouse-refined
     query: |
       SELECT
         slot,
@@ -1543,6 +1634,7 @@ prepared_blocks:
       LIMIT 50
   - name: Prepared blocks by consensus client
     description: Compare block building across consensus clients.
+    target: clickhouse-refined
     query: |
       SELECT
         meta_consensus_implementation AS cl_client,
@@ -1557,6 +1649,7 @@ prepared_blocks:
       ORDER BY blocks_prepared DESC
   - name: Prepared blocks by country
     description: Geographic distribution of block preparation.
+    target: clickhouse-refined
     query: |
       SELECT
         meta_client_geo_country AS country,
@@ -1570,6 +1663,7 @@ prepared_blocks:
       LIMIT 20
   - name: Block size distribution
     description: Distribution of prepared block sizes.
+    target: clickhouse-refined
     query: |
       SELECT
         intDiv(block_total_bytes, 10000) * 10 AS size_kb_bucket,
@@ -1583,6 +1677,7 @@ prepared_blocks:
       ORDER BY size_kb_bucket
   - name: High value prepared blocks
     description: Find prepared blocks with highest execution payload values.
+    target: clickhouse-refined
     query: |
       SELECT
         slot,
@@ -1598,6 +1693,7 @@ prepared_blocks:
       LIMIT 20
   - name: Block version distribution
     description: Distribution of block versions (deneb, electra, etc).
+    target: clickhouse-refined
     query: |
       SELECT
         block_version,
@@ -1614,6 +1710,7 @@ node_metadata:
   examples:
   - name: Active nodes summary
     description: Get summary of active sentry nodes in the last 24 hours.
+    target: clickhouse-refined
     query: |
       SELECT
         COUNT() AS total_nodes,
@@ -1624,6 +1721,7 @@ node_metadata:
       WHERE meta_client_name != ''
   - name: Nodes by consensus client
     description: Distribution of active nodes by consensus client.
+    target: clickhouse-refined
     query: |
       SELECT
         meta_consensus_implementation AS cl_client,
@@ -1635,6 +1733,7 @@ node_metadata:
       ORDER BY node_count DESC
   - name: Nodes by country
     description: Geographic distribution of active sentry nodes.
+    target: clickhouse-refined
     query: |
       SELECT
         meta_client_geo_country AS country,
@@ -1648,6 +1747,7 @@ node_metadata:
       LIMIT 20
   - name: Nodes by ASN
     description: Distribution of nodes by autonomous system (hosting provider).
+    target: clickhouse-refined
     query: |
       SELECT
         meta_client_geo_autonomous_system_organization AS asn_org,
@@ -1661,6 +1761,7 @@ node_metadata:
       LIMIT 20
   - name: Client version distribution
     description: Distribution of consensus client versions.
+    target: clickhouse-refined
     query: |
       SELECT
         meta_consensus_implementation AS cl_client,
@@ -1672,6 +1773,7 @@ node_metadata:
       ORDER BY cl_client, node_count DESC
   - name: Node classification breakdown
     description: Breakdown of nodes by classification type.
+    target: clickhouse-refined
     query: |
       SELECT
         classification,
@@ -1684,6 +1786,7 @@ node_metadata:
       ORDER BY node_count DESC
   - name: Nodes by continent
     description: Distribution of nodes by continent.
+    target: clickhouse-refined
     query: |
       SELECT
         meta_client_geo_continent_code AS continent,
@@ -1700,6 +1803,7 @@ mev_bids:
   examples:
   - name: Bids per slot by builder
     description: Total bids submitted per slot by each builder.
+    target: clickhouse-refined
     query: |
       SELECT
         slot,
@@ -1711,6 +1815,7 @@ mev_bids:
       LIMIT 100
   - name: Top builders by total bids
     description: Builders ranked by total bid count.
+    target: clickhouse-refined
     query: |
       SELECT
         builder_pubkey,
@@ -1724,6 +1829,7 @@ mev_bids:
       LIMIT 20
   - name: Bids per slot by relay
     description: Total bids received per slot by each relay.
+    target: clickhouse-refined
     query: |
       SELECT
         slot,
@@ -1735,6 +1841,7 @@ mev_bids:
       LIMIT 100
   - name: Relay bid volume comparison
     description: Compare bid volumes across relays.
+    target: clickhouse-refined
     query: |
       SELECT
         relay_name,
@@ -1748,6 +1855,7 @@ mev_bids:
       ORDER BY total_bids DESC
   - name: Highest value bids by timing
     description: Track when highest value bids arrive relative to slot start.
+    target: clickhouse-refined
     query: |
       SELECT
         slot,
@@ -1762,6 +1870,7 @@ mev_bids:
       LIMIT 100
   - name: Bid value progression within slot
     description: How bid values increase as slot deadline approaches.
+    target: clickhouse-refined
     query: |
       SELECT
         chunk_slot_start_diff AS timing_ms,
@@ -1774,6 +1883,7 @@ mev_bids:
       ORDER BY timing_ms
   - name: Builder bid timing patterns
     description: When different builders typically submit their highest bids.
+    target: clickhouse-refined
     query: |
       SELECT
         builder_pubkey,
@@ -1793,6 +1903,7 @@ attestation_propagation:
   examples:
   - name: Attestation arrival distribution
     description: Distribution of attestation arrival times in 50ms buckets.
+    target: clickhouse-refined
     query: |
       SELECT
         chunk_slot_start_diff AS timing_ms,
@@ -1804,6 +1915,7 @@ attestation_propagation:
       ORDER BY timing_ms
   - name: Attestation arrival by slot
     description: Attestation timing statistics per slot.
+    target: clickhouse-refined
     query: |
       SELECT
         slot,
@@ -1817,6 +1929,7 @@ attestation_propagation:
       LIMIT 50
   - name: Attestation observations by node
     description: How each node observes attestations.
+    target: clickhouse-refined
     query: |
       SELECT
         meta_consensus_implementation AS cl_client,
@@ -1831,6 +1944,7 @@ attestation_propagation:
       LIMIT 30
   - name: Attestation propagation by consensus client
     description: Compare attestation arrival times across consensus clients.
+    target: clickhouse-refined
     query: |
       SELECT
         meta_consensus_implementation AS cl_client,
@@ -1844,6 +1958,7 @@ attestation_propagation:
       ORDER BY avg_arrival_ms
   - name: Attestation propagation by country
     description: Compare attestation arrival times across countries.
+    target: clickhouse-refined
     query: |
       SELECT
         meta_client_geo_country AS country,
@@ -1858,6 +1973,7 @@ attestation_propagation:
       LIMIT 20
   - name: Late attestation analysis
     description: Find slots with late-arriving attestations.
+    target: clickhouse-refined
     query: |
       SELECT
         slot,
@@ -1875,6 +1991,7 @@ head_tracking:
   examples:
   - name: Head adoption timing by slot
     description: When nodes adopt new heads relative to slot start.
+    target: clickhouse-refined
     query: |
       SELECT
         slot,
@@ -1889,6 +2006,7 @@ head_tracking:
       LIMIT 50
   - name: Head adoption by consensus client
     description: Compare head adoption timing across consensus clients.
+    target: clickhouse-refined
     query: |
       SELECT
         meta_consensus_implementation AS cl_client,
@@ -1902,6 +2020,7 @@ head_tracking:
       ORDER BY avg_adoption_ms
   - name: Head adoption by country
     description: Compare head adoption timing across countries.
+    target: clickhouse-refined
     query: |
       SELECT
         meta_client_geo_country AS country,
@@ -1916,6 +2035,7 @@ head_tracking:
       LIMIT 20
   - name: Slow head adoption events
     description: Find slots where head adoption was unusually slow.
+    target: clickhouse-refined
     query: |
       SELECT
         slot,
@@ -1931,6 +2051,7 @@ head_tracking:
       LIMIT 20
   - name: Head adoption by source
     description: Compare head adoption timing by event source.
+    target: clickhouse-refined
     query: |
       SELECT
         source,
@@ -1943,6 +2064,7 @@ head_tracking:
       ORDER BY observations DESC
   - name: Head adoption variance by slot
     description: Measure how much head adoption timing varies across nodes per slot.
+    target: clickhouse-refined
     query: |
       SELECT
         slot,
@@ -1957,6 +2079,7 @@ head_tracking:
       LIMIT 20
   - name: Head adoption by ASN
     description: Compare head adoption timing across hosting providers.
+    target: clickhouse-refined
     query: |
       SELECT
         meta_client_geo_autonomous_system_organization AS asn_org,
