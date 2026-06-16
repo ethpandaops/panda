@@ -625,12 +625,11 @@ mev_analysis:
   name: MEV Analysis
   description: Queries for analyzing MEV (Maximal Extractable Value) activity including relays, builders,
     and block values. For finalized historical relay-delivered block counts use fct_block_mev with
-    status = 'canonical'; use fct_block_mev_head only for live monitoring. For canonical blocks without
-    MEV relay attribution, count canonical fct_block rows whose slot is absent from canonical fct_block_mev;
-    do not use fct_prepared_block for chain block totals or provenance. For individual bid data (values,
-    builder pubkeys, bid traces) use mev_relay_bid_trace (clickhouse-raw) — the value column is in wei
-    (UInt256). For validator registrations use mev_relay_validator_registration (clickhouse-raw). For bid
-    count trends use fct_mev_bid_count_by_relay and fct_mev_bid_count_by_builder (clickhouse-refined).
+    status = 'canonical'; use fct_block_mev_head only for live monitoring. fct_prepared_block is
+    preparation telemetry, not relay-delivery or chain-inclusion evidence. For individual bid data
+    (values, builder pubkeys, bid traces) use mev_relay_bid_trace (clickhouse-raw) — the value column
+    is in wei (UInt256). For validator registrations use mev_relay_validator_registration (clickhouse-raw).
+    For bid count trends use fct_mev_bid_count_by_relay and fct_mev_bid_count_by_builder (clickhouse-refined).
     For highest bid value timing use fct_mev_bid_highest_value_by_builder_chunked_50ms (clickhouse-refined).
   examples:
   - name: MEV relay activity
@@ -742,33 +741,6 @@ mev_analysis:
         AND status = 'canonical'
       GROUP BY hour
       ORDER BY hour DESC
-  - name: Canonical blocks by MEV relay attribution
-    description: Count finalized canonical blocks with and without a matching canonical MEV relay record.
-      Use this pattern for MEV-vs-non-MEV chain block counts; fct_prepared_block is only preparation
-      telemetry and should not be used for this comparison.
-    target: clickhouse-refined
-    query: |
-      WITH
-        now() - INTERVAL 1 DAY AS start_time,
-        now() AS end_time
-      SELECT
-        if(isNull(m.slot), 'no_mev_relay_record', 'mev_relay_record') AS mev_attribution,
-        COUNT() AS canonical_blocks,
-        AVG(b.execution_payload_gas_used) AS avg_gas_used,
-        AVG(b.execution_payload_transactions_count) AS avg_tx_count
-      FROM {network}.fct_block AS b FINAL
-      GLOBAL LEFT JOIN (
-          SELECT DISTINCT slot
-          FROM {network}.fct_block_mev FINAL
-          WHERE slot_start_date_time >= start_time
-            AND slot_start_date_time < end_time
-            AND status = 'canonical'
-      ) AS m ON b.slot = m.slot
-      WHERE b.slot_start_date_time >= start_time
-        AND b.slot_start_date_time < end_time
-        AND b.status = 'canonical'
-      GROUP BY mev_attribution
-      ORDER BY mev_attribution
   - name: Hourly MEV activity trend
     description: Track MEV activity trends by hour including bid counts and block values.
     target: clickhouse-refined

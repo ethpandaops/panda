@@ -22,6 +22,5 @@ table and network.
   that may reorg and are best for real-time monitoring.
 - **Prepared payload observations:** `fct_prepared_block` is node-side
   preparation telemetry. It can have multiple observations per slot and does
-  not prove chain inclusion. For finalized block counts, block provenance, or
-  MEV-vs-non-MEV comparisons, use canonical rows from `fct_block` and
-  `fct_block_mev`; do not substitute `fct_prepared_block`.
+  not prove chain inclusion. For finalized chain block questions, use the
+  relevant block fact table rather than substituting preparation telemetry.
