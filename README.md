@@ -2,7 +2,7 @@
 
 Your gateway to the [ethpandaops](https://github.com/ethpandaops) ecosystem. It's a CLI, an MCP server, and a sandboxed Python runtime that talks to ClickHouse, Prometheus, Loki, and Ethereum nodes so you don't have to wrangle credentials or know each API individually.
 
-Read more: https://www.anthropic.com/engineering/code-execution-with-mcp
+Read more: https://ethpandaops.io/posts/panda/
 
 ## Architecture
 
