@@ -219,8 +219,15 @@ dora_combined_workflows:
         print(f"Current epoch: {overview['current_epoch']}")
         print(f"Active validators: {overview['active_validator_count']}")
 
+        # Resolve the datasource that holds the xatu-raw dataset
+        datasource = next(
+            s["name"] for s in clickhouse.list_datasources()
+            if any(b.get("dataset") == "xatu-raw"
+                   for b in (s.get("extra") or {}).get("datasets") or [])
+        )
+
         # Get recent blocks from Xatu for deeper analysis
-        df = clickhouse.query("clickhouse-raw", f'''
+        df = clickhouse.query(datasource, f'''
             SELECT
                 slot,
                 block_root,
