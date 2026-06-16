@@ -438,3 +438,36 @@ func TestWriteConfigFile(t *testing.T) {
 		require.Error(t, err)
 	})
 }
+
+func TestEnsureConfigDirs(t *testing.T) {
+	t.Parallel()
+
+	t.Run("creates config and credentials directories", func(t *testing.T) {
+		t.Parallel()
+
+		dir := filepath.Join(t.TempDir(), "panda")
+
+		require.NoError(t, ensureConfigDirs(dir))
+
+		info, err := os.Stat(dir)
+		require.NoError(t, err)
+		assert.True(t, info.IsDir(), "config directory should exist")
+
+		credInfo, err := os.Stat(filepath.Join(dir, "credentials"))
+		require.NoError(t, err, "credentials directory should be pre-created")
+		assert.True(t, credInfo.IsDir(), "credentials path should be a directory")
+	})
+
+	t.Run("is idempotent when directories already exist", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+
+		require.NoError(t, ensureConfigDirs(dir))
+		require.NoError(t, ensureConfigDirs(dir))
+
+		credInfo, err := os.Stat(filepath.Join(dir, "credentials"))
+		require.NoError(t, err)
+		assert.True(t, credInfo.IsDir())
+	})
+}
