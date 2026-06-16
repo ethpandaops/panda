@@ -94,8 +94,8 @@ func runInit(cmd *cobra.Command, _ []string) error {
 	}
 
 	// 2. Write config files.
-	if err := os.MkdirAll(initDir, 0o755); err != nil {
-		return fmt.Errorf("creating config directory %s: %w", initDir, err)
+	if err := ensureConfigDirs(initDir); err != nil {
+		return err
 	}
 
 	absConfigDir, err := filepath.Abs(initDir)
@@ -194,6 +194,24 @@ func runInit(cmd *cobra.Command, _ []string) error {
 		fmt.Println()
 		fmt.Println("Server available at http://localhost:2480")
 		fmt.Println("Run 'panda datasources' to list available datasources")
+	}
+
+	return nil
+}
+
+// ensureConfigDirs creates the panda config directory and the credentials
+// subdirectory that the compose file bind-mounts into the server container.
+// Pre-creating the credentials directory as the host user prevents the Docker
+// daemon from creating the bind-mount source owned by root, which would block
+// 'panda auth login' (run as the host user) from writing the token file.
+func ensureConfigDirs(dir string) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("creating config directory %s: %w", dir, err)
+	}
+
+	credentialsDir := filepath.Join(dir, "credentials")
+	if err := os.MkdirAll(credentialsDir, 0o755); err != nil {
+		return fmt.Errorf("creating credentials directory %s: %w", credentialsDir, err)
 	}
 
 	return nil
