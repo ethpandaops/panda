@@ -47,13 +47,11 @@ block_archive_fetch:
       query: |
         from ethpandaops import block_archive, clickhouse
 
-        # Resolve the datasource that holds the xatu-raw dataset (fall back to the first ClickHouse datasource)
-        sources = clickhouse.list_datasources()
+        # Resolve the datasource that holds the xatu-raw dataset
         datasource = next(
-            (s["name"] for s in sources
-             if any(b.get("dataset") == "xatu-raw"
-                    for b in (s.get("extra") or {}).get("datasets") or [])),
-            sources[0]["name"],
+            s["name"] for s in clickhouse.list_datasources()
+            if any(b.get("dataset") == "xatu-raw"
+                   for b in (s.get("extra") or {}).get("datasets") or [])
         )
 
         df = clickhouse.query(datasource, """
