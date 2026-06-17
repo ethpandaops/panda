@@ -2,27 +2,26 @@
 # This container provides a secure execution environment for Python code
 # with the ethpandaops library pre-installed for Ethereum network data analysis.
 #
-# Multi-stage: the builder holds uv + build-essential and resolves the full
-# dependency tree; the final image copies only the installed site-packages, so
-# neither uv nor the C toolchain ever ships. Splitting the toolchain install out
-# of the dependency install also keeps each cached independently — editing
-# requirements.txt no longer re-runs the build-essential apt install.
+# Multi-stage: the builder holds uv and resolves the full dependency tree into a
+# staging prefix; the final image copies that prefix as a complete install
+# artifact (site-packages, console scripts, and package data) without ever
+# shipping uv. Dependencies are installed --only-binary, so a missing wheel is a
+# hard error rather than an unlocked source compile, and no C toolchain is
+# needed in either stage.
 
 FROM python:3.11-slim@sha256:a3ab0b966bc4e91546a033e22093cb840908979487a9fc0e6e38295747e49ac0 AS builder
 
 # uv (build-time only; never copied into the final image)
 COPY --from=ghcr.io/astral-sh/uv:0.11.17@sha256:03bdc89bb9798628846e60c3a9ad19006c8c3c724ccd2985a33145c039a0577b /uv /uvx /bin/
 
-# Toolchain to compile any sdist-only deps. Its own layer so it stays cached
-# across requirements.txt changes.
-RUN apt-get update && apt-get install -y --no-install-recommends build-essential && \
-    rm -rf /var/lib/apt/lists/*
-
-# Install Python dependencies. requirements.txt is compiled from requirements.in
-# with hashes (`uv pip compile --generate-hashes --universal`); --require-hashes
-# makes pip refuse anything that doesn't match the lock.
+# Install Python dependencies into a staging prefix. requirements.txt is compiled
+# from requirements.in with hashes (`uv pip compile --generate-hashes
+# --universal`); --require-hashes makes pip refuse anything that doesn't match
+# the lock, and --only-binary=:all: forbids source builds (every dependency must
+# resolve to a prebuilt wheel).
 COPY sandbox/requirements.txt /tmp/requirements.txt
-RUN uv pip install --system --no-cache --require-hashes -r /tmp/requirements.txt
+RUN uv pip install --python /usr/local/bin/python3 --prefix /install --no-cache \
+    --require-hashes --only-binary=:all: -r /tmp/requirements.txt
 
 # Install the ethpandaops platform library. Copied after the heavy dependency
 # layer so edits to these (frequently changed) files don't bust the deps cache.
@@ -39,8 +38,9 @@ COPY modules/ethnode/python/ethnode.py /opt/ethpandaops-pkg/ethpandaops/ethnode.
 COPY modules/tracoor/python/tracoor.py /opt/ethpandaops-pkg/ethpandaops/tracoor.py
 
 # --no-deps: the package's dependencies are already installed (hash-locked)
-# above; resolving them here would bypass the lock.
-RUN uv pip install --system --no-cache --no-deps /opt/ethpandaops-pkg
+# above; resolving them here would bypass the lock. The package is pure Python,
+# so no toolchain is required to build it.
+RUN uv pip install --python /usr/local/bin/python3 --prefix /install --no-cache --no-deps /opt/ethpandaops-pkg
 
 FROM python:3.11-slim@sha256:a3ab0b966bc4e91546a033e22093cb840908979487a9fc0e6e38295747e49ac0
 
@@ -49,10 +49,10 @@ RUN useradd -m -s /bin/bash sandbox && \
     mkdir -p /shared /output && \
     chown sandbox:sandbox /shared /output
 
-# Copy the resolved environment from the builder. site-packages holds every
-# dependency plus the ethpandaops package; console scripts and the C toolchain
-# are intentionally left behind.
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+# Copy the resolved environment from the builder onto the runtime's /usr/local,
+# bringing site-packages, console scripts, and package data. uv and the staging
+# tooling are intentionally left behind.
+COPY --from=builder /install /usr/local
 
 # Set working directory
 WORKDIR /home/sandbox
