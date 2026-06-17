@@ -2,7 +2,7 @@
 pandas>=2.2.0
 numpy>=2.0.0
 scipy>=1.14.0
-pyarrow>=22.0.0  # Parquet support, columnar data; clickhouse-connect arrow path
+fastparquet>=2024.11.0  # Parquet read/write engine (~9MB vs pyarrow's ~140MB)
 
 # Visualization (chart artifacts are uploaded back to storage)
 # matplotlib/seaborn render static PNGs headless with no system deps; plotly is
