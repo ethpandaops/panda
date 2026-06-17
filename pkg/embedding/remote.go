@@ -59,35 +59,40 @@ type embedResult struct {
 // RemoteEmbedder implements Embedder by calling the proxy's /embed endpoint.
 // An optional local cache avoids round-trips to the proxy on warm restarts.
 type RemoteEmbedder struct {
-	log        logrus.FieldLogger
-	proxyURL   string
-	httpClient *http.Client
-	tokenFn    func() string
-	localCache cache.Cache
-	model      string
+	log          logrus.FieldLogger
+	proxyURL     string
+	httpClient   *http.Client
+	tokenFn      func() string
+	invalidateFn func()
+	localCache   cache.Cache
+	model        string
 }
 
 // Compile-time interface check.
 var _ Embedder = (*RemoteEmbedder)(nil)
 
 // NewRemote creates a new RemoteEmbedder that calls the proxy's /embed endpoint.
-// tokenFn is called on each request to get the current auth token.
+// tokenFn is called on each request to get the current auth token, and
+// invalidateFn drops the cached token so a 401/403 can be retried with a fresh
+// one (it may be nil to disable the retry).
 // localCache and model are optional — when both are set, embedding vectors are
 // cached locally using {model}:{textHash} keys to avoid proxy round-trips.
 func NewRemote(
 	log logrus.FieldLogger,
 	proxyURL string,
 	tokenFn func() string,
+	invalidateFn func(),
 	localCache cache.Cache,
 	model string,
 ) *RemoteEmbedder {
 	return &RemoteEmbedder{
-		log:        log.WithField("component", "remote-embedder"),
-		proxyURL:   proxyURL,
-		httpClient: &http.Client{Timeout: remoteEmbedTimeout},
-		tokenFn:    tokenFn,
-		localCache: localCache,
-		model:      model,
+		log:          log.WithField("component", "remote-embedder"),
+		proxyURL:     proxyURL,
+		httpClient:   &http.Client{Timeout: remoteEmbedTimeout},
+		tokenFn:      tokenFn,
+		invalidateFn: invalidateFn,
+		localCache:   localCache,
+		model:        model,
 	}
 }
 
@@ -355,27 +360,48 @@ func (e *RemoteEmbedder) embedDirect(
 	return vectors, nil
 }
 
+// doWithAuthRetry POSTs jsonBody to the proxy path with the current auth token,
+// retrying once after invalidating the token on a 401/403.
+func (e *RemoteEmbedder) doWithAuthRetry(path string, jsonBody []byte) (*http.Response, error) {
+	send := func() (*http.Response, error) {
+		req, err := http.NewRequestWithContext(
+			context.Background(), http.MethodPost, e.proxyURL+path, bytes.NewReader(jsonBody),
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+
+		if token := e.tokenFn(); token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+
+		return e.httpClient.Do(req)
+	}
+
+	resp, err := send()
+	if err != nil {
+		return nil, err
+	}
+
+	if (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) && e.invalidateFn != nil {
+		_ = resp.Body.Close()
+		e.invalidateFn()
+
+		return send()
+	}
+
+	return resp, nil
+}
+
 func (e *RemoteEmbedder) checkCached(hashes []string) ([]embedResult, error) {
 	reqBody, err := json.Marshal(embedCheckRequest{Hashes: hashes})
 	if err != nil {
 		return nil, fmt.Errorf("marshaling check request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(
-		context.Background(), http.MethodPost,
-		e.proxyURL+"/embed/check", bytes.NewReader(reqBody),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("creating check request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	if token := e.tokenFn(); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-
-	resp, err := e.httpClient.Do(req)
+	resp, err := e.doWithAuthRetry("/embed/check", reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("calling embed check: %w", err)
 	}
@@ -401,21 +427,7 @@ func (e *RemoteEmbedder) callEmbed(items []embedItem) (*embedResponse, error) {
 		return nil, fmt.Errorf("marshaling embed request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(
-		context.Background(), http.MethodPost,
-		e.proxyURL+"/embed", bytes.NewReader(reqBody),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("creating embed request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	if token := e.tokenFn(); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-
-	resp, err := e.httpClient.Do(req)
+	resp, err := e.doWithAuthRetry("/embed", reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("calling proxy embed: %w", err)
 	}

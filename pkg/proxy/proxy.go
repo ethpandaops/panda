@@ -30,6 +30,10 @@ type Service interface {
 	// requests, or NoAuthToken when no bearer token is required.
 	RegisterToken() string
 
+	// Invalidate drops the cached access token so the next RegisterToken
+	// obtains a fresh one. Callers use it on a 401/403 before retrying.
+	Invalidate()
+
 	// RevokeToken is a no-op for client-managed bearer tokens.
 	RevokeToken()
 

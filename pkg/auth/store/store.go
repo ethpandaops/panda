@@ -35,6 +35,11 @@ type Store interface {
 	// GetAccessToken returns a valid access token, refreshing if needed.
 	GetAccessToken() (string, error)
 
+	// Invalidate forces the next GetAccessToken to refresh the access token,
+	// even if it has not yet hit the local expiry buffer. Used when the proxy
+	// rejects a token that should still be valid locally (e.g. revocation).
+	Invalidate()
+
 	// IsAuthenticated returns true if valid tokens are stored.
 	IsAuthenticated() bool
 }
@@ -68,11 +73,12 @@ type Config struct {
 
 // store implements the Store interface.
 type store struct {
-	log       logrus.FieldLogger
-	cfg       Config
-	mu        sync.RWMutex
-	tokens    *client.Tokens
-	refreshMu sync.Mutex
+	log          logrus.FieldLogger
+	cfg          Config
+	mu           sync.RWMutex
+	tokens       *client.Tokens
+	forceRefresh bool
+	refreshMu    sync.Mutex
 }
 
 // New creates a new credential store.
@@ -197,6 +203,30 @@ func (s *store) GetAccessToken() (string, error) {
 	return tokens.AccessToken, nil
 }
 
+// Invalidate forces the next GetAccessToken to refresh.
+func (s *store) Invalidate() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.forceRefresh = true
+}
+
+// forceRefreshRequested reports whether Invalidate has armed a forced refresh.
+func (s *store) forceRefreshRequested() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.forceRefresh
+}
+
+// clearForceRefresh clears the forced-refresh flag after a successful refresh.
+func (s *store) clearForceRefresh() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.forceRefresh = false
+}
+
 // IsAuthenticated returns true if valid tokens are stored.
 func (s *store) IsAuthenticated() bool {
 	tokens, err := s.getTokens()
@@ -234,8 +264,16 @@ func (s *store) needsRefresh(tokens *client.Tokens) bool {
 		return true
 	}
 
-	// Refresh if the access token is within the buffer of expiry.
-	if time.Now().Add(s.cfg.RefreshBuffer).After(tokens.ExpiresAt) {
+	if s.forceRefreshRequested() {
+		return true
+	}
+
+	// Refresh proactively once the access token passes the configured fraction
+	// of its lifetime, or once it is within the buffer of expiry.
+	if client.ShouldRefresh(
+		time.Now(), tokens.ExpiresAt, tokens.ExpiresIn,
+		s.cfg.RefreshBuffer, client.DefaultRefreshFraction,
+	) {
 		return true
 	}
 
@@ -290,6 +328,8 @@ func (s *store) refresh(prior *client.Tokens) (*client.Tokens, error) {
 	if err := s.Save(newTokens); err != nil {
 		return nil, err
 	}
+
+	s.clearForceRefresh()
 
 	return newTokens, nil
 }

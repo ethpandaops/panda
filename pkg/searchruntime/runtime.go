@@ -97,6 +97,7 @@ func Build(
 		log,
 		proxyService.URL(),
 		func() string { return proxyService.RegisterToken() },
+		proxyService.Invalidate,
 		localCache,
 		model,
 	)
