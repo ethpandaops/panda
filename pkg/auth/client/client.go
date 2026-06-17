@@ -46,6 +46,43 @@ type Tokens struct {
 	RefreshTokenIssuedAt time.Time `json:"refresh_token_issued_at,omitempty"`
 }
 
+// DefaultRefreshFraction is the elapsed-lifetime fraction at which an access
+// token is proactively refreshed: at 0.5 it refreshes once half its lifetime
+// has passed (e.g. ~30 min into a 1h token), leaving a wide margin so a request
+// never races a just-expired token.
+const DefaultRefreshFraction = 0.5
+
+// ShouldRefresh reports whether a token expiring at expiresAt (minted with an
+// original lifetime of expiresIn seconds) should be proactively refreshed at
+// the moment now.
+//
+// It returns true once the token is within buffer of expiry, or — when the
+// original lifetime is known — once it has passed refreshFraction of that
+// lifetime. refreshFraction is the elapsed-life fraction at which to refresh
+// (e.g. 0.5 refreshes at the halfway point, well before expiry, so a request
+// never races a just-expired token). A zero expiresAt (unknown expiry) only
+// triggers on the buffer check.
+func ShouldRefresh(now, expiresAt time.Time, expiresIn int, buffer time.Duration, refreshFraction float64) bool {
+	if expiresAt.IsZero() {
+		return false
+	}
+
+	if now.Add(buffer).After(expiresAt) {
+		return true
+	}
+
+	if expiresIn > 0 && refreshFraction > 0 && refreshFraction < 1 {
+		lifetime := time.Duration(expiresIn) * time.Second
+		refreshAt := expiresAt.Add(-time.Duration(float64(lifetime) * (1 - refreshFraction)))
+
+		if now.After(refreshAt) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // Config configures the OAuth client.
 type Config struct {
 	// IssuerURL is the OIDC issuer URL (e.g., https://dex.example.com).

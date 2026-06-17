@@ -679,6 +679,10 @@ func (s *server) RegisterToken() string {
 	return NoAuthToken
 }
 
+// Invalidate is a no-op: the embedded proxy issues no bearer tokens.
+func (s *server) Invalidate() {
+}
+
 func (s *server) RevokeToken() {
 }
 

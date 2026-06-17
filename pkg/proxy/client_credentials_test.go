@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/sirupsen/logrus"
 )
@@ -105,10 +104,6 @@ func TestClientCredentialsTokenIsCachedInMemory(t *testing.T) {
 	issuer := newFakeIssuer(t, 3600)
 	client := newClientCredentialsClient(issuer.server.URL, "http://unused.test")
 
-	if client.credStore != nil {
-		t.Fatal("client_credentials mode must not create an on-disk credential store")
-	}
-
 	first := client.RegisterToken()
 	if first != "svc-token-1" {
 		t.Fatalf("RegisterToken() = %q, want svc-token-1", first)
@@ -198,26 +193,50 @@ func TestClientCredentialsDiscoverFailsWhenRetryRejected(t *testing.T) {
 	}
 }
 
-func TestClientCredentialsServesCachedTokenAcrossMintOutage(t *testing.T) {
+// Serving a cached client_credentials token across a mint outage while the
+// token is inside the refresh buffer is covered by the token package's
+// clientCredentialsSource tests, where the in-memory cache is directly
+// controllable.
+
+func TestClickHouseQueryRetriesOn401(t *testing.T) {
 	t.Parallel()
 
 	issuer := newFakeIssuer(t, 3600)
-	client := newClientCredentialsClient(issuer.server.URL, "http://unused.test")
 
-	first := client.RegisterToken()
-	if first == "" {
-		t.Fatal("expected an initial token")
+	var calls atomic.Int64
+
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/clickhouse/" {
+			http.NotFound(w, r)
+			return
+		}
+
+		// Reject the first token (revoked server-side), accept the re-mint.
+		if calls.Add(1) == 1 {
+			http.Error(w, "revoked", http.StatusUnauthorized)
+			return
+		}
+
+		_, _ = w.Write([]byte("query-ok"))
+	}))
+	t.Cleanup(proxy.Close)
+
+	client := newClientCredentialsClient(issuer.server.URL, proxy.URL)
+
+	body, err := client.ClickHouseQuery(context.Background(), "xatu", "SELECT 1", nil)
+	if err != nil {
+		t.Fatalf("ClickHouseQuery error after retry: %v", err)
 	}
 
-	// Simulate the issuer going away while the cached token is still valid
-	// but inside the refresh buffer.
-	issuer.server.Close()
-	client.ccMu.Lock()
-	client.ccTokens.ExpiresAt = time.Now().Add(time.Minute)
-	client.ccMu.Unlock()
+	if string(body) != "query-ok" {
+		t.Fatalf("body = %q, want query-ok", body)
+	}
 
-	got := client.RegisterToken()
-	if got != first {
-		t.Fatalf("expected cached token %q across mint outage, got %q", first, got)
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("expected 2 clickhouse attempts (initial + retry), got %d", got)
+	}
+
+	if got := issuer.mints.Load(); got != 2 {
+		t.Fatalf("expected 2 mints (initial + re-mint on 401), got %d", got)
 	}
 }

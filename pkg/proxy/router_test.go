@@ -296,6 +296,7 @@ func (f *fakeRouterClient) URL() string { return f.url }
 
 func (f *fakeRouterClient) RegisterToken() string { return f.token }
 
+func (f *fakeRouterClient) Invalidate()  {}
 func (f *fakeRouterClient) RevokeToken() {}
 
 func (f *fakeRouterClient) ClickHouseDatasources() []string {

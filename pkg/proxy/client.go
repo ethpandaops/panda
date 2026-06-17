@@ -16,8 +16,7 @@ import (
 
 	"github.com/ethpandaops/panda/internal/version"
 	"github.com/ethpandaops/panda/pkg/attribution"
-	"github.com/ethpandaops/panda/pkg/auth/client"
-	"github.com/ethpandaops/panda/pkg/auth/store"
+	"github.com/ethpandaops/panda/pkg/auth/token"
 	"github.com/ethpandaops/panda/pkg/proxy/handlers"
 	"github.com/ethpandaops/panda/pkg/types"
 )
@@ -105,27 +104,21 @@ type proxyClient struct {
 	cfg             ClientConfig
 	httpClient      *http.Client
 	queryHTTPClient *http.Client
-	authClient      client.Client
-	credStore       store.Store
+
+	// tokenSource yields access tokens for proxy requests regardless of grant
+	// type (interactive refresh-token or client_credentials). It is nil when
+	// the proxy needs no auth.
+	tokenSource token.Source
 
 	mu          sync.RWMutex
 	datasources *DatasourcesResponse
 	stopCh      chan struct{}
 	stopped     bool
-
-	// ccMu guards ccTokens, the in-memory client_credentials token cache.
-	// Tokens minted via client_credentials are never written to disk.
-	ccMu     sync.Mutex
-	ccTokens *client.Tokens
 }
 
 // AuthModeClientCredentials is the ClientConfig.AuthMode value for the
 // OAuth2 client_credentials grant (Authentik service-account form).
 const AuthModeClientCredentials = "client_credentials"
-
-// clientCredentialsRefreshBuffer is how long before expiry a cached
-// client_credentials access token is re-minted.
-const clientCredentialsRefreshBuffer = 5 * time.Minute
 
 var ErrAuthenticationRequired = errors.New("proxy authentication required")
 
@@ -152,43 +145,27 @@ func NewClient(log logrus.FieldLogger, cfg ClientConfig) Client {
 		stopCh:          make(chan struct{}),
 	}
 
-	// Set up auth client and credential store if OIDC is configured.
+	// The proxy owns only "what is my issuer" (its own URL is the issuer in
+	// embedded mode); the auth package owns everything else — grant choice,
+	// OAuth client, and credential store. The proxy treats the result as an
+	// opaque token provider, nil when no auth is configured.
 	issuerURL := strings.TrimRight(cfg.IssuerURL, "/")
 	if issuerURL == "" {
 		issuerURL = strings.TrimRight(cfg.URL, "/")
 	}
 
-	resource := strings.TrimRight(cfg.Resource, "/")
-
-	if issuerURL != "" && cfg.ClientID != "" {
-		c.authClient = client.New(log, client.Config{
-			IssuerURL: issuerURL,
-			ClientID:  cfg.ClientID,
-			Resource:  resource,
-			Username:  cfg.Username,
-			Password:  cfg.Password,
-		})
-
-		// client_credentials mints tokens on demand and keeps them in
-		// memory only — no on-disk credential store.
-		if cfg.AuthMode != AuthModeClientCredentials {
-			c.credStore = store.New(log, store.Config{
-				AuthClient:      c.authClient,
-				IssuerURL:       issuerURL,
-				ClientID:        cfg.ClientID,
-				Resource:        resource,
-				RefreshTokenTTL: cfg.RefreshTokenTTL,
-			})
-		}
-	}
+	c.tokenSource = token.NewSource(log, token.Config{
+		IssuerURL:       issuerURL,
+		ClientID:        cfg.ClientID,
+		Resource:        cfg.Resource,
+		Username:        cfg.Username,
+		Password:        cfg.Password,
+		Mode:            cfg.AuthMode,
+		RefreshTokenTTL: cfg.RefreshTokenTTL,
+		MintTimeout:     cfg.HTTPTimeout,
+	})
 
 	return c
-}
-
-// usesClientCredentials reports whether this client mints tokens via the
-// client_credentials grant.
-func (c *proxyClient) usesClientCredentials() bool {
-	return c.cfg.AuthMode == AuthModeClientCredentials && c.authClient != nil
 }
 
 // Start starts the client and performs initial discovery.
@@ -235,22 +212,42 @@ func (c *proxyClient) URL() string {
 }
 
 func (c *proxyClient) RegisterToken() string {
-	if c.credStore == nil && !c.usesClientCredentials() {
+	if c.tokenSource == nil {
 		return NoAuthToken
 	}
 
-	token, err := c.loadAccessToken()
+	tok, err := c.tokenSource.Token(context.Background())
 	if err != nil {
-		if errors.Is(err, ErrAuthenticationRequired) {
-			c.log.WithError(err).Debug("Proxy access token is not available")
-		} else {
-			c.log.WithError(err).Error("Failed to get proxy access token from credential store")
-		}
+		c.log.WithError(err).Debug("Proxy access token is not available")
 
 		return ""
 	}
 
-	return token
+	return tok
+}
+
+// Invalidate drops the cached access token so the next request obtains a fresh
+// one. Callers use it on a 401/403 before retrying.
+func (c *proxyClient) Invalidate() {
+	if c.tokenSource != nil {
+		c.tokenSource.Invalidate()
+	}
+}
+
+// accessToken returns the bearer token for a proxy request: an empty string
+// when the proxy needs no auth, the token when available, or an error wrapping
+// ErrAuthenticationRequired when credentials are missing or unusable.
+func (c *proxyClient) accessToken(ctx context.Context) (string, error) {
+	if c.tokenSource == nil {
+		return "", nil
+	}
+
+	tok, err := c.tokenSource.Token(ctx)
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrAuthenticationRequired, err)
+	}
+
+	return tok, nil
 }
 
 func (c *proxyClient) RevokeToken() {
@@ -353,38 +350,64 @@ func (c *proxyClient) ClickHouseQuery(ctx context.Context, datasource, sql strin
 		requestURL += "?" + encoded
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, strings.NewReader(sql))
+	send := func() (int, []byte, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, strings.NewReader(sql))
+		if err != nil {
+			return 0, nil, fmt.Errorf("creating request: %w", err)
+		}
+
+		req.Header.Set(handlers.DatasourceHeader, datasource)
+		req.Header.Set("Content-Type", "text/plain")
+
+		if v := attribution.FromContext(ctx); v != "" {
+			req.Header.Set(attribution.Header, v)
+		}
+
+		if token := c.RegisterToken(); token != "" && token != NoAuthToken {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+
+		resp, err := c.queryHTTPClient.Do(req)
+		if err != nil {
+			return 0, nil, fmt.Errorf("executing query: %w", err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return resp.StatusCode, nil, fmt.Errorf("reading response: %w", err)
+		}
+
+		return resp.StatusCode, body, nil
+	}
+
+	status, body, err := send()
 	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
+		return nil, err
 	}
 
-	req.Header.Set(handlers.DatasourceHeader, datasource)
-	req.Header.Set("Content-Type", "text/plain")
+	// One invalidate-and-retry on auth rejection covers a token revoked
+	// server-side before the local refresh buffer kicks in.
+	if isAuthRejection(status) && c.tokenSource != nil {
+		c.log.Debug("Proxy rejected query token; invalidating and retrying")
+		c.tokenSource.Invalidate()
 
-	if v := attribution.FromContext(ctx); v != "" {
-		req.Header.Set(attribution.Header, v)
+		if status, body, err = send(); err != nil {
+			return nil, err
+		}
 	}
 
-	if token := c.RegisterToken(); token != "" && token != NoAuthToken {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-
-	resp, err := c.queryHTTPClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("executing query: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading response: %w", err)
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("query failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	if status < 200 || status >= 300 {
+		return nil, fmt.Errorf("query failed (%d): %s", status, strings.TrimSpace(string(body)))
 	}
 
 	return body, nil
+}
+
+// isAuthRejection reports whether status is a proxy auth rejection that a token
+// refresh-and-retry can recover from.
+func isAuthRejection(status int) bool {
+	return status == http.StatusUnauthorized || status == http.StatusForbidden
 }
 
 // PrometheusDatasources returns the discovered Prometheus datasource names.
@@ -460,14 +483,14 @@ func (c *proxyClient) EmbeddingModel() string {
 }
 
 // Discover fetches datasource information from the proxy's /datasources endpoint.
-// In client_credentials mode a 401/403 invalidates the cached token and the
-// request is retried once with a freshly minted one (covers proxy-side
-// revocation before the local expiry buffer kicks in).
+// A 401/403 invalidates the cached token and the request is retried once with a
+// fresh one, covering proxy-side revocation before the local expiry buffer
+// kicks in. This is independent of the auth grant in use.
 func (c *proxyClient) Discover(ctx context.Context) error {
 	err := c.discoverOnce(ctx)
-	if err != nil && errors.Is(err, ErrAuthenticationRequired) && c.usesClientCredentials() {
-		c.log.WithError(err).Debug("Proxy rejected client_credentials token; re-minting and retrying")
-		c.invalidateClientCredentialsToken()
+	if err != nil && errors.Is(err, ErrAuthenticationRequired) && c.tokenSource != nil {
+		c.log.WithError(err).Debug("Proxy rejected token; invalidating and retrying")
+		c.tokenSource.Invalidate()
 
 		return c.discoverOnce(ctx)
 	}
@@ -484,17 +507,13 @@ func (c *proxyClient) discoverOnce(ctx context.Context) error {
 		return fmt.Errorf("creating request: %w", err)
 	}
 
-	token, err := c.loadAccessToken()
+	tok, err := c.accessToken(ctx)
 	if err != nil {
-		if errors.Is(err, ErrAuthenticationRequired) {
-			return err
-		}
-
-		return fmt.Errorf("loading access token: %w", err)
+		return err
 	}
 
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
+	if tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
 	}
 
 	resp, err := c.httpClient.Do(req)
@@ -536,22 +555,13 @@ func (c *proxyClient) discoverOnce(ctx context.Context) error {
 }
 
 // EnsureAuthenticated checks if the user has valid credentials.
-func (c *proxyClient) EnsureAuthenticated(_ context.Context) error {
-	if c.usesClientCredentials() {
-		if _, err := c.loadAccessToken(); err != nil {
-			return fmt.Errorf("authenticating to proxy via client_credentials: %w", err)
-		}
-
-		return nil
-	}
-
-	if c.credStore == nil {
+func (c *proxyClient) EnsureAuthenticated(ctx context.Context) error {
+	if c.tokenSource == nil {
 		// No auth required (e.g., local dev mode).
 		return nil
 	}
 
-	_, err := c.loadAccessToken()
-	if err != nil {
+	if _, err := c.tokenSource.Token(ctx); err != nil {
 		return fmt.Errorf(
 			"not authenticated to proxy. Run `panda auth login` first: %w",
 			err,
@@ -559,72 +569,6 @@ func (c *proxyClient) EnsureAuthenticated(_ context.Context) error {
 	}
 
 	return nil
-}
-
-func (c *proxyClient) loadAccessToken() (string, error) {
-	if c.usesClientCredentials() {
-		return c.clientCredentialsToken()
-	}
-
-	if c.credStore == nil {
-		return "", nil
-	}
-
-	tokens, err := c.credStore.Load()
-	if err != nil {
-		return "", fmt.Errorf("loading stored credentials: %w", err)
-	}
-
-	if tokens == nil {
-		return "", ErrAuthenticationRequired
-	}
-
-	token, err := c.credStore.GetAccessToken()
-	if err != nil {
-		return "", fmt.Errorf("%w: %v", ErrAuthenticationRequired, err)
-	}
-
-	return token, nil
-}
-
-// clientCredentialsToken returns the cached client_credentials access token,
-// re-minting via the issuer's token endpoint when missing or close to expiry.
-// Tokens live in memory only; nothing is written to disk.
-func (c *proxyClient) clientCredentialsToken() (string, error) {
-	c.ccMu.Lock()
-	defer c.ccMu.Unlock()
-
-	if c.ccTokens != nil && time.Now().Add(clientCredentialsRefreshBuffer).Before(c.ccTokens.ExpiresAt) {
-		return c.ccTokens.AccessToken, nil
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), c.cfg.HTTPTimeout)
-	defer cancel()
-
-	tokens, err := c.authClient.ClientCredentials(ctx)
-	if err != nil {
-		// Keep serving a still-valid cached token across transient mint failures.
-		if c.ccTokens != nil && time.Now().Before(c.ccTokens.ExpiresAt) {
-			c.log.WithError(err).Warn("Re-minting client_credentials token failed; using cached token")
-			return c.ccTokens.AccessToken, nil
-		}
-
-		return "", fmt.Errorf("minting client_credentials token: %w", err)
-	}
-
-	c.ccTokens = tokens
-
-	return tokens.AccessToken, nil
-}
-
-// invalidateClientCredentialsToken drops the cached client_credentials token
-// so the next loadAccessToken mints a fresh one. Used when the proxy rejects
-// a token that has not yet hit the local expiry buffer (e.g. revocation).
-func (c *proxyClient) invalidateClientCredentialsToken() {
-	c.ccMu.Lock()
-	defer c.ccMu.Unlock()
-
-	c.ccTokens = nil
 }
 
 // backgroundRefresh periodically refreshes datasource information.

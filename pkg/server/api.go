@@ -767,41 +767,74 @@ func (s *service) proxyRequestWithService(
 	}
 
 	targetURL := baseURL + requestPath
-	req, err := http.NewRequestWithContext(ctx, method, targetURL, body)
-	if err != nil {
-		return nil, http.StatusInternalServerError, nil, fmt.Errorf("creating proxy request: %w", err)
-	}
 
-	for key, values := range headers {
-		for _, value := range values {
-			req.Header.Add(key, value)
+	// Buffer the body so the request can be replayed on an auth retry.
+	var bodyBytes []byte
+	if body != nil {
+		buffered, err := io.ReadAll(body)
+		if err != nil {
+			return nil, http.StatusInternalServerError, nil, fmt.Errorf("reading proxy request body: %w", err)
 		}
-	}
-	req.Header.Del("Authorization")
 
-	if v := attribution.FromContext(ctx); v != "" {
-		req.Header.Set(attribution.Header, v)
+		bodyBytes = buffered
 	}
 
-	token := proxySvc.RegisterToken()
 	defer proxySvc.RevokeToken()
 
-	if token != "" && token != proxy.NoAuthToken {
-		req.Header.Set("Authorization", "Bearer "+token)
+	send := func() ([]byte, int, http.Header, error) {
+		var reqBody io.Reader
+		if bodyBytes != nil {
+			reqBody = bytes.NewReader(bodyBytes)
+		}
+
+		req, err := http.NewRequestWithContext(ctx, method, targetURL, reqBody)
+		if err != nil {
+			return nil, http.StatusInternalServerError, nil, fmt.Errorf("creating proxy request: %w", err)
+		}
+
+		for key, values := range headers {
+			for _, value := range values {
+				req.Header.Add(key, value)
+			}
+		}
+		req.Header.Del("Authorization")
+
+		if v := attribution.FromContext(ctx); v != "" {
+			req.Header.Set(attribution.Header, v)
+		}
+
+		if token := proxySvc.RegisterToken(); token != "" && token != proxy.NoAuthToken {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return nil, http.StatusBadGateway, nil, err
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		data, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, resp.StatusCode, resp.Header.Clone(), fmt.Errorf("reading proxy response: %w", err)
+		}
+
+		return data, resp.StatusCode, resp.Header.Clone(), nil
 	}
 
-	resp, err := s.httpClient.Do(req)
+	data, status, header, err := send()
 	if err != nil {
-		return nil, http.StatusBadGateway, nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, resp.StatusCode, resp.Header.Clone(), fmt.Errorf("reading proxy response: %w", err)
+		return data, status, header, err
 	}
 
-	return data, resp.StatusCode, resp.Header.Clone(), nil
+	// One invalidate-and-retry on auth rejection covers a token revoked
+	// server-side before the local refresh buffer kicks in.
+	if status == http.StatusUnauthorized || status == http.StatusForbidden {
+		proxySvc.Invalidate()
+
+		return send()
+	}
+
+	return data, status, header, nil
 }
 
 func (s *service) primaryProxyService() (proxy.Service, error) {

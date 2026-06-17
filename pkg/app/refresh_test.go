@@ -325,6 +325,7 @@ func (f *fakeProxyClient) Start(_ context.Context) error               { return 
 func (f *fakeProxyClient) Stop(_ context.Context) error                { return nil }
 func (f *fakeProxyClient) URL() string                                 { return "" }
 func (f *fakeProxyClient) RegisterToken() string                       { return "" }
+func (f *fakeProxyClient) Invalidate()                                 {}
 func (f *fakeProxyClient) RevokeToken()                                {}
 func (f *fakeProxyClient) Discover(_ context.Context) error            { return nil }
 func (f *fakeProxyClient) EnsureAuthenticated(_ context.Context) error { return nil }

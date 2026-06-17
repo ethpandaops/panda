@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -162,6 +163,112 @@ func TestGetAccessTokenSerializesConcurrentRefreshes(t *testing.T) {
 
 	if got := client.refreshCalls.Load(); got != 1 {
 		t.Fatalf("expected exactly 1 provider refresh call, got %d", got)
+	}
+}
+
+func TestGetAccessTokenRefreshesAtAccessTokenHalfLife(t *testing.T) {
+	t.Parallel()
+
+	client := &stubAuthClient{}
+	store := New(logrus.New(), Config{
+		Path:          filepath.Join(t.TempDir(), "creds.json"),
+		AuthClient:    client,
+		RefreshBuffer: 5 * time.Minute,
+	}).(*store)
+	// 1h token with 20m left = 66% elapsed: past the 50% refresh point, but
+	// well outside the 5m expiry buffer.
+	store.tokens = &authclient.Tokens{
+		AccessToken:  "aging",
+		RefreshToken: "refresh-token",
+		ExpiresIn:    3600,
+		ExpiresAt:    time.Now().Add(20 * time.Minute),
+	}
+
+	token, err := store.GetAccessToken()
+	if err != nil {
+		t.Fatalf("GetAccessToken returned error: %v", err)
+	}
+
+	if token != "refreshed-token" {
+		t.Fatalf("expected proactive refresh past 50%% of lifetime, got %q", token)
+	}
+
+	if client.refreshCalls != 1 {
+		t.Fatalf("expected 1 refresh call, got %d", client.refreshCalls)
+	}
+}
+
+func TestGetAccessTokenDoesNotRefreshBeforeAccessTokenHalfLife(t *testing.T) {
+	t.Parallel()
+
+	client := &stubAuthClient{}
+	store := New(logrus.New(), Config{
+		Path:          filepath.Join(t.TempDir(), "creds.json"),
+		AuthClient:    client,
+		RefreshBuffer: 5 * time.Minute,
+	}).(*store)
+	// 1h token with 40m left = 33% elapsed: before the 50% refresh point.
+	store.tokens = &authclient.Tokens{
+		AccessToken:  "fresh",
+		RefreshToken: "refresh-token",
+		ExpiresIn:    3600,
+		ExpiresAt:    time.Now().Add(40 * time.Minute),
+	}
+
+	token, err := store.GetAccessToken()
+	if err != nil {
+		t.Fatalf("GetAccessToken returned error: %v", err)
+	}
+
+	if token != "fresh" {
+		t.Fatalf("expected original token before 50%% of lifetime, got %q", token)
+	}
+
+	if client.refreshCalls != 0 {
+		t.Fatalf("expected no refresh calls, got %d", client.refreshCalls)
+	}
+}
+
+func TestInvalidateForcesRefreshThenClears(t *testing.T) {
+	t.Parallel()
+
+	client := &stubAuthClient{}
+	store := New(logrus.New(), Config{
+		Path:          filepath.Join(t.TempDir(), "creds.json"),
+		AuthClient:    client,
+		RefreshBuffer: 5 * time.Minute,
+	}).(*store)
+	// A fresh token that would not otherwise refresh (0% elapsed).
+	store.tokens = &authclient.Tokens{
+		AccessToken:  "fresh",
+		RefreshToken: "refresh-token",
+		ExpiresIn:    3600,
+		ExpiresAt:    time.Now().Add(time.Hour),
+	}
+
+	store.Invalidate()
+
+	token, err := store.GetAccessToken()
+	if err != nil {
+		t.Fatalf("GetAccessToken returned error: %v", err)
+	}
+
+	if token != "refreshed-token" {
+		t.Fatalf("expected forced refresh after Invalidate, got %q", token)
+	}
+
+	if client.refreshCalls != 1 {
+		t.Fatalf("expected 1 refresh call after Invalidate, got %d", client.refreshCalls)
+	}
+
+	// The forced-refresh flag must clear: the now-fresh token should not
+	// refresh again on the next call.
+	if _, err := store.GetAccessToken(); err != nil {
+		t.Fatalf("second GetAccessToken returned error: %v", err)
+	}
+
+	if client.refreshCalls != 1 {
+		t.Fatalf("expected no extra refresh after the flag cleared, got %d", client.refreshCalls)
 	}
 }
 

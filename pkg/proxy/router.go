@@ -171,6 +171,16 @@ func (r *routerClient) RegisterToken() string {
 	return primary.RegisterToken()
 }
 
+// Invalidate drops the primary proxy's cached token for primary-only requests.
+func (r *routerClient) Invalidate() {
+	primary := r.Primary()
+	if primary == nil {
+		return
+	}
+
+	primary.Invalidate()
+}
+
 // RevokeToken revokes a primary-proxy token for primary-only proxy requests.
 func (r *routerClient) RevokeToken() {
 	primary := r.Primary()
