@@ -66,6 +66,20 @@ type RemoteEmbedder struct {
 	invalidateFn func()
 	localCache   cache.Cache
 	model        string
+	progressFn   func(completed, total int)
+}
+
+// OnProgress registers a callback invoked during EmbedBatch with the number of
+// documents embedded so far and the total in the batch. It enables
+// document-level progress reporting for index builds.
+func (e *RemoteEmbedder) OnProgress(fn func(completed, total int)) {
+	e.progressFn = fn
+}
+
+func (e *RemoteEmbedder) reportProgress(completed, total int) {
+	if e.progressFn != nil {
+		e.progressFn(completed, total)
+	}
 }
 
 // Compile-time interface check.
@@ -199,6 +213,8 @@ func (e *RemoteEmbedder) EmbedBatch(texts []string) ([][]float32, error) {
 		}
 	}
 
+	e.reportProgress(localHits, len(texts))
+
 	// Collect indices that still need embedding.
 	var remoteIndices []int
 
@@ -260,28 +276,29 @@ func (e *RemoteEmbedder) EmbedBatch(texts []string) ([][]float32, error) {
 			}
 		}
 
-		if len(missItems) == 0 {
-			continue
-		}
+		if len(missItems) > 0 {
+			e.log.WithFields(logrus.Fields{
+				"total":  len(batchIndices),
+				"cached": len(batchIndices) - len(missItems),
+				"misses": len(missItems),
+			}).Info("Proxy cache stats")
 
-		e.log.WithFields(logrus.Fields{
-			"total":  len(batchIndices),
-			"cached": len(batchIndices) - len(missItems),
-			"misses": len(missItems),
-		}).Info("Proxy cache stats")
-
-		resp, err := e.callEmbed(missItems)
-		if err != nil {
-			return nil, fmt.Errorf("embedding batch %d/%d: %w", batchNum, totalBatches, err)
-		}
-
-		for _, result := range resp.Results {
-			for _, idx := range hashToIndices[result.Hash] {
-				vectors[idx] = result.Vector
+			resp, err := e.callEmbed(missItems)
+			if err != nil {
+				return nil, fmt.Errorf("embedding batch %d/%d: %w", batchNum, totalBatches, err)
 			}
 
-			e.queueLocalCache(toCache, result.Hash, result.Vector)
+			for _, result := range resp.Results {
+				for _, idx := range hashToIndices[result.Hash] {
+					vectors[idx] = result.Vector
+				}
+
+				e.queueLocalCache(toCache, result.Hash, result.Vector)
+			}
 		}
+
+		// batchEnd is the cumulative count of remote items processed so far.
+		e.reportProgress(localHits+batchEnd, len(texts))
 	}
 
 	// Phase 3: persist newly fetched vectors to local cache.

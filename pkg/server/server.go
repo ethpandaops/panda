@@ -357,6 +357,17 @@ func (s *service) buildHTTPHandler(routes map[string]http.Handler) http.Handler 
 		_, _ = w.Write([]byte("ok"))
 	})
 	r.Get("/ready", func(w http.ResponseWriter, _ *http.Request) {
+		// Gate readiness on the proxy layer having completed initial datasource
+		// discovery (or being blocked on user auth). Until then /api/v1/datasources
+		// would return an empty list, so reporting "ready" too early makes
+		// 'panda datasources' look empty while the server is still bootstrapping.
+		if s.proxyService == nil || !s.proxyService.Ready() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte("not ready"))
+
+			return
+		}
+
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ready"))
 	})

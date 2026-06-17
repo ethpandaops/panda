@@ -123,6 +123,46 @@ func TestRemoteEmbedder_EmbedBatch_AllMisses(t *testing.T) {
 	assert.Equal(t, fakeVectors["gamma"], vectors[2])
 }
 
+func TestRemoteEmbedder_EmbedBatch_ReportsProgress(t *testing.T) {
+	t.Parallel()
+
+	texts := []string{"alpha", "beta", "gamma"}
+
+	srv := newMockProxy(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			var req embedRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+
+			results := make([]embedResult, 0, len(req.Items))
+			for _, item := range req.Items {
+				results = append(results, embedResult{Hash: item.Hash, Vector: []float32{1, 0, 0}})
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(embedResponse{Model: "test-model", Results: results}))
+		},
+		func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(embedCheckResponse{})
+		},
+	)
+
+	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" }, nil, nil, "")
+
+	var calls, lastDone, lastTotal int
+	embedder.OnProgress(func(completed, total int) {
+		calls++
+		lastDone, lastTotal = completed, total
+	})
+
+	_, err := embedder.EmbedBatch(texts)
+	require.NoError(t, err)
+
+	assert.Positive(t, calls, "OnProgress should be invoked during a batch embed")
+	assert.Equal(t, 3, lastDone, "final progress should report every document done")
+	assert.Equal(t, 3, lastTotal)
+}
+
 func TestRemoteEmbedder_EmbedBatch_AllCached(t *testing.T) {
 	t.Parallel()
 

@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -114,6 +115,17 @@ type proxyClient struct {
 	datasources *DatasourcesResponse
 	stopCh      chan struct{}
 	stopped     bool
+
+	// discovered reports whether at least one datasource discovery has
+	// succeeded. It gates server readiness: until the first successful
+	// discovery the server has no datasources to serve.
+	discovered atomic.Bool
+
+	// authPending reports whether discovery is blocked waiting for the user to
+	// authenticate. In that state the server is up and cannot do better until
+	// the user runs `panda auth login`, so it counts as ready — otherwise a
+	// yet-to-auth user would wedge readiness at 503 forever.
+	authPending atomic.Bool
 }
 
 // AuthModeClientCredentials is the ClientConfig.AuthMode value for the
@@ -492,10 +504,28 @@ func (c *proxyClient) Discover(ctx context.Context) error {
 		c.log.WithError(err).Debug("Proxy rejected token; invalidating and retrying")
 		c.tokenSource.Invalidate()
 
-		return c.discoverOnce(ctx)
+		err = c.discoverOnce(ctx)
+	}
+
+	switch {
+	case err == nil:
+		c.discovered.Store(true)
+		c.authPending.Store(false)
+	case errors.Is(err, ErrAuthenticationRequired):
+		// The server is up but cannot discover until the user authenticates.
+		// Treat this as ready so the init/start wait does not block on a state
+		// only the user can resolve.
+		c.authPending.Store(true)
 	}
 
 	return err
+}
+
+// Ready reports whether the client has completed at least one successful
+// datasource discovery, or is blocked waiting for the user to authenticate
+// (in which case the server is up and can do no better unattended).
+func (c *proxyClient) Ready() bool {
+	return c.discovered.Load() || c.authPending.Load()
 }
 
 // discoverOnce performs a single /datasources fetch.

@@ -104,6 +104,22 @@ func Build(
 
 	runtime.embedder = embedder
 
+	// Log document-level embedding progress so operators can watch the index
+	// build advance in `panda server logs`. The embedder reports documents as
+	// it works, attributed to whichever stage is currently building.
+	currentStage := ""
+	setStage := func(stage string) { currentStage = stage }
+
+	embedder.OnProgress(func(completed, total int) {
+		log.WithFields(logrus.Fields{
+			"stage":    currentStage,
+			"embedded": completed,
+			"total":    total,
+		}).Info("Embedding search index")
+	})
+
+	setStage("examples")
+
 	examples := resource.GetQueryExamples(moduleRegistry)
 	exampleCount := 0
 	for _, cat := range examples {
@@ -134,6 +150,7 @@ func Build(
 		return runtime, nil
 	}
 
+	setStage("runbooks")
 	log.WithField("runbooks", runbookReg.Count()).Info("Building runbook search index")
 
 	runbookIndex, err := resource.NewRunbookIndex(log, embedder, runbookReg.All())
@@ -179,6 +196,7 @@ func Build(
 	case eipReg.Count() == 0:
 		log.Warn("No EIPs found, EIP search will be disabled")
 	default:
+		setStage("EIPs")
 		log.WithField("eips", eipReg.Count()).Info("Building EIP search index")
 
 		eipIndex, indexErr := resource.NewEIPIndex(log, embedder, eipReg.All())
@@ -202,6 +220,8 @@ func Build(
 			"specs":     specsReg.SpecCount(),
 			"constants": specsReg.ConstantCount(),
 		}).Info("Building consensus specs search index")
+
+		setStage("consensus specs")
 
 		specsIndex, indexErr := resource.NewConsensusSpecIndex(log, embedder, specsReg.AllSpecs(), specsReg.AllConstants())
 		if indexErr != nil {

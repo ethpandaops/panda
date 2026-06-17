@@ -211,7 +211,44 @@ func checkServerHealth(ctx context.Context) error {
 	return nil
 }
 
-func waitForServerHealth(ctx context.Context, timeout time.Duration) error {
+// checkServerReady probes the server's /ready endpoint, which reports 200 only
+// once the proxy layer has completed initial datasource discovery (or is
+// blocked on user auth). /health returns 200 as soon as the HTTP listener is
+// up, so readiness — not liveness — is what 'panda init' and 'panda server
+// start' should wait on before claiming the server is usable.
+func checkServerReady(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	cfg, err := config.LoadClient(cfgFile)
+	if err != nil {
+		return &serverHealthConfigError{err: err}
+	}
+
+	readyURL := strings.TrimRight(cfg.ServerURL(), "/") + "/ready"
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, readyURL, nil)
+	if err != nil {
+		return &serverHealthRequestError{err: err}
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return &serverHealthRequestError{err: err}
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return &serverHealthStatusError{statusCode: resp.StatusCode}
+	}
+
+	return nil
+}
+
+func waitForServerReady(ctx context.Context, timeout time.Duration) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -228,14 +265,14 @@ func waitForServerHealth(ctx context.Context, timeout time.Duration) error {
 	var lastErr error
 
 	for {
-		err := checkServerHealth(waitCtx)
+		err := checkServerReady(waitCtx)
 		if err == nil {
 			return nil
 		}
 
 		var configErr *serverHealthConfigError
 		if errors.As(err, &configErr) {
-			return fmt.Errorf("cannot check server health: %w", err)
+			return fmt.Errorf("cannot check server readiness: %w", err)
 		}
 
 		lastErr = err
@@ -244,7 +281,7 @@ func waitForServerHealth(ctx context.Context, timeout time.Duration) error {
 		if !now.Before(nextProgressAt) {
 			remaining := max(time.Until(deadline).Round(time.Second), 0)
 
-			fmt.Printf("Still waiting for server to become healthy... (%s remaining)\n", remaining)
+			fmt.Printf("Still waiting for server to become ready... (%s remaining)\n", remaining)
 			nextProgressAt = now.Add(serverHealthProgressInterval)
 		}
 
@@ -260,13 +297,13 @@ func waitForServerHealth(ctx context.Context, timeout time.Duration) error {
 
 			if errors.Is(waitCtx.Err(), context.DeadlineExceeded) {
 				return fmt.Errorf(
-					"server did not become healthy within %s (last check: %v). Check logs with 'panda server logs'",
+					"server did not become ready within %s (last check: %v). Check logs with 'panda server logs'",
 					timeout,
 					lastErr,
 				)
 			}
 
-			return fmt.Errorf("server health wait canceled: %w", waitCtx.Err())
+			return fmt.Errorf("server readiness wait canceled: %w", waitCtx.Err())
 		case <-timer.C:
 		}
 	}
@@ -277,9 +314,9 @@ func runComposeAndWait(ctx context.Context, composeFile string, composeArgs []st
 		return err
 	}
 
-	fmt.Println("Waiting for server to become healthy...")
+	fmt.Println("Waiting for server to become ready...")
 
-	if err := waitForServerHealth(ctx, timeout); err != nil {
+	if err := waitForServerReady(ctx, timeout); err != nil {
 		return err
 	}
 
