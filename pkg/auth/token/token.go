@@ -7,6 +7,7 @@ package token
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -21,6 +22,10 @@ import (
 // ModeClientCredentials selects the non-interactive service-account grant. Any
 // other mode ("", "oauth", "oidc") uses the interactive refresh-token grant.
 const ModeClientCredentials = "client_credentials"
+
+// ErrNotAuthenticated is returned by an interactive Source when no credentials
+// are stored (e.g. the user has not run `panda auth login`, or logged out).
+var ErrNotAuthenticated = errors.New("not authenticated")
 
 // clientCredentialsBuffer is how long before expiry a cached client_credentials
 // access token is re-minted, in addition to the proactive fractional refresh.
@@ -131,8 +136,20 @@ func NewClientCredentialsSource(log logrus.FieldLogger, c client.Client, mintTim
 	}
 }
 
-// Token returns a valid access token from the credential store.
+// Token returns a valid access token from the credential store. It reloads the
+// credentials from disk on each call so a login or logout performed outside the
+// running process (the host CLI writes the bind-mounted credentials file) is
+// observed without a server restart.
 func (s *refreshSource) Token(_ context.Context) (string, error) {
+	tokens, err := s.store.Load()
+	if err != nil {
+		return "", err
+	}
+
+	if tokens == nil {
+		return "", ErrNotAuthenticated
+	}
+
 	return s.store.GetAccessToken()
 }
 

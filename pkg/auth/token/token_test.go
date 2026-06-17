@@ -166,9 +166,17 @@ type fakeStore struct {
 	invalidated bool
 }
 
-func (f *fakeStore) Path() string                    { return "" }
-func (f *fakeStore) Save(*client.Tokens) error       { return nil }
-func (f *fakeStore) Load() (*client.Tokens, error)   { return nil, nil }
+func (f *fakeStore) Path() string              { return "" }
+func (f *fakeStore) Save(*client.Tokens) error { return nil }
+
+func (f *fakeStore) Load() (*client.Tokens, error) {
+	if f.token == "" {
+		return nil, nil
+	}
+
+	return &client.Tokens{AccessToken: f.token}, nil
+}
+
 func (f *fakeStore) Clear() error                    { return nil }
 func (f *fakeStore) GetAccessToken() (string, error) { return f.token, nil }
 func (f *fakeStore) Invalidate()                     { f.invalidated = true }
@@ -192,6 +200,25 @@ func TestRefreshSourceDelegatesToStore(t *testing.T) {
 	src.Invalidate()
 	if !fs.invalidated {
 		t.Fatal("Invalidate did not propagate to the store")
+	}
+}
+
+func TestRefreshSourceDetectsLogoutOnReload(t *testing.T) {
+	t.Parallel()
+
+	fs := &fakeStore{token: "access-123"}
+	src := NewRefreshSource(fs)
+
+	if _, err := src.Token(context.Background()); err != nil {
+		t.Fatalf("Token error while authenticated: %v", err)
+	}
+
+	// Simulate a logout (credentials file cleared) under a running server.
+	fs.token = ""
+
+	_, err := src.Token(context.Background())
+	if !errors.Is(err, ErrNotAuthenticated) {
+		t.Fatalf("expected ErrNotAuthenticated after logout, got %v", err)
 	}
 }
 
