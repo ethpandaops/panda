@@ -339,3 +339,65 @@ func TestClientCredentialsSurfacesTokenEndpointError(t *testing.T) {
 		t.Fatalf("expected 401 in error, got: %v", err)
 	}
 }
+
+func TestRequestDeviceCodeRequestsOfflineAccessScope(t *testing.T) {
+	t.Parallel()
+
+	var gotForm url.Values
+
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/.well-known/openid-configuration":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"issuer":                        server.URL,
+				"token_endpoint":                server.URL + "/token",
+				"device_authorization_endpoint": server.URL + "/device",
+			})
+		case "/device":
+			if err := r.ParseForm(); err != nil {
+				t.Errorf("parsing form: %v", err)
+			}
+
+			gotForm = r.PostForm
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"device_code":      "device-code",
+				"user_code":        "USER-CODE",
+				"verification_uri": server.URL + "/activate",
+				"expires_in":       600,
+				"interval":         5,
+			})
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	c, ok := New(logrus.New(), Config{
+		IssuerURL: server.URL,
+		ClientID:  "panda-proxy",
+	}).(*client)
+	if !ok {
+		t.Fatal("New did not return *client")
+	}
+
+	if err := c.discover(context.Background()); err != nil {
+		t.Fatalf("discover failed: %v", err)
+	}
+
+	if _, err := c.requestDeviceCode(context.Background()); err != nil {
+		t.Fatalf("requestDeviceCode failed: %v", err)
+	}
+
+	if got := gotForm.Get("client_id"); got != "panda-proxy" {
+		t.Errorf("form client_id = %q, want %q", got, "panda-proxy")
+	}
+
+	// offline_access must be requested in the device authorization flow so the
+	// provider issues a refresh token; without it, headless sessions cannot
+	// auto-refresh and must re-run the full device flow on every expiry.
+	if scope := gotForm.Get("scope"); !strings.Contains(scope, "offline_access") {
+		t.Fatalf("device authorization scope must include offline_access, got %q", scope)
+	}
+}

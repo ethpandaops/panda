@@ -600,6 +600,7 @@ func (c *client) exchangeCode(ctx context.Context, code, verifier, redirectURI s
 func (c *client) requestDeviceCode(ctx context.Context) (*deviceAuthResponse, error) {
 	data := url.Values{
 		"client_id": {c.cfg.ClientID},
+		"scope":     {strings.Join(c.cfg.Scopes, " ")},
 	}
 	if c.cfg.Resource != "" {
 		data.Set("resource", c.cfg.Resource)
