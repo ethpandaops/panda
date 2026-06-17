@@ -679,6 +679,15 @@ func (s *server) RegisterToken() string {
 	return NoAuthToken
 }
 
+// Ready reports whether the embedded proxy server has finished starting. It
+// satisfies the proxy.Service readiness contract for in-process proxies.
+func (s *server) Ready() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.started
+}
+
 // Invalidate is a no-op: the embedded proxy issues no bearer tokens.
 func (s *server) Invalidate() {
 }

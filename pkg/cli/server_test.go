@@ -72,17 +72,17 @@ func TestComposeOverrideFile(t *testing.T) {
 	})
 }
 
-func TestWaitForServerHealthSucceedsAfterTemporaryFailure(t *testing.T) {
+func TestWaitForServerReadySucceedsAfterTemporaryFailure(t *testing.T) {
 	var attempts atomic.Int32
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/health" {
+		if r.URL.Path != "/ready" {
 			http.NotFound(w, r)
 			return
 		}
 
 		if attempts.Add(1) == 1 {
-			http.Error(w, "starting", http.StatusServiceUnavailable)
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
 			return
 		}
 
@@ -93,20 +93,20 @@ func TestWaitForServerHealthSucceedsAfterTemporaryFailure(t *testing.T) {
 	setClientConfig(t, server.URL)
 	setServerHealthWaitIntervals(t, 5*time.Millisecond, time.Hour)
 
-	err := waitForServerHealth(context.Background(), 200*time.Millisecond)
+	err := waitForServerReady(context.Background(), 200*time.Millisecond)
 
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, attempts.Load(), int32(2))
 }
 
-func TestWaitForServerHealthTimesOutWithLogsHint(t *testing.T) {
+func TestWaitForServerReadyTimesOutWithLogsHint(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/health" {
+		if r.URL.Path != "/ready" {
 			http.NotFound(w, r)
 			return
 		}
 
-		http.Error(w, "starting", http.StatusServiceUnavailable)
+		http.Error(w, "not ready", http.StatusServiceUnavailable)
 	}))
 	defer server.Close()
 
@@ -115,18 +115,19 @@ func TestWaitForServerHealthTimesOutWithLogsHint(t *testing.T) {
 
 	var err error
 	output := captureStdout(t, func() {
-		err = waitForServerHealth(context.Background(), 200*time.Millisecond)
+		err = waitForServerReady(context.Background(), 200*time.Millisecond)
 	})
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "server did not become healthy within")
+	assert.Contains(t, err.Error(), "server did not become ready within")
 	assert.Contains(t, err.Error(), "panda server logs")
-	assert.Contains(t, output, "Still waiting for server to become healthy...")
+	assert.Contains(t, output, "Still waiting for server to become ready...")
 }
 
 func TestRunServerRestartLogsAndWaitsForHealth(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/health" {
+		// /health gates the restart/liveness precheck; /ready gates the wait.
+		if r.URL.Path != "/health" && r.URL.Path != "/ready" {
 			http.NotFound(w, r)
 			return
 		}
@@ -170,14 +171,15 @@ func TestRunServerRestartLogsAndWaitsForHealth(t *testing.T) {
 	assert.Equal(t, []string{"restart"}, runnerArgs)
 	assertContainsInOrder(t, output,
 		"Restarting server...",
-		"Waiting for server to become healthy...",
+		"Waiting for server to become ready...",
 		"Server ready.",
 	)
 }
 
 func TestRunServerStartLogsAndWaitsForHealth(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/health" {
+		// /health gates the restart/liveness precheck; /ready gates the wait.
+		if r.URL.Path != "/health" && r.URL.Path != "/ready" {
 			http.NotFound(w, r)
 			return
 		}
@@ -221,7 +223,7 @@ func TestRunServerStartLogsAndWaitsForHealth(t *testing.T) {
 	assert.Equal(t, []string{"up", "-d", "--force-recreate"}, runnerArgs)
 	assertContainsInOrder(t, output,
 		"Starting server...",
-		"Waiting for server to become healthy...",
+		"Waiting for server to become ready...",
 		"Server ready.",
 	)
 }

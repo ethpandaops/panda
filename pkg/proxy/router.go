@@ -171,6 +171,24 @@ func (r *routerClient) RegisterToken() string {
 	return primary.RegisterToken()
 }
 
+// Ready reports readiness across the wrapped clients. When an external
+// (primary) proxy is configured, readiness tracks that proxy, since it owns the
+// datasources users expect. With only local proxies, readiness requires every
+// local client to have discovered at least once.
+func (r *routerClient) Ready() bool {
+	if r.primary != nil {
+		return r.primary.client.Ready()
+	}
+
+	for i := range r.routes {
+		if !r.routes[i].client.Ready() {
+			return false
+		}
+	}
+
+	return true
+}
+
 // Invalidate drops the primary proxy's cached token for primary-only requests.
 func (r *routerClient) Invalidate() {
 	primary := r.Primary()

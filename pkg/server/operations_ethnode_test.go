@@ -112,6 +112,7 @@ func (p *ethNodeOperationProxy) Start(_ context.Context) error { return nil }
 func (p *ethNodeOperationProxy) Stop(_ context.Context) error  { return nil }
 func (p *ethNodeOperationProxy) URL() string                   { return p.url }
 func (p *ethNodeOperationProxy) RegisterToken() string         { return proxy.NoAuthToken }
+func (p *ethNodeOperationProxy) Ready() bool                   { return true }
 func (p *ethNodeOperationProxy) Invalidate()                   {}
 func (p *ethNodeOperationProxy) RevokeToken()                  {}
 func (p *ethNodeOperationProxy) ClickHouseDatasources() []string {

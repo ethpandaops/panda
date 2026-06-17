@@ -183,6 +183,55 @@ func TestRouterWithOnlyLocalProxyHasNoPrimary(t *testing.T) {
 	}
 }
 
+func TestRouterReady(t *testing.T) {
+	t.Parallel()
+
+	log := logrus.New()
+	log.SetOutput(io.Discard)
+
+	t.Run("tracks the external primary and ignores locals", func(t *testing.T) {
+		t.Parallel()
+
+		hosted := &fakeRouterClient{url: "https://hosted.example"}
+		local := &fakeRouterClient{url: "http://local.example", ready: true}
+
+		router := NewRouter(log, []ClientRoute{
+			{Name: "hosted", Client: hosted},
+			{Name: "local", Client: local, Local: true},
+		})
+
+		if router.Ready() {
+			t.Fatal("Ready() = true, want false while the primary has not discovered")
+		}
+
+		hosted.ready = true
+		if !router.Ready() {
+			t.Fatal("Ready() = false, want true once the primary has discovered")
+		}
+	})
+
+	t.Run("local-only requires every local to be ready", func(t *testing.T) {
+		t.Parallel()
+
+		first := &fakeRouterClient{url: "http://a.example", ready: true}
+		second := &fakeRouterClient{url: "http://b.example"}
+
+		router := NewRouter(log, []ClientRoute{
+			{Name: "a", Client: first, Local: true},
+			{Name: "b", Client: second, Local: true},
+		})
+
+		if router.Ready() {
+			t.Fatal("Ready() = true, want false while a local proxy has not discovered")
+		}
+
+		second.ready = true
+		if !router.Ready() {
+			t.Fatal("Ready() = false, want true once all local proxies have discovered")
+		}
+	})
+}
+
 func TestRouterStartsStopsAndDiscoversAllClients(t *testing.T) {
 	t.Parallel()
 
@@ -273,6 +322,7 @@ type fakeRouterClient struct {
 	ethnode   bool
 	embedding bool
 	model     string
+	ready     bool
 
 	starts    int
 	stops     int
@@ -296,6 +346,7 @@ func (f *fakeRouterClient) URL() string { return f.url }
 
 func (f *fakeRouterClient) RegisterToken() string { return f.token }
 
+func (f *fakeRouterClient) Ready() bool  { return f.ready }
 func (f *fakeRouterClient) Invalidate()  {}
 func (f *fakeRouterClient) RevokeToken() {}
 

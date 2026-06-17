@@ -26,6 +26,11 @@ type Service interface {
 	// URL returns the proxy URL.
 	URL() string
 
+	// Ready reports whether the proxy layer has completed at least one
+	// successful datasource discovery. Until then there are no datasources to
+	// serve, so server readiness should be gated on it.
+	Ready() bool
+
 	// RegisterToken returns the current access token for server-to-proxy
 	// requests, or NoAuthToken when no bearer token is required.
 	RegisterToken() string

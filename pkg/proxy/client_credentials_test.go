@@ -240,3 +240,56 @@ func TestClickHouseQueryRetriesOn401(t *testing.T) {
 		t.Fatalf("expected 2 mints (initial + re-mint on 401), got %d", got)
 	}
 }
+
+func TestReadyFlipsAfterSuccessfulDiscovery(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/datasources" {
+			http.NotFound(w, r)
+			return
+		}
+
+		_ = json.NewEncoder(w).Encode(map[string]any{"clickhouse": []string{"xatu"}})
+	}))
+	t.Cleanup(srv.Close)
+
+	// No auth configured (local-proxy style): discovery should just succeed.
+	client := NewClient(logrus.New(), ClientConfig{URL: srv.URL}).(*proxyClient)
+
+	if client.Ready() {
+		t.Fatal("Ready() should be false before the first discovery")
+	}
+
+	if err := client.Discover(context.Background()); err != nil {
+		t.Fatalf("Discover error = %v", err)
+	}
+
+	if !client.Ready() {
+		t.Fatal("Ready() should be true after a successful discovery")
+	}
+}
+
+func TestReadyTrueWhenBlockedOnAuth(t *testing.T) {
+	t.Parallel()
+
+	// The proxy rejects every token, so discovery can never succeed without the
+	// user (re)authenticating. The server is up and can do no better unattended,
+	// so it must report ready rather than wedge the init/start wait at 503.
+	issuer := newFakeIssuer(t, 3600)
+	proxy := newFakeProxy(t, func(string) bool { return false })
+
+	client := newClientCredentialsClient(issuer.server.URL, proxy.URL)
+
+	if client.Ready() {
+		t.Fatal("Ready() should be false before any discovery attempt")
+	}
+
+	if err := client.Discover(context.Background()); err == nil {
+		t.Fatal("expected discovery to fail with authentication required")
+	}
+
+	if !client.Ready() {
+		t.Fatal("Ready() should be true when discovery is blocked waiting for auth")
+	}
+}

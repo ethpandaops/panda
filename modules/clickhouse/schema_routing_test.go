@@ -100,6 +100,7 @@ func (c *schemaProxyClient) Start(_ context.Context) error { return nil }
 func (c *schemaProxyClient) Stop(_ context.Context) error  { return nil }
 func (c *schemaProxyClient) URL() string                   { return c.url }
 func (c *schemaProxyClient) RegisterToken() string         { return c.token }
+func (c *schemaProxyClient) Ready() bool                   { return true }
 func (c *schemaProxyClient) Invalidate()                   {}
 func (c *schemaProxyClient) RevokeToken()                  {}
 func (c *schemaProxyClient) ClickHouseDatasources() []string {

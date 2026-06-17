@@ -250,6 +250,7 @@ func (c *routingProxyClient) Start(_ context.Context) error { return nil }
 func (c *routingProxyClient) Stop(_ context.Context) error  { return nil }
 func (c *routingProxyClient) URL() string                   { return c.url }
 func (c *routingProxyClient) RegisterToken() string         { return c.token }
+func (c *routingProxyClient) Ready() bool                   { return true }
 func (c *routingProxyClient) Invalidate()                   {}
 func (c *routingProxyClient) RevokeToken()                  {}
 func (c *routingProxyClient) ClickHouseDatasources() []string {
