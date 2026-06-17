@@ -4,11 +4,8 @@
 
 FROM python:3.11-slim@sha256:a3ab0b966bc4e91546a033e22093cb840908979487a9fc0e6e38295747e49ac0
 
-# Install uv and system dependencies
+# Install uv
 COPY --from=ghcr.io/astral-sh/uv:0.11.17@sha256:03bdc89bb9798628846e60c3a9ad19006c8c3c724ccd2985a33145c039a0577b /uv /uvx /bin/
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
 RUN useradd -m -s /bin/bash sandbox
@@ -19,10 +16,14 @@ RUN mkdir -p /shared /output && \
 
 # Install Python dependencies. requirements.txt is compiled from requirements.in
 # with hashes (`uv pip compile --generate-hashes --universal`); --require-hashes
-# makes pip refuse anything that doesn't match the lock.
+# makes pip refuse anything that doesn't match the lock. build-essential is only
+# needed to compile any sdist-only deps; it is installed and purged in the same
+# layer so it never lands in the final image.
 COPY sandbox/requirements.txt /tmp/requirements.txt
-RUN uv pip install --system --no-cache --require-hashes -r /tmp/requirements.txt && \
-    rm /tmp/requirements.txt
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential && \
+    uv pip install --system --no-cache --require-hashes -r /tmp/requirements.txt && \
+    apt-get purge -y --auto-remove build-essential && \
+    rm -rf /var/lib/apt/lists/* /tmp/requirements.txt
 
 # Install the ethpandaops platform library
 COPY sandbox/ethpandaops /opt/ethpandaops-pkg
