@@ -22,7 +22,27 @@ if [ -S /var/run/docker.sock ]; then
     addgroup panda "$DOCKER_GROUP" 2>/dev/null || usermod -aG "$DOCKER_GROUP" panda 2>/dev/null || true
 fi
 
-# Drop to the panda user and exec the requested command.
+# Decide which user to run the server as.
+#
+# By default we drop to the unprivileged `panda` user (UID 1000). That works
+# under rootful Docker, where the host user who ran `panda auth login` typically
+# also has UID 1000, so the mounted 0600 credential files are owned by `panda`
+# inside the container and stay readable after the drop.
+#
+# Under rootless Docker the host user maps to container UID 0, so host-written
+# files (the mounted credentials) appear owned by root inside the container and
+# the `panda` user can neither read nor refresh them — proxy auth then fails
+# with "permission denied" and `panda datasources` comes back empty. When the
+# mounted credentials are root-owned, run as root instead: under rootless that
+# maps back to the unprivileged host user (so it is not a privilege escalation),
+# and HOME is set so the credential path beneath it still resolves.
+CRED_DIR="/home/panda/.config/panda/credentials"
+if [ -d "$CRED_DIR" ] && [ "$(stat -c '%u' "$CRED_DIR" 2>/dev/null)" = "0" ]; then
+    export HOME=/home/panda
+    exec "$@"
+fi
+
+# Rootful: drop to the panda user.
 # Support both su-exec (Alpine) and gosu (Debian).
 if command -v su-exec >/dev/null 2>&1; then
     exec su-exec panda "$@"
