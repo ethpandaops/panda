@@ -1015,18 +1015,27 @@ func (s *server) EthNodeDatasourceInfo() []types.DatasourceInfo {
 	return ethNodeDatasourceInfo(s.EthNodeAvailable())
 }
 
-// EmbeddingAvailable returns true if the embedding service is configured.
+// EmbeddingAvailable returns true if either the v1 or the v2 embedding service
+// is configured. A proxy that only configures embedding_v2 still offers
+// embedding (via /v2/embedding), and the search runtime discovers v2 by probe.
 func (s *server) EmbeddingAvailable() bool {
-	return s.embeddingService != nil
+	return s.embeddingService != nil || s.embeddingServiceV2 != nil
 }
 
-// EmbeddingModel returns the configured embedding model name.
+// EmbeddingModel returns the advertised embedding model name. It prefers the v1
+// model — what /embed serves and what unspecified/legacy clients get — and falls
+// through to the v2 model so a v2-only proxy still advertises a non-empty model.
+// v2-capable clients discover the v2 model from the /v2/embedding response.
 func (s *server) EmbeddingModel() string {
-	if s.embeddingService == nil {
-		return ""
+	if s.embeddingService != nil {
+		return s.embeddingService.Model()
 	}
 
-	return s.embeddingService.Model()
+	if s.embeddingServiceV2 != nil {
+		return s.embeddingServiceV2.Model()
+	}
+
+	return ""
 }
 
 func advertisedURLs(listenAddr string) (string, string) {
