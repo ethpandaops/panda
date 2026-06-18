@@ -75,9 +75,22 @@ func Build(
 		return runtime, nil
 	}
 
-	model := proxyService.EmbeddingModel()
+	// Prefer the versioned /v2/embedding route (fp32 @ a fixed dimensionality,
+	// model advertised per response). Fall back to the legacy /embed routes when
+	// the proxy does not expose v2, so a new server still works against an older
+	// or self-hosted proxy. The model is whatever the chosen route serves: v2's
+	// advertised model, or v1's configured model.
+	tokenFn := func() string { return proxyService.RegisterToken() }
 
-	log.WithField("model", model).
+	model := proxyService.EmbeddingModel()
+	useV2 := false
+
+	if v2Model, ok := embedding.ProbeV2(ctx, proxyService.URL(), tokenFn); ok && v2Model != "" {
+		model = v2Model
+		useV2 = true
+	}
+
+	log.WithFields(logrus.Fields{"model": model, "v2": useV2}).
 		Info("Using remote embedder via proxy")
 
 	var localCache cache.Cache
@@ -93,13 +106,14 @@ func Build(
 		}
 	}
 
-	embedder := embedding.NewRemote(
+	embedder := embedding.NewRemoteWithEndpoint(
 		log,
 		proxyService.URL(),
-		func() string { return proxyService.RegisterToken() },
+		tokenFn,
 		proxyService.Invalidate,
 		localCache,
 		model,
+		useV2,
 	)
 
 	runtime.embedder = embedder
