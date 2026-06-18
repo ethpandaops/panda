@@ -72,6 +72,7 @@ type server struct {
 	ethNodeHandler      *handlers.EthNodeHandler
 	benchmarkoorHandler *handlers.BenchmarkoorHandler
 	embeddingService    *EmbeddingService
+	embeddingServiceV2  *EmbeddingService
 	githubHandler       *handlers.GitHubHandler
 
 	autodiscoverHTTPClient  *http.Client
@@ -211,6 +212,24 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 		)
 	}
 
+	// Create v2 embedding service if configured (independent model + dimensions).
+	if cfg.EmbeddingV2 != nil {
+		embCacheV2, err := buildEmbeddingCache(cfg.EmbeddingV2.Cache)
+		if err != nil {
+			return nil, fmt.Errorf("creating v2 embedding cache: %w", err)
+		}
+
+		s.embeddingServiceV2 = NewEmbeddingServiceWithDimensions(
+			log,
+			embCacheV2,
+			cfg.EmbeddingV2.APIKey,
+			cfg.EmbeddingV2.Model,
+			cfg.EmbeddingV2.APIURL,
+			0,
+			cfg.EmbeddingV2.Dimensions,
+		)
+	}
+
 	// Create GitHub handler if configured.
 	if cfg.GitHub != nil && cfg.GitHub.Token != "" {
 		s.githubTriggerLimiter = NewRateLimiter(log, RateLimiterConfig{
@@ -275,6 +294,11 @@ func (s *server) registerRoutes() {
 	if s.embeddingService != nil {
 		s.mux.Method(http.MethodPost, "/embed", s.metricsMiddleware(chain(http.HandlerFunc(s.handleEmbed))))
 		s.mux.Method(http.MethodPost, "/embed/check", s.metricsMiddleware(chain(http.HandlerFunc(s.handleEmbedCheck))))
+	}
+
+	if s.embeddingServiceV2 != nil {
+		s.mux.Method(http.MethodPost, "/v2/embedding", s.metricsMiddleware(chain(http.HandlerFunc(s.handleEmbedV2))))
+		s.mux.Method(http.MethodPost, "/v2/embedding/check", s.metricsMiddleware(chain(http.HandlerFunc(s.handleEmbedCheckV2))))
 	}
 
 	// Authenticated routes.
@@ -515,6 +539,77 @@ func (s *server) handleEmbedCheck(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleEmbedV2 embeds items via the v2 embedding service. The response
+// advertises the model and dimensions; vectors are fp32. The model behind this
+// route is config-swappable, and the advertised model lets clients detect a
+// change and re-index.
+func (s *server) handleEmbedV2(w http.ResponseWriter, r *http.Request) {
+	var req EmbedRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
+
+		return
+	}
+
+	if len(req.Items) > maxEmbedItems {
+		http.Error(w, fmt.Sprintf("too many items: %d exceeds maximum of %d", len(req.Items), maxEmbedItems), http.StatusBadRequest)
+
+		return
+	}
+
+	resp, err := s.embeddingServiceV2.Embed(r.Context(), req.Items)
+	if err != nil {
+		s.log.WithError(err).Error("V2 embedding request failed")
+		http.Error(w, fmt.Sprintf("embedding failed: %v", err), http.StatusInternalServerError)
+
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	out := EmbedV2Response{
+		Model:      resp.Model,
+		Dimensions: s.embeddingServiceV2.Dimensions(),
+		Results:    resp.Results,
+	}
+
+	if err := json.NewEncoder(w).Encode(out); err != nil {
+		s.log.WithError(err).Error("Failed to encode v2 embedding response")
+	}
+}
+
+// handleEmbedCheckV2 returns cached v2 vectors for the given hashes without
+// embedding new content. The response advertises the model.
+func (s *server) handleEmbedCheckV2(w http.ResponseWriter, r *http.Request) {
+	var req EmbedCheckRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
+
+		return
+	}
+
+	results, err := s.embeddingServiceV2.CheckCached(r.Context(), req.Hashes)
+	if err != nil {
+		s.log.WithError(err).Error("V2 embed check failed")
+		http.Error(w, fmt.Sprintf("embed check failed: %v", err), http.StatusInternalServerError)
+
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	out := EmbedV2CheckResponse{
+		Model:  s.embeddingServiceV2.Model(),
+		Cached: results,
+	}
+
+	if err := json.NewEncoder(w).Encode(out); err != nil {
+		s.log.WithError(err).Error("Failed to encode v2 embed check response")
+	}
+}
+
 // handleBranding returns the success_page config as JSON, or 204 if not configured.
 func (s *server) handleBranding(w http.ResponseWriter, _ *http.Request) {
 	if s.cfg.Auth.SuccessPage == nil {
@@ -644,6 +739,13 @@ func (s *server) Stop(ctx context.Context) error {
 	if s.embeddingService != nil {
 		if err := s.embeddingService.Close(); err != nil {
 			s.log.WithError(err).Warn("Error closing embedding service")
+		}
+	}
+
+	// Close v2 embedding service.
+	if s.embeddingServiceV2 != nil {
+		if err := s.embeddingServiceV2.Close(); err != nil {
+			s.log.WithError(err).Warn("Error closing v2 embedding service")
 		}
 	}
 

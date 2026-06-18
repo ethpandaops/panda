@@ -48,8 +48,13 @@ type ServerConfig struct {
 	// Metrics holds Prometheus metrics configuration.
 	Metrics MetricsConfig `yaml:"metrics"`
 
-	// Embedding holds optional embedding API configuration.
+	// Embedding holds optional embedding API configuration (v1 route: /embed).
 	Embedding *EmbeddingConfig `yaml:"embedding,omitempty"`
+
+	// EmbeddingV2 holds optional configuration for the v2 embedding route
+	// (/v2/embedding). The route's contract is fixed (fp32, model advertised in
+	// the response); the model itself is swappable here without touching v1.
+	EmbeddingV2 *EmbeddingConfig `yaml:"embedding_v2,omitempty"`
 
 	// GitHub holds optional GitHub API configuration for triggering workflows.
 	GitHub *GitHubAPIConfig `yaml:"github,omitempty"`
@@ -309,6 +314,10 @@ type EmbeddingConfig struct {
 	// APIURL is the base URL of the embedding API (default: "https://openrouter.ai/api/v1").
 	APIURL string `yaml:"api_url,omitempty"`
 
+	// Dimensions, when > 0, requests a fixed output dimensionality (Matryoshka)
+	// from the embedding API. Used by the v2 embedding route; ignored by v1.
+	Dimensions int `yaml:"dimensions,omitempty"`
+
 	// Cache holds embedding cache configuration.
 	Cache EmbeddingCacheConfig `yaml:"cache"`
 }
@@ -407,6 +416,25 @@ func (c *ServerConfig) ApplyDefaults() {
 		}
 	}
 
+	// Embedding v2 defaults.
+	if c.EmbeddingV2 != nil {
+		if c.EmbeddingV2.Model == "" {
+			c.EmbeddingV2.Model = "google/gemini-embedding-2"
+		}
+
+		if c.EmbeddingV2.APIURL == "" {
+			c.EmbeddingV2.APIURL = "https://openrouter.ai/api/v1"
+		}
+
+		if c.EmbeddingV2.Dimensions == 0 {
+			c.EmbeddingV2.Dimensions = 1536
+		}
+
+		if c.EmbeddingV2.Cache.Backend == "" {
+			c.EmbeddingV2.Cache.Backend = "memory"
+		}
+	}
+
 	// ClickHouse defaults.
 	for i := range c.ClickHouse {
 		if len(c.ClickHouse[i].Variants) > 0 {
@@ -477,6 +505,17 @@ func (c *ServerConfig) Validate() error {
 
 		if c.Embedding.Cache.Backend == "redis" && c.Embedding.Cache.RedisURL == "" {
 			return fmt.Errorf("embedding.cache.redis_url is required when cache backend is 'redis'")
+		}
+	}
+
+	// Validate embedding v2 config.
+	if c.EmbeddingV2 != nil {
+		if c.EmbeddingV2.APIKey == "" {
+			return fmt.Errorf("embedding_v2.api_key is required when embedding_v2 is configured")
+		}
+
+		if c.EmbeddingV2.Cache.Backend == "redis" && c.EmbeddingV2.Cache.RedisURL == "" {
+			return fmt.Errorf("embedding_v2.cache.redis_url is required when cache backend is 'redis'")
 		}
 	}
 

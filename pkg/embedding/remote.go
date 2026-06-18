@@ -22,18 +22,21 @@ const (
 	maxBatchSize = 500
 )
 
-// embedCheckRequest is the request payload for the proxy /embed/check endpoint.
+// embedCheckRequest is the request payload for the proxy embed-check endpoint.
 type embedCheckRequest struct {
 	Model  string   `json:"model"`
 	Hashes []string `json:"hashes"`
 }
 
-// embedCheckResponse is the response from /embed/check.
+// embedCheckResponse is the response from the embed-check endpoint. Model is
+// populated by the v2 route (and empty on v1) so callers can observe which
+// embedding model the proxy is currently serving.
 type embedCheckResponse struct {
+	Model  string        `json:"model"`
 	Cached []embedResult `json:"cached"`
 }
 
-// embedRequest is the request payload for the proxy /embed endpoint.
+// embedRequest is the request payload for the proxy embed endpoint.
 type embedRequest struct {
 	Items []embedItem `json:"items"`
 }
@@ -44,10 +47,13 @@ type embedItem struct {
 	Text string `json:"text"`
 }
 
-// embedResponse is the response payload from the proxy /embed endpoint.
+// embedResponse is the response payload from the proxy embed endpoint. Both v1
+// and v2 advertise the serving model; v2 additionally reports its fixed output
+// dimensionality.
 type embedResponse struct {
-	Results []embedResult `json:"results"`
-	Model   string        `json:"model"`
+	Results    []embedResult `json:"results"`
+	Model      string        `json:"model"`
+	Dimensions int           `json:"dimensions"`
 }
 
 // embedResult is a single embedding result.
@@ -56,8 +62,11 @@ type embedResult struct {
 	Vector []float32 `json:"vector"`
 }
 
-// RemoteEmbedder implements Embedder by calling the proxy's /embed endpoint.
+// RemoteEmbedder implements Embedder by calling the proxy's embed endpoint.
 // An optional local cache avoids round-trips to the proxy on warm restarts.
+// When v2 is set it targets the versioned /v2/embedding routes (fp32 at a fixed
+// dimensionality, model advertised per response); otherwise it uses the legacy
+// /embed routes.
 type RemoteEmbedder struct {
 	log          logrus.FieldLogger
 	proxyURL     string
@@ -66,26 +75,14 @@ type RemoteEmbedder struct {
 	invalidateFn func()
 	localCache   cache.Cache
 	model        string
+	v2           bool
 	progressFn   func(completed, total int)
-}
-
-// OnProgress registers a callback invoked during EmbedBatch with the number of
-// documents embedded so far and the total in the batch. It enables
-// document-level progress reporting for index builds.
-func (e *RemoteEmbedder) OnProgress(fn func(completed, total int)) {
-	e.progressFn = fn
-}
-
-func (e *RemoteEmbedder) reportProgress(completed, total int) {
-	if e.progressFn != nil {
-		e.progressFn(completed, total)
-	}
 }
 
 // Compile-time interface check.
 var _ Embedder = (*RemoteEmbedder)(nil)
 
-// NewRemote creates a new RemoteEmbedder that calls the proxy's /embed endpoint.
+// NewRemote creates a RemoteEmbedder that calls the proxy's legacy /embed routes.
 // tokenFn is called on each request to get the current auth token, and
 // invalidateFn drops the cached token so a 401/403 can be retried with a fresh
 // one (it may be nil to disable the retry).
@@ -99,6 +96,20 @@ func NewRemote(
 	localCache cache.Cache,
 	model string,
 ) *RemoteEmbedder {
+	return NewRemoteWithEndpoint(log, proxyURL, tokenFn, invalidateFn, localCache, model, false)
+}
+
+// NewRemoteWithEndpoint creates a RemoteEmbedder targeting either the v2
+// (/v2/embedding) routes when v2 is true, or the legacy /embed routes otherwise.
+func NewRemoteWithEndpoint(
+	log logrus.FieldLogger,
+	proxyURL string,
+	tokenFn func() string,
+	invalidateFn func(),
+	localCache cache.Cache,
+	model string,
+	v2 bool,
+) *RemoteEmbedder {
 	return &RemoteEmbedder{
 		log:          log.WithField("component", "remote-embedder"),
 		proxyURL:     proxyURL,
@@ -107,7 +118,22 @@ func NewRemote(
 		invalidateFn: invalidateFn,
 		localCache:   localCache,
 		model:        model,
+		v2:           v2,
 	}
+}
+
+// Model returns the embedding model this embedder is keyed to. Index builds use
+// it to tag the embedding space they were built in, so a later change to the
+// proxy's served model can be detected and trigger a re-index.
+func (e *RemoteEmbedder) Model() string {
+	return e.model
+}
+
+// OnProgress registers a callback invoked during EmbedBatch with the number of
+// documents embedded so far and the total in the batch. It enables
+// document-level progress reporting for index builds.
+func (e *RemoteEmbedder) OnProgress(fn func(completed, total int)) {
+	e.progressFn = fn
 }
 
 // Embed returns the L2-normalized embedding vector for a single text string.
@@ -328,6 +354,28 @@ func (e *RemoteEmbedder) Close() error {
 	return nil
 }
 
+func (e *RemoteEmbedder) reportProgress(completed, total int) {
+	if e.progressFn != nil {
+		e.progressFn(completed, total)
+	}
+}
+
+func (e *RemoteEmbedder) embedPath() string {
+	if e.v2 {
+		return "/v2/embedding"
+	}
+
+	return "/embed"
+}
+
+func (e *RemoteEmbedder) checkPath() string {
+	if e.v2 {
+		return "/v2/embedding/check"
+	}
+
+	return "/embed/check"
+}
+
 func (e *RemoteEmbedder) localCacheKey(textHash string) string {
 	return e.model + ":" + textHash
 }
@@ -345,7 +393,7 @@ func (e *RemoteEmbedder) queueLocalCache(toCache map[string][]byte, textHash str
 	toCache[e.localCacheKey(textHash)] = data
 }
 
-// embedDirect sends all items to /embed without checking the cache first.
+// embedDirect sends all items to the embed route without checking the cache first.
 func (e *RemoteEmbedder) embedDirect(
 	texts []string,
 	hashes []string,
@@ -418,7 +466,7 @@ func (e *RemoteEmbedder) checkCached(hashes []string) ([]embedResult, error) {
 		return nil, fmt.Errorf("marshaling check request: %w", err)
 	}
 
-	resp, err := e.doWithAuthRetry("/embed/check", reqBody)
+	resp, err := e.doWithAuthRetry(e.checkPath(), reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("calling embed check: %w", err)
 	}
@@ -444,7 +492,7 @@ func (e *RemoteEmbedder) callEmbed(items []embedItem) (*embedResponse, error) {
 		return nil, fmt.Errorf("marshaling embed request: %w", err)
 	}
 
-	resp, err := e.doWithAuthRetry("/embed", reqBody)
+	resp, err := e.doWithAuthRetry(e.embedPath(), reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("calling proxy embed: %w", err)
 	}

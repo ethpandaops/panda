@@ -59,6 +59,22 @@ type EmbedResult struct {
 	Vector []float32 `json:"vector"`
 }
 
+// EmbedV2Response is the response payload from the /v2/embedding endpoint. It
+// advertises the model and dimensions so clients can detect a model change and
+// re-index. Vectors are fp32.
+type EmbedV2Response struct {
+	Model      string        `json:"model"`
+	Dimensions int           `json:"dimensions"`
+	Results    []EmbedResult `json:"results"`
+}
+
+// EmbedV2CheckResponse is the response from /v2/embedding/check. It advertises
+// the model so clients can detect a model change.
+type EmbedV2CheckResponse struct {
+	Model  string        `json:"model"`
+	Cached []EmbedResult `json:"cached"`
+}
+
 // EmbeddingService handles embedding requests using a remote API with caching.
 type EmbeddingService struct {
 	log          logrus.FieldLogger
@@ -68,15 +84,31 @@ type EmbeddingService struct {
 	apiURL       string
 	client       *http.Client
 	costPerToken float64
+	// dimensions, when > 0, requests a fixed output dimensionality from the
+	// embedding API (Matryoshka truncation). 0 leaves it unset (native dims).
+	dimensions int
 }
 
-// NewEmbeddingService creates a new EmbeddingService.
-// If costPerToken is 0, the service fetches pricing from the API's /models endpoint.
+// NewEmbeddingService creates a new EmbeddingService with native output
+// dimensionality. If costPerToken is 0, the service fetches pricing from the
+// API's /models endpoint.
 func NewEmbeddingService(
 	log logrus.FieldLogger,
 	c cache.Cache,
 	apiKey, model, apiURL string,
 	costPerToken float64,
+) *EmbeddingService {
+	return NewEmbeddingServiceWithDimensions(log, c, apiKey, model, apiURL, costPerToken, 0)
+}
+
+// NewEmbeddingServiceWithDimensions creates a new EmbeddingService that requests
+// a fixed output dimensionality from the embedding API when dimensions > 0.
+func NewEmbeddingServiceWithDimensions(
+	log logrus.FieldLogger,
+	c cache.Cache,
+	apiKey, model, apiURL string,
+	costPerToken float64,
+	dimensions int,
 ) *EmbeddingService {
 	svcLog := log.WithField("component", "embedding-service")
 	normalizedURL := strings.TrimRight(apiURL, "/")
@@ -103,12 +135,31 @@ func NewEmbeddingService(
 		apiURL:       normalizedURL,
 		client:       httpClient,
 		costPerToken: costPerToken,
+		dimensions:   dimensions,
 	}
 }
 
 // Model returns the configured embedding model name.
 func (s *EmbeddingService) Model() string {
 	return s.model
+}
+
+// Dimensions returns the configured output dimensionality, or 0 for native.
+func (s *EmbeddingService) Dimensions() int {
+	return s.dimensions
+}
+
+// cacheKeyPrefix returns the cache-key namespace for this service's vectors.
+// It folds the requested dimensionality into the key when set (> 0), so two
+// services on the same model id but different output dimensions never collide.
+// Native-dimension services (dimensions == 0, i.e. v1) keep the legacy
+// {model}: prefix unchanged, so existing cached vectors stay valid.
+func (s *EmbeddingService) cacheKeyPrefix() string {
+	if s.dimensions > 0 {
+		return s.model + ":" + strconv.Itoa(s.dimensions) + ":"
+	}
+
+	return s.model + ":"
 }
 
 // Embed computes embeddings for the given items, using the cache where possible.
@@ -124,11 +175,11 @@ func (s *EmbeddingService) Embed(ctx context.Context, items []EmbedItem) (*Embed
 
 	s.log.WithField("items", len(items)).Info("Embed request received")
 
-	// Build cache keys: {model}:{hash}.
+	// Build cache keys: {model}:{hash} (or {model}:{dims}:{hash} when dims set).
 	cacheKeys := make([]string, len(items))
 
 	for i, item := range items {
-		cacheKeys[i] = s.model + ":" + item.Hash
+		cacheKeys[i] = s.cacheKeyPrefix() + item.Hash
 	}
 
 	// Check cache for existing vectors.
@@ -266,7 +317,7 @@ func (s *EmbeddingService) CheckCached(ctx context.Context, hashes []string) ([]
 
 	cacheKeys := make([]string, len(hashes))
 	for i, h := range hashes {
-		cacheKeys[i] = s.model + ":" + h
+		cacheKeys[i] = s.cacheKeyPrefix() + h
 	}
 
 	cached, err := s.cache.GetMulti(ctx, cacheKeys)
@@ -312,6 +363,9 @@ func (s *EmbeddingService) Close() error {
 type openRouterRequest struct {
 	Model string   `json:"model"`
 	Input []string `json:"input"`
+	// Dimensions requests a fixed output size (Matryoshka). Omitted when 0 so
+	// callers using native dimensionality send a byte-identical request.
+	Dimensions int `json:"dimensions,omitempty"`
 }
 
 // openRouterResponse is the response body from the OpenRouter embeddings API.
@@ -334,8 +388,9 @@ type openRouterEmbedding struct {
 
 func (s *EmbeddingService) callEmbeddingAPI(ctx context.Context, texts []string) ([][]float32, *openRouterUsage, error) {
 	reqBody := openRouterRequest{
-		Model: s.model,
-		Input: texts,
+		Model:      s.model,
+		Input:      texts,
+		Dimensions: s.dimensions,
 	}
 
 	body, err := json.Marshal(reqBody)
