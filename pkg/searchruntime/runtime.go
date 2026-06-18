@@ -388,8 +388,17 @@ func (r *Runtime) reindex(model string, useV2 bool) {
 		r.SpecsIndex.Swap(nil)
 	}
 
+	// Track whether every index rebuilt. builtModel only advances on full
+	// success: a partial failure (e.g. a transient proxy timeout on one index)
+	// must leave the model-change guard unsatisfied so the next tick re-enters
+	// reindex and retries — otherwise the failed index would stay parked
+	// not-ready forever, since the guard would never fire again.
+	ok := true
+
 	if idx, err := resource.NewExampleIndex(r.log, embedder, resource.GetQueryExamples(r.moduleRegistry)); err != nil {
 		r.log.WithError(err).Warn("Re-index: example index rebuild failed")
+
+		ok = false
 	} else {
 		r.ExampleIndex.Swap(idx)
 	}
@@ -397,6 +406,8 @@ func (r *Runtime) reindex(model string, useV2 bool) {
 	if r.RunbookIndex != nil && r.RunbookRegistry != nil {
 		if idx, err := resource.NewRunbookIndex(r.log, embedder, r.RunbookRegistry.All()); err != nil {
 			r.log.WithError(err).Warn("Re-index: runbook index rebuild failed")
+
+			ok = false
 		} else {
 			r.RunbookIndex.Swap(idx)
 		}
@@ -405,6 +416,8 @@ func (r *Runtime) reindex(model string, useV2 bool) {
 	if r.EIPIndex != nil && r.EIPRegistry != nil {
 		if idx, err := resource.NewEIPIndex(r.log, embedder, r.EIPRegistry.All()); err != nil {
 			r.log.WithError(err).Warn("Re-index: EIP index rebuild failed")
+
+			ok = false
 		} else {
 			r.EIPIndex.Swap(idx)
 		}
@@ -413,9 +426,21 @@ func (r *Runtime) reindex(model string, useV2 bool) {
 	if r.SpecsIndex != nil && r.SpecsRegistry != nil {
 		if idx, err := resource.NewConsensusSpecIndex(r.log, embedder, r.SpecsRegistry.AllSpecs(), r.SpecsRegistry.AllConstants()); err != nil {
 			r.log.WithError(err).Warn("Re-index: consensus spec index rebuild failed")
+
+			ok = false
 		} else {
 			r.SpecsIndex.Swap(idx)
 		}
+	}
+
+	if !ok {
+		// Don't advance builtModel — the next tick will re-detect the model
+		// change and retry. Any index that failed stays not-ready (never mixing
+		// model spaces) until a retry rebuilds it.
+		r.log.WithField("model", model).
+			Warn("Re-index incomplete; some indices failed to rebuild — will retry on the next tick")
+
+		return
 	}
 
 	r.embedder = embedder
