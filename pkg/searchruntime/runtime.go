@@ -26,12 +26,21 @@ import (
 type Runtime struct {
 	ExampleIndex    *resource.RefreshableExampleIndex
 	RunbookRegistry *runbooks.Registry
-	RunbookIndex    *resource.RunbookIndex
+	RunbookIndex    *resource.RefreshableRunbookIndex
 	EIPRegistry     *eips.Registry
-	EIPIndex        *resource.EIPIndex
+	EIPIndex        *resource.RefreshableEIPIndex
 	SpecsRegistry   *consensusspecs.Registry
-	SpecsIndex      *resource.ConsensusSpecIndex
+	SpecsIndex      *resource.RefreshableConsensusSpecIndex
 	embedder        embedding.Embedder
+
+	// Retained so the background refresher can rebuild every index under a new
+	// embedding model when the proxy's served model changes (the indices are
+	// content-addressed by model, so a swap requires a full re-embed).
+	log            logrus.FieldLogger
+	moduleRegistry *module.Registry
+	proxyService   proxy.Service
+	localCache     cache.Cache
+	builtModel     string
 
 	stop chan struct{}
 	wg   sync.WaitGroup
@@ -80,15 +89,7 @@ func Build(
 	// the proxy does not expose v2, so a new server still works against an older
 	// or self-hosted proxy. The model is whatever the chosen route serves: v2's
 	// advertised model, or v1's configured model.
-	tokenFn := func() string { return proxyService.RegisterToken() }
-
-	model := proxyService.EmbeddingModel()
-	useV2 := false
-
-	if v2Model, ok := embedding.ProbeV2(ctx, proxyService.URL(), tokenFn); ok && v2Model != "" {
-		model = v2Model
-		useV2 = true
-	}
+	model, useV2 := resolveModel(ctx, proxyService)
 
 	log.WithFields(logrus.Fields{"model": model, "v2": useV2}).
 		Info("Using remote embedder via proxy")
@@ -106,16 +107,13 @@ func Build(
 		}
 	}
 
-	embedder := embedding.NewRemoteWithEndpoint(
-		log,
-		proxyService.URL(),
-		tokenFn,
-		proxyService.Invalidate,
-		localCache,
-		model,
-		useV2,
-	)
+	runtime.log = log
+	runtime.moduleRegistry = moduleRegistry
+	runtime.proxyService = proxyService
+	runtime.localCache = localCache
+	runtime.builtModel = model
 
+	embedder := runtime.newEmbedder(model, useV2)
 	runtime.embedder = embedder
 
 	// Log document-level embedding progress so operators can watch the index
@@ -149,7 +147,7 @@ func Build(
 	}
 
 	runtime.ExampleIndex = resource.NewRefreshableExampleIndex(exampleIndex)
-	runtime.startExampleRefresh(log, moduleRegistry, exampleSignature(examples))
+	initialSig := exampleSignature(examples)
 
 	runbookReg, err := runbooks.NewRegistry(log)
 	if err != nil {
@@ -161,6 +159,8 @@ func Build(
 
 	if runbookReg.Count() == 0 {
 		log.Warn("No runbooks found, runbook search will be disabled")
+		runtime.startRefresh(initialSig)
+
 		return runtime, nil
 	}
 
@@ -173,7 +173,7 @@ func Build(
 		return nil, fmt.Errorf("building runbook index: %w", err)
 	}
 
-	runtime.RunbookIndex = runbookIndex
+	runtime.RunbookIndex = resource.NewRefreshableRunbookIndex(runbookIndex)
 
 	// Fetch EIP and consensus-specs registries concurrently. Both make
 	// independent GitHub API calls, so parallelizing them reduces startup
@@ -218,7 +218,7 @@ func Build(
 			log.WithError(indexErr).Warn("Failed to build EIP index — EIP search disabled")
 		} else {
 			runtime.EIPRegistry = eipReg
-			runtime.EIPIndex = eipIndex
+			runtime.EIPIndex = resource.NewRefreshableEIPIndex(eipIndex)
 			log.Info("Semantic search EIP index built")
 		}
 	}
@@ -242,10 +242,12 @@ func Build(
 			log.WithError(indexErr).Warn("Failed to build consensus specs index — specs search disabled")
 		} else {
 			runtime.SpecsRegistry = specsReg
-			runtime.SpecsIndex = specsIndex
+			runtime.SpecsIndex = resource.NewRefreshableConsensusSpecIndex(specsIndex)
 			log.Info("Semantic search consensus specs index built")
 		}
 	}
+
+	runtime.startRefresh(initialSig)
 
 	return runtime, nil
 }
@@ -273,10 +275,44 @@ func (r *Runtime) Close() error {
 	return nil
 }
 
-// startExampleRefresh rebuilds the example search index when the exposed
-// example set changes (e.g. the proxy's dataset declarations changed scoping).
-// Rebuilds are skipped while the set is unchanged, so the poll is cheap.
-func (r *Runtime) startExampleRefresh(log logrus.FieldLogger, moduleRegistry *module.Registry, initialSig uint64) {
+// resolveModel returns the embedding model the server should use and whether it
+// is reached via the versioned /v2/embedding route. It probes for v2 and falls
+// back to the proxy's advertised v1 model. This is the single source of truth
+// for "which model is the proxy serving right now" — used at startup and by the
+// background refresher to detect a model change.
+func resolveModel(ctx context.Context, proxyService proxy.Service) (string, bool) {
+	tokenFn := func() string { return proxyService.RegisterToken() }
+
+	if v2Model, ok := embedding.ProbeV2(ctx, proxyService.URL(), tokenFn); ok && v2Model != "" {
+		return v2Model, true
+	}
+
+	return proxyService.EmbeddingModel(), false
+}
+
+// newEmbedder builds a proxy-backed embedder for the given model and route,
+// reusing the runtime's shared local cache.
+func (r *Runtime) newEmbedder(model string, useV2 bool) *embedding.RemoteEmbedder {
+	tokenFn := func() string { return r.proxyService.RegisterToken() }
+
+	return embedding.NewRemoteWithEndpoint(
+		r.log,
+		r.proxyService.URL(),
+		tokenFn,
+		r.proxyService.Invalidate,
+		r.localCache,
+		model,
+		useV2,
+	)
+}
+
+// startRefresh runs the single background poll that (1) re-indexes the whole
+// corpus when the proxy's served embedding model changes — the indices are keyed
+// by model, so a change requires re-embedding under the new model — and otherwise
+// (2) rebuilds the example index when the exposed example set changes. The model
+// check takes priority: serving a stale-model index after the proxy switched
+// would dot-product a new-model query against old-model vectors (garbage).
+func (r *Runtime) startRefresh(initialSig uint64) {
 	r.wg.Add(1)
 
 	go func() {
@@ -292,16 +328,24 @@ func (r *Runtime) startExampleRefresh(log logrus.FieldLogger, moduleRegistry *mo
 			case <-r.stop:
 				return
 			case <-ticker.C:
-				examples := resource.GetQueryExamples(moduleRegistry)
+				model, useV2 := resolveModel(context.Background(), r.proxyService)
+				if model != "" && model != r.builtModel {
+					r.reindex(model, useV2)
+					lastSig = exampleSignature(resource.GetQueryExamples(r.moduleRegistry))
+
+					continue
+				}
+
+				examples := resource.GetQueryExamples(r.moduleRegistry)
 
 				sig := exampleSignature(examples)
 				if sig == lastSig {
 					continue
 				}
 
-				index, err := resource.NewExampleIndex(log, r.embedder, examples)
+				index, err := resource.NewExampleIndex(r.log, r.embedder, examples)
 				if err != nil {
-					log.WithError(err).Warn("Example index refresh failed; keeping previous index")
+					r.log.WithError(err).Warn("Example index refresh failed; keeping previous index")
 
 					continue
 				}
@@ -309,10 +353,75 @@ func (r *Runtime) startExampleRefresh(log logrus.FieldLogger, moduleRegistry *mo
 				r.ExampleIndex.Swap(index)
 				lastSig = sig
 
-				log.Info("Example search index refreshed after example set change")
+				r.log.Info("Example search index refreshed after example set change")
 			}
 		}
 	}()
+}
+
+// reindex rebuilds every active search index under a new embedding model after
+// the proxy's served model changed. It parks all indices not-ready first so no
+// in-flight search dot-products a new-model query against an old-model index,
+// rebuilds each from its retained registry, then swaps the fresh index in. A
+// brief "search reindexing" window during the rebuild is the intended, correct
+// behaviour — far better than silently mixing embedding spaces. The old embedder
+// is dropped (not closed): it shares the local cache with the new one, which the
+// runtime closes once at shutdown.
+func (r *Runtime) reindex(model string, useV2 bool) {
+	r.log.WithFields(logrus.Fields{"from": r.builtModel, "to": model, "v2": useV2}).
+		Warn("Proxy embedding model changed; re-indexing search corpus")
+
+	embedder := r.newEmbedder(model, useV2)
+
+	// Park everything not-ready up front so search never mixes model spaces.
+	r.ExampleIndex.Swap(nil)
+
+	if r.RunbookIndex != nil {
+		r.RunbookIndex.Swap(nil)
+	}
+
+	if r.EIPIndex != nil {
+		r.EIPIndex.Swap(nil)
+	}
+
+	if r.SpecsIndex != nil {
+		r.SpecsIndex.Swap(nil)
+	}
+
+	if idx, err := resource.NewExampleIndex(r.log, embedder, resource.GetQueryExamples(r.moduleRegistry)); err != nil {
+		r.log.WithError(err).Warn("Re-index: example index rebuild failed")
+	} else {
+		r.ExampleIndex.Swap(idx)
+	}
+
+	if r.RunbookIndex != nil && r.RunbookRegistry != nil {
+		if idx, err := resource.NewRunbookIndex(r.log, embedder, r.RunbookRegistry.All()); err != nil {
+			r.log.WithError(err).Warn("Re-index: runbook index rebuild failed")
+		} else {
+			r.RunbookIndex.Swap(idx)
+		}
+	}
+
+	if r.EIPIndex != nil && r.EIPRegistry != nil {
+		if idx, err := resource.NewEIPIndex(r.log, embedder, r.EIPRegistry.All()); err != nil {
+			r.log.WithError(err).Warn("Re-index: EIP index rebuild failed")
+		} else {
+			r.EIPIndex.Swap(idx)
+		}
+	}
+
+	if r.SpecsIndex != nil && r.SpecsRegistry != nil {
+		if idx, err := resource.NewConsensusSpecIndex(r.log, embedder, r.SpecsRegistry.AllSpecs(), r.SpecsRegistry.AllConstants()); err != nil {
+			r.log.WithError(err).Warn("Re-index: consensus spec index rebuild failed")
+		} else {
+			r.SpecsIndex.Swap(idx)
+		}
+	}
+
+	r.embedder = embedder
+	r.builtModel = model
+
+	r.log.WithField("model", model).Info("Re-index complete")
 }
 
 // exampleSignature is a cheap fingerprint of the example set (category, name and
