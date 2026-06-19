@@ -96,10 +96,10 @@
         value: >
           Answers from a real query over raw libp2p gossipsub data-column-sidecar
           observations for 8 June 2026 with a >5-minute propagation threshold.
-          Measured: ~8,400 late observations from ~93 distinct peers (accept roughly
-          7k-10k observations and 80-110 peers). A first-seen/deduplicated view
-          hides these laggard re-sends and lands near zero — a zero answer fails,
-          as does an ungrounded count.
+          Measured: ~46,000 late observations from ~120 distinct peers (accept
+          roughly 35k-55k observations and 100-140 peers). A first-seen/deduplicated
+          view hides these laggard re-sends and lands near zero — a zero answer
+          fails, as does an ungrounded count.
     variations:
       - For individual libp2p gossip observations of data column sidecars on 
         mainnet during 8 June 2026 (UTC), count the observations that arrived 

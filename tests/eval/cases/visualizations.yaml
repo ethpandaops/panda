@@ -12,12 +12,12 @@
     assert:
       - type: llm-rubric
         value: >
-          Produces a histogram visualization (a returned chart URL or saved image)
-          of
-          block arrival times for recent mainnet blocks, built from real queried data.
-          A textual summary with no chart artifact, or one not grounded in a real
-          query,
-          fails. Must provide the storage URL of the image it uploaded.
+          Produces a real histogram image of block arrival times for recent mainnet
+          blocks, built from real queried data, and points at that image artifact —
+          either a storage/chart URL or the path of the saved image file. A textual
+          or ASCII-only summary with no image artifact, or one not grounded in a real
+          query, fails; the question never asked for the artifact to be hosted, so a
+          saved image referenced by path passes just like an uploaded URL.
     variations:
       - Plot a histogram of block arrival times using the last 1000 blocks on 
         mainnet.
