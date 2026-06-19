@@ -21,8 +21,11 @@ import (
 
 const (
 	// credentialLockWait bounds how long an interactive write (login/logout)
-	// waits for an in-flight refresh to release the credentials file lock.
-	credentialLockWait = 5 * time.Second
+	// waits for an in-flight refresh to release the credentials file lock. A
+	// refresh holds the lock across its token-endpoint request, which the auth
+	// client caps at 30s, so this must exceed that to ride through a slow-but-
+	// valid refresh and only surface ErrCredentialBusy when one is truly stuck.
+	credentialLockWait = 35 * time.Second
 
 	// credentialLockPoll is the retry interval while waiting for the lock.
 	credentialLockPoll = 50 * time.Millisecond
