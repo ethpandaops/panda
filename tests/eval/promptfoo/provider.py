@@ -14,12 +14,21 @@ import asyncio
 import json
 import os
 import sys
+import urllib.request
+
+import yaml
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))  # tests/eval on path
 
+from agent.opencode_agent import EVAL_WORKER_OWNER_ID
 from config.settings import DEFAULT_AGENT_MODEL, DEFAULT_AGENT_ROUTE
 from harness.subject import OpencodeSubject
 from harness.trace import TOOLS_MARKER
+
+# The HTTP header the panda CLI forwards the attribution env var as
+# (pkg/attribution/attribution.go: const Header). The server reads it to scope
+# sandbox sessions to the caller, so teardown carries it to find + delete ours.
+_ATTRIBUTION_HEADER = "X-Panda-On-Behalf-Of"
 
 _SUBJECTS: dict[tuple, OpencodeSubject] = {}
 
@@ -31,6 +40,54 @@ def _subject(cfg: dict) -> OpencodeSubject:
             model=key[0], route=key[1], timeout=cfg.get("subject_timeout", 300)
         )
     return _SUBJECTS[key]
+
+
+def _server_base(subject) -> str:
+    """The base URL of the panda server THIS run talked to: the CLI route resolves it
+    from PANDA_CONFIG (the harden scratch config), else the subject's mcp_url."""
+    cfg_path = os.environ.get("PANDA_CONFIG", "")
+    if cfg_path and os.path.exists(cfg_path):
+        try:
+            with open(cfg_path) as f:
+                cfg = yaml.safe_load(f) or {}
+            base = (cfg.get("server") or {}).get("base_url")
+            if base:
+                return str(base).rstrip("/")
+        except Exception:  # noqa: BLE001 - fall through to the default
+            pass
+    return str(subject.settings.mcp_url).rstrip("/")
+
+
+def _teardown_worker_sessions(subject) -> list[str]:
+    """Destroy the sandbox sessions owned by THIS worker, now its just-finished test is
+    done. Deterministic and server-authoritative: the agent's panda CLI carries
+    X-Panda-On-Behalf-Of=<worker-id>, so the server scopes those sessions to this worker
+    (authOwnerID's attribution fallback). We ask the server for this worker's sessions and
+    delete them, carrying the same header so DestroySession's owner check passes. Tests run
+    serially within a worker, so this targets exactly the test that just finished; the short
+    TTL reaper is only a backstop for crashed/missed workers. Best-effort throughout."""
+    base = _server_base(subject)
+    headers = {_ATTRIBUTION_HEADER: EVAL_WORKER_OWNER_ID}
+    try:
+        req = urllib.request.Request(f"{base}/api/v1/sessions", headers=headers)  # noqa: S310
+        with urllib.request.urlopen(req, timeout=10) as r:  # noqa: S310
+            sessions = (json.loads(r.read().decode()) or {}).get("sessions") or []
+    except Exception:  # noqa: BLE001 - server gone / unreachable -> nothing to tear down
+        return []
+    destroyed: list[str] = []
+    for s in sessions:
+        sid = s.get("session_id")
+        if not sid:
+            continue
+        req = urllib.request.Request(  # noqa: S310
+            f"{base}/api/v1/sessions/{sid}", method="DELETE", headers=headers
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10):  # noqa: S310
+                destroyed.append(sid)
+        except Exception:  # noqa: BLE001 - already gone / not ours is fine
+            continue
+    return destroyed
 
 
 def _followups(vars_: dict) -> list:
@@ -99,8 +156,10 @@ def call_api(prompt, options, context):
         retried = True
         trace = asyncio.run(subject.run(prompts))
     subject.flush()  # push the run's Langfuse trace before promptfoo moves to the next
-    # Sandbox sessions are reaped server-side by the idle TTL (pkg/sandbox/session.go);
-    # no per-run teardown here. A leaked single-shot session self-reaps once idle.
+    # Primary cleanup: deterministically tear down THIS worker's sandbox sessions now the
+    # test is done (owner-scoped via attribution, server-authoritative). The server's short
+    # idle TTL (pkg/sandbox/session.go) is only a backstop for crashed/missed workers.
+    destroyed = _teardown_worker_sessions(subject)
     return {
         "output": _graded_output(trace),
         "tokenUsage": {
@@ -119,6 +178,7 @@ def call_api(prompt, options, context):
             "trace_id": trace.trace_id,
             "trace_url": subject.trace_url(trace.trace_id),
             "session_id": subject.session_id,
+            "destroyed_sandbox_sessions": destroyed,
             "retried": retried,
             "input_tokens": trace.input_tokens,
             "output_tokens": trace.output_tokens,

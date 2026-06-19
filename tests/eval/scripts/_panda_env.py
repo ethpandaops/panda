@@ -54,14 +54,15 @@ def write_scratch_config(port: int, *, source: Path | None = None) -> Path:
     sb["image"] = "ethpandaops-panda-sandbox:latest"
     sb["network"] = "ethpandaops-panda-harden"
     sb["host_shared_path"] = str(shared)
-    # Eval runs many agents at once (questions x phrasings x subjects, -j concurrent);
-    # the server's own idle reaper (pkg/sandbox/session.go) owns session lifecycle, so a
-    # leaked single-shot session self-reaps once it's idle past the TTL. A short 5m TTL
-    # keeps leaked containers from piling up; it's comfortably longer than any inter-turn
-    # gap in a multi-turn run (an actively-used session's lastUsed is bumped per call and
-    # is never reaped mid-execution), yet far shorter than the 30m default. With reaping
-    # the cap no longer needs to be huge — 100 sits well above run concurrency (~24) plus
-    # a TTL-window backlog.
+    # Eval runs many agents at once (questions x phrasings x subjects, -j concurrent).
+    # Primary cleanup is per-test and owner-scoped (provider.py tears down each worker's
+    # sessions when its test finishes). This short TTL is only a BACKSTOP for crashed or
+    # missed workers: the server's idle reaper (pkg/sandbox/session.go) self-reaps a leaked
+    # session once it's idle past the TTL. 5m is comfortably longer than any inter-turn gap
+    # in a multi-turn run (an actively-used session's lastUsed is bumped per call and is
+    # never reaped mid-execution), yet far shorter than the 30m default. With both the
+    # per-test delete and the reaper, the cap no longer needs to be huge — 100 sits well
+    # above run concurrency (~24) plus a TTL-window backlog.
     sessions = sb.setdefault("sessions", {})
     sessions["ttl"] = "5m"
     sessions["max_sessions"] = 100
