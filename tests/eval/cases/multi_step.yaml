@@ -19,13 +19,14 @@
       - type: llm-rubric
         value: >
           Across the turns the agent queries ~1000 recent mainnet blocks, computes
-          a
-          plausible average gas used per block (tens of millions of gas, e.g. ~10M-40M),
-          and produces a histogram of gas usage. Must provide the storage URL of the
-          chart
-          image it uploaded. A missing chart URL or an implausible gas figure fails.
-          Must re-use the session to maintain persistence between turns (look for
-          a session_id.)
+          a plausible average gas used per block (tens of millions of gas, e.g.
+          ~10M-40M), and produces a real histogram image of gas usage, pointing at
+          that image artifact — either a storage/chart URL or the path of the saved
+          image file. An ASCII-only or text-only chart with no image artifact, or an
+          implausible gas figure, fails; the question never asked for the chart to be
+          hosted, so a saved image referenced by path passes just like an uploaded
+          URL. Must re-use the session to maintain persistence between turns (look
+          for a session_id.)
 
     variations:
       - Fetch data for the most recent 1000 blocks on mainnet and write it to a 
@@ -52,16 +53,15 @@
       - type: llm-rubric
         value: >
           Across the turns the agent pulls block arrival times for recent mainnet
-          slots,
-          breaks them down per observing consensus client with mean and p95 values
-          (plausible sub-second to a few-second timings), and produces a box plot
-          comparing
-          the per-client distributions. Must provide the storage URL of the chart
-          image it
-          uploaded. A missing chart URL, no per-client breakdown, or implausible timings
-          fails.
-          Must re-use the session to maintain persistence between turns (look for
-          a session_id.)
+          slots, breaks them down per observing consensus client with mean and p95
+          values (plausible sub-second to a few-second timings), and produces a real
+          box plot image comparing the per-client distributions, pointing at that
+          image artifact — either a storage/chart URL or the path of the saved image
+          file. An ASCII-only or text-only chart with no image artifact, no per-client
+          breakdown, or implausible timings fails; the question never asked for the
+          chart to be hosted, so a saved image referenced by path passes just like an
+          uploaded URL. Must re-use the session to maintain persistence between turns
+          (look for a session_id.)
     variations:
       - Get block arrival times for the last 100 slots on mainnet.
       - Can you query the block arrival times for the last 100 slots on mainnet?
@@ -86,10 +86,13 @@
           day for 1-7 June 2026 (filtering on the partition key — these tables are
           billions of rows). Measured daily averages for that week: mainnet ~975M
           events/day (~6.8B total), hoodi ~420M/day, sepolia ~1.5M/day; accept
-          ~±15% with that network ordering. Then produces a per-network chart and
-          provides the storage URL of the uploaded image. Wrong magnitudes, a
-          missing chart URL, or wrong ordering fails. Must re-use the session to
-          maintain persistence between turns (look for a session_id.)
+          ~±15% with that network ordering. Then produces a real per-network chart
+          image and points at that image artifact — either a storage/chart URL or the
+          path of the saved image file. Wrong magnitudes, wrong ordering, or an
+          ASCII-only/text-only chart with no image artifact fails; the question never
+          asked for the chart to be hosted, so a saved image referenced by path
+          passes just like an uploaded URL. Must re-use the session to maintain
+          persistence between turns (look for a session_id.)
     variations:
       - For each day from 1-7 June 2026 (UTC), how many attestation events 
         landed in the raw beacon API event stream on mainnet?
