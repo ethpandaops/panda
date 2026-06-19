@@ -45,18 +45,15 @@ def grader_for(model: str) -> dict:
     """A promptfoo grading-provider spec for a judge model.
 
     Spelling decides the transport:
-    - a Codex model name (``gpt-5.5``, ``gpt-5.4``, ``gpt-5.3-codex``, …) or an explicit
-      ``codex:`` prefix grades through the Codex Responses API directly, authenticating
-      from ``~/.codex/auth.json`` (the same Codex/ChatGPT subscription the subject uses) —
-      so it needs NO OpenAI API key and NO OpenRouter detour.
-    - a bare non-Codex model name (e.g. ``qwen3.7-plus``) grades through the opencode-go
-      zen gateway via promptfoo's generic ``openai:chat`` driver + the opencode-go API key.
+    - a ``codex/<model>`` prefix (e.g. ``codex/gpt-5.4``) grades through the Codex Responses
+      API directly, authenticating from ``~/.codex/auth.json`` (the same Codex/ChatGPT
+      subscription the subject uses) — so it needs NO OpenAI API key and NO OpenRouter detour.
+      The ``codex/`` prefix is stripped and the remainder is passed as the model id.
+    - any other model name (e.g. ``qwen3.7-plus``) grades through the opencode-go zen gateway
+      via promptfoo's generic ``openai:chat`` driver + the opencode-go API key.
     """
-    spec = model
-    is_codex = spec.startswith("codex:")
-    if is_codex:
-        spec = spec[len("codex:") :]
-    if is_codex or spec.startswith("gpt-"):
+    if model.startswith("codex/"):
+        spec = model[len("codex/") :]
         return {
             "id": f"file://{_JUDGE_PROVIDER}",
             "label": f"judge:codex/{spec}",
