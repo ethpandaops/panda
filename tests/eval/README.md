@@ -42,9 +42,10 @@ Required environment:
 - The promptfoo grader (`--judge-model`):
   - a bare model name (default `qwen3.7-plus`) grades through the opencode-go zen gateway —
     `OPENCODE_GO_API_KEY` covers it.
-  - a `<provider>/<model>` spec (e.g. `openai/gpt-5.5`) grades through opencode's
-    `session.chat` — for `openai` that uses opencode's `auth.json` Codex/ChatGPT OAuth
-    credential (the same one the subject uses), so no OpenAI API key is needed.
+  - a Codex model name (e.g. `gpt-5.5`, `gpt-5.4`, `gpt-5.3-codex`) grades through the Codex
+    Responses API directly, authenticating from `~/.codex/auth.json` (the same Codex/ChatGPT
+    subscription the subject can use), so no OpenAI API key is needed. Run `codex login`
+    first to populate the auth file.
 - A reachable panda server: CI starts one; locally use `--scratch`, or point your
   `~/.config/panda/config.yaml` at a running server.
 

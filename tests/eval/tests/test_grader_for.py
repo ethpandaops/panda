@@ -1,6 +1,6 @@
 """grader_for routes judge specs to the right promptfoo grading provider."""
 
-from config.settings import grader_for
+from config.settings import CODEX_JUDGE_REASONING_EFFORT, grader_for
 
 
 def test_bare_model_uses_opencode_go_gateway():
@@ -11,17 +11,20 @@ def test_bare_model_uses_opencode_go_gateway():
     assert "apiKeyEnvar" in g["config"]
 
 
-def test_provider_slash_model_uses_opencode_judge():
-    g = grader_for("openai/gpt-5.5")
+def test_codex_model_uses_direct_codex_judge():
+    g = grader_for("gpt-5.5")
     assert g["id"].startswith("file://") and g["id"].endswith("promptfoo/judge.py")
-    assert g["config"] == {"provider_id": "openai", "model_id": "gpt-5.5"}
+    assert g["config"] == {"model": "gpt-5.5", "reasoning_effort": CODEX_JUDGE_REASONING_EFFORT}
 
 
-def test_explicit_opencode_prefix_is_stripped():
-    g = grader_for("opencode:openai/gpt-5.5")
-    assert g["config"] == {"provider_id": "openai", "model_id": "gpt-5.5"}
+def test_other_codex_model_ids_route_to_direct_judge():
+    for model in ("gpt-5.4", "gpt-5.3-codex"):
+        g = grader_for(model)
+        assert g["id"].endswith("promptfoo/judge.py")
+        assert g["config"]["model"] == model
 
 
-def test_model_id_keeps_remaining_slashes():
-    g = grader_for("openai/org/gpt-5.5")
-    assert g["config"] == {"provider_id": "openai", "model_id": "org/gpt-5.5"}
+def test_explicit_codex_prefix_is_stripped():
+    g = grader_for("codex:gpt-5.4")
+    assert g["id"].endswith("promptfoo/judge.py")
+    assert g["config"]["model"] == "gpt-5.4"
