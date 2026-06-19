@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -132,12 +133,35 @@ func runAuthLogin(cmd *cobra.Command, _ []string) error {
 	store := newAuthStore(target, client)
 
 	if err := store.Save(tokens); err != nil {
+		if errors.Is(err, authstore.ErrCredentialDowngrade) {
+			return fmt.Errorf(
+				"login returned no refresh token, but a refreshable credential already exists at %s; "+
+					"refusing to overwrite it. Upgrade panda so the login requests offline_access, or "+
+					"run 'panda auth logout' first to replace it",
+				store.Path(),
+			)
+		}
+
+		if errors.Is(err, authstore.ErrCredentialBusy) {
+			return fmt.Errorf("another process is refreshing these credentials; try the login again in a moment")
+		}
+
 		return fmt.Errorf("saving tokens: %w", err)
 	}
 
 	fmt.Printf("Authenticated to %s\n", target.issuerURL)
 	fmt.Printf("Credentials stored at: %s\n", store.Path())
 	fmt.Printf("Token expires at: %s\n", tokens.ExpiresAt.Format(time.RFC3339))
+
+	// A successful login with no refresh token cannot auto-refresh; warn so the
+	// short-lived session is not a surprise.
+	if tokens.RefreshToken == "" {
+		fmt.Println(
+			"WARNING: no refresh token was issued for this login. The session cannot auto-refresh " +
+				"and will expire when the access token does. Upgrade panda or re-run the login so the " +
+				"flow requests offline_access.",
+		)
+	}
 
 	// Restart the server if it's running so it picks up the new credentials.
 	restartServerIfRunning(baseCtx)
@@ -154,6 +178,10 @@ func runAuthLogout(cmd *cobra.Command, _ []string) error {
 	store := newAuthStore(target, nil)
 
 	if err := store.Clear(); err != nil {
+		if errors.Is(err, authstore.ErrCredentialBusy) {
+			return fmt.Errorf("another process is refreshing these credentials; try the logout again in a moment")
+		}
+
 		return fmt.Errorf("clearing tokens: %w", err)
 	}
 
