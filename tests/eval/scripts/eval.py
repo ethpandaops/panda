@@ -80,11 +80,17 @@ def _parse_args() -> argparse.Namespace:
         "sensitivity, which a phrasings-x-1 design conflates",
     )
     ap.add_argument("-k", "--repeat", type=int, default=1, help="runs per (case, subject)")
-    ap.add_argument("--judge-model", default=DEFAULT_EVALUATOR_MODEL)
+    ap.add_argument(
+        "--judge-model",
+        default=DEFAULT_EVALUATOR_MODEL,
+        help="grader model. A bare name (e.g. qwen3.7-plus) grades via the opencode-go "
+        "gateway; a <provider>/<model> (e.g. openai/gpt-5.5) grades through opencode's "
+        "session.chat — openai uses the auth.json Codex/ChatGPT OAuth, no API key needed.",
+    )
     ap.add_argument(
         "--grader",
         default="",
-        help="promptfoo grading provider string (default: <judge-model> via opencode-go)",
+        help="explicit promptfoo grading provider string (overrides --judge-model)",
     )
     ap.add_argument("--concurrency", type=int, default=16, help="max agent runs in flight")
     ap.add_argument(

@@ -6,6 +6,8 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+_JUDGE_PROVIDER = str(Path(__file__).resolve().parents[1] / "promptfoo" / "judge.py")
+
 # Default values - single source of truth. Everything else references these; don't
 # re-hardcode the strings at call sites.
 DEFAULT_AGENT_MODEL = "opencode-go/deepseek-v4-flash"
@@ -36,7 +38,26 @@ def _opencode_key_envar() -> str:
 
 
 def grader_for(model: str) -> dict:
-    """A promptfoo grading-provider spec for an opencode-go model."""
+    """A promptfoo grading-provider spec for a judge model.
+
+    Spelling decides the transport:
+    - ``<provider>/<model>`` (e.g. ``openai/gpt-5.5``) or an explicit ``opencode:`` prefix
+      grades through opencode's ``session.chat`` against that provider — for the ``openai``
+      provider this uses opencode's ``auth.json`` Codex/ChatGPT OAuth credential (the same
+      path the subject uses), so it needs NO OpenAI API key and NO OpenRouter detour.
+    - a bare model name (e.g. ``qwen3.7-plus``) grades through the opencode-go zen gateway
+      via promptfoo's generic ``openai:chat`` driver + the opencode-go API key.
+    """
+    spec = model
+    if spec.startswith("opencode:"):
+        spec = spec[len("opencode:") :]
+    if "/" in spec:
+        provider_id, model_id = spec.split("/", 1)
+        return {
+            "id": f"file://{_JUDGE_PROVIDER}",
+            "label": f"judge:{provider_id}/{model_id}",
+            "config": {"provider_id": provider_id, "model_id": model_id},
+        }
     return {
         "id": f"openai:chat:{model}",
         "config": {
