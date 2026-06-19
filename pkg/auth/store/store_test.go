@@ -14,11 +14,66 @@ import (
 	authclient "github.com/ethpandaops/panda/pkg/auth/client"
 )
 
+func TestSaveRefusesCredentialDowngrade(t *testing.T) {
+	t.Parallel()
+
+	st := New(logrus.New(), Config{
+		Path: filepath.Join(t.TempDir(), "creds.json"),
+	}).(*store)
+
+	// Seed a refreshable credential.
+	if err := st.Save(&authclient.Tokens{
+		AccessToken:  "access",
+		RefreshToken: "refresh",
+		ExpiresAt:    time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("seeding refreshable credential: %v", err)
+	}
+
+	// A login that returns no refresh token must be refused, not silently saved.
+	err := st.Save(&authclient.Tokens{
+		AccessToken: "access-2",
+		ExpiresAt:   time.Now().Add(time.Hour),
+	})
+	if !errors.Is(err, ErrCredentialDowngrade) {
+		t.Fatalf("expected ErrCredentialDowngrade, got %v", err)
+	}
+
+	// The refreshable credential must be left intact.
+	got, err := st.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if got == nil || got.RefreshToken != "refresh" {
+		t.Fatalf("refreshable credential was overwritten: %+v", got)
+	}
+
+	// A refreshable login is allowed; after logout a tokenless login is allowed
+	// because there is no refreshable credential to protect.
+	if err := st.Save(&authclient.Tokens{
+		AccessToken: "a", RefreshToken: "r2", ExpiresAt: time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("refreshable save should succeed: %v", err)
+	}
+
+	if err := st.Clear(); err != nil {
+		t.Fatalf("Clear: %v", err)
+	}
+
+	if err := st.Save(&authclient.Tokens{
+		AccessToken: "a", ExpiresAt: time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("tokenless save with no existing credential should succeed: %v", err)
+	}
+}
+
 func TestGetAccessTokenKeepsValidTokenWithoutRefreshToken(t *testing.T) {
 	t.Parallel()
 
 	client := &stubAuthClient{}
 	store := New(logrus.New(), Config{
+		Path:          filepath.Join(t.TempDir(), "creds.json"),
 		AuthClient:    client,
 		RefreshBuffer: 5 * time.Minute,
 	}).(*store)
@@ -46,6 +101,7 @@ func TestGetAccessTokenFallsBackWhenRefreshFailsButTokenIsStillValid(t *testing.
 
 	client := &stubAuthClient{refreshErr: errors.New("temporary failure")}
 	store := New(logrus.New(), Config{
+		Path:          filepath.Join(t.TempDir(), "creds.json"),
 		AuthClient:    client,
 		RefreshBuffer: 5 * time.Minute,
 	}).(*store)
@@ -74,6 +130,7 @@ func TestGetAccessTokenRefreshesAtRefreshTokenHalfLife(t *testing.T) {
 
 	client := &stubAuthClient{}
 	store := New(logrus.New(), Config{
+		Path:            filepath.Join(t.TempDir(), "creds.json"),
 		AuthClient:      client,
 		RefreshBuffer:   5 * time.Minute,
 		RefreshTokenTTL: 30 * 24 * time.Hour, // 30 days
@@ -104,6 +161,7 @@ func TestGetAccessTokenDoesNotRefreshBeforeRefreshTokenHalfLife(t *testing.T) {
 
 	client := &stubAuthClient{}
 	store := New(logrus.New(), Config{
+		Path:            filepath.Join(t.TempDir(), "creds.json"),
 		AuthClient:      client,
 		RefreshBuffer:   5 * time.Minute,
 		RefreshTokenTTL: 30 * 24 * time.Hour, // 30 days
@@ -134,6 +192,7 @@ func TestGetAccessTokenSerializesConcurrentRefreshes(t *testing.T) {
 
 	client := &countingAuthClient{}
 	store := New(logrus.New(), Config{
+		Path:          filepath.Join(t.TempDir(), "creds.json"),
 		AuthClient:    client,
 		RefreshBuffer: 5 * time.Minute,
 	}).(*store)

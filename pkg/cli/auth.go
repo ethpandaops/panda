@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -30,6 +31,7 @@ var (
 	authClientID  string
 	authResource  string
 	noBrowser     bool
+	verifyRefresh bool
 )
 
 var authCmd = &cobra.Command{
@@ -65,6 +67,9 @@ func init() {
 
 	authLoginCmd.Flags().BoolVar(&noBrowser, "no-browser", false,
 		"manual auth flow for SSH/headless environments (auto-detected over SSH)")
+
+	authStatusCmd.Flags().BoolVar(&verifyRefresh, "verify", false,
+		"actively test the refresh token against the provider (rotates it)")
 
 	for _, cmd := range []*cobra.Command{authLoginCmd, authLogoutCmd, authStatusCmd} {
 		cmd.Flags().StringVar(&authIssuerURL, "issuer", "", "proxy auth issuer URL (defaults to the configured server's proxy auth issuer)")
@@ -132,12 +137,35 @@ func runAuthLogin(cmd *cobra.Command, _ []string) error {
 	store := newAuthStore(target, client)
 
 	if err := store.Save(tokens); err != nil {
+		if errors.Is(err, authstore.ErrCredentialDowngrade) {
+			return fmt.Errorf(
+				"the provider issued no refresh token for this login (it did not grant the "+
+					"offline_access scope), but a refreshable credential already exists at %s; "+
+					"refusing to overwrite it. Run 'panda auth logout' first if you intend to replace it",
+				store.Path(),
+			)
+		}
+
+		if errors.Is(err, authstore.ErrCredentialBusy) {
+			return fmt.Errorf("another process is refreshing these credentials; try the login again in a moment")
+		}
+
 		return fmt.Errorf("saving tokens: %w", err)
 	}
 
 	fmt.Printf("Authenticated to %s\n", target.issuerURL)
 	fmt.Printf("Credentials stored at: %s\n", store.Path())
 	fmt.Printf("Token expires at: %s\n", tokens.ExpiresAt.Format(time.RFC3339))
+
+	// A successful login with no refresh token cannot auto-refresh; warn so the
+	// short-lived session is not a surprise.
+	if tokens.RefreshToken == "" {
+		fmt.Println(
+			"WARNING: the provider issued no refresh token for this login (it did not grant the " +
+				"offline_access scope). The session cannot auto-refresh and will expire when the " +
+				"access token does.",
+		)
+	}
 
 	// Restart the server if it's running so it picks up the new credentials.
 	restartServerIfRunning(baseCtx)
@@ -154,6 +182,10 @@ func runAuthLogout(cmd *cobra.Command, _ []string) error {
 	store := newAuthStore(target, nil)
 
 	if err := store.Clear(); err != nil {
+		if errors.Is(err, authstore.ErrCredentialBusy) {
+			return fmt.Errorf("another process is refreshing these credentials; try the logout again in a moment")
+		}
+
 		return fmt.Errorf("clearing tokens: %w", err)
 	}
 
@@ -193,10 +225,71 @@ func runAuthStatus(cmd *cobra.Command, _ []string) error {
 	if tokens.ExpiresAt.After(time.Now()) {
 		fmt.Printf("Status: Authenticated (expires in %s)\n", time.Until(tokens.ExpiresAt).Round(time.Second))
 		fmt.Printf("Expires at: %s\n", tokens.ExpiresAt.Format(time.RFC3339))
+	} else {
+		fmt.Printf("Status: Expired (expired at %s)\n", tokens.ExpiresAt.Format(time.RFC3339))
+	}
+
+	printRefreshTokenStatus(tokens)
+
+	if verifyRefresh {
+		return verifyRefreshToken(store, tokens)
+	}
+
+	return nil
+}
+
+// printRefreshTokenStatus reports what is knowable about the refresh token from
+// the stored credential. The refresh token is opaque, so its expiry cannot be
+// read locally; use --verify to test it against the provider.
+func printRefreshTokenStatus(tokens *authclient.Tokens) {
+	if tokens.RefreshToken == "" {
+		fmt.Println("Refresh token: none (session cannot auto-refresh; it ends when the access token expires)")
+
+		return
+	}
+
+	if tokens.RefreshTokenIssuedAt.IsZero() {
+		fmt.Println("Refresh token: present (last rotation time unknown; the provider reused it on the last refresh)")
+
+		return
+	}
+
+	fmt.Printf("Refresh token: present (last rotated %s ago, at %s)\n",
+		time.Since(tokens.RefreshTokenIssuedAt).Round(time.Second),
+		tokens.RefreshTokenIssuedAt.Format(time.RFC3339),
+	)
+}
+
+// verifyRefreshToken actively confirms the refresh token is still accepted by
+// the provider. This performs a real refresh and so rotates the token.
+func verifyRefreshToken(store authstore.Store, tokens *authclient.Tokens) error {
+	if tokens.RefreshToken == "" {
+		fmt.Println("Refresh check: skipped (no refresh token)")
+
 		return nil
 	}
 
-	fmt.Printf("Status: Expired (expired at %s)\n", tokens.ExpiresAt.Format(time.RFC3339))
+	fmt.Println("Refresh check: testing the refresh token with the provider (this rotates it)...")
+
+	store.Invalidate()
+
+	if _, err := store.GetAccessToken(); err != nil {
+		fmt.Printf("Refresh check: FAILED — %v\n", err)
+
+		return nil
+	}
+
+	refreshed, err := store.Load()
+	if err != nil || refreshed == nil {
+		fmt.Println("Refresh check: OK (refresh token is valid)")
+
+		return nil
+	}
+
+	fmt.Printf("Refresh check: OK (refresh token is valid; new access token expires at %s)\n",
+		refreshed.ExpiresAt.Format(time.RFC3339),
+	)
+
 	return nil
 }
 
