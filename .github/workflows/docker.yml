@@ -69,6 +69,9 @@ jobs:
           docker build -f goreleaser.server.Dockerfile -t panda-server-smoke .
           docker build -f sandbox/Dockerfile -t panda-sandbox-smoke .
 
+      - name: Test entrypoint runs as the credentials owner (non-1000 UIDs)
+        run: scripts/test-entrypoint-uid.sh panda-server-smoke
+
       - name: Smoke test server sandbox initialization
         run: |
           # Write a minimal config that the server can parse.
