@@ -37,6 +37,15 @@ if [ "$CRED_UID" != "1000" ]; then
         groupmod -g "$CRED_GID" panda 2>/dev/null || true
     fi
     usermod -u "$CRED_UID" panda 2>/dev/null || true
+
+    # Fail loudly rather than silently drop to UID 1000 and recreate the
+    # unreadable-credentials bug — e.g. usermod/groupmod missing, or $CRED_UID
+    # already taken by another account.
+    if [ "$(id -u panda)" != "$CRED_UID" ]; then
+        echo "docker-entrypoint: failed to run as credentials owner UID $CRED_UID" \
+             "(panda is still UID $(id -u panda)); credentials would be unreadable." >&2
+        exit 1
+    fi
 fi
 
 PANDA_UID=$(id -u panda)
@@ -64,8 +73,10 @@ if [ -S /var/run/docker.sock ]; then
     addgroup panda "$DOCKER_GROUP" 2>/dev/null || usermod -aG "$DOCKER_GROUP" panda 2>/dev/null || true
 fi
 
-# Drop to the panda user.
+# Drop to the panda user. su-exec/gosu set HOME from the passwd entry, but set
+# it explicitly too so the credential path beneath it resolves regardless.
 # Support both su-exec (Alpine) and gosu (Debian).
+export HOME=/home/panda
 if command -v su-exec >/dev/null 2>&1; then
     exec su-exec panda "$@"
 elif command -v gosu >/dev/null 2>&1; then
