@@ -93,3 +93,15 @@ func TestRuntimeCallbacksInheritExecutionAttribution(t *testing.T) {
 	require.Equal(t, "discord:sam", inherited,
 		"runtime callbacks must inherit the spawning execution's attribution")
 }
+
+func TestAuthOwnerIDAttributionFallback(t *testing.T) {
+	// No auth user: fall back to the caller attribution so sessions are owner-scoped
+	// even on an unauthenticated server (local mode, the eval harness).
+	withAttr := httptest.NewRequest(http.MethodGet, "/api/v1/sessions", nil)
+	withAttr = withAttr.WithContext(attribution.WithValue(withAttr.Context(), "eval-worker-abc123"))
+	require.Equal(t, "eval-worker-abc123", authOwnerID(withAttr))
+
+	// Neither auth user nor attribution: empty owner, preserving prior behavior.
+	bare := httptest.NewRequest(http.MethodGet, "/api/v1/sessions", nil)
+	require.Equal(t, "", authOwnerID(bare))
+}

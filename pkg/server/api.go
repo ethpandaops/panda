@@ -883,12 +883,14 @@ func runtimeExecutionID(ctx context.Context) string {
 }
 
 func authOwnerID(r *http.Request) string {
-	user := auth.GetAuthUser(r.Context())
-	if user == nil {
-		return ""
+	if user := auth.GetAuthUser(r.Context()); user != nil {
+		return fmt.Sprintf("%d", user.GitHubID)
 	}
 
-	return fmt.Sprintf("%d", user.GitHubID)
+	// Fall back to caller attribution so sessions are owner-scoped even when
+	// the server runs unauthenticated (e.g. local mode, the eval harness).
+	// Empty when no attribution is present, preserving prior behavior.
+	return attribution.FromContext(r.Context())
 }
 
 func parseOptionalInt(r *http.Request, key string) (int, error) {

@@ -41,6 +41,20 @@ _PANDA_TOOLS = ("execute_python", "manage_session", "search")
 # Langfuse session. In CI that's the GitHub run id; locally a per-process uuid.
 _LANGFUSE_SESSION_ID = os.environ.get("GITHUB_RUN_ID") or uuid.uuid4().hex
 
+# Caller-attribution env var the panda CLI forwards as the X-Panda-On-Behalf-Of
+# header (pkg/attribution/attribution.go: const EnvVar). The server scopes sandbox
+# sessions to this value (authOwnerID falls back to it when unauthenticated), so a
+# per-worker identity lets the eval tear down exactly this worker's sessions.
+_ATTRIBUTION_ENVVAR = "PANDA_ON_BEHALF_OF"
+
+# A unique owner id for THIS worker process. Each promptfoo worker runs its tests
+# serially against its own opencode serve, so "this worker's sessions" == "the
+# just-finished test's sessions". Set into the environment at import so the host
+# serve inherits it; the docker serve is passed it explicitly (see _docker_serve).
+# An externally-provided attribution (a real chat-agent test) is honored if set.
+os.environ.setdefault(_ATTRIBUTION_ENVVAR, f"eval-worker-{uuid.uuid4().hex[:12]}")
+EVAL_WORKER_OWNER_ID = os.environ[_ATTRIBUTION_ENVVAR]
+
 SYSTEM_PROMPT_MCP = "You are an ethpandaops agent. You have access to panda via its MCP tools."
 
 SYSTEM_PROMPT_CLI = "You are an ethpandaops agent. You have access to the panda CLI."
@@ -307,6 +321,9 @@ class OpenCodeAgent:
             "-p", f"127.0.0.1:{port}:{port}",
             "--add-host=host.docker.internal:host-gateway",
             "-e", "OPENCODE_GO_API_KEY",  # pass through (value stays out of the arg list)
+            # Caller attribution so the panda CLI inside carries X-Panda-On-Behalf-Of;
+            # the value is in os.environ (set at import), passed through by name.
+            "-e", _ATTRIBUTION_ENVVAR,
             "-v", f"{panda_dir}:/opt/pandabin:ro",
             "-v", f"{workdir / 'opencode.json'}:/work/opencode.json:ro",
             "-v", f"{workdir / 'auth.json'}:/root/.local/share/opencode/auth.json",

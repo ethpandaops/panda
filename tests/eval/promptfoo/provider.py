@@ -13,17 +13,22 @@ timeout is ``config.subject_timeout`` (seconds), kept separate to avoid the clas
 import asyncio
 import json
 import os
-import re
 import sys
 import urllib.request
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))  # tests/eval on path
-
 import yaml
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))  # tests/eval on path
+
+from agent.opencode_agent import EVAL_WORKER_OWNER_ID
 from config.settings import DEFAULT_AGENT_MODEL, DEFAULT_AGENT_ROUTE
 from harness.subject import OpencodeSubject
 from harness.trace import TOOLS_MARKER
+
+# The HTTP header the panda CLI forwards the attribution env var as
+# (pkg/attribution/attribution.go: const Header). The server reads it to scope
+# sandbox sessions to the caller, so teardown carries it to find + delete ours.
+_ATTRIBUTION_HEADER = "X-Panda-On-Behalf-Of"
 
 _SUBJECTS: dict[tuple, OpencodeSubject] = {}
 
@@ -35,6 +40,54 @@ def _subject(cfg: dict) -> OpencodeSubject:
             model=key[0], route=key[1], timeout=cfg.get("subject_timeout", 300)
         )
     return _SUBJECTS[key]
+
+
+def _server_base(subject) -> str:
+    """The base URL of the panda server THIS run talked to: the CLI route resolves it
+    from PANDA_CONFIG (the harden scratch config), else the subject's mcp_url."""
+    cfg_path = os.environ.get("PANDA_CONFIG", "")
+    if cfg_path and os.path.exists(cfg_path):
+        try:
+            with open(cfg_path) as f:
+                cfg = yaml.safe_load(f) or {}
+            base = (cfg.get("server") or {}).get("base_url")
+            if base:
+                return str(base).rstrip("/")
+        except Exception:  # noqa: BLE001 - fall through to the default
+            pass
+    return str(subject.settings.mcp_url).rstrip("/")
+
+
+def _teardown_worker_sessions(subject) -> list[str]:
+    """Destroy the sandbox sessions owned by THIS worker, now its just-finished test is
+    done. Deterministic and server-authoritative: the agent's panda CLI carries
+    X-Panda-On-Behalf-Of=<worker-id>, so the server scopes those sessions to this worker
+    (authOwnerID's attribution fallback). We ask the server for this worker's sessions and
+    delete them, carrying the same header so DestroySession's owner check passes. Tests run
+    serially within a worker, so this targets exactly the test that just finished; the short
+    TTL reaper is only a backstop for crashed/missed workers. Best-effort throughout."""
+    base = _server_base(subject)
+    headers = {_ATTRIBUTION_HEADER: EVAL_WORKER_OWNER_ID}
+    try:
+        req = urllib.request.Request(f"{base}/api/v1/sessions", headers=headers)  # noqa: S310
+        with urllib.request.urlopen(req, timeout=10) as r:  # noqa: S310
+            sessions = (json.loads(r.read().decode()) or {}).get("sessions") or []
+    except Exception:  # noqa: BLE001 - server gone / unreachable -> nothing to tear down
+        return []
+    destroyed: list[str] = []
+    for s in sessions:
+        sid = s.get("session_id")
+        if not sid:
+            continue
+        req = urllib.request.Request(  # noqa: S310
+            f"{base}/api/v1/sessions/{sid}", method="DELETE", headers=headers
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10):  # noqa: S310
+                destroyed.append(sid)
+        except Exception:  # noqa: BLE001 - already gone / not ours is fine
+            continue
+    return destroyed
 
 
 def _followups(vars_: dict) -> list:
@@ -87,54 +140,6 @@ def _graded_output(trace) -> str:
     return "\n".join(lines)
 
 
-# Panda sandbox session ids are 12-char hex. We only count an id as THIS agent's if it
-# appears next to a session keyword in the agent's own commands, or as a `session_id`
-# in a command's response — and never from `session list` output, which shows OTHER
-# agents' sessions too.
-_SESSION_IN_ARGS = re.compile(r"session[^\n]{0,40}?\b([0-9a-f]{12})\b", re.IGNORECASE)
-_SESSION_IN_OUTPUT = re.compile(r"session_id[\"'\s:=]{1,5}([0-9a-f]{12})", re.IGNORECASE)
-_LIST_CMD = re.compile(r"session(s\b|\s+list)", re.IGNORECASE)
-
-
-def _server_base(subject) -> str:
-    """The base URL of the panda server THIS run talked to: the CLI route resolves it
-    from PANDA_CONFIG (the harden scratch config), else the subject's mcp_url."""
-    cfg_path = os.environ.get("PANDA_CONFIG", "")
-    if cfg_path and os.path.exists(cfg_path):
-        try:
-            with open(cfg_path) as f:
-                cfg = yaml.safe_load(f) or {}
-            base = (cfg.get("server") or {}).get("base_url")
-            if base:
-                return str(base).rstrip("/")
-        except Exception:  # noqa: BLE001 - fall through to the default
-            pass
-    return str(subject.settings.mcp_url).rstrip("/")
-
-
-def _teardown_agent_sessions(subject, trace) -> list[str]:
-    """Destroy the sandbox sessions THIS agent created/used, now that its run is over.
-    Per-agent by construction: only ids from this run's own transcript — concurrent
-    agents' sessions (or a human's) are never touched. Best-effort; already-gone is fine."""
-    ids: set[str] = set()
-    for t in trace.tool_calls:
-        ids.update(_SESSION_IN_ARGS.findall(t.arguments or ""))
-        if not _LIST_CMD.search(t.arguments or ""):
-            ids.update(_SESSION_IN_OUTPUT.findall(t.output or ""))
-    if not ids:
-        return []
-    base = _server_base(subject)
-    destroyed = []
-    for sid in sorted(ids):
-        req = urllib.request.Request(f"{base}/api/v1/sessions/{sid}", method="DELETE")
-        try:
-            with urllib.request.urlopen(req, timeout=10):  # noqa: S310
-                destroyed.append(sid)
-        except Exception:  # noqa: BLE001 - not a session / already gone
-            continue
-    return destroyed
-
-
 def call_api(prompt, options, context):
     cfg = (options or {}).get("config", {}) or {}
     # The first turn is the rendered prompt; extra turns come from the `followups` var
@@ -151,7 +156,10 @@ def call_api(prompt, options, context):
         retried = True
         trace = asyncio.run(subject.run(prompts))
     subject.flush()  # push the run's Langfuse trace before promptfoo moves to the next
-    destroyed = _teardown_agent_sessions(subject, trace)  # this agent's sandboxes only
+    # Primary cleanup: deterministically tear down THIS worker's sandbox sessions now the
+    # test is done (owner-scoped via attribution, server-authoritative). The server's short
+    # idle TTL (pkg/sandbox/session.go) is only a backstop for crashed/missed workers.
+    destroyed = _teardown_worker_sessions(subject)
     return {
         "output": _graded_output(trace),
         "tokenUsage": {

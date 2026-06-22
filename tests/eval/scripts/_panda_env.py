@@ -54,10 +54,18 @@ def write_scratch_config(port: int, *, source: Path | None = None) -> Path:
     sb["image"] = "ethpandaops-panda-sandbox:latest"
     sb["network"] = "ethpandaops-panda-harden"
     sb["host_shared_path"] = str(shared)
-    # Eval runs many agents at once (questions x phrasings x subjects, -j concurrent);
-    # the default 50-session cap can starve them. The sessions are torn down after
-    # every measure (purge_sessions), so a high cap costs nothing when idle.
-    sb.setdefault("sessions", {})["max_sessions"] = 150
+    # Eval runs many agents at once (questions x phrasings x subjects, -j concurrent).
+    # Primary cleanup is per-test and owner-scoped (provider.py tears down each worker's
+    # sessions when its test finishes). This short TTL is only a BACKSTOP for crashed or
+    # missed workers: the server's idle reaper (pkg/sandbox/session.go) self-reaps a leaked
+    # session once it's idle past the TTL. 5m is comfortably longer than any inter-turn gap
+    # in a multi-turn run (an actively-used session's lastUsed is bumped per call and is
+    # never reaped mid-execution), yet far shorter than the 30m default. With both the
+    # per-test delete and the reaper, the cap no longer needs to be huge — 100 sits well
+    # above run concurrency (~24) plus a TTL-window backlog.
+    sessions = sb.setdefault("sessions", {})
+    sessions["ttl"] = "5m"
+    sessions["max_sessions"] = 100
     cfg["storage"] = {"base_dir": str(storage), "cache_dir": str(cache)}
     cfg.setdefault("observability", {})["metrics_enabled"] = False
 
@@ -122,10 +130,10 @@ class ScratchServer:
 
 def purge_sessions(port: int) -> int:
     """Destroy all remaining sandbox sessions on the SCRATCH server, called only as it
-    shuts down — its containers would otherwise outlive it as orphans (per-agent
-    teardown in the provider handles the during-run case; this is the final sweep of a
-    dying server, never a server anyone else uses). Best-effort: a dead/unreachable
-    server just means nothing to purge."""
+    shuts down — its containers would otherwise outlive it as orphans (the server's idle
+    reaper handles the during-run case via TTL; this is the final sweep of a dying server,
+    never a server anyone else uses). Best-effort: a dead/unreachable server just means
+    nothing to purge."""
     base = f"http://localhost:{port}/api/v1/sessions"
     try:
         with urllib.request.urlopen(base, timeout=10) as r:  # noqa: S310
