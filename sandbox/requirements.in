@@ -10,7 +10,7 @@ fastparquet>=2026.3.0  # Parquet read/write engine (~9MB vs pyarrow's ~140MB)
 # because it needs a full Chrome install.
 matplotlib>=3.9.0
 seaborn>=0.13.0  # statistical charts on top of matplotlib
-plotly>=5.24.0
+plotly>=6.8.0
 
 # ClickHouse client
 clickhouse-connect>=0.8.0
@@ -19,7 +19,7 @@ clickhouse-connect>=0.8.0
 httpx>=0.28.0
 
 # S3 client (block archive)
-boto3>=1.35.0
+boto3>=1.43.24
 
 # Utilities
 python-dateutil>=2.9.0
