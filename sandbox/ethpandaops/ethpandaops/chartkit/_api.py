@@ -17,7 +17,7 @@ polyline points, or SVG — those live in the engine (this file's imports).
 """
 import math, datetime
 import numpy as np, pandas as pd
-from ._engine import plot, render, make_scale, txt, tw, GREEN, ACC   # the engine (never agent-facing)
+from ._engine import plot, render, make_scale, txt, tw, GREEN, ACC, WARM, DIM, THEMES  # the engine (never agent-facing)
 from .sources.base import Source as _Source                          # provenance marker: real sources only
 
 PALETTE=[GREEN,ACC,"#2f6db0","#8e44ad","#1f9b7a","#b8860b"]
@@ -45,6 +45,11 @@ def _ax(vals,scale,n):                              # -> (domain, ticks) for lin
 _UNIT={"s":lambda v:f"{v:g}s","ms":lambda v:f"{int(v)}ms","%":lambda v:f"{v:g}%"}
 def _fmt(u): return _UNIT.get(u,lambda v:f"{v:,.0f}")
 def _atitle(label,unit): return f"{label} ({unit})" if unit else label
+def _finite(vals,where):                            # reject NaN/inf early with a chartkit message, not a numpy one
+    a=np.asarray(list(vals),float)
+    if a.size and not np.isfinite(a).all():
+        raise ValueError(f"chartkit.{where}: data contains NaN or inf — clean it before plotting.")
+    return a
 
 # chartkit knows NOTHING about specific sources. Agents reference source libraries directly
 # (from ...chartkit.sources.datasources.prometheus import prometheus) and pass the result as
@@ -66,8 +71,11 @@ class Chart:
 #   subtitle    (optional) — top scope: what is measured + over what ("First-seen arrival, all sentries")
 #   chart_title (REQUIRED) — label on the chart itself: the neutral plot name ("Block arrival distribution")
 _SENT={"good","ok","bad","neutral"}
-def _panel(*,title,subtitle="",chart_title="",pi,ph,stats=None,source=None,sources=None,notes="",window=None,legend=None,network="mainnet"):
+def _panel(*,title,subtitle="",chart_title="",pi,ph,stats=None,source=None,sources=None,notes="",window=None,legend=None,theme=None,network="mainnet"):
     title=(title or "").strip(); subtitle=(subtitle or "").strip(); chart_title=(chart_title or "").strip()
+    if isinstance(theme,str):                        # accept a preset name ("warm"/"dim"/"light") or a theme dict
+        if theme.lower() not in THEMES: raise ValueError(f"chartkit: unknown theme {theme!r}; presets: {', '.join(THEMES)} (or pass a theme dict).")
+        theme=THEMES[theme.lower()]
     if not title:
         raise ValueError("chartkit: `title` is required — the top headline (the finding it shows), "
                          'e.g. title="Most blocks land inside three seconds".')
@@ -94,12 +102,12 @@ def _panel(*,title,subtitle="",chart_title="",pi,ph,stats=None,source=None,sourc
         if lg is not None and not str(lg).startswith("data:image/"):
             raise ValueError("chartkit: a source `logo` must be a data:image/... URI from a source library, not a URL.")
     return Chart(dict(network=network,title=title,subtitle=subtitle,chart_title=chart_title,plot_inner=pi,plot_h=ph,
-        kpis=stats,sources=srcs,notes=notes,legend=legend,window=window))
+        kpis=stats,sources=srcs,notes=notes,legend=legend,theme=theme,window=window))
 
 # ===================== public chart functions =====================
 def histogram(values,*,x,unit="",title,subtitle="",chart_title="",source=None,sources=None,notes="",
-              stats=None,network="mainnet",window=None,median=True,bins=80):
-    v=np.asarray(list(values),float)
+              stats=None,theme=None,network="mainnet",window=None,median=True,bins=80):
+    v=_finite(values,"histogram")
     if not len(v): raise ValueError("chartkit.histogram: `values` is empty — nothing to plot.")
     if v.min()<0: raise ValueError("chartkit.histogram: values must be non-negative (use scatter/line for signed data).")
     bw=(v.max() or 1)/bins
@@ -112,16 +120,17 @@ def histogram(values,*,x,unit="",title,subtitle="",chart_title="",source=None,so
         xfmt=_fmt(unit),yfmt=_fmt(""),xtitle=_atitle(x,unit),ytitle="Count",
         bars=[(he[i],he[i+1],hc[i]) for i in range(len(hc))],markers=m)
     return _panel(title=title,subtitle=subtitle,pi=pi,ph=ph,stats=stats,source=source,sources=sources,
-        notes=notes,window=window,chart_title=chart_title,network=network)
+        notes=notes,window=window,chart_title=chart_title,theme=theme,network=network)
 
 def box(rows,*,x_label,x_unit="",title,subtitle="",chart_title="",source=None,sources=None,notes="",stats=None,
-        network="mainnet",window=None,sort="med",color="data",x_max=None,x_min=0):
+        theme=None,network="mainnet",window=None,sort="med",color="data",x_max=None,x_min=0):
     """Horizontal box plot. `rows`: dicts with label,p05,q1,med,q3,p95 (box=q1..q3, whiskers=p05..p95)."""
     rows=[dict(r) for r in rows]
     if not rows: raise ValueError("chartkit.box: `rows` is empty — nothing to plot.")
     for r in rows:
         miss=[k for k in ("label","p05","q1","med","q3","p95") if k not in r]
         if miss: raise ValueError(f"chartkit.box: row {r!r} is missing {miss} (need label,p05,q1,med,q3,p95).")
+        _finite([r[k] for k in ("p05","q1","med","q3","p95")],"box")
     if sort: rows=sorted(rows,key=lambda r:r[sort])
     n=len(rows); labels=[str(r["label"]) for r in rows]
     hi=x_max or max(r["p95"] for r in rows); xt=nice_ticks(x_min,hi,6)
@@ -139,15 +148,16 @@ def box(rows,*,x_label,x_unit="",title,subtitle="",chart_title="",source=None,so
         xfmt=_fmt(x_unit),yfmt=lambda y:labels[n-1-int(round(y))],xtitle=_atitle(x_label,x_unit),ytitle=None,
         lpad=lp,ph=max(220,n*30))
     return _panel(title=title,subtitle=subtitle,pi=pi,ph=ph,stats=stats,source=source,sources=sources,
-        notes=notes,window=window,chart_title=chart_title,network=network)
+        notes=notes,window=window,chart_title=chart_title,theme=theme,network=network)
 
 def bar(items,*,value_label="",unit="",title,subtitle="",chart_title="",sort=True,color="data",
-        source=None,sources=None,notes="",stats=None,network="mainnet",window=None):
+        source=None,sources=None,notes="",stats=None,theme=None,network="mainnet",window=None):
     """Horizontal bars for named categories. `items`: (label, value) pairs."""
     items=list(items)
     if not items: raise ValueError("chartkit.bar: `items` is empty — nothing to plot.")
     if sort: items=sorted(items,key=lambda kv:kv[1],reverse=True)
-    n=len(items); labels=[str(k) for k,_ in items]; vals=[float(v) for _,v in items]
+    n=len(items); labels=[str(k) for k,_ in items]; vals=list(_finite([v for _,v in items],"bar"))
+    if min(vals)<0: raise ValueError("chartkit.bar: values must be non-negative (a bar runs from 0); use custom() for signed/diverging bars.")
     hi=max(vals); xt=nice_ticks(0,hi,6); xhi=max(xt[-1],hi*1.14)   # headroom for the value labels
     lp=max(58,int(max(tw(l,11) for l in labels))+18); vf=_fmt(unit)
     def body(c):
@@ -159,10 +169,10 @@ def bar(items,*,value_label="",unit="",title,subtitle="",chart_title="",sort=Tru
         xfmt=vf,yfmt=lambda y:labels[n-1-int(round(y))],xtitle=_atitle(value_label,unit),ytitle=None,
         lpad=lp,ph=max(200,n*34))
     return _panel(title=title,subtitle=subtitle,pi=pi,ph=ph,stats=stats,source=source,sources=sources,
-        notes=notes,window=window,chart_title=chart_title,network=network)
+        notes=notes,window=window,chart_title=chart_title,theme=theme,network=network)
 
 def area(df,*,x,y,unit="",y_label=None,color=GREEN,title,subtitle="",chart_title="",
-         source=None,sources=None,notes="",stats=None,network="mainnet",window=None):
+         source=None,sources=None,notes="",stats=None,theme=None,network="mainnet",window=None):
     """Filled time/numeric series (single)."""
     if not len(df): raise ValueError("chartkit.area: dataframe is empty — nothing to plot.")
     xv=pd.Series(list(df[x]))
@@ -173,14 +183,14 @@ def area(df,*,x,y,unit="",y_label=None,color=GREEN,title,subtitle="",chart_title
         xdom=(0,xmax)
     else:
         xs=list(xv); xdom=(min(xs),max(xs)); xticks=nice_ticks(min(xs),max(xs),6); xfmt=_fmt(""); xtitle=x
-    yv=[float(v) for v in df[y]]; yt=nice_ticks(0,max(yv),5)
+    yv=list(_finite(df[y],"area")); yt=nice_ticks(0,max(yv),5)
     pi,ph=plot(kind="area",series=[{"pts":list(zip(xs,yv)),"color":color}],xdom=xdom,ydom=(0,yt[-1]),
         xticks=xticks,yticks=yt,xfmt=xfmt,yfmt=_fmt(unit),xtitle=xtitle,ytitle=_atitle(y_label or y,unit))
     return _panel(title=title,subtitle=subtitle,pi=pi,ph=ph,stats=stats,source=source,sources=sources,
-        notes=notes,window=window,chart_title=chart_title,network=network)
+        notes=notes,window=window,chart_title=chart_title,theme=theme,network=network)
 
 def waterfall(spans,*,x_label="",title,subtitle="",chart_title="",legend=None,
-              source=None,sources=None,notes="",stats=None,network="mainnet",window=None):
+              source=None,sources=None,notes="",stats=None,theme=None,network="mainnet",window=None):
     """Span timeline (Jaeger-style). `spans`: dicts with name,start,dur (ms) and optional color/depth."""
     if not spans: raise ValueError("chartkit.waterfall: `spans` is empty — nothing to plot.")
     lo=min(s["start"] for s in spans); hi=max(s["start"]+s["dur"] for s in spans); pad=(hi-lo)*0.08 or 1
@@ -189,10 +199,10 @@ def waterfall(spans,*,x_label="",title,subtitle="",chart_title="",legend=None,
         xfmt=lambda v:f"{v/1000:.2f}s",yfmt=lambda v:"",xtitle=_atitle(x_label,"s"),ytitle=None,
         ph=max(180,len(spans)*42))
     return _panel(title=title,subtitle=subtitle,pi=pi,ph=ph,stats=stats,source=source,sources=sources,
-        notes=notes,window=window,legend=legend,chart_title=chart_title,network=network)
+        notes=notes,window=window,legend=legend,chart_title=chart_title,theme=theme,network=network)
 
 def heatmap(cells,*,x_labels,y_labels,x_title="",y_title="",lo="",hi="",title,subtitle="",chart_title="",x_step=1,
-            source=None,sources=None,notes="",stats=None,network="mainnet",window=None):
+            source=None,sources=None,notes="",stats=None,theme=None,network="mainnet",window=None):
     """2D density. `cells`: (col_index, row_index, value); row 0 is the bottom row."""
     if not cells: raise ValueError("chartkit.heatmap: `cells` is empty — nothing to plot.")
     nx=len(x_labels); ny=len(y_labels)
@@ -201,12 +211,13 @@ def heatmap(cells,*,x_labels,y_labels,x_title="",y_title="",lo="",hi="",title,su
         xfmt=lambda v:x_labels[int(v-0.5)],yfmt=lambda v:y_labels[int(v-0.5)],
         xtitle=x_title,ytitle=y_title,ph=max(200,ny*28))
     return _panel(title=title,subtitle=subtitle,pi=pi,ph=ph,stats=stats,source=source,sources=sources,
-        notes=notes,window=window,legend={"type":"gradient","lo":lo,"hi":hi},chart_title=chart_title,network=network)
+        notes=notes,window=window,legend={"type":"gradient","lo":lo,"hi":hi},chart_title=chart_title,theme=theme,network=network)
 
 def line(df,*,x,left,right=None,y_scale="linear",y_max=None,markers=None,title,subtitle="",chart_title="",source=None,sources=None,notes="",
-         stats=None,network="mainnet",window=None):
+         stats=None,theme=None,network="mainnet",window=None):
     if not len(df): raise ValueError("chartkit.line: dataframe is empty — nothing to plot.")
     if not left: raise ValueError("chartkit.line: `left` needs at least one (label, column, unit) series.")
+    for sp in list(left)+list(right or []): _finite(df[sp[1]],"line")
     xv=pd.Series(list(df[x]))
     if np.issubdtype(np.asarray(xv).dtype,np.datetime64) or isinstance(xv.iloc[0],(pd.Timestamp,datetime.datetime)):
         tt=pd.to_datetime(xv); t0=tt.min(); xs=[(t-t0).total_seconds()/60 for t in tt]; xmax=math.ceil(max(xs))
@@ -215,7 +226,7 @@ def line(df,*,x,left,right=None,y_scale="linear",y_max=None,markers=None,title,s
     else:
         xs=list(xv); xmax=max(xs); xticks=nice_ticks(min(xs),xmax,6); xfmt=_fmt(""); xtitle=x
     # each series spec is (label, column, unit[, color]) — the optional 4th element overrides the colour
-    lcol=lambda i: left[i][3] if len(left[i])>3 else PALETTE[i]
+    lcol=lambda i: left[i][3] if len(left[i])>3 else PALETTE[i%len(PALETTE)]   # cycle, don't index past the palette
     def dom(cols): hi=max(df[sp[1]].max() for sp in cols); tk=nice_ticks(0,hi,5); return (0,tk[-1]),tk
     ldom,lt=_ax([v for sp in left for v in df[sp[1]]],y_scale,5); lunit=left[0][2]
     if y_max is not None: lt=nice_ticks(0,y_max,5); ldom=(0,y_max)   # force range / leave headroom
@@ -237,12 +248,13 @@ def line(df,*,x,left,right=None,y_scale="linear",y_max=None,markers=None,title,s
             xtitle=xtitle,ytitle=_atitle(left[0][0] if len(left)==1 else "Value",lunit),yscale=y_scale,markers=(markers or []),series=lseries)
         if len(left)>1: legend=[(left[i][0],lcol(i)) for i in range(len(left))]
     return _panel(title=title,subtitle=subtitle,pi=pi,ph=ph,stats=stats,source=source,sources=sources,
-        notes=notes,window=window,legend=legend,chart_title=chart_title,network=network)
+        notes=notes,window=window,legend=legend,chart_title=chart_title,theme=theme,network=network)
 
 def scatter(df,*,x,y,x_label=None,y_label=None,x_unit="",y_unit="",x_scale="linear",y_scale="linear",
-            trend=False,title,subtitle="",chart_title="",source=None,sources=None,notes="",stats=None,network="mainnet",window=None):
+            trend=False,title,subtitle="",chart_title="",source=None,sources=None,notes="",stats=None,theme=None,network="mainnet",window=None):
     xs=list(df[x]); ys=list(df[y])
     if not xs: raise ValueError("chartkit.scatter: dataframe is empty — nothing to plot.")
+    _finite(xs,"scatter"); _finite(ys,"scatter")
     xdom,xt=_ax(xs,x_scale,6); ydom,yt=_ax(ys,y_scale,5)
     if trend:                                          # least-squares fit drawn via the friendly context
         m,b=np.polyfit(xs,ys,1); r2=np.corrcoef(xs,ys)[0,1]**2; x0,x1=min(xs),max(xs)
@@ -257,11 +269,11 @@ def scatter(df,*,x,y,x_label=None,y_label=None,x_unit="",y_unit="",x_scale="line
             xscale=x_scale,yscale=y_scale,xfmt=_fmt(x_unit),yfmt=_fmt(y_unit),
             xtitle=_atitle(x_label or x,x_unit),ytitle=_atitle(y_label or y,y_unit))
     return _panel(title=title,subtitle=subtitle,pi=pi,ph=ph,stats=stats,source=source,sources=sources,
-        notes=notes,window=window,chart_title=chart_title,network=network)
+        notes=notes,window=window,chart_title=chart_title,theme=theme,network=network)
 
 def custom(*,draw,xdom,ydom,xticks,yticks,x_label="",y_label="",x_unit="",y_unit="",xfmt=None,yfmt=None,
            x_scale="linear",y_scale="linear",height=None,title,subtitle="",chart_title="",source=None,sources=None,
-           notes="",stats=None,legend=None,network="mainnet",window=None):
+           notes="",stats=None,legend=None,theme=None,network="mainnet",window=None):
     """First-class escape hatch for ANY chart the named functions don't cover.
     `draw(c)` receives the friendly context (c.line/c.dot/c.rect/c.band/c.hline/
     c.vline/c.label/c.right_axis, plus c.sx/c.sy scales) and works in DATA coordinates.
@@ -269,4 +281,4 @@ def custom(*,draw,xdom,ydom,xticks,yticks,x_label="",y_label="",x_unit="",y_unit
     pi,ph=plot(body=draw,xdom=xdom,ydom=ydom,xticks=xticks,yticks=yticks,xscale=x_scale,yscale=y_scale,
         xfmt=xfmt or _fmt(x_unit),yfmt=yfmt or _fmt(y_unit),xtitle=_atitle(x_label,x_unit),ytitle=_atitle(y_label,y_unit),ph=height)
     return _panel(title=title,subtitle=subtitle,pi=pi,ph=ph,stats=stats,source=source,sources=sources,
-        notes=notes,window=window,legend=legend,chart_title=chart_title,network=network)
+        notes=notes,window=window,legend=legend,chart_title=chart_title,theme=theme,network=network)

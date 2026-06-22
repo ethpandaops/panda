@@ -41,8 +41,9 @@ Rule of thumb: `title` says *what you found*; `chart_title` says *what the plot 
 The library enforces what it can; a structural mistake fails loudly with a message instead of producing a broken image:
 - `title` and `chart_title` present and non-empty · `chart_title` ≠ `title` · `subtitle` ≠ `title`
 - each `stats` entry is `(label, value, sentiment)` with sentiment ∈ `good|ok|bad|neutral`
-- each `source` is a real source-library object (has name + ref) — not a hand-built dict
-- the data you pass isn't empty (and `box` rows carry all five quantiles)
+- each `source` is a real source-library object (`sources.load(...)` / a source module) — not a hand-built dict
+- the data you pass isn't empty, is finite (no NaN/inf), and `box` rows carry all five quantiles
+- `histogram`/`bar` values are non-negative (bars and bins run from 0; use `custom()` for signed data)
 Everything below is what the library *can't* check — still your responsibility.
 
 ## Rules the library can't enforce — follow them
@@ -77,7 +78,7 @@ Everything below is what the library *can't* check — still your responsibility
    density across two dims → `heatmap` · spans/timeline → `timeline`. When unsure, the
    distribution or the time series is usually right.
 
-11. **Theme: leave it default.** The default (light) theme is tuned. Only pass `theme=` for a genuine reason (embedding in a dark surface). Never hand-pick colours per chart.
+11. **Theme: leave it default.** The default (light) theme is tuned. For a genuine reason (e.g. embedding in a dark surface) pass a preset: `theme="warm"` or `theme="dim"` (or `theme=ck.WARM`/`ck.DIM`, or a partial theme dict). Don't hand-pick colours per chart; per-series colour overrides exist where they're needed (`line` series tuples, `bar`/`area`/`box` `color=`).
 
 ## When the library doesn't have your chart
 Most needs are covered. For something genuinely custom (an unusual mark, a second axis

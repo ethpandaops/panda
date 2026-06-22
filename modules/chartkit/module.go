@@ -78,7 +78,7 @@ ck.bar([(name, count) for name, count in rows], value_label="Blocks proposed",
 func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 	return map[string]types.ModuleDoc{
 		"chartkit": {
-			Description: "Browser-free chart rendering for the sandbox. Pass data + plain labels; chartkit derives bins, domains, ticks, scales, layout and SVG, then writes a PNG via librsvg. Every chart requires a `title` (the finding) and a `chart_title` (the plot label); attribute a `source=` from a source library. Discover sources with `from ethpandaops.chartkit import sources; sources.available()`, client logos with `clients.CLIENTS`. Read the full rules with `ck.guide()`.",
+			Description: "Browser-free chart rendering for the sandbox. Pass data + plain labels; chartkit derives bins, domains, ticks, scales, layout and SVG, then writes a PNG via librsvg. Every chart requires a `title` (the finding) and a `chart_title` (the plot label); attribute a `source=` from a source library. Restyle with `theme=\"warm\"|\"dim\"`; override per-series colours via the `line` series tuples or `color=`. Discover sources with `from ethpandaops.chartkit import sources; sources.available()`, client logos with `clients.CLIENTS`. Read the full rules with `ck.guide()`.",
 			Functions: map[string]types.FunctionDoc{
 				"histogram": {Signature: `histogram(values, *, x, unit="", title, chart_title, source=None, stats=None, notes="", median=True, bins=80) -> Chart`, Description: "Distribution of a 1-D non-negative numeric Series/array"},
 				"bar":       {Signature: `bar(items, *, value_label="", unit="", title, chart_title, source=None, sort=True, color="data") -> Chart`, Description: "Horizontal bars for named categories; items are (label, value) pairs"},

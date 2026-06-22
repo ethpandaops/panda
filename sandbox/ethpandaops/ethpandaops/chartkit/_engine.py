@@ -64,6 +64,14 @@ def resolve_theme(o):
         else: t[k]=v
     return t
 GREEN=DEFAULT_THEME["data"]; ACC=DEFAULT_THEME["accent"]; DEADLINE=DEFAULT_THEME["deadline"]   # default aliases
+# Named theme presets (partial overrides; resolve_theme deep-merges them over DEFAULT_THEME).
+WARM={"paper":"#f4ecdd","card":"#fbf7ee","ink":"#2c2519","ink2":"#1d1810","muted":"#6f6450","faint":"#a3977f",
+      "line":"#e6dcc8","grid":"#ece2d0","data":"#1c5e3a","accent":"#b8480f","deadline":"#b3402a",
+      "sentiment":{"good":"#1a7f37","ok":"#a9791a","bad":"#b3402a","neutral":"#2c2519"},"heat":[(236,226,206),(28,80,46)]}
+DIM ={"paper":"#2b2f36","card":"#333842","ink":"#e8e5dd","ink2":"#f5f2ea","muted":"#a8a499","faint":"#7a766b",
+      "line":"#3e444e","grid":"#383e48","data":"#5fae7e","accent":"#dd9356","deadline":"#d77f6b",
+      "sentiment":{"good":"#5fae7e","ok":"#cfa84e","bad":"#d77f6b","neutral":"#e8e5dd"},"heat":[(56,62,72),(95,174,126)]}
+THEMES={"light":None,"warm":WARM,"dim":DIM}                # named presets agents can pass as theme=
 def _lerp(a,b,t): return tuple(round(a[i]+(b[i]-a[i])*t) for i in range(3))
 def heatcolor(t01,t): r,g,bl=_lerp(t["heat"][0],t["heat"][1],max(0,min(1,t01))); return f"#{r:02x}{g:02x}{bl:02x}"
 
@@ -235,7 +243,10 @@ def slot_kpis(s):
 def slot_plot(s):
     # the main content sits in its own card (matching the KPI card); title/legend/plot live inside it
     t=s.t; y0=s.y; pad=16; ix=s.CL+pad; py=y0+pad+4; inner=[]
-    if s.chart_title: inner.append(txt(s.CCX,y0+pad+10,s.chart_title,14,t["ink2"],700,anchor="middle")); py=y0+pad+28
+    if s.chart_title:                                        # wrap so a long chart title never overflows the card
+        ctl=wrap(s.chart_title,14,s.CW-2*pad,700)
+        for j,ln in enumerate(ctl): inner.append(txt(s.CCX,y0+pad+10+j*18,ln,14,t["ink2"],700,anchor="middle"))
+        py=y0+pad+10+len(ctl)*18
     leg=s.legend
     if isinstance(leg,dict) and leg.get("type")=="gradient":
         gy=py+18; gx=ix; gw=170                              # below the chart title, not over it

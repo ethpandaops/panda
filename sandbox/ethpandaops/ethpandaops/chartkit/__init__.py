@@ -19,6 +19,7 @@ from ._api import (
     histogram, bar, box, line, area, scatter, heatmap, waterfall, custom,
     hline, vline, Chart, nice_ticks, log_ticks,
 )
+from ._engine import WARM, DIM, THEMES   # theme presets: pass theme="warm"/"dim" or theme=ck.WARM
 from . import sources, clients
 
 def guide():
@@ -29,4 +30,5 @@ def guide():
 __all__ = [
     "histogram", "bar", "box", "line", "area", "scatter", "heatmap", "waterfall", "custom",
     "hline", "vline", "Chart", "nice_ticks", "log_ticks", "sources", "clients", "guide",
+    "WARM", "DIM", "THEMES",
 ]
