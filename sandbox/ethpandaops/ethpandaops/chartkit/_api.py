@@ -17,7 +17,7 @@ polyline points, or SVG — those live in the engine (this file's imports).
 """
 import math, datetime
 import numpy as np, pandas as pd
-from ._engine import plot, render, make_scale, txt, tw, GREEN, ACC, WARM, DIM, THEMES  # the engine (never agent-facing)
+from ._engine import plot, render, make_scale, txt, tw, GREEN, ACC, WARM, DIM, THEMES, RAMPS, ramp_color  # the engine
 from .sources.base import Source as _Source                          # provenance marker: real sources only
 
 PALETTE=[GREEN,ACC,"#2f6db0","#8e44ad","#1f9b7a","#b8860b"]
@@ -137,18 +137,22 @@ def box(rows,*,x_label,x_unit="",title,subtitle="",chart_title="",source=None,so
     xhi=max(xt[-1],hi*1.03)                                       # domain must cover the longest whisker
     lp=max(58,int(max(tw(l,11) for l in labels))+18)            # gutter fits the longest label
     h=0.30                                                       # box half-thickness in data units
+    ramp=color if color in RAMPS else None                       # opt-in: color="rainbow"/"viridis"/"gradient"
+    meds=[r["med"] for r in rows]; mn,mx=min(meds),max(meds)     # colour boxes by value when a ramp is chosen
     def body(c):
         for i,r in enumerate(rows):
             y=n-1-i                                                             # first sorted row at the TOP
+            bc=ramp_color(ramp,(r["med"]-mn)/(mx-mn) if mx>mn else 0.5,c.t) if ramp else color
             c.line([(r["p05"],y),(r["p95"],y)],color="muted",width=1.5)         # whisker
             for wx in (r["p05"],r["p95"]): c.line([(wx,y-0.14),(wx,y+0.14)],color="muted",width=1.5)
-            c.rect(r["q1"],y-h,r["q3"],y+h,color=color,rx=2.5,opacity=0.85)     # IQR box
+            c.rect(r["q1"],y-h,r["q3"],y+h,color=bc,rx=2.5,opacity=0.9)         # IQR box
             c.line([(r["med"],y-h),(r["med"],y+h)],color="paper",width=2.4)     # median
+    legend={"type":"gradient","lo":_fmt(x_unit)(mn),"hi":_fmt(x_unit)(mx),"ramp":ramp} if ramp else None
     pi,ph=plot(body=body,xdom=(x_min,xhi),ydom=(-0.6,n-0.4),xticks=xt,yticks=list(range(n)),
         xfmt=_fmt(x_unit),yfmt=lambda y:labels[n-1-int(round(y))],xtitle=_atitle(x_label,x_unit),ytitle=None,
         lpad=lp,ph=max(220,n*30))
     return _panel(title=title,subtitle=subtitle,pi=pi,ph=ph,stats=stats,source=source,sources=sources,
-        notes=notes,window=window,chart_title=chart_title,theme=theme,network=network)
+        notes=notes,window=window,chart_title=chart_title,theme=theme,legend=legend,network=network)
 
 def bar(items,*,value_label="",unit="",title,subtitle="",chart_title="",sort=True,color="data",
         source=None,sources=None,notes="",stats=None,theme=None,network="mainnet",window=None):
@@ -158,18 +162,21 @@ def bar(items,*,value_label="",unit="",title,subtitle="",chart_title="",sort=Tru
     if sort: items=sorted(items,key=lambda kv:kv[1],reverse=True)
     n=len(items); labels=[str(k) for k,_ in items]; vals=list(_finite([v for _,v in items],"bar"))
     if min(vals)<0: raise ValueError("chartkit.bar: values must be non-negative (a bar runs from 0); use custom() for signed/diverging bars.")
-    hi=max(vals); xt=nice_ticks(0,hi,6); xhi=max(xt[-1],hi*1.14)   # headroom for the value labels
+    hi=max(vals); lo=min(vals); xt=nice_ticks(0,hi,6); xhi=max(xt[-1],hi*1.14)   # headroom for the value labels
     lp=max(58,int(max(tw(l,11) for l in labels))+18); vf=_fmt(unit)
+    ramp=color if color in RAMPS else None                       # opt-in: color="rainbow"/"viridis"/"gradient"
     def body(c):
         h=0.34
         for i,(k,v) in enumerate(items):
-            y=n-1-i; c.rect(0,y-h,float(v),y+h,color=color,rx=2.5)
+            y=n-1-i; bc=ramp_color(ramp,(v-lo)/(hi-lo) if hi>lo else 0.5,c.t) if ramp else color
+            c.rect(0,y-h,float(v),y+h,color=bc,rx=2.5)
             c.label(float(v),y,"  "+vf(float(v)),size=11.5,color="ink",weight=700,dy=4)
+    legend={"type":"gradient","lo":vf(lo),"hi":vf(hi),"ramp":ramp} if ramp else None
     pi,ph=plot(body=body,xdom=(0,xhi),ydom=(-0.6,n-0.4),xticks=xt,yticks=list(range(n)),
         xfmt=vf,yfmt=lambda y:labels[n-1-int(round(y))],xtitle=_atitle(value_label,unit),ytitle=None,
         lpad=lp,ph=max(200,n*34))
     return _panel(title=title,subtitle=subtitle,pi=pi,ph=ph,stats=stats,source=source,sources=sources,
-        notes=notes,window=window,chart_title=chart_title,theme=theme,network=network)
+        notes=notes,window=window,chart_title=chart_title,theme=theme,legend=legend,network=network)
 
 def area(df,*,x,y,unit="",y_label=None,color=GREEN,title,subtitle="",chart_title="",
          source=None,sources=None,notes="",stats=None,theme=None,network="mainnet",window=None):

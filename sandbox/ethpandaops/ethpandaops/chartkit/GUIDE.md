@@ -80,6 +80,10 @@ Everything below is what the library *can't* check — still your responsibility
 
 11. **Theme: leave it default.** The default (light) theme is tuned. For a genuine reason (e.g. embedding in a dark surface) pass a preset: `theme="warm"` or `theme="dim"` (or `theme=ck.WARM`/`ck.DIM`, or a partial theme dict). Don't hand-pick colours per chart; per-series colour overrides exist where they're needed (`line` series tuples, `bar`/`area`/`box` `color=`).
 
+12. **Value gradients are opt-in.** `box`/`bar` default to one brand colour. When the value itself is the story (a clear ranking/ramp), pass `color="rainbow"` (or `"viridis"`/`"gradient"`) to colour each mark by its value, with a matching gradient legend. Use it when magnitude order carries meaning; leave the uniform default otherwise.
+
+13. **Keep labels to Latin text.** Layout is measured from the chart font (Inter). Latin/Greek/Cyrillic and emoji render best-effort via font fallback; CJK and unusual scripts may not have glyphs and their spacing isn't measured — prefer ASCII names (which is what Ethereum entity/client/table names already are).
+
 ## When the library doesn't have your chart
 Most needs are covered. For something genuinely custom (an unusual mark, a second axis
 the high-level call doesn't expose), there's a lower-level escape hatch — but reach for it

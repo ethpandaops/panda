@@ -45,8 +45,13 @@ RUN uv pip install --python /usr/local/bin/python3 --prefix /install --no-cache 
 FROM python:3.11-slim@sha256:a3ab0b966bc4e91546a033e22093cb840908979487a9fc0e6e38295747e49ac0
 
 # librsvg provides rsvg-convert, which the chartkit library uses to rasterise its
-# self-contained SVG charts (fonts are embedded as data URIs, so no system fonts needed).
-RUN apt-get update && apt-get install -y --no-install-recommends librsvg2-bin \
+# self-contained SVG charts. The chart font (Inter) is embedded as a data URI; the extra
+# font packages give librsvg a fontconfig fallback for glyphs Inter lacks — DejaVu covers
+# Latin-ext/Greek/Cyrillic and Noto Color Emoji covers emotes (best-effort under librsvg).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    librsvg2-bin \
+    fonts-dejavu-core \
+    fonts-noto-color-emoji \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user and runtime directories.

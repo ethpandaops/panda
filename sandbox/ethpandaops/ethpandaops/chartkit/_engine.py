@@ -75,6 +75,30 @@ THEMES={"light":None,"warm":WARM,"dim":DIM}                # named presets agent
 def _lerp(a,b,t): return tuple(round(a[i]+(b[i]-a[i])*t) for i in range(3))
 def heatcolor(t01,t): r,g,bl=_lerp(t["heat"][0],t["heat"][1],max(0,min(1,t01))); return f"#{r:02x}{g:02x}{bl:02x}"
 
+# ---- value gradients: map a normalised value t in [0,1] to a colour. A "rainbow" is just one
+# such ramp. Used to colour marks by magnitude (box/bar) the way a heatmap colours cells. ----
+def _hsv2hex(h,s,v):
+    i=int(h*6)%6; f=h*6-int(h*6); p,q,w=v*(1-s),v*(1-s*f),v*(1-s*(1-f))
+    r,g,b=[(v,w,p),(q,v,p),(p,v,w),(p,q,v),(w,p,v),(v,p,q)][i]
+    return f"#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}"
+def _stops_at(stops,t):
+    t=max(0.0,min(1.0,t))
+    for i in range(len(stops)-1):
+        o0,c0=stops[i]; o1,c1=stops[i+1]
+        if t<=o1:
+            f=(t-o0)/(o1-o0) if o1>o0 else 0.0
+            return "#%02x%02x%02x"%tuple(round(c0[j]+(c1[j]-c0[j])*f) for j in range(3))
+    return "#%02x%02x%02x"%tuple(stops[-1][1])
+_VIRIDIS=[(0,(68,1,84)),(.25,(59,82,139)),(.5,(33,145,140)),(.75,(94,201,98)),(1,(253,231,37))]
+RAMPS=("gradient","rainbow","viridis")              # names agents pass as a chart `color=`
+def ramp_color(name,t,theme):
+    t=max(0.0,min(1.0,t))
+    if name=="gradient": return heatcolor(t,theme)  # the theme's own light->brand ramp
+    if name=="rainbow":  return _hsv2hex(0.66*(1-t),0.62,0.82)   # blue (low) -> red (high)
+    if name=="viridis":  return _stops_at(_VIRIDIS,t)
+    return None
+def ramp_stops(name,theme,n=9): return [(round(i/(n-1),3),ramp_color(name,i/(n-1),theme)) for i in range(n)]
+
 # ===================== SCALES (hookable) =====================
 def _sclin(d,r): (a,b),(c,e)=d,r; return lambda v: c+(v-a)/(b-a)*(e-c)
 def _sclog(d,r):
@@ -250,7 +274,7 @@ def slot_plot(s):
     leg=s.legend
     if isinstance(leg,dict) and leg.get("type")=="gradient":
         gy=py+18; gx=ix; gw=170                              # below the chart title, not over it
-        stops="".join(f'<stop offset="{o}" stop-color="{heatcolor(o,t)}"/>' for o in (0,0.5,1))
+        stops="".join(f'<stop offset="{o}" stop-color="{c}"/>' for o,c in ramp_stops(leg.get("ramp","gradient"),t))
         inner.append(f'<defs><linearGradient id="hg">{stops}</linearGradient></defs>')
         inner.append(txt(gx,gy,leg["lo"],11,t["muted"])); gx+=tw(leg["lo"],11)+8
         inner.append(f'<rect x="{gx:.1f}" y="{gy-9:.1f}" width="{gw}" height="10" rx="2" fill="url(#hg)" stroke="{t["line"]}"/>'); gx+=gw+8
