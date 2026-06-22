@@ -3,7 +3,9 @@
 # =============================================================================
 FROM alpine:3.24@sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4
 
-RUN apk add --no-cache ca-certificates tzdata docker-cli su-exec
+# shadow provides usermod/groupmod, which the entrypoint uses to re-number the
+# panda user to the owner of the mounted credentials (non-1000 host UIDs).
+RUN apk add --no-cache ca-certificates tzdata docker-cli su-exec shadow
 
 RUN addgroup -g 1000 panda && \
     adduser -u 1000 -G panda -D panda
