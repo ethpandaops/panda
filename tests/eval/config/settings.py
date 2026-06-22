@@ -6,6 +6,12 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+_JUDGE_PROVIDER = str(Path(__file__).resolve().parents[1] / "promptfoo" / "judge.py")
+
+# Reasoning effort for the direct-Codex judge. Grading is a short rubric verdict, so a
+# light effort keeps it fast and cheap without hurting reliability.
+CODEX_JUDGE_REASONING_EFFORT = "low"
+
 # Default values - single source of truth. Everything else references these; don't
 # re-hardcode the strings at call sites.
 DEFAULT_AGENT_MODEL = "opencode-go/deepseek-v4-flash"
@@ -36,7 +42,26 @@ def _opencode_key_envar() -> str:
 
 
 def grader_for(model: str) -> dict:
-    """A promptfoo grading-provider spec for an opencode-go model."""
+    """A promptfoo grading-provider spec for a judge model.
+
+    Spelling decides the transport:
+    - a ``codex/<model>`` prefix (e.g. ``codex/gpt-5.4``) grades through the Codex Responses
+      API directly, authenticating from ``~/.codex/auth.json`` (the same Codex/ChatGPT
+      subscription the subject uses) — so it needs NO OpenAI API key and NO OpenRouter detour.
+      The ``codex/`` prefix is stripped and the remainder is passed as the model id.
+    - any other model name (e.g. ``qwen3.7-plus``) grades through the opencode-go zen gateway
+      via promptfoo's generic ``openai:chat`` driver + the opencode-go API key.
+    """
+    if model.startswith("codex/"):
+        spec = model[len("codex/") :]
+        return {
+            "id": f"file://{_JUDGE_PROVIDER}",
+            "label": f"judge:codex/{spec}",
+            "config": {
+                "model": spec,
+                "reasoning_effort": CODEX_JUDGE_REASONING_EFFORT,
+            },
+        }
     return {
         "id": f"openai:chat:{model}",
         "config": {

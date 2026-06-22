@@ -39,7 +39,13 @@ uv run python -m scripts.repl
 
 Required environment:
 - `OPENCODE_GO_API_KEY` — the agent subject (opencode-go provider).
-- `OPENROUTER_API_KEY` — the promptfoo grader (`--judge-model` → `openrouter:<model>`).
+- The promptfoo grader (`--judge-model`):
+  - a bare model name (default `qwen3.7-plus`) grades through the opencode-go zen gateway —
+    `OPENCODE_GO_API_KEY` covers it.
+  - a `codex/<model>` prefix (e.g. `codex/gpt-5.4`) grades through the Codex Responses API
+    directly, authenticating from `~/.codex/auth.json` (the same Codex/ChatGPT subscription
+    the subject can use), so no OpenAI API key is needed. Run `codex login` first to populate
+    the auth file.
 - A reachable panda server: CI starts one; locally use `--scratch`, or point your
   `~/.config/panda/config.yaml` at a running server.
 

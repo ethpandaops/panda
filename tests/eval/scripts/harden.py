@@ -171,11 +171,17 @@ def main() -> None:
         help="model for the adversarial diff auditor (fresh context; xhigh reasoning)",
     )
     ap.add_argument("--no-audit", action="store_true", help="disable the adversarial auditor stage")
-    ap.add_argument("--judge-model", default=DEFAULT_EVALUATOR_MODEL)
+    ap.add_argument(
+        "--judge-model",
+        default=DEFAULT_EVALUATOR_MODEL,
+        help="grader model. A bare name (e.g. qwen3.7-plus) grades via the opencode-go "
+        "gateway; a codex/<model> prefix (e.g. codex/gpt-5.4) grades through the Codex "
+        "Responses API directly using ~/.codex/auth.json — no OpenAI API key needed.",
+    )
     ap.add_argument(
         "--grader",
         default="",
-        help="promptfoo grading provider for llm-rubric asserts (default: <judge-model> via opencode-go)",
+        help="explicit promptfoo grading provider for llm-rubric asserts (overrides --judge-model)",
     )
     ap.add_argument("--rounds", type=int, default=3)
     ap.add_argument(
