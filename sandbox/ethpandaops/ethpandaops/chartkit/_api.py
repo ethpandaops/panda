@@ -34,9 +34,12 @@ def log_ticks(lo,hi):
     a=int(math.floor(math.log10(max(lo,1e-9)))); b=int(math.ceil(math.log10(max(hi,1e-9))))
     return [10**i for i in range(a,b+1)]
 def _ax(vals,scale,n):                              # -> (domain, ticks) for linear OR log
-    pos=[v for v in vals if v>0]
     if scale=="log":
-        tk=log_ticks(min(pos),max(vals)); return (tk[0],tk[-1]),tk
+        pos=[v for v in vals if v>0]
+        if not pos: raise ValueError("chartkit: a log scale needs positive values (all values were <= 0).")
+        tk=log_ticks(min(pos),max(pos))
+        if len(tk)<2: tk=[tk[0],tk[0]*10]           # non-degenerate domain so the log scale doesn't divide by zero
+        return (tk[0],tk[-1]),tk
     tk=nice_ticks(0,max(vals),n); return (0,tk[-1]),tk
 _UNIT={"s":lambda v:f"{v:g}s","ms":lambda v:f"{int(v)}ms","%":lambda v:f"{v:g}%"}
 def _fmt(u): return _UNIT.get(u,lambda v:f"{v:,.0f}")
@@ -83,6 +86,9 @@ def _panel(*,title,subtitle="",chart_title="",pi,ph,stats=None,source=None,sourc
     for sd in srcs:
         if not (isinstance(sd,dict) and sd.get("name") and sd.get("ref") is not None):
             raise ValueError(f"chartkit: each source must come from a source library (a dict with name+ref) — got {sd!r}.")
+        lg=sd.get("logo")                            # logos must be package-produced data URIs, never external URLs
+        if lg is not None and not str(lg).startswith("data:image/"):
+            raise ValueError("chartkit: a source `logo` must be a data:image/... URI from a source library, not a URL.")
     return Chart(dict(network=network,title=title,subtitle=subtitle,chart_title=chart_title,plot_inner=pi,plot_h=ph,
         kpis=stats,sources=srcs,notes=notes,legend=legend,window=window))
 
@@ -91,9 +97,12 @@ def histogram(values,*,x,unit="",title,subtitle="",chart_title="",source=None,so
               stats=None,network="mainnet",window=None,median=True,bins=80):
     v=np.asarray(list(values),float)
     if not len(v): raise ValueError("chartkit.histogram: `values` is empty — nothing to plot.")
+    if v.min()<0: raise ValueError("chartkit.histogram: values must be non-negative (use scatter/line for signed data).")
     bw=(v.max() or 1)/bins
-    ac,ae=np.histogram(v,bins=np.arange(0,v.max()+bw,bw)); last=int(np.where(ac>=max(3,len(v)*5e-4))[0].max())
-    xmax=int(math.ceil(ae[last+1])); hc,he=np.histogram(v,bins=np.arange(0,xmax+1e-9,bw)); yt=nice_ticks(0,hc.max())
+    ac,ae=np.histogram(v,bins=np.arange(0,v.max()+bw,bw))
+    idx=np.where(ac>=max(3,len(v)*5e-4))[0]; nz=np.where(ac>0)[0]      # tolerate tiny / all-equal samples
+    last=int(idx.max()) if len(idx) else (int(nz.max()) if len(nz) else 0)
+    xmax=max(1,int(math.ceil(ae[last+1]))); hc,he=np.histogram(v,bins=np.arange(0,xmax+1e-9,bw)); yt=nice_ticks(0,hc.max())
     m=[{"axis":"x","value":float(np.median(v)),"label":f"median {np.median(v):.2f}{unit}"}] if median else []
     pi,ph=plot(kind="histogram",xdom=(0,xmax),ydom=(0,yt[-1]),xticks=list(range(0,xmax+1)),yticks=yt,
         xfmt=_fmt(unit),yfmt=_fmt(""),xtitle=_atitle(x,unit),ytitle="Count",
@@ -151,6 +160,7 @@ def bar(items,*,value_label="",unit="",title,subtitle="",chart_title="",sort=Tru
 def area(df,*,x,y,unit="",y_label=None,color=GREEN,title,subtitle="",chart_title="",
          source=None,sources=None,notes="",stats=None,network="mainnet",window=None):
     """Filled time/numeric series (single)."""
+    if not len(df): raise ValueError("chartkit.area: dataframe is empty — nothing to plot.")
     xv=pd.Series(list(df[x]))
     if np.issubdtype(np.asarray(xv).dtype,np.datetime64) or isinstance(xv.iloc[0],(pd.Timestamp,datetime.datetime)):
         tt=pd.to_datetime(xv); t0=tt.min(); xs=[(t-t0).total_seconds()/3600 for t in tt]; xmax=max(xs)
@@ -191,6 +201,8 @@ def heatmap(cells,*,x_labels,y_labels,x_title="",y_title="",lo="",hi="",title,su
 
 def line(df,*,x,left,right=None,y_scale="linear",y_max=None,markers=None,title,subtitle="",chart_title="",source=None,sources=None,notes="",
          stats=None,network="mainnet",window=None):
+    if not len(df): raise ValueError("chartkit.line: dataframe is empty — nothing to plot.")
+    if not left: raise ValueError("chartkit.line: `left` needs at least one (label, column, unit) series.")
     xv=pd.Series(list(df[x]))
     if np.issubdtype(np.asarray(xv).dtype,np.datetime64) or isinstance(xv.iloc[0],(pd.Timestamp,datetime.datetime)):
         tt=pd.to_datetime(xv); t0=tt.min(); xs=[(t-t0).total_seconds()/60 for t in tt]; xmax=math.ceil(max(xs))
@@ -225,7 +237,9 @@ def line(df,*,x,left,right=None,y_scale="linear",y_max=None,markers=None,title,s
 
 def scatter(df,*,x,y,x_label=None,y_label=None,x_unit="",y_unit="",x_scale="linear",y_scale="linear",
             trend=False,title,subtitle="",chart_title="",source=None,sources=None,notes="",stats=None,network="mainnet",window=None):
-    xs=list(df[x]); ys=list(df[y]); xdom,xt=_ax(xs,x_scale,6); ydom,yt=_ax(ys,y_scale,5)
+    xs=list(df[x]); ys=list(df[y])
+    if not xs: raise ValueError("chartkit.scatter: dataframe is empty — nothing to plot.")
+    xdom,xt=_ax(xs,x_scale,6); ydom,yt=_ax(ys,y_scale,5)
     if trend:                                          # least-squares fit drawn via the friendly context
         m,b=np.polyfit(xs,ys,1); r2=np.corrcoef(xs,ys)[0,1]**2; x0,x1=min(xs),max(xs)
         def body(c):

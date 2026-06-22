@@ -7,7 +7,7 @@ Override layer:
   - slots=   : replace any frame band (header/kpis/plot/footer) with your own fn
   - @renderer("kind") OR body= : the plot body itself
 Anything not overridden falls back to the built-in default."""
-import base64, math, subprocess, html
+import base64, math, subprocess, html, re, tempfile
 from types import SimpleNamespace
 from pathlib import Path
 from PIL import ImageFont
@@ -28,8 +28,17 @@ def _font(size,w):
     return _F[k]
 def tw(s,size,w=400): return _font(size,w).getlength(str(s))
 def esc(s): return html.escape(str(s),quote=False)
+# Colours and hrefs land in SVG ATTRIBUTES, where unescaped caller input could break out of
+# the quotes or (for an href) point librsvg at an external resource. Element text is escaped by
+# txt(); these guard the attribute path. A rejected value renders as a safe default, never markup.
+_COLOR=re.compile(r"^(#[0-9a-fA-F]{3,8}|rgba?\([0-9 .,%]+\)|url\(#[\w-]+\)|[a-zA-Z]{1,20})$")
+def safe_color(c,default="#000000"): c="" if c is None else str(c); return c if _COLOR.match(c) else default
+def safe_href(u):
+    """Only allow logos that are package-produced base64 data URIs (blocks http/file/SSRF)."""
+    u="" if u is None else str(u)
+    return u if u.startswith("data:image/") else ""
 def txt(x,y,s,size,fill,w=400,anchor="start"):
-    return f'<text x="{x:.1f}" y="{y:.1f}" font-size="{size}" font-weight="{w}" fill="{fill}" text-anchor="{anchor}">{esc(s)}</text>'
+    return f'<text x="{x:.1f}" y="{y:.1f}" font-size="{size}" font-weight="{w}" fill="{safe_color(fill)}" text-anchor="{anchor}">{esc(s)}</text>'
 def wrap(s,size,maxw,w=400):
     out,cur=[],""
     for word in str(s).split():
@@ -73,7 +82,7 @@ class Draw:
         self.kind,self.sx,self.sy,self.yb,self.PW,self.PT,self.PH,self.GL,self.t=kind,sx,sy,yb,PW,PT,PH,GL,t
         self.bars,self.series,self.spans,self.cells,self._buf=bars,series,spans,cells,[]
     def add(self,svg): self._buf.append(svg); return svg
-    def col(self,c): return self.t.get(c,c)                       # theme name or raw hex
+    def col(self,c): return safe_color(self.t.get(c,c))           # theme name or raw hex, attribute-safe
     def line(self,points,color="data",width=2.4,scale_y=None):
         f=scale_y or self.sy; pts=" ".join(f"{self.sx(x):.1f},{f(v):.1f}" for x,v in points)
         return self.add(f'<polyline points="{pts}" fill="none" stroke="{self.col(color)}" stroke-width="{width}" stroke-linejoin="round"/>')
@@ -124,7 +133,7 @@ def _bars(c):
 def _area(c):
     o=[]
     for s in c.series:
-        pts=" ".join(f"{c.sx(x):.1f},{c.sy(y):.1f}" for x,y in s["pts"]); col=s.get("color",c.t["data"])
+        pts=" ".join(f"{c.sx(x):.1f},{c.sy(y):.1f}" for x,y in s["pts"]); col=safe_color(s.get("color",c.t["data"]))
         o.append(f'<polygon points="{c.sx(s["pts"][0][0]):.1f},{c.yb:.1f} {pts} {c.sx(s["pts"][-1][0]):.1f},{c.yb:.1f}" fill="{col}" fill-opacity="0.12"/>')
         o.append(f'<polyline points="{pts}" fill="none" stroke="{col}" stroke-width="2.6"/>')
     return o
@@ -133,7 +142,7 @@ def _area(c):
 def _line(c):
     o=[]
     for s in c.series:
-        pts=" ".join(f"{c.sx(x):.1f},{c.sy(y):.1f}" for x,y in s["pts"]); col=s.get("color",c.t["data"])
+        pts=" ".join(f"{c.sx(x):.1f},{c.sy(y):.1f}" for x,y in s["pts"]); col=safe_color(s.get("color",c.t["data"]))
         o.append(f'<polyline points="{pts}" fill="none" stroke="{col}" stroke-width="{s.get("w",2.6)}" stroke-linejoin="round"/>')
         if s.get("label"): lx,ly=s["pts"][-1]; o.append(txt(c.sx(lx)+8,c.sy(ly)+4,s["label"],11.5,col,700))
     return o
@@ -142,7 +151,7 @@ def _line(c):
 def _waterfall(c):
     o=[]; n=len(c.spans); rh=c.PH/n; R=c.GL+c.PW; bh=min(12,rh*0.36); fs=min(10.5,max(8.5,rh*0.46))
     for i,sp in enumerate(c.spans):
-        cy=c.PT+i*rh; col=sp.get("color") or c.t["services"].get(sp.get("service"),c.t["data"])
+        cy=c.PT+i*rh; col=safe_color(sp.get("color") or c.t["services"].get(sp.get("service"),c.t["data"]))
         x0=c.sx(sp["start"]); x1=c.sx(sp["start"]+sp["dur"]); bw=max(2,x1-x0)
         if i: o.append(f'<line x1="{c.GL}" x2="{R}" y1="{cy:.1f}" y2="{cy:.1f}" stroke="#f0efe8"/>')
         ny=cy+rh*0.40; by=cy+rh*0.46; nm=sp["name"]; ind=sp.get("depth",0)*14
@@ -181,7 +190,7 @@ def plot(*, kind=None, xdom, ydom, xticks, yticks, xfmt, yfmt, xtitle, ytitle,
     c=Draw(kind,sx,sy,yb,PW,PT,H,gl,t,bars,series,spans,cells); c.points=points
     ret=(body or RENDERERS[kind])(c); p+=(ret or [])+c._buf
     for m in markers or []:
-        col=m.get("color",t["accent"]); dash=' stroke-dasharray="5 3"' if m.get("dash") else ''
+        col=safe_color(m.get("color",t["accent"])); dash=' stroke-dasharray="5 3"' if m.get("dash") else ''
         if m["axis"]=="x":
             X=sx(m["value"]); p.append(f'<line x1="{X:.1f}" x2="{X:.1f}" y1="{PT}" y2="{PT+H}" stroke="{col}" stroke-width="2"{dash}/>')
             if X+8+tw(m["label"],11.5,700)>PW0-2: p.append(txt(X-8,PT+11,m["label"],11.5,col,700,anchor="end"))
@@ -207,7 +216,7 @@ def slot_header(s):
     for i,ln in enumerate(tlines): s.E.append(txt(CL,ty+22+i*lh,ln,28,t["ink2"],700))
     if s.subtitle: s.E.append(txt(CL,ty+22+(len(tlines)-1)*lh+22,s.subtitle,14,t["muted"]))
     cy=y+(band-cluster)/2                                    # brand cluster, vertically centred in band
-    s.E.append(f'<image x="{CR-logo}" y="{cy:.1f}" width="{logo}" height="{logo}" xlink:href="{BRAND}"/>')
+    s.E.append(f'<image x="{CR-logo}" y="{cy:.1f}" width="{logo}" height="{logo}" xlink:href="{safe_href(BRAND)}"/>')
     pcx=CR-logo/2; py=cy+logo+gap
     s.E.append(f'<rect x="{pcx-pillw/2:.1f}" y="{py:.1f}" width="{pillw:.1f}" height="{pillh}" rx="6" fill="{nh}1a"/>')
     s.E.append(txt(pcx,py+14.5,s.network.capitalize(),10.5,nh,600,anchor="middle"))
@@ -240,7 +249,7 @@ def slot_plot(s):
         for label,color in leg:
             iw=15+tw(label,11.5,600)+22
             if lx+iw>s.CR-pad and lx>ix: ly+=lh; lx=ix
-            inner.append(f'<rect x="{lx:.1f}" y="{ly-9}" width="11" height="11" rx="2.5" fill="{color}"/>'); inner.append(txt(lx+17,ly,label,11.5,t["ink"],600)); lx+=iw
+            inner.append(f'<rect x="{lx:.1f}" y="{ly-9}" width="11" height="11" rx="2.5" fill="{safe_color(color)}"/>'); inner.append(txt(lx+17,ly,label,11.5,t["ink"],600)); lx+=iw
         py=ly+26
     H=(py-y0)+s.plot_h+pad-6                                  # card height: content + bottom padding
     s.E.append(f'<rect x="{s.CL}" y="{y0:.1f}" width="{s.CW}" height="{H:.1f}" rx="14" fill="{t["card"]}" stroke="{t["line"]}"/>')
@@ -256,7 +265,7 @@ def slot_footer(s):
     colr=(mid-gap/2) if s.notes else s.CR         # right bound of the DATASOURCES column
     notes_x=mid+gap/2; notes_w=s.CR-notes_x
     s.E.append(txt(s.CL,fc,"DATASOURCES",10,t["faint"],700)); sy=fc+22; srcb=fc
-    img=lambda x,uri: f'<image x="{x:.1f}" y="{sy-14}" width="20" height="20" xlink:href="{uri}"/>'
+    img=lambda x,uri: f'<image x="{x:.1f}" y="{sy-14}" width="20" height="20" xlink:href="{safe_href(uri)}"/>'
     for src in s.sources:
         tx=s.CL; nm=src["name"]; st=src.get("source")   # st = the datasource this dataset lives in
         stacked=bool(st and st.get("logo") and st.get("name")!=nm)
@@ -294,7 +303,10 @@ def render(out, network, title, subtitle, chart_title, plot_inner, plot_h, kpis,
     style="".join(f'@font-face{{font-family:Inter;font-weight:{w};src:url({FONTB[w]})}}' for w in (400,600,700))+'text{font-family:Inter}'
     svg=(f'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="912" height="{H}" '
          f'viewBox="0 0 912 {H}"><style>{style}</style><rect width="912" height="{H}" fill="{t["paper"]}"/>'+"".join(s.E)+'</svg>')
-    out=Path(out); sp=out.with_suffix(".svg"); sp.write_text(svg)
-    subprocess.run(["rsvg-convert","-w","1824",str(sp),"-o",str(out)],check=True)
-    sp.unlink(missing_ok=True)
+    out=Path(out)
+    if out.suffix.lower()==".svg": raise ValueError("chartkit: save() writes a raster image (e.g. .png); got an .svg path.")
+    with tempfile.NamedTemporaryFile("w",dir=str(out.parent or "."),suffix=".svg",delete=False) as f:
+        f.write(svg); sp=f.name                          # unique temp -> no collision on concurrent renders
+    try: subprocess.run(["rsvg-convert","-w","1824",sp,"-o",str(out)],check=True)
+    finally: Path(sp).unlink(missing_ok=True)
     return str(out)
