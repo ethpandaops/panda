@@ -65,6 +65,24 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Build and push sandbox image
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          # Strip the leading "v" so sandbox tags match goreleaser's
+          # {{ .Version }} convention used for the server and proxy images
+          # (e.g. sandbox-0.31.0, not sandbox-v0.31.0).
+          VERSION=${TAG#v}
+          SHORT_SHA=${GITHUB_SHA::7}
+          LATEST_TAG=${{ steps.meta.outputs.latest_tag }}
+
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --file sandbox/Dockerfile \
+            --tag "ethpandaops/panda:sandbox-${VERSION}" \
+            --tag "ethpandaops/panda:sandbox-${VERSION}-${SHORT_SHA}" \
+            --tag "ethpandaops/panda:sandbox-${LATEST_TAG}" \
+            --push .
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89 # v7.2.2
         with:
@@ -86,24 +104,6 @@ jobs:
           subject-path: |
             dist/checksums.txt
             dist/*.tar.gz
-
-      - name: Build and push sandbox image
-        run: |
-          TAG=${GITHUB_REF#refs/tags/}
-          # Strip the leading "v" so sandbox tags match goreleaser's
-          # {{ .Version }} convention used for the server and proxy images
-          # (e.g. sandbox-0.31.0, not sandbox-v0.31.0).
-          VERSION=${TAG#v}
-          SHORT_SHA=${GITHUB_SHA::7}
-          LATEST_TAG=${{ steps.meta.outputs.latest_tag }}
-
-          docker buildx build \
-            --platform linux/amd64,linux/arm64 \
-            --file sandbox/Dockerfile \
-            --tag "ethpandaops/panda:sandbox-${VERSION}" \
-            --tag "ethpandaops/panda:sandbox-${VERSION}-${SHORT_SHA}" \
-            --tag "ethpandaops/panda:sandbox-${LATEST_TAG}" \
-            --push .
 
       # Keyless-sign the immutable version-pinned image tags. cosign resolves
       # each tag to its digest and signs by digest; floating tags (e.g.
