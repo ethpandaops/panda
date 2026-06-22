@@ -97,7 +97,7 @@ uv run python -m scripts.repl
 
 ### Module System
 
-Eleven compiled-in modules are registered in `pkg/app/app.go`:
+Twelve compiled-in modules are registered in `pkg/app/app.go`:
 - `clickhouse`
 - `prometheus`
 - `loki`
@@ -109,6 +109,7 @@ Eleven compiled-in modules are registered in `pkg/app/app.go`:
 - `tracoor`
 - `block_archive`
 - `datasets` (dataset knowledge packs, lives in `datasets/` at the repo root)
+- `chartkit` (docs-only; surfaces the chartkit sandbox charting library's Python docs + examples)
 
 Each module implements `module.Module` in `pkg/module/module.go`. Optional capability interfaces live alongside it in `pkg/module/module.go`.
 - `ProxyAware` — receives proxy client for proxy-backed operations

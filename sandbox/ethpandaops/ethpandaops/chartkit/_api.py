@@ -18,6 +18,7 @@ polyline points, or SVG — those live in the engine (this file's imports).
 import math, datetime
 import numpy as np, pandas as pd
 from ._engine import plot, render, make_scale, txt, tw, GREEN, ACC   # the engine (never agent-facing)
+from .sources.base import Source as _Source                          # provenance marker: real sources only
 
 PALETTE=[GREEN,ACC,"#2f6db0","#8e44ad","#1f9b7a","#b8860b"]
 
@@ -46,8 +47,9 @@ def _fmt(u): return _UNIT.get(u,lambda v:f"{v:,.0f}")
 def _atitle(label,unit): return f"{label} ({unit})" if unit else label
 
 # chartkit knows NOTHING about specific sources. Agents reference source libraries directly
-# (from sources.datasources.prometheus import prometheus) and pass the result as source=.
-# A source is any self-describing dict {name, ref, logo, color, source} — see sources/base.py.
+# (from ...chartkit.sources.datasources.prometheus import prometheus) and pass the result as
+# source=. A source is a `sources.base.Source` (a self-describing {name, ref, logo, color,
+# source} dict produced by a source library); hand-built dicts are rejected for provenance.
 
 # reference lines (thresholds / targets / deadlines) — pass in markers=[...]
 def hline(value,label="",color="deadline"): return {"axis":"y","value":value,"label":label,"color":color}
@@ -84,8 +86,10 @@ def _panel(*,title,subtitle="",chart_title="",pi,ph,stats=None,source=None,sourc
                              f"{sorted(_SENT)} — got {k!r}.")
     srcs=_srcs(source,sources)
     for sd in srcs:
-        if not (isinstance(sd,dict) and sd.get("name") and sd.get("ref") is not None):
-            raise ValueError(f"chartkit: each source must come from a source library (a dict with name+ref) — got {sd!r}.")
+        if not isinstance(sd,_Source) or not sd.get("name") or sd.get("ref") is None:
+            raise ValueError("chartkit: each `source` must come from a source library — use "
+                             "sources.load(...) or import a source module (e.g. `from ...sources.datasets.xatu "
+                             f"import xatu`); a hand-built dict is rejected. Got {sd!r}.")
         lg=sd.get("logo")                            # logos must be package-produced data URIs, never external URLs
         if lg is not None and not str(lg).startswith("data:image/"):
             raise ValueError("chartkit: a source `logo` must be a data:image/... URI from a source library, not a URL.")
