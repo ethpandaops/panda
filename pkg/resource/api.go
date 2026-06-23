@@ -42,13 +42,13 @@ func createAPIHandler(moduleReg *module.Registry) ReadHandler {
 			Description: "Upload files to storage for sharing",
 			Functions: map[string]types.FunctionDoc{
 				"upload": {
-					Signature:   "storage.upload(local_path: str, remote_name: str = None) -> str",
-					Description: "Upload a local file to storage and return the public URL",
+					Signature:   "storage.upload(local_path: str, remote_name: str = None) -> UploadResult",
+					Description: "Upload a local file to storage",
 					Parameters: map[string]string{
 						"local_path":  "Path to file (e.g., '/workspace/chart.png')",
 						"remote_name": "Optional: custom name for the stored file",
 					},
-					Returns: "Public URL string",
+					Returns: "UploadResult with .url (public URL), .key (storage key), and .host_path (path on the server host)",
 				},
 				"list_files": {
 					Signature:   "storage.list_files(prefix: str = '') -> list[dict]",

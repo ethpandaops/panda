@@ -29,8 +29,8 @@ df = pd.read_parquet("/workspace/data.parquet")  # Load!
 ck.line(df, x="time", left=[("Value", "value", "")],
     title="<the finding the chart shows>",      # required: the takeaway
     chart_title="<what the plot is>").save("/workspace/chart.png")  # required: the plot label
-url = storage.upload("/workspace/chart.png")
-print(url)`
+uploaded = storage.upload("/workspace/chart.png")
+print(uploaded.url)`
 
 // RegisterGettingStartedResources registers the panda://getting-started
 // resource.

@@ -8,13 +8,14 @@ Example:
     from ethpandaops import storage
 
     # Upload a file
-    url = storage.upload("/workspace/chart.png")
-    print(f"Chart available at: {url}")
+    result = storage.upload("/workspace/chart.png")
+    print(f"Chart available at: {result.url}")
 
-    # Upload with custom name
-    url = storage.upload("/workspace/data.csv", remote_name="results.csv")
+    # Upload with a custom name; result.host_path is the file on the server host
+    result = storage.upload("/workspace/data.csv", remote_name="results.csv")
 """
 
+from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
@@ -25,24 +26,18 @@ from ethpandaops import _runtime
 _UPLOAD_WRITE_TIMEOUT = 300.0
 
 
-class UploadResult(str):
-    """The public URL of an uploaded file.
+@dataclass(frozen=True)
+class UploadResult:
+    """A stored file: its public ``url``, storage ``key``, and ``host_path``.
 
-    Behaves as the URL string for backwards compatibility (``url = upload(...)``
-    still works), and additionally exposes the storage ``key`` and the file's
-    ``host_path`` — its location on the panda server's filesystem. ``host_path``
-    is only directly openable when the server runs on the same host as you (e.g.
-    the local CLI); it is server-relative when storage lives in a container volume.
+    ``host_path`` is the file's location on the panda server's filesystem. It is
+    directly openable when the server runs on the same host as you (e.g. the
+    local CLI), and server-relative when storage lives in a container volume.
     """
 
+    url: str
     key: str
     host_path: str
-
-    def __new__(cls, url: str, key: str = "", host_path: str = "") -> "UploadResult":
-        obj = super().__new__(cls, url)
-        obj.key = key
-        obj.host_path = host_path
-        return obj
 
 
 def _get_client() -> httpx.Client:
@@ -58,7 +53,7 @@ def upload(local_path: str, remote_name: str | None = None) -> UploadResult:
         remote_name: Name for the stored file. If None, uses the local filename.
 
     Returns:
-        An UploadResult — the public URL, which also carries ``.key`` and
+        An UploadResult with ``.url`` (public URL), ``.key`` (storage key), and
         ``.host_path`` (the file's path on the panda server host).
 
     Raises:
@@ -67,7 +62,7 @@ def upload(local_path: str, remote_name: str | None = None) -> UploadResult:
 
     Example:
         >>> result = upload("/workspace/chart.png")
-        >>> str(result)         # public URL
+        >>> result.url          # public URL
         >>> result.host_path    # path on the panda server host
     """
     path = Path(local_path)
