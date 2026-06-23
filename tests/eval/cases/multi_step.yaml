@@ -105,38 +105,6 @@
         beacon API event stream on mainnet during 1-7 June 2026 (UTC)?
       - Please report, by day, how many attestation events landed in the raw 
         beacon API event stream on mainnet for 1-7 June 2026 (UTC).
-  - id: chartkit_default_arrival_distribution               # 💬 charts should default to chartkit
-    description: distribution of block arrival times on a fixed day, charted with
-      the default charting library
-    network: mainnet
-    tags: [multi_step, visualization, blocks, timing, clickhouse]
-    steps:
-      - prompt: "Query the first-seen block arrival times for mainnet blocks on
-          20 June 2026 (UTC)."
-      - prompt: "Plot the distribution of those arrival times as a chart."
-    assert:
-      - type: llm-rubric
-        value: >
-          Across the turns the agent queries real first-seen block arrival times for
-          mainnet blocks on 20 June 2026 UTC (~7,180 blocks that day; median ~1.45s
-          into the slot, accept ~1.3-1.6s, and a p95 ~3.1s, accept ~2.8-3.5s) and
-          renders the distribution with the ethpandaops chartkit library — the sandbox
-          code imports and calls chartkit (e.g. `from ethpandaops import chartkit as
-          ck; ck.histogram(...)`), NOT raw matplotlib / plotly / seaborn and NOT an
-          ASCII chart — then points at the saved chartkit image artifact (a
-          storage/chart URL or the path of the saved image). Reaching for
-          matplotlib/plotly instead of chartkit, a text/ASCII chart, no image
-          artifact, or implausible timings all fail. A saved path passes just like a
-          URL. Must re-use the session across turns (look for a session_id.)
-    variations:
-      - Pull first-seen arrival times for mainnet blocks on 20 June 2026 (UTC), then
-        chart how they're distributed.
-      - For mainnet blocks on 20 June 2026 (UTC), get the first-seen arrival times and
-        visualize their distribution.
-      - I want to see how block arrival times were spread across mainnet blocks on
-        20 June 2026 (UTC) — query them and plot it.
-      - Fetch the first-seen arrival times of mainnet blocks on 20 June 2026 (UTC) and
-        show the distribution as a chart.
   - id: chartkit_default_entity_bar                         # 💬 charts should default to chartkit
     description: top proposer entities on a fixed day, charted with the default
       charting library
