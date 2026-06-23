@@ -72,7 +72,6 @@ Use the narrowest surface that fits the question:
 - **One PromQL answer**: ` + "`panda prometheus query <datasource> \"<promql>\"`" + `
 - **Protocol constants or spec definitions**: ` + "`panda search consensus-specs \"<topic>\"`" + `
 - **Python, charts, files, or cross-source joins**: ` + "`panda execute`" + `
-- **Any chart or plot**: the ` + "`chartkit`" + ` library (` + "`from ethpandaops import chartkit as ck`" + `) — histogram, bar, box, line, area, scatter, heatmap, waterfall — NOT matplotlib/plotly
 
 Do not guess command names, table names, columns, or query syntax. Search
 examples and runbooks first, then adapt a matching pattern. Search examples
@@ -82,7 +81,9 @@ an example names a dataset.
 ` + "`panda execute`" + ` is the Python sandbox — the same engine used by MCP clients via
 ` + "`execute_python`" + `. It provides workspace persistence between calls, multi-step
 workflows, and the full ethpandaops library (clickhouse, prometheus, loki,
-dora, forky, cbt, tracoor, ethnode, benchmarkoor, storage, and chartkit for charts).
+dora, forky, cbt, tracoor, ethnode, benchmarkoor, storage, chartkit). Use the
+library, not external/standard equivalents (e.g. chartkit for charts, not
+matplotlib).
 
 ### Quick Start
 
