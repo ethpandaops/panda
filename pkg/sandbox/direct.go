@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -35,7 +34,6 @@ type DirectBackend struct {
 	cfg config.SandboxConfig
 	log logrus.FieldLogger
 
-	mu   sync.RWMutex
 	done chan struct{}
 }
 
