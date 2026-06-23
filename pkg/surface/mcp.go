@@ -63,6 +63,7 @@ func (mcpDialect) GettingStartedIntro() string {
    - ` + "`search(type=\"runbooks\", query=\"...\")`" + ` → Investigation procedures only
    - ` + "`search(type=\"consensus-specs\", query=\"...\")`" + ` → Consensus-specs documents and protocol constants
 4. **Execute** → ` + "`execute_python`" + ` tool with the ethpandaops library; Python module APIs: ` + "`python://ethpandaops`" + `
+5. **Visualize** → for any chart or plot, use the ` + "`chartkit`" + ` library (` + "`from ethpandaops import chartkit as ck`" + `) — histogram, bar, box, line, area, scatter, heatmap, waterfall — NOT matplotlib/plotly
 
 `
 }
