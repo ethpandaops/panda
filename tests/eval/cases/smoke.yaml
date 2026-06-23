@@ -85,3 +85,32 @@
       - Please report the number of slots missed on mainnet in the last 24 
         hours.
       - For mainnet, how many slots were missed over the past 24 hours?
+  - id: chartkit_arrival_chart
+    description: chart the block arrival distribution for a fixed mainnet day with
+      the default charting library (chartkit)
+    input: "Chart the distribution of first-seen block arrival times for mainnet
+      blocks on 20 June 2026 (UTC)."
+    network: mainnet
+    tags: [smoke, visualization, blocks, timing]
+    assert:
+      - type: llm-rubric
+        value: >
+          Queries real first-seen block arrival times for mainnet blocks on 20 June
+          2026 UTC (~7,180 blocks that day; median ~1.45s into the slot, accept
+          ~1.3-1.6s) and renders the distribution with the ethpandaops chartkit
+          library — the sandbox code imports and calls chartkit (e.g. `from
+          ethpandaops import chartkit as ck; ck.histogram(...)`), NOT raw matplotlib /
+          plotly / seaborn and NOT an ASCII chart — then points at the saved chartkit
+          image artifact (a storage/chart URL or the path of the saved image). Using
+          matplotlib/plotly instead of chartkit, a text/ASCII chart, no image
+          artifact, or an implausible median all fail. The question never asked for
+          the image to be hosted, so a saved path passes just like a URL.
+    variations:
+      - Plot the distribution of first-seen block arrival times for mainnet blocks on
+        20 June 2026 (UTC).
+      - For mainnet blocks on 20 June 2026 (UTC), make a chart of how their first-seen
+        arrival times are distributed.
+      - Visualize the distribution of first-seen block arrival times for mainnet on
+        20 June 2026 (UTC).
+      - Generate a chart of the first-seen block arrival time distribution for mainnet
+        blocks on 20 June 2026 (UTC).
