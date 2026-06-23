@@ -22,11 +22,13 @@ df = clickhouse.query("<datasource>", "SELECT ...")
 df.to_parquet("/workspace/data.parquet")  # Persist!`
 
 // sessionWorkflowPlot is the second step of the multi-step session example.
-const sessionWorkflowPlot = `# Call 2: LOAD from workspace and plot
+const sessionWorkflowPlot = `# Call 2: LOAD from workspace and chart it with chartkit (the default charting library)
 import pandas as pd
+from ethpandaops import chartkit as ck
 df = pd.read_parquet("/workspace/data.parquet")  # Load!
-plt.plot(df["time"], df["value"])
-plt.savefig("/workspace/chart.png")
+ck.line(df, x="time", left=[("Value", "value", "")],
+    title="<the finding the chart shows>",      # required: the takeaway
+    chart_title="<what the plot is>").save("/workspace/chart.png")  # required: the plot label
 url = storage.upload("/workspace/chart.png")
 print(url)`
 
@@ -123,6 +125,11 @@ func sessionsSection(s surface.Dialect) string {
 	fmt.Fprintf(&sb,
 		"\nUse `storage.upload()` for permanent public URLs (see %s for API details).\n",
 		s.PythonDocsRef("storage"))
+	fmt.Fprintf(&sb,
+		"\n**Charts:** use the `chartkit` library (`from ethpandaops import chartkit as ck`) for any chart "+
+			"or plot — histogram, bar, box, line, area, scatter, heatmap, waterfall — not matplotlib/plotly. "+
+			"It derives bins/scales/layout and renders a branded PNG; see %s.\n",
+		s.PythonDocsRef("chartkit"))
 
 	return sb.String()
 }
