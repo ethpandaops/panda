@@ -106,68 +106,69 @@
       - Please report, by day, how many attestation events landed in the raw 
         beacon API event stream on mainnet for 1-7 June 2026 (UTC).
   - id: chartkit_default_arrival_distribution               # 💬 charts should default to chartkit
-    description: distribution of block arrival times, charted with the default
-      charting library
+    description: distribution of block arrival times on a fixed day, charted with
+      the default charting library
     network: mainnet
     tags: [multi_step, visualization, blocks, timing, clickhouse]
     steps:
-      - prompt: "Query the first-seen block arrival times for the last 2000 blocks
-          on mainnet."
+      - prompt: "Query the first-seen block arrival times for mainnet blocks on
+          20 June 2026 (UTC)."
       - prompt: "Plot the distribution of those arrival times as a chart."
     assert:
       - type: llm-rubric
         value: >
           Across the turns the agent queries real first-seen block arrival times for
-          ~2000 recent mainnet blocks (most landing roughly 1-3s into the slot,
-          median ~1.3-1.6s) and renders the distribution with the ethpandaops
-          chartkit library — the sandbox code imports and calls chartkit (e.g.
-          `from ethpandaops import chartkit as ck; ck.histogram(...)`), NOT raw
-          matplotlib / plotly / seaborn and NOT an ASCII chart — then points at the
-          saved chartkit image artifact (a storage/chart URL or the path of the saved
-          image). Reaching for matplotlib/plotly instead of chartkit, a text/ASCII
-          chart, no image artifact, or an implausible distribution all fail. The
-          question never asked for the image to be hosted, so a saved path passes
-          just like a URL. Must re-use the session across turns (look for a
-          session_id.)
+          mainnet blocks on 20 June 2026 UTC (~7,180 blocks that day; median ~1.45s
+          into the slot, accept ~1.3-1.6s, and a p95 ~3.1s, accept ~2.8-3.5s) and
+          renders the distribution with the ethpandaops chartkit library — the sandbox
+          code imports and calls chartkit (e.g. `from ethpandaops import chartkit as
+          ck; ck.histogram(...)`), NOT raw matplotlib / plotly / seaborn and NOT an
+          ASCII chart — then points at the saved chartkit image artifact (a
+          storage/chart URL or the path of the saved image). Reaching for
+          matplotlib/plotly instead of chartkit, a text/ASCII chart, no image
+          artifact, or implausible timings all fail. A saved path passes just like a
+          URL. Must re-use the session across turns (look for a session_id.)
     variations:
-      - Pull first-seen arrival times for the last 2000 mainnet blocks, then chart
-        how they're distributed.
-      - For the last 2000 blocks on mainnet, get the first-seen arrival times and
+      - Pull first-seen arrival times for mainnet blocks on 20 June 2026 (UTC), then
+        chart how they're distributed.
+      - For mainnet blocks on 20 June 2026 (UTC), get the first-seen arrival times and
         visualize their distribution.
-      - I want to see how block arrival times are spread across the most recent
-        2000 mainnet blocks — query them and plot it.
-      - Fetch the first-seen arrival times of the last 2000 mainnet blocks and show
-        the distribution as a chart.
+      - I want to see how block arrival times were spread across mainnet blocks on
+        20 June 2026 (UTC) — query them and plot it.
+      - Fetch the first-seen arrival times of mainnet blocks on 20 June 2026 (UTC) and
+        show the distribution as a chart.
   - id: chartkit_default_entity_bar                         # 💬 charts should default to chartkit
-    description: top proposer entities by block count, charted with the default
+    description: top proposer entities on a fixed day, charted with the default
       charting library
     network: mainnet
     tags: [multi_step, visualization, blocks, clickhouse]
     steps:
-      - prompt: "Which staking entities proposed the most blocks on mainnet over the
-          last 24 hours? Give me the top 10."
+      - prompt: "Which staking entities proposed the most blocks on mainnet on
+          20 June 2026 (UTC)? Give me the top 10."
       - prompt: "Show those top entities as a chart."
     assert:
       - type: llm-rubric
         value: >
           Across the turns the agent queries real proposer-entity data for the top 10
-          block-proposing entities on mainnet over ~24h (plausible named entities such
-          as Lido, Coinbase, Binance, Kiln, Figment or solo stakers, with block counts
-          in the hundreds to low thousands) and renders them with the ethpandaops
-          chartkit library — the sandbox code imports and calls chartkit (e.g.
-          `from ethpandaops import chartkit as ck; ck.bar(...)`), NOT raw matplotlib /
-          plotly and NOT an ASCII chart — producing a bar chart of blocks per entity
-          and pointing at the saved chartkit image artifact (a storage/chart URL or the
-          path of the saved image). Reaching for matplotlib/plotly instead of chartkit,
-          a text/ASCII chart, no image artifact, or hallucinated entities/counts all
-          fail. A saved path passes just like a URL. Must re-use the session across
-          turns (look for a session_id.)
+          block-proposing entities on mainnet on 20 June 2026 UTC. The measured leaders
+          that day are binance (~567 blocks) and solo_stakers (~543), followed by
+          whale_0x8ebd (~325), ether.fi (~320), coinbase (~286), then whale_0x9212,
+          figment, blockdaemon, piertwo and kiln (~150-245); accept ~±15% on counts and
+          reasonable variation in the mid-pack ordering. It then renders them with the
+          ethpandaops chartkit library — the sandbox code imports and calls chartkit
+          (e.g. `from ethpandaops import chartkit as ck; ck.bar(...)`), NOT raw
+          matplotlib / plotly and NOT an ASCII chart — producing a bar chart of blocks
+          per entity and pointing at the saved chartkit image artifact (a storage/chart
+          URL or the path of the saved image). Reaching for matplotlib/plotly instead of
+          chartkit, a text/ASCII chart, no image artifact, or hallucinated
+          entities/counts all fail. A saved path passes just like a URL. Must re-use the
+          session across turns (look for a session_id.)
     variations:
-      - Find the top 10 block-proposing staking entities on mainnet for the last 24
-        hours, then chart them.
-      - Over the past day on mainnet, which entities proposed the most blocks? Show
+      - Find the top 10 block-proposing staking entities on mainnet for 20 June 2026
+        (UTC), then chart them.
+      - On mainnet on 20 June 2026 (UTC), which entities proposed the most blocks? Show
         the top 10 on a chart.
-      - I'm trying to see the leading block proposers (staking entities) on mainnet
-        in the last 24h as a chart — top 10.
-      - Rank the staking entities by blocks proposed on mainnet over the last 24
-        hours and visualize the top 10.
+      - I'm trying to see the leading block proposers (staking entities) on mainnet on
+        20 June 2026 (UTC) as a chart — top 10.
+      - Rank the staking entities by blocks proposed on mainnet on 20 June 2026 (UTC)
+        and visualize the top 10.
