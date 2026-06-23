@@ -119,7 +119,7 @@ func TestPrintExampleResultsUsesNeutralTargetLabel(t *testing.T) {
 
 func TestPrintExampleUsageHintsAreGeneric(t *testing.T) {
 	output := captureStdout(t, func() {
-		printExampleUsageHints([]*serverapi.SearchExampleResult{{
+		printExampleUsageHints("", []*serverapi.SearchExampleResult{{
 			Query:   "SELECT count() FROM {network}.example",
 			Target:  "warehouse",
 			Dataset: "example-pack",
@@ -135,7 +135,7 @@ func TestPrintExampleUsageHintsAreGeneric(t *testing.T) {
 
 func TestPrintExampleUsageHintsMentionMultipleTargets(t *testing.T) {
 	output := captureStdout(t, func() {
-		printExampleUsageHints([]*serverapi.SearchExampleResult{
+		printExampleUsageHints("", []*serverapi.SearchExampleResult{
 			{Query: "SELECT 1", Target: "warehouse-a"},
 			{Query: "SELECT 2", Target: "warehouse-b"},
 		})

@@ -299,7 +299,7 @@ func runSearchExamples(cmd *cobra.Command, args []string) error {
 	}
 
 	printExampleResults(response.Results)
-	printExampleUsageHints(response.Results)
+	printExampleUsageHints(query, response.Results)
 
 	return nil
 }
@@ -372,7 +372,7 @@ func printExampleResults(results []*serverapi.SearchExampleResult) {
 	}
 }
 
-func printExampleUsageHints(results []*serverapi.SearchExampleResult) {
+func printExampleUsageHints(_ string, results []*serverapi.SearchExampleResult) {
 	if len(results) == 0 {
 		return
 	}
