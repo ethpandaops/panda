@@ -60,10 +60,7 @@ Everything below is what the library *can't* check — still your responsibility
 
 4. **Omit empty bands.** No stats → don't pass `stats` (the row disappears). No caveats → `notes=None`. No second series → don't force a legend. Don't pad the chart with empty structure.
 
-5. **Attribute every real source you queried — discover it, don't assume it.** Source identities live in their own libraries, not in chartkit. Call `sources.available()` to see what's installed; it returns two kinds:
-   - **datasources** — a store you query directly (the dataset *is* the query). `src = sources.load("datasources", name); src("the ref")`.
-   - **datasets** — a thing with its own brand that *lives in* a datasource. `src = sources.load("datasets", name); src("the ref")`. A dataset accepts `source=` to say which datasource instance it came from.
-   `ref` is free text (table, metric, join, query) naming what you actually read. **Never invent a source you didn't read**, and never assume a specific source exists — query `available()`. Multiple real sources → `sources=[...]`.
+5. **Attribute what you queried.** The simplest form is `source="the table/metric/query you read"` — a plain string is fine and shows as the data provenance. For a branded footer (with a logo), use a source library instead: call `sources.available()` to see what's installed, then `src = sources.load("datasources"|"datasets", name); source=src("the ref")`. `ref` is free text (table, metric, join, query) naming what you actually read. **Never invent a source you didn't read.** Multiple sources → `sources=[...]`. (A `logo`, if you build a source dict yourself, must be a `data:` URI — external URLs are rejected.)
 
 6. **Let the library derive the axes, ticks, and window.** Pass raw data and a time column; don't pre-bin, don't compute tick lists, don't hardcode the window — it comes from the data's time range.
 

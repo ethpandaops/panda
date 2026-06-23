@@ -18,7 +18,6 @@ polyline points, or SVG — those live in the engine (this file's imports).
 import math, datetime
 import numpy as np, pandas as pd
 from ._engine import plot, render, make_scale, txt, tw, GREEN, ACC, WARM, DIM, THEMES, RAMPS, ramp_color  # the engine
-from .sources.base import Source as _Source                          # provenance marker: real sources only
 
 PALETTE=[GREEN,ACC,"#2f6db0","#8e44ad","#1f9b7a","#b8860b"]
 
@@ -92,15 +91,20 @@ def _panel(*,title,subtitle="",chart_title="",pi,ph,stats=None,source=None,sourc
         if not (isinstance(k,(list,tuple)) and len(k)==3 and k[2] in _SENT):
             raise ValueError(f"chartkit: each stat must be (label, value, sentiment) with sentiment in "
                              f"{sorted(_SENT)} — got {k!r}.")
-    srcs=_srcs(source,sources)
-    for sd in srcs:
-        if not isinstance(sd,_Source) or not sd.get("name") or sd.get("ref") is None:
-            raise ValueError("chartkit: each `source` must come from a source library — use "
-                             "sources.load(...) or import a source module (e.g. `from ...sources.datasets.xatu "
-                             f"import xatu`); a hand-built dict is rejected. Got {sd!r}.")
-        lg=sd.get("logo")                            # logos must be package-produced data URIs, never external URLs
-        if lg is not None and not str(lg).startswith("data:image/"):
-            raise ValueError("chartkit: a source `logo` must be a data:image/... URI from a source library, not a URL.")
+    # A source can be a plain string (the table/query/metric you read), a {name, ref} dict, or a
+    # source-library object (which adds a logo). Strings/dicts are fine — only a `logo`, if present,
+    # must be a package data: URI (an external URL would let librsvg fetch it -> SSRF).
+    def _norm(sd):
+        if isinstance(sd,str): return {"name":"","ref":sd,"logo":None,"color":None}
+        if isinstance(sd,dict):
+            if sd.get("ref") is None:
+                raise ValueError(f"chartkit: a `source` needs a `ref` (what you read) — got {sd!r}.")
+            lg=sd.get("logo")
+            if lg is not None and not str(lg).startswith("data:image/"):
+                raise ValueError("chartkit: a source `logo` must be a data:image/... URI (from a source library), not a URL.")
+            return sd
+        raise ValueError(f"chartkit: `source` must be a string ref or a source object — got {sd!r}.")
+    srcs=[_norm(sd) for sd in _srcs(source,sources)]
     return Chart(dict(network=network,title=title,subtitle=subtitle,chart_title=chart_title,plot_inner=pi,plot_h=ph,
         kpis=stats,sources=srcs,notes=notes,legend=legend,theme=theme,window=window))
 

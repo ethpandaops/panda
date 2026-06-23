@@ -308,14 +308,21 @@ def slot_footer(s):
             s.E.append(img(s.CL,st["logo"])); s.E.append(img(s.CL+25,src["logo"])); tx=s.CL+25+20+8
         elif src.get("logo"):                     # logo is provider-owned; engine just embeds whatever it's handed
             s.E.append(img(s.CL,src["logo"])); tx=s.CL+27
-        s.E.append(txt(tx,sy,nm,13,src.get("color") or t["data"],700)); aftn=tx+tw(nm,13,700)+8
-        ref=src["ref"]
-        if tw("· "+ref,12)<=colr-aftn:            # fits inline after the name
-            s.E.append(txt(aftn,sy,"· "+ref,12,t["muted"])); srcb=sy; sy+=26
-        else:                                     # too long -> wrap under the name, bounded by colr
-            srcb=sy; sy+=18
-            for ln in wrap(ref,12,colr-tx): s.E.append(txt(tx,sy,ln,12,t["muted"])); srcb=sy; sy+=17
-            sy+=9
+        ref=src["ref"]; col=src.get("color") or t["data"]
+        if not nm:                                # bare string source: just the ref, no name/logo
+            if tw(ref,12.5,700)<=colr-tx: s.E.append(txt(tx,sy,ref,12.5,col,700)); srcb=sy; sy+=26
+            else:
+                srcb=sy
+                for ln in wrap(ref,12.5,colr-tx,700): s.E.append(txt(tx,sy,ln,12.5,col,700)); srcb=sy; sy+=18
+                sy+=8
+        else:
+            s.E.append(txt(tx,sy,nm,13,col,700)); aftn=tx+tw(nm,13,700)+8
+            if tw("· "+ref,12)<=colr-aftn:        # fits inline after the name
+                s.E.append(txt(aftn,sy,"· "+ref,12,t["muted"])); srcb=sy; sy+=26
+            else:                                 # too long -> wrap under the name, bounded by colr
+                srcb=sy; sy+=18
+                for ln in wrap(ref,12,colr-tx): s.E.append(txt(tx,sy,ln,12,t["muted"])); srcb=sy; sy+=17
+                sy+=9
     noteb=fc
     if s.notes:                                   # no notes -> the whole NOTES column is skipped
         s.E.append(txt(notes_x,fc,"NOTES",10,t["faint"],700)); ny=fc+22
