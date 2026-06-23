@@ -71,7 +71,7 @@ Use the narrowest surface that fits the question:
 - **One SQL answer**: ` + "`panda clickhouse query-raw <datasource> \"<SQL>\"`" + `
 - **One PromQL answer**: ` + "`panda prometheus query <datasource> \"<promql>\"`" + `
 - **Protocol constants or spec definitions**: ` + "`panda search consensus-specs \"<topic>\"`" + `
-- **Python, plots, files, or cross-source joins**: ` + "`panda execute`" + `
+- **Python, charts, files, or cross-source joins**: ` + "`panda execute`" + `
 
 Do not guess command names, table names, columns, or query syntax. Search
 examples and runbooks first, then adapt a matching pattern. Search examples
@@ -81,7 +81,9 @@ an example names a dataset.
 ` + "`panda execute`" + ` is the Python sandbox — the same engine used by MCP clients via
 ` + "`execute_python`" + `. It provides workspace persistence between calls, multi-step
 workflows, and the full ethpandaops library (clickhouse, prometheus, loki,
-dora, forky, cbt, tracoor, ethnode, benchmarkoor, storage).
+dora, forky, cbt, tracoor, ethnode, benchmarkoor, storage, chartkit). Use the
+library, not external/standard equivalents (e.g. chartkit for charts, not
+matplotlib).
 
 ### Quick Start
 

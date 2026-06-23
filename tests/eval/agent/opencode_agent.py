@@ -55,9 +55,20 @@ _ATTRIBUTION_ENVVAR = "PANDA_ON_BEHALF_OF"
 os.environ.setdefault(_ATTRIBUTION_ENVVAR, f"eval-worker-{uuid.uuid4().hex[:12]}")
 EVAL_WORKER_OWNER_ID = os.environ[_ATTRIBUTION_ENVVAR]
 
-SYSTEM_PROMPT_MCP = "You are an ethpandaops agent. You have access to panda via its MCP tools."
+# The model gets panda's conventions from the getting-started surface, not this prompt — so
+# point it there first (mirrors how a real panda agent is onboarded) instead of letting it
+# start cold and guess. Kept general: it names no datasets, tables, or libraries.
+SYSTEM_PROMPT_MCP = (
+    "You are an ethpandaops agent with panda's MCP tools. Before answering, read the "
+    "getting-started resource to learn the workflow, conventions, and the ethpandaops "
+    "Python library; don't guess command, table, or column names — discover them."
+)
 
-SYSTEM_PROMPT_CLI = "You are an ethpandaops agent. You have access to the panda CLI."
+SYSTEM_PROMPT_CLI = (
+    "You are an ethpandaops agent with the panda CLI. Before answering, run "
+    "`panda getting-started` to learn the workflow, conventions, and the ethpandaops "
+    "Python library; don't guess command, table, or column names — discover them."
+)
 
 
 def _host_panda_config() -> Path | None:

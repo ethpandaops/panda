@@ -105,3 +105,38 @@
         beacon API event stream on mainnet during 1-7 June 2026 (UTC)?
       - Please report, by day, how many attestation events landed in the raw 
         beacon API event stream on mainnet for 1-7 June 2026 (UTC).
+  - id: chartkit_default_entity_bar                         # 💬 charts should default to chartkit
+    description: top proposer entities on a fixed day, charted with the default
+      charting library
+    network: mainnet
+    tags: [multi_step, visualization, blocks, clickhouse]
+    steps:
+      - prompt: "Which staking entities proposed the most blocks on mainnet on
+          20 June 2026 (UTC)? Give me the top 10."
+      - prompt: "Show those top entities as a chart."
+    assert:
+      - type: llm-rubric
+        value: >
+          Across the turns the agent queries real proposer-entity data for the top 10
+          block-proposing entities on mainnet on 20 June 2026 UTC. The measured leaders
+          that day are binance (~567 blocks) and solo_stakers (~543), followed by
+          whale_0x8ebd (~325), ether.fi (~320), coinbase (~286), then whale_0x9212,
+          figment, blockdaemon, piertwo and kiln (~150-245); accept ~±15% on counts and
+          reasonable variation in the mid-pack ordering. It then renders them with the
+          ethpandaops chartkit library — the sandbox code imports and calls chartkit
+          (e.g. `from ethpandaops import chartkit as ck; ck.bar(...)`), NOT raw
+          matplotlib / plotly and NOT an ASCII chart — producing a bar chart of blocks
+          per entity and pointing at the saved chartkit image artifact (a storage/chart
+          URL or the path of the saved image). Reaching for matplotlib/plotly instead of
+          chartkit, a text/ASCII chart, no image artifact, or hallucinated
+          entities/counts all fail. A saved path passes just like a URL. Must re-use the
+          session across turns (look for a session_id.)
+    variations:
+      - Find the top 10 block-proposing staking entities on mainnet for 20 June 2026
+        (UTC), then chart them.
+      - On mainnet on 20 June 2026 (UTC), which entities proposed the most blocks? Show
+        the top 10 on a chart.
+      - I'm trying to see the leading block proposers (staking entities) on mainnet on
+        20 June 2026 (UTC) as a chart — top 10.
+      - Rank the staking entities by blocks proposed on mainnet on 20 June 2026 (UTC)
+        and visualize the top 10.
