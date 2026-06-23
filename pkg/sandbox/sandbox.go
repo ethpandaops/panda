@@ -21,6 +21,9 @@ const (
 	EnvAPIURL = "ETHPANDAOPS_API_URL"
 	// EnvExecutionID identifies the execution for storage tagging and correlation.
 	EnvExecutionID = "ETHPANDAOPS_EXECUTION_ID"
+	// EnvSessionID identifies the session so storage groups a multi-turn
+	// session's outputs under one directory. Empty for sessionless executions.
+	EnvSessionID = "ETHPANDAOPS_SESSION_ID"
 )
 
 // Service defines the interface for sandbox code execution backends.

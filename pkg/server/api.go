@@ -19,6 +19,7 @@ import (
 	"github.com/ethpandaops/panda/pkg/module"
 	"github.com/ethpandaops/panda/pkg/proxy"
 	"github.com/ethpandaops/panda/pkg/serverapi"
+	"github.com/ethpandaops/panda/pkg/storage"
 	"github.com/ethpandaops/panda/pkg/surface"
 	"github.com/ethpandaops/panda/pkg/types"
 )
@@ -488,15 +489,16 @@ func (s *service) handleRuntimeStorageUpload(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	relativeKey, url, err := s.storageService.Upload(executionID, name, r.Body)
+	result, err := s.storageService.Upload(runtimeStorageScope(r, executionID), name, r.Body)
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, fmt.Sprintf("upload failed: %v", err))
 		return
 	}
 
 	writeJSON(w, http.StatusOK, serverapi.RuntimeStorageUploadResponse{
-		Key: relativeKey,
-		URL: url,
+		Key:  result.Key,
+		URL:  result.URL,
+		Path: result.Path,
 	})
 }
 
@@ -514,7 +516,7 @@ func (s *service) handleRuntimeStorageList(w http.ResponseWriter, r *http.Reques
 
 	prefix := strings.TrimSpace(r.URL.Query().Get("prefix"))
 
-	storageFiles, err := s.storageService.List(executionID, prefix)
+	storageFiles, err := s.storageService.List(runtimeStorageScope(r, executionID), prefix)
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, fmt.Sprintf("listing files failed: %v", err))
 		return
@@ -553,7 +555,7 @@ func (s *service) handleRuntimeStorageURL(w http.ResponseWriter, r *http.Request
 
 	writeJSON(w, http.StatusOK, serverapi.RuntimeStorageURLResponse{
 		Key: key,
-		URL: s.storageService.GetURL(executionID, key),
+		URL: s.storageService.GetURL(runtimeStorageScope(r, executionID), key),
 	})
 }
 
@@ -880,6 +882,17 @@ func (s *service) proxyServiceForDatasource(datasourceType, datasourceName strin
 func runtimeExecutionID(ctx context.Context) string {
 	value, _ := ctx.Value(runtimeExecutionIDKey).(string)
 	return value
+}
+
+// runtimeStorageScope builds the storage scope for a runtime request. The
+// execution ID is authoritative (recovered from the runtime token), while the
+// session ID is reported by the sandbox via the session_id query parameter so
+// a multi-turn session's outputs land under one directory.
+func runtimeStorageScope(r *http.Request, executionID string) storage.Scope {
+	return storage.Scope{
+		SessionID:   strings.TrimSpace(r.URL.Query().Get("session_id")),
+		ExecutionID: executionID,
+	}
 }
 
 func authOwnerID(r *http.Request) string {

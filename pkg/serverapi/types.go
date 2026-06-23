@@ -55,8 +55,9 @@ type ListResourcesResponse struct {
 }
 
 type RuntimeStorageUploadResponse struct {
-	Key string `json:"key"`
-	URL string `json:"url"`
+	Key  string `json:"key"`
+	URL  string `json:"url"`
+	Path string `json:"path,omitempty"`
 }
 
 type RuntimeStorageFile struct {
