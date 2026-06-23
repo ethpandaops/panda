@@ -69,26 +69,6 @@ ck.bar([(name, count) for name, count in rows], value_label="Blocks proposed",
     source=xatu("fct_block_proposer_entity"),
 ).save("entities.png")`,
 				},
-				{
-					Name:        "Box plot of grouped value distributions",
-					Description: "Horizontal box chart from per-category p05/q1/median/q3/p95 quantiles, saved as a PNG",
-					Query: `from ethpandaops import chartkit as ck
-
-# Start with a DataFrame containing one category column and one numeric value column.
-quantiles = (
-    df.groupby("category")["value"]
-    .quantile([0.05, 0.25, 0.5, 0.75, 0.95])
-    .unstack()
-    .reset_index()
-)
-quantiles.columns = ["label", "p05", "q1", "med", "q3", "p95"]
-
-ck.box(quantiles.to_dict("records"), x_label="Value",
-    title="Median values vary by category",
-    chart_title="Value distribution by category",
-    source="the table or query you read",
-).save("box.png")`,
-				},
 			},
 		},
 	}

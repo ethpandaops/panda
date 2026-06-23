@@ -133,20 +133,6 @@ func TestPrintExampleUsageHintsAreGeneric(t *testing.T) {
 	assert.NotContains(t, output, "slot")
 }
 
-func TestPrintExampleUsageHintsForChartQueries(t *testing.T) {
-	output := captureStdout(t, func() {
-		printExampleUsageHints("make a box chart", []*serverapi.SearchExampleResult{{
-			Query:  "SELECT value FROM {network}.example",
-			Target: "warehouse",
-		}})
-	})
-
-	assert.Contains(t, output, "panda execute")
-	assert.Contains(t, output, "chartkit")
-	assert.Contains(t, output, "clickhouse.query(...)")
-	assert.NotContains(t, output, "query-raw")
-}
-
 func TestPrintExampleUsageHintsMentionMultipleTargets(t *testing.T) {
 	output := captureStdout(t, func() {
 		printExampleUsageHints("", []*serverapi.SearchExampleResult{

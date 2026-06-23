@@ -372,13 +372,12 @@ func printExampleResults(results []*serverapi.SearchExampleResult) {
 	}
 }
 
-func printExampleUsageHints(query string, results []*serverapi.SearchExampleResult) {
+func printExampleUsageHints(_ string, results []*serverapi.SearchExampleResult) {
 	if len(results) == 0 {
 		return
 	}
 
 	var hasDataset, hasSQL bool
-	wantsChart := mentionsChart(query)
 	targets := make(map[string]struct{})
 	for _, result := range results {
 		if result == nil {
@@ -394,15 +393,8 @@ func printExampleUsageHints(query string, results []*serverapi.SearchExampleResu
 
 	fmt.Println("Tips:")
 	fmt.Println("  Search examples are reusable patterns; replace placeholders and concrete network/time filters before executing.")
-	if wantsChart {
-		fmt.Println("  For chart/plot requests, adapt the data query inside panda execute and render a PNG with chartkit (`from ethpandaops import chartkit as ck`; see panda docs chartkit).")
-	}
 	if hasSQL {
-		if wantsChart {
-			fmt.Println("  For SQL examples, Target is the ClickHouse datasource/cluster name to pass to clickhouse.query(...) inside the script.")
-		} else {
-			fmt.Println("  For SQL examples, Target is the ClickHouse datasource/cluster: panda clickhouse query-raw <Target> \"<SQL>\"")
-		}
+		fmt.Println("  For SQL examples, Target is the ClickHouse datasource/cluster: panda clickhouse query-raw <Target> \"<SQL>\"")
 	}
 	if len(targets) > 1 {
 		fmt.Println("  Results span multiple Targets; query each Target separately and combine bounded results with panda execute or another client-side step.")
@@ -410,24 +402,6 @@ func printExampleUsageHints(query string, results []*serverapi.SearchExampleResu
 	if hasDataset {
 		fmt.Println("  Dataset is a guide name, not a datasource or database. Read it for syntax/placement: panda datasets <Dataset>")
 	}
-}
-
-func mentionsChart(query string) bool {
-	for _, token := range strings.FieldsFunc(strings.ToLower(query), func(r rune) bool {
-		return (r < 'a' || r > 'z') && (r < '0' || r > '9')
-	}) {
-		switch token {
-		case "chart", "charts", "plot", "plots", "graph", "graphs",
-			"visualize", "visualizes", "visualized", "visualizing",
-			"visualise", "visualises", "visualised", "visualising",
-			"visualization", "visualizations", "visualisation", "visualisations",
-			"histogram", "histograms", "heatmap", "heatmaps",
-			"scatterplot", "scatterplots", "boxplot", "boxplots":
-			return true
-		}
-	}
-
-	return false
 }
 
 func looksLikeSQLExample(query string) bool {
