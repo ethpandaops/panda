@@ -629,17 +629,21 @@ func (b *DockerBackend) execInContainer(
 		)
 	}
 
-	// Execute the script with ETHPANDAOPS_EXECUTION_ID env var for storage.upload().
+	// Execute the script with the execution and session env vars so
+	// storage.upload() can scope and group its files.
 	startTime := time.Now()
 
-	execEnv := make([]string, 0, len(env)+1)
+	execEnv := make([]string, 0, len(env)+2)
 	for k, v := range env {
-		if k == EnvExecutionID {
+		if k == EnvExecutionID || k == EnvSessionID {
 			continue
 		}
 		execEnv = append(execEnv, k+"="+v)
 	}
 	execEnv = append(execEnv, EnvExecutionID+"="+executionID)
+	if session.ID != "" {
+		execEnv = append(execEnv, EnvSessionID+"="+session.ID)
+	}
 
 	execConfig := client.ExecCreateOptions{
 		Cmd:          []string{"python", scriptPath},

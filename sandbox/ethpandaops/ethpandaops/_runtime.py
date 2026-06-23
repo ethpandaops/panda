@@ -13,6 +13,12 @@ import pandas as pd
 
 _API_URL = os.environ.get("ETHPANDAOPS_API_URL", "")
 _API_TOKEN = os.environ.get("ETHPANDAOPS_API_TOKEN", "")
+_SESSION_ID = os.environ.get("ETHPANDAOPS_SESSION_ID", "")
+
+
+def _session_params() -> dict[str, str]:
+    """Return the session_id query param when running inside a session."""
+    return {"session_id": _SESSION_ID} if _SESSION_ID else {}
 
 
 def _check_api_config() -> None:

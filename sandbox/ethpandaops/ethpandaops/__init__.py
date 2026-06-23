@@ -22,8 +22,8 @@ Example usage:
     # Query Prometheus using instance name
     result = prometheus.query("<datasource>", "up")
 
-    # Upload output file
-    url = storage.upload("/workspace/chart.png")
+    # Upload output file (uploaded.url is the public URL, uploaded.host_path the server path)
+    uploaded = storage.upload("/workspace/chart.png")
 """
 
 from . import storage

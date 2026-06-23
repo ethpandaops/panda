@@ -22,14 +22,34 @@ type File struct {
 	URL          string `json:"url,omitempty"`
 }
 
+// Scope identifies the storage namespace for an execution's files. When a
+// session is active, files are grouped under the session so a multi-turn
+// session's outputs share one parent directory (<session>/<execution>/);
+// otherwise they fall back to the execution ID alone.
+type Scope struct {
+	SessionID   string
+	ExecutionID string
+}
+
+// UploadResult describes a stored file. Path is the file's location on the
+// server host's filesystem — only directly openable when the server runs on
+// the same host as the caller (e.g. the local CLI), not when storage lives in
+// a container volume.
+type UploadResult struct {
+	Key  string
+	URL  string
+	Path string
+}
+
 // Service provides file storage backed by an afero filesystem.
 type Service interface {
-	// Upload stores a file scoped to an execution and returns its relative key and public URL.
-	Upload(executionID, name string, body io.Reader) (relativeKey, url string, err error)
-	// List returns files scoped to an execution, optionally filtered by prefix.
-	List(executionID, prefix string) ([]File, error)
-	// GetURL returns the public URL for a file scoped to an execution.
-	GetURL(executionID, key string) string
+	// Upload stores a file scoped to a session/execution and returns its key,
+	// public URL, and path on the server host.
+	Upload(scope Scope, name string, body io.Reader) (UploadResult, error)
+	// List returns files scoped to a session/execution, optionally filtered by prefix.
+	List(scope Scope, prefix string) ([]File, error)
+	// GetURL returns the public URL for a file scoped to a session/execution.
+	GetURL(scope Scope, key string) string
 	// ServeFile serves a stored file over HTTP.
 	ServeFile(w http.ResponseWriter, r *http.Request, filePath string)
 }
@@ -56,40 +76,44 @@ func New(fs afero.Fs, baseDir, baseURL string) Service {
 	}
 }
 
-// Upload stores a file and returns its relative key and public URL.
-func (s *service) Upload(executionID, name string, body io.Reader) (string, string, error) {
-	rel, err := relativeKey(executionID, name)
+// Upload stores a file and returns its key, public URL, and host path.
+func (s *service) Upload(scope Scope, name string, body io.Reader) (UploadResult, error) {
+	rel, err := relativeKey(scope, name)
 	if err != nil {
-		return "", "", err
+		return UploadResult{}, err
 	}
 
-	dir := filepath.Join(s.baseDir, sanitize(executionID))
+	dir := filepath.Join(s.baseDir, filepath.FromSlash(scope.path()))
 	if err := s.fs.MkdirAll(dir, 0o755); err != nil {
-		return "", "", fmt.Errorf("creating storage directory: %w", err)
+		return UploadResult{}, fmt.Errorf("creating storage directory: %w", err)
 	}
 
-	filePath := filepath.Join(dir, rel)
+	filePath := filepath.Join(dir, filepath.FromSlash(rel))
 
 	f, err := s.fs.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
-		return "", "", fmt.Errorf("creating file: %w", err)
+		return UploadResult{}, fmt.Errorf("creating file: %w", err)
 	}
 
 	if _, err := io.Copy(f, body); err != nil {
 		_ = f.Close()
-		return "", "", fmt.Errorf("writing file: %w", err)
+		return UploadResult{}, fmt.Errorf("writing file: %w", err)
 	}
 
 	if err := f.Close(); err != nil {
-		return "", "", fmt.Errorf("closing file: %w", err)
+		return UploadResult{}, fmt.Errorf("closing file: %w", err)
 	}
 
-	return rel, s.fileURL(executionID, rel), nil
+	return UploadResult{
+		Key:  rel,
+		URL:  s.fileURL(scope, rel),
+		Path: filePath,
+	}, nil
 }
 
 // List returns files for an execution, optionally filtered by prefix.
-func (s *service) List(executionID, prefix string) ([]File, error) {
-	dir := filepath.Join(s.baseDir, sanitize(executionID))
+func (s *service) List(scope Scope, prefix string) ([]File, error) {
+	dir := filepath.Join(s.baseDir, filepath.FromSlash(scope.path()))
 	files := make([]File, 0, 16)
 
 	err := afero.Walk(s.fs, dir, func(path string, info os.FileInfo, walkErr error) error {
@@ -117,7 +141,7 @@ func (s *service) List(executionID, prefix string) ([]File, error) {
 			Key:          rel,
 			Size:         info.Size(),
 			LastModified: info.ModTime().UTC().Format(time.RFC3339),
-			URL:          s.fileURL(executionID, rel),
+			URL:          s.fileURL(scope, rel),
 		})
 
 		return nil
@@ -136,13 +160,13 @@ func (s *service) List(executionID, prefix string) ([]File, error) {
 }
 
 // GetURL returns the public URL for a stored file.
-func (s *service) GetURL(executionID, key string) string {
-	rel, err := relativeKey(executionID, key)
+func (s *service) GetURL(scope Scope, key string) string {
+	rel, err := relativeKey(scope, key)
 	if err != nil {
 		return ""
 	}
 
-	return s.fileURL(executionID, rel)
+	return s.fileURL(scope, rel)
 }
 
 // ServeFile serves a stored file from the filesystem.
@@ -180,8 +204,20 @@ func (s *service) ServeFile(w http.ResponseWriter, r *http.Request, filePath str
 }
 
 // fileURL constructs the public URL for a stored file.
-func (s *service) fileURL(executionID, key string) string {
-	return s.baseURL + "/api/v1/storage/files/" + sanitize(executionID) + "/" + key
+func (s *service) fileURL(scope Scope, key string) string {
+	return s.baseURL + "/api/v1/storage/files/" + scope.path() + "/" + key
+}
+
+// path returns the scope's storage prefix as a forward-slash relative path:
+// "<session>/<execution>" when a session is set, otherwise "<execution>".
+func (sc Scope) path() string {
+	exec := sanitize(sc.ExecutionID)
+
+	if sess := sanitize(sc.SessionID); sess != "" {
+		return sess + "/" + exec
+	}
+
+	return exec
 }
 
 // sanitize strips leading slashes, whitespace, and path traversal components from a path segment.
@@ -196,15 +232,15 @@ func sanitize(s string) string {
 	return cleaned
 }
 
-// relativeKey normalizes a key, stripping the execution prefix if present.
-func relativeKey(executionID, key string) (string, error) {
+// relativeKey normalizes a key, stripping the scope prefix if present.
+func relativeKey(scope Scope, key string) (string, error) {
 	trimmed := sanitize(key)
 	if trimmed == "" {
 		return "", fmt.Errorf("key is required")
 	}
 
-	// Strip the execution prefix if the caller included it.
-	prefix := sanitize(executionID) + "/"
+	// Strip the scope prefix if the caller included it.
+	prefix := scope.path() + "/"
 	trimmed = strings.TrimPrefix(trimmed, prefix)
 
 	return trimmed, nil

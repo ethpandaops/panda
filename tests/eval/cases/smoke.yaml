@@ -117,3 +117,37 @@
         20 June 2026 (UTC) — query them and plot it.
       - Fetch the first-seen arrival times of mainnet blocks on 20 June 2026 (UTC) and
         show the distribution as a chart.
+  - id: storage_upload_session_scoped                       # 💬 storage.upload returns a share URL + a host path, grouped per session
+    description: upload a file from the sandbox and report its public URL and
+      server host path, then upload again in the same session
+    network: mainnet
+    tags: [smoke, multi_step, storage]
+    steps:
+      - prompt: "Save the 10 most recent mainnet blocks (slot and block arrival) to a
+          CSV file in the sandbox, upload it, and give me a link I can share."
+      - prompt: "Upload that same file again as blocks-backup.csv, and tell me where
+          both files now live on the panda server."
+    assert:
+      - type: llm-rubric
+        value: >
+          Across the turns the agent saves real mainnet block data to a file in the
+          sandbox and uploads it with the ethpandaops storage library (a
+          storage.upload call), returning the public URL to share. In the second turn
+          it uploads the file again in the SAME session — look for one shared
+          session_id reused across both turns, not a fresh session — and reports where
+          the files live on the panda server, i.e. the host path the upload returns
+          (UploadResult.host_path, the file's path on the server filesystem), with both
+          files grouped under the same session directory. A correct answer surfaces
+          both a public URL and a server-side host path from real uploads. Inventing a
+          URL or path without an actual upload, using a non-ethpandaops uploader,
+          starting a new session for the second upload, or never reporting the host
+          path all fail.
+    variations:
+      - Save the latest 10 mainnet blocks to a CSV in the sandbox, upload it, and hand
+        me a shareable link.
+      - Write the 10 most recent mainnet blocks (slot + arrival) to a file, upload it
+        for sharing, then re-upload it as blocks-backup.csv and tell me both files'
+        locations on the server.
+      - Export the last 10 mainnet blocks to a CSV, upload it so I can share it, and
+        afterwards upload a backup copy in the same session and report where they sit
+        on the server.

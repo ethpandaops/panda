@@ -63,7 +63,7 @@ def _srcs(source,sources): return sources or ([source] if source else [])
 class Chart:
     def __init__(self,a): self._a=a
     def save(self,out): render(out,**self._a); return out
-    # in the sandbox: def url(self): render("/workspace/_c.png",**self._a); return storage.upload("/workspace/_c.png")
+    # in the sandbox: def url(self): render("/workspace/_c.png",**self._a); return storage.upload("/workspace/_c.png").url
 
 # Two titles, delineated by role, validated here so structural mistakes fail loudly:
 #   title       (REQUIRED) — top headline: the finding/takeaway ("Most blocks land inside 3s")

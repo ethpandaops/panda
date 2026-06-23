@@ -70,7 +70,7 @@ def publish_debug_report():
     with open("/workspace/debug_file_path.txt") as f:
         debug_file = f.read().strip()
     remote_name = os.path.basename(debug_file)
-    url = storage.upload(debug_file, remote_name=remote_name)
+    url = storage.upload(debug_file, remote_name=remote_name).url
     with open("/workspace/debug_file_url.txt", "w") as f:
         f.write(url)
     append_debug("Debug Report URL", url)
