@@ -4,9 +4,19 @@ import (
 	"bytes"
 	"encoding/csv"
 	"fmt"
+	"regexp"
 
 	"github.com/spf13/cobra"
 )
+
+// ansiEscape matches ANSI escape sequences (CSI colour/style codes and OSC
+// strings) that clients embed in log bodies. ClickHouse stores these bytes
+// verbatim, so they leak into text and JSON output unless stripped.
+var ansiEscape = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)`)
+
+// stripANSI controls whether ANSI escape sequences are removed from
+// ClickHouse query output. Enabled by default so log bodies render cleanly.
+var stripANSI = true
 
 var clickhouseCmd = &cobra.Command{
 	GroupID: groupDirect,
@@ -38,6 +48,10 @@ Examples:
 
 func init() {
 	rootCmd.AddCommand(clickhouseCmd)
+
+	clickhouseCmd.PersistentFlags().BoolVar(&stripANSI, "strip-ansi", true,
+		"strip ANSI escape sequences (terminal colour codes) from output; "+
+			"pass --strip-ansi=false to keep them")
 
 	clickhouseCmd.AddCommand(clickhouseListDatasourcesCmd)
 	clickhouseCmd.AddCommand(clickhouseQueryCmd)
@@ -81,8 +95,12 @@ Examples:
 
 var clickhouseQueryRawCmd = &cobra.Command{
 	Use:   "query-raw <datasource> <sql>",
-	Short: "Execute a SQL query and return raw rows (always JSON)",
-	Long: `Execute a SQL query and return raw rows as JSON.
+	Short: "Execute a SQL query and return raw rows (TSV, or positional JSON with -o json)",
+	Long: `Execute a SQL query and return raw rows.
+
+Output follows --output: text (the default) prints ClickHouse's tab-separated
+rows verbatim, ideal for piping logs to a pager or grep; -o json returns
+positional row arrays under {"columns", "rows"}.
 
 Keep result sets bounded: aggregate in SQL or add a LIMIT when inspecting rows.
 For cross-source analysis, run separate bounded queries and combine them with
@@ -103,15 +121,20 @@ func runClickHouseOperation(cmd *cobra.Command, operationID, datasource, sql str
 		return err
 	}
 
-	if raw {
-		return printClickHouseJSON(response.Body, true)
+	body := response.Body
+	if stripANSI {
+		body = ansiEscape.ReplaceAll(body, nil)
 	}
 
+	// Text output (the default) prints ClickHouse's tab-separated rows verbatim
+	// for both query and query-raw, so log bodies pipe straight to a pager or
+	// grep. JSON output keeps the two shapes distinct: query-raw emits positional
+	// row arrays, query emits column-keyed objects.
 	if isJSON() {
-		return printClickHouseJSON(response.Body, false)
+		return printClickHouseJSON(body, raw)
 	}
 
-	fmt.Print(string(response.Body))
+	fmt.Print(string(body))
 	return nil
 }
 
