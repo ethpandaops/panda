@@ -21,6 +21,7 @@ func (s *service) dispatchOperation(operationID string, w http.ResponseWriter, r
 		s.handleTracoorOperation,
 		s.handleSpecsOperation,
 		s.handleBlockArchiveOperation,
+		s.handleNetworkOperation,
 	} {
 		if handler(operationID, w, r) {
 			return true

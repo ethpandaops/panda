@@ -63,9 +63,56 @@ func createAPIHandler(moduleReg *module.Registry) ReadHandler {
 			},
 		}
 
+		// Add platform-owned networks module (Cartographoor-backed discovery).
+		modules["networks"] = types.ModuleDoc{
+			Description: "Discover Ethereum networks and devnets (forks, client images, service endpoints, genesis) from the authoritative Cartographoor inventory",
+			Functions: map[string]types.FunctionDoc{
+				"list": {
+					Signature:   "list(active: bool = True, devnets_only: bool = False) -> list[dict]",
+					Description: "List networks; each dict has id, name, chain_id, status, is_devnet, devnet_group",
+				},
+				"devnets": {
+					Signature:   "devnets(active: bool = True) -> list[dict]",
+					Description: "List devnets only (sugar for list(devnets_only=True))",
+				},
+				"get": {
+					Signature:   "get(network: str) -> dict",
+					Description: "Full curated detail: chain_id, status, genesis_time, forks, clients, tools, endpoints, blob_schedule, node_inventory_url",
+				},
+				"forks": {
+					Signature:   "forks(network: str) -> dict",
+					Description: "Fork schedule with consensus (epoch/timestamp) and execution (block/timestamp) maps",
+				},
+				"clients": {
+					Signature:   "clients(network: str) -> list[dict]",
+					Description: "Client images running on the network as [{name, version}]",
+				},
+				"endpoints": {
+					Signature:   "endpoints(network: str) -> dict",
+					Description: "Non-empty service URLs keyed by role (rpc, beacon, explorer, dora, forky, tracoor, cbt, faucet, checkpoint_sync, ...)",
+				},
+				"genesis": {
+					Signature:   "genesis(network: str) -> dict",
+					Description: "Genesis timing and identity: genesis_time, genesis_delay, chain_id",
+				},
+				"groups": {
+					Signature:   "groups() -> list[str]",
+					Description: "Active devnet group (family) names, e.g. ['fusaka', 'pectra']",
+				},
+				"group": {
+					Signature:   "group(name: str) -> list[dict]",
+					Description: "All networks in a devnet group (family)",
+				},
+				"spec": {
+					Signature:   "spec(network: str, url: str = None) -> dict",
+					Description: "Fetch the notes.ethereum.org devnet spec page: title, sections (list of {heading, content} verbatim markdown), and the full markdown. Grab a section (e.g. local testing for the Kurtosis config) by heading",
+				},
+			},
+		}
+
 		response := serverapi.APIDocResponse{
 			Library:     "ethpandaops",
-			Description: "Data access library for Ethereum network analytics. Import: from ethpandaops import clickhouse, prometheus, loki, storage",
+			Description: "Data access library for Ethereum network analytics. Import: from ethpandaops import clickhouse, prometheus, loki, networks, storage",
 			Modules:     modules,
 		}
 
