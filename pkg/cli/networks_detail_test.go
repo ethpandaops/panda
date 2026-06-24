@@ -101,6 +101,42 @@ func TestRunNetworkForksOrdersByActivation(t *testing.T) {
 	assert.Less(t, denebAt, electraAt, "deneb (epoch 0) should sort before electra (epoch 10)")
 }
 
+func TestForkRowsTieBreakIsDeterministic(t *testing.T) {
+	// All three forks activate at epoch 0; order must be stable (alphabetical).
+	forks := map[string]any{
+		"consensus": map[string]any{
+			"deneb":     map[string]any{"epoch": float64(0)},
+			"altair":    map[string]any{"epoch": float64(0)},
+			"bellatrix": map[string]any{"epoch": float64(0)},
+		},
+	}
+
+	rows := forkRows(forks)
+	require.Len(t, rows, 3)
+	assert.Equal(t, "altair", rows[0][1])
+	assert.Equal(t, "bellatrix", rows[1][1])
+	assert.Equal(t, "deneb", rows[2][1])
+}
+
+func TestRunNetworkClientsLists(t *testing.T) {
+	server := networkGetTestServer(t)
+	defer server.Close()
+
+	setClientConfig(t, server.URL)
+	setOutputFormat(t, "text")
+
+	output := captureStdout(t, func() {
+		err := runNetworkClients(testCommand(), []string{"fusaka-devnet-3"})
+		require.NoError(t, err)
+	})
+
+	assert.Contains(t, output, "CLIENT")
+	assert.Contains(t, output, "VERSION")
+	assert.Contains(t, output, "geth")
+	assert.Contains(t, output, "v1.15.0")
+	assert.Contains(t, output, "lighthouse")
+}
+
 func TestRunNetworkEndpointsLists(t *testing.T) {
 	server := networkGetTestServer(t)
 	defer server.Close()

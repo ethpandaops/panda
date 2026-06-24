@@ -452,8 +452,14 @@ func forkRows(value any) [][]string {
 		}
 
 		sort.Slice(layerRows, func(i, j int) bool {
-			return forkActivationValue(entries, layerRows[i][1], layer.point) <
-				forkActivationValue(entries, layerRows[j][1], layer.point)
+			ai := forkActivationValue(entries, layerRows[i][1], layer.point)
+			aj := forkActivationValue(entries, layerRows[j][1], layer.point)
+			if ai != aj {
+				return ai < aj
+			}
+
+			// Deterministic order when forks share an activation (e.g. genesis).
+			return layerRows[i][1] < layerRows[j][1]
 		})
 
 		rows = append(rows, layerRows...)
