@@ -1,17 +1,23 @@
-"""Network and devnet discovery: the authoritative Cartographoor inventory.
+"""Network discovery: the authoritative Cartographoor inventory.
 
-This module is the easy way to get data about ethpandaops devnets — their
-forks, client images and versions, service endpoints (RPC, beacon, Dora,
-Forky, ...), genesis timing, and blob schedule.
+This module is the easy way to get data about the Ethereum networks
+ethpandaops tracks — mainnet, public testnets (hoodi, ...), and devnets —
+including their forks, client images and versions, service endpoints (RPC,
+beacon, Dora, Forky, ...), genesis timing, and blob schedule. Devnets are one
+filtered view via devnets() or list(devnets_only=True).
 
 Example usage:
     from ethpandaops import networks
 
-    # List active devnets
+    # List all active networks
+    for net in networks.list():
+        print(net["id"], net["chain_id"], net["devnet_group"])
+
+    # ...or just the devnets
     for net in networks.devnets():
         print(net["id"], net["chain_id"], net["devnet_group"])
 
-    # Full detail for one devnet
+    # Full detail for any network (mainnet, a testnet, or a devnet)
     detail = networks.get("fusaka-devnet-3")
     print(detail["genesis_time"], detail["chain_id"])
 
