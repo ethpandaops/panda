@@ -33,11 +33,12 @@ _OPS: dict[str, int] = {
     "BLOCKHASH": 0x40, "COINBASE": 0x41, "TIMESTAMP": 0x42, "NUMBER": 0x43,
     "PREVRANDAO": 0x44, "DIFFICULTY": 0x44, "GASLIMIT": 0x45, "CHAINID": 0x46,
     "SELFBALANCE": 0x47, "BASEFEE": 0x48, "BLOBHASH": 0x49, "BLOBBASEFEE": 0x4A,
+    "SLOTNUM": 0x4B,
     "POP": 0x50, "MLOAD": 0x51, "MSTORE": 0x52, "MSTORE8": 0x53,
     "SLOAD": 0x54, "SSTORE": 0x55, "JUMP": 0x56, "JUMPI": 0x57,
     "PC": 0x58, "MSIZE": 0x59, "GAS": 0x5A, "JUMPDEST": 0x5B,
     "TLOAD": 0x5C, "TSTORE": 0x5D, "MCOPY": 0x5E, "PUSH0": 0x5F,
-    # EOF (Fusaka) opcodes
+    # Glamsterdam (EIP-8024): take a 1-byte immediate
     "DUPN": 0xE6, "SWAPN": 0xE7, "EXCHANGE": 0xE8,
     # Calls and create
     "CREATE": 0xF0, "CALL": 0xF1, "CALLCODE": 0xF2, "RETURN": 0xF3,
@@ -110,11 +111,17 @@ def disassemble(bytecode: str) -> list[dict[str, Any]]:
         name = _OPS_BY_BYTE.get(byte, f"0x{byte:02x}")
         entry: dict[str, Any] = {"pc": i, "op": name}
 
-        push_size = (byte - 0x5F) if 0x60 <= byte <= 0x7F else 0
-        if push_size:
-            operand = data[i + 1: i + 1 + push_size]
+        # PUSH1–PUSH32: n-byte immediate; DUPN/SWAPN/EXCHANGE: 1-byte immediate
+        if 0x60 <= byte <= 0x7F:
+            imm_size = byte - 0x5F
+        elif byte in (0xE6, 0xE7, 0xE8):
+            imm_size = 1
+        else:
+            imm_size = 0
+        if imm_size:
+            operand = data[i + 1: i + 1 + imm_size]
             entry["operand"] = "0x" + operand.hex()
-            i += push_size
+            i += imm_size
 
         result.append(entry)
         i += 1
