@@ -25,10 +25,13 @@ df.to_parquet("/workspace/data.parquet")  # Persist!`
 const sessionWorkflowPlot = `# Call 2: LOAD from workspace and chart it with chartkit (the default charting library)
 import pandas as pd
 from ethpandaops import chartkit as ck
+from ethpandaops.chartkit.sources.datasources.clickhouse import clickhouse
 df = pd.read_parquet("/workspace/data.parquet")  # Load!
 ck.line(df, x="time", left=[("Value", "value", "")],
     title="<the finding the chart shows>",      # required: the takeaway
-    chart_title="<what the plot is>").save("/workspace/chart.png")  # required: the plot label
+    chart_title="<what the plot is>",           # required: the plot label
+    source=clickhouse("<the table/query you read>"),  # required: a source-library object
+    scope="<what the data is about, e.g. mainnet>").save("/workspace/chart.png")  # required: never defaulted (use None if global)
 uploaded = storage.upload("/workspace/chart.png")
 print(uploaded.url)`
 

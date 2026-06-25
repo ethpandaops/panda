@@ -15,7 +15,8 @@ ck.histogram(values, x="Time into slot", unit="s",
     title="Most blocks land inside three seconds",   # top headline: the finding
     subtitle="First-seen arrival of each block, across all sentries",
     chart_title="Block arrival distribution",        # label on the chart itself (required, ≠ title)
-    source=src("the ref you read"),                # ref is free text: table, metric, query
+    source=src("the ref you read"),                # required: a source-library object (carries name + logo)
+    scope="mainnet",                               # required: what the chart is about (usually the network) — never implicit
     stats=[("MEDIAN", "1.46s", "good"), ("SEEN WITHIN 2s", "78%", "good")],
     notes="Excludes blocks with no sentry coverage (<0.1%).",
 ).save("arrival.png")          # or .url() to upload and get a link
@@ -24,9 +25,19 @@ ck.histogram(values, x="Time into slot", unit="s",
 `prometheus` above is just whatever you queried — discover the installed set with
 `sources.available()`; this guide names no specific source on purpose.
 
+## Nothing is assumed — you state it
+The library has **no silent defaults for anything that changes what the chart claims**. You must pass
+`scope=` explicitly — what the chart is *about*, stamped as a badge in its header. Usually that's the
+network (`scope="mainnet"`/`"sepolia"`/`"hoodi"` or a devnet name; known networks get their brand colour),
+but it can be any short label for non-network data — a hardware platform (`scope="Ryzen 9950X"`), an
+environment, a comparison. There is no default; pass `scope=None` only when the data is genuinely global.
+`source=` must likewise be a real source-library object (a bare string/dict is rejected, so the footer
+always carries a verified name + logo). Leave either out and the call raises, telling you what to add —
+the point is that you *decide* what lands on the chart.
+
 ## The shape of every call
 - **Data first** — a Series/array (`histogram`, `bar`) or a DataFrame + column names (`line`, `area`, `heatmap`). Pass the *raw* data; the library bins/aggregates/scales it.
-- **`title`**, **`subtitle`**, **`unit`**, **`source`**, **`stats`**, **`notes`** — the labels.
+- **`scope`** (required) and **`source`** (required) — the provenance. **`title`**, **`chart_title`** (required) and **`subtitle`**, **`unit`**, **`stats`**, **`notes`** (optional) — the labels.
 - Returns a `Chart`; call `.save(path)` or `.url()`.
 
 ## The two titles — delineated by role
@@ -40,10 +51,11 @@ Rule of thumb: `title` says *what you found*; `chart_title` says *what the plot 
 ## Validated for you (these raise, not render-blank)
 The library enforces what it can; a structural mistake fails loudly with a message instead of producing a broken image:
 - `title` and `chart_title` present and non-empty · `chart_title` ≠ `title` · `subtitle` ≠ `title`
-- each `stats` entry is `(label, value, sentiment)` with sentiment ∈ `good|ok|bad|neutral`
-- each `source` is a real source-library object (`sources.load(...)` / a source module) — not a hand-built dict
+- `scope` is passed explicitly (a label or `None`, no default) and `source`/`sources` carries at least one real source — a chart with an implicit scope or no provenance is rejected
+- each `stats` entry is `(label, value, sentiment)` with sentiment ∈ `good|ok|bad|neutral`, and there are at most 6 of them
+- each `source` is a real source-library object (`sources.load(...)` / a source module) — a bare string or hand-built dict is rejected
 - the data you pass isn't empty, is finite (no NaN/inf), and `box` rows carry all five quantiles
-- `histogram`/`bar` values are non-negative (bars and bins run from 0; use `custom()` for signed data)
+- `histogram`/`bar` values are non-negative (bars and bins run from 0; use `custom()` for signed data); a log scale rejects non-positive values rather than dropping them
 Everything below is what the library *can't* check — still your responsibility.
 
 ## Rules the library can't enforce — follow them
@@ -60,7 +72,7 @@ Everything below is what the library *can't* check — still your responsibility
 
 4. **Omit empty bands.** No stats → don't pass `stats` (the row disappears). No caveats → `notes=None`. No second series → don't force a legend. Don't pad the chart with empty structure.
 
-5. **Attribute what you queried.** The simplest form is `source="the table/metric/query you read"` — a plain string is fine and shows as the data provenance. For a branded footer (with a logo), use a source library instead: call `sources.available()` to see what's installed, then `src = sources.load("datasources"|"datasets", name); source=src("the ref")`. `ref` is free text (table, metric, join, query) naming what you actually read. **Never invent a source you didn't read.** Multiple sources → `sources=[...]`. (A `logo`, if you build a source dict yourself, must be a `data:` URI — external URLs are rejected.)
+5. **Attribute what you queried — with a real source library.** `source=` must be a source-library object, never a bare string. Call `sources.available()` to see what's installed, then `src = sources.load("datasources"|"datasets", name); source=src("the ref")`. `ref` is free text (table, metric, join, query) naming what you actually read; the library supplies the verified name + logo so the footer can't carry faked provenance. **Never invent a source you didn't read.** Multiple sources → `sources=[...]`.
 
 6. **Let the library derive the axes, ticks, and window.** Pass raw data and a time column; don't pre-bin, don't compute tick lists, don't hardcode the window — it comes from the data's time range.
 

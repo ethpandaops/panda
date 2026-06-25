@@ -10,7 +10,7 @@ domains, ticks, scales, layout and SVG. The agent never writes coordinates or SV
     ck.histogram(values, x="Time into slot", unit="s",
         title="Most blocks land inside three seconds",   # top headline (the finding)
         chart_title="Block arrival distribution",        # label on the chart itself
-        source=xatu("fct_block_first_seen_by_node"),
+        source=xatu("mainnet.fct_block_first_seen_by_node"), scope="mainnet",
     ).save("arrival.png")
 
 Read the usage rules an agent must follow with `ck.guide()` (the bundled GUIDE.md).
