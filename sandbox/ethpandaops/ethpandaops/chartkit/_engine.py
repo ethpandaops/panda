@@ -39,14 +39,36 @@ def safe_href(u):
     return u if u.startswith("data:image/") else ""
 def txt(x,y,s,size,fill,w=400,anchor="start"):
     return f'<text x="{x:.1f}" y="{y:.1f}" font-size="{size}" font-weight="{w}" fill="{safe_color(fill)}" text-anchor="{anchor}">{esc(s)}</text>'
+def _hardchunks(word,size,maxw,w):
+    """Break a single token too wide for maxw into pixel-bounded pieces (character level)."""
+    pieces,cur=[],""
+    for ch in str(word):
+        if tw(cur+ch,size,w)<=maxw or not cur: cur+=ch
+        else: pieces.append(cur); cur=ch
+    if cur: pieces.append(cur)
+    return pieces
 def wrap(s,size,maxw,w=400):
     out,cur=[],""
     for word in str(s).split():
+        if tw(word,size,w)>maxw:                     # unbreakable token -> hard-break by chars
+            if cur: out.append(cur); cur=""
+            ch=_hardchunks(word,size,maxw,w); out+=ch[:-1]; cur=ch[-1] if ch else ""
+            continue
         t=(cur+" "+word).strip()
         if tw(t,size,w)<=maxw or not cur: cur=t
         else: out.append(cur); cur=word
     if cur: out.append(cur)
     return out
+def fit(s,size,maxw,w=400):
+    """Single-line clamp: s unchanged if it fits maxw, else char-truncated with a trailing '…'."""
+    s=str(s)
+    if maxw<=0: return ""
+    if tw(s,size,w)<=maxw: return s
+    out=""
+    for ch in s:
+        if tw(out+ch+"…",size,w)>maxw: break
+        out+=ch
+    return (out+"…") if out else "…"
 
 # ===================== THEME (every token overridable) =====================
 DEFAULT_THEME={
@@ -100,7 +122,7 @@ def ramp_color(name,t,theme):
 def ramp_stops(name,theme,n=9): return [(round(i/(n-1),3),ramp_color(name,i/(n-1),theme)) for i in range(n)]
 
 # ===================== SCALES (hookable) =====================
-def _sclin(d,r): (a,b),(c,e)=d,r; return lambda v: c+(v-a)/(b-a)*(e-c)
+def _sclin(d,r): (a,b),(c,e)=d,r; sp=(b-a) or 1e-12; return lambda v: c+(v-a)/sp*(e-c)   # never divide by a zero-width domain
 def _sclog(d,r):
     (a,b),(c,e)=d,r; la,lb=math.log10(max(a,1e-9)),math.log10(b)
     return lambda v: c+(math.log10(max(v,1e-9))-la)/(lb-la)*(e-c)
@@ -187,12 +209,13 @@ def _waterfall(c):
         x0=c.sx(sp["start"]); x1=c.sx(sp["start"]+sp["dur"]); bw=max(2,x1-x0)
         if i: o.append(f'<line x1="{c.GL}" x2="{R}" y1="{cy:.1f}" y2="{cy:.1f}" stroke="#f0efe8"/>')
         ny=cy+rh*0.40; by=cy+rh*0.46; nm=sp["name"]; ind=sp.get("depth",0)*14
-        if x0+ind+tw(nm,fs,600)>R-2: o.append(txt(min(x1,R-2),ny,nm,fs,c.t["ink"],600,anchor="end"))
-        else: o.append(txt(x0+ind,ny,nm,fs,c.t["ink"],600))
+        if x0+ind+tw(nm,fs,600)>R-2: o.append(txt(min(x1,R-2),ny,fit(nm,fs,min(x1,R-2)-c.GL-4,600),fs,c.t["ink"],600,anchor="end"))
+        else: o.append(txt(x0+ind,ny,fit(nm,fs,R-2-(x0+ind),600),fs,c.t["ink"],600))
         o.append(f'<rect x="{x0:.1f}" y="{by:.1f}" width="{bw:.1f}" height="{bh:.1f}" rx="2.5" fill="{col}"/>')
         dl=f'{sp["dur"]}ms'; dy=by+bh*0.5+3.2
-        if x1+6+tw(dl,9)>R-2: o.append(txt(x0-6,dy,dl,9,c.t["muted"],anchor="end"))
-        else: o.append(txt(x1+6,dy,dl,9,c.t["muted"]))
+        if x1+6+tw(dl,9)<=R-2: o.append(txt(x1+6,dy,dl,9,c.t["muted"]))      # right of the bar when it fits
+        elif x0-6-tw(dl,9)>=c.GL: o.append(txt(x0-6,dy,dl,9,c.t["muted"],anchor="end"))  # else left, but not into the gutter
+        else: o.append(txt(min(x1,R-2)-4,dy,fit(dl,9,max(10,bw-8),600),9,c.t["paper"],600,anchor="end"))  # else inside the bar
     return o
 
 @renderer("scatter")
@@ -215,12 +238,13 @@ def plot(*, kind=None, xdom, ydom, xticks, yticks, xfmt, yfmt, xtitle, ytitle,
     _rp=max(16, tw(xfmt(xticks[-1]),11)/2+6)
     if series: _rp=max([_rp]+[10+tw(s.get("label",""),11.5,700) for s in series if s.get("label")])
     if rpad: _rp=max(_rp,rpad)                    # caller can reserve extra right margin (e.g. a 2nd axis)
-    PW=PW0-gl-_rp; sx=make_scale(xscale,xdom,(gl,gl+PW)); sy=make_scale(yscale,ydom,(PT+H,PT)); yb=sy(ydom[0]); p=[]
+    gl=max(GL,min(gl,PW0-int(_rp)-160))          # a huge left gutter can never starve the plot below 160px
+    PW=max(160,PW0-gl-_rp); sx=make_scale(xscale,xdom,(gl,gl+PW)); sy=make_scale(yscale,ydom,(PT+H,PT)); yb=sy(ydom[0]); p=[]
     for tk in yticks:
         y=sy(tk); p.append(f'<line x1="{gl}" x2="{gl+PW}" y1="{y:.1f}" y2="{y:.1f}" stroke="{t["grid"]}"/>')
         p.append(txt(gl-10,y+4,yfmt(tk),11,t["faint"],anchor="end"))
     c=Draw(kind,sx,sy,yb,PW,PT,H,gl,t,bars,series,spans,cells); c.points=points
-    ret=(body or RENDERERS[kind])(c); p+=(ret or [])+c._buf
+    ret=(body or RENDERERS[kind])(c); p+=[x for x in (list(ret or [])+c._buf) if x]   # tolerate a draw returning a list/tuple of c.* results (or None)
     for m in markers or []:
         col=safe_color(m.get("color",t["accent"])); dash=' stroke-dasharray="5 3"' if m.get("dash") else ''
         if m["axis"]=="x":
@@ -230,7 +254,13 @@ def plot(*, kind=None, xdom, ydom, xticks, yticks, xfmt, yfmt, xtitle, ytitle,
         else:
             Y=sy(m["value"]); p.append(f'<line x1="{gl}" x2="{gl+PW}" y1="{Y:.1f}" y2="{Y:.1f}" stroke="{col}" stroke-width="1.8" stroke-dasharray="5 3"/>')
             ly=Y-7 if Y>PT+18 else Y+16; p.append(txt(gl+PW-4,ly,m["label"],11.5,col,700,anchor="end"))
-    for tk in xticks: p.append(txt(sx(tk),PT+H+20,xfmt(tk),11,t["faint"],anchor="middle"))
+    lastx=-1e9
+    for tk in xticks:
+        X=sx(tk)
+        if X<gl-2 or X>gl+PW+2: continue          # drop ticks pushed outside the plot (e.g. a padded waterfall domain)
+        lab=xfmt(tk); hw=tw(lab,11)/2
+        if X-hw<lastx+4: continue                 # thin out a tick whose label would overlap the previous one
+        p.append(txt(X,PT+H+20,lab,11,t["faint"],anchor="middle")); lastx=X+hw
     if ytitle: p.append(f'<text transform="rotate(-90)" x="{-(PT+H/2):.1f}" y="15" text-anchor="middle" font-size="12" font-weight="600" fill="{t["muted"]}">{esc(ytitle)}</text>')
     p.append(txt(gl+PW/2,PT+H+44,xtitle,12,t["muted"],600,anchor="middle"))
     return "".join(p), PT+H+52
@@ -238,50 +268,71 @@ def plot(*, kind=None, xdom, ydom, xticks, yticks, xfmt, yfmt, xtitle, ytitle,
 # ===================== FRAME — replaceable slots =====================
 def slot_header(s):
     t=s.t; y=s.y; CL=s.CL; CR=s.CR
-    logo=52; gap=8; pillh=21; cluster=logo+gap+pillh        # brand stack height
-    nh=t["networks"][s.network]; pillw=tw(s.network.capitalize(),10.5,600)+22
+    logo=52; gap=8; pillh=21; cluster=logo+(gap+pillh if s.network else 0)   # brand stack height
+    # Unknown networks (e.g. a devnet name the agent explicitly passed) get a neutral pill instead
+    # of crashing; the pill text is clamped so a long devnet name can't overrun the card edge.
+    nh=t["networks"].get(str(s.network).lower(),t["muted"]) if s.network else None
+    netname=fit(str(s.network).capitalize(),10.5,min(CR-CL-logo-24,168)-22,600) if s.network else ""
+    pillw=(tw(netname,10.5,600)+22) if s.network else 0
     avail=CR-max(logo,pillw)-24-CL                           # title must clear the brand cluster (no bleed)
-    tlines=wrap(s.title,28,avail,700); lh=32
-    tbh=(len(tlines)-1)*lh+(46 if s.subtitle else 24)        # title (+subtitle) text block
+    lh=32
+    tlines=[fit(ln,28,avail,700) for ln in wrap(s.title,28,avail,700)]   # wrap + clamp each line
+    slines=wrap(s.subtitle,14,avail) if s.subtitle else []  # subtitle is wrapped, never a raw overflow
+    tbh=(len(tlines)-1)*lh+24+(len(slines)*19+8 if slines else 0)        # title (+subtitle) text block
     band=max(cluster,tbh)
     ty=y+(band-tbh)/2                                        # title block, vertically centred in band
-    for i,ln in enumerate(tlines): s.E.append(txt(CL,ty+22+i*lh,ln,28,t["ink2"],700))
-    if s.subtitle: s.E.append(txt(CL,ty+22+(len(tlines)-1)*lh+22,s.subtitle,14,t["muted"]))
+    te=[txt(CL,ty+22+i*lh,ln,28,t["ink2"],700) for i,ln in enumerate(tlines)]
+    if slines:
+        sby=ty+22+(len(tlines)-1)*lh+22
+        te+=[txt(CL,sby+j*19,ln,14,t["muted"]) for j,ln in enumerate(slines)]
+    cid=f"hdr{int(y)}"                                       # clip the title column so any mis-measured glyph
+    s.E.append(f'<clipPath id="{cid}"><rect x="{CL}" y="{y:.1f}" width="{max(0,avail):.1f}" height="{band+10:.1f}"/></clipPath>')
+    s.E.append(f'<g clip-path="url(#{cid})">'+"".join(te)+'</g>')        # (e.g. CJK/emoji) can never reach the logo
     cy=y+(band-cluster)/2                                    # brand cluster, vertically centred in band
     s.E.append(f'<image x="{CR-logo}" y="{cy:.1f}" width="{logo}" height="{logo}" xlink:href="{safe_href(BRAND)}"/>')
-    pcx=CR-logo/2; py=cy+logo+gap
-    s.E.append(f'<rect x="{pcx-pillw/2:.1f}" y="{py:.1f}" width="{pillw:.1f}" height="{pillh}" rx="6" fill="{nh}1a"/>')
-    s.E.append(txt(pcx,py+14.5,s.network.capitalize(),10.5,nh,600,anchor="middle"))
+    if s.network:
+        py=cy+logo+gap; px=CR-pillw                          # right-align the pill to the card edge, under the logo
+        s.E.append(f'<rect x="{px:.1f}" y="{py:.1f}" width="{pillw:.1f}" height="{pillh}" rx="6" fill="{nh}1a"/>')
+        s.E.append(txt(px+pillw/2,py+14.5,netname,10.5,nh,600,anchor="middle"))
     return band+18
 
 def slot_kpis(s):
     if not s.kpis: return 6                       # no stats -> no card, no wasted row
     t=s.t; y=s.y; kh=78; cw=s.CW/len(s.kpis)
     s.E.append(f'<rect x="{s.CL}" y="{y}" width="{s.CW}" height="{kh}" rx="12" fill="{t["card"]}" stroke="{t["line"]}"/>')
+    uw=cw-28                                       # usable cell width (symmetric padding either side)
     for i,(lab,val,sent) in enumerate(s.kpis):
         cx=s.CL+i*cw
         if i: s.E.append(f'<line x1="{cx:.1f}" x2="{cx:.1f}" y1="{y}" y2="{y+kh}" stroke="{t["line"]}"/>')
-        s.E.append(txt(cx+22,y+26,lab,10.5,t["faint"],600)); s.E.append(txt(cx+22,y+56,val,24,t["sentiment"][sent],700))
+        vstr=str(val); vfs=24.0                     # shrink a wide value to a hair under uw so it is never chopped
+        if tw(vstr,vfs,700)>uw:
+            vfs=max(13.0,vfs*(uw-3)/tw(vstr,vfs,700))
+            if tw(vstr,vfs,700)>uw: vstr=fit(vstr,vfs,uw,700)   # only ellipsize when the 13px floor still overflows
+        s.E.append(txt(cx+22,y+26,fit(lab,10.5,uw,600),10.5,t["faint"],600))
+        s.E.append(txt(cx+22,y+56,vstr,vfs,t["sentiment"][sent],700))
     return kh+24
 
 def slot_plot(s):
     # the main content sits in its own card (matching the KPI card); title/legend/plot live inside it
     t=s.t; y0=s.y; pad=16; ix=s.CL+pad; py=y0+pad+4; inner=[]
-    if s.chart_title:                                        # wrap so a long chart title never overflows the card
-        ctl=wrap(s.chart_title,14,s.CW-2*pad,700)
+    if s.chart_title:                                        # wrap + clamp so a long chart title never overflows the card
+        ctl=[fit(ln,14,s.CW-2*pad,700) for ln in wrap(s.chart_title,14,s.CW-2*pad,700)]
         for j,ln in enumerate(ctl): inner.append(txt(s.CCX,y0+pad+10+j*18,ln,14,t["ink2"],700,anchor="middle"))
         py=y0+pad+10+len(ctl)*18
     leg=s.legend
     if isinstance(leg,dict) and leg.get("type")=="gradient":
-        gy=py+18; gx=ix; gw=170                              # below the chart title, not over it
+        gy=py+18; gx=ix; avail=s.CR-pad-ix                   # below the chart title, not over it
+        lo=fit(leg["lo"],11,avail*0.32); hi=fit(leg["hi"],11,avail*0.32)  # endpoints never crowd out the swatch
+        gw=max(60,min(170,avail-tw(lo,11)-tw(hi,11)-16))     # swatch shrinks to keep the whole row inside the card
         stops="".join(f'<stop offset="{o}" stop-color="{c}"/>' for o,c in ramp_stops(leg.get("ramp","gradient"),t))
         inner.append(f'<defs><linearGradient id="hg">{stops}</linearGradient></defs>')
-        inner.append(txt(gx,gy,leg["lo"],11,t["muted"])); gx+=tw(leg["lo"],11)+8
-        inner.append(f'<rect x="{gx:.1f}" y="{gy-9:.1f}" width="{gw}" height="10" rx="2" fill="url(#hg)" stroke="{t["line"]}"/>'); gx+=gw+8
-        inner.append(txt(gx,gy,leg["hi"],11,t["muted"])); py=gy+24
+        inner.append(txt(gx,gy,lo,11,t["muted"])); gx+=tw(lo,11)+8
+        inner.append(f'<rect x="{gx:.1f}" y="{gy-9:.1f}" width="{gw:.1f}" height="10" rx="2" fill="url(#hg)" stroke="{t["line"]}"/>'); gx+=gw+8
+        inner.append(txt(gx,gy,hi,11,t["muted"])); py=gy+24
     elif leg:
-        lx=ix; ly=py+22; lh=20                               # below the chart title, not over it
+        lx=ix; ly=py+22; lh=20; rowmax=s.CR-pad-ix-37        # below the chart title, not over it
         for label,color in leg:
+            label=fit(label,11.5,rowmax,600)                 # a single over-wide label is ellipsized, never escapes
             iw=15+tw(label,11.5,600)+22
             if lx+iw>s.CR-pad and lx>ix: ly+=lh; lx=ix
             inner.append(f'<rect x="{lx:.1f}" y="{ly-9}" width="11" height="11" rx="2.5" fill="{safe_color(color)}"/>'); inner.append(txt(lx+17,ly,label,11.5,t["ink"],600)); lx+=iw
@@ -330,7 +381,7 @@ def slot_footer(s):
     # bottom: generation meta centred on its own row (window lives here, with the credit)
     my=max(srcb,noteb)+28
     meta="Generated with github.com/ethpandaops/panda"+(f"   ·   {s.window}" if s.window else "")
-    s.E.append(txt(s.CL+s.CW/2,my,meta,11,t["faint"],anchor="middle"))
+    s.E.append(txt(s.CL+s.CW/2,my,fit(meta,11,s.CW),11,t["faint"],anchor="middle"))   # a long window can't overrun the page
     return my-s.y+14
 
 DEFAULT_SLOTS={"header":slot_header,"kpis":slot_kpis,"plot":slot_plot,"footer":slot_footer}
