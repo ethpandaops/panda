@@ -97,13 +97,24 @@ func (h *EthNodeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Construct upstream host.
+	// The special instance name "lb" selects the load-balanced endpoint
+	// (rpc.<network>.ethpandaops.io / bn.<network>.ethpandaops.io) instead of
+	// the per-node pattern (rpc-<instance>.srv.<network>.ethpandaops.io).
 	var host string
 
 	switch mode {
 	case "beacon":
-		host = fmt.Sprintf("bn-%s.srv.%s.ethpandaops.io", instance, network)
+		if instance == "lb" {
+			host = fmt.Sprintf("bn.%s.ethpandaops.io", network)
+		} else {
+			host = fmt.Sprintf("bn-%s.srv.%s.ethpandaops.io", instance, network)
+		}
 	case "execution":
-		host = fmt.Sprintf("rpc-%s.srv.%s.ethpandaops.io", instance, network)
+		if instance == "lb" {
+			host = fmt.Sprintf("rpc.%s.ethpandaops.io", network)
+		} else {
+			host = fmt.Sprintf("rpc-%s.srv.%s.ethpandaops.io", instance, network)
+		}
 	}
 
 	// Get or create reverse proxy for this host.

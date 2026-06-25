@@ -28,6 +28,7 @@ import (
 	clickhousemodule "github.com/ethpandaops/panda/modules/clickhouse"
 	doramodule "github.com/ethpandaops/panda/modules/dora"
 	ethnodemodule "github.com/ethpandaops/panda/modules/ethnode"
+	evmmodule "github.com/ethpandaops/panda/modules/evm"
 	forkymodule "github.com/ethpandaops/panda/modules/forky"
 	lokimodule "github.com/ethpandaops/panda/modules/loki"
 	prometheusmodule "github.com/ethpandaops/panda/modules/prometheus"
@@ -220,6 +221,7 @@ func (a *App) registerModules() *module.Registry {
 	reg.Add(datasetsmodule.New())
 	reg.Add(doramodule.New())
 	reg.Add(ethnodemodule.New())
+	reg.Add(evmmodule.New())
 	reg.Add(forkymodule.New())
 	reg.Add(lokimodule.New())
 	reg.Add(prometheusmodule.New())

@@ -26,3 +26,7 @@ python-dateutil>=2.9.0
 pytz>=2024.2
 rich>=13.9.0  # For better terminal output
 tabulate>=0.9.0  # For table formatting
+
+# Ethereum transaction signing and ABI encoding
+eth-account>=0.13.0
+eth-abi>=5.1.0
