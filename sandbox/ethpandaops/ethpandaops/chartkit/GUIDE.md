@@ -16,7 +16,7 @@ ck.histogram(values, x="Time into slot", unit="s",
     subtitle="First-seen arrival of each block, across all sentries",
     chart_title="Block arrival distribution",        # label on the chart itself (required, ≠ title)
     source=src("the ref you read"),                # required: a source-library object (carries name + logo)
-    network="mainnet",                             # required: the network the data is from — never implicit
+    scope="mainnet",                               # required: what the chart is about (usually the network) — never implicit
     stats=[("MEDIAN", "1.46s", "good"), ("SEEN WITHIN 2s", "78%", "good")],
     notes="Excludes blocks with no sentry coverage (<0.1%).",
 ).save("arrival.png")          # or .url() to upload and get a link
@@ -27,14 +27,17 @@ ck.histogram(values, x="Time into slot", unit="s",
 
 ## Nothing is assumed — you state it
 The library has **no silent defaults for anything that changes what the chart claims**. You must pass
-`network=` explicitly (there is no default — a chart asserts a network in its header, so omitting it
-is never allowed), and `source=` must be a real source-library object (a bare string/dict is rejected,
-so the footer always carries a verified name + logo). If you leave either out, the call raises with a
-message telling you what to add. The point is that you *decide* what lands on the chart.
+`scope=` explicitly — what the chart is *about*, stamped as a badge in its header. Usually that's the
+network (`scope="mainnet"`/`"sepolia"`/`"hoodi"` or a devnet name; known networks get their brand colour),
+but it can be any short label for non-network data — a hardware platform (`scope="Ryzen 9950X"`), an
+environment, a comparison. There is no default; pass `scope=None` only when the data is genuinely global.
+`source=` must likewise be a real source-library object (a bare string/dict is rejected, so the footer
+always carries a verified name + logo). Leave either out and the call raises, telling you what to add —
+the point is that you *decide* what lands on the chart.
 
 ## The shape of every call
 - **Data first** — a Series/array (`histogram`, `bar`) or a DataFrame + column names (`line`, `area`, `heatmap`). Pass the *raw* data; the library bins/aggregates/scales it.
-- **`network`** (required) and **`source`** (required) — the provenance. **`title`**, **`chart_title`** (required) and **`subtitle`**, **`unit`**, **`stats`**, **`notes`** (optional) — the labels.
+- **`scope`** (required) and **`source`** (required) — the provenance. **`title`**, **`chart_title`** (required) and **`subtitle`**, **`unit`**, **`stats`**, **`notes`** (optional) — the labels.
 - Returns a `Chart`; call `.save(path)` or `.url()`.
 
 ## The two titles — delineated by role
@@ -48,7 +51,7 @@ Rule of thumb: `title` says *what you found*; `chart_title` says *what the plot 
 ## Validated for you (these raise, not render-blank)
 The library enforces what it can; a structural mistake fails loudly with a message instead of producing a broken image:
 - `title` and `chart_title` present and non-empty · `chart_title` ≠ `title` · `subtitle` ≠ `title`
-- `network` is present (no default) and `source`/`sources` carries at least one real source — a chart with no network or no provenance is rejected
+- `scope` is passed explicitly (a label or `None`, no default) and `source`/`sources` carries at least one real source — a chart with an implicit scope or no provenance is rejected
 - each `stats` entry is `(label, value, sentiment)` with sentiment ∈ `good|ok|bad|neutral`, and there are at most 6 of them
 - each `source` is a real source-library object (`sources.load(...)` / a source module) — a bare string or hand-built dict is rejected
 - the data you pass isn't empty, is finite (no NaN/inf), and `box` rows carry all five quantiles

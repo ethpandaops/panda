@@ -31,7 +31,7 @@ ck.line(df, x="time", left=[("Value", "value", "")],
     title="<the finding the chart shows>",      # required: the takeaway
     chart_title="<what the plot is>",           # required: the plot label
     source=clickhouse("<the table/query you read>"),  # required: a source-library object
-    network="<the network, e.g. mainnet>").save("/workspace/chart.png")  # required: never defaulted
+    scope="<what the data is about, e.g. mainnet>").save("/workspace/chart.png")  # required: never defaulted (use None if global)
 uploaded = storage.upload("/workspace/chart.png")
 print(uploaded.url)`
 

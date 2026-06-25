@@ -268,12 +268,15 @@ def plot(*, kind=None, xdom, ydom, xticks, yticks, xfmt, yfmt, xtitle, ytitle,
 # ===================== FRAME — replaceable slots =====================
 def slot_header(s):
     t=s.t; y=s.y; CL=s.CL; CR=s.CR
-    logo=52; gap=8; pillh=21; cluster=logo+(gap+pillh if s.network else 0)   # brand stack height
-    # Unknown networks (e.g. a devnet name the agent explicitly passed) get a neutral pill instead
-    # of crashing; the pill text is clamped so a long devnet name can't overrun the card edge.
-    nh=t["networks"].get(str(s.network).lower(),t["muted"]) if s.network else None
-    netname=fit(str(s.network).capitalize(),10.5,min(CR-CL-logo-24,168)-22,600) if s.network else ""
-    pillw=(tw(netname,10.5,600)+22) if s.network else 0
+    logo=52; gap=8; pillh=21; cluster=logo+(gap+pillh if s.scope else 0)   # brand stack height
+    # The scope pill: a known network name keeps its brand colour and title-case; any other scope
+    # (a devnet, a hardware platform, a comparison) gets a neutral pill, shown verbatim. The text is
+    # clamped so a long label can't overrun the card edge; scope=None draws no pill at all.
+    sl=str(s.scope).lower() if s.scope else ""
+    nh=t["networks"].get(sl,t["muted"]) if s.scope else None
+    label=(str(s.scope).capitalize() if sl in t["networks"] else str(s.scope)) if s.scope else ""
+    badge=fit(label,10.5,min(CR-CL-logo-24,168)-22,600) if s.scope else ""
+    pillw=(tw(badge,10.5,600)+22) if s.scope else 0
     avail=CR-max(logo,pillw)-24-CL                           # title must clear the brand cluster (no bleed)
     lh=32
     tlines=[fit(ln,28,avail,700) for ln in wrap(s.title,28,avail,700)]   # wrap + clamp each line
@@ -290,10 +293,10 @@ def slot_header(s):
     s.E.append(f'<g clip-path="url(#{cid})">'+"".join(te)+'</g>')        # (e.g. CJK/emoji) can never reach the logo
     cy=y+(band-cluster)/2                                    # brand cluster, vertically centred in band
     s.E.append(f'<image x="{CR-logo}" y="{cy:.1f}" width="{logo}" height="{logo}" xlink:href="{safe_href(BRAND)}"/>')
-    if s.network:
+    if s.scope:
         py=cy+logo+gap; px=CR-pillw                          # right-align the pill to the card edge, under the logo
         s.E.append(f'<rect x="{px:.1f}" y="{py:.1f}" width="{pillw:.1f}" height="{pillh}" rx="6" fill="{nh}1a"/>')
-        s.E.append(txt(px+pillw/2,py+14.5,netname,10.5,nh,600,anchor="middle"))
+        s.E.append(txt(px+pillw/2,py+14.5,badge,10.5,nh,600,anchor="middle"))
     return band+18
 
 def slot_kpis(s):
@@ -386,10 +389,10 @@ def slot_footer(s):
 
 DEFAULT_SLOTS={"header":slot_header,"kpis":slot_kpis,"plot":slot_plot,"footer":slot_footer}
 
-def render(out, network, title, subtitle, chart_title, plot_inner, plot_h, kpis, sources, notes,
+def render(out, scope, title, subtitle, chart_title, plot_inner, plot_h, kpis, sources, notes,
            legend=None, theme=None, slots=None, window=None):
     t=resolve_theme(theme); SL={**DEFAULT_SLOTS,**(slots or {})}
-    s=SimpleNamespace(E=[],y=34,CL=34,CR=878,CW=844,CCX=456,t=t,network=network,title=title,subtitle=subtitle,
+    s=SimpleNamespace(E=[],y=34,CL=34,CR=878,CW=844,CCX=456,t=t,scope=scope,title=title,subtitle=subtitle,
         chart_title=chart_title,plot_inner=plot_inner,plot_h=plot_h,kpis=kpis,sources=sources,notes=notes,legend=legend,window=window)
     for name in ("header","kpis","plot","footer"): s.y+=SL[name](s)
     H=int(s.y+22)
