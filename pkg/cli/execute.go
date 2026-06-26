@@ -111,6 +111,15 @@ func runExecute(cmd *cobra.Command, _ []string) error {
 			ttl = "unknown"
 		}
 		fmt.Fprintf(os.Stderr, "[session] %s (ttl: %s)\n", result.SessionID, ttl)
+
+		// A fresh session means follow-up calls start from scratch: a new
+		// /workspace and a separate storage directory. Tell the caller how to
+		// stay in this one so files persist and uploads stay grouped together.
+		if executeSession == "" {
+			fmt.Fprintf(os.Stderr,
+				"          reuse it in follow-up calls: panda execute --session %s ...\n",
+				result.SessionID)
+		}
 	}
 
 	if result.ExitCode != 0 {

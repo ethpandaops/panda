@@ -33,7 +33,8 @@ ck.line(df, x="time", left=[("Value", "value", "")],
     source=clickhouse("<the table/query you read>"),  # required: a source-library object
     scope="<what the data is about, e.g. mainnet>").save("/workspace/chart.png")  # required: never defaulted (use None if global)
 uploaded = storage.upload("/workspace/chart.png")
-print(uploaded.url)`
+print(uploaded.url)        # public link to share
+print(uploaded.host_path)  # where the file lives on the panda server`
 
 // RegisterGettingStartedResources registers the panda://getting-started
 // resource.
@@ -126,7 +127,11 @@ func sessionsSection(s surface.Dialect) string {
 	sb.WriteString("\n")
 	sb.WriteString(s.PythonBlockInSession(sessionWorkflowPlot))
 	fmt.Fprintf(&sb,
-		"\nUse `storage.upload()` for permanent public URLs (see %s for API details).\n",
+		"\nUse `storage.upload()` to publish a file. It returns an `UploadResult` with both "+
+			"`.url` (a permanent public link to share) and `.host_path` (where the file lives on the "+
+			"panda server) — report both when asked where a file went. Uploads made in one session are "+
+			"grouped under that session's directory, so reuse the same session to keep related files "+
+			"together (see %s for API details).\n",
 		s.PythonDocsRef("storage"))
 	fmt.Fprintf(&sb,
 		"\n**Charts:** use the `chartkit` library (`from ethpandaops import chartkit as ck`) for any chart "+
