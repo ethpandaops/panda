@@ -103,10 +103,6 @@ func createAPIHandler(moduleReg *module.Registry) ReadHandler {
 					Signature:   "group(name: str) -> list[dict]",
 					Description: "All networks in a devnet group (family)",
 				},
-				"spec": {
-					Signature:   "spec(network: str, url: str = None) -> dict",
-					Description: "Fetch the notes.ethereum.org devnet spec page: title, sections (list of {heading, content} verbatim markdown), and the full markdown. Grab a section (e.g. local testing for the Kurtosis config) by heading",
-				},
 			},
 		}
 

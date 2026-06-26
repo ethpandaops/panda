@@ -30,13 +30,6 @@ Example usage:
     # Devnet families
     networks.groups()                      # ['fusaka', 'pectra', ...]
     networks.group("fusaka")               # [{'id': 'fusaka-devnet-3', ...}, ...]
-
-    # notes.ethereum.org spec page: full markdown + section index
-    s = networks.spec("glamsterdam-devnet-5")
-    print(s["title"])                                  # 'glamsterdam-devnet-5 spec'
-    print([sec["heading"] for sec in s["sections"]])   # section headings
-    local = next(sec for sec in s["sections"] if "local" in sec["heading"].lower())
-    print(local["content"])                            # the Kurtosis config block
 """
 
 from __future__ import annotations
@@ -133,37 +126,6 @@ def genesis(network: str) -> dict[str, Any]:
         "genesis_delay": detail.get("genesis_delay"),
         "chain_id": detail.get("chain_id"),
     }
-
-
-def spec(network: str, url: str | None = None) -> dict[str, Any]:
-    """Fetch and parse the notes.ethereum.org devnet spec page for a network.
-
-    These HackMD pages (https://notes.ethereum.org/@ethpandaops/<network>)
-    describe the devnet's targeted EIPs, client status, spec versions, and
-    local-testing config. The full markdown is returned, plus a light index of
-    its level-2 sections so you can grab the one you want by heading.
-
-    Args:
-        network: Network id (e.g., "glamsterdam-devnet-5").
-        url: Optional override for the spec page URL. Must be on
-             notes.ethereum.org or hackmd.io.
-
-    Returns:
-        Dict with 'network', 'url', 'title', 'sections' (list of
-        {heading, content} where content is verbatim section markdown), and
-        'markdown' (the full raw source).
-
-    Example:
-        spec = networks.spec("glamsterdam-devnet-5")
-        # grab the Kurtosis config (it lives in the local-testing section)
-        local = next(s for s in spec["sections"] if "local" in s["heading"].lower())
-        print(local["content"])
-    """
-    args: dict[str, Any] = {"network": network}
-    if url:
-        args["url"] = url
-
-    return invoke_data("network.spec", args)
 
 
 def groups() -> list[str]:

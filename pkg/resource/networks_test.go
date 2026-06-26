@@ -11,6 +11,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ethpandaops/panda/pkg/networkspec"
 	"github.com/ethpandaops/panda/pkg/surface"
 )
 
@@ -202,4 +203,72 @@ func TestNetworkDetailIncludesID(t *testing.T) {
 	require.Equal(t, "networks://group-a-devnet-1", response.ResourceURI)
 	require.Equal(t, "https://config.example/api/v1/nodes/inventory", response.NodeInventoryURL)
 	require.Contains(t, response.Usage, "node_inventory_url")
+}
+
+func TestNetworkDetailIncludesSpecDigest(t *testing.T) {
+	networkSpecFetcherMu.Lock()
+	oldFetcher := networkSpecFetcher
+	networkSpecFetcher = func(_ context.Context, id, group string, _ discovery.Network) (*networkspec.Response, error) {
+		if id != "group-a-devnet-1" {
+			return nil, nil
+		}
+
+		return &networkspec.Response{
+			Network: id,
+			URL:     "https://notes.ethereum.org/@ethpandaops/group-a-devnet-1",
+			Title:   "group-a-devnet-1 spec",
+			EIPs: []networkspec.EIP{{
+				ID:      "EIP-7708",
+				Title:   "ETH transfers emit a log",
+				URL:     "https://eips.ethereum.org/EIPS/eip-7708",
+				SpecURL: "https://github.com/ethereum/EIPs/blob/172188d7b090ed1afb876140f45e19ac00cba4bb/EIPS/eip-7708.md",
+			}},
+			Releases: []networkspec.Release{{
+				Name:    "Consensus Specs",
+				Version: "v1.7.0-alpha.11",
+				URL:     "https://github.com/ethereum/consensus-specs/releases/tag/v1.7.0-alpha.11",
+				Status:  "merged",
+			}},
+			ParticipantImages: []networkspec.Image{{
+				Layer:  "el",
+				Client: "geth",
+				Image:  "ethpandaops/geth:group-a-devnet-1",
+				URL:    "https://hub.docker.com/r/ethpandaops/geth/tags?name=group-a-devnet-1",
+			}},
+		}, nil
+	}
+	networkSpecFetcherMu.Unlock()
+	t.Cleanup(func() {
+		networkSpecFetcherMu.Lock()
+		networkSpecFetcher = oldFetcher
+		networkSpecFetcherMu.Unlock()
+	})
+
+	client := &fakeNetworkClient{
+		networks: map[string]discovery.Network{
+			"group-a-devnet-1": {Name: "devnet-1", ChainID: 11, Status: "active"},
+		},
+		groups: map[string]map[string]discovery.Network{
+			"group-a": {
+				"group-a-devnet-1": {Name: "devnet-1", ChainID: 11, Status: "active"},
+			},
+		},
+	}
+
+	log := logrus.New()
+	log.SetOutput(io.Discard)
+
+	out, err := createNetworkDetailHandler(log, client)(context.Background(), "networks://group-a-devnet-1", surface.MCP)
+	require.NoError(t, err)
+
+	var response NetworkDetailResponse
+	require.NoError(t, json.Unmarshal([]byte(out), &response))
+	require.NotNil(t, response.Spec)
+	require.Len(t, response.Spec.EIPs, 1)
+	require.Equal(t, "https://eips.ethereum.org/EIPS/eip-7708", response.Spec.EIPs[0].URL)
+	require.Len(t, response.Spec.Releases, 1)
+	require.Equal(t, "https://github.com/ethereum/consensus-specs/releases/tag/v1.7.0-alpha.11", response.Spec.Releases[0].URL)
+	require.Len(t, response.Spec.ParticipantImages, 1)
+	require.Equal(t, "https://hub.docker.com/r/ethpandaops/geth/tags?name=group-a-devnet-1", response.Spec.ParticipantImages[0].URL)
+	require.Contains(t, response.Usage, "spec field")
 }
