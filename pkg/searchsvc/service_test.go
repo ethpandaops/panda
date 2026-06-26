@@ -572,7 +572,7 @@ func TestSearchAll(t *testing.T) {
 		require.NotNil(t, resp.Specs)
 		assert.Nil(t, resp.EIPs)
 		require.Len(t, resp.Runbooks.Results, 1)
-		assert.Empty(t, resp.Runbooks.Results[0].Content)
+		assert.Equal(t, "runbooks://Debug", resp.Runbooks.Results[0].Ref)
 		require.Len(t, runbookSearcher.results, 1)
 		assert.Equal(t, "full runbook body", runbookSearcher.results[0].Runbook.Content)
 	})

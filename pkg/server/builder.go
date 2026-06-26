@@ -14,6 +14,8 @@ import (
 	"github.com/ethpandaops/panda/pkg/app"
 	"github.com/ethpandaops/panda/pkg/cartographoor"
 	"github.com/ethpandaops/panda/pkg/config"
+	"github.com/ethpandaops/panda/pkg/consensusspecs"
+	"github.com/ethpandaops/panda/pkg/eips"
 	"github.com/ethpandaops/panda/pkg/execsvc"
 	"github.com/ethpandaops/panda/pkg/module"
 	"github.com/ethpandaops/panda/pkg/resource"
@@ -24,6 +26,7 @@ import (
 	"github.com/ethpandaops/panda/pkg/storage"
 	"github.com/ethpandaops/panda/pkg/tokenstore"
 	"github.com/ethpandaops/panda/pkg/tool"
+	"github.com/ethpandaops/panda/runbooks"
 )
 
 // Dependencies contains all the services required to run the MCP server.
@@ -120,6 +123,9 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 		application.Cartographoor,
 		application.ModuleRegistry,
 		toolReg,
+		searchRuntime.RunbookRegistry,
+		searchRuntime.EIPRegistry,
+		searchRuntime.SpecsRegistry,
 	)
 
 	// Arm the background discovery refresh only now that the registries exist:
@@ -249,6 +255,9 @@ func (b *Builder) buildResourceRegistry(
 	cartographoorClient cartographoor.CartographoorClient,
 	moduleReg *module.Registry,
 	toolReg tool.Registry,
+	runbookReg *runbooks.Registry,
+	eipReg *eips.Registry,
+	specsReg *consensusspecs.Registry,
 ) resource.Registry {
 	reg := resource.NewRegistry(b.log)
 
@@ -274,6 +283,11 @@ func (b *Builder) buildResourceRegistry(
 		if err := provider.RegisterResources(b.log, reg); err != nil {
 			b.log.WithError(err).WithField("module", ext.Name()).Warn("Failed to register module resources")
 		}
+	}
+
+	// Register ref-based content readers for search results.
+	if runbookReg != nil || eipReg != nil || specsReg != nil {
+		resource.RegisterRefResources(b.log, reg, runbookReg, eipReg, specsReg)
 	}
 
 	staticCount := len(reg.ListStatic())

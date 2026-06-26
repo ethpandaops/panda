@@ -24,33 +24,31 @@ func TestSearchQueryArgsOrFlagRequiresQuery(t *testing.T) {
 	require.NoError(t, queryArgsOrFlag(&query)(testCommand(), nil))
 }
 
-func TestPrintRunbookSummariesOmitsContent(t *testing.T) {
+func TestPrintRunbookSummariesShowsRef(t *testing.T) {
 	output := captureStdout(t, func() {
 		printRunbookSummaries([]*serverapi.SearchRunbookResult{{
 			Name:            "Debug",
 			Description:     "Investigate a network issue.",
 			Tags:            []string{"debugging"},
 			Prerequisites:   []string{"clickhouse"},
-			Content:         "full runbook body",
+			Ref:             "runbooks://Debug",
 			SimilarityScore: 0.7,
 		}})
 	})
 
 	assert.Contains(t, output, "Debug")
-	assert.Contains(t, output, "Full content: panda search runbooks")
-	assert.NotContains(t, output, "full runbook body")
+	assert.Contains(t, output, "Read full content: panda read runbooks://Debug")
 }
 
-func TestCompactRunbookResponseOmitsContent(t *testing.T) {
+func TestCompactRunbookResponsePreservesRef(t *testing.T) {
 	resp := &serverapi.SearchRunbooksResponse{
 		Results: []*serverapi.SearchRunbookResult{{
-			Name:    "Debug",
-			Content: "full runbook body",
+			Name: "Debug",
+			Ref:  "runbooks://Debug",
 		}},
 	}
 
 	compact := compactRunbookResponse(resp)
 	require.Len(t, compact.Results, 1)
-	assert.Empty(t, compact.Results[0].Content)
-	assert.Equal(t, "full runbook body", resp.Results[0].Content)
+	assert.Equal(t, "runbooks://Debug", compact.Results[0].Ref)
 }

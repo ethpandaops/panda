@@ -103,7 +103,7 @@ type SearchRunbookResult struct {
 	Description     string   `json:"description"`
 	Tags            []string `json:"tags"`
 	Prerequisites   []string `json:"prerequisites"`
-	Content         string   `json:"content,omitempty"`
+	Ref             string   `json:"ref"`
 	FilePath        string   `json:"file_path"`
 	SimilarityScore float64  `json:"similarity_score"`
 }
@@ -127,6 +127,7 @@ type SearchEIPResult struct {
 	Category        string  `json:"category,omitempty"`
 	Created         string  `json:"created,omitempty"`
 	URL             string  `json:"url"`
+	Ref             string  `json:"ref"`
 	SimilarityScore float64 `json:"similarity_score"`
 }
 
@@ -149,6 +150,7 @@ type SearchSpecResult struct {
 	Topic           string  `json:"topic"`
 	Title           string  `json:"title"`
 	URL             string  `json:"url"`
+	Ref             string  `json:"ref"`
 	SimilarityScore float64 `json:"similarity_score"`
 }
 
