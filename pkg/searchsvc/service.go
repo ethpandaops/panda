@@ -412,7 +412,7 @@ func (s *Service) SearchRunbooks(query, tagFilter string, limit int) (*SearchRun
 			Description:     result.Runbook.Description,
 			Tags:            result.Runbook.Tags,
 			Prerequisites:   result.Runbook.Prerequisites,
-			Ref:             "runbooks://" + result.Runbook.Name,
+			Ref:             runbooks.RefURI(result.Runbook),
 			FilePath:        result.Runbook.FilePath,
 			SimilarityScore: result.Score,
 		})

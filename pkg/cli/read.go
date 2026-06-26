@@ -17,7 +17,7 @@ var readCmd = &cobra.Command{
 Refs are returned by 'panda search' as "Read full content: panda read <ref>".
 
 Supported ref schemes:
-  runbooks://{name}             Full runbook markdown
+  runbooks://{filename-stem}    Full runbook markdown
   eips://{number}               Full EIP content
   consensus-specs://{fork}/{topic}  Full consensus spec document
 

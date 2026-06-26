@@ -340,7 +340,7 @@ func TestSearchRunbooks(t *testing.T) {
 	t.Parallel()
 
 	results := []resource.RunbookSearchResult{
-		{Runbook: types.Runbook{Name: "finality", Tags: []string{"consensus", "finality"}}, Score: 0.9},
+		{Runbook: types.Runbook{Name: "Investigate Finality Delay", Tags: []string{"consensus", "finality"}, FilePath: "finality_delay.md"}, Score: 0.9},
 		{Runbook: types.Runbook{Name: "blocks", Tags: []string{"execution"}}, Score: 0.8},
 		{Runbook: types.Runbook{Name: "low", Tags: []string{"consensus"}}, Score: 0.1},
 	}
@@ -366,6 +366,7 @@ func TestSearchRunbooks(t *testing.T) {
 
 		assert.Len(t, resp.Results, 2)
 		assert.Equal(t, []string{"consensus", "execution", "finality"}, resp.AvailableTags)
+		assert.Equal(t, "runbooks://finality_delay", resp.Results[0].Ref)
 		assert.Equal(t, 5, searcher.lastLimit)
 	})
 
@@ -379,7 +380,7 @@ func TestSearchRunbooks(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Len(t, resp.Results, 1)
-		assert.Equal(t, "finality", resp.Results[0].Name)
+		assert.Equal(t, "Investigate Finality Delay", resp.Results[0].Name)
 		assert.Equal(t, 3*runbookFilterOverscan, searcher.lastLimit)
 	})
 
@@ -572,7 +573,7 @@ func TestSearchAll(t *testing.T) {
 		require.NotNil(t, resp.Specs)
 		assert.Nil(t, resp.EIPs)
 		require.Len(t, resp.Runbooks.Results, 1)
-		assert.Equal(t, "runbooks://Debug", resp.Runbooks.Results[0].Ref)
+		assert.Equal(t, "runbooks://debug", resp.Runbooks.Results[0].Ref)
 		require.Len(t, runbookSearcher.results, 1)
 		assert.Equal(t, "full runbook body", runbookSearcher.results[0].Runbook.Content)
 	})
