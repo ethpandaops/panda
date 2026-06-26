@@ -17,7 +17,8 @@ var ethnodeCmd = &cobra.Command{
 Nodes are identified by network id and instance name. Use 'panda ethnode
 networks' to discover network ids before calling a node endpoint. Instance
 names come from the network's node inventory or observability data; direct node
-access does not enumerate every instance.
+access does not enumerate every instance. Use instance "lb" for the
+load-balanced endpoint.
 
 Examples:
   panda ethnode list-datasources

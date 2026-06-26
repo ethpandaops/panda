@@ -10,7 +10,6 @@ import json
 import os
 from typing import Any
 
-from ethpandaops import _runtime
 from ethpandaops.ethnode import execution_rpc as _rpc
 
 # ---------------------------------------------------------------------------
@@ -38,7 +37,7 @@ _OPS: dict[str, int] = {
     "SLOAD": 0x54, "SSTORE": 0x55, "JUMP": 0x56, "JUMPI": 0x57,
     "PC": 0x58, "MSIZE": 0x59, "GAS": 0x5A, "JUMPDEST": 0x5B,
     "TLOAD": 0x5C, "TSTORE": 0x5D, "MCOPY": 0x5E, "PUSH0": 0x5F,
-    # Glamsterdam (EIP-8024): take a 1-byte immediate
+    # Glamsterdam (EIP-8024): use one encoded immediate byte.
     "DUPN": 0xE6, "SWAPN": 0xE7, "EXCHANGE": 0xE8,
     # Calls and create
     "CREATE": 0xF0, "CALL": 0xF1, "CALLCODE": 0xF2, "RETURN": 0xF3,
@@ -64,6 +63,48 @@ def _require_available() -> None:
         raise ValueError("EVM module is not enabled; ethnode datasource is required.")
 
 
+def _encode_eip8024_single(n: int) -> int:
+    if not 17 <= n <= 235:
+        raise ValueError("DUPN/SWAPN operand must satisfy 17 <= n <= 235")
+    return (n + 111) % 256
+
+
+def _decode_eip8024_single(x: int) -> int:
+    return (x + 145) % 256
+
+
+def _encode_eip8024_pair(n: int, m: int) -> int:
+    if not (1 <= n < m and n + m <= 30):
+        raise ValueError("EXCHANGE operands must satisfy 1 <= n < m and n + m <= 30")
+    if m <= 16:
+        q, r = n - 1, m - 1
+    else:
+        q, r = 29 - m, n - 1
+    return (16 * q + r) ^ 143
+
+
+def _decode_eip8024_pair(x: int) -> tuple[int, int]:
+    k = x ^ 143
+    q, r = divmod(k, 16)
+    if q < r:
+        return q + 1, r + 1
+    return r + 1, 29 - q
+
+
+def _invalid_eip8024_immediate(op: str, x: int) -> bool:
+    if op in ("DUPN", "SWAPN"):
+        return 90 < x < 128
+    if op == "EXCHANGE":
+        return 81 < x < 128
+    return False
+
+
+def _require_int_operand(op: str, item: Any) -> int:
+    if not isinstance(item, int) or isinstance(item, bool):
+        raise TypeError(f"{op} requires integer operand(s)")
+    return item
+
+
 # ---------------------------------------------------------------------------
 # Bytecode utilities
 # ---------------------------------------------------------------------------
@@ -73,26 +114,50 @@ def assemble(ops: list[str | int]) -> str:
 
     ops may mix opcode name strings and integer immediates.
     Multi-byte integers are big-endian encoded to their minimal byte length.
+    For EIP-8024 opcodes, pass decoded operands (e.g. ["DUPN", 17],
+    ["SWAPN", 108], ["EXCHANGE", 2, 3]); assemble() emits the encoded
+    immediate byte required by the EIP.
 
     Example:
-        assemble(["PUSH1", 0x01, "PUSH1", 0x01, "ADD", "STOP"]) -> "0x60016001010"
+        assemble(["PUSH1", 0x01, "PUSH1", 0x01, "ADD", "STOP"]) -> "0x600160010100"
+        assemble(["DUPN", 17]) -> "0xe680"
     """
     out: list[int] = []
+    i = 0
 
-    for item in ops:
+    while i < len(ops):
+        item = ops[i]
         if isinstance(item, str):
-            byte = _OPS.get(item.upper())
+            name = item.upper()
+            byte = _OPS.get(name)
             if byte is None:
                 raise ValueError(f"Unknown opcode: {item!r}")
             out.append(byte)
+
+            if name in ("DUPN", "SWAPN"):
+                i += 1
+                if i >= len(ops):
+                    raise ValueError(f"{name} requires one operand")
+                out.append(_encode_eip8024_single(_require_int_operand(name, ops[i])))
+            elif name == "EXCHANGE":
+                if i + 2 >= len(ops):
+                    raise ValueError("EXCHANGE requires two operands")
+                n = _require_int_operand(name, ops[i + 1])
+                m = _require_int_operand(name, ops[i + 2])
+                out.append(_encode_eip8024_pair(n, m))
+                i += 2
         elif isinstance(item, int):
-            if 0 <= item <= 0xFF:
+            if item < 0:
+                raise ValueError("Immediate integers must be non-negative")
+            if item <= 0xFF:
                 out.append(item)
             else:
                 length = (item.bit_length() + 7) // 8
                 out.extend(item.to_bytes(length, "big"))
         else:
             raise TypeError(f"Expected str or int, got {type(item).__name__!r}")
+
+        i += 1
 
     return "0x" + bytes(out).hex()
 
@@ -101,6 +166,8 @@ def disassemble(bytecode: str) -> list[dict[str, Any]]:
     """Disassemble hex bytecode into [{pc, op, operand}] dicts.
 
     PUSH immediates are captured in 'operand' as a hex string.
+    EIP-8024 DUPN/SWAPN immediates are decoded to the numeric stack operand;
+    EXCHANGE immediates are decoded to 'operands' as [n, m].
     """
     data = bytes.fromhex(bytecode.removeprefix("0x"))
     result: list[dict[str, Any]] = []
@@ -111,14 +178,22 @@ def disassemble(bytecode: str) -> list[dict[str, Any]]:
         name = _OPS_BY_BYTE.get(byte, f"0x{byte:02x}")
         entry: dict[str, Any] = {"pc": i, "op": name}
 
-        # PUSH1–PUSH32: n-byte immediate; DUPN/SWAPN/EXCHANGE: 1-byte immediate
-        if 0x60 <= byte <= 0x7F:
+        # EIP-8024 preserves jumpdest analysis by treating invalid immediates
+        # as not consumed: e75b disassembles as INVALID_SWAPN, JUMPDEST.
+        if byte in (0xE6, 0xE7, 0xE8):
+            immediate = data[i + 1] if i + 1 < len(data) else 0
+            if _invalid_eip8024_immediate(name, immediate):
+                entry["op"] = f"INVALID_{name}"
+            else:
+                entry["immediate"] = f"0x{immediate:02x}"
+                if name in ("DUPN", "SWAPN"):
+                    entry["operand"] = _decode_eip8024_single(immediate)
+                else:
+                    entry["operands"] = list(_decode_eip8024_pair(immediate))
+                if i + 1 < len(data):
+                    i += 1
+        elif 0x60 <= byte <= 0x7F:
             imm_size = byte - 0x5F
-        elif byte in (0xE6, 0xE7, 0xE8):
-            imm_size = 1
-        else:
-            imm_size = 0
-        if imm_size:
             operand = data[i + 1: i + 1 + imm_size]
             entry["operand"] = "0x" + operand.hex()
             i += imm_size

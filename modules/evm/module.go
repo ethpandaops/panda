@@ -130,11 +130,11 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 				},
 				"assemble": {
 					Signature:   "assemble(ops: list) -> str",
-					Description: "Assemble a list of opcode names and immediate ints into hex bytecode. Example: ['PUSH1', 0x01, 'PUSH1', 0x01, 'ADD', 'STOP']",
+					Description: "Assemble opcode names and immediates into hex bytecode. EIP-8024 opcodes take decoded operands, e.g. ['DUPN', 17] -> 0xe680.",
 				},
 				"disassemble": {
 					Signature:   "disassemble(bytecode: str) -> list[dict]",
-					Description: "Disassemble hex bytecode into [{pc, op, operand}] dicts.",
+					Description: "Disassemble hex bytecode into instruction dicts, including decoded EIP-8024 operands and invalid-immediate boundaries.",
 				},
 				"wallet": {
 					Signature:   "wallet(private_key=None) -> dict",
