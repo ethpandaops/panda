@@ -1,0 +1,155 @@
+evm_opcode_trial:
+  name: EVM Opcode Trial
+  description: Test EVM opcodes against devnet nodes and compare behavior across clients
+  examples:
+    - name: Trace a new opcode across clients
+      description: Execute raw bytecode against multiple clients and compare opcode-level traces to detect divergence
+      query: |
+        from ethpandaops import evm
+
+        network = "glamsterdam-devnet-6"
+        instances = ["geth-1", "reth-1", "nethermind-1", "besu-1"]
+
+        # PUSH0 PUSH0 ADD — tests EIP-3855 + arithmetic
+        bytecode = evm.assemble(["PUSH0", "PUSH0", "ADD", "STOP"])
+
+        for instance in instances:
+            try:
+                logs = evm.trace(network, instance, bytecode)
+                gas_used = sum(s.get("gasCost", 0) for s in logs)
+                print(f"{instance}: {len(logs)} steps, {gas_used} gas")
+            except Exception as e:
+                print(f"{instance}: ERROR {e}")
+
+    - name: Detect gas cost divergence
+      description: Run the same bytecode on all clients and flag any that report different total gas
+      query: |
+        from ethpandaops import evm
+
+        network = "glamsterdam-devnet-6"
+        instances = ["geth-1", "reth-1", "nethermind-1"]
+
+        bytecode = evm.assemble(["PUSH1", 0x00, "MLOAD", "POP", "STOP"])
+
+        costs = {}
+        for instance in instances:
+            logs = evm.trace(network, instance, bytecode)
+            costs[instance] = sum(s.get("gasCost", 0) for s in logs)
+
+        if len(set(costs.values())) > 1:
+            print("GAS DIVERGENCE DETECTED:", costs)
+        else:
+            print("All agree:", next(iter(costs.values())))
+
+evm_fuzz_triage:
+  name: EVM Fuzz Triage
+  description: Triage fuzz contracts deployed by spamoor evm-fuzz — replay and diff across clients
+  examples:
+    - name: Triage a diverging fuzz transaction
+      description: Given a tx hash from spamoor evm-fuzz, trace it against each client to locate the diverging opcode
+      query: |
+        from ethpandaops import evm, ethnode
+
+        network = "glamsterdam-devnet-6"
+        instances = ["geth-1", "reth-1"]
+        txhash = "0xabc123..."  # from spamoor divergence report
+
+        traces = {}
+        for instance in instances:
+            traces[instance] = evm.trace_tx(network, instance, txhash)
+
+        # Find first diverging step
+        for i, (a, b) in enumerate(zip(traces[instances[0]], traces[instances[1]])):
+            if a.get("op") != b.get("op") or a.get("gasCost") != b.get("gasCost"):
+                print(f"Divergence at step {i}, pc={a['pc']}")
+                print(f"  {instances[0]}: op={a['op']} gasCost={a.get('gasCost')}")
+                print(f"  {instances[1]}: op={b['op']} gasCost={b.get('gasCost')}")
+                break
+
+    - name: Re-run fuzz bytecode from a tx input
+      description: Fetch the init code from a deployment tx and re-trace it locally for inspection
+      query: |
+        from ethpandaops import evm, ethnode
+
+        network = "glamsterdam-devnet-6"
+        instance = "geth-1"
+        txhash = "0xabc123..."
+
+        tx = ethnode.execution_rpc(network, instance, "eth_getTransactionByHash", [txhash])
+        init_code = tx["input"]
+
+        print("Bytecode:", evm.disassemble(init_code)[:10], "...")
+        logs = evm.trace(network, instance, init_code)
+        print(f"{len(logs)} opcodes executed")
+
+evm_system_contracts:
+  name: System Contract & Precompile Testing
+  description: Call system contracts and precompiles directly to verify behavior
+  examples:
+    - name: Call the SHA256 precompile
+      description: Send input to the SHA256 precompile (0x02) and verify the result
+      query: |
+        from ethpandaops import evm
+
+        network = "glamsterdam-devnet-6"
+        instance = "geth-1"
+
+        # SHA256 precompile at 0x02
+        result = evm.call(
+            network, instance,
+            data="0xdeadbeef",
+            to="0x0000000000000000000000000000000000000002",
+        )
+        print("SHA256:", result)
+
+    - name: Test selfdestruct edge case
+      description: Deploy a contract that selfdestructs and verify state across clients
+      query: |
+        from ethpandaops import evm
+
+        network = "glamsterdam-devnet-6"
+        instance = "geth-1"
+
+        # init code: PUSH20 <addr> SELFDESTRUCT — sends balance to caller
+        selfdestruct_code = evm.assemble([
+            "CALLER",       # push beneficiary (caller)
+            "SELFDESTRUCT",
+        ])
+
+        w = evm.wallet()
+        print("Fund this address first:", evm.faucet(network, w["address"]))
+        # after funding:
+        # txhash = evm.tx(network, instance, w["private_key"], to=None, data=selfdestruct_code)
+
+evm_deploy_and_fuzz:
+  name: Deploy and Fuzz
+  description: Generate bytecode variants, deploy to devnet, observe on-chain behavior
+  examples:
+    - name: Deploy raw bytecode and check receipt
+      description: Build a wallet, fund it via the faucet, deploy a contract, and read the receipt
+      query: |
+        from ethpandaops import evm, ethnode
+
+        network = "glamsterdam-devnet-6"
+        instance = "geth-1"
+
+        w = evm.wallet()
+        print("Address:", w["address"])
+        print("Fund at:", evm.faucet(network, w["address"]))
+
+        # After funding, deploy bytecode that LOGs a result (visible in receipt)
+        bytecode = evm.assemble([
+            "PUSH1", 0x42,   # value to log
+            "PUSH1", 0x00,   # memory offset
+            "MSTORE",
+            "PUSH1", 0x20,   # length
+            "PUSH1", 0x00,   # offset
+            "LOG0",
+            "STOP",
+        ])
+
+        txhash = evm.tx(network, instance, w["private_key"], to=None, data=bytecode)
+        print("Deployed:", txhash)
+
+        receipt = ethnode.execution_rpc(network, instance, "eth_getTransactionReceipt", [txhash])
+        print("Logs:", receipt.get("logs"))

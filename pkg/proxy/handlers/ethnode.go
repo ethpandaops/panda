@@ -97,14 +97,10 @@ func (h *EthNodeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Construct upstream host.
-	var host string
-
-	switch mode {
-	case "beacon":
-		host = fmt.Sprintf("bn-%s.srv.%s.ethpandaops.io", instance, network)
-	case "execution":
-		host = fmt.Sprintf("rpc-%s.srv.%s.ethpandaops.io", instance, network)
-	}
+	// The special instance name "lb" selects the load-balanced endpoint
+	// (rpc.<network>.ethpandaops.io / bn.<network>.ethpandaops.io) instead of
+	// the per-node pattern (rpc-<instance>.srv.<network>.ethpandaops.io).
+	host := ethNodeUpstreamHost(mode, network, instance)
 
 	// Get or create reverse proxy for this host.
 	proxy := h.getOrCreateProxy(host)
@@ -122,6 +118,25 @@ func (h *EthNodeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}).Debug("Proxying ethnode request")
 
 	proxy.ServeHTTP(w, r)
+}
+
+func ethNodeUpstreamHost(mode, network, instance string) string {
+	switch mode {
+	case "beacon":
+		if instance == "lb" {
+			return fmt.Sprintf("bn.%s.ethpandaops.io", network)
+		}
+
+		return fmt.Sprintf("bn-%s.srv.%s.ethpandaops.io", instance, network)
+	case "execution":
+		if instance == "lb" {
+			return fmt.Sprintf("rpc.%s.ethpandaops.io", network)
+		}
+
+		return fmt.Sprintf("rpc-%s.srv.%s.ethpandaops.io", instance, network)
+	default:
+		return ""
+	}
 }
 
 // getOrCreateProxy returns a cached reverse proxy for the host, creating one if needed.

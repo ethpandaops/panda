@@ -30,7 +30,7 @@ def list_networks() -> list[dict[str, Any]]:
 
     Entries include at least name and type. The name is the network id accepted
     by ethnode calls. The per-node instance label cannot be enumerated and must
-    be supplied by the caller.
+    be supplied by the caller. Use instance="lb" for the load-balanced endpoint.
     """
     _require_ethnode_available()
     data = _runtime.invoke_data("ethnode.list_networks") or {}

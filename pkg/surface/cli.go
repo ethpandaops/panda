@@ -81,7 +81,7 @@ an example names a dataset.
 ` + "`panda execute`" + ` is the Python sandbox — the same engine used by MCP clients via
 ` + "`execute_python`" + `. It provides workspace persistence between calls, multi-step
 workflows, and the full ethpandaops library (clickhouse, prometheus, loki,
-dora, forky, cbt, tracoor, ethnode, benchmarkoor, storage, chartkit). Use the
+dora, forky, cbt, tracoor, ethnode, evm, benchmarkoor, storage, chartkit). Use the
 library, not external/standard equivalents (e.g. chartkit for charts, not
 matplotlib).
 

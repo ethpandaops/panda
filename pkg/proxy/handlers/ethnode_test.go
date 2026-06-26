@@ -43,3 +43,48 @@ func TestEthNodeProxyRewrite(t *testing.T) {
 		"expected basic auth, got %q", pr.Out.Header.Get("Authorization"))
 	assert.Equal(t, "203.0.113.11", pr.Out.Header.Get("X-Forwarded-For")) // SetXForwarded
 }
+
+func TestEthNodeUpstreamHost(t *testing.T) {
+	tests := []struct {
+		name     string
+		mode     string
+		network  string
+		instance string
+		want     string
+	}{
+		{
+			name:     "beacon instance",
+			mode:     "beacon",
+			network:  "mainnet",
+			instance: "lighthouse-1",
+			want:     "bn-lighthouse-1.srv.mainnet.ethpandaops.io",
+		},
+		{
+			name:     "execution instance",
+			mode:     "execution",
+			network:  "mainnet",
+			instance: "geth-1",
+			want:     "rpc-geth-1.srv.mainnet.ethpandaops.io",
+		},
+		{
+			name:     "beacon load balanced",
+			mode:     "beacon",
+			network:  "mainnet",
+			instance: "lb",
+			want:     "bn.mainnet.ethpandaops.io",
+		},
+		{
+			name:     "execution load balanced",
+			mode:     "execution",
+			network:  "mainnet",
+			instance: "lb",
+			want:     "rpc.mainnet.ethpandaops.io",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, test.want, ethNodeUpstreamHost(test.mode, test.network, test.instance))
+		})
+	}
+}
