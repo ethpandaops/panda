@@ -64,6 +64,21 @@ production_devnet_logs:
       WHERE ResourceAttributes['network'] = {network:String}
         AND Timestamp >= now() - INTERVAL 1 HOUR
       ORDER BY host
+  - name: List containers on a hosted node
+    description: List per-container log files and sample lines for one hosted network node. Use this
+      to identify which container is the CL, EL, validator, builder, relay, or sidecar before filtering
+      by LogAttributes['log.file.name'].
+    query: |
+      SELECT
+        LogAttributes['log.file.name'] AS container_log,
+        count() AS lines,
+        any(substring(Body, 1, 180)) AS sample
+      FROM {db}.otel_logs
+      WHERE ResourceAttributes['network'] = {network:String}
+        AND ResourceAttributes['host.name'] = {host:String}
+        AND Timestamp >= now() - INTERVAL 1 HOUR
+      GROUP BY container_log
+      ORDER BY lines DESC
   - name: Recent node errors
     description: Fetch recent error-class logs for one devnet node by matching the raw log body. A node
       VM mixes its CL, EL, validator and sidecar containers — use LogAttributes['log.file.name'] to tell
@@ -96,4 +111,51 @@ production_devnet_logs:
         AND match(Body, '(?i)(crit|err|error|fatal)')
         AND Timestamp >= now() - INTERVAL 1 HOUR
       ORDER BY Timestamp DESC
+      LIMIT 500
+  - name: Map ePBS builder index to host
+    description: Find buildoor or builder-sidecar log lines that announce Bid submitted with builder_index,
+      then use the emitting host as the builder node for reveal investigation.
+    query: |
+      SELECT
+        Timestamp,
+        ResourceAttributes['host.name'] AS host,
+        LogAttributes['log.file.name'] AS container_log,
+        Body
+      FROM {db}.otel_logs
+      WHERE ResourceAttributes['network'] = {network:String}
+        AND Timestamp >= now() - INTERVAL 1 HOUR
+        AND Body LIKE '%Bid submitted%builder_index=%'
+      ORDER BY Timestamp DESC
+      LIMIT 100
+  - name: Builder reveal logs for a slot window
+    description: Fetch builder-side reveal, envelope, payload, and propagation logs for a buildoor host
+      around an affected ePBS slot. Pass a tight timestamp window around the slot start.
+    query: |
+      SELECT
+        Timestamp,
+        ResourceAttributes['host.name'] AS host,
+        LogAttributes['log.file.name'] AS container_log,
+        Body
+      FROM {db}.otel_logs
+      WHERE ResourceAttributes['network'] = {network:String}
+        AND ResourceAttributes['host.name'] = {host:String}
+        AND Timestamp BETWEEN {start:String} AND {end:String}
+        AND match(Body, '(?i)(bid submitted|included on-chain|reveal|envelope|payload|0 peers|giving up|error|failed|400|bad_request)')
+      ORDER BY Timestamp
+      LIMIT 200
+  - name: Logs for one container in a time window
+    description: Fetch all log lines for a specific container log file on a hosted node in a tight
+      timeframe, useful after a container has been identified from sample lines.
+    query: |
+      SELECT
+        Timestamp,
+        ResourceAttributes['host.name'] AS host,
+        LogAttributes['log.file.name'] AS container_log,
+        Body
+      FROM {db}.otel_logs
+      WHERE ResourceAttributes['network'] = {network:String}
+        AND ResourceAttributes['host.name'] = {host:String}
+        AND LogAttributes['log.file.name'] = {container:String}
+        AND Timestamp BETWEEN {start:String} AND {end:String}
+      ORDER BY Timestamp
       LIMIT 500
