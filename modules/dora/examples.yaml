@@ -177,6 +177,44 @@ dora_slot_epoch_queries:
         for slot in missing_slots:
             print(slot)
 
+    - name: Find ePBS missing payload candidates
+      description: On a Gloas/ePBS network, find recent canonical Dora slots without an execution block as a fast first pass before confirming with PTC payload_attestations.
+      query: |
+        from ethpandaops import dora, ethnode
+        import httpx
+
+        network = "<network>"
+        instance = "<instance-name>"
+
+        base_url = dora.get_base_url(network)
+        head_slot = int(ethnode.get_beacon_headers(network, instance)["data"]["header"]["message"]["slot"])
+        lo = head_slot - 100
+
+        with httpx.Client(timeout=40) as client:
+            resp = client.get(
+                f"{base_url}/api/v1/slots",
+                params={"min_slot": lo, "limit": 200},
+            )
+            resp.raise_for_status()
+            payload = resp.json()
+
+        rows = payload["data"]["slots"]
+        rows = sorted([r for r in rows if lo <= int(r["slot"]) <= head_slot], key=lambda r: int(r["slot"]))
+
+        missed_blocks = [r for r in rows if r["status"] == "Missing"]
+        missing_payload_candidates = [
+            r for r in rows
+            if r["status"] != "Missing" and not r.get("with_eth_block")
+        ]
+
+        print("Missed beacon blocks:")
+        for row in missed_blocks:
+            print(row)
+
+        print("Missing payload candidates:")
+        for row in missing_payload_candidates:
+            print(row)
+
 dora_deep_links:
   name: Deep Links
   description: Generate Dora explorer links for various entities

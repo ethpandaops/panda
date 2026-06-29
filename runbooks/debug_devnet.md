@@ -1,37 +1,48 @@
 ---
-name: Debug Devnet
-description: Collect information about a devnet or systematically debug issues using Dora and OTel ClickHouse logs to diagnose network splits, offline nodes, finality delays, and client bugs
-tags: [devnet, debugging, network-split, forks, logs, consensus, validators, status, info]
+name: Debug Ethereum Network
+description: Debug a hosted Ethereum network by first learning its network metadata, fork/spec context, and available datasources, then using Dora, Forky, Ethnode, and OTel ClickHouse logs to investigate splits, finality delays, missed blocks, ePBS missing payloads, data availability failures, offline nodes, and client bugs.
+tags: [network, devnet, debugging, forks, consensus, logs, validators, epbs, peerdas]
 prerequisites: [clickhouse-raw]
 ---
 
-The first step in debugging a devnet is discovering which datasources have the network, then gathering information from whatever is available. Not all devnets are registered in Dora — some only have container logs in ClickHouse. Phase 0 determines the data profile so the debug flow adapts accordingly.
+This runbook is for debugging hosted Ethereum networks that Panda can see: multi-node devnets, testnets, and public networks. It is intentionally fork-aware. The investigation MUST first learn the network and active protocol rules, then interpret symptoms under those rules.
 
-**This runbook is for proper, multi-VM devnets and testnets** (e.g. `fusaka-devnet-0`, `hoodi`) — networks deployed across bare-metal VMs. The `investigate` skill routes here when the target is found in the hosted datasources; local Kurtosis devnets are routed to the **Debug Local Devnet** runbook instead. You are therefore always working with a known, named network.
+This runbook is not for local Kurtosis devnets. Use the local-devnet runbook for local enclaves and local OTel ClickHouse.
 
-**The user MUST specify which network to debug.** Do NOT assume a network — if the user hasn't specified one, ask them before proceeding. You can list the proper devnets and testnets that exist with `dora.list_networks()`.
+The user MUST provide, or the agent MUST resolve, a concrete network id before collecting evidence. Do not guess. Use `networks://active`, `dora.list_networks()`, or `ethnode.list_networks()` to discover candidates. If the user says "this devnet" and there is no unambiguous network in context, ask for the network id.
 
-Refer to the query skill for general API usage patterns (Dora overview, ClickHouse queries, direct HTTP calls, Dora link generation, etc.). This runbook only covers the debugging-specific procedure and API calls not in the skill.
+## Core Principle
 
-## How Devnet Logs Flow
+Do not start from a fixed mental model such as "missed slot means proposer failed." Ethereum fork rules define which actors, artifacts, and invariants exist. A pre-ePBS network has one slot model; a Gloas/ePBS network has separate beacon-block, payload-reveal, and PTC verdicts; a PeerDAS/Fulu network adds data-column availability. Forks may add new artifacts.
 
-Hosted devnets run as Docker containers on bare-metal VMs (managed by Ansible). Each container's logs are scraped and shipped via OpenTelemetry into the `clickhouse-raw` ClickHouse cluster, database `external`, table `external.otel_logs`. Query them with SQL via `clickhouse.query("clickhouse-raw", ...)`, always filtering by `ResourceAttributes['network']` (the devnet) and `Timestamp`. **There is no hosted Loki — devnet container logs live only in ClickHouse.**
+The required pattern is:
 
-Key fields on `external.otel_logs`:
-- `Timestamp DateTime64(9)` — always filter on this (it is the partition key).
-- `Body String` — the raw log line. The level is usually embedded here, not in `SeverityText`.
-- `SeverityText LowCardinality(String)` — often EMPTY for raw Docker logs; do not rely on it. Use `match(Body, ...)` for severity triage.
-- `ServiceName` — empty for these VM/Docker logs (the `k8s.*` materialized columns are also empty — those only apply to Kubernetes platform logs).
-- `ResourceAttributes Map(String, String)` — node identity. Keys: `network` (devnet name), `host.name` (the node, e.g. `lighthouse-geth-super-1`), `ingress_user`, `deployment.environment`.
-- `LogAttributes Map(String, String)` — per-line attributes. Keys include `log.file.name` / `log.file.path` (the Docker container json-log file — one per container on the node), `container_id`, plus any structured fields the client emits (`level`, `msg`, `component`, ...).
+1. Discover the network and available evidence sources.
+2. Read the network resource and ingest the fork/spec context.
+3. Build an active protocol model for the network.
+4. Establish a health baseline.
+5. Classify symptoms under the active protocol model.
+6. Drill into nodes, logs, direct RPC, and code/spec evidence only after classification.
+7. Co-relate symptoms and data collected from the live network to find the cause of the failures
 
-**Node naming:** `host.name` encodes the client pair as `<cl>-<el>-<tier>-<index>` (e.g. `lighthouse-geth-super-1` → CL lighthouse, EL geth). Non-paired nodes exist too (`bootnode-1`, `mev-relay-1`). **There is no `ethereum_cl` / `ethereum_el` label like Loki had** — a node VM runs the CL, EL, validator, and sidecar containers together, distinguished only by `LogAttributes['log.file.name']` (a container hash). To isolate one client's logs on a node, discover its containers first (see Phase 2) or identify the client by its log-line format in `Body`.
+## Source Authority
+
+Different Panda sources answer different questions. Treat disagreement as evidence, not noise.
+
+| Source | Use it for | Do not use it for |
+| --- | --- | --- |
+| `networks://<network>` | Network metadata, service URLs, fork schedule, spec notes, EIP/release links, participant images, node inventory URL | Live node health by itself |
+| `node_inventory_url` | Authoritative instance labels and node composition when available | Chain status or finality |
+| Dora | Indexed chain view, epochs, slots, validators, missed proposers, offline attesters, links | Direct truth for one node's current view |
+| Forky | Fork-choice snapshots and client/node head comparison | Container logs or validator duty attribution |
+| Ethnode | Direct beacon/execution RPC against specific instances | Whole-network aggregates unless queried across nodes |
+| ClickHouse `external.otel_logs` | Container/runtime behavior and historical logs | Definitive chain truth |
+| `search` EIPs/specs/examples/runbooks | Intended protocol behavior and query patterns | Live network state |
 
 ## Debug Report
 
-At the start of each debug session, create a single file at `/workspace/<network>-debug-<timestamp>.md`. Append ALL raw API responses, log extracts, and analysis notes to this file as you go. At the end of the session, provide the user with the file path.
+At the start of each debug session, create one report file at `/workspace/<network>-debug-<timestamp>.md`. Append all raw API responses, log extracts, queries, commands, and interpretations to this file as you go. At the end, publish it and provide the user with the URL and local path.
 
-Initialize the file and a helper for appending:
 ```python
 from datetime import datetime
 import json
@@ -46,7 +57,6 @@ with open(debug_file, "w") as f:
     f.write(f"# Debug Report: {network}\n")
     f.write(f"**Generated:** {datetime.utcnow().isoformat()}Z\n\n")
 
-# Save the path for subsequent steps
 with open("/workspace/debug_file_path.txt", "w") as f:
     f.write(debug_file)
 
@@ -74,272 +84,502 @@ def publish_debug_report():
     with open("/workspace/debug_file_url.txt", "w") as f:
         f.write(url)
     append_debug("Debug Report URL", url)
-    storage.upload(debug_file, remote_name=remote_name)
     return url
 ```
 
-**Appending to the debug report:** In every subsequent step, read the path from `/workspace/debug_file_path.txt` and append with `open(debug_file, "a")`. Do this for every piece of data collected — raw API responses, log extracts, summaries, and theories.
+Every collection step MUST append:
 
-**Minimum debug output contract:** Every collection step MUST append the exact query/API path/command used, the raw response or DataFrame before summarizing it, the active timeframe or slot/epoch window, any `data_quality_warnings` or source inconsistencies, and a short interpretation clearly labeled as interpretation.
-
-## Verbatim Tool Output
-
-When reporting label values, instance names, counts, or log lines: paste the raw tool response in a fenced code block. Do NOT paraphrase, reformat, infer, or "reconstruct" output. If the tool returns structured data that cannot be pasted as-is, say so explicitly — never invent entries to fill the gap.
-
-If the user states a fact (e.g. "we have 16 nodes"), do not let it bias tool output. Report what the tool returned, even if it contradicts the user.
-
-If two sources disagree (e.g. Dora says 16 nodes, the logs show 30 hosts), surface the disagreement rather than picking one. Dora is authoritative for *what nodes exist*; the OTel logs are authoritative for *what nodes are shipping logs*. They are not interchangeable.
+- the exact query, command, API path, or endpoint used
+- the raw response or DataFrame before summarizing
+- the active timeframe, slot range, or epoch range
+- source-specific warnings and data-quality issues
+- a short section labeled `Interpretation`
 
 ## Citations
 
-A *citation* is a `panda` command that re-derives the cited evidence. Every finding you record — both in the debug report and in chat output — MUST be followed by the citation(s) that produce it, so the user can run them and verify independently. Citations are claim-anchored, not exhaustive: cite the calls that support a finding, not every probe along the way.
+A citation is a Panda command that re-derives the cited evidence. Every final finding that names a concrete artifact - node, client, slot, epoch, validator, block root, transaction, builder, or log pattern - MUST include a citation directly under the claim.
 
-Place each citation directly under the finding, in a fenced shell block, with a one-line `#` comment saying what it fetches. Discover the current command surface with `panda --help` (and subcommand `--help`) — do not hardcode flags or subcommands from memory.
+Discover the current command surface with `panda --help` and subcommand `--help`; do not hardcode flags from memory.
+
+Use this shape:
+
+```shell
+# Fetches the network metadata and fork/spec context
+panda resources read networks://<network>
+```
+
+If a finding comes from sandbox Python, cite the `panda execute` invocation or include enough code in the report for the user to re-run it.
+
+## Verbatim Output
+
+When reporting label values, instance names, counts, roots, or log lines, paste raw tool output in a fenced code block. Do not paraphrase, reformat, infer, or reconstruct output. If a structured response cannot be pasted as-is, say so explicitly.
+
+If two sources disagree, report the disagreement. Example: Dora may list 16 consensus clients while OTel logs show 30 hosts; Dora is evidence for indexed chain participants, while OTel is evidence for log-shipping hosts.
 
 ## Timeframe Rules
 
-All steps in this runbook MUST use the same consistent timeframe OR there must be a reason to change the timeframe. Determine the **active timeframe** once and use it everywhere. If you update the **active timeframe** mid debugging, then mention it in the raw dump:
+Use one active timeframe or slot/epoch window across all related steps unless there is an explicit reason to change it. Record changes in the report.
 
-1. If the user provides a specific timeframe or epoch range → use that
-2. If a network split is detected in step 1 → override to the divergence slot/epoch and investigate around that point (before and after)
-3. Otherwise → default to the **past 1 hour**
+1. If the user provides a timeframe, slot range, or epoch range, use it.
+2. If a split or fork boundary is detected, override the active window to focus around the divergence or fork activation point.
+3. If missing payloads are detected, focus on the affected slots plus the next slots that carry PTC verdicts.
+4. Otherwise default to the past 1 hour.
 
-## Search-First Principle
+## Search-First Rule
 
-Use the `search` tool to find relevant patterns, related procedures, and protocol context throughout this runbook:
+Use Panda search to fill gaps instead of guessing APIs, schema, or protocol semantics.
 
-- **Examples** — Phase 1 already references specific example searches. In other phases, if you need a query pattern you don't have (e.g., Prometheus metrics for node health, EL-specific ClickHouse queries), search for it rather than guessing: `search(type="examples", query="<what you need>")`
-- **Runbooks** — If you hit a sub-problem during debugging that feels like it deserves its own procedure (e.g., "finality stalled but no split", "single client type failing"), check whether a dedicated runbook exists: `search(type="runbooks", query="<sub-problem>")`
-- **EIPs** — When investigating protocol-level behavior, fork boundary issues, or suspected consensus rule edge cases, look up the relevant specification: `search(type="eips", query="<EIP topic or number>")`
+- Examples: `search(type="examples", query="<query pattern you need>")`
+- Runbooks: `search(type="runbooks", query="<sub-problem>")`
+- EIPs: `search(type="eips", query="<EIP number or topic>")`
+- Consensus specs: `search(type="consensus-specs", query="<fork, field, or invariant>")`
 
-This does NOT replace the hardcoded patterns in this runbook — those encode debug-specific knowledge that generic examples won't have. Use search to fill gaps.
+Search is especially important near fork boundaries, for new EIPs, and when a slot contains artifacts the older mental model does not explain.
 
-## Phase 0: Network Discovery
+## Phase 0: Network Context Intake
 
-Before collecting data, determine which datasources have the target network.
+Before interpreting symptoms, gather the network context and available datasource profile.
 
-0. **Discover datasources and determine the data profile** — Do not assume node names. First discover what is available, then check for the target network:
+1. **Resolve the network id** - Read active networks if needed.
 
-   ```python
-   from ethpandaops import dora, clickhouse
-   import os
-
-   network = "<network>"
-
-   # Check Dora
-   try:
-       networks = dora.list_networks()
-       has_dora = network in [n["name"] for n in networks]
-   except Exception:
-       has_dora = False
-
-   # Check ClickHouse OTel logs — is this network shipping container logs to external.otel_logs?
-   # The same query also discovers the node (host.name) list for later use.
-   has_logs = False
-   hosts = []
-   try:
-       df = clickhouse.query("clickhouse-raw", """
-           SELECT DISTINCT ResourceAttributes['host.name'] AS host
-           FROM external.otel_logs
-           WHERE ResourceAttributes['network'] = {network:String}
-             AND Timestamp >= now() - INTERVAL 1 HOUR
-           ORDER BY host
-       """, {"network": network})
-       hosts = [h for h in df["host"].tolist() if h]
-       has_logs = len(hosts) > 0
-   except Exception:
-       pass
-
-   # Check ethnode (direct node API access)
-   has_ethnode = os.environ.get("ETHPANDAOPS_ETHNODE_AVAILABLE") == "true"
-
-   print(f"has_dora={has_dora}, has_logs={has_logs}, has_ethnode={has_ethnode}")
-   print(f"hosts={hosts}")
+   ```shell
+   # Lists active network ids known to Panda
+   panda resources read networks://active
    ```
 
-   Record the **data profile** in the debug report:
-   - `has_dora: true/false`
-   - `has_logs: true/false`
-   - `has_ethnode: true/false`
-   - List of discovered nodes (`host.name` values, if logs are available)
+2. **Read the network resource** - This is the first required artifact.
 
-   **Routing rules:**
-   - If the network is not found in **any** datasource → report to the user that the network doesn't exist in any known datasource and **stop**.
-   - `has_dora = true` → Phase 1 (Dora) runs normally.
-   - `has_dora = false` → **Skip Phase 1 entirely.** Note in the debug report that Dora is unavailable. If `has_ethnode = true`, use ethnode to build a basic network baseline before proceeding to Phase 2 — query head slots, finality checkpoints, and sync status across discovered nodes to approximate what Dora would have provided (see Phase 1 fallback below).
-   - `has_logs = false` → Phase 2 is limited; note that log investigation is unavailable.
-   - `has_ethnode = true` → Direct node RPC queries are available in Phase 3 for hypothesis validation.
-
-## Phase 1: Data Collection with Dora
-
-**Skip this phase if Phase 0 determined `has_dora = false`.** If `has_ethnode = true`, use the ethnode module (`search(type="examples", query="ethnode")` for patterns) to build a partial baseline instead. Then proceed to Phase 2.
-
-1. **Collect all Dora data** - In a single step, gather all network data and append raw responses to the debug report. You MAY combine these into one `execute_python` call:
-
-   - **Network overview** — use `search(type="examples", query="network overview")` for the pattern. `current_slot` is the latest indexed head slot; `current_epoch_start_slot` is the epoch boundary (`current_epoch * slots_per_epoch`, using the network's reported value). Dump the full overview object verbatim, including `finalized_epoch`, `epochs_since_finality`, `finalizing`, and any `data_quality_warnings`. Treat checkpoint-derived fields as the finality baseline; do not use Dora vote/participation aggregates to decide finality.
-   - **Network forks** — use `search(type="examples", query="network splits")`. Query the Dora `/forks` endpoint (with `Accept: application/json` header) to detect splits. A healthy network has one fork.
-   - **Epoch details** — use `search(type="examples", query="epoch summary")`. Iterate through ~9 epochs per hour across the active timeframe. **Always start from head epoch - 1** (the most recent completed epoch) — the head epoch is still in progress and will show artificially low participation. You SHOULD also check the head epoch, but treat its data as preliminary. Use try/except per epoch. Append each raw epoch payload before extracting fields. If an epoch marked finalized reports participation below 66.7%, flag it as a Dora data inconsistency instead of concluding the network finalized below threshold.
-   - **Missing proposers** — use `search(type="examples", query="missing proposers")`. Adjust `slot_lookback` to match the active timeframe (~300 slots per hour).
-   - **Offline attesters** — use `search(type="examples", query="offline attesters")`.
-
-   If there are multiple forks:
-   - **IMPORTANT:** A network split overrides the active timeframe. You MUST identify the divergence slot/epoch where the split occurred and refocus the entire investigation around that point. All subsequent steps MUST use this divergence-centered timeframe.
-   - Participation and proposer data from Dora reflects the canonical fork — nodes on a minority fork will appear "offline" even though they may be running fine on their fork
-   - The root cause investigation should focus on **why the split happened** rather than individual node failures
-   - When checking logs later, compare logs from nodes on different forks to find the divergence point
-
-2. **Build a baseline summary** - You MUST summarize the network state before proceeding to log investigation:
-   - Is the network on a single fork or has it split? (if split, this likely explains most other symptoms)
-   - Is the network finalizing? Use `finalized_epoch`, `epochs_since_finality`, and checkpoint/RPC evidence where available. How many epochs behind?
-   - What independent participation evidence is available? (>66.7% required for finality) **Use the last completed epoch, not the head epoch**. State the source of the number. If the only available number is a Dora aggregate that contradicts checkpoint finality or has warnings, report it as unreliable instead of using it as the baseline.
-   - Are there missed slots or empty epochs?
-   - Which specific nodes/validators are offline or underperforming?
-   - If there are multiple forks, which nodes are on which fork?
-   - Which sources disagree, if any? For example: finalized checkpoint advancing while Dora epoch participation is below 66.7%, Dora node list vs OTel hosts, or Dora forks vs direct RPC head roots.
-
-   Append the baseline summary to the debug report as a readable narrative. You SHOULD generate Dora links for relevant epochs, slots, and validators using the `dora.link_*()` helpers (see query skill). **Cite each named node, validator, slot, or fork-tip block per the Citations section.**
-
-   **If Dora shows a healthy network** (no splits, finality on track, high participation, no offline nodes) but the user reports issues, present the healthy baseline to the user and ask them for more details about what they're observing. You MAY proceed to log investigation only if you have a specific target — otherwise let the user guide the next step.
-
-## Phase 2: Log Investigation with ClickHouse (`external.otel_logs`)
-
-Use Dora findings (if available) to target specific nodes. With logs only (no Dora), start from the `hosts` list discovered in Phase 0 to identify which nodes have issues. **Always filter by `ResourceAttributes['network']` and `Timestamp`** — unfiltered queries scan everything and may time out. All queries go through `clickhouse.query("clickhouse-raw", ...)` against `external.otel_logs`; see **How Devnet Logs Flow** above for the full schema and severity-matching details.
-
-**Use the same active timeframe** established in the Timeframe Rules section above.
-
-**Node naming:** Most nodes follow `<cl>-<el>-<tier>-<n>` (e.g. `lighthouse-geth-super-1` → CL lighthouse, EL geth), but devnets also include bootnodes, MEV relays, and other non-paired nodes (`bootnode-1`, `mev-relay-1`) that do NOT match this pattern. Never derive node names from the convention — always use the `hosts` list discovered in Phase 0 (or Dora's `/v1/clients/consensus`).
-
-**CL vs EL — important difference from Loki:** there is no `ethereum_cl` / `ethereum_el` label. A node VM runs the CL, EL, validator, and sidecar containers together; their logs are separated only by `LogAttributes['log.file.name']` (a per-container json-log file, named by hash). To investigate one client on a node, first discover its containers (step 3) and identify the CL/EL container by its log-line format, then filter on that log file. To sweep a client type across the network, filter on `host.name` (e.g. `host.name LIKE 'lighthouse-%'` for lighthouse-CL nodes, or `host.name LIKE '%-geth-%'` for geth-EL nodes) — but remember the result still mixes that node's CL/EL/sidecar lines.
-
-**You SHOULD start with the consensus layer (CL).** Most devnet issues originate at the CL level. Only investigate EL logs if CL logs point to execution-side problems (e.g. payload validation errors, engine API failures).
-
-3. **Discover nodes and their containers** - You already have the node (`host.name`) list from Phase 0. For a node you want to drill into, list its containers and a sample line from each so you can tell which is the CL, EL, validator, or sidecar:
-
-   ```python
-   from ethpandaops import clickhouse
-
-   network = "<network>"
-   host = "<host.name>"
-
-   df = clickhouse.query("clickhouse-raw", """
-       SELECT
-         LogAttributes['log.file.name'] AS container_log,
-         count() AS lines,
-         any(substring(Body, 1, 120)) AS sample
-       FROM external.otel_logs
-       WHERE ResourceAttributes['network'] = {network:String}
-         AND ResourceAttributes['host.name'] = {host:String}
-         AND Timestamp >= now() - INTERVAL 1 HOUR
-       GROUP BY container_log
-       ORDER BY lines DESC
-   """, parameters={"network": network, "host": host})
-   print(df)
+   ```shell
+   # Fetches network metadata, fork schedule, spec notes, EIPs, releases, service URLs, and inventory URL
+   panda resources read networks://<network>
    ```
 
-   Identify the client from each `sample` log format (e.g. lighthouse `MMM DD HH:MM:SS.mmm LEVEL ...`, geth `LEVEL [MM-DD|HH:MM:SS.mmm] ...`, prysm `level=... msg=...`). Append the node→container map to the debug report.
+   Append the full resource to the debug report. Extract and record:
 
-4. **Fetch CL errors first (CRIT/ERR)** - For each problematic node (or all CL nodes when there is no Dora target), fetch the most severe lines. `SeverityText` is usually empty for these Docker logs, so match severity on the raw `Body`:
+   - network id, repository/path, status, chain id, genesis time
+   - service URLs: Dora, Forky, beacon RPC, JSON-RPC, metrics, tracoor, buildoor if present
+   - fork schedule and blob schedule
+   - `spec.eips`, `spec.releases`, `spec.metrics_url`, `spec.previous_spec_url`
+   - participant images and client versions
+   - `node_inventory_url`
+
+3. **Read node inventory when available** - Prefer it over deriving names from patterns.
 
    ```python
-   from ethpandaops import clickhouse
+   import httpx
 
-   network = "<network>"
-   host = "<host.name>"
-
-   df = clickhouse.query("clickhouse-raw", """
-       SELECT
-         Timestamp,
-         ResourceAttributes['host.name'] AS host,
-         LogAttributes['log.file.name'] AS container_log,
-         Body
-       FROM external.otel_logs
-       WHERE ResourceAttributes['network'] = {network:String}
-         AND ResourceAttributes['host.name'] = {host:String}
-         AND match(Body, '(?i)(crit|err|error|fatal)')
-         AND Timestamp >= now() - INTERVAL 1 HOUR
-       ORDER BY Timestamp DESC
-       LIMIT 200
-   """, parameters={"network": network, "host": host})
-   print(df)
+   node_inventory_url = "<node_inventory_url from networks://<network>>"
+   inventory = httpx.get(node_inventory_url, timeout=40).json()
+   append_debug("Node inventory", inventory)
    ```
 
-   Once you have identified the CL container's log file (step 3), add `AND LogAttributes['log.file.name'] = {container:String}` to isolate the CL client's lines from the EL and sidecars on the same node.
+4. **Discover datasource availability** - Build a data profile, but do not stop just because one source is missing. Use module discovery calls and examples instead of inventing queries:
 
-   To sweep a CL client type across the whole network instead of one node, replace the host filter with `AND ResourceAttributes['host.name'] LIKE {cl_prefix:String}` and pass e.g. `{"cl_prefix": "lighthouse-%"}`.
+   - Dora: `dora.list_networks()`
+   - Ethnode: `ethnode.list_networks()`
+   - Forky: `search(type="examples", query="forky list networks recent frames")`
+   - OTel logs: `search(type="examples", query="List devnet nodes shipping logs")`
 
-   If multiple nodes are erroring, query each one. Look for common error patterns across nodes — the same error across nodes of one client type points to a client bug.
+   Record `has_dora`, `has_ethnode`, `has_forky`, `has_logs`, discovered network lists, OTel hosts, and any errors in the debug report.
 
-   **If a node returns no logs at all**, that is itself a signal — but it does not necessarily mean the node is down (it may just not be shipping logs). If `has_ethnode = true`, verify by querying the node directly (e.g. sync status or health check). If it responds, it is running but not logging; if it is unreachable, it is truly down. Report either finding to the user.
+   Routing rules:
 
-5. **Fetch EL logs if CL points to execution issues** - You MAY investigate EL logs if CL logs show:
-   - Engine API errors (e.g. `engine_newPayload` failures, timeouts)
-   - Payload validation failures
-   - Execution sync issues
-   - "execution client unavailable" or similar
+   - If the network is not present in any live datasource and no network resource exists, report that Panda cannot see the requested network and stop.
+   - If Dora is unavailable, use Ethnode/Forky/logs for baseline.
+   - If ClickHouse logs are unavailable, continue with Dora/Forky/Ethnode and report that log drilldown is unavailable.
+   - If Ethnode is available, use direct RPC to validate hypotheses against specific nodes.
 
-   If any appear, fetch the EL container's logs on the same node — use the same query as step 4, filtering on the EL container's `LogAttributes['log.file.name']` (identified in step 3).
+## Phase 1: Protocol and Fork Model
 
-   **CL/EL diagnostic matrix** — use this to narrow the root cause:
-   - **Errors only in CL logs** → consensus issue (attestation bug, fork choice problem, CL client bug)
-   - **CL engine API errors + EL errors** → execution issue (invalid block, state transition bug, EL client bug)
-   - **CL clean but EL errors** → EL struggling but CL compensating; monitor but may not be primary cause
-   - **Both layers erroring** → shared dependency (disk, memory, network) or cascading failure
+This phase is mandatory. Its output is an "active protocol model" section in the debug report.
 
-6. **Escalate to WARN/INFO if needed** - If CRIT/ERR lines are empty or inconclusive at both CL and EL, broaden the `Body` pattern to include `warn`, then drop the severity filter entirely for INFO/DEBUG. Unfiltered-severity queries are verbose — keep a tight `Timestamp` window and a `LIMIT`, and they may still time out.
+1. **Summarize active forks and upcoming boundaries** - Use `networks://<network>` fork schedule first. If Ethnode is available, cross-check with beacon config and fork schedule from a healthy node using `search(type="examples", query="Get chain configuration fork schedule")`.
 
-7. **Correlate logs with Dora timeline** - **Only applicable when Dora data exists (Phase 1 ran).** You SHOULD match log timestamps against the Dora data:
-   - When did errors start relative to missed slots or participation drops?
-   - Do errors correlate with a specific epoch or slot?
-   - Are errors from one client type or spread across multiple?
-   - Are the errors at the CL level, EL level, or both?
-   - If the network has split, compare logs from nodes on different forks to find the divergence point
+2. **Search/read relevant specs** - For each EIP or release named by the network resource that could affect the observed symptom, search the relevant corpus.
 
-## Phase 3: Root Cause Analysis
+   Examples:
 
-8. **Identify root cause** - You SHOULD classify the issue by scope and layer, then formulate and test hypotheses.
+   ```python
+   # Use the search tool/resource exposed by Panda. Prefer exact EIP ids when known.
+   search(type="eips", query="EIP-7732")
+   search(type="consensus-specs", query="Gloas signed_execution_payload_bid payload_attestations")
+   search(type="consensus-specs", query="Fulu data columns blob_data_available")
+   search(type="examples", query="debug ethereum network finality split")
+   ```
 
-   **By scope:**
-   - **Single node failure** — one node is down, others healthy. Likely local (crash, disk full, OOM, misconfiguration).
-   - **Client-specific failure** — all nodes of one client affected. Likely a client bug.
-   - **Network split** — multiple forks detected. Focus on the divergence point.
-   - **Widespread failure** — many nodes across clients. Likely infrastructure or consensus rule edge case.
+   Record:
 
-   **By layer:** Use the CL/EL diagnostic matrix from step 5 to classify. Combine scope and layer to narrow the root cause (e.g. "client-specific CL failure" → CL client bug, "widespread EL failure" → execution rule edge case).
+   - which fork rules are active now
+   - which fork boundary, if any, is near the active timeframe
+   - which new actors exist: builder, PTC, data availability committee, sidecar, relay, etc.
+   - which new artifacts exist: bid, payload envelope, payload attestation, data column sidecar, execution request, block access list, etc.
+   - which invariants must hold for a healthy network
 
-   **Hypotheses to test:**
-   - Does the error message point to a known issue?
-   - Did the problem start at a specific slot/epoch correlating with a config change, fork boundary, or deployment?
-   - Are affected nodes in the same region or infrastructure?
-   - If a network split occurred, what is the first block where forks diverge? What is special about that block?
-   - If you suspect a specific EIP is involved, use `search(type="eips", query="<EIP topic or number>")` to fetch the specification and confirm or rule out a faulty implementation.
+3. **Detect ePBS/Gloas behavior when relevant** - The presence of Gloas in the fork schedule or `signed_execution_payload_bid` in block bodies means the slot model has changed. Use `search(type="examples", query="Detect ePBS and payload-attestation fields")`.
 
-   Append theories and reasoning to the debug report. **When a hypothesis pinpoints a specific block, transaction, slot, validator, or instance, cite it per the Citations section so the user can verify it independently.**
+4. **Write the active protocol model** - This should be short and explicit. Example:
 
-### RPC Validation (requires `has_ethnode = true`)
+   ```text
+   Interpretation:
+   - Active fork: Gloas at epoch 30.
+   - Slot states are not binary. A canonical beacon block can exist without an execution payload.
+   - Payload presence is decided by PTC payload_attestations in the next block.
+   - Missing payload investigation must identify builder_index and buildoor node before blaming the proposer.
+   - Fulu data availability may affect payload reveal/propagation, so blob/data-column availability must be checked for payload-related symptoms.
+   ```
 
-**If the ethnode module is available**, use direct node RPC queries via `from ethpandaops import ethnode` to validate hypotheses and gather concrete proof. Use `search(type="examples", query="ethnode")` for API patterns. Target the instances discovered in Phase 0 or identified as problematic in Phases 1–2.
+## Phase 2: Health Baseline
 
-**When to use RPC:**
-- **Network split suspected** → compare head slots/roots and finality checkpoints across nodes
-- **Node offline/stuck** → check sync status and peer counts
-- **Verifying a hypothesis** → query nodes directly via `beacon_get` / `execution_rpc`
-- **Finality stalled** → compare finality checkpoints across all nodes
+Build a baseline before drilling into logs. The baseline SHOULD answer: is the network split, finalizing, participating, producing blocks/payloads, and agreeing across clients?
 
-Append all RPC query results and analysis to the debug report. **The `panda ethnode` invocation that produced each RPC result is itself the citation for any finding it supports — record it alongside the result per the Citations section.**
+### Dora Baseline
 
-9. **Summarize findings** - You MUST present the user with:
-   - A clear description of what is happening (symptoms)
-   - The most likely root cause and supporting evidence
-   - Which nodes/clients are affected
-   - Dora links for relevant slots, epochs, and validators (if Dora was available)
-   - Suggested next steps (e.g. restart a node, report a client bug, check infrastructure)
-   - **Citations** for every concrete artifact named above (block, transaction, slot, validator, instance) per the Citations section, so the user can independently verify each claim
+Skip this subsection if `has_dora = false`.
 
-   Append the summary to the debug report. Then call `publish_debug_report()` and provide the user with the full fetchable URL, for example `http://localhost:2480/api/v1/storage/files/<execution-id>/<network>-debug-<timestamp>.md`. Also include the local `/workspace/...` path as secondary context.
+Use Panda examples for exact API patterns:
 
-## Key Thresholds
+- `search(type="examples", query="network overview")`
+- `search(type="examples", query="network splits")`
+- `search(type="examples", query="epoch summary")`
+- `search(type="examples", query="missing proposers")`
+- `search(type="examples", query="offline attesters")`
 
-- Finality requires >66.7% (2/3) of stake attesting correctly
-- Normal finality lag is 2 epochs (~13 minutes on mainnet, varies on devnets)
-- >4 epochs without finality is cause for concern
-- >8 epochs suggests a significant network issue
+Collect and append:
+
+- network overview, including finalized epoch, head slot, current epoch, finalizing status, and data-quality warnings
+- Dora `/forks` JSON
+- completed epoch summaries across the active timeframe
+- missed proposers for the active timeframe
+- offline or underperforming attesters
+- Dora links for relevant epochs, slots, validators, and blocks
+
+Rules:
+
+- Use the most recent completed epoch for participation. The head epoch is still in progress and may look artificially low.
+- If an epoch marked finalized reports participation below 66.7%, flag a source inconsistency instead of concluding the chain finalized below threshold.
+- If multiple forks exist, refocus the active window around the divergence slot/epoch.
+
+### Ethnode Baseline
+
+Use this when Ethnode is available, especially when Dora is missing or suspicious.
+
+Use `search(type="examples", query="Compare head roots and finality across nodes")`. Append the raw per-instance rows and explicitly call out whether head roots, finalized checkpoints, and sync status agree.
+
+### Forky Baseline
+
+Use Forky when fork-choice disagreement, reorgs, or client-specific head disagreement is suspected.
+
+- `search(type="examples", query="forky fork choice snapshots")`
+- `search(type="examples", query="forky compare head across clients")`
+- `search(type="examples", query="forky reorg")`
+
+Record frame ids, nodes, clients, head roots, justified/finalized checkpoints, and Forky links.
+
+### Baseline Summary
+
+Before logs, append a narrative summary:
+
+- Is the network on one fork or split?
+- Is finality advancing? How many epochs behind?
+- What is the best participation evidence and source?
+- Are missed beacon blocks present?
+- On ePBS networks, are canonical blocks missing execution payloads?
+- On DA/blob networks, are data sidecars/columns available?
+- Which nodes, validators, clients, or builders are implicated?
+- Which sources disagree?
+
+If the baseline is healthy but the user reports a problem, show the healthy baseline and ask for the observed symptom before doing broad log scraping.
+
+## Phase 3: Symptom Classification
+
+Classify first, then investigate the matching branch. Multiple branches may apply.
+
+| Symptom | Primary branch | First evidence to collect |
+| --- | --- | --- |
+| Multiple heads/roots, Dora forks, Forky disagreement | Network split / fork choice | Dora forks, Forky frames, Ethnode head roots |
+| Finalized checkpoint not advancing | Finality / participation | Ethnode checkpoints, Dora epochs, offline attesters |
+| `status=Missing` slots | Missed beacon blocks | proposer duties, proposer node logs, sync/peer status |
+| Canonical block exists but no payload on ePBS | ePBS missing payload | PTC verdict, `builder_index`, buildoor logs |
+| Payload or block validation errors | EL / Engine API / spec mismatch | CL engine logs, EL logs, block payload details, EIP/spec search |
+| Missing blobs, low blob/data availability, column warnings | DA / Blob / PeerDAS | block sidecars, PTC `blob_data_available`, data-column logs |
+| One node stuck/offline | Node drilldown | Ethnode sync/peers, node logs, host/container map |
+| One client type failing | Client-specific bug | grouped logs by client, versions/images, fork/spec context |
+
+## Branch A: Network Split / Fork Choice
+
+Use this branch when Dora reports multiple forks, Forky shows competing roots, or direct node RPC disagrees on head roots/checkpoints.
+
+1. Identify the earliest divergence slot/epoch and make it the active window.
+2. Compare head roots and finalized checkpoints across clients and nodes.
+3. Use Forky frames around the divergence to identify which clients/nodes saw which roots.
+4. Inspect the first divergent block: proposer, parent root, execution payload or bid, blobs/data columns, and any fork-specific fields.
+5. Search EIPs/specs for the active fork feature touched by the divergent block.
+6. Compare logs from nodes on different sides of the split around the divergence.
+
+Do not treat minority-fork nodes as simply "offline." On a split, Dora participation and proposer views may reflect the canonical fork only.
+
+## Branch B: Finality / Participation
+
+Use this branch when finalized checkpoints lag or participation drops.
+
+1. Validate finality with direct Ethnode checkpoints across multiple nodes when possible.
+2. Use Dora completed epoch summaries, not the head epoch, to estimate participation.
+3. Identify whether missing votes are concentrated by validator range, node, client, region, or fork side.
+4. Check whether a split explains apparent offline validators.
+5. Check node sync and peer counts for implicated nodes.
+6. Search for fork-specific participation changes if the issue starts near a fork boundary.
+
+Thresholds:
+
+- Finality requires more than 2/3 of stake attesting correctly.
+- Normal finality lag is 2 epochs.
+- More than 4 epochs without finality is concerning.
+- More than 8 epochs suggests a significant network issue.
+
+## Branch C: Missed Beacon Blocks
+
+Use this branch for slots with no beacon block at all.
+
+Pre-ePBS and ePBS both have missed beacon blocks. Under ePBS, do not confuse this with a canonical block that has a missing execution payload.
+
+1. Collect missed slots from Dora or direct beacon API.
+2. Identify scheduled proposer indices and map them to nodes/validator ranges using Dora, inventory, or validator-range API.
+3. Query proposer node health: Ethnode sync, peer count, version, logs.
+4. Inspect CL logs first, then validator-client logs if separated.
+5. If the same node misses repeatedly, classify as node-local.
+6. If one client type misses across nodes, classify as client-specific and compare image versions.
+
+## Branch D: ePBS / Gloas Missing Payloads
+
+Use this branch only when the active protocol model says ePBS/Gloas is active or block bodies contain `signed_execution_payload_bid`.
+
+Under ePBS, slot state has at least three cases:
+
+| State | Signal | Meaning | Investigate |
+| --- | --- | --- | --- |
+| Block + payload | canonical block and payload present | Healthy slot | No incident by itself |
+| Missed beacon block | no beacon block / Dora `status=Missing` | Proposer produced no beacon block | Proposer node |
+| Missing payload | canonical beacon block but payload absent | Builder won bid but payload was not revealed in time | Builder/buildoor path |
+
+Dora `with_eth_block=false` is a useful first pass, but the authoritative verdict is PTC `payload_attestations` in the next block.
+
+### Collect Missing Payload Candidates
+
+Use `search(type="examples", query="Find ePBS missing payload candidates")`. Treat this as a fast Dora first pass only; it identifies slots to confirm with PTC verdicts.
+
+### Confirm With PTC Verdicts
+
+The PTC verdict for slot `S` is carried in `payload_attestations` in the block at slot `S+1`.
+
+Use `search(type="examples", query="Get PTC payload facts for a slot")` for individual slots.
+
+### Attribute Missing Payloads To Builders
+
+Use `search(type="examples", query="Summarize payload presence by builder")`.
+
+Interpretation rules:
+
+- One `builder_index` concentrating absent payloads is a builder reveal problem until proven otherwise.
+- `builder_index = 18446744073709551615` means self-build. Missing payload on self-build points to a proposer/local EL path, not an external builder.
+- A small number of missing payloads does not by itself explain finality failure. Scope it to the responsible builder unless finality/participation evidence says otherwise.
+- Healthy builders and self-build should have near-100% payload-present rates over a stable window.
+
+### Map `builder_index` To A Buildoor Node
+
+Builder indices are registry indices, not validator indices. Do not map `builder_index` through `/validators/{index}`. Map it through builder sidecar logs.
+
+Use `search(type="examples", query="Map ePBS builder index to host")`.
+
+Builder nodes commonly look like `buildoor-<cl>-<el>-<n>`, but always use inventory/log evidence instead of relying on the name.
+
+### Investigate Builder Reveal
+
+For absent-payload slots, pull builder logs around the slot.
+
+Use `search(type="examples", query="Builder reveal logs for a slot window")`.
+
+Expected proposer-side behavior for a missing payload can include accepting a bid, publishing a block, then PTC voting `payload_present=false`. That rules the proposer out; it does not prove proposer fault.
+
+Builder-side failure patterns:
+
+- `Failed to submit reveal ... status 400` - likely builder/CL serialization or version mismatch.
+- `Giving up on reveal after max attempts` - builder reveal path failed.
+- `Published data columns to 0 peers` - likely data availability or peering propagation issue.
+- One CL implementation fails while another builder works - likely client-specific envelope endpoint compatibility.
+
+Builder sidecar components to recognize:
+
+| Component | Key lines | Use |
+| --- | --- | --- |
+| `bid-creator` | `Bid submitted ... builder_index=N` | maps builder index to host |
+| `scheduler` | `Creating and submitting bid`, `Revealing payload`, `Failed to submit reveal`, `Giving up on reveal` | reveal state machine |
+| `reveal-handler` | `Including blobs and kzg proofs`, `Payload revealed` | envelope assembly/publish |
+| `builder-service` | `Payload attributes event received`, `Starting payload build`, `Our payload was included on-chain` | build trigger and win detection |
+| `epbs-service` | `Head event received`, `Our payload was included in a beacon block` | chain-head tracking |
+| `bid-tracker` | `Recorded won bid`, `Revealed bid` | bid accounting |
+
+## Branch E: EL / Engine API / Spec Mismatch
+
+Use this branch when CL logs show payload validation failures, engine API errors, execution sync failures, or when a divergent block touches execution-rule EIPs.
+
+1. Identify the exact slot/block/transaction/payload that triggered the error.
+2. Pull CL logs for engine API errors on the proposer and peers.
+3. Pull EL logs on the same node and matching client cohort.
+4. Query the execution block or transaction through Ethnode if available.
+5. Search EIPs and execution specs for the active feature or changed invariant.
+6. Compare affected and unaffected client pairs and image versions.
+
+Diagnostic matrix:
+
+| Evidence | Likely class |
+| --- | --- |
+| CL errors only | consensus client/fork-choice/validation issue |
+| CL engine API errors plus EL errors | execution payload/state transition issue |
+| CL clean but EL errors | EL local issue or non-primary cascading issue |
+| All nodes of one EL fail | EL client bug or execution-spec mismatch |
+| All nodes of one CL fail | CL client bug or consensus-spec mismatch |
+| Error begins exactly at fork epoch | fork activation/config/spec compatibility issue |
+
+## Branch F: DA / Blob / PeerDAS
+
+Use this branch when the active fork includes blob sidecars or data columns and symptoms mention blobs, payload reveal, missing data, column unavailability, or propagation warnings.
+
+1. Record the blob schedule and active blob/data-column limits from `networks://<network>` and beacon config.
+2. Query block bodies/sidecars for affected slots.
+3. On ePBS, inspect PTC `blob_data_available` when present.
+4. Search consensus specs for the relevant Fulu/PeerDAS/data-column behavior.
+5. Check CL logs for sidecar/data-column publish, subscribe, custody, and peer warnings.
+6. If payload reveal fails with data propagation warnings, correlate builder logs with DA logs before blaming execution payload construction.
+
+## Phase 4: Log and Node Drilldown
+
+Hosted devnets and many hosted test networks run services as containers on VMs. Their logs are shipped via OpenTelemetry into `clickhouse-raw`, database `external`, table `external.otel_logs`. Query with `clickhouse.query("clickhouse-raw", ...)`.
+
+Always filter by:
+
+- `ResourceAttributes['network']`
+- `Timestamp`
+
+Key fields:
+
+- `Timestamp DateTime64(9)` - partition key; always filter
+- `Body String` - raw log line; severity is often embedded here
+- `SeverityText LowCardinality(String)` - often empty for Docker logs
+- `ResourceAttributes['host.name']` - node/host label
+- `LogAttributes['log.file.name']` - container json-log file
+- `LogAttributes['container_id']` - container id when available
+
+There is no universal `ethereum_cl` or `ethereum_el` label in these logs. A host may run CL, EL, validator, builder, relay, and sidecars. Identify containers by inventory and sample log lines.
+
+### Discover Host Containers
+
+Use `search(type="examples", query="List containers on a hosted node")`.
+
+Use samples to identify client formats:
+
+- Lighthouse: timestamped `INFO/WARN/ERRO` style consensus logs
+- Prysm: `level=... msg=...`
+- Teku: Java/log4j style lines
+- Geth: `LEVEL [MM-DD|HH:MM:SS.mmm] ...`
+- Builder sidecar/buildoor: `level=... msg="..." component=...`
+
+### Fetch Severe Logs
+
+Use `search(type="examples", query="Recent node errors")`. After identifying the relevant container, use `search(type="examples", query="Logs for one container in a time window")`.
+
+If severe logs are inconclusive, broaden to warnings, then to a tight INFO window around the affected slot. Unfiltered log queries are expensive and noisy.
+
+### Sweep A Client Type
+
+Use inventory when possible. If you must use host naming conventions, treat them as hints only:
+
+- CL prefix: `host.name LIKE 'lighthouse-%'`
+- EL inside pair: `host.name LIKE '%-geth-%'`
+- Builder: `host.name LIKE 'buildoor-%'`
+
+Use `search(type="examples", query="Errors across a consensus client type")` for a CL-client sweep.
+
+Always append the exact host list used. Do not invent missing nodes from a naming pattern.
+
+### Node Health Validation
+
+If logs are missing for a host, validate with Ethnode when available:
+
+- beacon sync status
+- CL peer count
+- execution sync status
+- EL peer count
+- node version
+
+A node can be healthy but not shipping logs, or down but still present in inventory.
+
+## Phase 5: Root Cause Analysis
+
+Classify the issue by scope, layer, and protocol actor.
+
+Scope:
+
+- Single node failure - local crash, disk, OOM, sync, peers, misconfiguration.
+- Client-specific failure - all or most nodes of one CL/EL/client version affected.
+- Builder-specific failure - one ePBS builder has poor reveal rate or reveal errors.
+- Network split - multiple incompatible chain views.
+- Widespread cross-client failure - infrastructure, config, or spec/fork edge case.
+
+Layer/actor:
+
+- Consensus proposer
+- Attester/validator client
+- Builder/buildoor sidecar
+- PTC/payload attestation path
+- Execution client / engine API
+- Data availability / sidecar / PeerDAS
+- Infrastructure/logging/host
+
+Hypotheses to test:
+
+- Did the problem start at a fork boundary, deployment, restart, or config change?
+- Does one client pair or image version explain the affected set?
+- Does a specific block, payload, transaction, blob, or data column explain the first failure?
+- Does a spec/EIP search identify changed semantics the old runbook would misclassify?
+- Do direct node RPC and indexed Dora/Forky views agree?
+- Do logs show cause before symptom, or only downstream effects?
+
+Append rejected hypotheses too when they prevent misattribution.
+
+## Phase 6: Final User Report
+
+The final response MUST include:
+
+- what is happening, in plain language
+- the active protocol model used for interpretation
+- the likely root cause and confidence level
+- affected nodes, clients, validators, builders, slots, epochs, or blocks
+- source disagreements and data-quality caveats
+- next actions: restart, disable/deprioritize builder, collect more logs, file client bug, check infra, compare code/spec, etc.
+- citations for every concrete artifact
+- debug report URL and local `/workspace/...` path
+
+Do not overstate certainty. If evidence only narrows the issue to a class, say that and name the next query that would distinguish the remaining possibilities.
+
+## Reference: ePBS / Gloas Glossary
+
+- ePBS - enshrined Proposer-Builder Separation, EIP-7732.
+- Gloas - consensus-spec fork name associated with ePBS.
+- Builder - entity that builds the execution payload and bids for inclusion.
+- `builder_index` - on-chain registry index for a builder. It is not necessarily a validator index.
+- Self-build - `builder_index = 18446744073709551615`; proposer built locally.
+- Bid - `signed_execution_payload_bid` in the beacon block; commitment/value, not full payload.
+- Reveal / envelope - builder publication of the signed execution payload envelope.
+- PTC - Payload Timeliness Committee.
+- `payload_attestations` - next-block attestations containing `payload_present` and, when available, `blob_data_available`.
+- Missing payload - canonical beacon block whose committed execution payload was not revealed in time.
+
+## Reference: Key Thresholds
+
+| Signal | Healthy | Warning / incident |
+| --- | --- | --- |
+| Finality | finalized checkpoint advancing, normal lag around 2 epochs | more than 4 epochs concerning; more than 8 epochs significant |
+| Participation | more than 66.7% effective stake attesting correctly | below 66.7% risks no finality |
+| Fork count | one canonical fork | multiple forks require divergence investigation |
+| ePBS payload reveal rate | near 100% per healthy builder/self-build | one builder materially below peers is a builder incident |
+| Logs | isolated errors with no chain symptom may be noise | errors correlated with first bad slot/epoch are high value |

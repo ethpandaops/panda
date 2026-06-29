@@ -30,9 +30,10 @@ func TestExamplesPreserveTotalCount(t *testing.T) {
 	}
 
 	// The packs were split from the original clickhouse examples.yaml
-	// (164 examples); xatu-cbt later gained the table_coverage example.
-	if total != 165 {
-		t.Fatalf("total examples = %d, want 165", total)
+	// (164 examples); xatu-cbt later gained the table_coverage example and
+	// otel-logs gained hosted-network debugging examples.
+	if total != 169 {
+		t.Fatalf("total examples = %d, want 169", total)
 	}
 }
 
@@ -84,8 +85,8 @@ func TestInitFromDiscoveryScopesToDeclaredDatasets(t *testing.T) {
 		total += len(cat.Examples)
 	}
 
-	if total != 6 {
-		t.Fatalf("scoped to otel-logs: total examples = %d, want 6", total)
+	if total != 10 {
+		t.Fatalf("scoped to otel-logs: total examples = %d, want 10", total)
 	}
 
 	if _, ok := ex["block_timing"]; ok {
@@ -155,8 +156,8 @@ func TestInitFromDiscoveryNoBindingsShowsAll(t *testing.T) {
 		total += len(cat.Examples)
 	}
 
-	if total != 165 {
-		t.Fatalf("no bindings: total examples = %d, want 165 (all packs)", total)
+	if total != 169 {
+		t.Fatalf("no bindings: total examples = %d, want 169 (all packs)", total)
 	}
 }
 
