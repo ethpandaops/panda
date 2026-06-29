@@ -190,6 +190,7 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 		application.ModuleRegistry,
 		application.Cartographoor,
 		searchRuntime.SpecsRegistry,
+		searchRuntime.RunbookRegistry,
 		proxyAuthMeta,
 		credentials,
 		runtimeTokens,

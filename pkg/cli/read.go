@@ -1,11 +1,15 @@
 package cli
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/ethpandaops/panda/pkg/serverapi"
 )
 
 var readCmd = &cobra.Command{
@@ -47,9 +51,61 @@ func runRead(cmd *cobra.Command, args []string) error {
 	}
 
 	if status < 200 || status >= 300 {
-		return decodeAPIError(status, data)
+		return formatResourceReadError(ref, status, data)
 	}
 
 	fmt.Print(string(data))
 	return nil
+}
+
+// formatResourceReadError turns a resource-read miss into a path-discovery aid:
+// when the server attached candidate URIs, it lists them as copy-paste
+// `panda read` hints; otherwise it points to semantic search for finding a
+// resource by meaning.
+func formatResourceReadError(input string, status int, data []byte) error {
+	var payload serverapi.ReadResourceError
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return decodeAPIError(status, data)
+	}
+
+	if len(payload.Candidates) == 0 {
+		// No close path matched — search owns discovery "by meaning".
+		return fmt.Errorf("%w\n\n  tip: search by meaning — panda search %q", decodeAPIError(status, data), searchHintQuery(input))
+	}
+
+	msg := payload.Error
+	if msg == "" {
+		msg = fmt.Sprintf("no resource matched %q", input)
+	}
+
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "%s\n\nNo exact match — did you mean:\n", msg)
+
+	for _, c := range payload.Candidates {
+		fmt.Fprintf(&b, "  panda read %s", c.URI)
+		if c.Title != "" {
+			fmt.Fprintf(&b, "  — %s", c.Title)
+		}
+
+		b.WriteByte('\n')
+	}
+
+	return errors.New(strings.TrimRight(b.String(), "\n"))
+}
+
+// searchHintQuery reduces a failed ref input to plain search terms for the
+// "search by meaning" tip (e.g. runbooks://finalty → "finalty").
+func searchHintQuery(input string) string {
+	var b strings.Builder
+
+	for _, r := range strings.ToLower(input) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte(' ')
+		}
+	}
+
+	return strings.Join(strings.Fields(b.String()), " ")
 }

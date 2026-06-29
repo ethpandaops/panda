@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,6 +30,7 @@ import (
 	"github.com/ethpandaops/panda/pkg/surface"
 	"github.com/ethpandaops/panda/pkg/tokenstore"
 	"github.com/ethpandaops/panda/pkg/tool"
+	"github.com/ethpandaops/panda/runbooks"
 )
 
 // Service is the main MCP server service.
@@ -52,6 +54,7 @@ type service struct {
 	moduleRegistry       *module.Registry
 	cartographoorClient  cartographoor.CartographoorClient
 	specsRegistry        *consensusspecs.Registry
+	runbookRegistry      *runbooks.Registry
 	proxyAuthMetadata    *serverapi.ProxyAuthMetadataResponse
 	credentials          *credentialController
 	runtimeTokens        *tokenstore.Store
@@ -82,6 +85,7 @@ func NewService(
 	moduleReg *module.Registry,
 	cartographoorClient cartographoor.CartographoorClient,
 	specsReg *consensusspecs.Registry,
+	runbookReg *runbooks.Registry,
 	proxyAuthMetadata *serverapi.ProxyAuthMetadataResponse,
 	credentials *credentialController,
 	runtimeTokens *tokenstore.Store,
@@ -99,6 +103,7 @@ func NewService(
 		moduleRegistry:      moduleReg,
 		cartographoorClient: cartographoorClient,
 		specsRegistry:       specsReg,
+		runbookRegistry:     runbookReg,
 		proxyAuthMetadata:   proxyAuthMetadata,
 		credentials:         credentials,
 		runtimeTokens:       runtimeTokens,
@@ -256,7 +261,7 @@ func (s *service) createResourceHandler(uri string) mcpserver.ResourceHandlerFun
 	return func(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
 		content, mimeType, err := s.resourceRegistry.Read(ctx, uri, surface.MCP)
 		if err != nil {
-			return nil, err
+			return nil, s.resourceReadError(uri, err)
 		}
 
 		return []mcp.ResourceContents{
@@ -274,7 +279,7 @@ func (s *service) createResourceTemplateHandler() mcpserver.ResourceTemplateHand
 	return func(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
 		content, mimeType, err := s.resourceRegistry.Read(ctx, req.Params.URI, surface.MCP)
 		if err != nil {
-			return nil, err
+			return nil, s.resourceReadError(req.Params.URI, err)
 		}
 
 		return []mcp.ResourceContents{
@@ -285,6 +290,22 @@ func (s *service) createResourceTemplateHandler() mcpserver.ResourceTemplateHand
 			},
 		}, nil
 	}
+}
+
+// resourceReadError enriches a resource-read miss with path suggestions so an
+// MCP client that guessed the wrong URI can self-correct to a valid path.
+func (s *service) resourceReadError(uri string, readErr error) error {
+	candidates := s.resolveResources(uri, 5)
+	if len(candidates) == 0 {
+		return readErr
+	}
+
+	suggestions := make([]string, 0, len(candidates))
+	for _, c := range candidates {
+		suggestions = append(suggestions, c.URI)
+	}
+
+	return fmt.Errorf("%w; did you mean: %s", readErr, strings.Join(suggestions, ", "))
 }
 
 // runHTTP runs the server with both SSE and streamable-http MCP transports.
