@@ -90,8 +90,6 @@ func (s *service) handleNetworkOperation(operationID string, w http.ResponseWrit
 		s.handleNetworkGet(w, r)
 	case "network.group":
 		s.handleNetworkGroup(w, r)
-	case "network.spec":
-		s.handleNetworkSpec(w, r)
 	default:
 		return false
 	}

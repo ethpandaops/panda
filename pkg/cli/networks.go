@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -28,8 +27,7 @@ Examples:
   panda networks info fusaka-devnet-3
   panda networks forks fusaka-devnet-3
   panda networks clients fusaka-devnet-3
-  panda networks endpoints fusaka-devnet-3
-  panda networks spec glamsterdam-devnet-5`,
+  panda networks endpoints fusaka-devnet-3`,
 	Args: cobra.NoArgs,
 	RunE: runNetworks,
 }
@@ -95,171 +93,6 @@ func init() {
 	// Detail subcommands work for any network or devnet id, under both groups.
 	addNetworkDetailCommands(networksCmd)
 	addNetworkDetailCommands(devnetsCmd)
-	addNetworkSpecCommand(networksCmd)
-	addNetworkSpecCommand(devnetsCmd)
-}
-
-// addNetworkSpecCommand attaches the `spec` view (notes.ethereum.org devnet
-// spec page) to a parent command. With no section argument it prints the whole
-// page; with one it prints just the matching section.
-func addNetworkSpecCommand(parent *cobra.Command) {
-	cmd := &cobra.Command{
-		Use:   "spec <network> [section]",
-		Short: "Show the notes.ethereum.org devnet spec page, or one of its sections",
-		Long: `Show the notes.ethereum.org devnet spec page for a network.
-
-With no section argument the full page markdown is printed. Pass a section
-name (matched case-insensitively against headings, substring is enough) to
-print just that section — e.g. the "Local testing" section carries the
-Kurtosis config.
-
-Examples:
-  panda networks spec glamsterdam-devnet-5
-  panda networks spec glamsterdam-devnet-5 --list
-  panda networks spec glamsterdam-devnet-5 "local testing"
-  panda networks spec glamsterdam-devnet-5 eip`,
-		Args:              cobra.RangeArgs(1, 2),
-		ValidArgsFunction: completeNetworkNames,
-		RunE:              runNetworkSpec,
-	}
-	cmd.Flags().Bool("list", false, "List the section headings only")
-	cmd.Flags().String("url", "", "Override the spec page URL (notes.ethereum.org or hackmd.io)")
-	parent.AddCommand(cmd)
-}
-
-func runNetworkSpec(cmd *cobra.Command, args []string) error {
-	listOnly, _ := cmd.Flags().GetBool("list")
-	override, _ := cmd.Flags().GetString("url")
-
-	opArgs := map[string]any{"network": args[0]}
-	if override != "" {
-		opArgs["url"] = override
-	}
-
-	response, err := runServerOperation(cmd, "network.spec", opArgs)
-	if err != nil {
-		return err
-	}
-
-	data, _ := response.Data.(map[string]any)
-	sections := specSections(data["sections"])
-
-	if listOnly {
-		return printSpecHeadings(data, sections)
-	}
-
-	// A section argument prints just that section.
-	if len(args) == 2 {
-		return printSpecSection(data, sections, args[1])
-	}
-
-	if isJSON() {
-		return printJSON(data)
-	}
-
-	fmt.Println(asString(data["markdown"]))
-
-	return nil
-}
-
-type specSection struct {
-	heading string
-	content string
-}
-
-func specSections(value any) []specSection {
-	raw, ok := value.([]any)
-	if !ok {
-		return nil
-	}
-
-	sections := make([]specSection, 0, len(raw))
-
-	for _, item := range raw {
-		section, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-
-		sections = append(sections, specSection{
-			heading: asString(section["heading"]),
-			content: asString(section["content"]),
-		})
-	}
-
-	return sections
-}
-
-func printSpecHeadings(data map[string]any, sections []specSection) error {
-	if isJSON() {
-		headings := make([]string, 0, len(sections))
-		for _, section := range sections {
-			headings = append(headings, section.heading)
-		}
-
-		return printJSON(map[string]any{"network": data["network"], "sections": headings})
-	}
-
-	if title := asString(data["title"]); title != "" {
-		fmt.Println(title)
-	}
-
-	for _, section := range sections {
-		fmt.Println("  - " + section.heading)
-	}
-
-	return nil
-}
-
-func printSpecSection(data map[string]any, sections []specSection, query string) error {
-	match, ok := matchSpecSection(sections, query)
-	if !ok {
-		available := make([]string, 0, len(sections))
-		for _, section := range sections {
-			available = append(available, section.heading)
-		}
-
-		return fmt.Errorf("no section matching %q. Available: %s", query, strings.Join(available, ", "))
-	}
-
-	if isJSON() {
-		return printJSON(map[string]any{
-			"network": data["network"],
-			"heading": match.heading,
-			"content": match.content,
-		})
-	}
-
-	fmt.Printf("## %s\n\n%s\n", match.heading, match.content)
-
-	return nil
-}
-
-// matchSpecSection finds a section by query, in order of preference: exact
-// heading, heading substring, then content substring (so "kurtosis" finds the
-// "Local testing" section whose body mentions it).
-func matchSpecSection(sections []specSection, query string) (specSection, bool) {
-	lower := strings.ToLower(strings.TrimSpace(query))
-
-	for _, section := range sections {
-		if strings.EqualFold(section.heading, query) {
-			return section, true
-		}
-	}
-
-	for _, section := range sections {
-		if strings.Contains(strings.ToLower(section.heading), lower) {
-			return section, true
-		}
-	}
-
-	for _, section := range sections {
-		if strings.Contains(strings.ToLower(section.content), lower) {
-			return section, true
-		}
-	}
-
-	return specSection{}, false
 }
 
 // addNetworkDetailCommands attaches the per-network detail views to a parent

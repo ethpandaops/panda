@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -61,6 +62,13 @@ func TestDevnetCommandAliasHasListSubcommand(t *testing.T) {
 	assert.True(t, found)
 }
 
+func TestNetworkSpecCommandIsNotRegistered(t *testing.T) {
+	assert.False(t, hasSubcommand(networksCmd, "spec"))
+	assert.False(t, hasSubcommand(networksCmd, "specs"))
+	assert.False(t, hasSubcommand(devnetsCmd, "spec"))
+	assert.False(t, hasSubcommand(devnetsCmd, "specs"))
+}
+
 func activeNetworksTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
 
@@ -108,4 +116,23 @@ func setNetworksDevnetsOnly(t *testing.T, value bool) {
 	original := networksDevnetsOnly
 	networksDevnetsOnly = value
 	t.Cleanup(func() { networksDevnetsOnly = original })
+}
+
+func hasSubcommand(cmd commandLister, name string) bool {
+	for _, subcommand := range cmd.Commands() {
+		if subcommand.Name() == name {
+			return true
+		}
+		for _, alias := range subcommand.Aliases {
+			if alias == name {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+type commandLister interface {
+	Commands() []*cobra.Command
 }

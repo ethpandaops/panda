@@ -5,15 +5,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/ethpandaops/cartographoor/pkg/discovery"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/sirupsen/logrus"
 
 	"github.com/ethpandaops/panda/pkg/cartographoor"
+	"github.com/ethpandaops/panda/pkg/networkspec"
 	"github.com/ethpandaops/panda/pkg/surface"
 )
 
@@ -47,11 +50,12 @@ type NetworksAllResponse struct {
 
 // NetworkDetailResponse is the response for networks://{name} (single network).
 type NetworkDetailResponse struct {
-	ID               string            `json:"id"`
-	ResourceURI      string            `json:"resource_uri"`
-	NodeInventoryURL string            `json:"node_inventory_url,omitempty"`
-	Usage            string            `json:"usage,omitempty"`
-	Network          discovery.Network `json:"network"`
+	ID               string                `json:"id"`
+	ResourceURI      string                `json:"resource_uri"`
+	NodeInventoryURL string                `json:"node_inventory_url,omitempty"`
+	Usage            string                `json:"usage,omitempty"`
+	Network          discovery.Network     `json:"network"`
+	Spec             *networkspec.Response `json:"spec,omitempty"`
 }
 
 // GroupDetailResponse is the response for networks://{group} (devnet group).
@@ -93,7 +97,7 @@ func RegisterNetworksResources(log logrus.FieldLogger, reg Registry, client cart
 		Template: mcp.NewResourceTemplate(
 			"networks://{name}",
 			"Network or Group Details",
-			mcp.WithTemplateDescription("Get details for a specific network or all networks in a devnet group"),
+			mcp.WithTemplateDescription("Get details for a specific network, including parsed devnet spec links when available, or all networks in a devnet group"),
 			mcp.WithTemplateMIMEType("application/json"),
 			mcp.WithTemplateAnnotations([]mcp.Role{mcp.RoleAssistant}, 0.5, ""),
 		),
@@ -167,7 +171,7 @@ func createAllNetworksHandler(client cartographoor.CartographoorClient) ReadHand
 
 // createNetworkDetailHandler returns a handler for networks://{name}.
 func createNetworkDetailHandler(log logrus.FieldLogger, client cartographoor.CartographoorClient) ReadHandler {
-	return func(_ context.Context, uri string, _ surface.Dialect) (string, error) {
+	return func(ctx context.Context, uri string, _ surface.Dialect) (string, error) {
 		matches := networkURIPattern.FindStringSubmatch(uri)
 		if len(matches) != 2 {
 			return "", fmt.Errorf("invalid URI format: %s", uri)
@@ -178,12 +182,19 @@ func createNetworkDetailHandler(log logrus.FieldLogger, client cartographoor.Car
 		// Try exact network match first
 		if network, ok := client.GetNetwork(name); ok {
 			inventoryURL := networkNodeInventoryURL(network)
+			group := networkGroupName(client, name)
+			spec, specErr := readNetworkSpecForResource(ctx, name, group, network)
+			if specErr != nil {
+				log.WithError(specErr).WithField("network", name).Debug("network spec not included in resource")
+			}
+
 			data, err := json.MarshalIndent(NetworkDetailResponse{
 				ID:               name,
 				ResourceURI:      "networks://" + name,
 				NodeInventoryURL: inventoryURL,
-				Usage:            networkDetailUsage(inventoryURL),
+				Usage:            networkDetailUsage(inventoryURL, spec != nil),
 				Network:          network,
+				Spec:             spec,
 			}, "", "  ")
 			if err != nil {
 				return "", fmt.Errorf("marshaling response: %w", err)
@@ -253,12 +264,79 @@ func networkNodeInventoryURL(network discovery.Network) string {
 	return ""
 }
 
-func networkDetailUsage(inventoryURL string) string {
-	if inventoryURL == "" {
-		return "Use networks://active for current network ids. This network does not advertise a node inventory URL."
+func networkDetailUsage(inventoryURL string, hasSpec bool) string {
+	parts := []string{"Use networks://active for current network ids."}
+	if hasSpec {
+		parts = append(parts, "The spec field is parsed from the ethpandaops notes page and includes EIP links, spec/release links, participant images, metrics_url, and previous_spec_url when present.")
 	}
 
-	return "Use node_inventory_url to discover node instance labels for direct node API calls."
+	if inventoryURL == "" {
+		parts = append(parts, "This network does not advertise a node inventory URL.")
+
+		return strings.Join(parts, " ")
+	}
+
+	parts = append(parts, "Use node_inventory_url to discover node instance labels for direct node API calls.")
+
+	return strings.Join(parts, " ")
+}
+
+type networkSpecResourceFetcher func(context.Context, string, string, discovery.Network) (*networkspec.Response, error)
+
+var (
+	networkSpecFetcherMu sync.RWMutex
+	networkSpecFetcher   networkSpecResourceFetcher = defaultFetchNetworkSpecForResource
+)
+
+func readNetworkSpecForResource(ctx context.Context, id, group string, network discovery.Network) (*networkspec.Response, error) {
+	networkSpecFetcherMu.RLock()
+	fetcher := networkSpecFetcher
+	networkSpecFetcherMu.RUnlock()
+
+	return fetcher(ctx, id, group, network)
+}
+
+func defaultFetchNetworkSpecForResource(ctx context.Context, id, group string, network discovery.Network) (*networkspec.Response, error) {
+	override := networkSpecURLOverride(network)
+	if group == "" && override == "" {
+		return nil, nil
+	}
+
+	spec, status, err := networkspec.FetchAndParse(ctx, http.DefaultClient, id, override)
+	if err != nil && status == http.StatusBadRequest && override != "" {
+		spec, status, err = networkspec.FetchAndParse(ctx, http.DefaultClient, id, "")
+	}
+	if err != nil {
+		if status == http.StatusNotFound {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	return spec, nil
+}
+
+func networkSpecURLOverride(network discovery.Network) string {
+	if network.ServiceURLs == nil {
+		return ""
+	}
+
+	return network.ServiceURLs.DevnetSpec
+}
+
+func networkGroupName(client cartographoor.CartographoorClient, id string) string {
+	for _, group := range client.GetGroups() {
+		networks, ok := client.GetGroup(group)
+		if !ok {
+			continue
+		}
+		if _, ok := networks[id]; ok {
+			return group
+		}
+	}
+
+	return ""
 }
 
 func matchingNetworkIDsByDisplayName(networks map[string]discovery.Network, displayName string) []string {

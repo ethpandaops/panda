@@ -164,6 +164,156 @@ ethnode_chain_status:
         block_num = ethnode.eth_block_number(network, instance)
         print(f"Latest EL block: {block_num}")
 
+    - name: Compare head roots and finality across nodes
+      description: Compare direct beacon-node head roots, sync status, and finalized checkpoints across several instances to validate splits or finality lag.
+      query: |
+        from ethpandaops import ethnode
+
+        network = "<network>"
+        instances = ["<instance-a>", "<instance-b>", "<instance-c>"]
+
+        rows = []
+        for instance in instances:
+            try:
+                syncing = ethnode.get_node_syncing(network, instance)
+                checkpoints = ethnode.get_finality_checkpoints(network, instance)
+                header = ethnode.get_beacon_headers(network, instance)
+                rows.append({
+                    "instance": instance,
+                    "head_slot": syncing["data"].get("head_slot"),
+                    "sync_distance": syncing["data"].get("sync_distance"),
+                    "is_syncing": syncing["data"].get("is_syncing"),
+                    "finalized_epoch": checkpoints["data"]["finalized"]["epoch"],
+                    "head_root": header["data"]["root"],
+                })
+            except Exception as e:
+                rows.append({"instance": instance, "error": str(e)})
+
+        for row in rows:
+            print(row)
+
+    - name: Detect ePBS and payload-attestation fields
+      description: Inspect a beacon block body for Gloas/ePBS fields such as signed_execution_payload_bid and payload_attestations.
+      query: |
+        from ethpandaops import ethnode
+
+        network = "<network>"
+        instance = "<instance-name>"
+
+        head = ethnode.beacon_get(network, instance, "/eth/v2/beacon/blocks/head")
+        body = head["data"]["message"]["body"]
+
+        model = {
+            "is_epbs": "signed_execution_payload_bid" in body,
+            "has_payload_attestations": "payload_attestations" in body,
+            "has_data_column_fields": "blob_data_available" in str(body),
+        }
+        print(model)
+
+ethnode_epbs_payloads:
+  name: ePBS Payloads
+  description: Inspect Gloas/ePBS bids, PTC payload verdicts, and builder reveal rates using direct beacon API calls.
+  examples:
+    - name: Get PTC payload facts for a slot
+      description: For an ePBS slot, read the signed execution payload bid from the slot block and the PTC payload_present verdict from the next block.
+      query: |
+        from ethpandaops import ethnode
+
+        SELF_BUILD = 18446744073709551615
+
+        network = "<network>"
+        instance = "<instance-name>"
+        slot = 123456
+
+        block = ethnode.beacon_get(network, instance, f"/eth/v2/beacon/blocks/{slot}")
+        message = block["data"]["message"]
+        body = message["body"]
+        bid = body["signed_execution_payload_bid"]["message"]
+
+        facts = {
+            "slot": slot,
+            "proposer_index": int(message["proposer_index"]),
+            "builder_index": int(bid["builder_index"]),
+            "bid_value": int(bid["value"]),
+            "block_hash": bid.get("block_hash"),
+            "is_self_build": int(bid["builder_index"]) == SELF_BUILD,
+            "payload_present": None,
+            "blob_data_available": None,
+        }
+
+        next_block = ethnode.beacon_get(network, instance, f"/eth/v2/beacon/blocks/{slot + 1}")
+        next_body = next_block["data"]["message"]["body"]
+        for pa in next_body.get("payload_attestations", []):
+            data = pa["data"]
+            if int(data["slot"]) == slot:
+                facts["payload_present"] = bool(data.get("payload_present"))
+                if "blob_data_available" in data:
+                    facts["blob_data_available"] = bool(data.get("blob_data_available"))
+                break
+
+        print(facts)
+
+    - name: Summarize payload presence by builder
+      description: Group ePBS PTC payload_present verdicts by builder_index over a recent slot window to find builders with poor reveal rates.
+      query: |
+        from collections import defaultdict
+        from ethpandaops import ethnode
+
+        SELF_BUILD = 18446744073709551615
+
+        network = "<network>"
+        instance = "<instance-name>"
+        head_slot = int(ethnode.get_beacon_headers(network, instance)["data"]["header"]["message"]["slot"])
+        lo = head_slot - 100
+
+        def slot_payload_facts(slot):
+            block = ethnode.beacon_get(network, instance, f"/eth/v2/beacon/blocks/{slot}")
+            message = block["data"]["message"]
+            bid = message["body"]["signed_execution_payload_bid"]["message"]
+            facts = {
+                "slot": slot,
+                "builder_index": int(bid["builder_index"]),
+                "payload_present": None,
+            }
+            try:
+                next_block = ethnode.beacon_get(network, instance, f"/eth/v2/beacon/blocks/{slot + 1}")
+                next_body = next_block["data"]["message"]["body"]
+                for pa in next_body.get("payload_attestations", []):
+                    data = pa["data"]
+                    if int(data["slot"]) == slot:
+                        facts["payload_present"] = bool(data.get("payload_present"))
+                        break
+            except Exception as e:
+                facts["ptc_error"] = str(e)
+            return facts
+
+        agg = defaultdict(lambda: {"present": 0, "absent": 0, "unknown": 0, "absent_slots": []})
+
+        for slot in range(lo, head_slot):
+            fact = slot_payload_facts(slot)
+            builder = fact["builder_index"]
+            if fact["payload_present"] is True:
+                agg[builder]["present"] += 1
+            elif fact["payload_present"] is False:
+                agg[builder]["absent"] += 1
+                agg[builder]["absent_slots"].append(slot)
+            else:
+                agg[builder]["unknown"] += 1
+
+        for builder, counts in sorted(agg.items()):
+            known = counts["present"] + counts["absent"]
+            reveal_rate = None if known == 0 else counts["present"] / known
+            tag = "SELF_BUILD" if builder == SELF_BUILD else f"builder {builder}"
+            print({
+                "builder_index": builder,
+                "tag": tag,
+                "present": counts["present"],
+                "absent": counts["absent"],
+                "unknown": counts["unknown"],
+                "reveal_rate": reveal_rate,
+                "absent_slots": counts["absent_slots"],
+            })
+
 ethnode_advanced:
   name: Advanced Queries
   description: Use generic pass-through for advanced API calls
