@@ -2,60 +2,49 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"os"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
-	authclient "github.com/ethpandaops/panda/pkg/auth/client"
-	authstore "github.com/ethpandaops/panda/pkg/auth/store"
-	"github.com/ethpandaops/panda/pkg/config"
 	"github.com/ethpandaops/panda/pkg/serverapi"
 )
 
+// defaultProxyAuthClientID is the OAuth client ID assumed when a config does not
+// specify one.
 const defaultProxyAuthClientID = "panda"
 
-type authTarget struct {
-	issuerURL string
-	clientID  string
-	resource  string
-	proxyURL  string
-	enabled   bool
-}
-
-var (
-	authIssuerURL string
-	authClientID  string
-	authResource  string
-	noBrowser     bool
-	verifyRefresh bool
-)
+// minLoginPollInterval bounds how often the CLI polls the server for login
+// completion, regardless of the provider's advertised interval.
+const minLoginPollInterval = 2 * time.Second
 
 var authCmd = &cobra.Command{
 	GroupID: groupSetup,
 	Use:     "auth",
 	Short:   "Manage proxy authentication",
-	Long:    `Authenticate the local server against a hosted credential proxy.`,
+	Long: `Manage the server's proxy authentication.
+
+The server owns the proxy credentials: it performs the login, holds the tokens,
+and refreshes them. These commands drive the running server over its API and
+never read or write the credential files themselves, so a running server is
+required.`,
 }
 
 var authLoginCmd = &cobra.Command{
 	Use:   "login",
-	Short: "Log in to the configured credential proxy",
+	Short: "Log the server in to the configured credential proxy",
 	RunE:  runAuthLogin,
 }
 
 var authLogoutCmd = &cobra.Command{
 	Use:   "logout",
-	Short: "Remove locally stored proxy credentials",
+	Short: "Remove the server's stored proxy credentials",
 	RunE:  runAuthLogout,
 }
 
 var authStatusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show proxy authentication status",
+	Short: "Show the server's proxy authentication status",
 	RunE:  runAuthStatus,
 }
 
@@ -64,366 +53,136 @@ func init() {
 	authCmd.AddCommand(authLoginCmd)
 	authCmd.AddCommand(authLogoutCmd)
 	authCmd.AddCommand(authStatusCmd)
-
-	authLoginCmd.Flags().BoolVar(&noBrowser, "no-browser", false,
-		"manual auth flow for SSH/headless environments (auto-detected over SSH)")
-
-	authStatusCmd.Flags().BoolVar(&verifyRefresh, "verify", false,
-		"actively test the refresh token against the provider (rotates it)")
-
-	for _, cmd := range []*cobra.Command{authLoginCmd, authLogoutCmd, authStatusCmd} {
-		cmd.Flags().StringVar(&authIssuerURL, "issuer", "", "proxy auth issuer URL (defaults to the configured server's proxy auth issuer)")
-		cmd.Flags().StringVar(&authClientID, "client-id", "", "OAuth client ID (defaults to configured value or 'panda')")
-		cmd.Flags().StringVar(&authResource, "resource", "", "OAuth protected resource (defaults to the proxy URL)")
-	}
 }
 
-// newAuthClient builds an auth client for the resolved target, wiring the
-// proxy branding URL when a proxy URL is known.
-func newAuthClient(target *authTarget, headless bool) authclient.Client {
-	cfg := authclient.Config{
-		IssuerURL: target.issuerURL,
-		ClientID:  target.clientID,
-		Resource:  target.resource,
-		Headless:  headless,
-	}
-
-	if target.proxyURL != "" {
-		cfg.BrandingURL = strings.TrimRight(target.proxyURL, "/") + "/auth/branding"
-	}
-
-	return authclient.New(log, cfg)
-}
-
-// newAuthStore builds the credential store for the resolved target. The store
-// uses client for token refresh when one is supplied.
-func newAuthStore(target *authTarget, client authclient.Client) authstore.Store {
-	return authstore.New(log, authstore.Config{
-		AuthClient: client,
-		IssuerURL:  target.issuerURL,
-		ClientID:   target.clientID,
-		Resource:   target.resource,
-	})
-}
-
+// runAuthLogin asks the server to start a device-authorization login, prints the
+// verification details for the user, and waits for the server to complete the
+// flow. The tokens are minted into and held by the server; they never reach the
+// CLI.
 func runAuthLogin(cmd *cobra.Command, _ []string) error {
-	baseCtx := commandContext(cmd)
+	ctx := commandContext(cmd)
 
-	target, err := resolveAuthTarget(baseCtx)
-	if err != nil {
-		return err
+	var resp serverapi.AuthLoginResponse
+	if err := serverPostJSON(ctx, "/api/v1/auth/login", nil, &resp); err != nil {
+		return fmt.Errorf("starting login: %w", err)
 	}
 
-	if !target.enabled {
+	if !resp.Enabled {
 		fmt.Println("Proxy authentication is not enabled for the configured server.")
+
 		return nil
 	}
 
-	headless := isHeadlessAuth()
-	if headless && !noBrowser {
-		fmt.Println("SSH session detected, using device authorization flow.")
+	fmt.Printf("\nTo authenticate, open:\n\n  %s\n\n", resp.VerificationURI)
+	fmt.Printf("and enter the code:\n\n  %s\n\n", resp.UserCode)
+
+	if resp.VerificationURIComplete != "" {
+		fmt.Printf("(or open %s to skip entering the code)\n\n", resp.VerificationURIComplete)
 	}
 
-	ctx, cancel := context.WithTimeout(baseCtx, 5*time.Minute)
-	defer cancel()
+	fmt.Println("Waiting for authorization...")
 
-	client := newAuthClient(target, headless)
+	// Bound the wait by the device code's lifetime; the server also stops
+	// polling when the code expires.
+	if resp.ExpiresIn > 0 {
+		var cancel context.CancelFunc
 
-	tokens, err := client.Login(ctx)
-	if err != nil {
-		return fmt.Errorf("login failed: %w", err)
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(resp.ExpiresIn+30)*time.Second)
+		defer cancel()
 	}
 
-	store := newAuthStore(target, client)
+	interval := time.Duration(resp.Interval) * time.Second
+	if interval < minLoginPollInterval {
+		interval = minLoginPollInterval
+	}
 
-	if err := store.Save(tokens); err != nil {
-		if errors.Is(err, authstore.ErrCredentialDowngrade) {
-			return fmt.Errorf(
-				"the provider issued no refresh token for this login (it did not grant the "+
-					"offline_access scope), but a refreshable credential already exists at %s; "+
-					"refusing to overwrite it. Run 'panda auth logout' first if you intend to replace it",
-				store.Path(),
-			)
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timed out waiting for authorization")
+		case <-time.After(interval):
 		}
 
-		if errors.Is(err, authstore.ErrCredentialBusy) {
-			return fmt.Errorf("another process is refreshing these credentials; try the login again in a moment")
+		var state serverapi.AuthLoginStateResponse
+		if err := serverGetJSON(ctx, "/api/v1/auth/login", nil, &state); err != nil {
+			return fmt.Errorf("checking login status: %w", err)
 		}
 
-		return fmt.Errorf("saving tokens: %w", err)
+		switch state.State {
+		case serverapi.AuthLoginAuthenticated:
+			fmt.Println("Authenticated.")
+
+			return nil
+		case serverapi.AuthLoginError:
+			return fmt.Errorf("login failed: %s", state.Error)
+		case serverapi.AuthLoginNone:
+			return fmt.Errorf("login is no longer in progress")
+		case serverapi.AuthLoginPending:
+		}
 	}
-
-	fmt.Printf("Authenticated to %s\n", target.issuerURL)
-	fmt.Printf("Credentials stored at: %s\n", store.Path())
-	fmt.Printf("Token expires at: %s\n", tokens.ExpiresAt.Format(time.RFC3339))
-
-	// A successful login with no refresh token cannot auto-refresh; warn so the
-	// short-lived session is not a surprise.
-	if tokens.RefreshToken == "" {
-		fmt.Println(
-			"WARNING: the provider issued no refresh token for this login (it did not grant the " +
-				"offline_access scope). The session cannot auto-refresh and will expire when the " +
-				"access token does.",
-		)
-	}
-
-	// Restart the server if it's running so it picks up the new credentials.
-	restartServerIfRunning(baseCtx)
-
-	return nil
 }
 
+// runAuthLogout asks the server to clear its stored credentials.
 func runAuthLogout(cmd *cobra.Command, _ []string) error {
-	target, err := resolveAuthTarget(cmd.Context())
-	if err != nil {
-		return err
+	if err := serverPostJSON(commandContext(cmd), "/api/v1/auth/logout", nil, nil); err != nil {
+		return fmt.Errorf("logging out: %w", err)
 	}
 
-	store := newAuthStore(target, nil)
+	fmt.Println("Removed the server's stored credentials.")
 
-	if err := store.Clear(); err != nil {
-		if errors.Is(err, authstore.ErrCredentialBusy) {
-			return fmt.Errorf("another process is refreshing these credentials; try the logout again in a moment")
-		}
-
-		return fmt.Errorf("clearing tokens: %w", err)
-	}
-
-	fmt.Printf("Removed credentials at: %s\n", store.Path())
 	return nil
 }
 
+// runAuthStatus reports the server's credential state.
 func runAuthStatus(cmd *cobra.Command, _ []string) error {
-	target, err := resolveAuthTarget(cmd.Context())
-	if err != nil {
-		return err
+	var st serverapi.AuthStatusResponse
+	if err := serverGetJSON(commandContext(cmd), "/api/v1/auth/status", nil, &st); err != nil {
+		return fmt.Errorf("getting auth status: %w", err)
 	}
 
-	if !target.enabled {
+	if !st.Enabled {
 		fmt.Println("Proxy authentication is not enabled for the configured server.")
+
 		return nil
 	}
 
-	client := newAuthClient(target, false)
-	store := newAuthStore(target, client)
+	fmt.Printf("Issuer: %s\n", st.IssuerURL)
+	fmt.Printf("Client ID: %s\n", st.ClientID)
+	fmt.Printf("Resource: %s\n", st.Resource)
+	fmt.Printf("Credentials: %s\n", st.CredentialsPath)
 
-	tokens, err := store.Load()
-	if err != nil {
-		return fmt.Errorf("loading tokens: %w", err)
-	}
-
-	fmt.Printf("Issuer: %s\n", target.issuerURL)
-	fmt.Printf("Client ID: %s\n", target.clientID)
-	fmt.Printf("Resource: %s\n", target.resource)
-	fmt.Printf("Credentials: %s\n", store.Path())
-
-	if tokens == nil {
+	switch {
+	case !st.Authenticated:
 		fmt.Println("Status: Not authenticated")
+
 		return nil
+	case st.ExpiresAt == nil:
+		fmt.Println("Status: Authenticated")
+	case st.Expired:
+		fmt.Printf("Status: Expired (expired at %s)\n", st.ExpiresAt.Format(time.RFC3339))
+	default:
+		fmt.Printf("Status: Authenticated (expires in %s)\n", time.Until(*st.ExpiresAt).Round(time.Second))
+		fmt.Printf("Expires at: %s\n", st.ExpiresAt.Format(time.RFC3339))
 	}
 
-	if tokens.ExpiresAt.After(time.Now()) {
-		fmt.Printf("Status: Authenticated (expires in %s)\n", time.Until(tokens.ExpiresAt).Round(time.Second))
-		fmt.Printf("Expires at: %s\n", tokens.ExpiresAt.Format(time.RFC3339))
-	} else {
-		fmt.Printf("Status: Expired (expired at %s)\n", tokens.ExpiresAt.Format(time.RFC3339))
-	}
-
-	printRefreshTokenStatus(tokens)
-
-	if verifyRefresh {
-		return verifyRefreshToken(store, tokens)
-	}
+	printRefreshTokenStatus(&st)
 
 	return nil
 }
 
-// printRefreshTokenStatus reports what is knowable about the refresh token from
-// the stored credential. The refresh token is opaque, so its expiry cannot be
-// read locally; use --verify to test it against the provider.
-func printRefreshTokenStatus(tokens *authclient.Tokens) {
-	if tokens.RefreshToken == "" {
+// printRefreshTokenStatus reports what is knowable about the refresh token. The
+// refresh token itself is never exposed; only its presence and last rotation
+// time are reported by the server.
+func printRefreshTokenStatus(st *serverapi.AuthStatusResponse) {
+	switch {
+	case !st.RefreshTokenPresent:
 		fmt.Println("Refresh token: none (session cannot auto-refresh; it ends when the access token expires)")
-
-		return
-	}
-
-	if tokens.RefreshTokenIssuedAt.IsZero() {
+	case st.RefreshTokenIssuedAt == nil:
 		fmt.Println("Refresh token: present (last rotation time unknown; the provider reused it on the last refresh)")
-
-		return
-	}
-
-	fmt.Printf("Refresh token: present (last rotated %s ago, at %s)\n",
-		time.Since(tokens.RefreshTokenIssuedAt).Round(time.Second),
-		tokens.RefreshTokenIssuedAt.Format(time.RFC3339),
-	)
-}
-
-// verifyRefreshToken actively confirms the refresh token is still accepted by
-// the provider. This performs a real refresh and so rotates the token.
-func verifyRefreshToken(store authstore.Store, tokens *authclient.Tokens) error {
-	if tokens.RefreshToken == "" {
-		fmt.Println("Refresh check: skipped (no refresh token)")
-
-		return nil
-	}
-
-	fmt.Println("Refresh check: testing the refresh token with the provider (this rotates it)...")
-
-	store.Invalidate()
-
-	if _, err := store.GetAccessToken(); err != nil {
-		fmt.Printf("Refresh check: FAILED — %v\n", err)
-
-		return nil
-	}
-
-	refreshed, err := store.Load()
-	if err != nil || refreshed == nil {
-		fmt.Println("Refresh check: OK (refresh token is valid)")
-
-		return nil
-	}
-
-	fmt.Printf("Refresh check: OK (refresh token is valid; new access token expires at %s)\n",
-		refreshed.ExpiresAt.Format(time.RFC3339),
-	)
-
-	return nil
-}
-
-func resolveAuthTarget(ctx context.Context) (*authTarget, error) {
-	// 1. Explicit CLI flags take priority.
-	if strings.TrimSpace(authIssuerURL) != "" || strings.TrimSpace(authClientID) != "" || strings.TrimSpace(authResource) != "" {
-		target := &authTarget{
-			issuerURL: strings.TrimSpace(authIssuerURL),
-			clientID:  strings.TrimSpace(authClientID),
-			resource:  strings.TrimSpace(authResource),
-			enabled:   true,
-		}
-
-		if target.clientID == "" {
-			target.clientID = defaultProxyAuthClientID
-		}
-
-		if target.issuerURL == "" {
-			return nil, fmt.Errorf("issuer is required when overriding auth settings")
-		}
-
-		return target, nil
-	}
-
-	// 2. Try reading proxy.auth from local config file (works without a running server).
-	if target := resolveAuthTargetFromConfig(); target != nil {
-		return target, nil
-	}
-
-	// 3. Fall back to querying the running server's proxy auth metadata endpoint.
-	metadata, err := proxyAuthMetadata(ctx)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"could not resolve proxy auth settings: no proxy.auth in config and server unreachable (%w). "+
-				"Run 'panda init' to create a config with proxy auth settings, or start the server first",
-			err,
+	default:
+		fmt.Printf("Refresh token: present (last rotated %s ago, at %s)\n",
+			time.Since(*st.RefreshTokenIssuedAt).Round(time.Second),
+			st.RefreshTokenIssuedAt.Format(time.RFC3339),
 		)
 	}
-
-	mode := strings.TrimSpace(metadata.Mode)
-	if mode == "" {
-		mode = "oauth"
-	}
-
-	target := &authTarget{
-		issuerURL: strings.TrimSpace(metadata.IssuerURL),
-		clientID:  strings.TrimSpace(metadata.ClientID),
-		resource:  strings.TrimSpace(metadata.Resource),
-		enabled:   metadata.Enabled,
-	}
-
-	if target.clientID == "" {
-		target.clientID = defaultProxyAuthClientID
-	}
-
-	if target.resource == "" && mode != "oidc" {
-		target.resource = target.issuerURL
-	}
-
-	return target, nil
-}
-
-// resolveAuthTargetFromConfig attempts to read proxy auth settings directly
-// from the local config file, enabling auth to work without a running server.
-func resolveAuthTargetFromConfig() *authTarget {
-	cfg, err := config.LoadClient(cfgFile)
-	if err != nil {
-		return nil
-	}
-
-	if cfg.Proxy.Auth == nil {
-		return nil
-	}
-
-	issuerURL := strings.TrimSpace(cfg.Proxy.Auth.IssuerURL)
-	if issuerURL == "" {
-		// Fall back to proxy URL as issuer if issuer_url is not explicitly set.
-		issuerURL = strings.TrimRight(strings.TrimSpace(cfg.Proxy.URL), "/")
-	}
-
-	if issuerURL == "" {
-		return nil
-	}
-
-	clientID := strings.TrimSpace(cfg.Proxy.Auth.ClientID)
-	if clientID == "" {
-		clientID = defaultProxyAuthClientID
-	}
-
-	mode := strings.TrimSpace(cfg.Proxy.Auth.Mode)
-	if mode == "" {
-		mode = "oauth"
-	}
-
-	resource := strings.TrimSpace(cfg.Proxy.Auth.Resource)
-	if resource == "" && mode != "oidc" {
-		resource = issuerURL
-		if resource == "" {
-			resource = strings.TrimRight(strings.TrimSpace(cfg.Proxy.URL), "/")
-		}
-	}
-
-	return &authTarget{
-		issuerURL: issuerURL,
-		clientID:  clientID,
-		resource:  resource,
-		proxyURL:  strings.TrimRight(strings.TrimSpace(cfg.Proxy.URL), "/"),
-		enabled:   true,
-	}
-}
-
-// isHeadlessAuth returns true when the auth flow should skip the local
-// callback server — either because --no-browser was passed or because
-// an SSH session was detected.
-func isHeadlessAuth() bool {
-	return noBrowser || isSSHSession()
-}
-
-// isSSHSession returns true when the process is running inside an SSH session.
-func isSSHSession() bool {
-	for _, key := range []string{"SSH_CLIENT", "SSH_CONNECTION", "SSH_TTY"} {
-		if os.Getenv(key) != "" {
-			return true
-		}
-	}
-
-	return false
-}
-
-func proxyAuthMetadata(ctx context.Context) (*serverapi.ProxyAuthMetadataResponse, error) {
-	var response serverapi.ProxyAuthMetadataResponse
-	if err := serverGetJSON(ctx, "/api/v1/proxy/auth", nil, &response); err != nil {
-		return nil, err
-	}
-
-	return &response, nil
 }

@@ -189,6 +189,43 @@ type ProxyAuthConfig struct {
 	RefreshTokenTTL time.Duration `yaml:"refresh_token_ttl,omitempty"`
 }
 
+// ResolvedAuthIssuerURL returns the OIDC issuer used for this proxy's auth: the
+// explicit issuer_url, or the proxy URL when unset. It is the single source of
+// truth so the proxy token source and the server's credential controller derive
+// the same credential file.
+func (p ProxyConfig) ResolvedAuthIssuerURL() string {
+	if p.Auth == nil {
+		return ""
+	}
+
+	issuer := strings.TrimSpace(p.Auth.IssuerURL)
+	if issuer == "" {
+		issuer = p.URL
+	}
+
+	return strings.TrimRight(strings.TrimSpace(issuer), "/")
+}
+
+// ResolvedAuthResource returns the RFC 8707 resource used for this proxy's auth,
+// applying the same defaulting the credential store keys on: empty for external
+// issuers (oidc, client_credentials), and the proxy URL for the legacy embedded
+// oauth issuer. Kept in lockstep with ResolvedAuthIssuerURL so credential paths
+// never diverge between the proxy client and the server's auth controller.
+func (p ProxyConfig) ResolvedAuthResource() string {
+	if p.Auth == nil {
+		return ""
+	}
+
+	resource := strings.TrimSpace(p.Auth.Resource)
+
+	mode := strings.TrimSpace(p.Auth.Mode)
+	if resource == "" && mode != "oidc" && mode != "client_credentials" {
+		resource = p.URL
+	}
+
+	return strings.TrimRight(strings.TrimSpace(resource), "/")
+}
+
 // LocalProxyConfig configures the embedded local proxy used for local
 // datasource autodiscovery.
 type LocalProxyConfig struct {

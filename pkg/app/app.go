@@ -308,19 +308,16 @@ func (a *App) proxyClientConfig(proxyCfg config.ProxyConfig, onDiscover func()) 
 		return cfg
 	}
 
-	cfg.IssuerURL = proxyCfg.Auth.IssuerURL
+	// Resolve issuer and resource through the shared helpers so the proxy token
+	// source and the server's credential controller key on the same credential
+	// file (the resource is part of the credential path hash).
+	cfg.IssuerURL = proxyCfg.ResolvedAuthIssuerURL()
 	cfg.ClientID = proxyCfg.Auth.ClientID
-	cfg.Resource = strings.TrimSpace(proxyCfg.Auth.Resource)
+	cfg.Resource = proxyCfg.ResolvedAuthResource()
 	cfg.RefreshTokenTTL = proxyCfg.Auth.RefreshTokenTTL
 	cfg.AuthMode = strings.TrimSpace(proxyCfg.Auth.Mode)
 	cfg.Username = strings.TrimSpace(proxyCfg.Auth.Username)
 	cfg.Password = proxyCfg.Auth.Password
-
-	// The legacy "oauth" embedded-issuer mode defaults the RFC 8707 resource
-	// to the proxy URL; external-issuer modes (oidc, client_credentials) do not.
-	if cfg.Resource == "" && cfg.AuthMode != "oidc" && cfg.AuthMode != proxy.AuthModeClientCredentials {
-		cfg.Resource = proxyCfg.URL
-	}
 
 	return cfg
 }

@@ -26,6 +26,54 @@ type ProxyAuthMetadataResponse struct {
 	Resource  string `json:"resource,omitempty"`
 }
 
+// AuthStatusResponse reports the server's credential state. It deliberately
+// carries no tokens — the access and refresh tokens never leave the server.
+type AuthStatusResponse struct {
+	Enabled              bool       `json:"enabled"`
+	Authenticated        bool       `json:"authenticated"`
+	IssuerURL            string     `json:"issuer_url,omitempty"`
+	ClientID             string     `json:"client_id,omitempty"`
+	Resource             string     `json:"resource,omitempty"`
+	ExpiresAt            *time.Time `json:"expires_at,omitempty"`
+	Expired              bool       `json:"expired"`
+	RefreshTokenPresent  bool       `json:"refresh_token_present"`
+	RefreshTokenIssuedAt *time.Time `json:"refresh_token_issued_at,omitempty"`
+	CredentialsPath      string     `json:"credentials_path,omitempty"`
+}
+
+// AuthLoginResponse is returned when a device-authorization login is started.
+// Only the user-facing verification details are exposed; the device code is
+// retained server-side and exchanged for tokens by the server's poller.
+type AuthLoginResponse struct {
+	Enabled                 bool   `json:"enabled"`
+	VerificationURI         string `json:"verification_uri,omitempty"`
+	VerificationURIComplete string `json:"verification_uri_complete,omitempty"`
+	UserCode                string `json:"user_code,omitempty"`
+	ExpiresIn               int    `json:"expires_in,omitempty"`
+	Interval                int    `json:"interval,omitempty"`
+}
+
+// AuthLoginState is the state of an in-flight device-authorization login.
+type AuthLoginState string
+
+const (
+	// AuthLoginPending means the user has not yet approved the device login.
+	AuthLoginPending AuthLoginState = "pending"
+	// AuthLoginAuthenticated means the login completed and tokens were stored.
+	AuthLoginAuthenticated AuthLoginState = "authenticated"
+	// AuthLoginError means the login failed (denied, expired, or provider error).
+	AuthLoginError AuthLoginState = "error"
+	// AuthLoginNone means no login is in flight.
+	AuthLoginNone AuthLoginState = "none"
+)
+
+// AuthLoginStateResponse reports progress of an in-flight device login so the
+// CLI can poll for completion.
+type AuthLoginStateResponse struct {
+	State AuthLoginState `json:"state"`
+	Error string         `json:"error,omitempty"`
+}
+
 type ResourceResponse struct {
 	URI      string `json:"uri"`
 	MIMEType string `json:"mime_type"`
