@@ -123,7 +123,7 @@ func runResourcesList(cmd *cobra.Command, _ []string) error {
 func runResourcesRead(cmd *cobra.Command, args []string) error {
 	response, err := readResource(cmd.Context(), args[0])
 	if err != nil {
-		return fmt.Errorf("reading resource: %w", err)
+		return err
 	}
 
 	if isJSON() {
@@ -154,7 +154,7 @@ func readResource(ctx context.Context, uri string) (*serverapi.ResourceResponse,
 	}
 
 	if status < 200 || status >= 300 {
-		return nil, decodeAPIError(status, data)
+		return nil, formatResourceReadError(uri, status, data)
 	}
 
 	return &serverapi.ResourceResponse{

@@ -429,7 +429,13 @@ func (s *service) handleAPIReadResource(w http.ResponseWriter, r *http.Request) 
 
 	content, mimeType, err := s.resourceRegistry.Read(r.Context(), uri, surf)
 	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, err.Error())
+		// On a miss, attach ranked path candidates so the caller can resolve the
+		// right path instead of dead-ending on "unknown resource URI".
+		writeJSON(w, http.StatusBadRequest, serverapi.ReadResourceError{
+			Error:      err.Error(),
+			Candidates: s.resolveResources(uri, defaultResolveLimit),
+		})
+
 		return
 	}
 

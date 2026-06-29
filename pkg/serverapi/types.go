@@ -102,6 +102,23 @@ type ListResourcesResponse struct {
 	Templates []ResourceTemplateInfo `json:"templates,omitempty"`
 }
 
+// ResourceCandidate is a ranked path-resolution result attached to a read miss
+// to help the caller find the right resource path.
+type ResourceCandidate struct {
+	URI         string  `json:"uri"`
+	Title       string  `json:"title,omitempty"`
+	Description string  `json:"description,omitempty"`
+	Kind        string  `json:"kind"`
+	Score       float64 `json:"score"`
+}
+
+// ReadResourceError is the error body returned when a resource read misses; it
+// carries discovery candidates so the caller can find the right path.
+type ReadResourceError struct {
+	Error      string              `json:"error"`
+	Candidates []ResourceCandidate `json:"candidates,omitempty"`
+}
+
 type RuntimeStorageUploadResponse struct {
 	Key  string `json:"key"`
 	URL  string `json:"url"`
