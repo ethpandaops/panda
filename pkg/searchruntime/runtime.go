@@ -6,6 +6,7 @@ import (
 	"hash/fnv"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -42,6 +43,12 @@ type Runtime struct {
 	localCache     cache.Cache
 	builtModel     string
 
+	// activated reports whether search has been brought online (indices built
+	// and the background refresher started). activating is a single-flight guard
+	// so concurrent discovery events don't trigger overlapping activation builds.
+	activated  atomic.Bool
+	activating atomic.Bool
+
 	stop chan struct{}
 	wg   sync.WaitGroup
 }
@@ -65,7 +72,23 @@ func Build(
 	specsCfg config.ConsensusSpecsConfig,
 ) (*Runtime, error) {
 	runtime := &Runtime{stop: make(chan struct{})}
+	runtime.log = log
+	runtime.moduleRegistry = moduleRegistry
 
+	// The runbook registry is local embedded content — it never needs an
+	// embedding provider — so build it unconditionally. This keeps the
+	// runbooks:// ref readers (`panda read`) working even when semantic search
+	// is unavailable.
+	runbookReg, err := runbooks.NewRegistry(log)
+	if err != nil {
+		return nil, fmt.Errorf("creating runbook registry: %w", err)
+	}
+
+	runtime.RunbookRegistry = runbookReg
+
+	// Without a primary (external) proxy, embedding can never become available:
+	// serve the content registries for ref reads, but build no search index and
+	// run no background poll.
 	if proxyService == nil {
 		log.Warn("Proxy service unavailable; semantic search disabled")
 
@@ -78,178 +101,147 @@ func Build(
 		return runtime, nil
 	}
 
-	if !proxyService.EmbeddingAvailable() {
-		log.Warn("Proxy embedding not available; semantic search disabled")
-
-		return runtime, nil
-	}
-
-	// Prefer the versioned /v2/embedding route (fp32 @ a fixed dimensionality,
-	// model advertised per response). Fall back to the legacy /embed routes when
-	// the proxy does not expose v2, so a new server still works against an older
-	// or self-hosted proxy. The model is whatever the chosen route serves: v2's
-	// advertised model, or v1's configured model.
-	model, useV2 := resolveModel(ctx, proxyService)
-
-	log.WithFields(logrus.Fields{"model": model, "v2": useV2}).
-		Info("Using remote embedder via proxy")
-
-	var localCache cache.Cache
+	runtime.proxyService = proxyService
 
 	if cacheDir != "" {
-		var err error
-
-		localCache, err = cache.NewFilesystem(cacheDir)
-		if err != nil {
-			log.WithError(err).Warn("Failed to create local embedding cache, continuing without")
+		localCache, cacheErr := cache.NewFilesystem(cacheDir)
+		if cacheErr != nil {
+			log.WithError(cacheErr).Warn("Failed to create local embedding cache, continuing without")
 		} else {
+			runtime.localCache = localCache
 			log.WithField("dir", cacheDir).Info("Local embedding cache enabled")
 		}
 	}
 
-	runtime.log = log
-	runtime.moduleRegistry = moduleRegistry
-	runtime.proxyService = proxyService
-	runtime.localCache = localCache
-	runtime.builtModel = model
+	// Fetch the EIP and consensus-specs registries (concurrent GitHub calls,
+	// both non-fatal). They back the eips:// and consensus-specs:// ref readers
+	// and feed the search indices once embedding is available.
+	runtime.fetchExternalRegistries(ctx, specsCfg)
 
-	embedder := runtime.newEmbedder(model, useV2)
-	runtime.embedder = embedder
+	// Create parked (not-ready) index wrappers so the background poll can build
+	// and swap indices in — both at cold start (embedding not yet available) and
+	// when the proxy later switches embedding model. A parked wrapper reports
+	// "not ready" to searches until an index is swapped in.
+	runtime.ExampleIndex = resource.NewRefreshableExampleIndex(nil)
 
-	// Log document-level embedding progress so operators can watch the index
-	// build advance in `panda server logs`. The embedder reports documents as
-	// it works, attributed to whichever stage is currently building.
-	currentStage := ""
-	setStage := func(stage string) { currentStage = stage }
-
-	embedder.OnProgress(func(completed, total int) {
-		log.WithFields(logrus.Fields{
-			"stage":    currentStage,
-			"embedded": completed,
-			"total":    total,
-		}).Info("Embedding search index")
-	})
-
-	setStage("examples")
-
-	examples := resource.GetQueryExamples(moduleRegistry)
-	exampleCount := 0
-	for _, cat := range examples {
-		exampleCount += len(cat.Examples)
-	}
-
-	log.WithField("examples", exampleCount).Info("Building example search index")
-
-	exampleIndex, err := resource.NewExampleIndex(log, embedder, examples)
-	if err != nil {
-		_ = runtime.Close()
-		return nil, fmt.Errorf("building example index: %w", err)
-	}
-
-	runtime.ExampleIndex = resource.NewRefreshableExampleIndex(exampleIndex)
-	initialSig := exampleSignature(examples)
-
-	runbookReg, err := runbooks.NewRegistry(log)
-	if err != nil {
-		_ = runtime.Close()
-		return nil, fmt.Errorf("creating runbook registry: %w", err)
-	}
-
-	runtime.RunbookRegistry = runbookReg
-
-	if runbookReg.Count() == 0 {
+	if runbookReg.Count() > 0 {
+		runtime.RunbookIndex = resource.NewRefreshableRunbookIndex(nil)
+	} else {
 		log.Warn("No runbooks found, runbook search will be disabled")
-		runtime.startRefresh(initialSig)
-
-		return runtime, nil
 	}
 
-	setStage("runbooks")
-	log.WithField("runbooks", runbookReg.Count()).Info("Building runbook search index")
-
-	runbookIndex, err := resource.NewRunbookIndex(log, embedder, runbookReg.All())
-	if err != nil {
-		_ = runtime.Close()
-		return nil, fmt.Errorf("building runbook index: %w", err)
+	if runtime.EIPRegistry != nil {
+		runtime.EIPIndex = resource.NewRefreshableEIPIndex(nil)
 	}
 
-	runtime.RunbookIndex = resource.NewRefreshableRunbookIndex(runbookIndex)
+	if runtime.SpecsRegistry != nil {
+		runtime.SpecsIndex = resource.NewRefreshableConsensusSpecIndex(nil)
+	}
 
-	// Fetch EIP and consensus-specs registries concurrently. Both make
-	// independent GitHub API calls, so parallelizing them reduces startup
-	// latency. Both are non-fatal — gracefully disabled if GitHub is
-	// unreachable.
-	var (
-		eipReg   *eips.Registry
-		eipErr   error
-		specsReg *consensusspecs.Registry
-		specsErr error
-		wg       sync.WaitGroup
-	)
+	// Build the indices now if embedding is already available so search is ready
+	// the moment the server serves traffic. Otherwise leave them parked: OnDiscover
+	// activates search on the next proxy discovery once embedding becomes available
+	// (e.g. after `panda auth login` completes), with no restart required.
+	runtime.activate(ctx)
+
+	if !runtime.activated.Load() {
+		log.Warn("Proxy embedding not available; semantic search will activate on the next proxy discovery once embedding is available")
+	}
+
+	return runtime, nil
+}
+
+// activate brings semantic search online: it builds every index for the
+// embedding model the proxy is currently serving and, on success, hands ongoing
+// refresh to the background timer. It is the single path that activates search —
+// called synchronously at startup (embedding already available) and from
+// OnDiscover (embedding became available after startup). It builds at most once;
+// a failed build leaves it inactive so a later discovery retries.
+func (r *Runtime) activate(ctx context.Context) {
+	if r.activated.Load() {
+		return
+	}
+
+	model, useV2 := resolveModel(ctx, r.proxyService)
+	if model == "" {
+		return // embedding not available yet
+	}
+
+	r.reindex(model, useV2)
+	if r.builtModel == "" {
+		return // build failed; a later discovery retries
+	}
+
+	r.activated.Store(true)
+	r.startRefresh(exampleSignature(resource.GetQueryExamples(r.moduleRegistry)))
+}
+
+// OnDiscover is invoked after each successful proxy discovery. It activates
+// semantic search the first time the proxy advertises an embedding model, then
+// becomes a no-op (the background timer owns ongoing refresh). The build runs in
+// its own goroutine so it never blocks the discovery path, guarded single-flight
+// so overlapping discovery events cannot trigger concurrent builds.
+func (r *Runtime) OnDiscover() {
+	if r.proxyService == nil || r.activated.Load() {
+		return
+	}
+
+	if !r.activating.CompareAndSwap(false, true) {
+		return
+	}
+
+	r.wg.Add(1)
+
+	go func() {
+		defer r.wg.Done()
+		defer r.activating.Store(false)
+
+		r.activate(context.Background())
+	}()
+}
+
+// fetchExternalRegistries populates the EIP and consensus-specs registries from
+// GitHub. The two fetches are independent network calls, so they run
+// concurrently. Both are non-fatal: a failure leaves the corresponding registry
+// nil, which disables that ref scheme and its search but never blocks startup.
+func (r *Runtime) fetchExternalRegistries(ctx context.Context, specsCfg config.ConsensusSpecsConfig) {
+	var wg sync.WaitGroup
 
 	wg.Add(2)
 
 	go func() {
 		defer wg.Done()
-		log.Info("Fetching EIPs from GitHub for search index")
-		eipReg, eipErr = eips.NewRegistry(ctx, log, "")
+
+		r.log.Info("Fetching EIPs from GitHub for search index")
+
+		eipReg, err := eips.NewRegistry(ctx, r.log, "")
+		switch {
+		case err != nil:
+			r.log.WithError(err).Warn("Failed to initialize EIP registry — EIP search and refs disabled")
+		case eipReg.Count() == 0:
+			r.log.Warn("No EIPs found — EIP search and refs disabled")
+		default:
+			r.EIPRegistry = eipReg
+		}
 	}()
 
 	go func() {
 		defer wg.Done()
-		log.Info("Fetching consensus specs from GitHub for search index")
-		specsReg, specsErr = consensusspecs.NewRegistry(ctx, log, specsCfg, "")
+
+		r.log.Info("Fetching consensus specs from GitHub for search index")
+
+		specsReg, err := consensusspecs.NewRegistry(ctx, r.log, specsCfg, "")
+		switch {
+		case err != nil:
+			r.log.WithError(err).Warn("Failed to initialize consensus specs registry — specs search and refs disabled")
+		case specsReg.SpecCount() == 0:
+			r.log.Warn("No consensus specs found — specs search and refs disabled")
+		default:
+			r.SpecsRegistry = specsReg
+		}
 	}()
 
 	wg.Wait()
-
-	// Build EIP search index from fetched registry.
-	switch {
-	case eipErr != nil:
-		log.WithError(eipErr).Warn("Failed to initialize EIP registry — EIP search disabled")
-	case eipReg.Count() == 0:
-		log.Warn("No EIPs found, EIP search will be disabled")
-	default:
-		setStage("EIPs")
-		log.WithField("eips", eipReg.Count()).Info("Building EIP search index")
-
-		eipIndex, indexErr := resource.NewEIPIndex(log, embedder, eipReg.All())
-		if indexErr != nil {
-			log.WithError(indexErr).Warn("Failed to build EIP index — EIP search disabled")
-		} else {
-			runtime.EIPRegistry = eipReg
-			runtime.EIPIndex = resource.NewRefreshableEIPIndex(eipIndex)
-			log.Info("Semantic search EIP index built")
-		}
-	}
-
-	// Build consensus specs search index from fetched registry.
-	switch {
-	case specsErr != nil:
-		log.WithError(specsErr).Warn("Failed to initialize consensus specs registry — specs search disabled")
-	case specsReg.SpecCount() == 0:
-		log.Warn("No consensus specs found, specs search will be disabled")
-	default:
-		log.WithFields(logrus.Fields{
-			"specs":     specsReg.SpecCount(),
-			"constants": specsReg.ConstantCount(),
-		}).Info("Building consensus specs search index")
-
-		setStage("consensus specs")
-
-		specsIndex, indexErr := resource.NewConsensusSpecIndex(log, embedder, specsReg.AllSpecs(), specsReg.AllConstants())
-		if indexErr != nil {
-			log.WithError(indexErr).Warn("Failed to build consensus specs index — specs search disabled")
-		} else {
-			runtime.SpecsRegistry = specsReg
-			runtime.SpecsIndex = resource.NewRefreshableConsensusSpecIndex(specsIndex)
-			log.Info("Semantic search consensus specs index built")
-		}
-	}
-
-	runtime.startRefresh(initialSig)
-
-	return runtime, nil
 }
 
 // Close stops the background refresher and releases the shared embedder.
@@ -295,7 +287,7 @@ func resolveModel(ctx context.Context, proxyService proxy.Service) (string, bool
 func (r *Runtime) newEmbedder(model string, useV2 bool) *embedding.RemoteEmbedder {
 	tokenFn := func() string { return r.proxyService.RegisterToken() }
 
-	return embedding.NewRemoteWithEndpoint(
+	embedder := embedding.NewRemoteWithEndpoint(
 		r.log,
 		r.proxyService.URL(),
 		tokenFn,
@@ -304,6 +296,16 @@ func (r *Runtime) newEmbedder(model string, useV2 bool) *embedding.RemoteEmbedde
 		model,
 		useV2,
 	)
+
+	// Log document-level progress so operators can watch an index build advance
+	// in `panda server logs` (the corpus is large; a multi-minute build should
+	// not look hung).
+	embedder.OnProgress(func(completed, total int) {
+		r.log.WithFields(logrus.Fields{"embedded": completed, "total": total}).
+			Info("Embedding search index")
+	})
+
+	return embedder
 }
 
 // startRefresh runs the single background poll that (1) re-indexes the whole
@@ -312,6 +314,10 @@ func (r *Runtime) newEmbedder(model string, useV2 bool) *embedding.RemoteEmbedde
 // (2) rebuilds the example index when the exposed example set changes. The model
 // check takes priority: serving a stale-model index after the proxy switched
 // would dot-product a new-model query against old-model vectors (garbage).
+//
+// It is started only once search has activated (an embedding model is built), so
+// r.embedder is always set by the time the example-refresh path runs. Activation
+// itself is event-driven (see OnDiscover), not polled.
 func (r *Runtime) startRefresh(initialSig uint64) {
 	r.wg.Add(1)
 
@@ -359,17 +365,23 @@ func (r *Runtime) startRefresh(initialSig uint64) {
 	}()
 }
 
-// reindex rebuilds every active search index under a new embedding model after
-// the proxy's served model changed. It parks all indices not-ready first so no
-// in-flight search dot-products a new-model query against an old-model index,
-// rebuilds each from its retained registry, then swaps the fresh index in. A
-// brief "search reindexing" window during the rebuild is the intended, correct
-// behaviour — far better than silently mixing embedding spaces. The old embedder
-// is dropped (not closed): it shares the local cache with the new one, which the
-// runtime closes once at shutdown.
+// reindex builds every active search index under the given embedding model from
+// its retained registry and swaps the fresh index in. It serves two cases: the
+// first build when search activates (builtModel == ""), and a rebuild after the
+// proxy's served model changed. It parks all indices not-ready first so no
+// in-flight search dot-products a query against a stale- or mixed-model index. A
+// brief not-ready window during the rebuild is the intended, correct behaviour —
+// far better than silently mixing embedding spaces. The old embedder is dropped
+// (not closed): it shares the local cache with the new one, which the runtime
+// closes once at shutdown.
 func (r *Runtime) reindex(model string, useV2 bool) {
-	r.log.WithFields(logrus.Fields{"from": r.builtModel, "to": model, "v2": useV2}).
-		Warn("Proxy embedding model changed; re-indexing search corpus")
+	if r.builtModel == "" {
+		r.log.WithFields(logrus.Fields{"model": model, "v2": useV2}).
+			Info("Activating semantic search; building index corpus")
+	} else {
+		r.log.WithFields(logrus.Fields{"from": r.builtModel, "to": model, "v2": useV2}).
+			Warn("Proxy embedding model changed; re-indexing search corpus")
+	}
 
 	embedder := r.newEmbedder(model, useV2)
 

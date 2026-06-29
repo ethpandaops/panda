@@ -128,6 +128,12 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 		searchRuntime.SpecsRegistry,
 	)
 
+	// Activate semantic search on the next discovery once the proxy advertises
+	// embedding — e.g. the server started before `panda auth login` completed, so
+	// embedding was unavailable at build time. Without this, search stays disabled
+	// until a manual restart.
+	application.AddDiscoveryObserver(searchRuntime.OnDiscover)
+
 	// Arm the background discovery refresh only now that the registries exist:
 	// activation during build raced registry wiring, and modules that activate
 	// later (e.g. a local Kurtosis datasource appearing after startup) still
