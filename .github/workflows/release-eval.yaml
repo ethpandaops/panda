@@ -266,19 +266,19 @@ jobs:
           ARGS=(--eval-json reports/eval.json --tag "$TAG" --commit "$GITHUB_SHA"
                 --history-dir "$GITHUB_WORKSPACE/history" --out-dir reports/release
                 --langfuse-links reports/langfuse_links.md --repo "$GITHUB_REPOSITORY"
-                --report-url "https://ethpandaops.github.io/panda/eval/${TAG}/")
+                --report-url "https://ethpandaops.github.io/panda/eval/ci/?run=releases/${TAG}")
           [ "$PRERELEASE" = "true" ] && ARGS+=(--prerelease)
           uv run python -m scripts.release_scorecard "${ARGS[@]}"
           cat reports/release/scorecard.md >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Publish HTML report to GitHub Pages (gh-pages branch)
+      - name: Publish qualification payload to the gh-pages data store
         env:
           TAG: ${{ steps.meta.outputs.tag }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          # First run creates the branch; later runs append one dir per release.
+          # First run creates the branch; later runs append one payload per release.
           if git fetch origin gh-pages 2>/dev/null; then
             git worktree add /tmp/pages origin/gh-pages
             git -C /tmp/pages checkout -B gh-pages
@@ -288,25 +288,25 @@ jobs:
             git -C /tmp/pages rm -rfq . 2>/dev/null || true
             touch /tmp/pages/.nojekyll
           fi
-          mkdir -p "/tmp/pages/eval/${TAG}"
-          cp tests/eval/reports/release/eval-report.html "/tmp/pages/eval/${TAG}/index.html"
-          # Register the qualification in the CI viewer's manifest as the
-          # "releases" pseudo-branch — the bare viewer page defaults to the
-          # newest release, and the branch switcher walks releases like commits.
-          (cd tests/eval && uv run python -m scripts.ci_pages publish             --pages-dir /tmp/pages --payload reports/release/data.json)
-          # Regenerate the eval index from the directories actually present
-          # (eval/ci/ is the smoke-run viewer, not a release — keep it out of the list).
-          {
-            echo '<!doctype html><html lang="en"><head><meta charset="utf-8">'
-            echo '<title>panda release qualification reports</title>'
-            echo '<style>body{font:16px/1.6 system-ui;max-width:640px;margin:3rem auto;padding:0 1rem}</style>'
-            echo '</head><body><h1>🐼 Release qualification reports</h1><ul>'
-            find /tmp/pages/eval -mindepth 1 -maxdepth 1 -type d ! -name ci -exec basename {} \; | \
-              sort -rV | sed 's|.*|<li><a href="&/">&</a></li>|'
-            echo '</ul>'
-            echo '<p><a href="ci/">CI smoke-run reports →</a></p>'
-            echo '</body></html>'
-          } > /tmp/pages/eval/index.html
+          # Register the qualification in the viewer's manifest as the "releases"
+          # pseudo-branch. This payload is the only thing a release publishes to
+          # gh-pages: the viewer (eval/ci/) fetches it straight off the branch via
+          # raw.githubusercontent at ?run=releases/<tag>, so the report is live the
+          # instant this push lands — it never waits on (or races) a Pages deploy.
+          # The self-contained eval-report.html is still attached as a release asset
+          # for offline viewing; we no longer bake a per-tag copy into the deploy
+          # snapshot (that was the one surface that 404'd until the next redeploy).
+          (cd tests/eval && uv run python -m scripts.ci_pages publish \
+            --pages-dir /tmp/pages --payload reports/release/data.json)
+          # eval/ is just an entry point: send it to the viewer, which defaults to
+          # the newest release and lets the branch switcher walk every release.
+          mkdir -p /tmp/pages/eval
+          cat > /tmp/pages/eval/index.html <<'HTML'
+          <!doctype html><html lang="en"><head><meta charset="utf-8">
+          <meta http-equiv="refresh" content="0; url=ci/">
+          <title>panda eval reports</title></head>
+          <body><p>🐼 <a href="ci/">panda eval reports →</a></p></body></html>
+          HTML
           git -C /tmp/pages add -A
           git -C /tmp/pages commit -m "eval report: ${TAG}"
           git -C /tmp/pages push origin gh-pages
@@ -315,7 +315,7 @@ jobs:
           cp -R /tmp/pages /tmp/pages-site
           rm -f /tmp/pages-site/.git
           git worktree remove --force /tmp/pages
-          echo "report published: https://ethpandaops.github.io/panda/eval/${TAG}/"
+          echo "report published: https://ethpandaops.github.io/panda/eval/ci/?run=releases/${TAG}"
 
       - name: Check Pages deploy mode
         id: pagesmode
