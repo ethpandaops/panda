@@ -98,7 +98,7 @@ type SearchRunbookResult struct {
 	Description     string   `json:"description"`
 	Tags            []string `json:"tags"`
 	Prerequisites   []string `json:"prerequisites"`
-	Content         string   `json:"content,omitempty"`
+	Ref             string   `json:"ref"`
 	FilePath        string   `json:"file_path"`
 	SimilarityScore float64  `json:"similarity_score"`
 }
@@ -123,6 +123,7 @@ type SearchEIPResult struct {
 	Category        string  `json:"category,omitempty"`
 	Created         string  `json:"created,omitempty"`
 	URL             string  `json:"url"`
+	Ref             string  `json:"ref"`
 	SimilarityScore float64 `json:"similarity_score"`
 }
 
@@ -132,6 +133,7 @@ type SearchSpecResult struct {
 	Topic           string  `json:"topic"`
 	Title           string  `json:"title"`
 	URL             string  `json:"url"`
+	Ref             string  `json:"ref"`
 	SimilarityScore float64 `json:"similarity_score"`
 }
 
@@ -410,7 +412,7 @@ func (s *Service) SearchRunbooks(query, tagFilter string, limit int) (*SearchRun
 			Description:     result.Runbook.Description,
 			Tags:            result.Runbook.Tags,
 			Prerequisites:   result.Runbook.Prerequisites,
-			Content:         result.Runbook.Content,
+			Ref:             runbooks.RefURI(result.Runbook),
 			FilePath:        result.Runbook.FilePath,
 			SimilarityScore: result.Score,
 		})
@@ -510,6 +512,7 @@ func (s *Service) SearchEIPs(
 			Category:        result.EIP.Category,
 			Created:         result.EIP.Created,
 			URL:             result.EIP.URL,
+			Ref:             fmt.Sprintf("eips://%d", result.EIP.Number),
 			SimilarityScore: result.Score,
 		})
 
@@ -584,6 +587,7 @@ func (s *Service) SearchSpecs(
 			Topic:           result.Spec.Topic,
 			Title:           result.Spec.Title,
 			URL:             result.Spec.URL,
+			Ref:             fmt.Sprintf("consensus-specs://%s/%s", result.Spec.Fork, result.Spec.Topic),
 			SimilarityScore: result.Score,
 		})
 
@@ -639,7 +643,7 @@ func (s *Service) SearchAll(query string, limit int) (*SearchAllResponse, error)
 	if s.runbookIndex != nil && s.runbookReg != nil {
 		runbooks, err := s.SearchRunbooks(query, "", limit)
 		if err == nil {
-			resp.Runbooks = summarizeRunbooks(runbooks)
+			resp.Runbooks = runbooks
 		}
 	}
 
@@ -658,27 +662,6 @@ func (s *Service) SearchAll(query string, limit int) (*SearchAllResponse, error)
 	}
 
 	return resp, nil
-}
-
-func summarizeRunbooks(resp *SearchRunbooksResponse) *SearchRunbooksResponse {
-	if resp == nil {
-		return nil
-	}
-
-	summary := *resp
-	summary.Results = make([]*SearchRunbookResult, 0, len(resp.Results))
-
-	for _, result := range resp.Results {
-		if result == nil {
-			continue
-		}
-
-		item := *result
-		item.Content = ""
-		summary.Results = append(summary.Results, &item)
-	}
-
-	return &summary
 }
 
 func clampSearchLimit(limit, max int) int {

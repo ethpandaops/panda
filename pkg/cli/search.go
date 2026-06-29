@@ -435,29 +435,12 @@ func printRunbookResults(results []*serverapi.SearchRunbookResult) {
 				strings.Join(result.Prerequisites, ", "))
 		}
 
-		fmt.Printf("\n%s\n", result.Content)
+		fmt.Printf("  Read full content: panda read %s\n", result.Ref)
 	}
 }
 
 func compactRunbookResponse(resp *serverapi.SearchRunbooksResponse) *serverapi.SearchRunbooksResponse {
-	if resp == nil {
-		return nil
-	}
-
-	compact := *resp
-	compact.Results = make([]*serverapi.SearchRunbookResult, 0, len(resp.Results))
-
-	for _, result := range resp.Results {
-		if result == nil {
-			continue
-		}
-
-		item := *result
-		item.Content = ""
-		compact.Results = append(compact.Results, &item)
-	}
-
-	return &compact
+	return resp
 }
 
 func printRunbookSummaries(results []*serverapi.SearchRunbookResult) {
@@ -475,7 +458,7 @@ func printRunbookSummaries(results []*serverapi.SearchRunbookResult) {
 				strings.Join(result.Prerequisites, ", "))
 		}
 
-		fmt.Println("  Full content: panda search runbooks \"<query>\"")
+		fmt.Printf("  Read full content: panda read %s\n", result.Ref)
 	}
 }
 
@@ -498,6 +481,7 @@ func printEIPResults(results []*serverapi.SearchEIPResult) {
 		}
 
 		fmt.Println()
+		fmt.Printf("  Read full content: panda read %s\n", result.Ref)
 		fmt.Printf("  %s\n", result.URL)
 	}
 }
@@ -544,6 +528,7 @@ func printSpecResults(response *serverapi.SearchSpecsResponse) {
 
 		fmt.Printf("[%s] %s (score: %.2f)\n", result.Fork, result.Title, result.SimilarityScore)
 		fmt.Printf("  Topic: %s\n", result.Topic)
+		fmt.Printf("  Read full content: panda read %s\n", result.Ref)
 		fmt.Printf("  %s\n", result.URL)
 	}
 }

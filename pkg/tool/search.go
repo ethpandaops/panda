@@ -15,7 +15,7 @@ const SearchToolName = "search"
 
 const searchDescription = `Search indexed examples, runbooks, EIPs, and consensus specs using semantic search.
 
-When ` + "`type`" + ` is omitted, searches across all types and returns compact combined results. Runbook content is omitted in this mode; use ` + "`type=\"runbooks\"`" + ` when you need a full procedure.
+Search returns metadata and ref URIs for long-form runbooks, EIPs, and consensus-specs documents; read the selected ref resource only after choosing the result that looks relevant.
 
 For data queries, use ` + "`type=\"examples\"`" + ` first to get SQL/API snippets without unrelated protocol or runbook results.
 Example results include ` + "`target`" + ` (the datasource to query) and, when applicable, ` + "`dataset`" + ` (the knowledge pack to read for placement or syntax).
