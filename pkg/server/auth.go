@@ -186,9 +186,24 @@ func (c *credentialController) Logout() error {
 	return c.newStore(c.target, nil).Clear()
 }
 
-// runLogin polls for device approval and persists the resulting tokens. It owns
-// the poll context's cancel and releases it when the flow settles. Updates land
-// on the supplied pendingLogin so a superseded login never clobbers a newer one.
+// Stop cancels any in-flight login so its poller goroutine exits. The stored
+// credential is left intact.
+func (c *credentialController) Stop() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.pending != nil && c.pending.cancel != nil {
+		c.pending.cancel()
+	}
+
+	c.pending = nil
+}
+
+// runLogin polls for device approval and persists the resulting tokens. The
+// terminal state and the credential write are committed under the lock only if
+// this attempt is still the current pending login, so a logout or a newer login
+// that supersedes it can neither be clobbered nor re-authenticated by a
+// late-returning poll.
 func (c *credentialController) runLogin(
 	ctx context.Context,
 	client authclient.Client,
@@ -198,28 +213,30 @@ func (c *credentialController) runLogin(
 	defer p.cancel()
 
 	tokens, err := client.PollDeviceLogin(ctx, device)
-	if err != nil {
-		c.setLoginResult(p, serverapi.AuthLoginError, err.Error())
 
-		return
-	}
-
-	if err := c.newStore(c.target, client).Save(tokens); err != nil {
-		c.setLoginResult(p, serverapi.AuthLoginError, err.Error())
-
-		return
-	}
-
-	c.setLoginResult(p, serverapi.AuthLoginAuthenticated, "")
-}
-
-// setLoginResult records the terminal state of a login attempt under the lock.
-func (c *credentialController) setLoginResult(p *pendingLogin, state serverapi.AuthLoginState, errMsg string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	p.state = state
-	p.err = errMsg
+	// Superseded by a newer login or cancelled by logout; drop the result.
+	if c.pending != p {
+		return
+	}
+
+	if err != nil {
+		p.state = serverapi.AuthLoginError
+		p.err = err.Error()
+
+		return
+	}
+
+	if saveErr := c.newStore(c.target, client).Save(tokens); saveErr != nil {
+		p.state = serverapi.AuthLoginError
+		p.err = saveErr.Error()
+
+		return
+	}
+
+	p.state = serverapi.AuthLoginAuthenticated
 }
 
 // handleAuthStatus reports the server's credential state (GET /api/v1/auth/status).

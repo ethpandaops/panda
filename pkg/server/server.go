@@ -151,6 +151,10 @@ func (s *service) Stop() error {
 
 	s.log.Info("Stopping MCP server")
 
+	if s.credentials != nil {
+		s.credentials.Stop()
+	}
+
 	close(s.done)
 	s.running = false
 

@@ -223,10 +223,10 @@ func buildProxyAuthMetadata(cfg *config.Config) *serverapi.ProxyAuthMetadataResp
 		mode = "oauth"
 	}
 
-	issuerURL := strings.TrimSpace(cfg.Proxy.Auth.IssuerURL)
-	if issuerURL == "" {
-		issuerURL = strings.TrimRight(cfg.Proxy.URL, "/")
-	}
+	// Resolve issuer/resource via the shared helpers so the metadata (and the
+	// credential controller built from it) keys on the exact same credential
+	// file as the proxy client's token source.
+	issuerURL := cfg.Proxy.ResolvedAuthIssuerURL()
 
 	// client_credentials is a server-side service-account flow; there is no
 	// human auth flow for `panda auth login` to drive against it.
@@ -234,20 +234,12 @@ func buildProxyAuthMetadata(cfg *config.Config) *serverapi.ProxyAuthMetadataResp
 		return &serverapi.ProxyAuthMetadataResponse{Mode: mode}
 	}
 
-	resource := strings.TrimSpace(cfg.Proxy.Auth.Resource)
-	if resource == "" && mode != "oidc" {
-		resource = issuerURL
-		if resource == "" {
-			resource = strings.TrimRight(cfg.Proxy.URL, "/")
-		}
-	}
-
 	return &serverapi.ProxyAuthMetadataResponse{
 		Enabled:   issuerURL != "" && cfg.Proxy.Auth.ClientID != "",
 		Mode:      mode,
 		IssuerURL: issuerURL,
 		ClientID:  cfg.Proxy.Auth.ClientID,
-		Resource:  resource,
+		Resource:  cfg.Proxy.ResolvedAuthResource(),
 	}
 }
 
