@@ -71,6 +71,10 @@ type App struct {
 	// with the (already-built) resource registry. Installed by the server
 	// builder when it arms the discovery refresh.
 	moduleResourceRegistrar func(module.Module)
+	// discoveryObservers are notified after each successful proxy discovery once
+	// the refresh is armed. The server builder registers the search runtime here
+	// so it can activate semantic search once the proxy advertises embedding.
+	discoveryObservers []func()
 }
 
 // New creates a new App.
@@ -404,6 +408,27 @@ func (a *App) onDiscoveryRefresh() {
 	}
 
 	a.refreshModulesFromDiscovery()
+
+	a.registrarMu.Lock()
+	observers := a.discoveryObservers
+	a.registrarMu.Unlock()
+
+	for _, observe := range observers {
+		observe()
+	}
+}
+
+// AddDiscoveryObserver registers a callback invoked after each successful proxy
+// discovery once the refresh is armed. Used by the server builder to let the
+// search runtime activate once the proxy advertises an embedding model.
+func (a *App) AddDiscoveryObserver(observe func()) {
+	if observe == nil {
+		return
+	}
+
+	a.registrarMu.Lock()
+	a.discoveryObservers = append(a.discoveryObservers, observe)
+	a.registrarMu.Unlock()
 }
 
 // ArmDiscoveryRefresh enables the background discovery hook and installs the
