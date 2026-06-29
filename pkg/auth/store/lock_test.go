@@ -233,10 +233,6 @@ func newRotatingAuthClient(initial string) *rotatingAuthClient {
 	return &rotatingAuthClient{valid: map[string]struct{}{initial: {}}}
 }
 
-func (c *rotatingAuthClient) Login(_ context.Context) (*authclient.Tokens, error) {
-	return nil, errors.New("not implemented")
-}
-
 func (c *rotatingAuthClient) BeginDeviceLogin(_ context.Context) (*authclient.DeviceAuth, error) {
 	return nil, errors.New("not implemented")
 }

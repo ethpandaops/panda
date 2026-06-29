@@ -336,10 +336,6 @@ type stubAuthClient struct {
 	refreshErr   error
 }
 
-func (s *stubAuthClient) Login(_ context.Context) (*authclient.Tokens, error) {
-	return nil, errors.New("not implemented")
-}
-
 func (s *stubAuthClient) BeginDeviceLogin(_ context.Context) (*authclient.DeviceAuth, error) {
 	return nil, errors.New("not implemented")
 }
@@ -369,10 +365,6 @@ func (s *stubAuthClient) Refresh(_ context.Context, _ string) (*authclient.Token
 
 type countingAuthClient struct {
 	refreshCalls atomic.Int64
-}
-
-func (s *countingAuthClient) Login(_ context.Context) (*authclient.Tokens, error) {
-	return nil, errors.New("not implemented")
 }
 
 func (s *countingAuthClient) BeginDeviceLogin(_ context.Context) (*authclient.DeviceAuth, error) {
