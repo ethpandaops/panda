@@ -237,6 +237,14 @@ func (c *rotatingAuthClient) Login(_ context.Context) (*authclient.Tokens, error
 	return nil, errors.New("not implemented")
 }
 
+func (c *rotatingAuthClient) BeginDeviceLogin(_ context.Context) (*authclient.DeviceAuth, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (c *rotatingAuthClient) PollDeviceLogin(_ context.Context, _ *authclient.DeviceAuth) (*authclient.Tokens, error) {
+	return nil, errors.New("not implemented")
+}
+
 func (c *rotatingAuthClient) ClientCredentials(_ context.Context) (*authclient.Tokens, error) {
 	return nil, errors.New("not implemented")
 }

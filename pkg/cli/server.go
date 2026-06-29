@@ -17,6 +17,7 @@ import (
 	"github.com/ethpandaops/panda/pkg/config"
 	"github.com/ethpandaops/panda/pkg/configpath"
 	"github.com/ethpandaops/panda/pkg/sandbox"
+	"github.com/ethpandaops/panda/pkg/serverapi"
 )
 
 var (
@@ -432,19 +433,24 @@ func printHealthStatus(ctx context.Context) {
 	fmt.Println("Health: Unreachable")
 }
 
-// printAuthStatus loads auth credentials and prints whether the user
-// is authenticated against the configured proxy.
+// printAuthStatus queries the running server for its credential state. The
+// server owns the credentials, so when it is unreachable the status is unknown.
 func printAuthStatus() {
-	target := resolveAuthTargetFromConfig()
-	if target == nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	var st serverapi.AuthStatusResponse
+	if err := serverGetJSON(ctx, "/api/v1/auth/status", nil, &st); err != nil {
+		fmt.Println("Auth: Unknown (server not running)")
+		return
+	}
+
+	if !st.Enabled {
 		fmt.Println("Auth: Not configured")
 		return
 	}
 
-	client := newAuthClient(target, false)
-	store := newAuthStore(target, client)
-
-	if store.IsAuthenticated() {
+	if st.Authenticated {
 		fmt.Println("Auth: Authenticated")
 	} else {
 		fmt.Println("Auth: Not authenticated (run 'panda auth login')")
@@ -462,38 +468,6 @@ func printProxyURL() {
 		fmt.Printf("Proxy: %s\n", cfg.Proxy.URL)
 	} else {
 		fmt.Println("Proxy: Not configured")
-	}
-}
-
-// restartServerIfRunning restarts the panda server container if the compose
-// file exists and the server is currently reachable. This is called after
-// auth login to ensure the running server picks up new credentials.
-func restartServerIfRunning(ctx context.Context) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
-	compose := resolveComposeFile()
-	if _, err := os.Stat(compose); os.IsNotExist(err) {
-		return
-	}
-
-	healthCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-
-	if err := checkServerHealth(healthCtx); err != nil {
-		return
-	}
-
-	fmt.Println("Restarting server to pick up new credentials...")
-
-	if err := runComposeAndWait(
-		ctx,
-		compose,
-		[]string{"restart"},
-		defaultServerHealthWaitTimeout,
-	); err != nil {
-		log.WithError(err).Warn("Failed to restart server")
 	}
 }
 

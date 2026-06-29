@@ -53,6 +53,7 @@ type service struct {
 	cartographoorClient  cartographoor.CartographoorClient
 	specsRegistry        *consensusspecs.Registry
 	proxyAuthMetadata    *serverapi.ProxyAuthMetadataResponse
+	credentials          *credentialController
 	runtimeTokens        *tokenstore.Store
 	cleanup              func(context.Context) error
 	httpClient           *http.Client
@@ -82,6 +83,7 @@ func NewService(
 	cartographoorClient cartographoor.CartographoorClient,
 	specsReg *consensusspecs.Registry,
 	proxyAuthMetadata *serverapi.ProxyAuthMetadataResponse,
+	credentials *credentialController,
 	runtimeTokens *tokenstore.Store,
 	cleanup func(context.Context) error,
 ) Service {
@@ -98,6 +100,7 @@ func NewService(
 		cartographoorClient: cartographoorClient,
 		specsRegistry:       specsReg,
 		proxyAuthMetadata:   proxyAuthMetadata,
+		credentials:         credentials,
 		runtimeTokens:       runtimeTokens,
 		cleanup:             cleanup,
 		httpClient:          &http.Client{Transport: &version.Transport{}, Timeout: 0},

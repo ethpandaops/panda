@@ -28,6 +28,10 @@ func (s *service) mountAPIRoutes(r chi.Router) {
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/datasources", s.handleAPIDatasources)
 		r.Get("/proxy/auth", s.handleAPIProxyAuthMetadata)
+		r.Get("/auth/status", s.handleAuthStatus)
+		r.Post("/auth/login", s.handleAuthLogin)
+		r.Get("/auth/login", s.handleAuthLoginState)
+		r.Post("/auth/logout", s.handleAuthLogout)
 		r.Get("/search/examples", s.handleAPISearchExamples)
 		r.Get("/search/runbooks", s.handleAPISearchRunbooks)
 		r.Get("/search/eips", s.handleAPISearchEIPs)

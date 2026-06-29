@@ -340,6 +340,14 @@ func (s *stubAuthClient) Login(_ context.Context) (*authclient.Tokens, error) {
 	return nil, errors.New("not implemented")
 }
 
+func (s *stubAuthClient) BeginDeviceLogin(_ context.Context) (*authclient.DeviceAuth, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (s *stubAuthClient) PollDeviceLogin(_ context.Context, _ *authclient.DeviceAuth) (*authclient.Tokens, error) {
+	return nil, errors.New("not implemented")
+}
+
 func (s *stubAuthClient) ClientCredentials(_ context.Context) (*authclient.Tokens, error) {
 	return nil, errors.New("not implemented")
 }
@@ -364,6 +372,14 @@ type countingAuthClient struct {
 }
 
 func (s *countingAuthClient) Login(_ context.Context) (*authclient.Tokens, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (s *countingAuthClient) BeginDeviceLogin(_ context.Context) (*authclient.DeviceAuth, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (s *countingAuthClient) PollDeviceLogin(_ context.Context, _ *authclient.DeviceAuth) (*authclient.Tokens, error) {
 	return nil, errors.New("not implemented")
 }
 

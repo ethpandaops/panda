@@ -165,6 +165,12 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 		serverBaseURL,
 	)
 
+	// Resolve proxy auth metadata once so the server's credential controller
+	// uses the exact same issuer/client/resource — and therefore the exact same
+	// on-disk credential file — as the proxy client's token source.
+	proxyAuthMeta := buildProxyAuthMetadata(b.cfg)
+	credentials := newCredentialController(b.log, proxyAuthMeta)
+
 	// Create and return the server service.
 	return NewService(
 		b.log,
@@ -178,7 +184,8 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 		application.ModuleRegistry,
 		application.Cartographoor,
 		searchRuntime.SpecsRegistry,
-		buildProxyAuthMetadata(b.cfg),
+		proxyAuthMeta,
+		credentials,
 		runtimeTokens,
 		cleanup,
 	), nil

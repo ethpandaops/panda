@@ -37,6 +37,14 @@ func (f *fakeAuthClient) Login(_ context.Context) (*client.Tokens, error) {
 	return nil, errors.New("not implemented")
 }
 
+func (f *fakeAuthClient) BeginDeviceLogin(_ context.Context) (*client.DeviceAuth, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (f *fakeAuthClient) PollDeviceLogin(_ context.Context, _ *client.DeviceAuth) (*client.Tokens, error) {
+	return nil, errors.New("not implemented")
+}
+
 func (f *fakeAuthClient) Refresh(_ context.Context, _ string) (*client.Tokens, error) {
 	return nil, errors.New("not implemented")
 }

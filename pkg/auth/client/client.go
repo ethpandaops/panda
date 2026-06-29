@@ -26,6 +26,16 @@ type Client interface {
 	// Login performs the OAuth PKCE flow and returns tokens.
 	Login(ctx context.Context) (*Tokens, error)
 
+	// BeginDeviceLogin starts the RFC 8628 device authorization flow and
+	// returns the details a user needs to approve it. The opaque device code in
+	// the result is exchanged for tokens by PollDeviceLogin; only the
+	// verification URL and user code are meant to be shown to the user.
+	BeginDeviceLogin(ctx context.Context) (*DeviceAuth, error)
+
+	// PollDeviceLogin polls the token endpoint until the device authorization
+	// is approved (returning tokens), denied, or expired (returning an error).
+	PollDeviceLogin(ctx context.Context, device *DeviceAuth) (*Tokens, error)
+
 	// Refresh refreshes an access token using a refresh token.
 	Refresh(ctx context.Context, refreshToken string) (*Tokens, error)
 
@@ -141,11 +151,24 @@ type OIDCConfig struct {
 
 // deviceAuthResponse is the RFC 8628 device authorization response.
 type deviceAuthResponse struct {
-	DeviceCode      string `json:"device_code"`
-	UserCode        string `json:"user_code"`
-	VerificationURI string `json:"verification_uri"`
-	ExpiresIn       int    `json:"expires_in"`
-	Interval        int    `json:"interval"`
+	DeviceCode              string `json:"device_code"`
+	UserCode                string `json:"user_code"`
+	VerificationURI         string `json:"verification_uri"`
+	VerificationURIComplete string `json:"verification_uri_complete,omitempty"`
+	ExpiresIn               int    `json:"expires_in"`
+	Interval                int    `json:"interval"`
+}
+
+// DeviceAuth carries the result of starting a device authorization flow. The
+// VerificationURI and UserCode are safe to show to the user; the DeviceCode is
+// the secret the poller exchanges for tokens and must not be exposed.
+type DeviceAuth struct {
+	DeviceCode              string
+	UserCode                string
+	VerificationURI         string
+	VerificationURIComplete string
+	ExpiresIn               int
+	Interval                int
 }
 
 // New creates a new OAuth client.
@@ -253,6 +276,48 @@ func (c *client) loginDevice(ctx context.Context) (*Tokens, error) {
 	}
 
 	return tokens, nil
+}
+
+// BeginDeviceLogin starts the device authorization flow and returns the user
+// verification details plus the opaque device code used to poll for tokens.
+func (c *client) BeginDeviceLogin(ctx context.Context) (*DeviceAuth, error) {
+	if err := c.discover(ctx); err != nil {
+		return nil, fmt.Errorf("discovering auth config: %w", err)
+	}
+
+	if c.oidc.DeviceAuthorizationEndpoint == "" {
+		return nil, fmt.Errorf("server does not support device authorization flow")
+	}
+
+	resp, err := c.requestDeviceCode(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("requesting device code: %w", err)
+	}
+
+	return &DeviceAuth{
+		DeviceCode:              resp.DeviceCode,
+		UserCode:                resp.UserCode,
+		VerificationURI:         resp.VerificationURI,
+		VerificationURIComplete: resp.VerificationURIComplete,
+		ExpiresIn:               resp.ExpiresIn,
+		Interval:                resp.Interval,
+	}, nil
+}
+
+// PollDeviceLogin polls the token endpoint until the device authorization in
+// device is approved, denied, or expired.
+func (c *client) PollDeviceLogin(ctx context.Context, device *DeviceAuth) (*Tokens, error) {
+	if device == nil || device.DeviceCode == "" {
+		return nil, fmt.Errorf("no device code to poll")
+	}
+
+	if err := c.discover(ctx); err != nil {
+		return nil, fmt.Errorf("discovering auth config: %w", err)
+	}
+
+	interval := max(time.Duration(device.Interval)*time.Second, 5*time.Second)
+
+	return c.pollDeviceToken(ctx, device.DeviceCode, interval)
 }
 
 // Refresh refreshes an access token using a refresh token.

@@ -22,6 +22,7 @@ import (
 	"github.com/ethpandaops/panda/pkg/config"
 	"github.com/ethpandaops/panda/pkg/configpath"
 	"github.com/ethpandaops/panda/pkg/proxy"
+	"github.com/ethpandaops/panda/pkg/serverapi"
 )
 
 const (
@@ -77,8 +78,6 @@ func init() {
 	initCmd.Flags().BoolVar(&initSkipDocker, "skip-docker", false, "skip Docker check and image pull")
 	initCmd.Flags().BoolVar(&initSkipAuth, "skip-auth", false, "skip authentication step")
 	initCmd.Flags().BoolVar(&initSkipStart, "skip-start", false, "skip starting the server")
-	initCmd.Flags().BoolVar(&noBrowser, "no-browser", false,
-		"manual auth flow for SSH/headless environments (auto-detected over SSH)")
 }
 
 func runInit(cmd *cobra.Command, _ []string) error {
@@ -157,20 +156,10 @@ func runInit(cmd *cobra.Command, _ []string) error {
 		fmt.Printf("Docker Compose already exists: %s (use --force to overwrite)\n", composePath)
 	}
 
-	// 4. Authenticate against the proxy.
-	if !initSkipAuth {
-		fmt.Println()
+	// 4. Start the server. Auth is driven through the running server (it owns
+	// the credentials), so the server must come up before authentication.
+	serverStarted := false
 
-		if skipped, err := initEnsureAuth(cmd); err != nil {
-			return fmt.Errorf("authentication failed: %w", err)
-		} else if skipped {
-			fmt.Println("Already authenticated (credentials still valid)")
-		}
-	} else {
-		fmt.Println("\nSkipping authentication (--skip-auth)")
-	}
-
-	// 5. Start the server.
 	switch {
 	case initSkipStart:
 		fmt.Println("\nSkipping server start (--skip-start)")
@@ -191,9 +180,27 @@ func runInit(cmd *cobra.Command, _ []string) error {
 			return fmt.Errorf("starting server: %w", err)
 		}
 
+		serverStarted = true
+
 		fmt.Println()
 		fmt.Println("Server available at http://localhost:2480")
 		fmt.Println("Run 'panda datasources' to list available datasources")
+	}
+
+	// 5. Authenticate against the proxy through the running server.
+	switch {
+	case initSkipAuth:
+		fmt.Println("\nSkipping authentication (--skip-auth)")
+	case !serverStarted:
+		fmt.Println("\nServer not started; run 'panda auth login' once it is running.")
+	default:
+		fmt.Println()
+
+		if skipped, err := initEnsureAuth(cmd); err != nil {
+			return fmt.Errorf("authentication failed: %w", err)
+		} else if skipped {
+			fmt.Println("Already authenticated (credentials still valid)")
+		}
 	}
 
 	return nil
@@ -592,30 +599,26 @@ func probeSocketGIDInContainer(socketPath string) (string, error) {
 	return gid, nil
 }
 
-// initEnsureAuth checks for existing valid credentials before starting the
-// full OAuth login flow. Returns (true, nil) if auth was skipped because
-// credentials are already valid, (false, nil) on successful fresh login,
-// or (false, err) on failure.
+// initEnsureAuth asks the running server for its credential status and drives a
+// login only when needed. Returns (true, nil) if auth was skipped because the
+// server is already authenticated (or auth is disabled), (false, nil) on a
+// successful fresh login, or (false, err) on failure.
 func initEnsureAuth(cmd *cobra.Command) (bool, error) {
-	target, err := resolveAuthTarget(commandContext(cmd))
-	if err != nil {
-		return false, err
+	var st serverapi.AuthStatusResponse
+	if err := serverGetJSON(commandContext(cmd), "/api/v1/auth/status", nil, &st); err != nil {
+		return false, fmt.Errorf("checking auth status: %w", err)
 	}
 
-	if !target.enabled {
+	if !st.Enabled {
 		fmt.Println("Proxy authentication is not enabled for the configured server.")
+
 		return true, nil
 	}
 
-	client := newAuthClient(target, false)
-	store := newAuthStore(target, client)
-
-	// Try to get a valid access token (refreshes automatically if needed).
-	if _, err := store.GetAccessToken(); err == nil {
+	if st.Authenticated {
 		return true, nil
 	}
 
-	// No valid credentials — run the full login flow.
 	fmt.Println("Authenticating...")
 
 	return false, runAuthLogin(cmd, nil)
