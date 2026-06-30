@@ -56,6 +56,19 @@ def _series_name(metric: dict[str, Any]) -> str:
     return "process"
 
 
+def _restart_label(metric: dict[str, Any], instance: str) -> str:
+    """A concise restart label. Prefers the client that actually restarted on ethpandaops
+    devnets (execution_client for an EL process, consensus_client for a CL one), so the chart
+    reads "ethrex restart" / "prysm restart" instead of the full instance name; falls back to
+    the instance when those labels are absent."""
+    job = metric.get("job", "")
+    if job == "execution" and metric.get("execution_client"):
+        return f"{metric['execution_client']} restart"
+    if job in ("consensus_node", "consensus") and metric.get("consensus_client"):
+        return f"{metric['consensus_client']} restart"
+    return f"{instance} restart"
+
+
 def restarts(
     instance_name: str,
     match: str = "",
@@ -87,12 +100,14 @@ def restarts(
 
         first_ts = float(samples[0][0])
         starts = sorted({round(float(value)) for _, value in samples})
-        name = _series_name(series.get("metric", {}))
+        metric = series.get("metric", {})
+        name = _series_name(metric)
+        label = _restart_label(metric, name)
 
         for started_at in starts:
             if started_at >= first_ts:  # a start observed within the window is a restart
                 out.append(
-                    {"t": started_at, "label": f"{name} restart", "kind": "restart", "series": name}
+                    {"t": started_at, "label": label, "kind": "restart", "series": name}
                 )
 
     out.sort(key=lambda event: event["t"])

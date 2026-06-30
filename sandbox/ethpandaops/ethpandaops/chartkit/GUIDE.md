@@ -102,6 +102,7 @@ Overlay moments-in-time and thresholds with `markers=` on `line()` / `area()`.
   - `style="dot"` — a dot on the matching series (or a baseline rail if it matches none). Best when events are *frequent or belong to one series* — many rules turn into a picket fence, and a dot can sit on the line it actually happened to.
 - **Capturing is datasource work; rendering is not.** chartkit only draws — the timestamps come from a query. For process/container restarts, `prometheus.restarts(instance, match=..., start=..., end=...)` returns ready records (it reads `process_start_time_seconds`, whose *value is the start time*, so each new value is a restart). Feed them straight in: `markers=ck.events(prometheus.restarts(...), style="dot")`.
 - **Pass real timestamps, not offsets.** A time-series chart maps each event's time onto its own x-axis automatically. Event markers therefore need a datetime x-axis — they raise on a numeric one.
+- **Clustered labels stay readable.** Rule labels never overprint: identical labels minutes apart collapse into one `label ×N`, and distinct labels that would collide stack onto separate rows. So a burst of restarts reads as `ethrex restart ×3`, not a smear — you don't hand-place anything. (`prometheus.restarts()` already names labels by the client that restarted, e.g. `ethrex restart` / `prysm restart`.)
 
 ```python
 from ethpandaops import chartkit as ck, prometheus

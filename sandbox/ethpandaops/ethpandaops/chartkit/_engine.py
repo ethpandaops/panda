@@ -250,6 +250,27 @@ def _marker_dot_y(series,name,x):
         (x0,y0),(x1,y1)=pts[i-1],pts[i]
         if x0<=x<=x1: return y0+(y1-y0)*((x-x0)/(x1-x0) if x1>x0 else 0)
     return pts[-1][1]
+def _layout_xlabels(items):
+    """Place vertical-marker labels so they never overprint. Adjacent identical labels merge into
+    one (with a ×count); the rest drop onto the lowest row whose text boxes they clear. Without
+    this, clustered event markers (e.g. three restarts minutes apart) stack into unreadable mush.
+    items: [(X_px, label, colour)] -> [(X_px, text, colour, row, anchor)]."""
+    if not items: return []
+    items=sorted(items,key=lambda it:it[0]); merged=[]; last_x=None; last_lbl=None
+    for X,lbl,col in items:
+        if merged and lbl==last_lbl and X-last_x<tw(lbl,11.5,700)+14: merged[-1][3]+=1   # chain off the previous marker, keep the cluster's leftmost X
+        else: merged.append([X,lbl,col,1])
+        last_x=X; last_lbl=lbl
+    rows=[]; out=[]                                   # rows[r] = right edge (px) of the last label placed in row r
+    for X,lbl,col,n in merged:
+        text=f"{lbl} ×{n}" if n>1 else lbl; w=tw(text,11.5,700)
+        anchor="end" if X+8+w>PW0-2 else "start"; x0=(X-8-w) if anchor=="end" else X+8
+        r=0
+        while r<len(rows) and rows[r]>x0-6: r+=1
+        if r==len(rows): rows.append(x0+w)
+        else: rows[r]=x0+w
+        out.append((X,text,col,r,anchor))
+    return out
 
 def plot(*, kind=None, xdom, ydom, xticks, yticks, xfmt, yfmt, xtitle, ytitle,
          bars=None, series=None, markers=None, spans=None, cells=None, points=None, ph=None, body=None,
@@ -265,6 +286,7 @@ def plot(*, kind=None, xdom, ydom, xticks, yticks, xfmt, yfmt, xtitle, ytitle,
         p.append(txt(gl-10,y+4,yfmt(tk),11,t["faint"],anchor="end"))
     c=Draw(kind,sx,sy,yb,PW,PT,H,gl,t,bars,series,spans,cells); c.points=points
     ret=(body or RENDERERS[kind])(c); p+=[x for x in (list(ret or [])+c._buf) if x]   # tolerate a draw returning a list/tuple of c.* results (or None)
+    xlabels=[]                                        # collect rule labels -> de-conflicted together below
     for m in markers or []:
         raw=m.get("color"); col=safe_color(t.get(raw,raw) if raw else t["accent"])   # resolve a theme token ("accent"/"deadline") or pass a hex through
         lbl=m.get("label",""); axis=m.get("axis","x")
@@ -272,16 +294,17 @@ def plot(*, kind=None, xdom, ydom, xticks, yticks, xfmt, yfmt, xtitle, ytitle,
             X=sx(m["value"]); yv=_marker_dot_y(series,m.get("series"),m["value"])
             Y=sy(yv) if yv is not None else PT+H-6
             p.append(f'<circle cx="{X:.1f}" cy="{Y:.1f}" r="4.2" fill="{col}" stroke="{safe_color(t["card"])}" stroke-width="1.5"/>')
-            if lbl: p.append(txt(X,Y-9,lbl,11,col,700,anchor="middle"))
+            if lbl: p.append(txt(X,Y-9,lbl,11,col,700,anchor="middle"))   # dot label stays anchored to its dot
         elif axis=="x":
             dash=' stroke-dasharray="5 3"' if m.get("dash") else ''
             X=sx(m["value"]); p.append(f'<line x1="{X:.1f}" x2="{X:.1f}" y1="{PT}" y2="{PT+H}" stroke="{col}" stroke-width="2"{dash}/>')
-            if lbl and X+8+tw(lbl,11.5,700)>PW0-2: p.append(txt(X-8,PT+11,lbl,11.5,col,700,anchor="end"))
-            elif lbl: p.append(txt(X+8,PT+11,lbl,11.5,col,700))
+            if lbl: xlabels.append((X,lbl,col))
         else:
             Y=sy(m["value"]); p.append(f'<line x1="{gl}" x2="{gl+PW}" y1="{Y:.1f}" y2="{Y:.1f}" stroke="{col}" stroke-width="1.8" stroke-dasharray="5 3"/>')
             ly=Y-7 if Y>PT+18 else Y+16
             if lbl: p.append(txt(gl+PW-4,ly,lbl,11.5,col,700,anchor="end"))
+    for X,text,col,row,anchor in _layout_xlabels(xlabels):
+        p.append(txt(X-8 if anchor=="end" else X+8, PT+11+row*13, text, 11.5, col, 700, anchor=anchor))
     lastx=-1e9
     for tk in xticks:
         X=sx(tk)
