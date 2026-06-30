@@ -1,4 +1,4 @@
-.PHONY: build build-server build-panda build-proxy install install-server install-panda install-proxy test lint clean docker docker-push docker-sandbox test-sandbox run studio help setup-hooks govulncheck
+.PHONY: build build-server build-panda build-proxy install install-server install-panda install-proxy test lint clean docker docker-push docker-sandbox test-sandbox run studio help setup-hooks govulncheck generate
 
 # Build variables
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -60,6 +60,9 @@ govulncheck: ## Scan for reachable vulnerabilities (allowlist in scripts/govulnc
 
 tidy: ## Run go mod tidy
 	go mod tidy
+
+generate: ## Run code generation (oapi-codegen for the compute API client)
+	go generate ./pkg/compute/...
 
 clean: ## Clean build artifacts
 	rm -f panda-server .panda-server-bin panda panda-proxy panda-server-linux-amd64

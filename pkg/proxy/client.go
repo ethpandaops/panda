@@ -462,6 +462,13 @@ func (c *proxyClient) BenchmarkoorDatasourceInfo() []types.DatasourceInfo {
 	return normalizeInfo("benchmarkoor", c.datasources.BenchmarkoorInfo, c.cfg.Name)
 }
 
+func (c *proxyClient) ComputeDatasourceInfo() []types.DatasourceInfo {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return normalizeInfo("compute", c.datasources.ComputeInfo, c.cfg.Name)
+}
+
 // EthNodeAvailable returns true if the proxy has ethnode credentials configured.
 func (c *proxyClient) EthNodeAvailable() bool {
 	c.mu.RLock()

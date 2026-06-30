@@ -1,0 +1,167 @@
+compute_sandbox_lifecycle:
+  name: Sandbox Lifecycle
+  description: >-
+    Create, inspect, stop/start, lease, and delete ephemeral compute sandboxes
+    (Firecracker microVMs). Mutations are asynchronous: they return an operation
+    that you poll to completion.
+  examples:
+    - name: List available templates
+      description: >-
+        Answer "what can I boot", "which sandbox images exist" — every template
+        a sandbox can be created from, with its versions
+      query: |
+        from ethpandaops import compute
+
+        templates = compute.list_templates(limit=50)
+        for t in templates.get("items", templates.get("data", [])):
+            print(f"{t.get('name')}  v{t.get('version')}  {t.get('description', '')}")
+
+    - name: Create a sandbox and poll the operation
+      description: >-
+        Create a sandbox from a template, then poll the returned async operation
+        until it finishes. Mutations return 202 + an operation id; poll
+        get_operation until status is succeeded/failed
+      query: |
+        import time
+
+        from ethpandaops import compute
+
+        op = compute.create_sandbox(template="ubuntu-22.04", ttl="1h", on_delete="archive")
+        operation_id = op["id"]
+
+        while True:
+            current = compute.get_operation(operation_id)
+            status = current.get("status")
+            print(f"operation {operation_id}: {status}")
+            if status in ("succeeded", "failed", "cancelled"):
+                break
+            time.sleep(2)
+
+        print("result:", current.get("result"))
+
+    - name: List sandboxes
+      description: List existing sandboxes and their current state
+      query: |
+        from ethpandaops import compute
+
+        sandboxes = compute.list_sandboxes(limit=50)
+        for s in sandboxes.get("items", sandboxes.get("data", [])):
+            print(f"{s.get('id')}  {s.get('template')}  {s.get('status')}  ttl={s.get('ttl')}")
+
+    - name: Inspect a sandbox and its operations
+      description: Get one sandbox's detail plus the async operations run against it
+      query: |
+        from ethpandaops import compute
+
+        sandboxes = compute.list_sandboxes(limit=1)
+        sandbox_id = sandboxes.get("items", sandboxes.get("data", []))[0]["id"]
+
+        sandbox = compute.get_sandbox(sandbox_id)
+        print(sandbox.get("status"), sandbox.get("template"))
+
+        ops = compute.get_sandbox_operations(sandbox_id)
+        for op in ops.get("items", ops.get("data", [])):
+            print(f"{op.get('id')}  {op.get('kind')}  {op.get('status')}")
+
+    - name: Stop, start, and extend a sandbox lease
+      description: >-
+        Pause a running sandbox, resume it, and push its TTL out so it is not
+        reaped. extend is a Go-duration string ("30m", "2h")
+      query: |
+        from ethpandaops import compute
+
+        sandbox_id = compute.list_sandboxes(limit=1).get("items")[0]["id"]
+
+        compute.stop_sandbox(sandbox_id)
+        compute.start_sandbox(sandbox_id)
+        compute.lease_sandbox(sandbox_id, extend="2h")
+
+    - name: Delete a sandbox
+      description: Tear down a sandbox; returns an operation you can poll
+      query: |
+        from ethpandaops import compute
+
+        sandbox_id = compute.list_sandboxes(limit=1).get("items")[0]["id"]
+        op = compute.delete_sandbox(sandbox_id)
+        print("delete operation:", op.get("id"))
+
+compute_snapshots:
+  name: Snapshots and Restore
+  description: >-
+    Capture a sandbox's state as a snapshot and restore it into a fresh sandbox.
+    Snapshot and restore are asynchronous operations.
+  examples:
+    - name: Snapshot a sandbox
+      description: Capture the current state of a sandbox for later restore
+      query: |
+        from ethpandaops import compute
+
+        sandbox_id = compute.list_sandboxes(limit=1).get("items")[0]["id"]
+        op = compute.snapshot_sandbox(sandbox_id, note="before upgrade")
+        print("snapshot operation:", op.get("id"))
+
+    - name: Restore a snapshot into a new sandbox
+      description: >-
+        Boot a fresh sandbox from a previously captured snapshot; returns an
+        operation to poll for the new sandbox id
+      query: |
+        from ethpandaops import compute
+
+        snapshots = compute.list_snapshots(limit=1)
+        snapshot_id = snapshots.get("items", snapshots.get("data", []))[0]["id"]
+
+        op = compute.restore_snapshot(snapshot_id, ttl="1h")
+        print("restore operation:", op.get("id"))
+
+    - name: Trace snapshot lineage
+      description: >-
+        See which sandboxes were restored from a snapshot, and a sandbox's
+        snapshot/restore ancestry
+      query: |
+        from ethpandaops import compute
+
+        snapshot_id = compute.list_snapshots(limit=1).get("items")[0]["id"]
+
+        restored = compute.get_snapshot_restored_by(snapshot_id)
+        print("restored sandboxes:", restored.get("items", restored.get("data", [])))
+
+        sandbox_id = compute.list_sandboxes(limit=1).get("items")[0]["id"]
+        print("lineage:", compute.get_sandbox_lineage(sandbox_id))
+
+compute_directory:
+  name: Operations, Keys, and Directory
+  description: >-
+    Poll async operations, manage your SSH public keys, and browse the service
+    directory (users, nodes, audit log, metadata).
+  examples:
+    - name: List recent operations
+      description: Browse async operations and their statuses across the service
+      query: |
+        from ethpandaops import compute
+
+        ops = compute.list_operations(limit=20)
+        for op in ops.get("items", ops.get("data", [])):
+            print(f"{op.get('id')}  {op.get('kind')}  {op.get('status')}")
+
+    - name: Register an SSH key
+      description: >-
+        Add an SSH public key so you can connect to sandboxes, then list your
+        registered keys
+      query: |
+        from ethpandaops import compute
+
+        compute.add_ssh_key(public_key="ssh-ed25519 AAAA... laptop", name="laptop")
+        for k in compute.list_ssh_keys().get("items", []):
+            print(k.get("id"), k.get("name"))
+
+    - name: Service metadata and nodes
+      description: >-
+        Inspect service capabilities/limits and the compute nodes backing the
+        service
+      query: |
+        from ethpandaops import compute
+
+        print("meta:", compute.meta())
+        nodes = compute.list_nodes()
+        for n in nodes.get("items", nodes.get("data", [])):
+            print(n.get("id"), n.get("status"))

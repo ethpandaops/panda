@@ -318,6 +318,7 @@ type fakeProxyClient struct {
 	prometheus   []types.DatasourceInfo
 	loki         []types.DatasourceInfo
 	benchmarkoor []types.DatasourceInfo
+	compute      []types.DatasourceInfo
 	ethnode      bool
 }
 
@@ -367,6 +368,10 @@ func (f *fakeProxyClient) LokiDatasourceInfo() []types.DatasourceInfo { return f
 
 func (f *fakeProxyClient) BenchmarkoorDatasourceInfo() []types.DatasourceInfo {
 	return f.benchmarkoor
+}
+
+func (f *fakeProxyClient) ComputeDatasourceInfo() []types.DatasourceInfo {
+	return f.compute
 }
 
 func (f *fakeProxyClient) EthNodeAvailable() bool { return f.ethnode }

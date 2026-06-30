@@ -137,7 +137,9 @@ func (c *schemaProxyClient) PrometheusDatasourceInfo() []types.DatasourceInfo {
 func (c *schemaProxyClient) LokiDatasources() []string                          { return nil }
 func (c *schemaProxyClient) LokiDatasourceInfo() []types.DatasourceInfo         { return nil }
 func (c *schemaProxyClient) BenchmarkoorDatasourceInfo() []types.DatasourceInfo { return nil }
-func (c *schemaProxyClient) EthNodeAvailable() bool                             { return false }
+
+func (c *schemaProxyClient) ComputeDatasourceInfo() []types.DatasourceInfo { return nil }
+func (c *schemaProxyClient) EthNodeAvailable() bool                        { return false }
 func (c *schemaProxyClient) EthNodeDatasourceInfo() []types.DatasourceInfo {
 	return nil
 }

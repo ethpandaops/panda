@@ -30,6 +30,7 @@ COPY modules/benchmarkoor/python/benchmarkoor.py /opt/ethpandaops-pkg/ethpandaop
 COPY modules/block_archive/python/block_archive.py /opt/ethpandaops-pkg/ethpandaops/block_archive.py
 COPY modules/cbt/python/cbt.py /opt/ethpandaops-pkg/ethpandaops/cbt.py
 COPY modules/clickhouse/python/clickhouse.py /opt/ethpandaops-pkg/ethpandaops/clickhouse.py
+COPY modules/compute/python/compute.py /opt/ethpandaops-pkg/ethpandaops/compute.py
 COPY modules/dora/python/dora.py /opt/ethpandaops-pkg/ethpandaops/dora.py
 COPY modules/forky/python/forky.py /opt/ethpandaops-pkg/ethpandaops/forky.py
 COPY modules/loki/python/loki.py /opt/ethpandaops-pkg/ethpandaops/loki.py

@@ -198,6 +198,19 @@ loki:
 #     # allowed_orgs:
 #     #   - ethpandaops
 
+# Compute: ephemeral-sandbox control plane (core ethpandaops members only).
+# The proxy authenticates to the backend with a shared service token and
+# forwards the verified end-user subject (default header X-Authentik-Sub) so the
+# backend can authorize per user. Gate it to core members with allowed_orgs.
+# compute:
+#   - name: production
+#     description: "ethPandaOps compute sandboxes"
+#     url: "${COMPUTE_URL}"
+#     token: "${COMPUTE_TOKEN}"
+#     # forwarded_subject_header: X-Authentik-Sub
+#     allowed_orgs:
+#       - ethpandaops:Core
+
 # Ethereum node API access (beacon and execution nodes)
 # Single credential pair for all bn-*.srv.*.ethpandaops.io and rpc-*.srv.*.ethpandaops.io endpoints
 # ethnode:

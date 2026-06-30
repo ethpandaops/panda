@@ -318,6 +318,7 @@ type fakeRouterClient struct {
 	loki       []types.DatasourceInfo
 
 	benchmarkoor []types.DatasourceInfo
+	compute      []types.DatasourceInfo
 
 	ethnode   bool
 	embedding bool
@@ -382,6 +383,10 @@ func (f *fakeRouterClient) LokiDatasourceInfo() []types.DatasourceInfo {
 
 func (f *fakeRouterClient) BenchmarkoorDatasourceInfo() []types.DatasourceInfo {
 	return append([]types.DatasourceInfo(nil), f.benchmarkoor...)
+}
+
+func (f *fakeRouterClient) ComputeDatasourceInfo() []types.DatasourceInfo {
+	return append([]types.DatasourceInfo(nil), f.compute...)
 }
 
 func (f *fakeRouterClient) EthNodeAvailable() bool { return f.ethnode }
