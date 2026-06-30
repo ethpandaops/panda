@@ -18,6 +18,7 @@ func (s *service) dispatchOperation(operationID string, w http.ResponseWriter, r
 		s.handleEthNodeOperation,
 		s.handleCBTOperation,
 		s.handleBenchmarkoorOperation,
+		s.handleComputeOperation,
 		s.handleTracoorOperation,
 		s.handleSpecsOperation,
 		s.handleBlockArchiveOperation,

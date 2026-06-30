@@ -60,6 +60,14 @@ func NewAuthorizer(log logrus.FieldLogger, cfg ServerConfig) *Authorizer {
 		}}
 	}
 
+	for _, ds := range cfg.Compute {
+		a.rules[ruleKey("compute", ds.Name)] = []datasourceVariantRule{{
+			routeName:   ds.Name,
+			allowedOrgs: append([]string(nil), ds.AllowedOrgs...),
+			metadata:    metadataValue("url", ds.URL),
+		}}
+	}
+
 	if cfg.EthNode != nil && len(cfg.EthNode.AllowedOrgs) > 0 {
 		a.rules[ruleKey("ethnode", "")] = []datasourceVariantRule{{
 			allowedOrgs: append([]string(nil), cfg.EthNode.AllowedOrgs...),
@@ -110,6 +118,7 @@ func (a *Authorizer) FilterDatasources(ctx context.Context, resp DatasourcesResp
 	filtered.PrometheusInfo = a.filterDatasourceList(userOrgs, hasUser, "prometheus", resp.PrometheusInfo)
 	filtered.LokiInfo = a.filterDatasourceList(userOrgs, hasUser, "loki", resp.LokiInfo)
 	filtered.BenchmarkoorInfo = a.filterDatasourceList(userOrgs, hasUser, "benchmarkoor", resp.BenchmarkoorInfo)
+	filtered.ComputeInfo = a.filterDatasourceList(userOrgs, hasUser, "compute", resp.ComputeInfo)
 
 	return filtered
 }

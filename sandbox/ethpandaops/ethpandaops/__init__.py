@@ -41,6 +41,7 @@ def __getattr__(name):
         "block_archive",
         "cbt",
         "clickhouse",
+        "compute",
         "prometheus",
         "loki",
         "dora",

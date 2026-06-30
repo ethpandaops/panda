@@ -281,6 +281,12 @@ func (r *routerClient) BenchmarkoorDatasourceInfo() []types.DatasourceInfo {
 	return infos
 }
 
+func (r *routerClient) ComputeDatasourceInfo() []types.DatasourceInfo {
+	infos, _ := r.mergeDatasourceInfo("compute")
+
+	return infos
+}
+
 // EthNodeAvailable returns primary-proxy ethnode availability.
 func (r *routerClient) EthNodeAvailable() bool {
 	primary := r.Primary()
@@ -402,6 +408,8 @@ func routeDatasourceInfo(client Client, datasourceType string) []types.Datasourc
 		return client.LokiDatasourceInfo()
 	case "benchmarkoor":
 		return client.BenchmarkoorDatasourceInfo()
+	case "compute":
+		return client.ComputeDatasourceInfo()
 	default:
 		return nil
 	}

@@ -71,6 +71,7 @@ type server struct {
 	lokiHandler         *handlers.LokiHandler
 	ethNodeHandler      *handlers.EthNodeHandler
 	benchmarkoorHandler *handlers.BenchmarkoorHandler
+	computeHandler      *handlers.ComputeHandler
 	embeddingService    *EmbeddingService
 	embeddingServiceV2  *EmbeddingService
 	githubHandler       *handlers.GitHubHandler
@@ -193,6 +194,10 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 
 	if benchConfigs := cfg.ToBenchmarkoorHandlerConfigs(); len(benchConfigs) > 0 {
 		s.benchmarkoorHandler = handlers.NewBenchmarkoorHandler(log, benchConfigs)
+	}
+
+	if computeConfigs := cfg.ToComputeHandlerConfigs(); len(computeConfigs) > 0 {
+		s.computeHandler = handlers.NewComputeHandler(log, computeConfigs, authSubject)
 	}
 
 	// Create embedding service if configured.
@@ -323,6 +328,10 @@ func (s *server) registerRoutes() {
 		s.handleSubtreeRoute("/benchmarkoor", s.metricsMiddleware(chain(s.benchmarkoorHandler)))
 	}
 
+	if s.computeHandler != nil {
+		s.handleSubtreeRoute("/compute", s.metricsMiddleware(chain(s.computeHandler)))
+	}
+
 	if s.githubHandler != nil {
 		s.handleSubtreeRoute("/github", s.metricsMiddleware(chain(s.githubHandler)))
 	}
@@ -376,6 +385,7 @@ type DatasourcesResponse struct {
 	PrometheusInfo     []types.DatasourceInfo `json:"prometheus_info,omitempty"`
 	LokiInfo           []types.DatasourceInfo `json:"loki_info,omitempty"`
 	BenchmarkoorInfo   []types.DatasourceInfo `json:"benchmarkoor_info,omitempty"`
+	ComputeInfo        []types.DatasourceInfo `json:"compute_info,omitempty"`
 	EthNodeAvailable   bool                   `json:"ethnode_available,omitempty"`
 	EmbeddingAvailable bool                   `json:"embedding_available,omitempty"`
 	EmbeddingModel     string                 `json:"embedding_model,omitempty"`
@@ -391,6 +401,7 @@ type datasourcesResponseWire struct {
 	PrometheusInfo     []types.DatasourceInfo `json:"prometheus_info,omitempty"`
 	LokiInfo           []types.DatasourceInfo `json:"loki_info,omitempty"`
 	BenchmarkoorInfo   []types.DatasourceInfo `json:"benchmarkoor_info,omitempty"`
+	ComputeInfo        []types.DatasourceInfo `json:"compute_info,omitempty"`
 	EthNodeAvailable   bool                   `json:"ethnode_available,omitempty"`
 	EmbeddingAvailable bool                   `json:"embedding_available,omitempty"`
 	EmbeddingModel     string                 `json:"embedding_model,omitempty"`
@@ -407,6 +418,7 @@ func (d DatasourcesResponse) MarshalJSON() ([]byte, error) {
 		PrometheusInfo:     d.PrometheusInfo,
 		LokiInfo:           d.LokiInfo,
 		BenchmarkoorInfo:   d.BenchmarkoorInfo,
+		ComputeInfo:        d.ComputeInfo,
 		EthNodeAvailable:   d.EthNodeAvailable,
 		EmbeddingAvailable: d.EmbeddingAvailable,
 		EmbeddingModel:     d.EmbeddingModel,
@@ -425,6 +437,7 @@ func (d *DatasourcesResponse) UnmarshalJSON(data []byte) error {
 	d.PrometheusInfo = infoFromWire("prometheus", wire.PrometheusInfo, wire.Prometheus)
 	d.LokiInfo = infoFromWire("loki", wire.LokiInfo, wire.Loki)
 	d.BenchmarkoorInfo = normalizeInfo("benchmarkoor", wire.BenchmarkoorInfo, "")
+	d.ComputeInfo = normalizeInfo("compute", wire.ComputeInfo, "")
 	d.EthNodeAvailable = wire.EthNodeAvailable
 	d.EmbeddingAvailable = wire.EmbeddingAvailable
 	d.EmbeddingModel = wire.EmbeddingModel
@@ -466,6 +479,7 @@ func (s *server) handleDatasources(w http.ResponseWriter, r *http.Request) {
 		PrometheusInfo:     s.PrometheusDatasourceInfo(),
 		LokiInfo:           s.LokiDatasourceInfo(),
 		BenchmarkoorInfo:   s.BenchmarkoorDatasourceInfo(),
+		ComputeInfo:        s.ComputeDatasourceInfo(),
 		EthNodeAvailable:   s.EthNodeAvailable(),
 		EmbeddingAvailable: s.EmbeddingAvailable(),
 		EmbeddingModel:     s.EmbeddingModel(),
@@ -1005,9 +1019,40 @@ func (s *server) BenchmarkoorDatasourceInfo() []types.DatasourceInfo {
 	return result
 }
 
+// ComputeDatasourceInfo returns detailed compute datasource info.
+func (s *server) ComputeDatasourceInfo() []types.DatasourceInfo {
+	if len(s.cfg.Compute) == 0 {
+		return nil
+	}
+
+	result := make([]types.DatasourceInfo, 0, len(s.cfg.Compute))
+
+	for _, comp := range s.cfg.Compute {
+		result = append(result, types.DatasourceInfo{
+			Type:        "compute",
+			Name:        comp.Name,
+			Description: comp.Description,
+			Metadata:    metadataValue("url", comp.URL),
+		})
+	}
+
+	return result
+}
+
 // EthNodeAvailable returns true if the ethnode handler is configured.
 func (s *server) EthNodeAvailable() bool {
 	return s.ethNodeHandler != nil
+}
+
+// authSubject returns the verified end-user subject from the request context,
+// or the empty string when the request is unauthenticated. It is the trusted
+// source for the subject the compute handler forwards upstream.
+func authSubject(ctx context.Context) string {
+	if user := GetAuthUser(ctx); user != nil {
+		return user.Subject
+	}
+
+	return ""
 }
 
 // EthNodeDatasourceInfo returns the ethnode datasource info when configured.

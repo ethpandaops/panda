@@ -1,0 +1,1122 @@
+openapi: 3.0.3
+info:
+  title: Compute API
+  version: v1
+  description: Internal REST API for sandbox, snapshot, template, and operation management.
+servers:
+  - url: /
+tags:
+  - name: ssh-keys
+  - name: ssh
+  - name: sandboxes
+  - name: snapshots
+  - name: templates
+  - name: operations
+  - name: system
+paths:
+  /v1/me/ssh-keys:
+    get:
+      tags: [ssh-keys]
+      operationId: listSSHPublicKeys
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: SSH public keys registered by the authenticated subject.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SSHPublicKeyList'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [ssh-keys]
+      operationId: addSSHPublicKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddSSHPublicKeyRequest'
+      responses:
+        '201':
+          description: SSH public key registered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SSHPublicKey'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/me/ssh-keys/{id}:
+    parameters:
+      - $ref: '#/components/parameters/SSHPublicKeyID'
+    delete:
+      tags: [ssh-keys]
+      operationId: deleteSSHPublicKey
+      responses:
+        '204':
+          description: SSH public key removed.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/sandboxes:
+    get:
+      tags: [sandboxes]
+      operationId: listSandboxes
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Sandboxes in stable ID order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SandboxList'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [sandboxes]
+      operationId: createSandbox
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSandboxRequest'
+      responses:
+        '202':
+          description: Sandbox creation accepted. Poll the returned operation ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/sandboxes/{id}:
+    parameters:
+      - $ref: '#/components/parameters/SandboxID'
+    get:
+      tags: [sandboxes]
+      operationId: getSandbox
+      responses:
+        '200':
+          description: Sandbox.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sandbox'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      tags: [sandboxes]
+      operationId: deleteSandbox
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: Sandbox deletion accepted. Poll the returned operation ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/sandboxes/{id}/stop:
+    parameters:
+      - $ref: '#/components/parameters/SandboxID'
+    post:
+      tags: [sandboxes]
+      operationId: stopSandbox
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: Stop accepted. Poll the returned operation ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptedResponse'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/sandboxes/{id}/start:
+    parameters:
+      - $ref: '#/components/parameters/SandboxID'
+    post:
+      tags: [sandboxes]
+      operationId: startSandbox
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: Start accepted. Poll the returned operation ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptedResponse'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/sandboxes/{id}/snapshot:
+    parameters:
+      - $ref: '#/components/parameters/SandboxID'
+    post:
+      tags: [sandboxes]
+      operationId: snapshotSandbox
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SnapshotSandboxRequest'
+      responses:
+        '202':
+          description: Snapshot accepted. Poll the returned operation ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptedResponse'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/sandboxes/{id}/lease:
+    parameters:
+      - $ref: '#/components/parameters/SandboxID'
+    post:
+      tags: [sandboxes]
+      operationId: leaseSandbox
+      summary: Extend a sandbox's TTL. A heartbeat is a periodic call to this endpoint.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeaseSandboxRequest'
+      responses:
+        '200':
+          description: Lease extended. Returns the new expiry, clamped to max TTL.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeaseResponse'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/sandboxes/{id}/exec:
+    parameters:
+      - $ref: '#/components/parameters/SandboxID'
+    get:
+      tags: [sandboxes]
+      operationId: execSandbox
+      responses:
+        '501':
+          $ref: '#/components/responses/StreamingNotImplemented'
+  /v1/sandboxes/{id}/ssh:
+    parameters:
+      - $ref: '#/components/parameters/SandboxID'
+    post:
+      tags: [ssh]
+      operationId: prepareSandboxSSH
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrepareSandboxSSHRequest'
+      responses:
+        '200':
+          description: Stock SSH connection details and a gateway-auth certificate for the supplied key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SSHPreparation'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/sandboxes/{id}/tunnel/{port}:
+    parameters:
+      - $ref: '#/components/parameters/SandboxID'
+      - name: port
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 65535
+    get:
+      tags: [sandboxes]
+      operationId: tunnelSandbox
+      responses:
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '501':
+          $ref: '#/components/responses/StreamingNotImplemented'
+  /v1/ssh/authorize:
+    post:
+      tags: [ssh]
+      operationId: authorizeSSH
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SSHAuthorizeRequest'
+      responses:
+        '200':
+          description: Live SSH access authorization for the gateway.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SSHAuthorizeResponse'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/snapshots:
+    get:
+      tags: [snapshots]
+      operationId: listSnapshots
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Snapshots in stable ID order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SnapshotList'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/snapshots/{id}:
+    parameters:
+      - $ref: '#/components/parameters/SnapshotID'
+    get:
+      tags: [snapshots]
+      operationId: getSnapshot
+      responses:
+        '200':
+          description: Snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Snapshot'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      tags: [snapshots]
+      operationId: deleteSnapshot
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: Snapshot deletion accepted. Poll the returned operation ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptedResponse'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/snapshots/{id}/restore:
+    parameters:
+      - $ref: '#/components/parameters/SnapshotID'
+    post:
+      tags: [snapshots]
+      operationId: restoreSnapshot
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestoreSnapshotRequest'
+      responses:
+        '202':
+          description: Restore accepted. Poll the returned operation ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptedResponse'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/templates:
+    get:
+      tags: [templates]
+      operationId: listTemplates
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Templates in stable name/version order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateList'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/templates/{name}/{version}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: version
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [templates]
+      operationId: getTemplate
+      responses:
+        '200':
+          description: Template.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Template'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/operations:
+    get:
+      tags: [operations]
+      operationId: listOperations
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Operations in stable created_at/id order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationList'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/operations/{id}:
+    parameters:
+      - $ref: '#/components/parameters/OperationID'
+    get:
+      tags: [operations]
+      operationId: getOperation
+      responses:
+        '200':
+          description: Operation. Terminal states are succeeded and failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Operation'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/healthz:
+    get:
+      tags: [system]
+      operationId: healthz
+      responses:
+        '200':
+          description: Process is alive.
+          content:
+            text/plain:
+              schema:
+                type: string
+  /v1/readyz:
+    get:
+      tags: [system]
+      operationId: readyz
+      responses:
+        '200':
+          description: Service dependencies are ready.
+          content:
+            text/plain:
+              schema:
+                type: string
+        '503':
+          $ref: '#/components/responses/NotReady'
+  /v1/metrics:
+    get:
+      tags: [system]
+      operationId: metrics
+      responses:
+        '200':
+          description: Prometheus metrics.
+          content:
+            text/plain:
+              schema:
+                type: string
+  /v1/openapi.yaml:
+    get:
+      tags: [system]
+      operationId: openAPIYAML
+      responses:
+        '200':
+          description: This OpenAPI document.
+          content:
+            application/yaml:
+              schema:
+                type: string
+  /v1/meta:
+    get:
+      tags: [system]
+      operationId: meta
+      responses:
+        '200':
+          description: Server reference clock.
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/sandboxes/{id}/logs:
+    parameters:
+      - $ref: '#/components/parameters/SandboxID'
+    get:
+      tags: [sandboxes]
+      operationId: getSandboxLogs
+      responses:
+        '200':
+          description: Guest log lines (empty in deferred mode).
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/sandboxes/{id}/lineage:
+    parameters:
+      - $ref: '#/components/parameters/SandboxID'
+    get:
+      tags: [sandboxes]
+      operationId: getSandboxLineage
+      responses:
+        '200':
+          description: Derived provenance graph for the sandbox.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/sandboxes/{id}/operations:
+    parameters:
+      - $ref: '#/components/parameters/SandboxID'
+    get:
+      tags: [sandboxes]
+      operationId: getSandboxOperations
+      responses:
+        '200':
+          description: Operations targeting the sandbox.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/sandboxes/{id}/snapshots:
+    parameters:
+      - $ref: '#/components/parameters/SandboxID'
+    get:
+      tags: [sandboxes]
+      operationId: getSandboxSnapshots
+      responses:
+        '200':
+          description: Snapshots taken from the sandbox.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/snapshots/{id}/restored-by:
+    parameters:
+      - $ref: '#/components/parameters/SnapshotID'
+    get:
+      tags: [snapshots]
+      operationId: getSnapshotRestoredBy
+      responses:
+        '200':
+          description: Sandboxes restored from the snapshot.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/nodes:
+    get:
+      tags: [system]
+      operationId: listNodes
+      responses:
+        '200':
+          description: Node registry entries.
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/nodes/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [system]
+      operationId: getNode
+      responses:
+        '200':
+          description: A node registry entry.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/users:
+    get:
+      tags: [system]
+      operationId: listUsers
+      responses:
+        '200':
+          description: Users.
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/users/{handle}:
+    parameters:
+      - name: handle
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [system]
+      operationId: getUser
+      responses:
+        '200':
+          description: A user.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/users/{handle}/keys:
+    parameters:
+      - name: handle
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [system]
+      operationId: addUserKey
+      responses:
+        '201':
+          description: The updated user with the new key.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/users/{handle}/keys/{label}:
+    parameters:
+      - name: handle
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: label
+        in: path
+        required: true
+        schema:
+          type: string
+    delete:
+      tags: [system]
+      operationId: deleteUserKey
+      responses:
+        '200':
+          description: The updated user.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/audit:
+    get:
+      tags: [system]
+      operationId: listAudit
+      responses:
+        '200':
+          description: Append-only audit log entries.
+        default:
+          $ref: '#/components/responses/Error'
+components:
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Required for mutating requests. Reusing a key with the same request returns the same accepted operation; reusing it with a different request returns 409.
+      schema:
+        type: string
+        minLength: 1
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 500
+        default: 100
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Integer offset cursor returned as next_cursor.
+      schema:
+        type: string
+    Offset:
+      name: offset
+      in: query
+      required: false
+      description: Integer offset alternative to cursor.
+      schema:
+        type: integer
+        minimum: 0
+    SandboxID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    SnapshotID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    OperationID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    SSHPublicKeyID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    Error:
+      description: API error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    BadRequest:
+      description: Bad request, including malformed JSON, missing idempotency key, or invalid pagination parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Conflict:
+      description: Conflict, including idempotency-key reuse with a different request.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    UnprocessableEntity:
+      description: Syntactically valid request that failed validation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    InternalError:
+      description: Internal server error. Message is masked and does not include internal details.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    NotReady:
+      description: Service is not ready.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    StreamingNotImplemented:
+      description: Streaming API placeholder that is not implemented in this v1 chunk.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+  schemas:
+    CreateSandboxRequest:
+      type: object
+      required: [template]
+      additionalProperties: false
+      properties:
+        template:
+          type: string
+        ttl:
+          type: string
+          description: Optional positive Go-style duration string.
+        on_delete:
+          type: string
+          enum: [delete, hot, cold, archive]
+          description: Disposition to apply when the sandbox is deleted.
+    SnapshotSandboxRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        note:
+          type: string
+    RestoreSnapshotRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        ttl:
+          type: string
+          description: Optional positive Go-style duration string.
+    LeaseSandboxRequest:
+      type: object
+      additionalProperties: false
+      required: [extend]
+      properties:
+        extend:
+          type: string
+          description: Positive Go-style duration to extend the lease by, clamped to max_lease_extension and max TTL.
+    LeaseResponse:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+          description: New expiry after the lease extension.
+    SSHAuthorizeRequest:
+      type: object
+      required: [routing_username, gateway_public_key]
+      additionalProperties: false
+      properties:
+        routing_username:
+          type: string
+          description: SSH username carrying the target sandbox name.
+        public_key_fingerprint:
+          type: string
+          description: SHA256 fingerprint of a live registered public key already proven by the gateway.
+        client_certificate:
+          type: string
+          description: Gateway-auth SSH certificate presented by the client.
+        gateway_public_key:
+          type: string
+          description: One OpenSSH public key generated by the gateway for this session.
+    SSHAuthorizeResponse:
+      type: object
+      required: [sandbox_id, incarnation_id, supervisor_endpoint, supervisor_port, capability, guest_certificate, expires_at]
+      properties:
+        sandbox_id:
+          type: string
+        incarnation_id:
+          type: string
+        supervisor_endpoint:
+          type: string
+        supervisor_port:
+          type: integer
+        capability:
+          type: string
+        guest_certificate:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+    PrepareSandboxSSHRequest:
+      type: object
+      required: [public_key]
+      additionalProperties: false
+      properties:
+        public_key:
+          type: string
+          description: One registered OpenSSH public key to certify for gateway authentication.
+    SSHPreparation:
+      type: object
+      required: [host, port, username, key_fingerprint, client_certificate, expires_at]
+      properties:
+        host:
+          type: string
+        port:
+          type: integer
+        username:
+          type: string
+        key_fingerprint:
+          type: string
+        client_certificate:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+    AddSSHPublicKeyRequest:
+      type: object
+      required: [public_key]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          description: Optional display name. Defaults to the key comment or fingerprint.
+        public_key:
+          type: string
+          description: One OpenSSH public key line.
+    SSHPublicKey:
+      type: object
+      required: [id, name, public_key, fingerprint, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        public_key:
+          type: string
+        fingerprint:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AcceptedResponse:
+      type: object
+      required: [op_id]
+      properties:
+        id:
+          type: string
+          description: Resource ID for create-style operations.
+        sandbox_id:
+          type: string
+        snapshot_id:
+          type: string
+        op_id:
+          type: string
+    Sandbox:
+      type: object
+      required: [id, template_version, status, on_delete, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        template_version:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, snapshotting, stopped, restoring, failed, degraded, gone]
+        node:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        max_expires_at:
+          type: string
+          format: date-time
+        on_delete:
+          type: string
+          enum: [delete, hot, cold, archive]
+        error:
+          $ref: '#/components/schemas/Failure'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Snapshot:
+      type: object
+      required: [id, sandbox_id, template_version, state, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        sandbox_id:
+          type: string
+        template_version:
+          type: string
+        state:
+          type: string
+          enum: [creating, available, claimed, consumed, failed, unavailable]
+        node:
+          type: string
+        error:
+          $ref: '#/components/schemas/Failure'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Operation:
+      type: object
+      required: [state, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum: [create, stop, start, snapshot, restore, delete_sandbox, delete_snapshot]
+        state:
+          type: string
+          enum: [queued, running, succeeded, failed]
+        result:
+          type: object
+          additionalProperties:
+            type: string
+        error:
+          $ref: '#/components/schemas/Failure'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Failure:
+      type: object
+      required: [reason, message, created_at, updated_at]
+      properties:
+        reason:
+          type: string
+        message:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Template:
+      type: object
+      required: [name, version, vcpu, memory_mb, disk_gb, clock_policy]
+      properties:
+        name:
+          type: string
+        version:
+          type: string
+        vcpu:
+          type: integer
+        memory_mb:
+          type: integer
+        disk_gb:
+          type: integer
+        clock_policy:
+          type: string
+          enum: [frozen, realtime]
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorBody'
+    ErrorBody:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum:
+            - missing_idempotency_key
+            - unauthorized
+            - invalid_json
+            - request_too_large
+            - missing_template
+            - template_not_found
+            - ambiguous_template
+            - invalid_limit
+            - invalid_cursor
+            - invalid_offset
+            - invalid_ttl
+            - invalid_on_delete
+            - ambiguous_pagination
+            - invalid_port
+            - invalid_ssh_authorization
+            - invalid_ssh_public_key
+            - not_found
+            - conflict
+            - not_ready
+            - streaming_not_implemented
+            - internal_error
+            - invalid_ssh_key
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties:
+            type: string
+    SandboxList:
+      allOf:
+        - $ref: '#/components/schemas/ListEnvelope'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Sandbox'
+    SnapshotList:
+      allOf:
+        - $ref: '#/components/schemas/ListEnvelope'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Snapshot'
+    TemplateList:
+      allOf:
+        - $ref: '#/components/schemas/ListEnvelope'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Template'
+    OperationList:
+      allOf:
+        - $ref: '#/components/schemas/ListEnvelope'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Operation'
+    SSHPublicKeyList:
+      allOf:
+        - $ref: '#/components/schemas/ListEnvelope'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/SSHPublicKey'
+    ListEnvelope:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items: {}
+        next_cursor:
+          type: string
+        total:
+          type: integer
+          minimum: 0

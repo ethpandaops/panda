@@ -26,6 +26,7 @@ import (
 	cbtmodule "github.com/ethpandaops/panda/modules/cbt"
 	chartkitmodule "github.com/ethpandaops/panda/modules/chartkit"
 	clickhousemodule "github.com/ethpandaops/panda/modules/clickhouse"
+	computemodule "github.com/ethpandaops/panda/modules/compute"
 	doramodule "github.com/ethpandaops/panda/modules/dora"
 	ethnodemodule "github.com/ethpandaops/panda/modules/ethnode"
 	evmmodule "github.com/ethpandaops/panda/modules/evm"
@@ -222,6 +223,7 @@ func (a *App) registerModules() *module.Registry {
 	reg.Add(cbtmodule.New())
 	reg.Add(chartkitmodule.New())
 	reg.Add(clickhousemodule.New())
+	reg.Add(computemodule.New())
 	reg.Add(datasetsmodule.New())
 	reg.Add(doramodule.New())
 	reg.Add(ethnodemodule.New())
@@ -572,6 +574,7 @@ func (a *App) discoveredDatasources(proxyClient proxy.Client) []types.Datasource
 	discovered = append(discovered, proxyClient.LokiDatasourceInfo()...)
 	discovered = append(discovered, proxyClient.EthNodeDatasourceInfo()...)
 	discovered = append(discovered, proxyClient.BenchmarkoorDatasourceInfo()...)
+	discovered = append(discovered, proxyClient.ComputeDatasourceInfo()...)
 
 	return discovered
 }

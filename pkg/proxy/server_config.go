@@ -39,6 +39,9 @@ type ServerConfig struct {
 	// Benchmarkoor holds benchmarkoor API instance configurations.
 	Benchmarkoor []BenchmarkoorInstanceConfig `yaml:"benchmarkoor,omitempty"`
 
+	// Compute holds compute API instance configurations.
+	Compute []ComputeInstanceConfig `yaml:"compute,omitempty"`
+
 	// RateLimiting holds rate limiting configuration.
 	RateLimiting RateLimitConfig `yaml:"rate_limiting"`
 
@@ -152,6 +155,7 @@ var (
 	_ DatasourceConfig = LokiInstanceConfig{}
 	_ DatasourceConfig = EthNodeInstanceConfig{}
 	_ DatasourceConfig = BenchmarkoorInstanceConfig{}
+	_ DatasourceConfig = ComputeInstanceConfig{}
 )
 
 // ClickHouseClusterConfig holds ClickHouse cluster configuration.
@@ -271,6 +275,19 @@ type BenchmarkoorInstanceConfig struct {
 	// UIURL is the public benchmarkoor web UI, used to build deep links to
 	// runs and suites. The UI host is not derivable from the API URL.
 	UIURL string `yaml:"ui_url,omitempty"`
+}
+
+// ComputeInstanceConfig holds compute API instance configuration. The compute
+// backend manages ephemeral sandboxes and snapshots; Token is the shared
+// service bearer token injected as the Authorization header, and the proxy
+// forwards the verified end-user subject so the backend can authorize per user.
+type ComputeInstanceConfig struct {
+	BaseDatasourceConfig `yaml:",inline"`
+	URL                  string `yaml:"url"`
+	Token                string `yaml:"token,omitempty"`
+	// ForwardedSubjectHeader overrides the header used to forward the verified
+	// end-user subject upstream. Defaults to X-Authentik-Sub.
+	ForwardedSubjectHeader string `yaml:"forwarded_subject_header,omitempty"`
 }
 
 // RateLimitConfig holds rate limiting configuration.
@@ -520,8 +537,8 @@ func (c *ServerConfig) Validate() error {
 	}
 
 	// Validate at least one datasource is configured.
-	if len(c.ClickHouse) == 0 && len(c.Prometheus) == 0 && len(c.Loki) == 0 && c.EthNode == nil && len(c.Benchmarkoor) == 0 {
-		return fmt.Errorf("at least one datasource (clickhouse, prometheus, loki, ethnode, or benchmarkoor) must be configured")
+	if len(c.ClickHouse) == 0 && len(c.Prometheus) == 0 && len(c.Loki) == 0 && c.EthNode == nil && len(c.Benchmarkoor) == 0 && len(c.Compute) == 0 {
+		return fmt.Errorf("at least one datasource (clickhouse, prometheus, loki, ethnode, benchmarkoor, or compute) must be configured")
 	}
 
 	// Validate ClickHouse configs.
@@ -612,6 +629,17 @@ func (c *ServerConfig) Validate() error {
 		}
 	}
 
+	// Validate compute configs.
+	for i, comp := range c.Compute {
+		if comp.Name == "" {
+			return fmt.Errorf("compute[%d].name is required", i)
+		}
+
+		if comp.URL == "" {
+			return fmt.Errorf("compute[%d].url is required", i)
+		}
+	}
+
 	// Validate Loki configs.
 	for i, loki := range c.Loki {
 		if loki.Name == "" {
@@ -658,6 +686,27 @@ func (c *ServerConfig) ToBenchmarkoorHandlerConfigs() []handlers.BenchmarkoorCon
 			Description: bench.Description,
 			URL:         bench.URL,
 			APIKey:      bench.APIKey,
+		})
+	}
+
+	return configs
+}
+
+// ToComputeHandlerConfigs converts the compute instance configs to handler
+// configs.
+func (c *ServerConfig) ToComputeHandlerConfigs() []handlers.ComputeConfig {
+	if len(c.Compute) == 0 {
+		return nil
+	}
+
+	configs := make([]handlers.ComputeConfig, 0, len(c.Compute))
+	for _, comp := range c.Compute {
+		configs = append(configs, handlers.ComputeConfig{
+			Name:                   comp.Name,
+			Description:            comp.Description,
+			URL:                    comp.URL,
+			Token:                  comp.Token,
+			ForwardedSubjectHeader: comp.ForwardedSubjectHeader,
 		})
 	}
 

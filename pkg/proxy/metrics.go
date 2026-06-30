@@ -270,6 +270,8 @@ func extractDatasourceType(path string) string {
 		return "ethnode"
 	case "benchmarkoor":
 		return "benchmarkoor"
+	case "compute":
+		return "compute"
 	case "github":
 		return "github"
 	case "datasources":

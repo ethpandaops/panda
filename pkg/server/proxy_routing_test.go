@@ -274,6 +274,9 @@ func (c *routingProxyClient) LokiDatasourceInfo() []types.DatasourceInfo {
 func (c *routingProxyClient) BenchmarkoorDatasourceInfo() []types.DatasourceInfo {
 	return append([]types.DatasourceInfo(nil), c.benchmarkoor...)
 }
+func (c *routingProxyClient) ComputeDatasourceInfo() []types.DatasourceInfo {
+	return nil
+}
 func (c *routingProxyClient) EthNodeAvailable() bool { return false }
 func (c *routingProxyClient) EthNodeDatasourceInfo() []types.DatasourceInfo {
 	return nil

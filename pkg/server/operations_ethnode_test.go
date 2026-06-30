@@ -133,6 +133,10 @@ func (p *ethNodeOperationProxy) LokiDatasourceInfo() []types.DatasourceInfo {
 func (p *ethNodeOperationProxy) BenchmarkoorDatasourceInfo() []types.DatasourceInfo {
 	return nil
 }
+
+func (p *ethNodeOperationProxy) ComputeDatasourceInfo() []types.DatasourceInfo {
+	return nil
+}
 func (p *ethNodeOperationProxy) EthNodeAvailable() bool { return p.ethnodeAvailable }
 func (p *ethNodeOperationProxy) EthNodeDatasourceInfo() []types.DatasourceInfo {
 	if !p.ethnodeAvailable {
