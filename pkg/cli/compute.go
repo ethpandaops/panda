@@ -24,6 +24,7 @@ var (
 	computeLimit       int
 	computeOffset      int
 	computeCursor      string
+	computeFilters     []string
 )
 
 var computeCmd = &cobra.Command{
@@ -78,6 +79,8 @@ func init() {
 		cmd.Flags().IntVar(&computeLimit, "limit", 0, "Maximum items to return")
 		cmd.Flags().IntVar(&computeOffset, "offset", 0, "Items to skip")
 		cmd.Flags().StringVar(&computeCursor, "cursor", "", "Pagination cursor (next_cursor from a prior page)")
+		cmd.Flags().StringArrayVar(&computeFilters, "filter", nil,
+			"Filter results, key<op>value where op is =, !=, ~=, >, <, >=, <= (e.g. state=running); repeatable")
 	}
 
 	computeSandboxesCreateCmd.Flags().StringVar(&computeTemplate, "template", "", "Template to launch (required)")
@@ -581,6 +584,10 @@ func computeListArgs() map[string]any {
 
 	setIfNotEmpty(args, "cursor", computeCursor)
 
+	if len(computeFilters) > 0 {
+		args["filter"] = computeFilters
+	}
+
 	return args
 }
 
@@ -598,12 +605,15 @@ func computeMutationArgs(id string) map[string]any {
 	return args
 }
 
-// runComputeRaw runs a compute operation and prints the raw JSON response.
+// runComputeRaw runs a compute operation and renders the response. Output is
+// human-readable by default (a table for list results, key-value pairs for a
+// single object) and raw JSON when --output json is set. List results honour
+// --filter, which the server applies before pagination.
 func runComputeRaw(cmd *cobra.Command, operationID string, args map[string]any) error {
 	response, err := runServerOperationRaw(cmd, operationID, args)
 	if err != nil {
 		return err
 	}
 
-	return printJSONBytes(response.Body)
+	return renderComputeRaw(operationID, response.Body)
 }

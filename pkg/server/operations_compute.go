@@ -101,6 +101,7 @@ func (s *service) handleComputeOperation(operationID string, w http.ResponseWrit
 				Limit:  computeLimit(args),
 				Cursor: computeCursor(args),
 				Offset: computeOffset(args),
+				Filter: computeFilter(args),
 			})
 		})
 	case "compute.get_sandbox":
@@ -157,6 +158,7 @@ func (s *service) handleComputeOperation(operationID string, w http.ResponseWrit
 				Limit:  computeLimit(args),
 				Cursor: computeCursor(args),
 				Offset: computeOffset(args),
+				Filter: computeFilter(args),
 			})
 		})
 	case "compute.get_snapshot":
@@ -186,6 +188,7 @@ func (s *service) handleComputeOperation(operationID string, w http.ResponseWrit
 				Limit:  computeLimit(args),
 				Cursor: computeCursor(args),
 				Offset: computeOffset(args),
+				Filter: computeFilter(args),
 			})
 		})
 	case "compute.get_template":
@@ -198,6 +201,7 @@ func (s *service) handleComputeOperation(operationID string, w http.ResponseWrit
 				Limit:  computeLimit(args),
 				Cursor: computeCursor(args),
 				Offset: computeOffset(args),
+				Filter: computeFilter(args),
 			})
 		})
 	case "compute.get_operation":
@@ -212,6 +216,7 @@ func (s *service) handleComputeOperation(operationID string, w http.ResponseWrit
 				Limit:  computeLimit(args),
 				Cursor: computeCursor(args),
 				Offset: computeOffset(args),
+				Filter: computeFilter(args),
 			})
 		})
 	case "compute.add_ssh_key":
@@ -519,6 +524,29 @@ func computeCursor(args map[string]any) *compute.Cursor {
 	}
 
 	return nil
+}
+
+// computeFilter coerces the repeated filter argument into the generated client's
+// query parameter. The compute backend applies the filters before pagination.
+func computeFilter(args map[string]any) *compute.Filter {
+	raw := optionalSliceArg(args, "filter")
+	if len(raw) == 0 {
+		return nil
+	}
+
+	filters := make(compute.Filter, 0, len(raw))
+
+	for _, item := range raw {
+		if value, ok := item.(string); ok && value != "" {
+			filters = append(filters, value)
+		}
+	}
+
+	if len(filters) == 0 {
+		return nil
+	}
+
+	return &filters
 }
 
 func computeIdem(args map[string]any) compute.IdempotencyKey {

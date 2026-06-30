@@ -23,6 +23,7 @@ paths:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Filter'
       responses:
         '200':
           description: SSH public keys registered by the authenticated subject.
@@ -75,6 +76,7 @@ paths:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Filter'
       responses:
         '200':
           description: Sandboxes in stable ID order.
@@ -299,6 +301,7 @@ paths:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Filter'
       responses:
         '200':
           description: Snapshots in stable ID order.
@@ -370,6 +373,7 @@ paths:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Filter'
       responses:
         '200':
           description: Templates in stable name/version order.
@@ -413,6 +417,7 @@ paths:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Filter'
       responses:
         '200':
           description: Operations in stable created_at/id order.
@@ -624,45 +629,6 @@ paths:
           $ref: '#/components/responses/NotFound'
         default:
           $ref: '#/components/responses/Error'
-  /v1/users/{handle}/keys:
-    parameters:
-      - name: handle
-        in: path
-        required: true
-        schema:
-          type: string
-    post:
-      tags: [system]
-      operationId: addUserKey
-      responses:
-        '201':
-          description: The updated user with the new key.
-        '404':
-          $ref: '#/components/responses/NotFound'
-        default:
-          $ref: '#/components/responses/Error'
-  /v1/users/{handle}/keys/{label}:
-    parameters:
-      - name: handle
-        in: path
-        required: true
-        schema:
-          type: string
-      - name: label
-        in: path
-        required: true
-        schema:
-          type: string
-    delete:
-      tags: [system]
-      operationId: deleteUserKey
-      responses:
-        '200':
-          description: The updated user.
-        '404':
-          $ref: '#/components/responses/NotFound'
-        default:
-          $ref: '#/components/responses/Error'
   /v1/audit:
     get:
       tags: [system]
@@ -672,7 +638,15 @@ paths:
           description: Append-only audit log entries.
         default:
           $ref: '#/components/responses/Error'
+security:
+  - bearerAuth: []
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Authentik-issued OIDC access token (JWT). Users reach the API via panda-proxy forwarding their token; machine callers use a client_credentials token.
   parameters:
     IdempotencyKey:
       name: Idempotency-Key
@@ -698,6 +672,28 @@ components:
       description: Integer offset cursor returned as next_cursor.
       schema:
         type: string
+    Filter:
+      name: filter
+      in: query
+      required: false
+      description: >-
+        Filter results by field, formatted as key<op>value where op is one of
+        =, !=, ~= (contains), >, <, >=, <=. Keys are response field names and may
+        be dotted to reach nested fields (e.g. error.reason). Comparison is
+        numeric when both sides are numbers and case-insensitive otherwise.
+        Repeatable; all filters must match. Applied before pagination.
+      explode: true
+      schema:
+        type: array
+        items:
+          type: string
+      examples:
+        status:
+          summary: Only running items
+          value: ["state=running"]
+        combined:
+          summary: Multiple filters (AND)
+          value: ["state=running", "template~=ubuntu"]
     Offset:
       name: offset
       in: query
@@ -958,126 +954,246 @@ components:
           type: string
         op_id:
           type: string
-    Sandbox:
+    LiveMetrics:
       type: object
-      required: [id, template_version, status, on_delete, created_at, updated_at]
+      required: [cpuPct, memUsedGiB, memTotalGiB, diskUsedGiB, diskTotalGiB]
       properties:
-        id:
+        cpuPct:
+          type: number
+        memUsedGiB:
+          type: number
+        memTotalGiB:
+          type: number
+        diskUsedGiB:
+          type: number
+        diskTotalGiB:
+          type: number
+    GuestNetwork:
+      type: object
+      required: [guestIp, node, uplinkCidr, tapDevice, dns, nftables, jailer, egressAllow, egressDeny]
+      properties:
+        guestIp:
           type: string
-        template_version:
-          type: string
-        status:
-          type: string
-          enum: [pending, running, snapshotting, stopped, restoring, failed, degraded, gone]
+          nullable: true
         node:
           type: string
-        expires_at:
+          nullable: true
+        uplinkCidr:
           type: string
-          format: date-time
-        max_expires_at:
+        tapDevice:
           type: string
-          format: date-time
-        on_delete:
+        dns:
           type: string
-          enum: [delete, hot, cold, archive]
-        error:
-          $ref: '#/components/schemas/Failure'
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-    Snapshot:
+        nftables:
+          type: boolean
+        jailer:
+          type: boolean
+        egressAllow:
+          type: array
+          items:
+            type: string
+        egressDeny:
+          type: array
+          items:
+            type: string
+    Sandbox:
       type: object
-      required: [id, sandbox_id, template_version, state, tier, created_at, updated_at]
+      required: [id, name, state, template, ver, vcpu, mem, createdAt, onDelete, snap, tier, frozen, restored, clockPolicy, workload, tags, procs, idempotencyKey, err, metrics, network]
       properties:
         id:
           type: string
-        sandbox_id:
+        name:
           type: string
-        template_version:
+        state:
+          type: string
+          enum: [pending, running, snapshotting, stopped, restoring, failed, degraded, gone]
+        template:
+          type: string
+        ver:
+          type: string
+        node:
+          type: string
+          nullable: true
+        vcpu:
+          type: integer
+        mem:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        maxExpiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        onDelete:
+          type: string
+          enum: [delete, hot, cold, archive]
+        snap:
+          type: integer
+        tier:
+          type: string
+        frozen:
+          type: boolean
+        restored:
+          type: boolean
+        leasedBy:
+          type: string
+          nullable: true
+        leaseRenews:
+          type: string
+          nullable: true
+        ip:
+          type: string
+          nullable: true
+        clock:
+          type: string
+          nullable: true
+        clockPolicy:
+          type: string
+        workload:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        procs:
+          type: array
+          items:
+            type: string
+        idempotencyKey:
+          type: string
+        sourceSnapshot:
+          type: string
+          nullable: true
+        err:
+          type: string
+        metrics:
+          $ref: '#/components/schemas/LiveMetrics'
+        network:
+          $ref: '#/components/schemas/GuestNetwork'
+    Snapshot:
+      type: object
+      required: [id, sandbox, sandboxId, template, ver, size, sizeGiB, tier, restores, createdAt, frozenAt, frozen, owner, tags, description, digest, state]
+      properties:
+        id:
+          type: string
+        sandbox:
+          type: string
+        sandboxId:
+          type: string
+        template:
+          type: string
+        ver:
+          type: string
+        size:
+          type: string
+        sizeGiB:
+          type: number
+        tier:
+          type: string
+        node:
+          type: string
+          nullable: true
+        archiveState:
+          type: string
+        archiveRef:
+          type: string
+        restores:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        frozenAt:
+          type: string
+        clock:
+          type: string
+          nullable: true
+        frozen:
+          type: boolean
+        owner:
+          type: string
+        parent:
+          type: string
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+        description:
+          type: string
+        digest:
           type: string
         state:
           type: string
           enum: [creating, available, claimed, consumed, failed, unavailable]
-        tier:
-          type: string
-          enum: [hot, cold, archive]
-        node:
-          type: string
-        archive_state:
-          type: string
-          enum: [archiving, archived, failed]
-        archive_ref:
-          type: string
-          description: Stored archive completion marker object key when archive_state is archived.
-        expires_at:
-          type: string
-          format: date-time
-        error:
-          $ref: '#/components/schemas/Failure'
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
     Operation:
       type: object
-      required: [state, created_at, updated_at]
+      required: [id, type, target, state, startedAt, actor, idempotencyKey, err]
       properties:
         id:
           type: string
-        kind:
+        type:
           type: string
-          enum: [create, stop, start, snapshot, restore, delete_sandbox, delete_snapshot]
+        target:
+          type: string
+        targetId:
+          type: string
+          nullable: true
         state:
           type: string
           enum: [queued, running, succeeded, failed]
-        result:
-          type: object
-          additionalProperties:
-            type: string
-        error:
-          $ref: '#/components/schemas/Failure'
-        created_at:
+        startedAt:
           type: string
           format: date-time
-        updated_at:
+        durationMs:
+          type: integer
+          format: int64
+          nullable: true
+        actor:
           type: string
-          format: date-time
-    Failure:
-      type: object
-      required: [reason, message, created_at, updated_at]
-      properties:
-        reason:
+        idempotencyKey:
           type: string
-        message:
+        err:
           type: string
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
     Template:
       type: object
-      required: [name, version, vcpu, memory_mb, disk_gb, clock_policy]
+      required: [name, ver, clock, clockPolicy, sizing, vcpuOptions, tags, rootfs, kernel, artifact, pinned]
       properties:
         name:
           type: string
-        version:
+        ver:
           type: string
-        vcpu:
-          type: integer
-        memory_mb:
-          type: integer
-        disk_gb:
-          type: integer
-        clock_policy:
+        clock:
+          type: string
+        clockPolicy:
           type: string
           enum: [frozen, realtime]
+        sizing:
+          type: string
+        vcpuOptions:
+          type: array
+          items:
+            type: integer
+        tags:
+          type: array
+          items:
+            type: string
+        rootfs:
+          type: string
+        kernel:
+          type: string
+        artifact:
+          type: string
+        pinned:
+          type: string
     ErrorEnvelope:
       type: object
       required: [error]
@@ -1101,6 +1217,7 @@ components:
             - invalid_limit
             - invalid_cursor
             - invalid_offset
+            - invalid_filter
             - invalid_ttl
             - invalid_on_delete
             - ambiguous_pagination
