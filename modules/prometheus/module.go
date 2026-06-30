@@ -172,6 +172,18 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 					},
 					Returns: "Dict with time series data",
 				},
+				"restarts": {
+					Signature:   "prometheus.restarts(instance_name: str, match: str = \"\", start: str = None, end: str = None, step: str = \"60s\") -> list[dict]",
+					Description: "Detect process/container restarts from process_start_time_seconds (its value IS the start time, so each new value is a restart; the baseline already running at window open is dropped). Returns event records ready for chartkit: markers=ck.events(prometheus.restarts(...), style=\"dot\"). Pass the same start/end as the chart you overlay them on.",
+					Parameters: map[string]string{
+						"instance_name": "Datasource name",
+						"match":         "PromQL label-selector body without braces, e.g. 'job=~\"ethrex.*\"' (empty = all processes)",
+						"start":         "Start time (default: now-1h) — match your chart window",
+						"end":           "End time (default: now)",
+						"step":          "Resolution step (default '60s'); restarts faster than the step may be missed",
+					},
+					Returns: "List of {'t' (unix seconds), 'label', 'kind': 'restart', 'series'} sorted by time",
+				},
 				"get_labels": {
 					Signature:   "prometheus.get_labels(instance_name: str, start: str = None, end: str = None) -> list[str]",
 					Description: "Get all label names",

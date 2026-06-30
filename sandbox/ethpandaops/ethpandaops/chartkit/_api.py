@@ -67,6 +67,47 @@ def hline(value,label="",color="deadline"): return {"axis":"y","value":value,"la
 def vline(value,label="",color="deadline",dash=True): return {"axis":"x","value":value,"label":label,"color":color,"dash":dash}
 def _srcs(source,sources): return sources or ([source] if source else [])
 
+# events: turn a list of timestamped occurrences (restarts, deploys, fork boundaries, outages)
+# into markers for a time-series chart's markers=[...]. The capture is datasource-specific and
+# lives elsewhere (e.g. prometheus.restarts()); this is the datasource-agnostic render side.
+_EVENT_COLORS={"restart":"#c2410c","deploy":"#2f6db0","fork":"#8e44ad","outage":"#c0392b","incident":"#c0392b","info":"#5b6066"}
+def events(records,*,style="rule",kind=None,color=None):
+    """Markers for time-stamped events. Each record is a dict with `t` (unix seconds or a
+    datetime) and optional `label`, `kind` (restart/deploy/fork/outage/info → colour), and
+    `series` (the chart series a dot attaches to). style="rule" draws a labelled vertical
+    line per event; style="dot" drops a dot on the matching series — cheaper when events are
+    frequent or belong to one series. Pass the result straight to a line/area chart's markers=.
+    The chart converts the timestamps to its own x-axis, so pass real times, not offsets."""
+    if style not in ("rule","dot"):
+        raise ValueError(f"chartkit.events: `style` must be 'rule' or 'dot' — got {style!r}.")
+    out=[]
+    for r in records or []:
+        if not isinstance(r,dict) or "t" not in r:
+            raise ValueError(f"chartkit.events: each record must be a dict with a `t` (unix seconds or datetime) — got {r!r}.")
+        k=r.get("kind") or kind or "info"
+        v=r["t"]; v=pd.to_datetime(v,unit="s") if isinstance(v,(int,float,np.integer,np.floating)) else pd.to_datetime(v)   # unix seconds or a datetime -> always a datetime; the chart maps it onto its x-axis
+        m={"axis":"x","value":v,"color":color or _EVENT_COLORS.get(k,_EVENT_COLORS["info"]),"kind":k,
+           "label":(r.get("label","") if style=="rule" else "")}
+        if style=="dot": m["style"]="dot"; m["series"]=r.get("series")
+        else: m["dash"]=True
+        out.append(m)
+    return out
+
+def _markers_to_x(markers,t0,unit_s):
+    """Convert datetime-valued x-markers (e.g. from events()) to the chart's numeric x-units
+    since t0; numeric x-markers and y-markers pass through unchanged. t0=None means the x-axis
+    is not temporal, where a datetime/event marker is a usage error (raised, not mis-placed)."""
+    out=[]
+    for m in (markers or []):
+        v=m.get("value")
+        if m.get("axis","x")=="x" and isinstance(v,(pd.Timestamp,datetime.datetime,np.datetime64)):
+            if t0 is None:
+                raise ValueError("chartkit: a datetime/event marker needs a time x-axis, but this chart's x is numeric. "
+                                 "Use events()/datetime markers on line()/area() with a datetime x column.")
+            m={**m,"value":(pd.to_datetime(v)-t0).total_seconds()/unit_s}
+        out.append(m)
+    return out
+
 class Chart:
     def __init__(self,a): self._a=a
     def save(self,out): render(out,**self._a); return out
@@ -215,7 +256,7 @@ def bar(items,*,value_label="",unit="",title,subtitle="",chart_title="",sort=Tru
     return _panel(title=title,subtitle=subtitle,pi=pi,ph=ph,stats=stats,source=source,sources=sources,
         notes=notes,window=window,chart_title=chart_title,theme=theme,legend=legend,scope=scope)
 
-def area(df,*,x,y,unit="",y_label=None,color=GREEN,title,subtitle="",chart_title="",
+def area(df,*,x,y,unit="",y_label=None,color=GREEN,markers=None,title,subtitle="",chart_title="",
          source=None,sources=None,notes="",stats=None,theme=None,scope=_REQ,window=None):
     """Filled time/numeric series (single)."""
     if not len(df): raise ValueError("chartkit.area: dataframe is empty — nothing to plot.")
@@ -224,12 +265,13 @@ def area(df,*,x,y,unit="",y_label=None,color=GREEN,title,subtitle="",chart_title
         tt=pd.to_datetime(xv); t0=tt.min(); xs=[(t-t0).total_seconds()/3600 for t in tt]; xmax=max(xs)
         xticks=nice_ticks(0,xmax,6); xfmt=lambda h:(t0+pd.Timedelta(hours=h)).strftime("%-d %b %H:%M"); xtitle="Time (UTC)"
         window=window or f"{t0:%-d %b %H:%M} → {(t0+pd.Timedelta(hours=xmax)):%-d %b %H:%M} UTC"
-        xdom=(0,xmax)
+        xdom=(0,xmax); markers=_markers_to_x(markers,t0,3600)   # event timestamps -> hours since t0
     else:
         xs=list(xv); xdom=(min(xs),max(xs)); xticks=nice_ticks(min(xs),max(xs),6); xfmt=_fmt(""); xtitle=x
+        markers=_markers_to_x(markers,None,3600)        # numeric x: reject datetime/event markers loudly
     yv=list(_finite(df[y],"area")); yt=nice_ticks(0,max(yv),5)
-    pi,ph=plot(kind="area",series=[{"pts":list(zip(xs,yv)),"color":color}],xdom=xdom,ydom=(0,yt[-1]),
-        xticks=xticks,yticks=yt,xfmt=xfmt,yfmt=_fmt(unit),xtitle=xtitle,ytitle=_atitle(y_label or y,unit))
+    pi,ph=plot(kind="area",series=[{"pts":list(zip(xs,yv)),"color":color,"name":y_label or y}],xdom=xdom,ydom=(0,yt[-1]),
+        xticks=xticks,yticks=yt,xfmt=xfmt,yfmt=_fmt(unit),xtitle=xtitle,ytitle=_atitle(y_label or y,unit),markers=(markers or []))
     return _panel(title=title,subtitle=subtitle,pi=pi,ph=ph,stats=stats,source=source,sources=sources,
         notes=notes,window=window,chart_title=chart_title,theme=theme,scope=scope)
 
@@ -274,14 +316,16 @@ def line(df,*,x,left,right=None,y_scale="linear",y_max=None,markers=None,title,s
         tt=pd.to_datetime(xv); t0=tt.min(); xs=[(t-t0).total_seconds()/60 for t in tt]; xmax=math.ceil(max(xs))
         xticks=nice_ticks(0,xmax,6); xfmt=lambda m:(t0+pd.Timedelta(minutes=m)).strftime("%H:%M"); xtitle="Time (UTC)"
         window=window or f"{t0:%-d %b %Y %H:%M} → {(t0+pd.Timedelta(minutes=max(xs))):%H:%M} UTC"
+        markers=_markers_to_x(markers,t0,60)            # event timestamps -> minutes since t0
     else:
         xs=list(xv); xmax=max(xs); xticks=nice_ticks(min(xs),xmax,6); xfmt=_fmt(""); xtitle=x
+        markers=_markers_to_x(markers,None,60)          # numeric x: reject datetime/event markers loudly
     # each series spec is (label, column, unit[, color]) — the optional 4th element overrides the colour
     lcol=lambda i: left[i][3] if len(left[i])>3 else PALETTE[i%len(PALETTE)]   # cycle, don't index past the palette
     def dom(cols): hi=max(df[sp[1]].max() for sp in cols); tk=nice_ticks(0,hi,5); return (0,tk[-1]),tk
     ldom,lt=_ax([v for sp in left for v in df[sp[1]]],y_scale,5); lunit=left[0][2]
     if y_max is not None: lt=nice_ticks(0,y_max,5); ldom=(0,y_max)   # force range / leave headroom
-    lseries=[{"pts":list(zip(xs,list(df[left[i][1]]))),"color":lcol(i),"label":(left[i][0] if len(left)==1 else None)} for i in range(len(left))]
+    lseries=[{"pts":list(zip(xs,list(df[left[i][1]]))),"color":lcol(i),"name":left[i][0],"label":(left[i][0] if len(left)==1 else None)} for i in range(len(left))]
     legend=None
     if right:
         rcol=lambda i: right[i][3] if len(right[i])>3 else ACC

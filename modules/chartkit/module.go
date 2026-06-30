@@ -71,6 +71,24 @@ ck.bar([(name, count) for name, count in rows], value_label="Blocks proposed",
     scope="mainnet",                                   # required: what the chart is about (usually the network)
 ).save("entities.png")`,
 				},
+				{
+					Name:        "Time series with restart events",
+					Description: "Overlay process/container restarts on a Prometheus line chart with markers=ck.events()",
+					Query: `from ethpandaops import chartkit as ck, prometheus
+from ethpandaops.chartkit.sources.datasources.prometheus import prometheus as src
+
+# capture restarts (reads process_start_time_seconds; its value IS the start time)
+restarts = prometheus.restarts("devnet", match='job=~"ethrex.*"',
+    start="2026-06-29T15:00:00Z", end="2026-06-30T13:00:00Z")  # -> [{t, label, kind, series}, ...]
+
+ck.line(df, x="time", left=[("prysm-ethrex-1", "slots_behind", "slots")],
+    markers=ck.events(restarts, style="dot"),    # a dot on the series at each restart (style="rule" for vertical lines)
+    title="Prysm stalled until the EL was restarted",
+    chart_title="Slots behind chain head",
+    source=src("beacon_head_slot"),              # required: a source-library object
+    scope="devnet",                              # required: what the chart is about
+).save("restarts.png")`,
+				},
 			},
 		},
 	}
@@ -93,6 +111,7 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 				"custom":    {Signature: `custom(*, draw, xdom, ydom, xticks, yticks, x_label="", y_label="", title, chart_title, source, scope) -> Chart`, Description: "Escape hatch: draw bespoke marks via the Draw context (c.line/c.rect/c.dot/...) when no built-in type fits. source= and scope= are required"},
 				"hline":     {Signature: `hline(value, label="", color="deadline") -> dict`, Description: "A horizontal reference line for markers=[...]"},
 				"vline":     {Signature: `vline(value, label="", color="deadline", dash=True) -> dict`, Description: "A vertical reference line for markers=[...]"},
+				"events":    {Signature: `events(records, *, style="rule", kind=None, color=None) -> list[dict]`, Description: "Turn timestamped events into markers=[...] for line/area. Each record is {t (unix seconds or datetime), label, kind (restart/deploy/fork/outage/info -> colour), series}. style=\"rule\" draws a labelled vertical line per event; style=\"dot\" drops a dot on the matching series (cheaper when events are frequent or per-series). Capture restarts with prometheus.restarts(); pass real timestamps (a time-series chart maps them onto its x-axis)."},
 				"guide":     {Signature: `guide() -> str`, Description: "The full chartkit usage rules an agent must follow (titles, units, attribution, no relative time, ...)"},
 			},
 		},

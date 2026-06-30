@@ -231,6 +231,26 @@ def _heatmap(c):
         o.append(f'<rect x="{x0:.1f}" y="{y0:.1f}" width="{x1-x0-1:.1f}" height="{y1-y0-1:.1f}" rx="1.5" fill="{heatcolor(v/vmax,c.t)}"/>')
     return o
 
+def _match_series(series,name):
+    """Pick the series a point-event attaches to: exact name match (case-insensitive),
+    else the sole series, else None (the caller falls back to a baseline rail)."""
+    if name and series:
+        nl=str(name).strip().lower()
+        for s in series:
+            if str(s.get("name") or s.get("label") or "").strip().lower()==nl: return s
+        return None
+    return series[0] if series and len(series)==1 else None
+def _marker_dot_y(series,name,x):
+    """Data-y of the matched series at data-x (linear interp between samples), or None for a rail."""
+    s=_match_series(series,name); pts=s and s.get("pts")
+    if not pts: return None
+    if x<=pts[0][0]: return pts[0][1]
+    if x>=pts[-1][0]: return pts[-1][1]
+    for i in range(1,len(pts)):
+        (x0,y0),(x1,y1)=pts[i-1],pts[i]
+        if x0<=x<=x1: return y0+(y1-y0)*((x-x0)/(x1-x0) if x1>x0 else 0)
+    return pts[-1][1]
+
 def plot(*, kind=None, xdom, ydom, xticks, yticks, xfmt, yfmt, xtitle, ytitle,
          bars=None, series=None, markers=None, spans=None, cells=None, points=None, ph=None, body=None,
          theme=None, xscale="linear", yscale="linear", rpad=None, lpad=None):
@@ -246,14 +266,22 @@ def plot(*, kind=None, xdom, ydom, xticks, yticks, xfmt, yfmt, xtitle, ytitle,
     c=Draw(kind,sx,sy,yb,PW,PT,H,gl,t,bars,series,spans,cells); c.points=points
     ret=(body or RENDERERS[kind])(c); p+=[x for x in (list(ret or [])+c._buf) if x]   # tolerate a draw returning a list/tuple of c.* results (or None)
     for m in markers or []:
-        col=safe_color(m.get("color",t["accent"])); dash=' stroke-dasharray="5 3"' if m.get("dash") else ''
-        if m["axis"]=="x":
+        raw=m.get("color"); col=safe_color(t.get(raw,raw) if raw else t["accent"])   # resolve a theme token ("accent"/"deadline") or pass a hex through
+        lbl=m.get("label",""); axis=m.get("axis","x")
+        if m.get("style")=="dot" and axis=="x":                       # point event: a dot ON its series, or on a baseline rail when unmatched
+            X=sx(m["value"]); yv=_marker_dot_y(series,m.get("series"),m["value"])
+            Y=sy(yv) if yv is not None else PT+H-6
+            p.append(f'<circle cx="{X:.1f}" cy="{Y:.1f}" r="4.2" fill="{col}" stroke="{safe_color(t["card"])}" stroke-width="1.5"/>')
+            if lbl: p.append(txt(X,Y-9,lbl,11,col,700,anchor="middle"))
+        elif axis=="x":
+            dash=' stroke-dasharray="5 3"' if m.get("dash") else ''
             X=sx(m["value"]); p.append(f'<line x1="{X:.1f}" x2="{X:.1f}" y1="{PT}" y2="{PT+H}" stroke="{col}" stroke-width="2"{dash}/>')
-            if X+8+tw(m["label"],11.5,700)>PW0-2: p.append(txt(X-8,PT+11,m["label"],11.5,col,700,anchor="end"))
-            else: p.append(txt(X+8,PT+11,m["label"],11.5,col,700))
+            if lbl and X+8+tw(lbl,11.5,700)>PW0-2: p.append(txt(X-8,PT+11,lbl,11.5,col,700,anchor="end"))
+            elif lbl: p.append(txt(X+8,PT+11,lbl,11.5,col,700))
         else:
             Y=sy(m["value"]); p.append(f'<line x1="{gl}" x2="{gl+PW}" y1="{Y:.1f}" y2="{Y:.1f}" stroke="{col}" stroke-width="1.8" stroke-dasharray="5 3"/>')
-            ly=Y-7 if Y>PT+18 else Y+16; p.append(txt(gl+PW-4,ly,m["label"],11.5,col,700,anchor="end"))
+            ly=Y-7 if Y>PT+18 else Y+16
+            if lbl: p.append(txt(gl+PW-4,ly,lbl,11.5,col,700,anchor="end"))
     lastx=-1e9
     for tk in xticks:
         X=sx(tk)

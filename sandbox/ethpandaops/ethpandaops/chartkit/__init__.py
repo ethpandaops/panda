@@ -17,7 +17,7 @@ Read the usage rules an agent must follow with `ck.guide()` (the bundled GUIDE.m
 """
 from ._api import (
     histogram, bar, box, line, area, scatter, heatmap, waterfall, custom,
-    hline, vline, Chart, nice_ticks, log_ticks,
+    hline, vline, events, Chart, nice_ticks, log_ticks,
 )
 from ._engine import WARM, DIM, THEMES   # theme presets: pass theme="warm"/"dim" or theme=ck.WARM
 from . import sources, clients
@@ -29,6 +29,6 @@ def guide():
 
 __all__ = [
     "histogram", "bar", "box", "line", "area", "scatter", "heatmap", "waterfall", "custom",
-    "hline", "vline", "Chart", "nice_ticks", "log_ticks", "sources", "clients", "guide",
+    "hline", "vline", "events", "Chart", "nice_ticks", "log_ticks", "sources", "clients", "guide",
     "WARM", "DIM", "THEMES",
 ]

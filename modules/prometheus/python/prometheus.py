@@ -47,6 +47,58 @@ def query_range(
     )
 
 
+def _series_name(metric: dict[str, Any]) -> str:
+    """A short, stable identity for a metric series — most specific label first."""
+    for key in ("instance", "pod", "container", "job"):
+        value = metric.get(key)
+        if value:
+            return str(value)
+    return "process"
+
+
+def restarts(
+    instance_name: str,
+    match: str = "",
+    start: str | None = None,
+    end: str | None = None,
+    step: str = "60s",
+) -> list[dict[str, Any]]:
+    """Detect process restarts from ``process_start_time_seconds``.
+
+    The gauge's *value* is the process start time (unix seconds), so every distinct
+    value over the window is one start; the earliest one (already running when the
+    window opened) is the baseline and is dropped. Returns event records
+    ``[{"t", "label", "kind", "series"}]`` ready for ``ethpandaops.chartkit.events``.
+
+    ``match`` is a PromQL label-selector body without braces, e.g. ``'job=~"ethrex.*"'``.
+    Pass the same ``start``/``end`` as the chart you'll overlay these on.
+    """
+    query_text = "process_start_time_seconds"
+    if match:
+        query_text += "{" + match + "}"
+
+    data = query_range(instance_name, query_text, step=step, start=start, end=end) or {}
+
+    out: list[dict[str, Any]] = []
+    for series in data.get("result", []):
+        samples = series.get("values") or []
+        if not samples:
+            continue
+
+        first_ts = float(samples[0][0])
+        starts = sorted({round(float(value)) for _, value in samples})
+        name = _series_name(series.get("metric", {}))
+
+        for started_at in starts:
+            if started_at >= first_ts:  # a start observed within the window is a restart
+                out.append(
+                    {"t": started_at, "label": f"{name} restart", "kind": "restart", "series": name}
+                )
+
+    out.sort(key=lambda event: event["t"])
+    return out
+
+
 def get_labels(
     instance_name: str,
     start: str | None = None,

@@ -93,6 +93,29 @@ Everything below is what the library *can't* check — still your responsibility
 
 13. **Keep labels to Latin text.** Layout is measured from the chart font (Inter). Latin/Greek/Cyrillic and emoji render best-effort via font fallback; CJK and unusual scripts may not have glyphs and their spacing isn't measured — prefer ASCII names (which is what Ethereum entity/client/table names already are).
 
+## Events & reference lines
+Overlay moments-in-time and thresholds with `markers=` on `line()` / `area()`.
+
+- **Reference lines** — `ck.vline(value, label, color)` (a vertical rule) and `ck.hline(value, label, color)` (a horizontal threshold/deadline). One yardstick clarifies; ten clutter (rule #9).
+- **Events** — `ck.events(records, style=...)` turns timestamped occurrences (restarts, deploys, fork boundaries, outages) into markers. Each record is `{"t": <unix seconds or datetime>, "label", "kind", "series"}`. `kind` (`restart` / `deploy` / `fork` / `outage` / `info`) sets the colour; `series` (optional) is the chart series a dot attaches to.
+  - `style="rule"` (default) — a labelled vertical line per event. Best for a *few global* moments.
+  - `style="dot"` — a dot on the matching series (or a baseline rail if it matches none). Best when events are *frequent or belong to one series* — many rules turn into a picket fence, and a dot can sit on the line it actually happened to.
+- **Capturing is datasource work; rendering is not.** chartkit only draws — the timestamps come from a query. For process/container restarts, `prometheus.restarts(instance, match=..., start=..., end=...)` returns ready records (it reads `process_start_time_seconds`, whose *value is the start time*, so each new value is a restart). Feed them straight in: `markers=ck.events(prometheus.restarts(...), style="dot")`.
+- **Pass real timestamps, not offsets.** A time-series chart maps each event's time onto its own x-axis automatically. Event markers therefore need a datetime x-axis — they raise on a numeric one.
+
+```python
+from ethpandaops import chartkit as ck, prometheus
+from ethpandaops.chartkit.sources.datasources.prometheus import prometheus as src
+
+restarts = prometheus.restarts("devnet", match='job=~"ethrex.*"',
+    start="2026-06-29T15:00:00Z", end="2026-06-30T13:00:00Z")   # -> [{t, label, kind, series}, ...]
+ck.line(df, x="time", left=[("prysm-ethrex-1", "slots_behind", "slots")],
+    markers=ck.events(restarts, style="dot"),    # a dot on the series at each restart
+    title="Prysm stalled until the EL was restarted", chart_title="Slots behind chain head",
+    source=src("beacon_head_slot"), scope="devnet",
+).save("restarts.png")
+```
+
 ## When the library doesn't have your chart
 Most needs are covered. For something genuinely custom (an unusual mark, a second axis
 the high-level call doesn't expose), there's a lower-level escape hatch — but reach for it
