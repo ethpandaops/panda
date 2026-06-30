@@ -84,19 +84,9 @@ func NewDockerBackend(cfg config.SandboxConfig, log logrus.FieldLogger) (*Docker
 		securityConfigFunc: DefaultSecurityConfig,
 	}
 
-	// Create session manager with callbacks for container queries and cleanup.
-	backend.sessionManager = NewSessionManager(
-		cfg.Sessions,
-		log,
-		backend.getSessionContainer,
-		backend.listAllSessionContainers,
-		func(ctx context.Context, containerID string) error {
-			if backend.client == nil {
-				return nil
-			}
-			return backend.forceRemoveContainer(ctx, containerID)
-		},
-	)
+	// Session records live in Docker container labels; the store adapts those
+	// queries (and container teardown) to the backend-agnostic SessionManager.
+	backend.sessionManager = NewSessionManager(cfg.Sessions, log, &dockerSessionStore{b: backend})
 
 	return backend, nil
 }
@@ -370,11 +360,11 @@ func (b *DockerBackend) executeWithNewSession(ctx context.Context, req ExecuteRe
 
 	// Build session object for execution.
 	session := &Session{
-		ID:          sessionID,
-		OwnerID:     req.OwnerID,
-		ContainerID: containerID,
-		CreatedAt:   time.Now(),
-		LastUsed:    time.Now(),
+		ID:        sessionID,
+		OwnerID:   req.OwnerID,
+		Handle:    containerID,
+		CreatedAt: time.Now(),
+		LastUsed:  time.Now(),
 	}
 
 	// Mark session as executing to prevent TTL-based purging during execution.
@@ -436,7 +426,7 @@ func (b *DockerBackend) executeInSession(ctx context.Context, req ExecuteRequest
 	// Populate session info.
 	result.SessionID = session.ID
 	result.SessionTTLRemaining = b.sessionManager.TTLRemaining(session.ID)
-	result.SessionFiles = b.collectSessionFiles(ctx, session.ContainerID)
+	result.SessionFiles = b.collectSessionFiles(ctx, session.Handle)
 
 	return result, nil
 }
@@ -577,7 +567,7 @@ func (b *DockerBackend) execInContainer(
 	log := b.log.WithFields(logrus.Fields{
 		"execution_id": executionID,
 		"session_id":   session.ID,
-		"container_id": session.ContainerID,
+		"container_id": session.Handle,
 	})
 
 	// Create execution context with timeout.
@@ -597,7 +587,7 @@ func (b *DockerBackend) execInContainer(
 		AttachStderr: true,
 	}
 
-	writeResp, err := b.client.ExecCreate(execCtx, session.ContainerID, writeConfig)
+	writeResp, err := b.client.ExecCreate(execCtx, session.Handle, writeConfig)
 	if err != nil {
 		return nil, fmt.Errorf("creating write exec: %w", err)
 	}
@@ -652,7 +642,7 @@ func (b *DockerBackend) execInContainer(
 		Env:          execEnv,
 	}
 
-	execResp, err := b.client.ExecCreate(execCtx, session.ContainerID, execConfig)
+	execResp, err := b.client.ExecCreate(execCtx, session.Handle, execConfig)
 	if err != nil {
 		return nil, fmt.Errorf("creating exec: %w", err)
 	}
@@ -692,7 +682,7 @@ func (b *DockerBackend) execInContainer(
 			Cmd: cleanupCmd,
 		}
 
-		if cleanupResp, err := b.client.ExecCreate(cleanupCtx, session.ContainerID, cleanupConfig); err == nil {
+		if cleanupResp, err := b.client.ExecCreate(cleanupCtx, session.Handle, cleanupConfig); err == nil {
 			_, _ = b.client.ExecStart(cleanupCtx, cleanupResp.ID, client.ExecStartOptions{})
 		}
 
@@ -714,7 +704,7 @@ func (b *DockerBackend) execInContainer(
 		Cmd: cleanupCmd,
 	}
 
-	cleanupResp, err := b.client.ExecCreate(ctx, session.ContainerID, cleanupConfig)
+	cleanupResp, err := b.client.ExecCreate(ctx, session.Handle, cleanupConfig)
 	if err == nil {
 		_, _ = b.client.ExecStart(ctx, cleanupResp.ID, client.ExecStartOptions{})
 	}
@@ -1038,9 +1028,32 @@ func (b *DockerBackend) forceRemoveContainer(ctx context.Context, containerID st
 	return nil
 }
 
+// dockerSessionStore adapts the docker backend's container queries and teardown
+// to the backend-agnostic SessionStore. A session's authoritative state is its
+// container's labels; Handle is the container ID.
+type dockerSessionStore struct {
+	b *DockerBackend
+}
+
+func (s *dockerSessionStore) Get(ctx context.Context, sessionID string) (*Session, error) {
+	return s.b.getSessionContainer(ctx, sessionID)
+}
+
+func (s *dockerSessionStore) List(ctx context.Context) ([]*Session, error) {
+	return s.b.listAllSessionContainers(ctx)
+}
+
+func (s *dockerSessionStore) Remove(ctx context.Context, session *Session) error {
+	if s.b.client == nil {
+		return nil
+	}
+
+	return s.b.forceRemoveContainer(ctx, session.Handle)
+}
+
 // getSessionContainer queries Docker for a session container by session ID.
 // Returns nil if not found.
-func (b *DockerBackend) getSessionContainer(ctx context.Context, sessionID string) (*SessionContainer, error) {
+func (b *DockerBackend) getSessionContainer(ctx context.Context, sessionID string) (*Session, error) {
 	if b.client == nil {
 		return nil, fmt.Errorf("docker client not initialized")
 	}
@@ -1064,16 +1077,16 @@ func (b *DockerBackend) getSessionContainer(ctx context.Context, sessionID strin
 
 	c := list.Items[0]
 
-	return &SessionContainer{
-		ContainerID: c.ID,
-		SessionID:   sessionID,
-		OwnerID:     c.Labels[LabelOwnerID],
-		CreatedAt:   parseContainerCreatedAt(c.Labels, c.Created),
+	return &Session{
+		ID:        sessionID,
+		OwnerID:   c.Labels[LabelOwnerID],
+		Handle:    c.ID,
+		CreatedAt: parseContainerCreatedAt(c.Labels, c.Created),
 	}, nil
 }
 
 // listAllSessionContainers queries Docker for all session containers.
-func (b *DockerBackend) listAllSessionContainers(ctx context.Context) ([]*SessionContainer, error) {
+func (b *DockerBackend) listAllSessionContainers(ctx context.Context) ([]*Session, error) {
 	if b.client == nil {
 		return nil, fmt.Errorf("docker client not initialized")
 	}
@@ -1091,7 +1104,7 @@ func (b *DockerBackend) listAllSessionContainers(ctx context.Context) ([]*Sessio
 		return nil, fmt.Errorf("listing containers: %w", err)
 	}
 
-	result := make([]*SessionContainer, 0, len(list.Items))
+	result := make([]*Session, 0, len(list.Items))
 
 	for _, c := range list.Items {
 		sessionID := c.Labels[LabelSessionID]
@@ -1099,11 +1112,11 @@ func (b *DockerBackend) listAllSessionContainers(ctx context.Context) ([]*Sessio
 			continue
 		}
 
-		result = append(result, &SessionContainer{
-			ContainerID: c.ID,
-			SessionID:   sessionID,
-			OwnerID:     c.Labels[LabelOwnerID],
-			CreatedAt:   parseContainerCreatedAt(c.Labels, c.Created),
+		result = append(result, &Session{
+			ID:        sessionID,
+			OwnerID:   c.Labels[LabelOwnerID],
+			Handle:    c.ID,
+			CreatedAt: parseContainerCreatedAt(c.Labels, c.Created),
 		})
 	}
 
@@ -1134,20 +1147,20 @@ func (b *DockerBackend) ListSessions(ctx context.Context, ownerID string) ([]Ses
 		}
 
 		// Get last used time from session manager.
-		lastUsed := b.sessionManager.GetLastUsed(c.SessionID)
+		lastUsed := b.sessionManager.GetLastUsed(c.ID)
 		if lastUsed.IsZero() {
 			// Session hasn't been accessed since server start, use created time.
 			lastUsed = c.CreatedAt
 		}
 
 		// Collect workspace files.
-		workspaceFiles := b.collectSessionFiles(ctx, c.ContainerID)
+		workspaceFiles := b.collectSessionFiles(ctx, c.Handle)
 
 		sessions = append(sessions, SessionInfo{
-			ID:             c.SessionID,
+			ID:             c.ID,
 			CreatedAt:      c.CreatedAt,
 			LastUsed:       lastUsed,
-			TTLRemaining:   b.sessionManager.TTLRemaining(c.SessionID),
+			TTLRemaining:   b.sessionManager.TTLRemaining(c.ID),
 			WorkspaceFiles: workspaceFiles,
 		})
 	}
