@@ -199,15 +199,13 @@ loki:
 #     #   - ethpandaops
 
 # Compute: ephemeral-sandbox control plane (core ethpandaops members only).
-# The proxy authenticates to the backend with a shared service token and
-# forwards the verified end-user subject (default header X-Authentik-Sub) so the
-# backend can authorize per user. Gate it to core members with allowed_orgs.
+# The proxy verifies the caller's OIDC token, gates access via allowed_orgs, and
+# forwards that same token to the backend, which validates it directly and
+# derives the user from it. No service token is configured here.
 # compute:
 #   - name: production
 #     description: "ethPandaOps compute sandboxes"
 #     url: "${COMPUTE_URL}"
-#     token: "${COMPUTE_TOKEN}"
-#     # forwarded_subject_header: X-Authentik-Sub
 #     allowed_orgs:
 #       - ethpandaops:Core
 

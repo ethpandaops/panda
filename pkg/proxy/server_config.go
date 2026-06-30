@@ -278,16 +278,12 @@ type BenchmarkoorInstanceConfig struct {
 }
 
 // ComputeInstanceConfig holds compute API instance configuration. The compute
-// backend manages ephemeral sandboxes and snapshots; Token is the shared
-// service bearer token injected as the Authorization header, and the proxy
-// forwards the verified end-user subject so the backend can authorize per user.
+// backend manages ephemeral sandboxes and snapshots; it validates the caller's
+// OIDC bearer token directly, so the proxy forwards that token unchanged (after
+// verifying it and enforcing allowed_orgs) — no service token is injected.
 type ComputeInstanceConfig struct {
 	BaseDatasourceConfig `yaml:",inline"`
 	URL                  string `yaml:"url"`
-	Token                string `yaml:"token,omitempty"`
-	// ForwardedSubjectHeader overrides the header used to forward the verified
-	// end-user subject upstream. Defaults to X-Authentik-Sub.
-	ForwardedSubjectHeader string `yaml:"forwarded_subject_header,omitempty"`
 }
 
 // RateLimitConfig holds rate limiting configuration.
@@ -702,11 +698,9 @@ func (c *ServerConfig) ToComputeHandlerConfigs() []handlers.ComputeConfig {
 	configs := make([]handlers.ComputeConfig, 0, len(c.Compute))
 	for _, comp := range c.Compute {
 		configs = append(configs, handlers.ComputeConfig{
-			Name:                   comp.Name,
-			Description:            comp.Description,
-			URL:                    comp.URL,
-			Token:                  comp.Token,
-			ForwardedSubjectHeader: comp.ForwardedSubjectHeader,
+			Name:        comp.Name,
+			Description: comp.Description,
+			URL:         comp.URL,
 		})
 	}
 
