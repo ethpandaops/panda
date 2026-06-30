@@ -125,7 +125,10 @@ func (s *service) handleComputeOperation(operationID string, w http.ResponseWrit
 		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
 			return c.SnapshotSandbox(ctx, id,
 				&compute.SnapshotSandboxParams{IdempotencyKey: computeIdem(args)},
-				compute.SnapshotSandboxJSONRequestBody{Note: computeOptStr(args, "note")},
+				compute.SnapshotSandboxJSONRequestBody{
+					Note: computeOptStr(args, "note"),
+					Ttl:  computeOptStr(args, "ttl"),
+				},
 			)
 		})
 	case "compute.lease_sandbox":
@@ -242,6 +245,10 @@ func (s *service) handleComputeOperation(operationID string, w http.ResponseWrit
 	case "compute.meta":
 		s.computeOp(w, r, func(ctx context.Context, c *compute.Client, _ map[string]any) (*http.Response, error) {
 			return c.Meta(ctx)
+		})
+	case "compute.auth_session":
+		s.computeOp(w, r, func(ctx context.Context, c *compute.Client, _ map[string]any) (*http.Response, error) {
+			return c.AuthSession(ctx)
 		})
 
 	default:

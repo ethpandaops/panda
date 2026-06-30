@@ -6,6 +6,7 @@ info:
 servers:
   - url: /
 tags:
+  - name: auth
   - name: ssh-keys
   - name: ssh
   - name: sandboxes
@@ -484,6 +485,19 @@ paths:
             application/yaml:
               schema:
                 type: string
+  /v1/auth/session:
+    get:
+      tags: [auth]
+      operationId: authSession
+      responses:
+        '200':
+          description: Browser authentication status and identity when OIDC auth is enabled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSession'
+        default:
+          $ref: '#/components/responses/Error'
   /v1/meta:
     get:
       tags: [system]
@@ -766,6 +780,33 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorEnvelope'
   schemas:
+    AuthSession:
+      type: object
+      required: [enabled, authenticated]
+      properties:
+        enabled:
+          type: boolean
+        authenticated:
+          type: boolean
+        user:
+          $ref: '#/components/schemas/WebSessionIdentity'
+    WebSessionIdentity:
+      type: object
+      required: [subject, handle, email, name, avatarUrl]
+      properties:
+        subject:
+          type: string
+        handle:
+          type: string
+        email:
+          type: string
+        name:
+          type: string
+        avatarUrl:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
     CreateSandboxRequest:
       type: object
       required: [template]
@@ -786,6 +827,9 @@ components:
       properties:
         note:
           type: string
+        ttl:
+          type: string
+          description: Optional Go-style duration string. Omit to use lifecycle.default_snapshot_ttl; "0" means no expiry.
     RestoreSnapshotRequest:
       type: object
       additionalProperties: false
@@ -946,7 +990,7 @@ components:
           format: date-time
     Snapshot:
       type: object
-      required: [id, sandbox_id, template_version, state, created_at, updated_at]
+      required: [id, sandbox_id, template_version, state, tier, created_at, updated_at]
       properties:
         id:
           type: string
@@ -957,8 +1001,20 @@ components:
         state:
           type: string
           enum: [creating, available, claimed, consumed, failed, unavailable]
+        tier:
+          type: string
+          enum: [hot, cold, archive]
         node:
           type: string
+        archive_state:
+          type: string
+          enum: [archiving, archived, failed]
+        archive_ref:
+          type: string
+          description: Stored archive completion marker object key when archive_state is archived.
+        expires_at:
+          type: string
+          format: date-time
         error:
           $ref: '#/components/schemas/Failure'
         created_at:

@@ -238,30 +238,72 @@ func (e SandboxStatus) Valid() bool {
 	}
 }
 
+// Defines values for SnapshotArchiveState.
+const (
+	SnapshotArchiveStateArchived  SnapshotArchiveState = "archived"
+	SnapshotArchiveStateArchiving SnapshotArchiveState = "archiving"
+	SnapshotArchiveStateFailed    SnapshotArchiveState = "failed"
+)
+
+// Valid indicates whether the value is a known member of the SnapshotArchiveState enum.
+func (e SnapshotArchiveState) Valid() bool {
+	switch e {
+	case SnapshotArchiveStateArchived:
+		return true
+	case SnapshotArchiveStateArchiving:
+		return true
+	case SnapshotArchiveStateFailed:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SnapshotState.
 const (
-	Available   SnapshotState = "available"
-	Claimed     SnapshotState = "claimed"
-	Consumed    SnapshotState = "consumed"
-	Creating    SnapshotState = "creating"
-	Failed      SnapshotState = "failed"
-	Unavailable SnapshotState = "unavailable"
+	SnapshotStateAvailable   SnapshotState = "available"
+	SnapshotStateClaimed     SnapshotState = "claimed"
+	SnapshotStateConsumed    SnapshotState = "consumed"
+	SnapshotStateCreating    SnapshotState = "creating"
+	SnapshotStateFailed      SnapshotState = "failed"
+	SnapshotStateUnavailable SnapshotState = "unavailable"
 )
 
 // Valid indicates whether the value is a known member of the SnapshotState enum.
 func (e SnapshotState) Valid() bool {
 	switch e {
-	case Available:
+	case SnapshotStateAvailable:
 		return true
-	case Claimed:
+	case SnapshotStateClaimed:
 		return true
-	case Consumed:
+	case SnapshotStateConsumed:
 		return true
-	case Creating:
+	case SnapshotStateCreating:
 		return true
-	case Failed:
+	case SnapshotStateFailed:
 		return true
-	case Unavailable:
+	case SnapshotStateUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SnapshotTier.
+const (
+	Archive SnapshotTier = "archive"
+	Cold    SnapshotTier = "cold"
+	Hot     SnapshotTier = "hot"
+)
+
+// Valid indicates whether the value is a known member of the SnapshotTier enum.
+func (e SnapshotTier) Valid() bool {
+	switch e {
+	case Archive:
+		return true
+	case Cold:
+		return true
+	case Hot:
 		return true
 	default:
 		return false
@@ -302,6 +344,13 @@ type AddSSHPublicKeyRequest struct {
 
 	// PublicKey One OpenSSH public key line.
 	PublicKey string `json:"public_key"`
+}
+
+// AuthSession defines model for AuthSession.
+type AuthSession struct {
+	Authenticated bool                `json:"authenticated"`
+	Enabled       bool                `json:"enabled"`
+	User          *WebSessionIdentity `json:"user,omitempty"`
 }
 
 // CreateSandboxRequest defines model for CreateSandboxRequest.
@@ -478,18 +527,29 @@ type SandboxList struct {
 
 // Snapshot defines model for Snapshot.
 type Snapshot struct {
-	CreatedAt       time.Time     `json:"created_at"`
-	Error           *Failure      `json:"error,omitempty"`
-	Id              string        `json:"id"`
-	Node            *string       `json:"node,omitempty"`
-	SandboxId       string        `json:"sandbox_id"`
-	State           SnapshotState `json:"state"`
-	TemplateVersion string        `json:"template_version"`
-	UpdatedAt       time.Time     `json:"updated_at"`
+	// ArchiveRef Stored archive completion marker object key when archive_state is archived.
+	ArchiveRef      *string               `json:"archive_ref,omitempty"`
+	ArchiveState    *SnapshotArchiveState `json:"archive_state,omitempty"`
+	CreatedAt       time.Time             `json:"created_at"`
+	Error           *Failure              `json:"error,omitempty"`
+	ExpiresAt       *time.Time            `json:"expires_at,omitempty"`
+	Id              string                `json:"id"`
+	Node            *string               `json:"node,omitempty"`
+	SandboxId       string                `json:"sandbox_id"`
+	State           SnapshotState         `json:"state"`
+	TemplateVersion string                `json:"template_version"`
+	Tier            SnapshotTier          `json:"tier"`
+	UpdatedAt       time.Time             `json:"updated_at"`
 }
+
+// SnapshotArchiveState defines model for Snapshot.ArchiveState.
+type SnapshotArchiveState string
 
 // SnapshotState defines model for Snapshot.State.
 type SnapshotState string
+
+// SnapshotTier defines model for Snapshot.Tier.
+type SnapshotTier string
 
 // SnapshotList defines model for SnapshotList.
 type SnapshotList struct {
@@ -501,6 +561,9 @@ type SnapshotList struct {
 // SnapshotSandboxRequest defines model for SnapshotSandboxRequest.
 type SnapshotSandboxRequest struct {
 	Note *string `json:"note,omitempty"`
+
+	// Ttl Optional Go-style duration string. Omit to use lifecycle.default_snapshot_ttl; "0" means no expiry.
+	Ttl *string `json:"ttl,omitempty"`
 }
 
 // Template defines model for Template.
@@ -521,6 +584,16 @@ type TemplateList struct {
 	Items      []Template `json:"items"`
 	NextCursor *string    `json:"next_cursor,omitempty"`
 	Total      int        `json:"total"`
+}
+
+// WebSessionIdentity defines model for WebSessionIdentity.
+type WebSessionIdentity struct {
+	AvatarUrl string     `json:"avatarUrl"`
+	Email     string     `json:"email"`
+	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+	Handle    string     `json:"handle"`
+	Name      string     `json:"name"`
+	Subject   string     `json:"subject"`
 }
 
 // Cursor defines model for Cursor.
@@ -765,6 +838,9 @@ type ClientInterface interface {
 	// ListAudit request
 	ListAudit(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// AuthSession request
+	AuthSession(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// Healthz request
 	Healthz(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -899,6 +975,18 @@ type ClientInterface interface {
 
 func (c *Client) ListAudit(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListAuditRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) AuthSession(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAuthSessionRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -1471,6 +1559,33 @@ func NewListAuditRequest(server string) (*http.Request, error) {
 	}
 
 	operationPath := fmt.Sprintf("/v1/audit")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewAuthSessionRequest generates requests for AuthSession
+func NewAuthSessionRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/auth/session")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -3213,6 +3328,9 @@ type ClientWithResponsesInterface interface {
 	// ListAuditWithResponse request
 	ListAuditWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListAuditResponse, error)
 
+	// AuthSessionWithResponse request
+	AuthSessionWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*AuthSessionResponse, error)
+
 	// HealthzWithResponse request
 	HealthzWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*HealthzResponse, error)
 
@@ -3369,6 +3487,37 @@ func (r ListAuditResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r ListAuditResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type AuthSessionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *AuthSession
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r AuthSessionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AuthSessionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r AuthSessionResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -4594,6 +4743,15 @@ func (c *ClientWithResponses) ListAuditWithResponse(ctx context.Context, reqEdit
 	return ParseListAuditResponse(rsp)
 }
 
+// AuthSessionWithResponse request returning *AuthSessionResponse
+func (c *ClientWithResponses) AuthSessionWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*AuthSessionResponse, error) {
+	rsp, err := c.AuthSession(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAuthSessionResponse(rsp)
+}
+
 // HealthzWithResponse request returning *HealthzResponse
 func (c *ClientWithResponses) HealthzWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*HealthzResponse, error) {
 	rsp, err := c.Healthz(ctx, reqEditors...)
@@ -5015,6 +5173,39 @@ func ParseListAuditResponse(rsp *http.Response) (*ListAuditResponse, error) {
 	}
 
 	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseAuthSessionResponse parses an HTTP response from a AuthSessionWithResponse call
+func ParseAuthSessionResponse(rsp *http.Response) (*AuthSessionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AuthSessionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AuthSession
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {

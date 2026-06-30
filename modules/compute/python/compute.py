@@ -98,6 +98,12 @@ def meta(datasource: str | None = None) -> Any:
     return _runtime.invoke_json("compute.meta", _args(datasource))
 
 
+def auth_session(datasource: str | None = None) -> Any:
+    """Get the authenticated session and identity (subject, handle, email)."""
+    _require_compute_available()
+    return _runtime.invoke_json("compute.auth_session", _args(datasource))
+
+
 # --- Sandboxes ---------------------------------------------------------------
 
 
@@ -180,13 +186,18 @@ def start_sandbox(
 def snapshot_sandbox(
     sandbox_id: str,
     note: str | None = None,
+    ttl: str | None = None,
     idempotency_key: str | None = None,
     datasource: str | None = None,
 ) -> Any:
-    """Snapshot a sandbox's current state. Returns an operation to poll."""
+    """Snapshot a sandbox's current state. Returns an operation to poll.
+
+    ttl is an optional Go-style duration for the snapshot's lifetime ("0" means
+    no expiry; omit for the server default).
+    """
     _require_compute_available()
     args = _args(
-        datasource, id=sandbox_id, note=note, idempotency_key=idempotency_key
+        datasource, id=sandbox_id, note=note, ttl=ttl, idempotency_key=idempotency_key
     )
     return _runtime.invoke_json("compute.snapshot_sandbox", args)
 

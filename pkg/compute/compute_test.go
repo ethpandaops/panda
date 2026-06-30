@@ -63,6 +63,7 @@ func TestOpenAPISpecHasExpectedOperations(t *testing.T) {
 		"listSnapshots", "getSnapshot", "deleteSnapshot", "restoreSnapshot",
 		"listTemplates", "getTemplate", "listOperations", "getOperation",
 		"listSSHPublicKeys", "addSSHPublicKey", "deleteSSHPublicKey",
+		"authSession",
 	}
 
 	got := make(map[string]bool)

@@ -87,6 +87,8 @@ func init() {
 	_ = computeSandboxesCreateCmd.MarkFlagRequired("template")
 
 	computeSandboxesSnapshotCmd.Flags().StringVar(&computeNote, "note", "", "Optional note recorded with the snapshot")
+	computeSandboxesSnapshotCmd.Flags().StringVar(&computeTTL, "ttl", "",
+		"Snapshot lifetime (Go duration; \"0\" means no expiry, omit for the server default)")
 	computeSandboxesLeaseCmd.Flags().StringVar(&computeExtend, "extend", "",
 		"Lease extension (Go duration, e.g. 30m) (required)")
 	_ = computeSandboxesLeaseCmd.MarkFlagRequired("extend")
@@ -126,6 +128,7 @@ func init() {
 		computeDatasourcesCmd,
 		computeMetaCmd,
 		computeAuditCmd,
+		computeSessionCmd,
 		computeSandboxesCmd,
 		computeSnapshotsCmd,
 		computeTemplatesCmd,
@@ -255,6 +258,15 @@ var computeAuditCmd = &cobra.Command{
 	},
 }
 
+var computeSessionCmd = &cobra.Command{
+	Use:   "session",
+	Short: "Show the authenticated session and identity",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		return runComputeRaw(cmd, "compute.auth_session", computeArgs())
+	},
+}
+
 // Sandboxes.
 
 var computeSandboxesListCmd = &cobra.Command{
@@ -324,6 +336,7 @@ var computeSandboxesSnapshotCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		opArgs := computeMutationArgs(args[0])
 		setIfNotEmpty(opArgs, "note", computeNote)
+		setIfNotEmpty(opArgs, "ttl", computeTTL)
 
 		return runComputeRaw(cmd, "compute.snapshot_sandbox", opArgs)
 	},
