@@ -369,7 +369,7 @@ func TestDirectBackendTTLExpiry(t *testing.T) {
 
 	// Wait for TTL to expire, then run cleanup.
 	time.Sleep(100 * time.Millisecond)
-	b.cleanupExpired()
+	b.sessionManager.cleanupExpired(context.Background())
 
 	sessions, err = b.ListSessions(context.Background(), "")
 	if err != nil {
@@ -426,14 +426,14 @@ func TestDirectBackendWorkspaceDirPersistsAcrossExecutions(t *testing.T) {
 	}
 
 	// Verify the workspace directory actually exists on disk.
-	b.mu.RLock()
-	s := b.sessions[sessionID]
-	b.mu.RUnlock()
-
+	s, err := b.store.Get(context.Background(), sessionID)
+	if err != nil {
+		t.Fatalf("store.Get: %v", err)
+	}
 	if s == nil {
 		t.Fatal("session not found")
 	}
-	if _, err := os.Stat(filepath.Join(s.workDir, "greeting.txt")); err != nil {
+	if _, err := os.Stat(filepath.Join(s.Handle, "greeting.txt")); err != nil {
 		t.Fatalf("greeting.txt should exist on disk: %v", err)
 	}
 }
@@ -503,7 +503,7 @@ func TestDirectBackendSessionTTLRefreshedOnExecute(t *testing.T) {
 	// Now the session should survive another TTL period.
 	time.Sleep(80 * time.Millisecond)
 
-	b.cleanupExpired()
+	b.sessionManager.cleanupExpired(context.Background())
 
 	sessions, err := b.ListSessions(context.Background(), "")
 	if err != nil {
@@ -558,7 +558,7 @@ func TestDirectBackendMaxDurationExpiry(t *testing.T) {
 	}
 
 	time.Sleep(100 * time.Millisecond)
-	b.cleanupExpired()
+	b.sessionManager.cleanupExpired(context.Background())
 
 	if err := b.DestroySession(context.Background(), id, ""); err == nil {
 		t.Fatal("expected session to be expired by MaxDuration")
@@ -626,7 +626,7 @@ func TestDirectBackendCleanupExpiredIsSafeWithNoSessions(t *testing.T) {
 	}
 
 	// Should not panic.
-	b.cleanupExpired()
+	b.sessionManager.cleanupExpired(context.Background())
 
 	sessions, err := b.ListSessions(context.Background(), "")
 	if err != nil {
@@ -784,12 +784,12 @@ func TestDirectBackendDestroyDuringExecuteNoPanic(t *testing.T) {
 }
 
 // TestDirectBackendCleanupSkipsInFlightExecution verifies the executing guard:
-// the cleanup loop must not reclaim a session that has an execution in flight,
+// idle-TTL cleanup must not reclaim a session that has an execution in flight,
 // even when it has exceeded its TTL.
 func TestDirectBackendCleanupSkipsInFlightExecution(t *testing.T) {
 	cfg := sessionEnabledCfg()
-	cfg.Sessions.TTL = 1 * time.Millisecond
-	cfg.Sessions.MaxDuration = 1 * time.Millisecond
+	cfg.Sessions.TTL = 20 * time.Millisecond
+	cfg.Sessions.MaxDuration = 10 * time.Minute // only idle TTL governs here
 
 	b, err := NewDirectBackend(cfg, logrus.New())
 	if err != nil {
@@ -801,21 +801,21 @@ func TestDirectBackendCleanupSkipsInFlightExecution(t *testing.T) {
 		t.Fatalf("CreateSession: %v", err)
 	}
 
-	// Mark an in-flight execution.
-	b.mu.Lock()
-	b.sessions[id].executing = 1
-	b.mu.Unlock()
+	// An in-flight execution protects the session from idle-TTL purging.
+	b.sessionManager.markExecuting(id)
 
-	time.Sleep(5 * time.Millisecond)
-	b.cleanupExpired()
+	time.Sleep(40 * time.Millisecond) // TTL elapsed
+	b.sessionManager.cleanupExpired(context.Background())
 
 	if sessions, _ := b.ListSessions(context.Background(), ""); len(sessions) != 1 {
-		t.Fatalf("expected busy session to survive cleanup, got %d", len(sessions))
+		t.Fatalf("expected in-flight session to survive cleanup, got %d", len(sessions))
 	}
 
-	// Once the execution finishes, cleanup reclaims it.
-	b.finishExecuting(id)
-	b.cleanupExpired()
+	// Once the execution finishes and its refreshed idle timer elapses, cleanup
+	// reclaims it.
+	b.sessionManager.unmarkExecuting(id)
+	time.Sleep(40 * time.Millisecond)
+	b.sessionManager.cleanupExpired(context.Background())
 
 	if sessions, _ := b.ListSessions(context.Background(), ""); len(sessions) != 0 {
 		t.Fatalf("expected session reclaimed after execution finished, got %d", len(sessions))

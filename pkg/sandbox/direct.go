@@ -29,40 +29,91 @@ var directEnvPassthrough = []string{
 	"SSL_CERT_FILE", "SSL_CERT_DIR",
 }
 
-// directSession represents a persistent workspace directory for a session.
-type directSession struct {
-	id        string
-	ownerID   string
-	workDir   string
-	createdAt time.Time
-	lastUsed  time.Time
-	// executing counts in-flight executions in this session. While > 0 the
-	// idle/max-duration cleanup must not remove the workspace out from under
-	// the running subprocess (mirrors the docker backend's markExecuting).
-	executing int
+// directSessionStore is the in-process SessionStore for the direct backend:
+// sessions are workspace directories owned in a map, with the directory itself
+// as the Session.Handle. Get/List hand out copies so SessionManager can annotate
+// the returned Session without racing the map. All lifecycle policy lives in the
+// SessionManager that drives this store.
+type directSessionStore struct {
+	mu       sync.RWMutex
+	sessions map[string]*Session
+}
+
+func newDirectSessionStore() *directSessionStore {
+	return &directSessionStore{sessions: make(map[string]*Session)}
+}
+
+func (s *directSessionStore) add(session *Session) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.sessions[session.ID] = session
+}
+
+func (s *directSessionStore) Get(_ context.Context, sessionID string) (*Session, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	session, ok := s.sessions[sessionID]
+	if !ok {
+		return nil, nil
+	}
+
+	cp := *session
+
+	return &cp, nil
+}
+
+func (s *directSessionStore) List(_ context.Context) ([]*Session, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make([]*Session, 0, len(s.sessions))
+	for _, session := range s.sessions {
+		cp := *session
+		out = append(out, &cp)
+	}
+
+	return out, nil
+}
+
+func (s *directSessionStore) Remove(_ context.Context, session *Session) error {
+	s.mu.Lock()
+	_, ok := s.sessions[session.ID]
+	delete(s.sessions, session.ID)
+	s.mu.Unlock()
+
+	if !ok {
+		return nil
+	}
+
+	return os.RemoveAll(session.Handle)
 }
 
 // DirectBackend implements sandbox execution by running Python directly as a
 // subprocess on the host (no Docker containers). Intended for use inside a
 // Kubernetes pod where the pod boundary itself provides the isolation.
+//
+// Session lifecycle (TTL, max-duration, ownership, the executing guard, limits,
+// cleanup) is delegated to the shared SessionManager; this backend only owns the
+// workspace directories (via directSessionStore) and the subprocess execution.
 type DirectBackend struct {
 	cfg config.SandboxConfig
 	log logrus.FieldLogger
 
-	mu       sync.RWMutex
-	sessions map[string]*directSession
-	done     chan struct{}
-	stopOnce sync.Once
-	wg       sync.WaitGroup
+	store          *directSessionStore
+	sessionManager *SessionManager
 }
 
 // NewDirectBackend creates a new direct execution backend.
 func NewDirectBackend(cfg config.SandboxConfig, log logrus.FieldLogger) (*DirectBackend, error) {
+	store := newDirectSessionStore()
+
 	return &DirectBackend{
-		cfg:      cfg,
-		log:      log.WithField("component", "sandbox.direct"),
-		sessions: make(map[string]*directSession),
-		done:     make(chan struct{}),
+		cfg:            cfg,
+		log:            log.WithField("component", "sandbox.direct"),
+		store:          store,
+		sessionManager: NewSessionManager(cfg.Sessions, log, store),
 	}, nil
 }
 
@@ -71,8 +122,8 @@ func (b *DirectBackend) Name() string {
 	return "direct"
 }
 
-// Start validates that python3 is available on the host and kicks off
-// session cleanup when sessions are enabled.
+// Start validates that a Python interpreter is available on the host and starts
+// the session manager (which runs cleanup when sessions are enabled).
 func (b *DirectBackend) Start(ctx context.Context) error {
 	b.log.Info("Starting direct execution backend")
 
@@ -89,12 +140,12 @@ func (b *DirectBackend) Start(ctx context.Context) error {
 		}
 	}
 
-	if b.cfg.Sessions.IsEnabled() {
-		b.wg.Add(1)
-		go b.cleanupLoop()
+	if err := b.sessionManager.Start(ctx); err != nil {
+		return err
 	}
 
 	b.log.WithField("python", b.pythonBin()).Info("Direct execution backend started")
+
 	return nil
 }
 
@@ -107,27 +158,15 @@ func (b *DirectBackend) pythonBin() string {
 	if _, err := exec.LookPath("python3"); err == nil {
 		return "python3"
 	}
+
 	return "python"
 }
 
-// Stop cleans up all session workspaces and shuts down.
+// Stop shuts down the session manager, which reaps all session workspaces.
 func (b *DirectBackend) Stop(ctx context.Context) error {
 	b.log.Info("Stopping direct execution backend")
-	b.stopOnce.Do(func() { close(b.done) })
-	b.wg.Wait()
 
-	// Clean up all session workspaces.
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	for id, s := range b.sessions {
-		if err := os.RemoveAll(s.workDir); err != nil {
-			b.log.WithField("session_id", id).WithError(err).Warn("Failed to cleanup session workspace")
-		}
-	}
-	b.sessions = make(map[string]*directSession)
-
-	return nil
+	return b.sessionManager.Stop(ctx)
 }
 
 // Execute runs Python code directly as a subprocess. When req.SessionID is set
@@ -148,15 +187,32 @@ func (b *DirectBackend) Execute(ctx context.Context, req ExecuteRequest) (*Execu
 	log.Debug("Starting direct code execution")
 
 	// Resolve the working directory: session workspace or a fresh temp dir.
-	workDir, session, err := b.resolveWorkDir(req.SessionID, req.OwnerID, executionID)
-	if err != nil {
-		return nil, err
-	}
-	if session != nil {
-		// Release the in-flight guard once this execution completes so cleanup
-		// can reclaim the session.
-		defer b.finishExecuting(session.id)
-	} else if workDir != "" {
+	var (
+		workDir string
+		session *Session
+	)
+
+	if req.SessionID != "" {
+		// Get verifies ownership, enforces TTL/max-duration, and refreshes LastUsed.
+		s, err := b.sessionManager.Get(ctx, req.SessionID, req.OwnerID)
+		if err != nil {
+			return nil, err
+		}
+
+		session = s
+		workDir = s.Handle
+
+		// Protect the workspace from TTL purging while this execution runs.
+		b.sessionManager.markExecuting(s.ID)
+		defer b.sessionManager.unmarkExecuting(s.ID)
+	} else {
+		tmpDir, err := os.MkdirTemp("", fmt.Sprintf("panda-exec-%s-", executionID))
+		if err != nil {
+			return nil, fmt.Errorf("creating temp directory: %w", err)
+		}
+
+		workDir = tmpDir
+
 		defer func() {
 			if err := os.RemoveAll(workDir); err != nil {
 				log.WithError(err).Warn("Failed to cleanup temp directory")
@@ -188,7 +244,7 @@ func (b *DirectBackend) Execute(ctx context.Context, req ExecuteRequest) (*Execu
 	}
 	envMap[EnvExecutionID] = executionID
 	if session != nil {
-		envMap[EnvSessionID] = session.id
+		envMap[EnvSessionID] = session.ID
 	}
 
 	env := make([]string, 0, len(envMap))
@@ -212,7 +268,7 @@ func (b *DirectBackend) Execute(ctx context.Context, req ExecuteRequest) (*Execu
 	cmd.Stderr = &stderr
 
 	// Run the command.
-	err = cmd.Run()
+	err := cmd.Run()
 
 	duration := time.Since(startTime).Seconds()
 
@@ -241,109 +297,50 @@ func (b *DirectBackend) Execute(ctx context.Context, req ExecuteRequest) (*Execu
 		DurationSeconds: duration,
 	}
 
-	// Populate session info when running in a session. Read lastUsed from the
-	// captured session pointer (still valid even if the session was destroyed
-	// concurrently) rather than re-indexing the map, which would nil-deref.
+	// Populate session info when running in a session. TTLRemaining tolerates a
+	// session that was destroyed concurrently (returns the full TTL).
 	if session != nil {
-		b.mu.RLock()
-		lastUsed := session.lastUsed
-		b.mu.RUnlock()
-
-		result.SessionID = session.id
-		result.SessionTTLRemaining = b.ttlRemaining(session.id, lastUsed)
+		result.SessionID = session.ID
+		result.SessionTTLRemaining = b.sessionManager.TTLRemaining(session.ID)
 		result.SessionFiles = b.listWorkspaceFiles(workDir)
 	}
 
 	return result, nil
 }
 
-// resolveWorkDir returns the working directory for an execution and, when
-// running inside a session, the session itself with its in-flight counter
-// incremented — callers MUST pair a non-nil session with finishExecuting.
-// Non-session executions get a temp dir that the caller must clean up.
-func (b *DirectBackend) resolveWorkDir(sessionID, ownerID, executionID string) (string, *directSession, error) {
-	if sessionID != "" {
-		b.mu.Lock()
-		defer b.mu.Unlock()
-
-		s, ok := b.sessions[sessionID]
-		if !ok {
-			return "", nil, fmt.Errorf("session %s not found", sessionID)
-		}
-
-		// Enforce ownership: a caller may only execute in its own session.
-		// Mirrors DestroySession; the docker backend enforces this via
-		// sessionManager.Get(ctx, sessionID, ownerID).
-		if s.ownerID != "" && ownerID != "" && s.ownerID != ownerID {
-			return "", nil, fmt.Errorf("session %s not owned by caller", sessionID)
-		}
-
-		s.lastUsed = time.Now()
-		s.executing++
-
-		return s.workDir, s, nil
-	}
-
-	// No session — create a fresh temp dir.
-	prefix := executionID
-	if prefix == "" {
-		prefix = uuid.New().String()
-	}
-	tmpDir, err := os.MkdirTemp("", fmt.Sprintf("panda-exec-%s-", prefix))
-	if err != nil {
-		return "", nil, fmt.Errorf("creating temp directory: %w", err)
-	}
-
-	return tmpDir, nil, nil
-}
-
-// finishExecuting releases the in-flight guard taken by resolveWorkDir so the
-// cleanup loop may reclaim the session once no executions remain.
-func (b *DirectBackend) finishExecuting(sessionID string) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	if s, ok := b.sessions[sessionID]; ok && s.executing > 0 {
-		s.executing--
-	}
-}
-
-// ttlRemaining returns the time until the session expires from inactivity.
-// Returns the full configured TTL when lastUsed is zero (e.g. brand-new session).
-func (b *DirectBackend) ttlRemaining(sessionID string, lastUsed time.Time) time.Duration {
-	if lastUsed.IsZero() {
-		return b.cfg.Sessions.TTL
-	}
-
-	remaining := b.cfg.Sessions.TTL - time.Since(lastUsed)
-	if remaining < 0 {
-		return 0
-	}
-
-	return remaining
-}
-
 // SessionsEnabled returns whether sessions are enabled in config.
 func (b *DirectBackend) SessionsEnabled() bool {
-	return b.cfg.Sessions.IsEnabled()
+	return b.sessionManager.Enabled()
 }
 
 // ListSessions returns all active sessions, optionally filtered by ownerID.
-func (b *DirectBackend) ListSessions(_ context.Context, ownerID string) ([]SessionInfo, error) {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
+func (b *DirectBackend) ListSessions(ctx context.Context, ownerID string) ([]SessionInfo, error) {
+	if !b.sessionManager.Enabled() {
+		return nil, fmt.Errorf("sessions are disabled")
+	}
 
-	infos := make([]SessionInfo, 0, len(b.sessions))
-	for _, s := range b.sessions {
-		if ownerID != "" && s.ownerID != ownerID {
+	sessions, err := b.sessionManager.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	infos := make([]SessionInfo, 0, len(sessions))
+	for _, s := range sessions {
+		if ownerID != "" && s.OwnerID != "" && s.OwnerID != ownerID {
 			continue
 		}
 
+		lastUsed := b.sessionManager.GetLastUsed(s.ID)
+		if lastUsed.IsZero() {
+			lastUsed = s.CreatedAt
+		}
+
 		infos = append(infos, SessionInfo{
-			ID:           s.id,
-			CreatedAt:    s.createdAt,
-			LastUsed:     s.lastUsed,
-			TTLRemaining: b.ttlRemaining(s.id, s.lastUsed),
+			ID:             s.ID,
+			CreatedAt:      s.CreatedAt,
+			LastUsed:       lastUsed,
+			TTLRemaining:   b.sessionManager.TTLRemaining(s.ID),
+			WorkspaceFiles: b.listWorkspaceFiles(s.Handle),
 		})
 	}
 
@@ -355,29 +352,33 @@ func (b *DirectBackend) ListSessions(_ context.Context, ownerID string) ([]Sessi
 }
 
 // CreateSession creates a new persistent workspace and returns its session ID.
-func (b *DirectBackend) CreateSession(_ context.Context, ownerID string, _ map[string]string) (string, error) {
-	if !b.cfg.Sessions.IsEnabled() {
+func (b *DirectBackend) CreateSession(ctx context.Context, ownerID string, _ map[string]string) (string, error) {
+	if !b.sessionManager.Enabled() {
 		return "", fmt.Errorf("sessions are disabled")
 	}
 
-	sessionID := strings.ReplaceAll(uuid.New().String(), "-", "")[:12]
+	canCreate, count, maxAllowed := b.sessionManager.CanCreateSession(ctx, ownerID)
+	if !canCreate {
+		return "", fmt.Errorf(
+			"maximum sessions limit reached (%d/%d). Use manage_session with operation 'list' to see sessions, then 'destroy' to free up a slot",
+			count, maxAllowed,
+		)
+	}
+
+	sessionID := b.sessionManager.GenerateSessionID()
 
 	workDir, err := os.MkdirTemp("", fmt.Sprintf("panda-session-%s-", sessionID))
 	if err != nil {
 		return "", fmt.Errorf("creating session workspace: %w", err)
 	}
 
-	now := time.Now()
-
-	b.mu.Lock()
-	b.sessions[sessionID] = &directSession{
-		id:        sessionID,
-		ownerID:   ownerID,
-		workDir:   workDir,
-		createdAt: now,
-		lastUsed:  now,
-	}
-	b.mu.Unlock()
+	b.store.add(&Session{
+		ID:        sessionID,
+		OwnerID:   ownerID,
+		Handle:    workDir,
+		CreatedAt: time.Now(),
+	})
+	b.sessionManager.RecordAccess(sessionID)
 
 	b.log.WithField("session_id", sessionID).Info("Created session workspace")
 
@@ -385,101 +386,17 @@ func (b *DirectBackend) CreateSession(_ context.Context, ownerID string, _ map[s
 }
 
 // DestroySession removes a session's workspace and cleans up.
-func (b *DirectBackend) DestroySession(_ context.Context, sessionID, ownerID string) error {
-	b.mu.RLock()
-	s, ok := b.sessions[sessionID]
-	b.mu.RUnlock()
-
-	if !ok {
-		return fmt.Errorf("session %s not found", sessionID)
+func (b *DirectBackend) DestroySession(ctx context.Context, sessionID, ownerID string) error {
+	if !b.sessionManager.Enabled() {
+		return fmt.Errorf("sessions are disabled")
 	}
 
-	if ownerID != "" && s.ownerID != "" && s.ownerID != ownerID {
-		return fmt.Errorf("session %s not owned by caller", sessionID)
-	}
-
-	b.mu.Lock()
-	delete(b.sessions, sessionID)
-	b.mu.Unlock()
-
-	if err := os.RemoveAll(s.workDir); err != nil {
-		b.log.WithField("session_id", sessionID).WithError(err).Warn("Failed to cleanup session workspace")
-	}
-
-	b.log.WithField("session_id", sessionID).Info("Destroyed session workspace")
-
-	return nil
+	return b.sessionManager.Destroy(ctx, sessionID, ownerID)
 }
 
 // CanCreateSession checks if a new session can be created within limits.
-func (b *DirectBackend) CanCreateSession(_ context.Context, ownerID string) (bool, int, int) {
-	maxSessions := b.cfg.Sessions.MaxSessions
-	if maxSessions <= 0 {
-		return true, 0, 0
-	}
-
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-
-	count := 0
-	for _, s := range b.sessions {
-		if ownerID == "" || s.ownerID == ownerID {
-			count++
-		}
-	}
-
-	return count < maxSessions, count, maxSessions
-}
-
-// cleanupLoop runs periodically to destroy expired sessions.
-func (b *DirectBackend) cleanupLoop() {
-	defer b.wg.Done()
-
-	ticker := time.NewTicker(1 * time.Minute)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-b.done:
-			return
-		case <-ticker.C:
-			b.cleanupExpired()
-		}
-	}
-}
-
-// cleanupExpired destroys sessions that have exceeded TTL or MaxDuration.
-func (b *DirectBackend) cleanupExpired() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	now := time.Now()
-	for id, s := range b.sessions {
-		// Never reclaim a session with an execution in flight — removing its
-		// workspace would pull files out from under the running subprocess.
-		if s.executing > 0 {
-			continue
-		}
-
-		// Check max duration.
-		if now.Sub(s.createdAt) > b.cfg.Sessions.MaxDuration {
-			b.log.WithField("session_id", id).Info("Session expired (max duration)")
-			if err := os.RemoveAll(s.workDir); err != nil {
-				b.log.WithField("session_id", id).WithError(err).Warn("Failed to cleanup session workspace")
-			}
-			delete(b.sessions, id)
-			continue
-		}
-
-		// Check TTL (idle timeout).
-		if now.Sub(s.lastUsed) > b.cfg.Sessions.TTL {
-			b.log.WithField("session_id", id).Info("Session expired (idle TTL)")
-			if err := os.RemoveAll(s.workDir); err != nil {
-				b.log.WithField("session_id", id).WithError(err).Warn("Failed to cleanup session workspace")
-			}
-			delete(b.sessions, id)
-		}
-	}
+func (b *DirectBackend) CanCreateSession(ctx context.Context, ownerID string) (bool, int, int) {
+	return b.sessionManager.CanCreateSession(ctx, ownerID)
 }
 
 // listWorkspaceFiles returns the files in the workspace directory for session
