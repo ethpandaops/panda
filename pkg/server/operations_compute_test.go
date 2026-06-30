@@ -111,6 +111,24 @@ func TestComputeListBuildsQuery(t *testing.T) {
 	assert.Equal(t, "abc", query.Get("cursor"))
 }
 
+// TestComputeListForwardsFilters confirms repeated --filter values reach the
+// backend as repeated filter query parameters, where compute applies them.
+func TestComputeListForwardsFilters(t *testing.T) {
+	t.Parallel()
+
+	transport := &recordingTransport{status: http.StatusOK, body: `{"items":[]}`, contentType: "application/json"}
+	svc := newComputeService(t, transport, types.DatasourceInfo{Name: "production"})
+
+	rec := callComputeOp(t, svc, "compute.list_sandboxes", map[string]any{
+		"filter": []any{"status=running", "vcpu>=4"},
+	})
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.NotNil(t, transport.last)
+
+	assert.Equal(t, []string{"status=running", "vcpu>=4"}, transport.last.URL.Query()["filter"])
+}
+
 // TestComputeRequiresDatasourceWhenAmbiguous verifies an explicit datasource is
 // required when more than one compute datasource is advertised.
 func TestComputeRequiresDatasourceWhenAmbiguous(t *testing.T) {

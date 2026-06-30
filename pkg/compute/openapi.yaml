@@ -23,6 +23,7 @@ paths:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Filter'
       responses:
         '200':
           description: SSH public keys registered by the authenticated subject.
@@ -75,6 +76,7 @@ paths:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Filter'
       responses:
         '200':
           description: Sandboxes in stable ID order.
@@ -299,6 +301,7 @@ paths:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Filter'
       responses:
         '200':
           description: Snapshots in stable ID order.
@@ -370,6 +373,7 @@ paths:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Filter'
       responses:
         '200':
           description: Templates in stable name/version order.
@@ -413,6 +417,7 @@ paths:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Filter'
       responses:
         '200':
           description: Operations in stable created_at/id order.
@@ -698,6 +703,28 @@ components:
       description: Integer offset cursor returned as next_cursor.
       schema:
         type: string
+    Filter:
+      name: filter
+      in: query
+      required: false
+      description: >-
+        Filter results by field, formatted as key<op>value where op is one of
+        =, !=, ~= (contains), >, <, >=, <=. Keys are response field names and may
+        be dotted to reach nested fields (e.g. error.reason). Comparison is
+        numeric when both sides are numbers and case-insensitive otherwise.
+        Repeatable; all filters must match. Applied before pagination.
+      explode: true
+      schema:
+        type: array
+        items:
+          type: string
+      examples:
+        status:
+          summary: Only running items
+          value: ["status=running"]
+        combined:
+          summary: Multiple filters (AND)
+          value: ["status=running", "template_version~=ubuntu"]
     Offset:
       name: offset
       in: query
@@ -1101,6 +1128,7 @@ components:
             - invalid_limit
             - invalid_cursor
             - invalid_offset
+            - invalid_filter
             - invalid_ttl
             - invalid_on_delete
             - ambiguous_pagination

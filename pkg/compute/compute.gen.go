@@ -50,6 +50,7 @@ const (
 	ErrorBodyCodeConflict                ErrorBodyCode = "conflict"
 	ErrorBodyCodeInternalError           ErrorBodyCode = "internal_error"
 	ErrorBodyCodeInvalidCursor           ErrorBodyCode = "invalid_cursor"
+	ErrorBodyCodeInvalidFilter           ErrorBodyCode = "invalid_filter"
 	ErrorBodyCodeInvalidJson             ErrorBodyCode = "invalid_json"
 	ErrorBodyCodeInvalidLimit            ErrorBodyCode = "invalid_limit"
 	ErrorBodyCodeInvalidOffset           ErrorBodyCode = "invalid_offset"
@@ -81,6 +82,8 @@ func (e ErrorBodyCode) Valid() bool {
 	case ErrorBodyCodeInternalError:
 		return true
 	case ErrorBodyCodeInvalidCursor:
+		return true
+	case ErrorBodyCodeInvalidFilter:
 		return true
 	case ErrorBodyCodeInvalidJson:
 		return true
@@ -599,6 +602,9 @@ type WebSessionIdentity struct {
 // Cursor defines model for Cursor.
 type Cursor = string
 
+// Filter defines model for Filter.
+type Filter = []string
+
 // IdempotencyKey defines model for IdempotencyKey.
 type IdempotencyKey = string
 
@@ -653,6 +659,9 @@ type ListSSHPublicKeysParams struct {
 
 	// Offset Integer offset alternative to cursor.
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+
+	// Filter Filter results by field, formatted as key<op>value where op is one of =, !=, ~= (contains), >, <, >=, <=. Keys are response field names and may be dotted to reach nested fields (e.g. error.reason). Comparison is numeric when both sides are numbers and case-insensitive otherwise. Repeatable; all filters must match. Applied before pagination.
+	Filter *Filter `form:"filter,omitempty" json:"filter,omitempty"`
 }
 
 // ListOperationsParams defines parameters for ListOperations.
@@ -664,6 +673,9 @@ type ListOperationsParams struct {
 
 	// Offset Integer offset alternative to cursor.
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+
+	// Filter Filter results by field, formatted as key<op>value where op is one of =, !=, ~= (contains), >, <, >=, <=. Keys are response field names and may be dotted to reach nested fields (e.g. error.reason). Comparison is numeric when both sides are numbers and case-insensitive otherwise. Repeatable; all filters must match. Applied before pagination.
+	Filter *Filter `form:"filter,omitempty" json:"filter,omitempty"`
 }
 
 // ListSandboxesParams defines parameters for ListSandboxes.
@@ -675,6 +687,9 @@ type ListSandboxesParams struct {
 
 	// Offset Integer offset alternative to cursor.
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+
+	// Filter Filter results by field, formatted as key<op>value where op is one of =, !=, ~= (contains), >, <, >=, <=. Keys are response field names and may be dotted to reach nested fields (e.g. error.reason). Comparison is numeric when both sides are numbers and case-insensitive otherwise. Repeatable; all filters must match. Applied before pagination.
+	Filter *Filter `form:"filter,omitempty" json:"filter,omitempty"`
 }
 
 // CreateSandboxParams defines parameters for CreateSandbox.
@@ -716,6 +731,9 @@ type ListSnapshotsParams struct {
 
 	// Offset Integer offset alternative to cursor.
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+
+	// Filter Filter results by field, formatted as key<op>value where op is one of =, !=, ~= (contains), >, <, >=, <=. Keys are response field names and may be dotted to reach nested fields (e.g. error.reason). Comparison is numeric when both sides are numbers and case-insensitive otherwise. Repeatable; all filters must match. Applied before pagination.
+	Filter *Filter `form:"filter,omitempty" json:"filter,omitempty"`
 }
 
 // DeleteSnapshotParams defines parameters for DeleteSnapshot.
@@ -739,6 +757,9 @@ type ListTemplatesParams struct {
 
 	// Offset Integer offset alternative to cursor.
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+
+	// Filter Filter results by field, formatted as key<op>value where op is one of =, !=, ~= (contains), >, <, >=, <=. Keys are response field names and may be dotted to reach nested fields (e.g. error.reason). Comparison is numeric when both sides are numbers and case-insensitive otherwise. Repeatable; all filters must match. Applied before pagination.
+	Filter *Filter `form:"filter,omitempty" json:"filter,omitempty"`
 }
 
 // AddSSHPublicKeyJSONRequestBody defines body for AddSSHPublicKey for application/json ContentType.
@@ -1694,6 +1715,18 @@ func NewListSSHPublicKeysRequest(server string, params *ListSSHPublicKeysParams)
 
 		}
 
+		if params.Filter != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "filter", *params.Filter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if encoded := queryValues.Encode(); encoded != "" {
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
@@ -1988,6 +2021,18 @@ func NewListOperationsRequest(server string, params *ListOperationsParams) (*htt
 
 		}
 
+		if params.Filter != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "filter", *params.Filter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if encoded := queryValues.Encode(); encoded != "" {
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
@@ -2118,6 +2163,18 @@ func NewListSandboxesRequest(server string, params *ListSandboxesParams) (*http.
 		if params.Offset != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "offset", *params.Offset, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Filter != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "filter", *params.Filter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -2798,6 +2855,18 @@ func NewListSnapshotsRequest(server string, params *ListSnapshotsParams) (*http.
 
 		}
 
+		if params.Filter != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "filter", *params.Filter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if encoded := queryValues.Encode(); encoded != "" {
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
@@ -3082,6 +3151,18 @@ func NewListTemplatesRequest(server string, params *ListTemplatesParams) (*http.
 		if params.Offset != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "offset", *params.Offset, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Filter != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "filter", *params.Filter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
