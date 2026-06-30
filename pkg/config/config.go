@@ -89,6 +89,12 @@ type SandboxConfig struct {
 	Network        string  `yaml:"network"`
 	HostSharedPath string  `yaml:"host_shared_path,omitempty"`
 
+	// PythonPath pins the Python interpreter the direct backend invokes for
+	// untrusted sandbox code. Empty falls back to python3/python on PATH. Point
+	// this at the baked sandbox venv (e.g. /usr/local/bin/python3) so code runs
+	// against a known, dependency-complete environment rather than ambient PATH.
+	PythonPath string `yaml:"python_path,omitempty"`
+
 	// Instance identifies this server's sandbox containers with a custom label.
 	// Used to distinguish containers from different server instances (e.g., probe runner vs production).
 	// When set, containers are labeled with "io.ethpandaops-panda.instance=<value>".
