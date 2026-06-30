@@ -26,18 +26,11 @@ RUN uv pip install --python /usr/local/bin/python3 --prefix /install --no-cache 
 # Install the ethpandaops platform library. Copied after the heavy dependency
 # layer so edits to these (frequently changed) files don't bust the deps cache.
 COPY sandbox/ethpandaops /opt/ethpandaops-pkg
-COPY modules/benchmarkoor/python/benchmarkoor.py /opt/ethpandaops-pkg/ethpandaops/benchmarkoor.py
-COPY modules/block_archive/python/block_archive.py /opt/ethpandaops-pkg/ethpandaops/block_archive.py
-COPY modules/cbt/python/cbt.py /opt/ethpandaops-pkg/ethpandaops/cbt.py
-COPY modules/clickhouse/python/clickhouse.py /opt/ethpandaops-pkg/ethpandaops/clickhouse.py
-COPY modules/compute/python/compute.py /opt/ethpandaops-pkg/ethpandaops/compute.py
-COPY modules/dora/python/dora.py /opt/ethpandaops-pkg/ethpandaops/dora.py
-COPY modules/forky/python/forky.py /opt/ethpandaops-pkg/ethpandaops/forky.py
-COPY modules/loki/python/loki.py /opt/ethpandaops-pkg/ethpandaops/loki.py
-COPY modules/prometheus/python/prometheus.py /opt/ethpandaops-pkg/ethpandaops/prometheus.py
-COPY modules/ethnode/python/ethnode.py /opt/ethpandaops-pkg/ethpandaops/ethnode.py
-COPY modules/evm/python/evm.py /opt/ethpandaops-pkg/ethpandaops/evm.py
-COPY modules/tracoor/python/tracoor.py /opt/ethpandaops-pkg/ethpandaops/tracoor.py
+# Each module's helper is named after its module, so the wildcard lands each as
+# ethpandaops/<name>.py. A wildcard (not an explicit list) so a new module is
+# bundled automatically — matching scripts/sandbox-hash.sh, which already globs
+# modules/*/python/*.py, and the server Dockerfile's identical COPY. No drift.
+COPY modules/*/python/*.py /opt/ethpandaops-pkg/ethpandaops/
 
 # --no-deps: the package's dependencies are already installed (hash-locked)
 # above; resolving them here would bypass the lock. The package is pure Python,

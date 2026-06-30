@@ -48,13 +48,17 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -o panda-proxy ./cmd/proxy
 
 # =============================================================================
-# Stage 2: Runtime
+# Stage 2: Runtime (single image, all backends)
 # =============================================================================
 FROM debian:bookworm-slim@sha256:0104b334637a5f19aa9c983a91b54c89887c0984081f2068983107a6f6c21eeb
 
-# Install runtime dependencies for Docker access and health checks
+# Runtime deps. docker.io/netcat for the docker backend + healthcheck; python3 +
+# librsvg + fonts are the lean provisioning floor for the *direct* backend (the
+# heavy Python wheels are NOT baked — see the entrypoint). librsvg rasterises
+# chartkit's SVG charts; the fonts give it a glyph fallback.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates docker.io netcat-openbsd && \
+    ca-certificates docker.io netcat-openbsd \
+    python3 librsvg2-bin fonts-dejavu-core fonts-noto-color-emoji && \
     rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
@@ -66,6 +70,17 @@ WORKDIR /app
 # Copy binaries from builder
 COPY --from=builder /app/panda-server /app/panda-server
 COPY --from=builder /app/panda-proxy /app/panda-proxy
+
+# Direct-backend provisioning assets. Used only when PANDA_SANDBOX_BACKEND=direct:
+# the entrypoint builds /opt/panda-venv from these at first boot. The heavy wheels
+# install from the hash lock at boot rather than baking into the image, so the
+# default (docker/gvisor) image stays lean — uv + python3 are the only always-on
+# cost. requirements.txt + ethpandaops are the SAME files the sandbox image uses
+# (wildcard COPY matches sandbox/Dockerfile + scripts/sandbox-hash.sh — no drift).
+COPY --from=ghcr.io/astral-sh/uv:0.11.17@sha256:03bdc89bb9798628846e60c3a9ad19006c8c3c724ccd2985a33145c039a0577b /uv /uvx /bin/
+COPY sandbox/requirements.txt /opt/panda-sandbox/requirements.txt
+COPY sandbox/ethpandaops /opt/panda-sandbox/ethpandaops-pkg
+COPY modules/*/python/*.py /opt/panda-sandbox/ethpandaops-pkg/ethpandaops/
 
 # Create directories
 RUN mkdir -p /config /shared /output /data/storage /data/cache && \
@@ -80,8 +95,10 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh && \
 # Expose ports
 EXPOSE 2480 2490
 
-# Health check - verify the MCP server port is accepting connections
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+# Health check - verify the MCP server port is accepting connections. The start
+# period is generous: the direct backend installs its venv on first boot before
+# the server starts listening (docker/gvisor start immediately).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
     CMD nc -z localhost 2480 || exit 1
 
 ENTRYPOINT ["docker-entrypoint.sh"]
