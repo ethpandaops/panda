@@ -3,7 +3,9 @@ package cli
 import (
 	"bytes"
 	"encoding/csv"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -100,7 +102,7 @@ func runClickHouseOperation(cmd *cobra.Command, operationID, datasource, sql str
 		"sql":        sql,
 	})
 	if err != nil {
-		return err
+		return wrapClickHouseError(err)
 	}
 
 	if raw {
@@ -113,6 +115,35 @@ func runClickHouseOperation(cmd *cobra.Command, operationID, datasource, sql str
 
 	fmt.Print(string(response.Body))
 	return nil
+}
+
+// clickHouseUnknownTableHint sits next to the datasource (rather than in the
+// generic error helper) and replaces the misleading generic 404 hint that a
+// ClickHouse unknown-table/database error would otherwise surface.
+const clickHouseUnknownTableHint = "ClickHouse could not find that table. List real tables with 'panda schema <cluster>'. " +
+	"OTel log tables must be fully qualified: use 'external.otel_logs' for hosted devnets/testnets, " +
+	"or 'otel.otel_logs' for local Kurtosis devnets."
+
+// wrapClickHouseError swaps the generic status hint for a table-specific hint
+// when ClickHouse reports an unknown table/database. ClickHouse returns these
+// as HTTP 404, whose generic hint would wrongly suggest the datasource itself
+// is missing.
+func wrapClickHouseError(err error) error {
+	var apiErr *apiError
+	if !errors.As(err, &apiErr) || !isUnknownClickHouseTableError(apiErr.Message) {
+		return err
+	}
+
+	return fmt.Errorf("HTTP %d: %s\n\n  hint: %s", apiErr.Status, apiErr.Message, clickHouseUnknownTableHint)
+}
+
+func isUnknownClickHouseTableError(message string) bool {
+	lower := strings.ToLower(message)
+
+	return strings.Contains(lower, "unknown table") ||
+		strings.Contains(lower, "unknown_table") ||
+		strings.Contains(lower, "unknown database") ||
+		strings.Contains(lower, "unknown_database")
 }
 
 func printClickHouseJSON(data []byte, raw bool) error {

@@ -2,12 +2,59 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 )
+
+// lokiRedirectSynopsis points users at the ClickHouse OTel log tables, which
+// have replaced Loki for container logs.
+const lokiRedirectSynopsis = `Loki is not available here. Container logs now live in ClickHouse — query them with 'panda clickhouse query':
+
+  • Hosted (multi-VM) devnets/testnets → external.otel_logs  (filter ResourceAttributes['network'])
+  • Local Kurtosis devnets            → otel.otel_logs       (filter EnclaveName)
+
+Qualify the table with its database — the example below targets a hosted cluster.
+Severity lives in Body for these Docker logs (SeverityText is usually empty), so
+match on Body. Example:
+
+  panda clickhouse query clickhouse-raw "SELECT Timestamp, ResourceAttributes['host.name'] AS host, Body \
+    FROM external.otel_logs \
+    WHERE ResourceAttributes['network'] = '<network>' \
+      AND Timestamp >= now() - INTERVAL 1 HOUR \
+      AND match(Body, '(?i)(crit|err|error|fatal)') \
+    ORDER BY Timestamp DESC LIMIT 100"`
+
+// redirectLokiError swaps the generic status hint for the ClickHouse redirect
+// synopsis when a Loki command failed because the Loki module is unavailable on
+// this server. The module being disabled returns HTTP 404, whose generic hint
+// ("check 'panda datasources'") is redundant once we point straight at the
+// replacement datasource.
+func redirectLokiError(err error) error {
+	var apiErr *apiError
+	if !errors.As(err, &apiErr) || !lokiUnavailable(apiErr) {
+		return err
+	}
+
+	return fmt.Errorf("HTTP %d: %s\n\n%s", apiErr.Status, apiErr.Message, lokiRedirectSynopsis)
+}
+
+// lokiUnavailable reports whether an API error means the Loki module/datasource
+// is not served here (rather than a genuine query failure against a live Loki).
+func lokiUnavailable(e *apiError) bool {
+	if e.Status == http.StatusNotFound {
+		return true
+	}
+
+	lower := strings.ToLower(e.Message)
+
+	return strings.Contains(lower, "not enabled") || strings.Contains(lower, "not available")
+}
 
 var (
 	lokiLimit     int
@@ -77,7 +124,7 @@ var lokiListDatasourcesCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		response, err := runServerOperation(cmd, "loki.list_datasources", map[string]any{})
 		if err != nil {
-			return err
+			return redirectLokiError(err)
 		}
 
 		return printDatasourceList(response)
@@ -98,7 +145,7 @@ var lokiQueryCmd = &cobra.Command{
 			"direction":  lokiDirection,
 		})
 		if err != nil {
-			return err
+			return redirectLokiError(err)
 		}
 
 		if isJSON() {
@@ -122,7 +169,7 @@ var lokiQueryInstantCmd = &cobra.Command{
 			"direction":  lokiDirection,
 		})
 		if err != nil {
-			return err
+			return redirectLokiError(err)
 		}
 
 		if isJSON() {
@@ -144,7 +191,7 @@ var lokiLabelsCmd = &cobra.Command{
 			"end":        lokiEnd,
 		})
 		if err != nil {
-			return err
+			return redirectLokiError(err)
 		}
 
 		if isJSON() {
@@ -167,7 +214,7 @@ var lokiLabelValuesCmd = &cobra.Command{
 			"end":        lokiEnd,
 		})
 		if err != nil {
-			return err
+			return redirectLokiError(err)
 		}
 
 		if isJSON() {
