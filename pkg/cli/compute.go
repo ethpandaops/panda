@@ -80,7 +80,7 @@ func init() {
 		cmd.Flags().IntVar(&computeOffset, "offset", 0, "Items to skip")
 		cmd.Flags().StringVar(&computeCursor, "cursor", "", "Pagination cursor (next_cursor from a prior page)")
 		cmd.Flags().StringArrayVar(&computeFilters, "filter", nil,
-			"Filter results, key<op>value where op is =, !=, ~=, >, <, >=, <= (e.g. status=running); repeatable")
+			"Filter results, key<op>value where op is =, !=, ~=, >, <, >=, <= (e.g. state=running); repeatable")
 	}
 
 	computeSandboxesCreateCmd.Flags().StringVar(&computeTemplate, "template", "", "Template to launch (required)")

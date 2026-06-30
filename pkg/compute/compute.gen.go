@@ -19,6 +19,10 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
+const (
+	BearerAuthScopes bearerAuthContextKey = "bearerAuth.Scopes"
+)
+
 // Defines values for CreateSandboxRequestOnDelete.
 const (
 	CreateSandboxRequestOnDeleteArchive CreateSandboxRequestOnDelete = "archive"
@@ -124,39 +128,6 @@ func (e ErrorBodyCode) Valid() bool {
 	}
 }
 
-// Defines values for OperationKind.
-const (
-	OperationKindCreate         OperationKind = "create"
-	OperationKindDeleteSandbox  OperationKind = "delete_sandbox"
-	OperationKindDeleteSnapshot OperationKind = "delete_snapshot"
-	OperationKindRestore        OperationKind = "restore"
-	OperationKindSnapshot       OperationKind = "snapshot"
-	OperationKindStart          OperationKind = "start"
-	OperationKindStop           OperationKind = "stop"
-)
-
-// Valid indicates whether the value is a known member of the OperationKind enum.
-func (e OperationKind) Valid() bool {
-	switch e {
-	case OperationKindCreate:
-		return true
-	case OperationKindDeleteSandbox:
-		return true
-	case OperationKindDeleteSnapshot:
-		return true
-	case OperationKindRestore:
-		return true
-	case OperationKindSnapshot:
-		return true
-	case OperationKindStart:
-		return true
-	case OperationKindStop:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for OperationState.
 const (
 	OperationStateFailed    OperationState = "failed"
@@ -205,57 +176,36 @@ func (e SandboxOnDelete) Valid() bool {
 	}
 }
 
-// Defines values for SandboxStatus.
+// Defines values for SandboxState.
 const (
-	SandboxStatusDegraded     SandboxStatus = "degraded"
-	SandboxStatusFailed       SandboxStatus = "failed"
-	SandboxStatusGone         SandboxStatus = "gone"
-	SandboxStatusPending      SandboxStatus = "pending"
-	SandboxStatusRestoring    SandboxStatus = "restoring"
-	SandboxStatusRunning      SandboxStatus = "running"
-	SandboxStatusSnapshotting SandboxStatus = "snapshotting"
-	SandboxStatusStopped      SandboxStatus = "stopped"
+	SandboxStateDegraded     SandboxState = "degraded"
+	SandboxStateFailed       SandboxState = "failed"
+	SandboxStateGone         SandboxState = "gone"
+	SandboxStatePending      SandboxState = "pending"
+	SandboxStateRestoring    SandboxState = "restoring"
+	SandboxStateRunning      SandboxState = "running"
+	SandboxStateSnapshotting SandboxState = "snapshotting"
+	SandboxStateStopped      SandboxState = "stopped"
 )
 
-// Valid indicates whether the value is a known member of the SandboxStatus enum.
-func (e SandboxStatus) Valid() bool {
+// Valid indicates whether the value is a known member of the SandboxState enum.
+func (e SandboxState) Valid() bool {
 	switch e {
-	case SandboxStatusDegraded:
+	case SandboxStateDegraded:
 		return true
-	case SandboxStatusFailed:
+	case SandboxStateFailed:
 		return true
-	case SandboxStatusGone:
+	case SandboxStateGone:
 		return true
-	case SandboxStatusPending:
+	case SandboxStatePending:
 		return true
-	case SandboxStatusRestoring:
+	case SandboxStateRestoring:
 		return true
-	case SandboxStatusRunning:
+	case SandboxStateRunning:
 		return true
-	case SandboxStatusSnapshotting:
+	case SandboxStateSnapshotting:
 		return true
-	case SandboxStatusStopped:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for SnapshotArchiveState.
-const (
-	SnapshotArchiveStateArchived  SnapshotArchiveState = "archived"
-	SnapshotArchiveStateArchiving SnapshotArchiveState = "archiving"
-	SnapshotArchiveStateFailed    SnapshotArchiveState = "failed"
-)
-
-// Valid indicates whether the value is a known member of the SnapshotArchiveState enum.
-func (e SnapshotArchiveState) Valid() bool {
-	switch e {
-	case SnapshotArchiveStateArchived:
-		return true
-	case SnapshotArchiveStateArchiving:
-		return true
-	case SnapshotArchiveStateFailed:
+	case SandboxStateStopped:
 		return true
 	default:
 		return false
@@ -264,49 +214,28 @@ func (e SnapshotArchiveState) Valid() bool {
 
 // Defines values for SnapshotState.
 const (
-	SnapshotStateAvailable   SnapshotState = "available"
-	SnapshotStateClaimed     SnapshotState = "claimed"
-	SnapshotStateConsumed    SnapshotState = "consumed"
-	SnapshotStateCreating    SnapshotState = "creating"
-	SnapshotStateFailed      SnapshotState = "failed"
-	SnapshotStateUnavailable SnapshotState = "unavailable"
+	Available   SnapshotState = "available"
+	Claimed     SnapshotState = "claimed"
+	Consumed    SnapshotState = "consumed"
+	Creating    SnapshotState = "creating"
+	Failed      SnapshotState = "failed"
+	Unavailable SnapshotState = "unavailable"
 )
 
 // Valid indicates whether the value is a known member of the SnapshotState enum.
 func (e SnapshotState) Valid() bool {
 	switch e {
-	case SnapshotStateAvailable:
+	case Available:
 		return true
-	case SnapshotStateClaimed:
+	case Claimed:
 		return true
-	case SnapshotStateConsumed:
+	case Consumed:
 		return true
-	case SnapshotStateCreating:
+	case Creating:
 		return true
-	case SnapshotStateFailed:
+	case Failed:
 		return true
-	case SnapshotStateUnavailable:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for SnapshotTier.
-const (
-	Archive SnapshotTier = "archive"
-	Cold    SnapshotTier = "cold"
-	Hot     SnapshotTier = "hot"
-)
-
-// Valid indicates whether the value is a known member of the SnapshotTier enum.
-func (e SnapshotTier) Valid() bool {
-	switch e {
-	case Archive:
-		return true
-	case Cold:
-		return true
-	case Hot:
+	case Unavailable:
 		return true
 	default:
 		return false
@@ -384,12 +313,17 @@ type ErrorEnvelope struct {
 	Error ErrorBody `json:"error"`
 }
 
-// Failure defines model for Failure.
-type Failure struct {
-	CreatedAt time.Time `json:"created_at"`
-	Message   string    `json:"message"`
-	Reason    string    `json:"reason"`
-	UpdatedAt time.Time `json:"updated_at"`
+// GuestNetwork defines model for GuestNetwork.
+type GuestNetwork struct {
+	Dns         string   `json:"dns"`
+	EgressAllow []string `json:"egressAllow"`
+	EgressDeny  []string `json:"egressDeny"`
+	GuestIp     *string  `json:"guestIp"`
+	Jailer      bool     `json:"jailer"`
+	Nftables    bool     `json:"nftables"`
+	Node        *string  `json:"node"`
+	TapDevice   string   `json:"tapDevice"`
+	UplinkCidr  string   `json:"uplinkCidr"`
 }
 
 // LeaseResponse defines model for LeaseResponse.
@@ -412,19 +346,28 @@ type ListEnvelope struct {
 	Total      int           `json:"total"`
 }
 
-// Operation defines model for Operation.
-type Operation struct {
-	CreatedAt time.Time          `json:"created_at"`
-	Error     *Failure           `json:"error,omitempty"`
-	Id        *string            `json:"id,omitempty"`
-	Kind      *OperationKind     `json:"kind,omitempty"`
-	Result    *map[string]string `json:"result,omitempty"`
-	State     OperationState     `json:"state"`
-	UpdatedAt time.Time          `json:"updated_at"`
+// LiveMetrics defines model for LiveMetrics.
+type LiveMetrics struct {
+	CpuPct       float32 `json:"cpuPct"`
+	DiskTotalGiB float32 `json:"diskTotalGiB"`
+	DiskUsedGiB  float32 `json:"diskUsedGiB"`
+	MemTotalGiB  float32 `json:"memTotalGiB"`
+	MemUsedGiB   float32 `json:"memUsedGiB"`
 }
 
-// OperationKind defines model for Operation.Kind.
-type OperationKind string
+// Operation defines model for Operation.
+type Operation struct {
+	Actor          string         `json:"actor"`
+	DurationMs     *int64         `json:"durationMs,omitempty"`
+	Err            string         `json:"err"`
+	Id             string         `json:"id"`
+	IdempotencyKey string         `json:"idempotencyKey"`
+	StartedAt      time.Time      `json:"startedAt"`
+	State          OperationState `json:"state"`
+	Target         string         `json:"target"`
+	TargetId       *string        `json:"targetId,omitempty"`
+	Type           string         `json:"type"`
+}
 
 // OperationState defines model for Operation.State.
 type OperationState string
@@ -503,23 +446,42 @@ type SSHPublicKeyList struct {
 
 // Sandbox defines model for Sandbox.
 type Sandbox struct {
-	CreatedAt       time.Time       `json:"created_at"`
-	Error           *Failure        `json:"error,omitempty"`
-	ExpiresAt       *time.Time      `json:"expires_at,omitempty"`
-	Id              string          `json:"id"`
-	MaxExpiresAt    *time.Time      `json:"max_expires_at,omitempty"`
-	Node            *string         `json:"node,omitempty"`
-	OnDelete        SandboxOnDelete `json:"on_delete"`
-	Status          SandboxStatus   `json:"status"`
-	TemplateVersion string          `json:"template_version"`
-	UpdatedAt       time.Time       `json:"updated_at"`
+	Clock          *string         `json:"clock,omitempty"`
+	ClockPolicy    string          `json:"clockPolicy"`
+	CreatedAt      time.Time       `json:"createdAt"`
+	Err            string          `json:"err"`
+	ExpiresAt      *time.Time      `json:"expiresAt,omitempty"`
+	Frozen         bool            `json:"frozen"`
+	Id             string          `json:"id"`
+	IdempotencyKey string          `json:"idempotencyKey"`
+	Ip             *string         `json:"ip,omitempty"`
+	LeaseRenews    *string         `json:"leaseRenews,omitempty"`
+	LeasedBy       *string         `json:"leasedBy,omitempty"`
+	MaxExpiresAt   *time.Time      `json:"maxExpiresAt,omitempty"`
+	Mem            int             `json:"mem"`
+	Metrics        LiveMetrics     `json:"metrics"`
+	Name           string          `json:"name"`
+	Network        GuestNetwork    `json:"network"`
+	Node           *string         `json:"node,omitempty"`
+	OnDelete       SandboxOnDelete `json:"onDelete"`
+	Procs          []string        `json:"procs"`
+	Restored       bool            `json:"restored"`
+	Snap           int             `json:"snap"`
+	SourceSnapshot *string         `json:"sourceSnapshot,omitempty"`
+	State          SandboxState    `json:"state"`
+	Tags           []string        `json:"tags"`
+	Template       string          `json:"template"`
+	Tier           string          `json:"tier"`
+	Vcpu           int             `json:"vcpu"`
+	Ver            string          `json:"ver"`
+	Workload       string          `json:"workload"`
 }
 
 // SandboxOnDelete defines model for Sandbox.OnDelete.
 type SandboxOnDelete string
 
-// SandboxStatus defines model for Sandbox.Status.
-type SandboxStatus string
+// SandboxState defines model for Sandbox.State.
+type SandboxState string
 
 // SandboxList defines model for SandboxList.
 type SandboxList struct {
@@ -530,29 +492,33 @@ type SandboxList struct {
 
 // Snapshot defines model for Snapshot.
 type Snapshot struct {
-	// ArchiveRef Stored archive completion marker object key when archive_state is archived.
-	ArchiveRef      *string               `json:"archive_ref,omitempty"`
-	ArchiveState    *SnapshotArchiveState `json:"archive_state,omitempty"`
-	CreatedAt       time.Time             `json:"created_at"`
-	Error           *Failure              `json:"error,omitempty"`
-	ExpiresAt       *time.Time            `json:"expires_at,omitempty"`
-	Id              string                `json:"id"`
-	Node            *string               `json:"node,omitempty"`
-	SandboxId       string                `json:"sandbox_id"`
-	State           SnapshotState         `json:"state"`
-	TemplateVersion string                `json:"template_version"`
-	Tier            SnapshotTier          `json:"tier"`
-	UpdatedAt       time.Time             `json:"updated_at"`
+	ArchiveRef   *string       `json:"archiveRef,omitempty"`
+	ArchiveState *string       `json:"archiveState,omitempty"`
+	Clock        *string       `json:"clock,omitempty"`
+	CreatedAt    time.Time     `json:"createdAt"`
+	Description  string        `json:"description"`
+	Digest       string        `json:"digest"`
+	ExpiresAt    *time.Time    `json:"expiresAt,omitempty"`
+	Frozen       bool          `json:"frozen"`
+	FrozenAt     string        `json:"frozenAt"`
+	Id           string        `json:"id"`
+	Node         *string       `json:"node,omitempty"`
+	Owner        string        `json:"owner"`
+	Parent       *string       `json:"parent,omitempty"`
+	Restores     int           `json:"restores"`
+	Sandbox      string        `json:"sandbox"`
+	SandboxId    string        `json:"sandboxId"`
+	Size         string        `json:"size"`
+	SizeGiB      float32       `json:"sizeGiB"`
+	State        SnapshotState `json:"state"`
+	Tags         []string      `json:"tags"`
+	Template     string        `json:"template"`
+	Tier         string        `json:"tier"`
+	Ver          string        `json:"ver"`
 }
-
-// SnapshotArchiveState defines model for Snapshot.ArchiveState.
-type SnapshotArchiveState string
 
 // SnapshotState defines model for Snapshot.State.
 type SnapshotState string
-
-// SnapshotTier defines model for Snapshot.Tier.
-type SnapshotTier string
 
 // SnapshotList defines model for SnapshotList.
 type SnapshotList struct {
@@ -571,12 +537,17 @@ type SnapshotSandboxRequest struct {
 
 // Template defines model for Template.
 type Template struct {
-	ClockPolicy TemplateClockPolicy `json:"clock_policy"`
-	DiskGb      int                 `json:"disk_gb"`
-	MemoryMb    int                 `json:"memory_mb"`
+	Artifact    string              `json:"artifact"`
+	Clock       string              `json:"clock"`
+	ClockPolicy TemplateClockPolicy `json:"clockPolicy"`
+	Kernel      string              `json:"kernel"`
 	Name        string              `json:"name"`
-	Vcpu        int                 `json:"vcpu"`
-	Version     string              `json:"version"`
+	Pinned      string              `json:"pinned"`
+	Rootfs      string              `json:"rootfs"`
+	Sizing      string              `json:"sizing"`
+	Tags        []string            `json:"tags"`
+	VcpuOptions []int               `json:"vcpuOptions"`
+	Ver         string              `json:"ver"`
 }
 
 // TemplateClockPolicy defines model for Template.ClockPolicy.
@@ -649,6 +620,9 @@ type StreamingNotImplemented = ErrorEnvelope
 
 // UnprocessableEntity defines model for UnprocessableEntity.
 type UnprocessableEntity = ErrorEnvelope
+
+// bearerAuthContextKey is the context key for bearerAuth security scheme
+type bearerAuthContextKey string
 
 // ListSSHPublicKeysParams defines parameters for ListSSHPublicKeys.
 type ListSSHPublicKeysParams struct {
@@ -986,12 +960,6 @@ type ClientInterface interface {
 
 	// GetUser request
 	GetUser(ctx context.Context, handle string, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// AddUserKey request
-	AddUserKey(ctx context.Context, handle string, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// DeleteUserKey request
-	DeleteUserKey(ctx context.Context, handle string, label string, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) ListAudit(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -1536,30 +1504,6 @@ func (c *Client) ListUsers(ctx context.Context, reqEditors ...RequestEditorFn) (
 
 func (c *Client) GetUser(ctx context.Context, handle string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetUserRequest(c.Server, handle)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) AddUserKey(ctx context.Context, handle string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewAddUserKeyRequest(c.Server, handle)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) DeleteUserKey(ctx context.Context, handle string, label string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewDeleteUserKeyRequest(c.Server, handle, label)
 	if err != nil {
 		return nil, err
 	}
@@ -3288,81 +3232,6 @@ func NewGetUserRequest(server string, handle string) (*http.Request, error) {
 	return req, nil
 }
 
-// NewAddUserKeyRequest generates requests for AddUserKey
-func NewAddUserKeyRequest(server string, handle string) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "handle", handle, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/v1/users/%s/keys", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewDeleteUserKeyRequest generates requests for DeleteUserKey
-func NewDeleteUserKeyRequest(server string, handle string, label string) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "handle", handle, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "label", label, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/v1/users/%s/keys/%s", pathParam0, pathParam1)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -3536,12 +3405,6 @@ type ClientWithResponsesInterface interface {
 
 	// GetUserWithResponse request
 	GetUserWithResponse(ctx context.Context, handle string, reqEditors ...RequestEditorFn) (*GetUserResponse, error)
-
-	// AddUserKeyWithResponse request
-	AddUserKeyWithResponse(ctx context.Context, handle string, reqEditors ...RequestEditorFn) (*AddUserKeyResponse, error)
-
-	// DeleteUserKeyWithResponse request
-	DeleteUserKeyWithResponse(ctx context.Context, handle string, label string, reqEditors ...RequestEditorFn) (*DeleteUserKeyResponse, error)
 }
 
 type ListAuditResponse struct {
@@ -4753,68 +4616,6 @@ func (r GetUserResponse) ContentType() string {
 	return ""
 }
 
-type AddUserKeyResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON404      *NotFound
-	JSONDefault  *Error
-}
-
-// Status returns HTTPResponse.Status
-func (r AddUserKeyResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r AddUserKeyResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r AddUserKeyResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type DeleteUserKeyResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON404      *NotFound
-	JSONDefault  *Error
-}
-
-// Status returns HTTPResponse.Status
-func (r DeleteUserKeyResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r DeleteUserKeyResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r DeleteUserKeyResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
 // ListAuditWithResponse request returning *ListAuditResponse
 func (c *ClientWithResponses) ListAuditWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListAuditResponse, error) {
 	rsp, err := c.ListAudit(ctx, reqEditors...)
@@ -5220,24 +5021,6 @@ func (c *ClientWithResponses) GetUserWithResponse(ctx context.Context, handle st
 		return nil, err
 	}
 	return ParseGetUserResponse(rsp)
-}
-
-// AddUserKeyWithResponse request returning *AddUserKeyResponse
-func (c *ClientWithResponses) AddUserKeyWithResponse(ctx context.Context, handle string, reqEditors ...RequestEditorFn) (*AddUserKeyResponse, error) {
-	rsp, err := c.AddUserKey(ctx, handle, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseAddUserKeyResponse(rsp)
-}
-
-// DeleteUserKeyWithResponse request returning *DeleteUserKeyResponse
-func (c *ClientWithResponses) DeleteUserKeyWithResponse(ctx context.Context, handle string, label string, reqEditors ...RequestEditorFn) (*DeleteUserKeyResponse, error) {
-	rsp, err := c.DeleteUserKey(ctx, handle, label, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseDeleteUserKeyResponse(rsp)
 }
 
 // ParseListAuditResponse parses an HTTP response from a ListAuditWithResponse call
@@ -6497,72 +6280,6 @@ func ParseGetUserResponse(rsp *http.Response) (*GetUserResponse, error) {
 	}
 
 	response := &GetUserResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest NotFound
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON404 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseAddUserKeyResponse parses an HTTP response from a AddUserKeyWithResponse call
-func ParseAddUserKeyResponse(rsp *http.Response) (*AddUserKeyResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &AddUserKeyResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest NotFound
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON404 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseDeleteUserKeyResponse parses an HTTP response from a DeleteUserKeyWithResponse call
-func ParseDeleteUserKeyResponse(rsp *http.Response) (*DeleteUserKeyResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &DeleteUserKeyResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}

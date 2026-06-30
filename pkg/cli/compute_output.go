@@ -29,44 +29,65 @@ var computeColumnsByOperation = map[string][]computeColumn{
 	"compute.list_operations":          operationColumns,
 	"compute.get_sandbox_operations":   operationColumns,
 	"compute.list_ssh_keys":            sshKeyColumns,
+	"compute.list_nodes":               nodeColumns,
+	"compute.list_users":               userColumns,
 }
 
 var sandboxColumns = []computeColumn{
 	{header: "ID", path: "id"},
-	{header: "STATUS", path: "status"},
-	{header: "TEMPLATE", path: "template_version"},
+	{header: "STATE", path: "state"},
+	{header: "TEMPLATE", path: "template"},
+	{header: "VER", path: "ver"},
 	{header: "NODE", path: "node"},
-	{header: "CREATED", path: "created_at", format: formatComputeTime},
-	{header: "EXPIRES", path: "expires_at", format: formatComputeTime},
+	{header: "CREATED", path: "createdAt", format: formatComputeTime},
+	{header: "EXPIRES", path: "expiresAt", format: formatComputeTime},
 }
 
 var snapshotColumns = []computeColumn{
 	{header: "ID", path: "id"},
 	{header: "STATE", path: "state"},
 	{header: "TIER", path: "tier"},
-	{header: "SANDBOX", path: "sandbox_id"},
-	{header: "TEMPLATE", path: "template_version"},
-	{header: "CREATED", path: "created_at", format: formatComputeTime},
-	{header: "EXPIRES", path: "expires_at", format: formatComputeTime},
+	{header: "SANDBOX", path: "sandboxId"},
+	{header: "TEMPLATE", path: "template"},
+	{header: "VER", path: "ver"},
+	{header: "CREATED", path: "createdAt", format: formatComputeTime},
+	{header: "EXPIRES", path: "expiresAt", format: formatComputeTime},
 }
 
 var templateColumns = []computeColumn{
 	{header: "NAME", path: "name"},
-	{header: "VERSION", path: "version"},
-	{header: "VCPU", path: "vcpu"},
-	{header: "MEM(MB)", path: "memory_mb"},
-	{header: "DISK(GB)", path: "disk_gb"},
-	{header: "CLOCK", path: "clock_policy"},
+	{header: "VERSION", path: "ver"},
+	{header: "SIZING", path: "sizing"},
+	{header: "CLOCK", path: "clockPolicy"},
+	{header: "PINNED", path: "pinned"},
 }
 
 var operationColumns = []computeColumn{
 	{header: "ID", path: "id"},
-	{header: "KIND", path: "kind"},
+	{header: "TYPE", path: "type"},
 	{header: "STATE", path: "state"},
-	{header: "CREATED", path: "created_at", format: formatComputeTime},
-	{header: "UPDATED", path: "updated_at", format: formatComputeTime},
+	{header: "TARGET", path: "target"},
+	{header: "STARTED", path: "startedAt", format: formatComputeTime},
 }
 
+var nodeColumns = []computeColumn{
+	{header: "ID", path: "id"},
+	{header: "STATUS", path: "status"},
+	{header: "ZONE", path: "zone"},
+	{header: "OS", path: "os"},
+	{header: "VCPU", path: "vcpuTotal"},
+	{header: "MEM", path: "memTotal"},
+}
+
+var userColumns = []computeColumn{
+	{header: "HANDLE", path: "handle"},
+	{header: "NAME", path: "name"},
+	{header: "EMAIL", path: "email"},
+	{header: "TYPE", path: "type"},
+}
+
+// sshKeyColumns renders the caller's own keys (/v1/me/ssh-keys), which keep the
+// snake_case SSHPublicKey shape.
 var sshKeyColumns = []computeColumn{
 	{header: "ID", path: "id"},
 	{header: "NAME", path: "name"},
@@ -380,7 +401,9 @@ func keyPriority(key string) int {
 }
 
 func timestampFormatter(key string) func(any) string {
-	if strings.HasSuffix(key, "_at") || strings.HasSuffix(key, "_time") {
+	// Match both snake_case (created_at) and camelCase (createdAt) timestamp keys.
+	if strings.HasSuffix(key, "_at") || strings.HasSuffix(key, "_time") ||
+		strings.HasSuffix(key, "At") || strings.HasSuffix(key, "Time") {
 		return formatComputeTime
 	}
 

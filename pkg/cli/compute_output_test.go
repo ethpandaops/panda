@@ -10,15 +10,15 @@ import (
 func TestRenderComputeRawListIsTableByDefault(t *testing.T) {
 	setOutputFormat(t, "text")
 
-	body := []byte(`{"items":[{"id":"sbx-1","status":"running","template_version":"ubuntu/24.04"},` +
-		`{"id":"sbx-2","status":"stopped","template_version":"ubuntu/24.04"}],"total":2}`)
+	body := []byte(`{"items":[{"id":"sbx-1","state":"running","template":"ubuntu","ver":"24.04"},` +
+		`{"id":"sbx-2","state":"stopped","template":"ubuntu","ver":"24.04"}],"total":2}`)
 
 	output := captureStdout(t, func() {
 		require.NoError(t, renderComputeRaw("compute.list_sandboxes", body))
 	})
 
 	assert.Contains(t, output, "ID")
-	assert.Contains(t, output, "STATUS")
+	assert.Contains(t, output, "STATE")
 	assert.Contains(t, output, "sbx-1")
 	assert.Contains(t, output, "running")
 	assert.Contains(t, output, "2 results.")
@@ -41,7 +41,7 @@ func TestRenderComputeRawJSONPassthrough(t *testing.T) {
 func TestRenderComputeRawObjectIsKeyValue(t *testing.T) {
 	setOutputFormat(t, "text")
 
-	body := []byte(`{"id":"sbx-1","status":"running","node":"node-a"}`)
+	body := []byte(`{"id":"sbx-1","state":"running","node":"node-a"}`)
 
 	output := captureStdout(t, func() {
 		require.NoError(t, renderComputeRaw("compute.get_sandbox", body))
@@ -49,7 +49,7 @@ func TestRenderComputeRawObjectIsKeyValue(t *testing.T) {
 
 	assert.Contains(t, output, "id:")
 	assert.Contains(t, output, "sbx-1")
-	assert.Contains(t, output, "status:")
+	assert.Contains(t, output, "state:")
 	assert.Contains(t, output, "running")
 }
 
