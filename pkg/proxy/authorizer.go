@@ -61,10 +61,11 @@ func NewAuthorizer(log logrus.FieldLogger, cfg ServerConfig) *Authorizer {
 	}
 
 	for _, ds := range cfg.Compute {
+		// No url metadata: the compute backend address is private and must not
+		// surface to callers (see ComputeDatasourceInfo).
 		a.rules[ruleKey("compute", ds.Name)] = []datasourceVariantRule{{
 			routeName:   ds.Name,
 			allowedOrgs: append([]string(nil), ds.AllowedOrgs...),
-			metadata:    metadataValue("url", ds.URL),
 		}}
 	}
 

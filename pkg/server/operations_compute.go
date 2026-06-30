@@ -45,10 +45,16 @@ func (d *computeProxyDoer) Do(req *http.Request) (*http.Response, error) {
 		requestPath += "?" + req.URL.RawQuery
 	}
 
-	headers := http.Header{handlers.DatasourceHeader: []string{d.datasource}}
-	if contentType := req.Header.Get("Content-Type"); contentType != "" {
-		headers.Set("Content-Type", contentType)
+	// Forward every header the generated client set (Content-Type,
+	// Idempotency-Key, Accept, ...). The proxy strips caller credentials and
+	// injects the service token downstream, so passing them through is safe and
+	// avoids dropping headers the backend requires.
+	headers := req.Header.Clone()
+	if headers == nil {
+		headers = http.Header{}
 	}
+
+	headers.Set(handlers.DatasourceHeader, d.datasource)
 
 	respBody, status, respHeaders, err := d.svc.proxyDatasourceRequest(
 		req.Context(),
@@ -428,7 +434,9 @@ func (s *service) writeComputeResult(w http.ResponseWriter, resp *http.Response,
 		contentType = "application/json"
 	}
 
-	writePassthroughResponse(w, http.StatusOK, contentType, body)
+	// Preserve the upstream 2xx status so callers can tell apart created (201),
+	// accepted (202), and no-content (204) results.
+	writePassthroughResponse(w, resp.StatusCode, contentType, body)
 }
 
 func (s *service) computeDatasources() ([]types.DatasourceInfo, error) {

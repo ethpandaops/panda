@@ -1028,11 +1028,13 @@ func (s *server) ComputeDatasourceInfo() []types.DatasourceInfo {
 	result := make([]types.DatasourceInfo, 0, len(s.cfg.Compute))
 
 	for _, comp := range s.cfg.Compute {
+		// The upstream URL is deliberately omitted: it is the proxy's private
+		// backend address and exposing it would leak internal topology to
+		// callers and undercut the neutral "compute" alias.
 		result = append(result, types.DatasourceInfo{
 			Type:        "compute",
 			Name:        comp.Name,
 			Description: comp.Description,
-			Metadata:    metadataValue("url", comp.URL),
 		})
 	}
 
