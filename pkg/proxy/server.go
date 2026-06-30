@@ -197,7 +197,7 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 	}
 
 	if computeConfigs := cfg.ToComputeHandlerConfigs(); len(computeConfigs) > 0 {
-		s.computeHandler = handlers.NewComputeHandler(log, computeConfigs, authSubject)
+		s.computeHandler = handlers.NewComputeHandler(log, computeConfigs)
 	}
 
 	// Create embedding service if configured.
@@ -1044,17 +1044,6 @@ func (s *server) ComputeDatasourceInfo() []types.DatasourceInfo {
 // EthNodeAvailable returns true if the ethnode handler is configured.
 func (s *server) EthNodeAvailable() bool {
 	return s.ethNodeHandler != nil
-}
-
-// authSubject returns the verified end-user subject from the request context,
-// or the empty string when the request is unauthenticated. It is the trusted
-// source for the subject the compute handler forwards upstream.
-func authSubject(ctx context.Context) string {
-	if user := GetAuthUser(ctx); user != nil {
-		return user.Subject
-	}
-
-	return ""
 }
 
 // EthNodeDatasourceInfo returns the ethnode datasource info when configured.
