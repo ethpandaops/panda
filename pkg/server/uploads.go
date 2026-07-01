@@ -16,9 +16,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-
-	"github.com/ethpandaops/panda/pkg/attribution"
-	"github.com/ethpandaops/panda/pkg/proxy"
 )
 
 // maxLocalUploadBytes caps a single upload held in memory.
@@ -171,42 +168,23 @@ func (s *service) handleUploadPublish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	proxySvc, err := s.primaryProxyService()
-	if err != nil {
-		writeAPIError(w, http.StatusServiceUnavailable, fmt.Sprintf("publishing unavailable: %v", err))
-		return
-	}
+	// Route through the shared proxy helper so publish gets the same treatment as
+	// every other proxy-bound request: s.httpClient (User-Agent), attribution
+	// forwarding, and the 401/403 invalidate-and-retry.
+	requestPath := "/uploads?name=" + url.QueryEscape(it.name)
+	headers := http.Header{"Content-Type": {"application/octet-stream"}}
 
-	target := strings.TrimRight(proxySvc.URL(), "/") + "/uploads"
-
-	proxyReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, target, bytes.NewReader(it.data))
-	if err != nil {
-		writeAPIError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	proxyReq.URL.RawQuery = "name=" + url.QueryEscape(it.name)
-	proxyReq.ContentLength = int64(len(it.data))
-	proxyReq.Header.Set("Content-Type", "application/octet-stream")
-
-	if v := r.Header.Get(attribution.Header); v != "" {
-		proxyReq.Header.Set(attribution.Header, v)
-	}
-
-	if token := proxySvc.RegisterToken(); token != "" && token != proxy.NoAuthToken {
-		proxyReq.Header.Set("Authorization", "Bearer "+token)
-	}
-
-	resp, err := http.DefaultClient.Do(proxyReq)
+	data, status, header, err := s.proxyRequest(r.Context(), http.MethodPost, requestPath, bytes.NewReader(it.data), headers)
 	if err != nil {
 		writeAPIError(w, http.StatusBadGateway, fmt.Sprintf("publish failed: %v", err))
 		return
 	}
-	defer func() { _ = resp.Body.Close() }()
 
-	data, _ := io.ReadAll(resp.Body)
-	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
-	w.WriteHeader(resp.StatusCode)
+	if ct := header.Get("Content-Type"); ct != "" {
+		w.Header().Set("Content-Type", ct)
+	}
+
+	w.WriteHeader(status)
 	_, _ = w.Write(data)
 }
 
