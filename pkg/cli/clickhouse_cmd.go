@@ -120,9 +120,7 @@ func runClickHouseOperation(cmd *cobra.Command, operationID, datasource, sql str
 // clickHouseUnknownTableHint sits next to the datasource (rather than in the
 // generic error helper) and replaces the misleading generic 404 hint that a
 // ClickHouse unknown-table/database error would otherwise surface.
-const clickHouseUnknownTableHint = "ClickHouse could not find that table. List real tables with 'panda schema <cluster>'. " +
-	"OTel log tables must be fully qualified: use 'external.otel_logs' for hosted devnets/testnets, " +
-	"or 'otel.otel_logs' for local Kurtosis devnets."
+const clickHouseUnknownTableHint = "ClickHouse could not find that table. List real tables with 'panda schema <cluster>'."
 
 // wrapClickHouseError swaps the generic status hint for a table-specific hint
 // when ClickHouse reports an unknown table/database. ClickHouse returns these
