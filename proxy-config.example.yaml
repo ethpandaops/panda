@@ -235,10 +235,10 @@ loki:
 # Built-in abuse guards: a per-user rate limit, a size cap (max_object_bytes),
 # filename sanitization, and forced download (Content-Disposition: attachment)
 # for scriptable types (html/svg/js) so a public bucket can't serve them inline.
-# Set a 60-day object lifecycle on the bucket for retention.
+# Set a 60-day object lifecycle scoped to key_prefix for retention.
 # uploads:
 #   bucket: "ethpandaops-platform-production-public"
-#   key_prefix: "uploads/"                  # keeps user uploads out of other namespaces
+#   key_prefix: "panda/uploads/"            # namespaces panda uploads in the shared bucket
 #   public_base_url: "https://data.ethpandaops.io"
 #   endpoint: "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
 #   access_key_id: "${R2_UPLOADS_ACCESS_KEY_ID}"

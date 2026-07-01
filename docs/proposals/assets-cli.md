@@ -22,7 +22,7 @@ The preview page renders the file and shows a **Make public** button. Clicking i
 promotes the file to the public bucket and shows the durable link:
 
 ```
-https://data.ethpandaops.io/uploads/9f3ca1/report.html   (expires in 60 days)
+https://data.ethpandaops.io/panda/uploads/9f3ca1/report.html   (expires in 60 days)
 ```
 
 - **Private by default.** The upload is held **in memory** in the local server
@@ -34,7 +34,7 @@ https://data.ethpandaops.io/uploads/9f3ca1/report.html   (expires in 60 days)
 
 ```console
 $ panda upload chart.png --public
-https://data.ethpandaops.io/uploads/71aa9c/chart.png
+https://data.ethpandaops.io/panda/uploads/71aa9c/chart.png
 
 $ cat gas.svg | panda upload - --name gas.svg
 http://localhost:2480/u/2b77e4
@@ -57,7 +57,7 @@ touches the proxy; only **publish** does. No new MCP tool.
 # proxy-config.yaml
 uploads:
   bucket: "ethpandaops-platform-production-public"
-  key_prefix: "uploads/"
+  key_prefix: "panda/uploads/"
   public_base_url: "https://data.ethpandaops.io"
   endpoint: "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
   access_key_id: "${R2_UPLOADS_ACCESS_KEY_ID}"
@@ -65,7 +65,7 @@ uploads:
   max_object_bytes: 104857600   # 100 MiB
 ```
 
-Published objects are content-addressed (`uploads/<6-hex-sha256>/<filename>`) —
+Published objects are content-addressed (`panda/uploads/<6-hex-sha256>/<filename>`) —
 identical bytes dedup and every public URL is immutable.
 
 ## Retention
@@ -107,7 +107,7 @@ An R2 writer key scoped RW to just the target bucket + the 60-day lifecycle rule
 
 ## Open decision
 
-Target the existing `-public` bucket under an `uploads/` prefix (ships now, but
+Target the existing `-public` bucket under a `panda/uploads/` prefix (ships now, but
 `data.ethpandaops.io` reads as the xatu data surface), or the dedicated
 `-dropbox` bucket behind a new `uploads.ethpandaops.io` CNAME (cleaner, one extra
 `platform`-repo change). Prefix separation is fine to start.
