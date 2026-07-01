@@ -229,6 +229,18 @@ loki:
 # github:
 #   token: "${GITHUB_TOKEN}"  # PAT or app token with actions:write permission
 
+# Uploads (optional — enables `panda upload` to store files in an R2/S3 bucket
+# and return a durable public URL). Content-addressed: key is
+# <key_prefix><6-hex-of-sha256>/<filename>.
+# uploads:
+#   bucket: "ethpandaops-platform-production-public"
+#   key_prefix: "uploads/"                  # keeps user uploads out of other namespaces
+#   public_base_url: "https://data.ethpandaops.io"
+#   endpoint: "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+#   access_key_id: "${R2_UPLOADS_ACCESS_KEY_ID}"
+#   secret_access_key: "${R2_UPLOADS_SECRET_ACCESS_KEY}"
+#   max_object_bytes: 104857600             # 100 MiB (default if omitted)
+
 # Rate limiting
 rate_limiting:
   enabled: true

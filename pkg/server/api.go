@@ -45,6 +45,7 @@ func (s *service) mountAPIRoutes(r chi.Router) {
 		r.Post("/build/trigger", s.handleAPIBuildTrigger)
 		r.Post("/build/status", s.handleAPIBuildStatus)
 		r.HandleFunc("/operations/{operationID}", s.handleAPIOperation)
+		r.Post("/uploads", s.handleUpload)
 
 		// Public file serving (no auth — same as MinIO anonymous download).
 		r.Get("/storage/files/*", s.handleStorageServeFile)
@@ -510,6 +511,48 @@ func (s *service) handleRuntimeStorageUpload(w http.ResponseWriter, r *http.Requ
 		URL:  result.URL,
 		Path: result.Path,
 	})
+}
+
+// handleUpload streams a file to the proxy's /uploads route, which holds the R2
+// credentials, and relays the resulting public URL. The server never sees the
+// credentials; it only forwards the body and caller attribution.
+func (s *service) handleUpload(w http.ResponseWriter, r *http.Request) {
+	proxySvc, err := s.primaryProxyService()
+	if err != nil {
+		writeAPIError(w, http.StatusServiceUnavailable, fmt.Sprintf("uploads unavailable: %v", err))
+		return
+	}
+
+	target := strings.TrimRight(proxySvc.URL(), "/") + "/uploads"
+
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, target, r.Body)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	req.URL.RawQuery = r.URL.RawQuery
+	req.ContentLength = r.ContentLength
+	req.Header.Set("Content-Type", "application/octet-stream")
+
+	if v := r.Header.Get(attribution.Header); v != "" {
+		req.Header.Set(attribution.Header, v)
+	}
+
+	if token := proxySvc.RegisterToken(); token != "" && token != proxy.NoAuthToken {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		writeAPIError(w, http.StatusBadGateway, fmt.Sprintf("upload failed: %v", err))
+		return
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
 }
 
 func (s *service) handleRuntimeStorageList(w http.ResponseWriter, r *http.Request) {

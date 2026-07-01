@@ -72,6 +72,7 @@ type server struct {
 	ethNodeHandler      *handlers.EthNodeHandler
 	benchmarkoorHandler *handlers.BenchmarkoorHandler
 	computeHandler      *handlers.ComputeHandler
+	uploadsHandler      *handlers.UploadsHandler
 	embeddingService    *EmbeddingService
 	embeddingServiceV2  *EmbeddingService
 	githubHandler       *handlers.GitHubHandler
@@ -198,6 +199,15 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 
 	if computeConfigs := cfg.ToComputeHandlerConfigs(); len(computeConfigs) > 0 {
 		s.computeHandler = handlers.NewComputeHandler(log, computeConfigs)
+	}
+
+	if uploadsCfg := cfg.ToUploadsHandlerConfig(); uploadsCfg != nil {
+		uploadsHandler, err := handlers.NewUploadsHandler(log, *uploadsCfg)
+		if err != nil {
+			return nil, fmt.Errorf("creating uploads handler: %w", err)
+		}
+
+		s.uploadsHandler = uploadsHandler
 	}
 
 	// Create embedding service if configured.
@@ -343,6 +353,10 @@ func (s *server) registerRoutes() {
 
 	if s.githubHandler != nil {
 		s.handleSubtreeRoute("/github", s.metricsMiddleware(chain(s.githubHandler)))
+	}
+
+	if s.uploadsHandler != nil {
+		s.handleSubtreeRoute("/uploads", s.metricsMiddleware(chain(s.uploadsHandler)))
 	}
 }
 
