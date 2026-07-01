@@ -55,11 +55,14 @@ func NewUploadsHandler(log logrus.FieldLogger, cfg UploadsConfig) (*UploadsHandl
 		return nil, fmt.Errorf("uploads: bucket, endpoint and public_base_url are required")
 	}
 
+	// Derive TLS from the endpoint scheme (https unless explicitly http://) so a
+	// local/dev http endpoint works instead of being forced to TLS.
+	secure := !strings.HasPrefix(strings.ToLower(cfg.Endpoint), "http://")
 	endpoint := strings.TrimPrefix(strings.TrimPrefix(cfg.Endpoint, "https://"), "http://")
 
 	client, err := minio.New(endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.AccessKeyID, cfg.SecretKey, ""),
-		Secure: true,
+		Secure: secure,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("uploads: creating r2 client: %w", err)

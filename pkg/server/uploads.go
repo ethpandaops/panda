@@ -21,11 +21,14 @@ import (
 // maxLocalUploadBytes caps a single upload held in memory.
 const maxLocalUploadBytes int64 = 100 << 20
 
-// uploadMaxItems bounds how many private uploads the store keeps; the oldest is
-// evicted past this. Private uploads live only in memory for the server's
-// lifetime ("just for the session") — nothing touches disk or leaves the machine
-// until the user publishes.
-const uploadMaxItems = 32
+// Private uploads live only in memory for the server's lifetime ("just for the
+// session") — nothing touches disk or leaves the machine until the user
+// publishes. The oldest are evicted past either bound, so worst-case memory is
+// capped regardless of upload size.
+const (
+	uploadMaxItems            = 32
+	uploadMaxTotalBytes int64 = 256 << 20 // 256 MiB across all held previews
+)
 
 type uploadItem struct {
 	name        string
@@ -35,13 +38,20 @@ type uploadItem struct {
 }
 
 type uploadStore struct {
-	mu    sync.Mutex
-	items map[string]*uploadItem
-	seq   uint64
+	mu            sync.Mutex
+	items         map[string]*uploadItem
+	seq           uint64
+	totalBytes    int64
+	maxItems      int
+	maxTotalBytes int64
 }
 
 func newUploadStore() *uploadStore {
-	return &uploadStore{items: make(map[string]*uploadItem, uploadMaxItems)}
+	return &uploadStore{
+		items:         make(map[string]*uploadItem, uploadMaxItems),
+		maxItems:      uploadMaxItems,
+		maxTotalBytes: uploadMaxTotalBytes,
+	}
 }
 
 func (s *uploadStore) put(name, contentType string, data []byte) string {
@@ -51,8 +61,10 @@ func (s *uploadStore) put(name, contentType string, data []byte) string {
 	s.seq++
 	id := uuid.NewString()
 	s.items[id] = &uploadItem{name: name, contentType: contentType, data: data, seq: s.seq}
+	s.totalBytes += int64(len(data))
 
-	for len(s.items) > uploadMaxItems {
+	// Evict oldest past either bound, but never the item we just added.
+	for len(s.items) > 1 && (len(s.items) > s.maxItems || s.totalBytes > s.maxTotalBytes) {
 		oldestID, oldestSeq := "", ^uint64(0)
 		for k, v := range s.items {
 			if v.seq < oldestSeq {
@@ -60,6 +72,7 @@ func (s *uploadStore) put(name, contentType string, data []byte) string {
 			}
 		}
 
+		s.totalBytes -= int64(len(s.items[oldestID].data))
 		delete(s.items, oldestID)
 	}
 

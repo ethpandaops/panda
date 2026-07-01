@@ -71,7 +71,8 @@ identical bytes dedup and every public URL is immutable.
 ## Retention
 
 - **Private previews** live only in the local server's memory (session lifetime),
-  bounded to the most recent `uploadMaxItems` (32) uploads.
+  bounded to the most recent 32 uploads and 256 MiB total (oldest evicted first),
+  so worst-case memory is capped regardless of upload size.
 - **Public objects** expire **60 days** after publication via an R2 lifecycle
   rule on the bucket (configured in the platform repo).
 

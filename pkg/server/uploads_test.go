@@ -35,6 +35,32 @@ func TestUploadStoreEvictsOldest(t *testing.T) {
 	}
 }
 
+func TestUploadStoreEvictsOnTotalBytes(t *testing.T) {
+	// High item cap, low byte cap → only the byte bound can trigger eviction.
+	store := &uploadStore{items: make(map[string]*uploadItem), maxItems: 100, maxTotalBytes: 10}
+
+	first := store.put("a.bin", "application/octet-stream", make([]byte, 6))
+	store.put("b.bin", "application/octet-stream", make([]byte, 6)) // total 12 > 10
+
+	if _, ok := store.get(first); ok {
+		t.Fatal("oldest item should have been evicted on the total-bytes bound")
+	}
+
+	if store.totalBytes > store.maxTotalBytes {
+		t.Fatalf("totalBytes = %d, want <= %d", store.totalBytes, store.maxTotalBytes)
+	}
+}
+
+func TestUploadStoreKeepsItemLargerThanTotalCap(t *testing.T) {
+	// A single item over the byte cap is kept, not evicted into an empty store.
+	store := &uploadStore{items: make(map[string]*uploadItem), maxItems: 100, maxTotalBytes: 5}
+
+	id := store.put("big.bin", "application/octet-stream", make([]byte, 9))
+	if _, ok := store.get(id); !ok {
+		t.Fatal("the only item must be retained even if it exceeds the byte cap")
+	}
+}
+
 func TestHandleUploadStoresPrivately(t *testing.T) {
 	svc := testUploadService()
 
