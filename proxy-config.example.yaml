@@ -229,12 +229,13 @@ loki:
 # github:
 #   token: "${GITHUB_TOKEN}"  # PAT or app token with actions:write permission
 
-# Uploads (optional — enables `panda upload` to store files in an R2/S3 bucket
-# and return a durable public URL). Content-addressed: key is
-# <key_prefix><6-hex-of-sha256>/<filename>. Built-in abuse guards: a per-user
-# upload rate limit, a size cap (max_object_bytes), filename sanitization, and
-# forced download (Content-Disposition: attachment) for scriptable types
-# (html/svg/js) so a public bucket can't serve them inline.
+# Uploads (optional — the publish target for `panda upload`). Private previews
+# stay in the local server; this bucket holds only files the user chose to make
+# public. Content-addressed: key is <key_prefix><6-hex-of-sha256>/<filename>.
+# Built-in abuse guards: a per-user rate limit, a size cap (max_object_bytes),
+# filename sanitization, and forced download (Content-Disposition: attachment)
+# for scriptable types (html/svg/js) so a public bucket can't serve them inline.
+# Set a 60-day object lifecycle on the bucket for retention.
 # uploads:
 #   bucket: "ethpandaops-platform-production-public"
 #   key_prefix: "uploads/"                  # keeps user uploads out of other namespaces

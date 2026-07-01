@@ -51,6 +51,7 @@ type service struct {
 	execService          *execsvc.Service
 	proxyService         proxy.Service
 	storageService       storage.Service
+	uploads              *uploadStore
 	moduleRegistry       *module.Registry
 	cartographoorClient  cartographoor.CartographoorClient
 	specsRegistry        *consensusspecs.Registry
@@ -100,6 +101,7 @@ func NewService(
 		execService:         execSvc,
 		proxyService:        proxySvc,
 		storageService:      storageSvc,
+		uploads:             newUploadStore(),
 		moduleRegistry:      moduleReg,
 		cartographoorClient: cartographoorClient,
 		specsRegistry:       specsReg,
@@ -399,6 +401,10 @@ func (s *service) buildHTTPHandler(routes map[string]http.Handler) http.Handler 
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ready"))
 	})
+
+	// Private upload preview page (in-memory, session-only) with a publish button.
+	r.Get("/u/{id}", s.handleUploadPreviewPage)
+	r.Get("/u/{id}/raw", s.handleUploadServeRaw)
 
 	s.mountAPIRoutes(r)
 
