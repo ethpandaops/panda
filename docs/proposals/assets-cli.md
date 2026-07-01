@@ -61,6 +61,21 @@ The client config needs nothing — uploads ride the existing `server.url` → p
 path. Uploads carry the caller attribution panda already sends, so the proxy can
 org-gate writes (`auth.allowed_orgs`) and cap size. No new MCP tool.
 
+## Abuse guards (in the proxy handler)
+
+The `/uploads` route is authenticated (org-gated at token issuance) and, on top
+of the generic per-user request limiter, has:
+
+- a **dedicated per-user upload rate limit** (60/min, burst 20) — uploads write
+  bytes to R2, so they're throttled tighter than a normal query;
+- a **size cap** (`max_object_bytes`, default 100 MiB) enforced while streaming;
+- **filename sanitization** — path components stripped, restricted to
+  `[A-Za-z0-9._-]`, length-capped, extension preserved;
+- **forced download for scriptable types** — `text/html`, `image/svg+xml`, JS,
+  etc. are stored with `Content-Disposition: attachment` so a public bucket on an
+  ethpandaops domain can't serve phishing/XSS inline; images, PDFs and text still
+  render inline.
+
 ## Prerequisite (platform repo)
 
 An R2 writer key scoped RW to just that bucket — terraform R2 + SOPS secret +

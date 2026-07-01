@@ -27,6 +27,12 @@ const (
 	// githubTriggerRefillPerMinute is how fast the trigger budget refills.
 	// Ten per ten minutes refills at one per minute.
 	githubTriggerRefillPerMinute = 1
+
+	// uploadsBurst is the per-user upload budget: this many uploads may fire
+	// back-to-back (e.g. `panda upload *.png`) before the budget throttles.
+	uploadsBurst = 20
+	// uploadsRefillPerMinute caps sustained per-user uploads to one per second.
+	uploadsRefillPerMinute = 60
 )
 
 // Server is the credential proxy server interface.
@@ -73,6 +79,7 @@ type server struct {
 	benchmarkoorHandler *handlers.BenchmarkoorHandler
 	computeHandler      *handlers.ComputeHandler
 	uploadsHandler      *handlers.UploadsHandler
+	uploadsLimiter      *RateLimiter
 	embeddingService    *EmbeddingService
 	embeddingServiceV2  *EmbeddingService
 	githubHandler       *handlers.GitHubHandler
@@ -208,6 +215,10 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 		}
 
 		s.uploadsHandler = uploadsHandler
+		s.uploadsLimiter = NewRateLimiter(log, RateLimiterConfig{
+			RequestsPerMinute: uploadsRefillPerMinute,
+			BurstSize:         uploadsBurst,
+		})
 	}
 
 	// Create embedding service if configured.
@@ -356,7 +367,15 @@ func (s *server) registerRoutes() {
 	}
 
 	if s.uploadsHandler != nil {
-		s.handleSubtreeRoute("/uploads", s.metricsMiddleware(chain(s.uploadsHandler)))
+		// A dedicated per-user limiter (keyed on the authenticated subject, so it
+		// runs inside chain() after auth) throttles uploads tighter than the
+		// generic request limiter, since each upload writes bytes to R2.
+		uploads := http.Handler(s.uploadsHandler)
+		if s.uploadsLimiter != nil {
+			uploads = s.uploadsLimiter.Middleware()(uploads)
+		}
+
+		s.handleSubtreeRoute("/uploads", s.metricsMiddleware(chain(uploads)))
 	}
 }
 
@@ -861,6 +880,10 @@ func (s *server) Stop(ctx context.Context) error {
 
 	if s.githubTriggerLimiter != nil {
 		s.githubTriggerLimiter.Stop()
+	}
+
+	if s.uploadsLimiter != nil {
+		s.uploadsLimiter.Stop()
 	}
 
 	// Close embedding service.

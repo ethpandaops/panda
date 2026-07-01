@@ -68,3 +68,42 @@ func TestUploadsHandlerRejectsEmptyBody(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
 	}
 }
+
+func TestSanitizeUploadName(t *testing.T) {
+	cases := map[string]string{
+		"report.md":                       "report.md",
+		"../../etc/passwd":                "passwd",
+		"my chart (final).png":            "my_chart__final_.png",
+		"":                                "file",
+		".":                               "file",
+		"..":                              "file",
+		"/":                               "file",
+		"a/b/c.txt":                       "c.txt",
+		"...":                             "file",
+		"héllo.png":                       "h_llo.png",
+		strings.Repeat("x", 200) + ".png": strings.Repeat("x", 124) + ".png",
+	}
+
+	for in, want := range cases {
+		if got := sanitizeUploadName(in); got != want {
+			t.Errorf("sanitizeUploadName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestInlineSafe(t *testing.T) {
+	inline := []string{"image/png", "image/jpeg", "application/pdf", "text/plain; charset=utf-8", "video/mp4"}
+	forced := []string{"text/html", "image/svg+xml", "application/xhtml+xml", "text/javascript", "application/octet-stream"}
+
+	for _, ct := range inline {
+		if !inlineSafe(ct) {
+			t.Errorf("inlineSafe(%q) = false, want true", ct)
+		}
+	}
+
+	for _, ct := range forced {
+		if inlineSafe(ct) {
+			t.Errorf("inlineSafe(%q) = true, want false", ct)
+		}
+	}
+}

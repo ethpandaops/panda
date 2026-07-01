@@ -231,7 +231,10 @@ loki:
 
 # Uploads (optional — enables `panda upload` to store files in an R2/S3 bucket
 # and return a durable public URL). Content-addressed: key is
-# <key_prefix><6-hex-of-sha256>/<filename>.
+# <key_prefix><6-hex-of-sha256>/<filename>. Built-in abuse guards: a per-user
+# upload rate limit, a size cap (max_object_bytes), filename sanitization, and
+# forced download (Content-Disposition: attachment) for scriptable types
+# (html/svg/js) so a public bucket can't serve them inline.
 # uploads:
 #   bucket: "ethpandaops-platform-production-public"
 #   key_prefix: "uploads/"                  # keeps user uploads out of other namespaces

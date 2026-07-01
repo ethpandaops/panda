@@ -79,10 +79,7 @@ func (h *UploadsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	name := path.Base(strings.TrimSpace(r.URL.Query().Get("name")))
-	if name == "" || name == "." || name == "/" {
-		name = "file"
-	}
+	name := sanitizeUploadName(r.URL.Query().Get("name"))
 
 	// Content-address the object so identical bytes dedup and every URL is
 	// immutable; the hash needs the whole body, so buffer to a temp file first.
@@ -124,9 +121,15 @@ func (h *UploadsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	key := h.cfg.KeyPrefix + hex.EncodeToString(hasher.Sum(nil))[:6] + "/" + name
 
-	if _, err := h.client.PutObject(r.Context(), h.cfg.Bucket, key, tmp, size, minio.PutObjectOptions{
-		ContentType: contentType,
-	}); err != nil {
+	opts := minio.PutObjectOptions{ContentType: contentType}
+	// Force types that a browser would execute in the ethpandaops origin (HTML,
+	// SVG, JS) to download instead — defuses phishing/XSS on a public bucket
+	// while charts, PDFs and text still render inline.
+	if !inlineSafe(contentType) {
+		opts.ContentDisposition = fmt.Sprintf("attachment; filename=%q", name)
+	}
+
+	if _, err := h.client.PutObject(r.Context(), h.cfg.Bucket, key, tmp, size, opts); err != nil {
 		h.fail(w, http.StatusBadGateway, "putting object", err)
 		return
 	}
@@ -145,4 +148,62 @@ func (h *UploadsHandler) fail(w http.ResponseWriter, status int, msg string, err
 		h.log.WithError(err).Warn(msg)
 	}
 	http.Error(w, msg, status)
+}
+
+// maxUploadNameLen bounds the object filename so keys stay well under S3 limits
+// and a hostile name can't bloat the key.
+const maxUploadNameLen = 128
+
+// sanitizeUploadName reduces a client-supplied name to a safe basename: path
+// components stripped, restricted to [A-Za-z0-9._-], and length-capped while
+// preserving the extension (which drives Content-Type).
+func sanitizeUploadName(raw string) string {
+	name := path.Base(strings.TrimSpace(raw))
+	if name == "" || name == "." || name == ".." || name == "/" {
+		return "file"
+	}
+
+	var b strings.Builder
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '_', r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+
+	name = strings.Trim(b.String(), ".")
+	if name == "" {
+		return "file"
+	}
+
+	if len(name) > maxUploadNameLen {
+		ext := path.Ext(name)
+		if len(ext) < maxUploadNameLen {
+			name = name[:maxUploadNameLen-len(ext)] + ext
+		} else {
+			name = name[:maxUploadNameLen]
+		}
+	}
+
+	return name
+}
+
+// inlineSafe reports whether a Content-Type is safe to serve inline from a
+// public bucket. Scriptable/markup types (html, svg, xml, js) are not.
+func inlineSafe(contentType string) bool {
+	ct := strings.ToLower(strings.TrimSpace(contentType))
+	if i := strings.IndexByte(ct, ';'); i >= 0 {
+		ct = strings.TrimSpace(ct[:i])
+	}
+
+	switch ct {
+	case "application/pdf", "text/plain", "text/csv", "text/markdown", "application/json":
+		return true
+	case "image/svg+xml":
+		return false
+	default:
+		return strings.HasPrefix(ct, "image/") || strings.HasPrefix(ct, "video/") || strings.HasPrefix(ct, "audio/")
+	}
 }
