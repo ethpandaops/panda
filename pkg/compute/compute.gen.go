@@ -242,6 +242,21 @@ func (e SnapshotState) Valid() bool {
 	}
 }
 
+// Defines values for SnapshotBootSourceKind.
+const (
+	SnapshotBootSourceKindSnapshot SnapshotBootSourceKind = "snapshot"
+)
+
+// Valid indicates whether the value is a known member of the SnapshotBootSourceKind enum.
+func (e SnapshotBootSourceKind) Valid() bool {
+	switch e {
+	case SnapshotBootSourceKindSnapshot:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TemplateClockPolicy.
 const (
 	Frozen   TemplateClockPolicy = "frozen"
@@ -254,6 +269,21 @@ func (e TemplateClockPolicy) Valid() bool {
 	case Frozen:
 		return true
 	case Realtime:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TemplateBootSourceKind.
+const (
+	TemplateBootSourceKindTemplate TemplateBootSourceKind = "template"
+)
+
+// Valid indicates whether the value is a known member of the TemplateBootSourceKind enum.
+func (e TemplateBootSourceKind) Valid() bool {
+	switch e {
+	case TemplateBootSourceKindTemplate:
 		return true
 	default:
 		return false
@@ -289,7 +319,10 @@ type AuthSession struct {
 type CreateSandboxRequest struct {
 	// OnDelete Disposition to apply when the sandbox is deleted.
 	OnDelete *CreateSandboxRequestOnDelete `json:"on_delete,omitempty"`
-	Template string                        `json:"template"`
+	Source   *CreateSandboxSource          `json:"source,omitempty"`
+
+	// Template Legacy template name. Mutually exclusive with source.
+	Template *string `json:"template,omitempty"`
 
 	// Ttl Optional positive Go-style duration string.
 	Ttl *string `json:"ttl,omitempty"`
@@ -297,6 +330,11 @@ type CreateSandboxRequest struct {
 
 // CreateSandboxRequestOnDelete Disposition to apply when the sandbox is deleted.
 type CreateSandboxRequestOnDelete string
+
+// CreateSandboxSource defines model for CreateSandboxSource.
+type CreateSandboxSource struct {
+	union json.RawMessage
+}
 
 // ErrorBody defines model for ErrorBody.
 type ErrorBody struct {
@@ -383,6 +421,15 @@ type OperationList struct {
 type PrepareSandboxSSHRequest struct {
 	// PublicKey One registered OpenSSH public key to certify for gateway authentication.
 	PublicKey string `json:"public_key"`
+}
+
+// PromoteSnapshotRequest defines model for PromoteSnapshotRequest.
+type PromoteSnapshotRequest struct {
+	Description *string   `json:"description,omitempty"`
+	Name        string    `json:"name"`
+	Replace     *bool     `json:"replace,omitempty"`
+	Tags        *[]string `json:"tags,omitempty"`
+	Version     *string   `json:"version,omitempty"`
 }
 
 // RestoreSnapshotRequest defines model for RestoreSnapshotRequest.
@@ -520,6 +567,15 @@ type Snapshot struct {
 // SnapshotState defines model for Snapshot.State.
 type SnapshotState string
 
+// SnapshotBootSource defines model for SnapshotBootSource.
+type SnapshotBootSource struct {
+	Kind       SnapshotBootSourceKind `json:"kind"`
+	SnapshotId string                 `json:"snapshot_id"`
+}
+
+// SnapshotBootSourceKind defines model for SnapshotBootSource.Kind.
+type SnapshotBootSourceKind string
+
 // SnapshotList defines model for SnapshotList.
 type SnapshotList struct {
 	Items      []Snapshot `json:"items"`
@@ -552,6 +608,16 @@ type Template struct {
 
 // TemplateClockPolicy defines model for Template.ClockPolicy.
 type TemplateClockPolicy string
+
+// TemplateBootSource defines model for TemplateBootSource.
+type TemplateBootSource struct {
+	Kind    TemplateBootSourceKind `json:"kind"`
+	Name    string                 `json:"name"`
+	Version *string                `json:"version,omitempty"`
+}
+
+// TemplateBootSourceKind defines model for TemplateBootSource.Kind.
+type TemplateBootSourceKind string
 
 // TemplateList defines model for TemplateList.
 type TemplateList struct {
@@ -716,6 +782,12 @@ type DeleteSnapshotParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
+// PromoteSnapshotParams defines parameters for PromoteSnapshot.
+type PromoteSnapshotParams struct {
+	// IdempotencyKey Required for mutating requests. Reusing a key with the same request returns the same accepted operation; reusing it with a different request returns 409.
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
 // RestoreSnapshotParams defines parameters for RestoreSnapshot.
 type RestoreSnapshotParams struct {
 	// IdempotencyKey Required for mutating requests. Reusing a key with the same request returns the same accepted operation; reusing it with a different request returns 409.
@@ -751,11 +823,76 @@ type SnapshotSandboxJSONRequestBody = SnapshotSandboxRequest
 // PrepareSandboxSSHJSONRequestBody defines body for PrepareSandboxSSH for application/json ContentType.
 type PrepareSandboxSSHJSONRequestBody = PrepareSandboxSSHRequest
 
+// PromoteSnapshotJSONRequestBody defines body for PromoteSnapshot for application/json ContentType.
+type PromoteSnapshotJSONRequestBody = PromoteSnapshotRequest
+
 // RestoreSnapshotJSONRequestBody defines body for RestoreSnapshot for application/json ContentType.
 type RestoreSnapshotJSONRequestBody = RestoreSnapshotRequest
 
 // AuthorizeSSHJSONRequestBody defines body for AuthorizeSSH for application/json ContentType.
 type AuthorizeSSHJSONRequestBody = SSHAuthorizeRequest
+
+// AsTemplateBootSource returns the union data inside the CreateSandboxSource as a TemplateBootSource
+func (t CreateSandboxSource) AsTemplateBootSource() (TemplateBootSource, error) {
+	var body TemplateBootSource
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromTemplateBootSource overwrites any union data inside the CreateSandboxSource as the provided TemplateBootSource
+func (t *CreateSandboxSource) FromTemplateBootSource(v TemplateBootSource) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeTemplateBootSource performs a merge with any union data inside the CreateSandboxSource, using the provided TemplateBootSource
+func (t *CreateSandboxSource) MergeTemplateBootSource(v TemplateBootSource) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsSnapshotBootSource returns the union data inside the CreateSandboxSource as a SnapshotBootSource
+func (t CreateSandboxSource) AsSnapshotBootSource() (SnapshotBootSource, error) {
+	var body SnapshotBootSource
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromSnapshotBootSource overwrites any union data inside the CreateSandboxSource as the provided SnapshotBootSource
+func (t *CreateSandboxSource) FromSnapshotBootSource(v SnapshotBootSource) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeSnapshotBootSource performs a merge with any union data inside the CreateSandboxSource, using the provided SnapshotBootSource
+func (t *CreateSandboxSource) MergeSnapshotBootSource(v SnapshotBootSource) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t CreateSandboxSource) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *CreateSandboxSource) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -935,6 +1072,11 @@ type ClientInterface interface {
 
 	// GetSnapshot request
 	GetSnapshot(ctx context.Context, id SnapshotID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PromoteSnapshotWithBody request with any body
+	PromoteSnapshotWithBody(ctx context.Context, id SnapshotID, params *PromoteSnapshotParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PromoteSnapshot(ctx context.Context, id SnapshotID, params *PromoteSnapshotParams, body PromoteSnapshotJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RestoreSnapshotWithBody request with any body
 	RestoreSnapshotWithBody(ctx context.Context, id SnapshotID, params *RestoreSnapshotParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1396,6 +1538,30 @@ func (c *Client) DeleteSnapshot(ctx context.Context, id SnapshotID, params *Dele
 
 func (c *Client) GetSnapshot(ctx context.Context, id SnapshotID, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetSnapshotRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PromoteSnapshotWithBody(ctx context.Context, id SnapshotID, params *PromoteSnapshotParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPromoteSnapshotRequestWithBody(c.Server, id, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PromoteSnapshot(ctx context.Context, id SnapshotID, params *PromoteSnapshotParams, body PromoteSnapshotJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPromoteSnapshotRequest(c.Server, id, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -2906,6 +3072,66 @@ func NewGetSnapshotRequest(server string, id SnapshotID) (*http.Request, error) 
 	return req, nil
 }
 
+// NewPromoteSnapshotRequest calls the generic PromoteSnapshot builder with application/json body
+func NewPromoteSnapshotRequest(server string, id SnapshotID, params *PromoteSnapshotParams, body PromoteSnapshotJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPromoteSnapshotRequestWithBody(server, id, params, "application/json", bodyReader)
+}
+
+// NewPromoteSnapshotRequestWithBody generates requests for PromoteSnapshot with any type of body
+func NewPromoteSnapshotRequestWithBody(server string, id SnapshotID, params *PromoteSnapshotParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/snapshots/%s/promote", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+	}
+
+	return req, nil
+}
+
 // NewRestoreSnapshotRequest calls the generic RestoreSnapshot builder with application/json body
 func NewRestoreSnapshotRequest(server string, id SnapshotID, params *RestoreSnapshotParams, body RestoreSnapshotJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -3380,6 +3606,11 @@ type ClientWithResponsesInterface interface {
 
 	// GetSnapshotWithResponse request
 	GetSnapshotWithResponse(ctx context.Context, id SnapshotID, reqEditors ...RequestEditorFn) (*GetSnapshotResponse, error)
+
+	// PromoteSnapshotWithBodyWithResponse request with any body
+	PromoteSnapshotWithBodyWithResponse(ctx context.Context, id SnapshotID, params *PromoteSnapshotParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PromoteSnapshotResponse, error)
+
+	PromoteSnapshotWithResponse(ctx context.Context, id SnapshotID, params *PromoteSnapshotParams, body PromoteSnapshotJSONRequestBody, reqEditors ...RequestEditorFn) (*PromoteSnapshotResponse, error)
 
 	// RestoreSnapshotWithBodyWithResponse request with any body
 	RestoreSnapshotWithBodyWithResponse(ctx context.Context, id SnapshotID, params *RestoreSnapshotParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RestoreSnapshotResponse, error)
@@ -4399,6 +4630,37 @@ func (r GetSnapshotResponse) ContentType() string {
 	return ""
 }
 
+type PromoteSnapshotResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON201      *Template
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r PromoteSnapshotResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PromoteSnapshotResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PromoteSnapshotResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type RestoreSnapshotResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -4942,6 +5204,23 @@ func (c *ClientWithResponses) GetSnapshotWithResponse(ctx context.Context, id Sn
 		return nil, err
 	}
 	return ParseGetSnapshotResponse(rsp)
+}
+
+// PromoteSnapshotWithBodyWithResponse request with arbitrary body returning *PromoteSnapshotResponse
+func (c *ClientWithResponses) PromoteSnapshotWithBodyWithResponse(ctx context.Context, id SnapshotID, params *PromoteSnapshotParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PromoteSnapshotResponse, error) {
+	rsp, err := c.PromoteSnapshotWithBody(ctx, id, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePromoteSnapshotResponse(rsp)
+}
+
+func (c *ClientWithResponses) PromoteSnapshotWithResponse(ctx context.Context, id SnapshotID, params *PromoteSnapshotParams, body PromoteSnapshotJSONRequestBody, reqEditors ...RequestEditorFn) (*PromoteSnapshotResponse, error) {
+	rsp, err := c.PromoteSnapshot(ctx, id, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePromoteSnapshotResponse(rsp)
 }
 
 // RestoreSnapshotWithBodyWithResponse request with arbitrary body returning *RestoreSnapshotResponse
@@ -6067,6 +6346,39 @@ func ParseGetSnapshotResponse(rsp *http.Response) (*GetSnapshotResponse, error) 
 			return nil, err
 		}
 		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePromoteSnapshotResponse parses an HTTP response from a PromoteSnapshotWithResponse call
+func ParsePromoteSnapshotResponse(rsp *http.Response) (*PromoteSnapshotResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PromoteSnapshotResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest Template
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
 
 	}
 

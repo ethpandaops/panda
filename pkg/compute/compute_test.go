@@ -61,7 +61,7 @@ func TestOpenAPISpecHasExpectedOperations(t *testing.T) {
 		"listSandboxes", "createSandbox", "getSandbox", "deleteSandbox",
 		"stopSandbox", "startSandbox", "snapshotSandbox", "leaseSandbox",
 		"listSnapshots", "getSnapshot", "deleteSnapshot", "restoreSnapshot",
-		"listTemplates", "getTemplate", "listOperations", "getOperation",
+		"promoteSnapshot", "listTemplates", "getTemplate", "listOperations", "getOperation",
 		"listSSHPublicKeys", "addSSHPublicKey", "deleteSSHPublicKey",
 		"authSession",
 	}

@@ -19,12 +19,16 @@ var (
 	computeExtend      string
 	computeTemplate    string
 	computeName        string
+	computeVersion     string
+	computeDescription string
+	computeReplace     bool
 	computePublicKey   string
 	computeIdempotency string
 	computeLimit       int
 	computeOffset      int
 	computeCursor      string
 	computeFilters     []string
+	computeTags        []string
 )
 
 var computeCmd = &cobra.Command{
@@ -97,6 +101,12 @@ func init() {
 	_ = computeSandboxesLeaseCmd.MarkFlagRequired("extend")
 	computeSnapshotsRestoreCmd.Flags().StringVar(&computeTTL, "ttl", "",
 		"Lease duration for the restored sandbox (Go duration)")
+	computeSnapshotsPromoteCmd.Flags().StringVar(&computeName, "name", "", "Warm template name (required)")
+	computeSnapshotsPromoteCmd.Flags().StringVar(&computeVersion, "version", "", "Warm template version")
+	computeSnapshotsPromoteCmd.Flags().StringVar(&computeDescription, "description", "", "Warm template description")
+	computeSnapshotsPromoteCmd.Flags().BoolVar(&computeReplace, "replace", false, "Replace an existing template version")
+	computeSnapshotsPromoteCmd.Flags().StringArrayVar(&computeTags, "tags", nil, "Warm template tag; repeatable")
+	_ = computeSnapshotsPromoteCmd.MarkFlagRequired("name")
 
 	computeKeysAddCmd.Flags().StringVar(&computePublicKey, "public-key", "", "SSH public key material (required)")
 	computeKeysAddCmd.Flags().StringVar(&computeName, "name", "", "Optional label for the key")
@@ -105,7 +115,7 @@ func init() {
 	for _, cmd := range []*cobra.Command{
 		computeSandboxesCreateCmd, computeSandboxesDeleteCmd, computeSandboxesStopCmd,
 		computeSandboxesStartCmd, computeSandboxesSnapshotCmd, computeSnapshotsDeleteCmd,
-		computeSnapshotsRestoreCmd,
+		computeSnapshotsRestoreCmd, computeSnapshotsPromoteCmd,
 	} {
 		cmd.Flags().StringVar(&computeIdempotency, "idempotency-key", "",
 			"Idempotency key to make the mutation safely retryable")
@@ -119,7 +129,7 @@ func init() {
 	)
 	computeSnapshotsCmd.AddCommand(
 		computeSnapshotsListCmd, computeSnapshotsGetCmd, computeSnapshotsDeleteCmd,
-		computeSnapshotsRestoreCmd, computeSnapshotsChildrenCmd,
+		computeSnapshotsRestoreCmd, computeSnapshotsPromoteCmd, computeSnapshotsChildrenCmd,
 	)
 	computeTemplatesCmd.AddCommand(computeTemplatesListCmd, computeTemplatesGetCmd)
 	computeOperationsCmd.AddCommand(computeOperationsListCmd, computeOperationsGetCmd)
@@ -431,6 +441,28 @@ var computeSnapshotsRestoreCmd = &cobra.Command{
 		setIfNotEmpty(opArgs, "ttl", computeTTL)
 
 		return runComputeRaw(cmd, "compute.restore_snapshot", opArgs)
+	},
+}
+
+var computeSnapshotsPromoteCmd = &cobra.Command{
+	Use:   "promote <id>",
+	Short: "Promote a snapshot into a warm template",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		opArgs := computeMutationArgs(args[0])
+		opArgs["name"] = computeName
+		setIfNotEmpty(opArgs, "version", computeVersion)
+		setIfNotEmpty(opArgs, "description", computeDescription)
+
+		if cmd.Flags().Changed("replace") {
+			opArgs["replace"] = computeReplace
+		}
+
+		if len(computeTags) > 0 {
+			opArgs["tags"] = computeTags
+		}
+
+		return runComputeRaw(cmd, "compute.promote_snapshot", opArgs)
 	},
 }
 
