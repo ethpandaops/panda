@@ -365,6 +365,29 @@ paths:
                 $ref: '#/components/schemas/AcceptedResponse'
         default:
           $ref: '#/components/responses/Error'
+  /v1/snapshots/{id}/promote:
+    parameters:
+      - $ref: '#/components/parameters/SnapshotID'
+    post:
+      tags: [snapshots]
+      operationId: promoteSnapshot
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PromoteSnapshotRequest'
+      responses:
+        '201':
+          description: Snapshot promoted to a warm template.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Template'
+        default:
+          $ref: '#/components/responses/Error'
   /v1/templates:
     get:
       tags: [templates]
@@ -805,11 +828,13 @@ components:
           format: date-time
     CreateSandboxRequest:
       type: object
-      required: [template]
       additionalProperties: false
       properties:
         template:
           type: string
+          description: Legacy template name. Mutually exclusive with source.
+        source:
+          $ref: '#/components/schemas/CreateSandboxSource'
         ttl:
           type: string
           description: Optional positive Go-style duration string.
@@ -817,6 +842,32 @@ components:
           type: string
           enum: [delete, hot, cold, archive]
           description: Disposition to apply when the sandbox is deleted.
+    CreateSandboxSource:
+      oneOf:
+        - $ref: '#/components/schemas/TemplateBootSource'
+        - $ref: '#/components/schemas/SnapshotBootSource'
+    TemplateBootSource:
+      type: object
+      additionalProperties: false
+      required: [kind, name]
+      properties:
+        kind:
+          type: string
+          enum: [template]
+        name:
+          type: string
+        version:
+          type: string
+    SnapshotBootSource:
+      type: object
+      additionalProperties: false
+      required: [kind, snapshot_id]
+      properties:
+        kind:
+          type: string
+          enum: [snapshot]
+        snapshot_id:
+          type: string
     SnapshotSandboxRequest:
       type: object
       additionalProperties: false
@@ -833,6 +884,24 @@ components:
         ttl:
           type: string
           description: Optional positive Go-style duration string.
+    PromoteSnapshotRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+        version:
+          type: string
+        replace:
+          type: boolean
+          default: false
+        description:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
     LeaseSandboxRequest:
       type: object
       additionalProperties: false

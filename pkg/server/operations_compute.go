@@ -176,6 +176,8 @@ func (s *service) handleComputeOperation(operationID string, w http.ResponseWrit
 				compute.RestoreSnapshotJSONRequestBody{Ttl: computeOptStr(args, "ttl")},
 			)
 		})
+	case "compute.promote_snapshot":
+		s.computeOpWithID(w, r, "id", s.computePromoteSnapshot)
 	case "compute.get_snapshot_restored_by":
 		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, _ map[string]any) (*http.Response, error) {
 			return c.GetSnapshotRestoredBy(ctx, id)
@@ -329,7 +331,7 @@ func (s *service) computeCreateSandbox(ctx context.Context, c *compute.Client, a
 	}
 
 	body := compute.CreateSandboxJSONRequestBody{
-		Template: template,
+		Template: &template,
 		Ttl:      computeOptStr(args, "ttl"),
 	}
 
@@ -348,6 +350,29 @@ func (s *service) computeLeaseSandbox(ctx context.Context, c *compute.Client, id
 	}
 
 	return c.LeaseSandbox(ctx, id, compute.LeaseSandboxJSONRequestBody{Extend: extend})
+}
+
+func (s *service) computePromoteSnapshot(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
+	name, err := requiredStringArg(args, "name")
+	if err != nil {
+		return nil, &computeArgError{err: err}
+	}
+
+	replace, err := optionalBoolArg(args, "replace")
+	if err != nil {
+		return nil, &computeArgError{err: err}
+	}
+
+	return c.PromoteSnapshot(ctx, id,
+		&compute.PromoteSnapshotParams{IdempotencyKey: computeIdem(args)},
+		compute.PromoteSnapshotJSONRequestBody{
+			Name:        name,
+			Version:     computeOptStr(args, "version"),
+			Replace:     replace,
+			Description: computeOptStr(args, "description"),
+			Tags:        computeOptStringSlice(args, "tags"),
+		},
+	)
 }
 
 func (s *service) computeGetTemplate(ctx context.Context, c *compute.Client, args map[string]any) (*http.Response, error) {
@@ -559,4 +584,33 @@ func computeOptStr(args map[string]any, key string) *string {
 	}
 
 	return nil
+}
+
+func computeOptStringSlice(args map[string]any, key string) *[]string {
+	var raw []any
+
+	switch values := args[key].(type) {
+	case []any:
+		raw = values
+	case []string:
+		raw = make([]any, 0, len(values))
+		for _, value := range values {
+			raw = append(raw, value)
+		}
+	default:
+		return nil
+	}
+
+	items := make([]string, 0, len(raw))
+	for _, item := range raw {
+		if value, ok := item.(string); ok && value != "" {
+			items = append(items, value)
+		}
+	}
+
+	if len(items) == 0 {
+		return nil
+	}
+
+	return &items
 }

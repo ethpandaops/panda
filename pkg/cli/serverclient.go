@@ -198,6 +198,23 @@ func runServerOperationRaw(cmd *cobra.Command, operationID string, args map[stri
 	return serverOperationRaw(commandContext(cmd), operationID, args)
 }
 
+// apiError is a non-2xx response from the server. It exposes the status and
+// message so a command can attach a datasource-specific hint in place of the
+// generic status hint — e.g. a ClickHouse unknown-table error arrives as a 404
+// whose generic hint would wrongly point at a missing datasource.
+type apiError struct {
+	Status  int
+	Message string
+}
+
+func (e *apiError) Error() string {
+	if hint := serverErrorHint(e.Status, e.Message); hint != "" {
+		return fmt.Sprintf("HTTP %d: %s\n\n  hint: %s", e.Status, e.Message, hint)
+	}
+
+	return fmt.Sprintf("HTTP %d: %s", e.Status, e.Message)
+}
+
 func decodeAPIError(status int, data []byte) error {
 	var message string
 
@@ -212,12 +229,7 @@ func decodeAPIError(status int, data []byte) error {
 		message = strings.TrimSpace(string(data))
 	}
 
-	hint := serverErrorHint(status, message)
-	if hint != "" {
-		return fmt.Errorf("HTTP %d: %s\n\n  hint: %s", status, message, hint)
-	}
-
-	return fmt.Errorf("HTTP %d: %s", status, message)
+	return &apiError{Status: status, Message: message}
 }
 
 func serverErrorHint(status int, message string) string {

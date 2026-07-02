@@ -167,7 +167,19 @@ var doraSlotCmd = &cobra.Command{
 var doraEpochCmd = &cobra.Command{
 	Use:   "epoch <network> <epoch>",
 	Short: "Get epoch summary (always JSON)",
-	Args:  cobra.ExactArgs(2),
+	Long: `Get the Dora summary for a single epoch (always JSON).
+
+The summary fields are nested under the top-level "data" key and use lowercase
+names (e.g. data.finalized, data.globalparticipationrate, data.attestationscount).
+
+Query a COMPLETED epoch. A future epoch returns no data, and the head
+(in-progress) epoch reports partial, artificially low participation because it
+is still being filled (and can be null right at the epoch boundary). For a
+reliable snapshot use head_epoch - 1.
+
+Examples:
+  panda dora epoch hoodi 100`,
+	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		response, err := runServerOperationRaw(cmd, "dora.get_epoch", map[string]any{
 			"network": args[0],

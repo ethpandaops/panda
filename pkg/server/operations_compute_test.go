@@ -71,6 +71,52 @@ func TestComputeForwardsIdempotencyKey(t *testing.T) {
 	assert.JSONEq(t, `{"template":"ubuntu/24.04","ttl":"1h"}`, string(transport.lastBody))
 }
 
+func TestComputePromoteSnapshotBuildsRequest(t *testing.T) {
+	t.Parallel()
+
+	transport := &recordingTransport{status: http.StatusCreated, body: `{}`, contentType: "application/json"}
+	svc := newComputeService(t, transport, types.DatasourceInfo{Name: "production"})
+
+	rec := callComputeOp(t, svc, "compute.promote_snapshot", map[string]any{
+		"id":              "snap-1",
+		"name":            "ubuntu-warm",
+		"version":         "v2",
+		"description":     "ready to boot",
+		"replace":         true,
+		"tags":            []any{"devnet", "warm"},
+		"idempotency_key": "idem-promote",
+	})
+
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	require.NotNil(t, transport.last)
+
+	assert.Equal(t, http.MethodPost, transport.last.Method)
+	assert.Equal(t, "/compute/v1/snapshots/snap-1/promote", transport.last.URL.Path)
+	assert.Equal(t, "idem-promote", transport.last.Header.Get("Idempotency-Key"))
+	assert.JSONEq(t, `{
+		"name": "ubuntu-warm",
+		"version": "v2",
+		"description": "ready to boot",
+		"replace": true,
+		"tags": ["devnet", "warm"]
+	}`, string(transport.lastBody))
+}
+
+func TestComputePromoteSnapshotRequiresName(t *testing.T) {
+	t.Parallel()
+
+	transport := &recordingTransport{status: http.StatusCreated, body: `{}`, contentType: "application/json"}
+	svc := newComputeService(t, transport, types.DatasourceInfo{Name: "production"})
+
+	rec := callComputeOp(t, svc, "compute.promote_snapshot", map[string]any{
+		"id": "snap-1",
+	})
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "name is required")
+	assert.Nil(t, transport.last, "no upstream request should be made without a template name")
+}
+
 // TestComputePreservesUpstreamStatus verifies a 2xx upstream status is passed
 // through rather than flattened to 200.
 func TestComputePreservesUpstreamStatus(t *testing.T) {
