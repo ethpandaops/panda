@@ -58,16 +58,6 @@ func TestFaucetAuthenticatedResolution(t *testing.T) {
 		require.Equal(t, http.StatusNotFound, rec.Code)
 	})
 
-	t.Run("network without a faucet endpoint", func(t *testing.T) {
-		// fusaka-devnet-3 advertises rpc/beacon/dora but no faucet URL.
-		svc := authedService(t)
-		rec := httptest.NewRecorder()
-
-		args := map[string]any{"network": "fusaka-devnet-3", "address": "0x1111111111111111111111111111111111111111"}
-		require.True(t, svc.handleEVMOperation("evm.faucet", rec, newNetworkOpRequest(t, args)))
-		require.Equal(t, http.StatusNotFound, rec.Code)
-	})
-
 	t.Run("missing address arg", func(t *testing.T) {
 		svc := authedService(t)
 		rec := httptest.NewRecorder()

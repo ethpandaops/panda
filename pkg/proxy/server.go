@@ -77,6 +77,7 @@ type server struct {
 	prometheusHandler   *handlers.PrometheusHandler
 	lokiHandler         *handlers.LokiHandler
 	ethNodeHandler      *handlers.EthNodeHandler
+	faucetHandler       *handlers.FaucetHandler
 	benchmarkoorHandler *handlers.BenchmarkoorHandler
 	computeHandler      *handlers.ComputeHandler
 	workflowHandler     *handlers.WorkflowHandler
@@ -201,6 +202,12 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 
 	if ethNodeConfig != nil {
 		s.ethNodeHandler = handlers.NewEthNodeHandler(log, *ethNodeConfig)
+		// The agent faucet is served on the same credential-gated ethpandaops.io
+		// domain as the nodes, so it reuses the ethnode basic-auth credential.
+		s.faucetHandler = handlers.NewFaucetHandler(log, handlers.FaucetConfig{
+			Username: ethNodeConfig.Username,
+			Password: ethNodeConfig.Password,
+		})
 	}
 
 	if benchConfigs := cfg.ToBenchmarkoorHandlerConfigs(); len(benchConfigs) > 0 {
@@ -368,6 +375,10 @@ func (s *server) registerRoutes() {
 	if s.ethNodeHandler != nil {
 		s.handleSubtreeRoute("/beacon", s.metricsMiddleware(chain(s.ethNodeHandler)))
 		s.handleSubtreeRoute("/execution", s.metricsMiddleware(chain(s.ethNodeHandler)))
+	}
+
+	if s.faucetHandler != nil {
+		s.handleSubtreeRoute("/faucet", s.metricsMiddleware(chain(s.faucetHandler)))
 	}
 
 	if s.benchmarkoorHandler != nil {

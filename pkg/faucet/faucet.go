@@ -7,6 +7,7 @@
 package faucet
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/binary"
@@ -40,20 +41,27 @@ type Result struct {
 	AmountWei string `json:"amount_wei"`
 }
 
-// Client talks to a single PoWFaucet agent-REST endpoint.
-type Client struct {
-	baseURL string
-	http    *http.Client
+// Transport issues one faucet HTTP request and returns the response body and
+// status code. It lets the mining flow run either against a faucet URL directly
+// (tests, CLI) or through the panda proxy — the only authenticated network path
+// in production, so the faucet needs no public surface.
+type Transport interface {
+	Do(ctx context.Context, method, path string, body []byte) (respBody []byte, status int, err error)
 }
 
-// New returns a Client for the given faucet base URL, e.g.
-// https://faucet-agents.<network>.ethpandaops.io.
-func New(baseURL string, httpClient *http.Client) *Client {
-	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 30 * time.Second}
-	}
+// Client drives the PoWFaucet agent-REST flow over a Transport.
+type Client struct {
+	t Transport
+}
 
-	return &Client{baseURL: strings.TrimRight(baseURL, "/"), http: httpClient}
+// NewWithTransport returns a Client that issues requests through t (e.g. the
+// proxy-routed transport used by the evm.faucet server operation).
+func NewWithTransport(t Transport) *Client { return &Client{t: t} }
+
+// New returns a Client that talks directly to a faucet base URL, e.g.
+// https://faucet-agents.<network>.ethpandaops.io. Used by tests and direct use.
+func New(baseURL string, httpClient *http.Client) *Client {
+	return NewWithTransport(newHTTPTransport(baseURL, httpClient))
 }
 
 // Claim runs the full agent flow for address: start a session, mine PoW shares
@@ -293,39 +301,23 @@ func (c *Client) post(ctx context.Context, path string, body, out any) error {
 }
 
 func (c *Client) do(ctx context.Context, method, path string, body, out any) error {
-	var reader io.Reader
+	var payload []byte
 	if body != nil {
 		encoded, err := json.Marshal(body)
 		if err != nil {
 			return err
 		}
 
-		reader = strings.NewReader(string(encoded))
+		payload = encoded
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, reader)
+	data, status, err := c.t.Do(ctx, method, path, payload)
 	if err != nil {
 		return err
 	}
 
-	req.Header.Set("User-Agent", userAgent)
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("faucet returned %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+	if status < 200 || status >= 300 {
+		return fmt.Errorf("faucet returned %d: %s", status, strings.TrimSpace(string(data)))
 	}
 
 	if out == nil {
@@ -337,4 +329,48 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	}
 
 	return nil
+}
+
+// httpTransport talks to a faucet base URL directly.
+type httpTransport struct {
+	baseURL string
+	http    *http.Client
+}
+
+func newHTTPTransport(baseURL string, httpClient *http.Client) *httpTransport {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 30 * time.Second}
+	}
+
+	return &httpTransport{baseURL: strings.TrimRight(baseURL, "/"), http: httpClient}
+}
+
+func (t *httpTransport) Do(ctx context.Context, method, path string, body []byte) ([]byte, int, error) {
+	var reader io.Reader
+	if body != nil {
+		reader = bytes.NewReader(body)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, t.baseURL+path, reader)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	req.Header.Set("User-Agent", userAgent)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	resp, err := t.http.Do(req)
+	if err != nil {
+		return nil, http.StatusBadGateway, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, resp.StatusCode, err
+	}
+
+	return data, resp.StatusCode, nil
 }
