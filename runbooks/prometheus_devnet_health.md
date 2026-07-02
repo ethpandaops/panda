@@ -29,7 +29,7 @@ Cited metric readings and what they support — each reading is an evidence item
 
 ```yaml
 - source: prometheus
-  ref: "query_range(ds, 'up{job=\"beacon\"}', '30s', start='-1h')"
+  ref: "query_range(ds, 'up{job=\"beacon\"}', '30s', start='2026-07-01T10:40:00Z', end='2026-07-01T11:40:00Z')"
   at: "2026-07-01T10:40Z-11:40Z"
   detail: "cl-3 target up==0 from 10:41Z; all other targets up==1"
 ```
@@ -62,7 +62,8 @@ Python below is a shape to adapt — substitute the datasource, terms, and windo
 
 4. **Query bounded.** `prometheus.query(datasource, promql)` for current state;
    `prometheus.query_range(datasource, promql, step, start=start, end=end)` for
-   trends — note `step` comes before the window bounds. Keep the window to the
+   trends — `step` comes before the window bounds, and `start`/`end` are RFC3339
+   timestamps (relative bounds like `"-1h"` are rejected). Keep the window to the
    incident, and search the examples index for "prometheus" query patterns rather
    than inventing them.
 

@@ -29,6 +29,9 @@ fixes it and why.
 1. **EXPLAIN first.** Run `EXPLAIN <query>` and read the plan before changing anything.
 2. **Pick the cluster.** Prefer `clickhouse-refined` (pre-aggregated, fast) for metrics;
    use `clickhouse-raw` only when the question needs event-level detail (large, slow).
+   Not every network is on every cluster — if the refined `<network>` database is
+   absent, check the dataset placements (`panda datasets`) before falling back: a
+   devnet's raw data may live on a different datasource (e.g. an experimental cluster).
 3. **Filter on the partition key.** Use native date columns (`slot_start_date_time`,
    `wallclock_date_time`) bare — wrapping them in functions like `toDate(...)` defeats
    the partition index. On `clickhouse-raw` also filter
@@ -61,7 +64,9 @@ Using the wrong view silently drops the very rows the question is about.
   processed — an empty result can mean "not yet transformed", not "didn't happen".
   Check `cbt.get_transformation_coverage(network, "{network}.<table>")` before
   concluding data is missing, and explain an unprocessed position (dependency bounds,
-  gaps) with `cbt.debug_coverage(network, id, position)`.
+  gaps) with `cbt.debug_coverage(network, id, position)`. A 404 from the coverage
+  calls means the network is not registered with CBT — record coverage as
+  unavailable, not empty, and verify with a bounded raw-table probe instead.
 - **Orphans and reorgs:** canonical-only tables hide them. For stale parents, reorgs,
   or orphan rate, include orphaned blocks explicitly.
 - When unsure whether a table is deduplicated, check its grain: one row per slot is
@@ -87,7 +92,9 @@ To query a time window:
    `slot_start_date_time >= now() - INTERVAL <window>` (a `_head` table — fine for
    resolving a recent range, but it may reorg; not finalized truth).
 2. **Pass the results as literals** into
-   `WHERE block_number BETWEEN <min> AND <max>` (or `= <n>` for one block).
+   `WHERE block_number BETWEEN <min> AND <max>` (or `= <n>` for one block). An empty
+   bridge result (0/0 aggregates) is not a range — treat it as no data for the window
+   and check placement/coverage rather than querying `BETWEEN 0 AND 0`.
 
 Resolve the range from `fct_block_head` only — a `SELECT max(block_number)` subquery on
 the partitioned table itself is the full scan you are avoiding, and `updated_date_time`

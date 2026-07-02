@@ -44,9 +44,11 @@ Required: a `network_target`, and the reported symptom (or "is it healthy?").
 Preferred: a timeframe or affected slot/epoch/block, and the setup (clients, tooling, load).
 
 ## Output
-A classified diagnosis: what is happening, the active protocol model used, the likely
-scope/layer/actor, affected components, any source disagreements, and the next
-distinguishing query — every concrete claim cited (`runbooks://evidence_discipline`).
+A classified diagnosis carrying, as named fields: the summary (what is happening),
+the health baseline, the active protocol model used, the matched symptom branch, the
+likely scope/layer/actor, affected components, any source disagreements, confidence,
+and the next distinguishing query — every concrete claim cited
+(`runbooks://evidence_discipline`).
 
 ## Procedure
 
@@ -69,6 +71,7 @@ distinguishing query — every concrete claim cited (`runbooks://evidence_discip
 | `status=Missing` slots | missed beacon blocks | proposer duties → proposer node health/logs → sync/peers |
 | Canonical block but no payload (ePBS) | missing payload | PTC verdict in block S+1, `builder_index`, buildoor logs (`runbooks://ethereum_protocol_model`) |
 | Payload/block validation or engine errors | EL / engine API | CL engine-API logs + matching EL logs, block/payload detail (matrix below); rejected-artifact inventory: `runbooks://tracoor_invalid_artifact_forensics` |
+| Builder bid/envelope gossip rejections (ePBS) | builder path | CL bid-admission logs + builder/buildoor logs for the same slot; the CL is often the rejector, not the fault (matrix below) |
 | Missing blobs / data-column warnings | DA / PeerDAS | sidecars, PTC `blob_data_available`, data-column logs (`runbooks://ethereum_protocol_model`) |
 | One node stuck/offline | node drilldown | direct sync/peers + node logs; distinguish down vs not-shipping-logs |
 | One client type failing across nodes | client-specific bug | grouped logs by client + image/version, fork/spec context |
@@ -84,6 +87,7 @@ execution sync issues, or "execution client unavailable".
 
 | Evidence | Likely class |
 | --- | --- |
+| CL bid-admission errors + builder invalid-artifact logs, EL clean | builder tooling / builder-EL construction path — the CL is the rejector |
 | CL errors only | consensus / fork-choice / validation, or CL client bug |
 | CL engine-API errors + EL errors | payload / state-transition issue, or EL bug |
 | CL clean, EL errors | EL-local or non-primary cascade (monitor; may not be primary) |

@@ -41,11 +41,15 @@ evidence:
 
 Python is a shape to adapt — substitute network and window.
 
-1. **Count before listing.** Establish the scale of the window first:
+1. **Count before listing.** Establish the scale of EVERY artifact kind in the
+   window first — zero in one kind says nothing about the others:
 
    ```python
    from ethpandaops import tracoor
-   n = tracoor.count_beacon_bad_blocks("<network>", after="<iso>", before="<iso>")
+   w = dict(after="<iso>", before="<iso>")
+   n_blocks = tracoor.count_beacon_bad_blocks("<network>", **w)
+   n_blobs  = tracoor.count_beacon_bad_blobs("<network>", **w)
+   n_exec   = tracoor.count_execution_bad_blocks("<network>", **w)
    ```
 
    Zero rejected artifacts is a finding: the incident evidence lies elsewhere
@@ -63,9 +67,11 @@ Python is a shape to adapt — substitute network and window.
    (`runbooks://evidence_discipline`). Execution bad blocks carry
    `block_extra_data`, which often identifies the builder that produced them.
 
-4. **Anchor first_bad.** Sort by slot/time; the earliest rejected artifact that
-   explains later symptoms is the `first_bad` candidate — later rejections are often
-   descendants of the same fault. Cross-check the slot against fork boundaries
+4. **Anchor first_bad.** Sort beacon artifacts by slot/time and execution bad blocks
+   by `block_number`/`fetched_at` (they expose no consensus slot); the earliest
+   rejected artifact that explains later symptoms is the `first_bad` candidate —
+   later rejections are often descendants of the same fault. Cross-check the slot
+   (or the block-number/fetched-at streak) against fork boundaries
    (`runbooks://ethereum_protocol_model`): a rejection streak starting exactly at an
    activation epoch is a fork-rules divergence, not random corruption.
 

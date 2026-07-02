@@ -66,7 +66,9 @@ curl -s -X POST <rpc> -H 'content-type: application/json' \
 
 If the exact commit cannot be resolved, say so; inspecting a release tag or nearest
 commit is allowed, but the finding's confidence drops and line-level blame at an
-unresolved rev is off the table.
+unresolved rev is off the table. For images without revision labels (mutable tags
+like `main-latest`), record the immutable digest + image creation time, pick the
+nearest upstream commit before that time, and set commit status `nearest-known`.
 
 ## Drilldown procedure
 

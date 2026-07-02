@@ -29,7 +29,10 @@ blame belong to `runbooks://devnet_issue_root_cause`. Shape (values illustrative
 
 ```yaml
 collation:
-  healthy_window_summary: ""     # one paragraph INSTEAD of issues when nothing is wrong
+  healthy_window_summary: ""     # one paragraph INSTEAD of issues when nothing is wrong;
+                                 # when issues ARE emitted (e.g. builder-path-degraded on a
+                                 # finalizing chain), the healthy-chain verdict lives in each
+                                 # issue's summary/evidence, not here
   issues:
     - summary: >
         Checkpoints froze at epoch 12 while head advanced; teku VCs vc-2/vc-3

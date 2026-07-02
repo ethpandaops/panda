@@ -105,6 +105,11 @@ slot/error id), `one-sided` (one side shows it, the other lacks logging),
 - `insufficient-evidence`: the trace may be possible but evidence cannot distinguish it
   from alternatives.
 
+Verdicts may be layered: when the immediate failure edge is `reachable` but the
+deeper mechanism behind it is only `partially-reachable`, give each path its own
+reachability in `paths` and set the top-level verdict to the weaker one — confidence
+binds to the deeper claim.
+
 Cap confidence (per `runbooks://evidence_discipline`) when the exact image/commit is
 unresolved, `first_bad` is prose-only, a required actor is absent from setup, the
 active fork doesn't match the blamed branch, evidence exists only on a downstream

@@ -29,9 +29,9 @@ whenever a field the caller's next step needs is unresolved.
 | Source | Use it for | Caveat |
 | --- | --- | --- |
 | `networks://active` | Active ids and devnet groups | Display names may be duplicated |
-| `networks://<network>` | Repo/path, chain id, genesis artifact URLs, service URLs, fork/blob schedule, spec notes, participant images, `node_inventory_url` | Spec notes can be aspirational |
+| `networks://<network>` | Repo/path, chain id, genesis artifact URLs, service URLs, fork/blob schedule, spec notes, participant images, `node_inventory_url` | Spec notes can be aspirational; timestamp fields may derive from `MIN_GENESIS_TIME`, not live consensus genesis |
 | `node_inventory_url` | Deployed labels, roles, client pairs, host composition | May not describe protocol constants |
-| CL config (`.../cl/config.yaml`) | Slot timing, fork epochs, presets | Prefer over memory/defaults |
+| CL config (`.../cl/config.yaml`) + live beacon `/eth/v1/config/spec` and `/eth/v1/beacon/genesis` | Slot timing, fork epochs, presets, live consensus `genesis_time` | Prefer over memory/defaults; if config.yaml omits a constant, read it from live `/config/spec` and cite it |
 | Package schema (`network_params.yaml`) | Valid ethereum-package args fields | Package versions move |
 
 For deployed topology/images, live inventory and artifacts beat notes; for protocol
@@ -58,6 +58,10 @@ Report source disagreements rather than silently choosing
    (labels are how later logs, validator ranges, builders, and client pairs get mapped).
 4. Fetch CL config (slot timing, fork epochs, validator counts) and EL
    genesis/chainspec from the genesis artifact host when they affect the task.
+   Three genesis timestamps exist and differ: `MIN_GENESIS_TIME` (config), the EL
+   genesis timestamp, and live consensus `genesis_time` (`MIN_GENESIS_TIME` +
+   `GENESIS_DELAY`, from `/eth/v1/beacon/genesis`). Use the live one for wall-clock
+   fork/blob timestamps and record which source each value came from.
 5. Build a short active protocol model (`runbooks://ethereum_protocol_model`); search
    the consensus-specs, eips, and examples indexes rather than guessing.
 

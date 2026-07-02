@@ -59,7 +59,10 @@ already watched, the observation lanes from `runbooks://devnet_watch` seed the
 candidate table directly.
 
 Then collect issue candidates over the window using the examples index; do not
-hardcode Dora/Forky/ClickHouse queries from memory.
+hardcode Dora/Forky/ClickHouse queries from memory. On raw-only devnets (no refined
+database, CBT coverage 404s — `runbooks://clickhouse_querying`), treat CBT example
+hits as query-shape guidance and translate them to the network's raw tables at their
+actual placement.
 
 | Candidate class | What to collect | Find the query |
 | --- | --- | --- |

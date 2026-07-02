@@ -50,7 +50,7 @@ reconciliation:
 | ClickHouse refined `_head` | live one-value-per-slot state for real-time monitoring | may reorg — not finalized truth; CBT coverage gaps read as missing data (`runbooks://clickhouse_querying`) |
 | ClickHouse `_canonical` | finalized chain-state history, no reorgs | lags finality; hides orphans/reorgs by design (`runbooks://clickhouse_querying`) |
 | OTel logs | what a service said, verbatim, with timestamps | absence means "not in the fetched window or not shipping", never "the service is down" (`runbooks://kurtosis_devnet`) |
-| Prometheus metrics | time-series liveness and resource trends | scrape gaps mimic downtime (`runbooks://prometheus_devnet_health`) |
+| Prometheus metrics | time-series liveness and resource trends | scrape gaps mimic downtime; a native client scrape job and an API-derived exporter probe of the same service have different semantics — one failing while the other answers is itself evidence (`runbooks://prometheus_devnet_health`) |
 
 ## Procedure
 
@@ -58,8 +58,8 @@ reconciliation:
    it, and what it anchors to (`runbooks://devnet_issue_contract`). Most
    "disagreements" dissolve here: the two refs answer different questions.
 2. **Classify the axis of disagreement:** per-node view vs canonical history, raw
-   events vs deduplicated truth, `_head` vs `_canonical`, staleness/lag, or coverage
-   (observer, scrape, log shipping, CBT transformation).
+   events vs deduplicated truth, `_head` vs `_canonical`, staleness/lag, metadata
+   field semantics, or coverage (observer, scrape, log shipping, CBT transformation).
 3. **Verify against a third source of a different kind** — a second indexer inherits
    the first's blind spot; a direct RPC read settles what an indexer and a log
    disagree about (`runbooks://evidence_discipline`).
@@ -73,7 +73,8 @@ reconciliation:
 | Explorer shows node offline, its RPC responds | minority fork (indexers track the canonical fork only) or indexing lag | compare head root + finalized checkpoint from that node's RPC against a canonical-fork node |
 | Participation differs between sources | one side read the in-progress head epoch — judge completed epochs only; a "finalized" epoch showing <66.7% participation means distrust that source (both rules: `runbooks://ethereum_protocol_model`) | re-read both for the last completed epoch; verify against checkpoints |
 | Slot present in raw events, absent in refined | block was orphaned/reorged out — canonical views drop it; or the CBT pipeline has not processed that range yet (`runbooks://clickhouse_querying`) | query the raw table for the block root; check transformation coverage |
-| Logs silent, metrics healthy (or inverse) | log-shipping or scrape gap, not service state (gap semantics: `runbooks://prometheus_devnet_health`) | hit the service API directly |
+| Logs silent, metrics healthy (or inverse) | log-shipping or scrape gap, not service state (gap semantics: `runbooks://prometheus_devnet_health`) | hit the service API directly; with no direct RPC, compare an API-derived exporter probe against a different-kind chain-progress source |
+| Hosted metadata genesisTime differs from live genesis_time | `MIN_GENESIS_TIME` vs live consensus genesis (`+ GENESIS_DELAY`) — field semantics, owner: `runbooks://hosted_devnet_context` | derive genesis from a slot's timestamp minus `slot × SECONDS_PER_SLOT` |
 | Two nodes report different heads | that is a finding, not a data-quality issue — a split | switch to `runbooks://debug_ethereum_network` (network split branch) |
 
 ## Self-Check

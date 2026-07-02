@@ -27,6 +27,9 @@ handed directly to `kurtosis run --args-file`. Emit the file, not a prose plan.
 1. **Package + schema.** Use the caller's package ref or the default; inspect
    `network_params.yaml` for valid fields before writing YAML — the package schema
    owns valid keys, so every key you emit was checked against it or an example.
+   `network_params.yaml` can lag real keys (e.g. `preset`); when a key you need is
+   absent, check the package's schema/sanity-check code or a shipped example before
+   concluding it is unsupported.
 2. **Topology.** Without steering, build a minimal faithful slice: hosted fork schedule
    + slot timing, ≥1 representative CL/EL pair, preserved client/image versions where
    the package supports explicit images, only necessary tooling. With steering, adjust
@@ -44,9 +47,11 @@ handed directly to `kurtosis run --args-file`. Emit the file, not a prose plan.
    Spamoor/tx-fuzz/blobber (only when throughput/blobs must be exercised). Client-flag
    caveat: Besu `--miner-extra-data` expects hex bytes; Geth `--miner.extradata`
    accepts a plain string.
-6. **Validate:** `--dry-run` proves the args parse — record it as exactly that. Live
-   health, fork activation, and builder behavior are verified after boot via
-   `runbooks://kurtosis_devnet`.
+6. **Validate:** `--dry-run` proves the args parse and render — record it as exactly
+   that, and read the rendered plan for Starlark errors rather than trusting the exit
+   code alone. A dry-run still creates an (empty) enclave; remove it so the real
+   launch can reuse the name. Live health, fork activation, and builder behavior are
+   verified after boot via `runbooks://kurtosis_devnet`.
 
 ### Accelerated Gloas/ePBS smoke
 
@@ -54,7 +59,9 @@ Preserve hosted chain id + selected images; use the `minimal` preset only as an
 explicit local acceleration (recorded as a deviation, not a faithful clone); keep BPO
 changes before Gloas for a clean smoke (BPO epochs 1 and 2 → local Gloas at epoch ≥3
 unless deliberately stressing a stacked boundary — fork/BPO boundary semantics:
-`runbooks://ethereum_protocol_model`); include Buildoor when observing the builder path.
+`runbooks://ethereum_protocol_model`); with Fulu active and a small validator set,
+give at least one participant full custody (`supernode: true`) — PeerDAS validation
+fails in tiny topologies without one; include Buildoor when observing the builder path.
 
 ## Output shape
 

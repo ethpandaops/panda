@@ -36,8 +36,9 @@ network_target: { kind: local-enclave, enclave: "devnet-1" }
 - **Start fresh:** `kurtosis run --args-file <config> <package_ref>`; capture the
   enclave name and genesis time, and confirm it is producing blocks.
 - **Attach:** the caller MUST name the enclave; picking one from the list is guessing —
-  if ambiguous, stop and ask. Discover with `kurtosis enclave ls`,
-  `enclave inspect <enclave>`, `service ls`.
+  if ambiguous, stop and ask. Discover with `kurtosis enclave ls`, then
+  `kurtosis enclave inspect <enclave>` — its output includes the full service table
+  with port mappings (current CLIs have no `service ls`).
 
 ## Map services
 

@@ -26,7 +26,9 @@ Preferred: a full issue record — `first_bad`, affected components, handles
 ## Output
 The final report below. State what the evidence supports and no more: a failed
 reproduction or low confidence is reported as such, with the evidence that would most
-improve it queued as feedback (`runbooks://evidence_discipline`).
+improve it queued as feedback (`runbooks://evidence_discipline`). When the evidence
+proves an immediate cause but only supports a deeper mechanism behind it, state both
+in the summary and bind `confidence` to the deeper claim.
 
 ## Core rules
 

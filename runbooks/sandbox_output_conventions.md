@@ -25,14 +25,18 @@ reused session — as the task requires.
 
 - **Charts:** use the ethpandaops **chartkit** charting library and produce a real
   saved image artifact (chartkit replaces matplotlib, plotly, and ASCII art here).
-  Look up the exact API by searching the examples index for "chartkit <chart type>".
-- **Files / sharing:** upload with the ethpandaops **storage** library; it returns a
-  public URL and the local host path — surface both. Search the examples index for
-  "storage upload file url".
-- **Sessions:** for multi-step work, reuse one session (`session_id`) across turns so
-  intermediate data (CSVs, dataframes) persists. Search the examples index for
-  "reuse sandbox session".
-- Reference an example instead of guessing an API signature.
+  Look up the exact API by searching the examples index for "chartkit <chart type>";
+  if the index misses, read the chartkit docs surface.
+- **Files / sharing:** upload with the ethpandaops **storage** library —
+  `storage.upload(path, remote_name=...)` returns `.url` and `.host_path`; surface
+  both. Search the examples index for "storage upload file url"; if the index
+  misses, read the storage docs surface.
+- **Sessions:** for multi-step work, reuse one session (`session_id`) across turns.
+  What persists is the `/workspace` FILESYSTEM, not Python variables — each call is
+  a fresh process, so save intermediate dataframes to `/workspace` (parquet/CSV/
+  pickle) and reload them in later calls.
+- Reference an example or the module's docs surface instead of guessing an API
+  signature.
 
 ## Notes
 

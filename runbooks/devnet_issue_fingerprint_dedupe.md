@@ -51,8 +51,8 @@ v1:<category>:<layer>:<active_fork_or_phase>:<symptom_class>:<scope>:<component_
   `head-advances-finality-stalled`, `gloas-builder-reveal-fails`,
   `engine-newpayload-invalid`, `payload-attestation-missing`,
   `client-service-restarting`.
-- `component_signature`: sorted roles + client families — `cl:lighthouse|el:besu`,
-  `vc:teku+builder:buildoor`, `multi-client`.
+- `component_signature`: sorted `role:client` families joined with `+` —
+  `builder:buildoor+cl:lighthouse+el:geth`, `vc:teku+builder:buildoor`, `multi-client`.
 - `artifact_signature`: a short stable phrase for the normalized artifact/error shape.
 
 Lowercase, hyphen-separated. Normalize by stripping UUIDs, container ids, ports,

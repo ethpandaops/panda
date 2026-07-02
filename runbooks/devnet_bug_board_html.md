@@ -299,7 +299,9 @@ function apply(){const q=($('#q').value||'').toLowerCase(),cl=$('#f-cli').value,
 let sortKey='up',sortDesc=true;
 function sortIf(){const tb=$('#board tbody');if(!tb)return;
   [...tb.rows].sort((a,b)=>{const x=a.dataset[sortKey],y=b.dataset[sortKey],n=+x-+y,
-    c=isNaN(n)?(x<y?-1:1):n;return sortDesc?-c:c;}).forEach(r=>tb.appendChild(r));}
+    c=isNaN(n)?(x<y?-1:1):n;
+    if(c===0&&sortKey!=='sevrank')return (+b.dataset.sevrank)-(+a.dataset.sevrank);
+    return sortDesc?-c:c;}).forEach(r=>tb.appendChild(r));}
 $$('#board th[data-sort]').forEach(th=>th.onclick=()=>{const k=th.dataset.sort;
   sortDesc=k===sortKey?!sortDesc:true;sortKey=k;sortIf();});
 paint();
@@ -353,6 +355,8 @@ Before delivering:
 - `DORA_BASE` came from the `networks://<network>` service URL when available; the
   convention was used only as a stated fallback.
 - Both the published URL and the host path were delivered.
+- The published URL was fetched back and the page contains every bug id, the
+  baseline line, and the static-snapshot note.
 - The delivered message states the page is a static snapshot: upvotes are
   viewer-local, and nothing on it streams live data.
 - No unescaped bug content reached the page — narrative arrived as `*_text` and went

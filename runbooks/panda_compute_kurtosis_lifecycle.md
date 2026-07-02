@@ -29,7 +29,10 @@ metadata for a later watch or investigation to restore the exact state.
 Record the surface before mutating remote state: `panda version`,
 `panda compute --help`, `panda compute datasources`, `panda compute templates list`.
 If compute is unavailable, stop with a clear capability error — the caller decides
-whether a local run is an acceptable substitute.
+whether a local run is an acceptable substitute. Unavailable includes auth failures:
+an advertised compute datasource with `templates list` returning 401/invalid-token
+means compute exists but is unusable until credentials are fixed — a successful
+template listing, not the datasource advertisement, is the go signal.
 
 ## Async operation rule
 
