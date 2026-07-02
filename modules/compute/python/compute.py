@@ -216,6 +216,22 @@ def lease_sandbox(
     return _runtime.invoke_json("compute.lease_sandbox", args)
 
 
+def prepare_sandbox_ssh(
+    sandbox_id: str,
+    public_key: str,
+    datasource: str | None = None,
+) -> Any:
+    """Mint a short-lived SSH gateway certificate for a registered public key.
+
+    Returns the gateway ``host``, ``port``, ``username``, and the
+    ``client_certificate`` to present alongside the matching private key.
+    The certificate expires within minutes; connect immediately.
+    """
+    _require_compute_available()
+    args = _args(datasource, id=sandbox_id, public_key=public_key)
+    return _runtime.invoke_json("compute.prepare_sandbox_ssh", args)
+
+
 def get_sandbox_snapshots(sandbox_id: str, datasource: str | None = None) -> Any:
     """List snapshots taken from a sandbox."""
     _require_compute_available()

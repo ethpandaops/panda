@@ -134,6 +134,8 @@ func (s *service) handleComputeOperation(operationID string, w http.ResponseWrit
 		})
 	case "compute.lease_sandbox":
 		s.computeOpWithID(w, r, "id", s.computeLeaseSandbox)
+	case "compute.prepare_sandbox_ssh":
+		s.computeOpWithID(w, r, "id", s.computePrepareSandboxSSH)
 	case "compute.get_sandbox_snapshots":
 		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, _ map[string]any) (*http.Response, error) {
 			return c.GetSandboxSnapshots(ctx, id)
@@ -350,6 +352,15 @@ func (s *service) computeLeaseSandbox(ctx context.Context, c *compute.Client, id
 	}
 
 	return c.LeaseSandbox(ctx, id, compute.LeaseSandboxJSONRequestBody{Extend: extend})
+}
+
+func (s *service) computePrepareSandboxSSH(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
+	publicKey, err := requiredStringArg(args, "public_key")
+	if err != nil {
+		return nil, &computeArgError{err: err}
+	}
+
+	return c.PrepareSandboxSSH(ctx, id, compute.PrepareSandboxSSHJSONRequestBody{PublicKey: publicKey})
 }
 
 func (s *service) computePromoteSnapshot(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {

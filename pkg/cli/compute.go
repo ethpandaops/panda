@@ -112,6 +112,11 @@ func init() {
 	computeKeysAddCmd.Flags().StringVar(&computeName, "name", "", "Optional label for the key")
 	_ = computeKeysAddCmd.MarkFlagRequired("public-key")
 
+	computeSandboxesSSHCmd.Flags().StringVar(&computeSSHIdentity, "identity", "~/.ssh/id_ed25519",
+		"Private key whose public half is registered with 'panda compute keys add'")
+	computeSandboxesSSHCmd.Flags().BoolVar(&computeSSHPrint, "print", false,
+		"Print the ssh command instead of executing it")
+
 	for _, cmd := range []*cobra.Command{
 		computeSandboxesCreateCmd, computeSandboxesDeleteCmd, computeSandboxesStopCmd,
 		computeSandboxesStartCmd, computeSandboxesSnapshotCmd, computeSnapshotsDeleteCmd,
@@ -126,6 +131,7 @@ func init() {
 		computeSandboxesDeleteCmd, computeSandboxesStopCmd, computeSandboxesStartCmd,
 		computeSandboxesSnapshotCmd, computeSandboxesLeaseCmd, computeSandboxesSnapshotsCmd,
 		computeSandboxesOperationsCmd, computeSandboxesLogsCmd, computeSandboxesLineageCmd,
+		computeSandboxesSSHCmd,
 	)
 	computeSnapshotsCmd.AddCommand(
 		computeSnapshotsListCmd, computeSnapshotsGetCmd, computeSnapshotsDeleteCmd,
