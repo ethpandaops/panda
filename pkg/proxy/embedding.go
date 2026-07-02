@@ -26,8 +26,8 @@ const (
 )
 
 // Embedding task types. Retrieval-tuned models embed queries and documents
-// asymmetrically ("questions and their answers are not semantically similar"),
-// so every embed request declares which side of retrieval its texts sit on.
+// asymmetrically ("questions and their answers are not semantically similar").
+// v1/v2 are symmetric and pass an empty task; v3 requires one of these values.
 const (
 	// EmbedTaskQuery marks texts that are search queries.
 	EmbedTaskQuery = "query"
@@ -35,44 +35,43 @@ const (
 	EmbedTaskDocument = "document"
 )
 
-// embedTaskParams maps a request task to the upstream input_type and the
-// cache-key segment that isolates its vector space. Task is required — there
-// is no symmetric fallback.
+// embedTaskParams maps a request task to the upstream input_type and cache-key
+// segment. An empty task preserves the symmetric v1/v2 contracts: no upstream
+// input_type and no task segment in the cache key.
 func embedTaskParams(task string) (inputType, keySegment string, err error) {
 	switch task {
+	case "":
+		return "", "", nil
 	case EmbedTaskQuery:
 		return "search_query", EmbedTaskQuery + ":", nil
 	case EmbedTaskDocument:
 		return "search_document", EmbedTaskDocument + ":", nil
 	default:
-		return "", "", fmt.Errorf("embed task is required and must be %q or %q, got %q", EmbedTaskQuery, EmbedTaskDocument, task)
+		return "", "", fmt.Errorf("embed task must be %q or %q, got %q", EmbedTaskQuery, EmbedTaskDocument, task)
 	}
 }
 
-// EmbedCheckRequest is the request payload for the /embedding/check endpoint.
+// EmbedCheckRequest is the request payload for the embedding check endpoints.
 type EmbedCheckRequest struct {
+	// Model is accepted for compatibility with legacy v1 clients.
+	Model  string   `json:"model,omitempty"`
 	Hashes []string `json:"hashes"`
-	// Task scopes the lookup to a task-typed vector space ("query" or
-	// "document"). Required.
-	Task string `json:"task"`
+	// Task is required only by /v3/embedding/check.
+	Task string `json:"task,omitempty"`
 }
 
-// EmbedCheckResponse is the response from /embedding/check. It advertises the
-// model and dimensions so clients can detect a change of either — the embedding
-// space is identified by model/dimensions/task, and a dimensionality change
-// under the same model needs a re-index just as much as a model swap.
+// EmbedCheckResponse is the response from the embedding check endpoints.
 type EmbedCheckResponse struct {
-	Model      string        `json:"model"`
-	Dimensions int           `json:"dimensions"`
+	Model      string        `json:"model,omitempty"`
+	Dimensions int           `json:"dimensions,omitempty"`
 	Cached     []EmbedResult `json:"cached"`
 }
 
-// EmbedRequest is the request payload for the /embedding endpoint.
+// EmbedRequest is the request payload for the embedding endpoints.
 type EmbedRequest struct {
 	Items []EmbedItem `json:"items"`
-	// Task declares which side of retrieval the texts sit on ("query" or
-	// "document"). Required.
-	Task string `json:"task"`
+	// Task is required only by /v3/embedding.
+	Task string `json:"task,omitempty"`
 }
 
 // EmbedItem is a single item to embed.
@@ -81,12 +80,12 @@ type EmbedItem struct {
 	Text string `json:"text"`
 }
 
-// EmbedResponse is the response payload from the /embedding endpoint. It
-// advertises the model and dimensions; vectors are fp32.
+// EmbedResponse is the response payload from the embedding endpoints. v1 omits
+// dimensions; v2/v3 include model and dimensions.
 type EmbedResponse struct {
-	Model      string        `json:"model"`
-	Dimensions int           `json:"dimensions"`
 	Results    []EmbedResult `json:"results"`
+	Model      string        `json:"model"`
+	Dimensions int           `json:"dimensions,omitempty"`
 }
 
 // EmbedResult is a single embedding result.
@@ -104,16 +103,27 @@ type EmbeddingService struct {
 	apiURL       string
 	client       *http.Client
 	costPerToken float64
-	// dimensions is the fixed output dimensionality requested from the
-	// embedding API (Matryoshka truncation). Always > 0 — part of the
-	// embedding-space identity.
+	// dimensions, when > 0, requests a fixed output dimensionality from the
+	// embedding API (Matryoshka truncation). 0 leaves it unset (native dims).
 	dimensions int
 }
 
-// NewEmbeddingService creates a new EmbeddingService that requests a fixed
-// output dimensionality from the embedding API. If costPerToken is 0, the
-// service fetches pricing from the API's /models endpoint.
+// NewEmbeddingService creates a new EmbeddingService with native output
+// dimensionality. If costPerToken is 0, the service fetches pricing from the
+// API's /models endpoint.
 func NewEmbeddingService(
+	log logrus.FieldLogger,
+	c cache.Cache,
+	apiKey, model, apiURL string,
+	costPerToken float64,
+) *EmbeddingService {
+	return NewEmbeddingServiceWithDimensions(log, c, apiKey, model, apiURL, costPerToken, 0)
+}
+
+// NewEmbeddingServiceWithDimensions creates a new EmbeddingService that
+// requests a fixed output dimensionality from the embedding API when dimensions
+// > 0.
+func NewEmbeddingServiceWithDimensions(
 	log logrus.FieldLogger,
 	c cache.Cache,
 	apiKey, model, apiURL string,
@@ -159,17 +169,21 @@ func (s *EmbeddingService) Dimensions() int {
 	return s.dimensions
 }
 
-// cacheKeyPrefix returns the cache-key namespace for this service's vectors:
-// {model}:{dims}:. Dimensionality is always folded in, so two services on the
-// same model id but different output dimensions never collide.
+// cacheKeyPrefix returns the cache-key namespace for this service's vectors.
+// The full key shape is {model}:[{dims}:][{task}:]{hash}. Dimensionality is
+// folded in when set; v1 keeps the legacy {model}: prefix.
 func (s *EmbeddingService) cacheKeyPrefix() string {
-	return s.model + ":" + strconv.Itoa(s.dimensions) + ":"
+	if s.dimensions > 0 {
+		return s.model + ":" + strconv.Itoa(s.dimensions) + ":"
+	}
+
+	return s.model + ":"
 }
 
 // Embed computes embeddings for the given items, using the cache where possible.
 // Uncached items are sent to the upstream API in sub-batches of maxEmbedBatchSize.
-// Task is required — "query" or "document" — and selects the asymmetric
-// retrieval embedding plus the task-scoped cache key space.
+// A non-empty task selects the asymmetric retrieval input_type and task-scoped
+// cache space. v1/v2 pass task == "" for symmetric embeddings.
 func (s *EmbeddingService) Embed(ctx context.Context, items []EmbedItem, task string) (*EmbedResponse, error) {
 	inputType, keySegment, err := embedTaskParams(task)
 	if err != nil {
@@ -186,7 +200,7 @@ func (s *EmbeddingService) Embed(ctx context.Context, items []EmbedItem, task st
 
 	s.log.WithFields(logrus.Fields{"items": len(items), "task": task}).Info("Embed request received")
 
-	// Build cache keys: {model}:{dims}:{task}:{hash}.
+	// Build cache keys: {model}:[{dims}:][{task}:]{hash}.
 	cacheKeys := make([]string, len(items))
 
 	for i, item := range items {
@@ -318,8 +332,9 @@ func (s *EmbeddingService) Embed(ctx context.Context, items []EmbedItem, task st
 	}, nil
 }
 
-// CheckCached returns cached vectors for the given hashes, scoped to the
-// required task's vector space. Only cached hashes are returned.
+// CheckCached returns cached vectors for the given hashes. A non-empty task
+// scopes the lookup to that task's vector space. Only cached hashes are
+// returned.
 func (s *EmbeddingService) CheckCached(ctx context.Context, hashes []string, task string) ([]EmbedResult, error) {
 	_, keySegment, err := embedTaskParams(task)
 	if err != nil {
@@ -383,9 +398,9 @@ type openRouterRequest struct {
 	// Dimensions requests a fixed output size (Matryoshka). Omitted when 0 so
 	// callers using native dimensionality send a byte-identical request.
 	Dimensions int `json:"dimensions,omitempty"`
-	// InputType asks retrieval-tuned models to embed asymmetrically
-	// ("search_query" or "search_document"). Always set — task is required.
-	InputType string `json:"input_type"`
+	// InputType asks retrieval-tuned models to embed asymmetrically. It is
+	// omitted for the symmetric v1/v2 protocol contracts.
+	InputType string `json:"input_type,omitempty"`
 }
 
 // openRouterResponse is the response body from the OpenRouter embeddings API.
@@ -467,18 +482,16 @@ func (s *EmbeddingService) callEmbeddingAPI(ctx context.Context, texts []string,
 		}
 	}
 
-	// Sort by index to maintain input order. Vector length must match the
-	// configured dimensionality: the service advertises Dimensions as part of
-	// the embedding-space identity, so an upstream that ignores or mishandles
-	// the Matryoshka request must fail loudly here rather than silently serve
-	// vectors under a lying identity.
+	// Sort by index to maintain input order. For fixed-dimensional services,
+	// vector length must match the advertised embedding-space identity so an
+	// upstream that ignores the Matryoshka request fails loudly.
 	vectors := make([][]float32, len(texts))
 	for _, emb := range apiResp.Data {
 		if emb.Index < 0 || emb.Index >= len(vectors) {
 			return nil, nil, fmt.Errorf("embedding API returned invalid index %d", emb.Index)
 		}
 
-		if len(emb.Embedding) != s.dimensions {
+		if s.dimensions > 0 && len(emb.Embedding) != s.dimensions {
 			return nil, nil, fmt.Errorf(
 				"embedding API returned a %d-dimensional vector, expected %d — upstream ignored the dimensions request",
 				len(emb.Embedding), s.dimensions,

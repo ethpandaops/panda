@@ -385,6 +385,7 @@ func (f *fakeProxyClient) EthNodeDatasourceInfo() []types.DatasourceInfo {
 }
 
 func (f *fakeProxyClient) EmbeddingAvailable() bool { return false }
+func (f *fakeProxyClient) EmbeddingModel() string   { return "" }
 
 // TestDiscoveryRefreshDisarmedUntilBuildCompletes verifies the discovery hook
 // is inert before ArmDiscoveryRefresh: background ticks during server build

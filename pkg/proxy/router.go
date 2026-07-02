@@ -317,6 +317,16 @@ func (r *routerClient) EmbeddingAvailable() bool {
 	return primary.EmbeddingAvailable()
 }
 
+// EmbeddingModel returns the primary-proxy legacy embedding model.
+func (r *routerClient) EmbeddingModel() string {
+	primary := r.Primary()
+	if primary == nil {
+		return ""
+	}
+
+	return primary.EmbeddingModel()
+}
+
 // OwnerForDatasource returns the proxy that owns a datasource by type/name.
 func (r *routerClient) OwnerForDatasource(datasourceType, datasourceName string) (DatasourceOwner, bool) {
 	_, owners := r.mergeDatasourceInfo(datasourceType)

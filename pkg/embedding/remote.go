@@ -18,18 +18,20 @@ import (
 
 const (
 	remoteEmbedTimeout = 2 * time.Minute
-	// maxBatchSize limits how many items are sent in a single /embedding request.
+	// maxBatchSize limits how many items are sent in a single embedding request.
 	// The proxy accepts up to 500 items and sub-batches to the upstream API internally.
 	maxBatchSize = 500
 
 	// Proxy embedding routes.
-	embedPath      = "/embedding"
-	embedCheckPath = "/embedding/check"
+	embedPathV1      = "/embed"
+	embedCheckPathV1 = "/embed/check"
+	embedPathV2      = "/v2/embedding"
+	embedCheckPathV2 = "/v2/embedding/check"
+	embedPathV3      = "/v3/embedding"
+	embedCheckPathV3 = "/v3/embedding/check"
 
-	// Embedding task types (wire values shared with pkg/proxy). Queries and
-	// documents embed asymmetrically on retrieval-tuned models, and their
-	// vectors live in task-scoped cache spaces. The proxy requires a task on
-	// every embed and embed-check request.
+	// Embedding task types (wire values shared with pkg/proxy). v3 sends these
+	// on the wire; v1/v2 are symmetric and omit task.
 	taskQuery    = "query"
 	taskDocument = "document"
 )
@@ -37,7 +39,7 @@ const (
 // embedCheckRequest is the request payload for the proxy embed-check endpoint.
 type embedCheckRequest struct {
 	Hashes []string `json:"hashes"`
-	Task   string   `json:"task"`
+	Task   string   `json:"task,omitempty"`
 }
 
 // embedCheckResponse is the response from the embed-check endpoint. Model and
@@ -51,7 +53,7 @@ type embedCheckResponse struct {
 // embedRequest is the request payload for the proxy embed endpoint.
 type embedRequest struct {
 	Items []embedItem `json:"items"`
-	Task  string      `json:"task"`
+	Task  string      `json:"task,omitempty"`
 }
 
 // embedItem is a single item to embed.
@@ -74,8 +76,8 @@ type embedResult struct {
 	Vector []float32 `json:"vector"`
 }
 
-// RemoteEmbedder implements Embedder by calling the proxy's /embedding routes
-// (fp32 vectors at a fixed dimensionality, model advertised per response).
+// RemoteEmbedder implements Embedder by calling the negotiated proxy embedding
+// routes. v3 is task-typed; v2 and v1 are symmetric.
 // An optional local cache avoids round-trips to the proxy on warm restarts.
 type RemoteEmbedder struct {
 	log          logrus.FieldLogger
@@ -85,23 +87,22 @@ type RemoteEmbedder struct {
 	invalidateFn func()
 	localCache   cache.Cache
 	model        string
-	// dimensions is the output dimensionality this embedder is keyed to. Part
-	// of the embedding-space identity — model/dimensions/task — folded into
-	// local cache keys so a dimensionality change never serves stale vectors.
+	// dimensions and protocol are part of the local embedding-space identity,
+	// so a proxy upgrade or dimensionality change never serves stale vectors.
 	dimensions int
+	protocol   Protocol
 	progressFn func(completed, total int)
 }
 
 // Compile-time interface check.
 var _ Embedder = (*RemoteEmbedder)(nil)
 
-// NewRemote creates a RemoteEmbedder for the given embedding space (model +
-// dimensions, both advertised by the proxy's /embedding/check probe).
+// NewRemote creates a RemoteEmbedder for the negotiated embedding space.
 // tokenFn is called on each request to get the current auth token, and
 // invalidateFn drops the cached token so a 401/403 can be retried with a fresh
 // one (it may be nil to disable the retry).
 // localCache is optional — when set, embedding vectors are cached locally
-// using {model}:{dims}:{task}:{textHash} keys to avoid proxy round-trips.
+// using protocol-specific keys to avoid proxy round-trips.
 func NewRemote(
 	log logrus.FieldLogger,
 	proxyURL string,
@@ -110,6 +111,7 @@ func NewRemote(
 	localCache cache.Cache,
 	model string,
 	dimensions int,
+	protocol Protocol,
 ) *RemoteEmbedder {
 	return &RemoteEmbedder{
 		log:          log.WithField("component", "remote-embedder"),
@@ -120,6 +122,7 @@ func NewRemote(
 		localCache:   localCache,
 		model:        model,
 		dimensions:   dimensions,
+		protocol:     protocol,
 	}
 }
 
@@ -140,7 +143,7 @@ func (e *RemoteEmbedder) OnProgress(fn func(completed, total int)) {
 // Embed returns the L2-normalized QUERY embedding vector for a single
 // search-query string.
 func (e *RemoteEmbedder) Embed(text string) ([]float32, error) {
-	vectors, err := e.embedAll([]string{text}, taskQuery)
+	vectors, err := e.embedAll([]string{text}, e.queryTask())
 	if err != nil {
 		return nil, err
 	}
@@ -154,13 +157,29 @@ func (e *RemoteEmbedder) Embed(text string) ([]float32, error) {
 
 // EmbedBatch returns L2-normalized DOCUMENT embedding vectors for multiple texts.
 func (e *RemoteEmbedder) EmbedBatch(texts []string) ([][]float32, error) {
-	return e.embedAll(texts, taskDocument)
+	return e.embedAll(texts, e.documentTask())
 }
 
 // EmbedQueryBatch returns L2-normalized QUERY embedding vectors for multiple
-// query-shaped texts.
+// query-shaped texts. v1/v2 are symmetric, so this is equivalent to EmbedBatch.
 func (e *RemoteEmbedder) EmbedQueryBatch(texts []string) ([][]float32, error) {
-	return e.embedAll(texts, taskQuery)
+	return e.embedAll(texts, e.queryTask())
+}
+
+func (e *RemoteEmbedder) queryTask() string {
+	if e.protocol == ProtocolV3 {
+		return taskQuery
+	}
+
+	return ""
+}
+
+func (e *RemoteEmbedder) documentTask() string {
+	if e.protocol == ProtocolV3 {
+		return taskDocument
+	}
+
+	return ""
 }
 
 // embedAll embeds texts under one task type. When a local cache is configured,
@@ -373,12 +392,40 @@ func (e *RemoteEmbedder) reportProgress(completed, total int) {
 	}
 }
 
-// localCacheKey builds the local cache key from the embedding-space identity:
-// model, dimensionality, and task. Scoping all three keeps every vector space
-// separate — a dims or task change never serves stale vectors. Adopting this
-// key shape cold-invalidates caches written by earlier versions once, by design.
+func (e *RemoteEmbedder) embedPath() string {
+	switch e.protocol {
+	case ProtocolV3:
+		return embedPathV3
+	case ProtocolV2:
+		return embedPathV2
+	default:
+		return embedPathV1
+	}
+}
+
+func (e *RemoteEmbedder) checkPath() string {
+	switch e.protocol {
+	case ProtocolV3:
+		return embedCheckPathV3
+	case ProtocolV2:
+		return embedCheckPathV2
+	default:
+		return embedCheckPathV1
+	}
+}
+
+// localCacheKey builds the local cache key from the protocol embedding-space
+// identity: v3 {model}:{dims}:{task}:{hash}, v2 {model}:{dims}:{hash}, v1
+// {model}:{hash}.
 func (e *RemoteEmbedder) localCacheKey(task, textHash string) string {
-	return e.model + ":" + strconv.Itoa(e.dimensions) + ":" + task + ":" + textHash
+	switch e.protocol {
+	case ProtocolV3:
+		return e.model + ":" + strconv.Itoa(e.dimensions) + ":" + task + ":" + textHash
+	case ProtocolV2:
+		return e.model + ":" + strconv.Itoa(e.dimensions) + ":" + textHash
+	default:
+		return e.model + ":" + textHash
+	}
 }
 
 func (e *RemoteEmbedder) queueLocalCache(toCache map[string][]byte, task, textHash string, vec []float32) {
@@ -440,8 +487,10 @@ func (e *RemoteEmbedder) doWithAuthRetry(path string, jsonBody []byte) (*http.Re
 
 		req.Header.Set("Content-Type", "application/json")
 
-		if token := e.tokenFn(); token != "" {
-			req.Header.Set("Authorization", "Bearer "+token)
+		if e.tokenFn != nil {
+			if token := e.tokenFn(); token != "" {
+				req.Header.Set("Authorization", "Bearer "+token)
+			}
 		}
 
 		return e.httpClient.Do(req)
@@ -468,7 +517,24 @@ func (e *RemoteEmbedder) doWithAuthRetry(path string, jsonBody []byte) (*http.Re
 // proxy config change mid-build would otherwise poison both silently (a
 // same-dimensionality model swap is undetectable downstream).
 func (e *RemoteEmbedder) verifyEmbeddingSpace(model string, dimensions int) error {
-	if model != e.model || dimensions != e.dimensions {
+	if e.protocol == ProtocolV1 {
+		return nil
+	}
+
+	if model != e.model {
+		return fmt.Errorf(
+			"proxy embedding space changed: serving %s/%d, expected %s/%d — re-resolve the space and re-index",
+			model, dimensions, e.model, e.dimensions,
+		)
+	}
+
+	// Historical v2 proxies predate the dimensions echo; zero means "not
+	// advertised" and is accepted for the model/dimensions negotiated by ProbeV2.
+	if e.protocol == ProtocolV2 && dimensions == 0 {
+		return nil
+	}
+
+	if dimensions != e.dimensions {
 		return fmt.Errorf(
 			"proxy embedding space changed: serving %s/%d, expected %s/%d — re-resolve the space and re-index",
 			model, dimensions, e.model, e.dimensions,
@@ -479,12 +545,17 @@ func (e *RemoteEmbedder) verifyEmbeddingSpace(model string, dimensions int) erro
 }
 
 func (e *RemoteEmbedder) checkCached(hashes []string, task string) ([]embedResult, error) {
-	reqBody, err := json.Marshal(embedCheckRequest{Hashes: hashes, Task: task})
+	req := embedCheckRequest{Hashes: hashes}
+	if e.protocol == ProtocolV3 {
+		req.Task = task
+	}
+
+	reqBody, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling check request: %w", err)
 	}
 
-	resp, err := e.doWithAuthRetry(embedCheckPath, reqBody)
+	resp, err := e.doWithAuthRetry(e.checkPath(), reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("calling embed check: %w", err)
 	}
@@ -509,12 +580,17 @@ func (e *RemoteEmbedder) checkCached(hashes []string, task string) ([]embedResul
 }
 
 func (e *RemoteEmbedder) callEmbed(items []embedItem, task string) (*embedResponse, error) {
-	reqBody, err := json.Marshal(embedRequest{Items: items, Task: task})
+	req := embedRequest{Items: items}
+	if e.protocol == ProtocolV3 {
+		req.Task = task
+	}
+
+	reqBody, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling embed request: %w", err)
 	}
 
-	resp, err := e.doWithAuthRetry(embedPath, reqBody)
+	resp, err := e.doWithAuthRetry(e.embedPath(), reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("calling proxy embed: %w", err)
 	}

@@ -161,6 +161,7 @@ func TestAuthorizerFilterDatasources(t *testing.T) {
 		PrometheusInfo:     []types.DatasourceInfo{{Type: "prometheus", Name: "internal"}},
 		LokiInfo:           []types.DatasourceInfo{{Type: "loki", Name: "logs"}},
 		EmbeddingAvailable: true,
+		EmbeddingModel:     "openai/text-embedding-3-small",
 	}
 
 	// Embedding is infrastructure metadata, not a per-user datasource — it must
@@ -168,6 +169,7 @@ func TestAuthorizerFilterDatasources(t *testing.T) {
 	assertEmbeddingPreserved := func(t *testing.T, filtered DatasourcesResponse) {
 		t.Helper()
 		assert.True(t, filtered.EmbeddingAvailable)
+		assert.Equal(t, "openai/text-embedding-3-small", filtered.EmbeddingModel)
 	}
 
 	// User in ethpandaops — should see everything.

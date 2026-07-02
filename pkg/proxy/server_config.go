@@ -51,9 +51,12 @@ type ServerConfig struct {
 	// Metrics holds Prometheus metrics configuration.
 	Metrics MetricsConfig `yaml:"metrics"`
 
-	// Embedding holds optional embedding API configuration (route: /embedding;
-	// fp32 vectors, model and dimensions advertised in every response).
+	// Embedding holds optional embedding API configuration (v1 route: /embed).
 	Embedding *EmbeddingConfig `yaml:"embedding,omitempty"`
+
+	// EmbeddingV2 holds optional configuration for the v2/v3 embedding routes.
+	// v3 is a protocol upgrade over the same fixed-dimensional embedding space.
+	EmbeddingV2 *EmbeddingConfig `yaml:"embedding_v2,omitempty"`
 
 	// GitHub holds optional GitHub API configuration for triggering workflows.
 	GitHub *GitHubAPIConfig `yaml:"github,omitempty"`
@@ -317,17 +320,15 @@ type EmbeddingConfig struct {
 	// APIKey is the API key for the embedding provider (e.g., OpenRouter).
 	APIKey string `yaml:"api_key"`
 
-	// Model is the embedding model name (default: "google/gemini-embedding-2").
-	// It must support asymmetric retrieval embedding (input_type) — every embed
-	// request carries a query/document task.
+	// Model is the embedding model name (default: "openai/text-embedding-3-small"
+	// for v1, "google/gemini-embedding-2" for v2/v3).
 	Model string `yaml:"model,omitempty"`
 
 	// APIURL is the base URL of the embedding API (default: "https://openrouter.ai/api/v1").
 	APIURL string `yaml:"api_url,omitempty"`
 
 	// Dimensions requests a fixed output dimensionality (Matryoshka) from the
-	// embedding API (default: 1536). Part of the embedding-space identity
-	// advertised to clients.
+	// embedding API. Used by embedding_v2; ignored by the v1 embedding block.
 	Dimensions int `yaml:"dimensions,omitempty"`
 
 	// Cache holds embedding cache configuration.
@@ -416,19 +417,34 @@ func (c *ServerConfig) ApplyDefaults() {
 	// Embedding defaults.
 	if c.Embedding != nil {
 		if c.Embedding.Model == "" {
-			c.Embedding.Model = "google/gemini-embedding-2"
+			c.Embedding.Model = "openai/text-embedding-3-small"
 		}
 
 		if c.Embedding.APIURL == "" {
 			c.Embedding.APIURL = "https://openrouter.ai/api/v1"
 		}
 
-		if c.Embedding.Dimensions == 0 {
-			c.Embedding.Dimensions = 1536
-		}
-
 		if c.Embedding.Cache.Backend == "" {
 			c.Embedding.Cache.Backend = "memory"
+		}
+	}
+
+	// Embedding v2/v3 defaults.
+	if c.EmbeddingV2 != nil {
+		if c.EmbeddingV2.Model == "" {
+			c.EmbeddingV2.Model = "google/gemini-embedding-2"
+		}
+
+		if c.EmbeddingV2.APIURL == "" {
+			c.EmbeddingV2.APIURL = "https://openrouter.ai/api/v1"
+		}
+
+		if c.EmbeddingV2.Dimensions == 0 {
+			c.EmbeddingV2.Dimensions = 1536
+		}
+
+		if c.EmbeddingV2.Cache.Backend == "" {
+			c.EmbeddingV2.Cache.Backend = "memory"
 		}
 	}
 
@@ -500,14 +516,25 @@ func (c *ServerConfig) Validate() error {
 			return fmt.Errorf("embedding.api_key is required when embedding is configured")
 		}
 
-		// Dimensions is embedding-space identity; a non-positive value would
-		// start cleanly, advertise a bad space, then fail every embed request.
-		if c.Embedding.Dimensions < 1 {
-			return fmt.Errorf("embedding.dimensions must be positive, got %d", c.Embedding.Dimensions)
-		}
-
 		if c.Embedding.Cache.Backend == "redis" && c.Embedding.Cache.RedisURL == "" {
 			return fmt.Errorf("embedding.cache.redis_url is required when cache backend is 'redis'")
+		}
+	}
+
+	// Validate embedding v2/v3 config.
+	if c.EmbeddingV2 != nil {
+		if c.EmbeddingV2.APIKey == "" {
+			return fmt.Errorf("embedding_v2.api_key is required when embedding_v2 is configured")
+		}
+
+		// Dimensions is embedding-space identity; a non-positive value would
+		// start cleanly, advertise a bad space, then fail every embed request.
+		if c.EmbeddingV2.Dimensions < 1 {
+			return fmt.Errorf("embedding_v2.dimensions must be positive, got %d", c.EmbeddingV2.Dimensions)
+		}
+
+		if c.EmbeddingV2.Cache.Backend == "redis" && c.EmbeddingV2.Cache.RedisURL == "" {
+			return fmt.Errorf("embedding_v2.cache.redis_url is required when cache backend is 'redis'")
 		}
 	}
 

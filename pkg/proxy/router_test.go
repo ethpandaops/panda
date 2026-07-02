@@ -390,6 +390,7 @@ func (f *fakeRouterClient) EthNodeDatasourceInfo() []types.DatasourceInfo {
 }
 
 func (f *fakeRouterClient) EmbeddingAvailable() bool { return f.embedding }
+func (f *fakeRouterClient) EmbeddingModel() string   { return "" }
 
 func (f *fakeRouterClient) Discover(_ context.Context) error {
 	f.discovers++

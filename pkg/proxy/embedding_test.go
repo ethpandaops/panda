@@ -61,7 +61,7 @@ func TestEmbeddingService_Embed_CacheMiss(t *testing.T) {
 	mockAPI := newMockOpenRouterServer(t, &apiCalls)
 
 	memCache := cache.NewInMemory(0)
-	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL+"/v1", 0.01, 3)
+	svc := NewEmbeddingServiceWithDimensions(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL+"/v1", 0.01, 3)
 
 	items := []EmbedItem{
 		{Hash: "aaa", Text: "hello"},
@@ -111,7 +111,7 @@ func TestEmbeddingService_Embed_CacheHit(t *testing.T) {
 		testModel + ":3:document:bbb": vecData,
 	}))
 
-	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL+"/v1", 0.01, 3)
+	svc := NewEmbeddingServiceWithDimensions(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL+"/v1", 0.01, 3)
 
 	items := []EmbedItem{
 		{Hash: "aaa", Text: "hello"},
@@ -146,7 +146,7 @@ func TestEmbeddingService_Embed_PartialCacheHit(t *testing.T) {
 
 	require.NoError(t, memCache.Set(context.Background(), testModel+":3:document:aaa", vecData))
 
-	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL+"/v1", 0.01, 3)
+	svc := NewEmbeddingServiceWithDimensions(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL+"/v1", 0.01, 3)
 
 	items := []EmbedItem{
 		{Hash: "aaa", Text: "hello"},
@@ -178,7 +178,7 @@ func TestEmbeddingService_Embed_Empty(t *testing.T) {
 	mockAPI := newMockOpenRouterServer(t, &apiCalls)
 
 	memCache := cache.NewInMemory(0)
-	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL+"/v1", 0.01, 3)
+	svc := NewEmbeddingServiceWithDimensions(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL+"/v1", 0.01, 3)
 
 	resp, err := svc.Embed(context.Background(), []EmbedItem{}, EmbedTaskDocument)
 	require.NoError(t, err)
@@ -198,7 +198,7 @@ func TestEmbeddingService_Embed_L2Normalized(t *testing.T) {
 	mockAPI := newMockOpenRouterServer(t, &apiCalls)
 
 	memCache := cache.NewInMemory(0)
-	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL+"/v1", 0.01, 3)
+	svc := NewEmbeddingServiceWithDimensions(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL+"/v1", 0.01, 3)
 
 	items := []EmbedItem{
 		{Hash: "aaa", Text: "test normalization"},
@@ -230,7 +230,7 @@ func TestEmbeddingService_Embed_APIError(t *testing.T) {
 	t.Cleanup(errorServer.Close)
 
 	memCache := cache.NewInMemory(0)
-	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, errorServer.URL+"/v1", 0, 3)
+	svc := NewEmbeddingServiceWithDimensions(logrus.New(), memCache, "test-api-key", testModel, errorServer.URL+"/v1", 0, 3)
 
 	items := []EmbedItem{
 		{Hash: "aaa", Text: "hello"},
@@ -274,7 +274,7 @@ func TestEmbeddingService_TaskScopesUpstreamAndCache(t *testing.T) {
 
 	mockAPI := newTaskCapturingServer(t, &inputTypes)
 	memCache := cache.NewInMemory(0)
-	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL, 0.01, 3)
+	svc := NewEmbeddingServiceWithDimensions(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL, 0.01, 3)
 
 	items := []EmbedItem{{Hash: "aaa", Text: "hello"}}
 
@@ -303,12 +303,18 @@ func TestEmbeddingService_TaskScopesUpstreamAndCache(t *testing.T) {
 	assert.Len(t, cached, 1)
 	assert.Equal(t, queryResp.Results[0].Vector, cached[0].Vector)
 
-	// Task is required: empty and unknown tasks are rejected.
+	// Empty task is the symmetric v1/v2 path: no upstream input_type and no
+	// task segment in the cache key.
 	_, err = svc.Embed(context.Background(), items, "")
-	require.Error(t, err)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"search_query", "search_document", ""}, inputTypes)
+
+	cached, err = svc.CheckCached(context.Background(), []string{"aaa"}, "")
+	require.NoError(t, err)
+	assert.Len(t, cached, 1)
+
+	// Unknown tasks are rejected.
 	_, err = svc.Embed(context.Background(), items, "banana")
-	require.Error(t, err)
-	_, err = svc.CheckCached(context.Background(), []string{"aaa"}, "")
 	require.Error(t, err)
 	_, err = svc.CheckCached(context.Background(), []string{"aaa"}, "banana")
 	require.Error(t, err)

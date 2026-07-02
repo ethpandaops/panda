@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ethpandaops/panda/pkg/embedding"
 	"github.com/ethpandaops/panda/pkg/resource"
 	"github.com/ethpandaops/panda/pkg/types"
 )
@@ -106,4 +107,11 @@ func TestRuntimeCloseEmbedderError(t *testing.T) {
 	r := &Runtime{embedder: embedder}
 
 	require.Error(t, r.Close())
+}
+
+func TestEmbeddingSpaceChangedIncludesProtocol(t *testing.T) {
+	t.Parallel()
+
+	assert.True(t, embeddingSpaceChanged("model", 1536, embedding.ProtocolV2, "model", 1536, embedding.ProtocolV3))
+	assert.False(t, embeddingSpaceChanged("model", 1536, embedding.ProtocolV3, "model", 1536, embedding.ProtocolV3))
 }
