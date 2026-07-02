@@ -49,9 +49,8 @@ The visual language follows the EthPandaOps bug-leaderboard product: light theme
 default (indigo accent, JetBrains-Mono-first code, soft tinted status/severity chips),
 with a dark variant available via the "◐ theme" toggle, persisted in `localStorage`.
 It intentionally does not auto-switch to dark on the OS preference — the product look
-is the default so the page always opens in the light-indigo style. Architecturally it
-mirrors the repo's `tests/eval/scripts/report_template.html`: CSS design tokens, zero
-external fetches, safe to serve as an uploaded asset.
+is the default so the page always opens in the light-indigo style. Architecturally:
+CSS design tokens, zero external fetches, safe to serve as an uploaded asset.
 
 It is a **static snapshot**. The viewer's own upvote is saved in their browser, but
 shared vote totals, comments, and live log/chart streaming need the bug-board backend
@@ -484,11 +483,11 @@ print(path)
 
 Every field is `html.escape`'d, so log lines and titles cannot break out of the page.
 (If you later switch to an injected-JSON viewer for live mode, escape the blob with
-`json.dumps(...).replace("</", "<\\/")` as `report_template.html` does.)
+`json.dumps(...).replace("</", "<\\/")` so a `</script>` inside the data cannot
+terminate the script tag.)
 
 Deliver the published URL and the local `/workspace/...` path. If the network is
 healthy, still publish a board whose summary states zero bugs and shows the baseline.
-Only push to the external starflinger asset store on explicit request.
 
 ## Self-Check
 
