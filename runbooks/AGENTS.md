@@ -99,6 +99,10 @@ they satisfy schemas, and there is no runtime validator here.
   `runbooks://evidence_discipline` — never a 0-100 integer (uncalibrated precision).
 - Shared shapes (the issue record, evidence items) live once, in
   `runbooks://devnet_issue_contract`; stages reference them instead of re-declaring.
+- When an example shows a shared shape **truncated**, mark the elision inside the
+  YAML itself with a comment naming the omitted required fields and the owner ref.
+  Agents copy the block they see, not the prose around it — an elision visible only
+  outside the example produces silently partial records.
 - Note allowed enum values in a trailing comment on the field, only where the enum is
   load-bearing.
 

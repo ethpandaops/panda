@@ -25,7 +25,8 @@ Phase 3 hand-off makes sense.
 
 - **`network_target`** — required. For a hosted devnet resolve it with
   `runbooks://hosted_devnet_context` (`networks://active`, then the network resource);
-  for a local or compute enclave use `runbooks://kurtosis_devnet`. Do not guess.
+  for a local enclave use `runbooks://kurtosis_devnet`; for a compute enclave use
+  `runbooks://panda_compute_kurtosis_lifecycle`. Do not guess.
 - **Time window** — the reporting period. Use the user's window verbatim if given;
   otherwise default to the past 4 epochs and state the default. Pin one concrete
   slot/epoch range and reuse it across every scan query; record it in the report header.
@@ -47,16 +48,14 @@ One HTML file with two layers:
 
 The visual language follows the EthPandaOps bug-leaderboard product: light theme by
 default (indigo accent, JetBrains-Mono-first code, soft tinted status/severity chips),
-with a dark variant available via the "◐ theme" toggle, persisted in `localStorage`.
-It intentionally does not auto-switch to dark on the OS preference — the product look
-is the default so the page always opens in the light-indigo style. Architecturally:
-CSS design tokens, zero external fetches, safe to serve as an uploaded asset.
+dark variant via the "◐ theme" toggle (persisted in `localStorage`; deliberately no
+OS-preference auto-switch — the page always opens in the light-indigo product style).
+Architecturally: CSS design tokens, zero external fetches, safe as an uploaded asset.
 
-It is a **static snapshot**. The viewer's own upvote is saved in their browser, but
-shared vote totals, comments, and live log/chart streaming need the bug-board backend
-and are out of scope for the static asset — the page bakes a snapshot and links out to
-live tooling. Say so plainly in the delivered report; do not imply the static file is
-live or that upvotes are shared.
+It is a **static snapshot**. The viewer's own upvote is saved in their browser; shared
+vote totals, comments, and live log/chart streaming need the bug-board backend — the
+page bakes a snapshot and links out to live tooling. Say so plainly in the delivered
+report; do not imply the file is live or that upvotes are shared.
 
 ## Procedure
 
@@ -145,6 +144,8 @@ cannot support:
 bug:
   id: MISS-01                        # stable id from the Phase 2 summary table
   issue:                             # one issue record — full shape owned by runbooks://devnet_issue_contract
+    # TRUNCATED example: emit the FULL record — also first_bad, affected,
+    # co_present, fingerprint, and handles, copied from the contract's example.
     title: "geth proposers miss every slot after the Gloas boundary"
     summary: >
       Slots 4711-4740 scheduled on geth-paired proposers are all Missing; the first
@@ -161,7 +162,7 @@ bug:
     upvotes: 0                       # baked-in snapshot count; humans/agents seed it
     status_badges:                   # pills; kind ∈ open|confirmed|investigating|draft|fixed
       - { text: "confirmed", kind: confirmed }
-    labels: ["missing from EELS testing"]            # free-form chips, filterable
+    labels: ["missing from EELS testing"]            # free-form chips, matched by text search
     connections:                     # all optional — include only what the evidence supports
       clients: ["geth EL", "lighthouse CL"]          # drives the leaderboard client filter
       instances: ["el-3-geth"]                       # → ethpandaops.io instance page + ssh line
@@ -207,13 +208,15 @@ when the resource omits them.
 | Kurtosis config | `https://github.com/ethpandaops/<network>/blob/<ref>/network-params.yaml` | `ethereum-package config` |
 
 Embed a reproducing Kurtosis config in the page only when the reproduction was
-actually verified. The Phase 4 generator implements each pattern as a small `link_*`
-helper so agents supply structured fields, not raw URLs.
+actually verified. The Phase 4 generator automates the patterns backed by structured
+fields (`dora_slot`, `instance`, `gh_pr`, `gh_line`, `eip_at`, the Kurtosis config
+link); use the remaining patterns when composing links inside the `*_html` fields.
 
 ## Phase 4: Build And Publish The Bug Board
 
 Collect every bug object into `/workspace/bugs.json`, then render and publish with the
-generator below — run it verbatim in the sandbox after filling `NETWORK` and `WINDOW`.
+generator below — run it verbatim in the sandbox after filling `NETWORK`, `WINDOW`,
+and `BASELINE` (the Phase 1 baseline; with zero bugs the board is baseline + empty list).
 The generator owns page chrome, CSS tokens, the leaderboard, the link vocabulary, and
 all structured rendering; agents supply only the per-bug `*_html` narrative.
 
@@ -224,6 +227,7 @@ from ethpandaops import storage
 
 NETWORK = "<network>"
 WINDOW  = "<slot/epoch range>"
+BASELINE = "<one-line health baseline: split? finalizing? participating?>"
 # Prefer the Dora service URL from networks://<network>; fall back to the convention.
 DORA_BASE = f"https://dora.{NETWORK}.ethpandaops.io"
 bugs = json.load(open("/workspace/bugs.json"))
@@ -275,7 +279,7 @@ def timeline(events):
         pre = f'<pre>{esc(e["log"])}</pre>' if e.get("log") else ""
         items.append(f'<div class="tl-item tl-{esc(e.get("kind","note"))}">'
                      f'<div class="tl-date">{esc(e.get("ts",""))} · {esc(e.get("kind","note"))}{ref}</div>'
-                     f'<div>{e.get("text","")}</div>{pre}</div>')
+                     f'<div>{esc(e.get("text",""))}</div>{pre}</div>')
     return f'<div class="timeline">{"".join(items)}</div>'
 
 def sparkline(s):
@@ -318,7 +322,7 @@ def bug_section(b):
     return f"""<section class="bug" id="{esc(b['id'])}" data-id="{esc(b['id'])}" data-base="{up}"
       data-sev="{esc(sev)}" data-clients="{esc(' '.join(c.get('clients',[])).lower())}"
       data-haspr="{'1' if c.get('prs') else '0'}" data-up="{up}"
-      data-text="{esc((issue['title']+' '+board.get('subtitle','')).lower())}">
+      data-text="{esc(' '.join([issue['title'], board.get('subtitle','')] + board.get('labels', [])).lower())}">
       <div class="bug-h"><h2>{esc(b['id'])} — {esc(issue['title'])}</h2>
         <button class="upbtn" data-vote="{esc(b['id'])}" title="upvote — saved in your browser">▲ <span class="up-n">{up}</span></button></div>
       <p class="sub">{esc(board.get('subtitle',''))}</p>
@@ -342,9 +346,10 @@ def row(b):
     prs = " ".join(badge(f"#{p['number']} {p['state']}", PR_KIND.get(p['state'],"minor")) for p in c.get("prs",[]))
     up = int(board.get("upvotes", 0))
     return (f'<tr data-id="{esc(b["id"])}" data-base="{up}" data-sev="{esc(b.get("severity"))}" '
+            f'data-sevrank="{2 - SEV_RANK.get(b.get("severity"), 9)}" '
             f'data-haspr="{"1" if c.get("prs") else "0"}" '
             f'data-clients="{esc(" ".join(c.get("clients",[])).lower())}" data-up="{up}" '
-            f'data-text="{esc(issue["title"].lower())}">'
+            f'data-text="{esc(" ".join([issue["title"]] + board.get("labels", [])).lower())}">'
             f'<td><button class="upbtn" data-vote="{esc(b["id"])}" title="upvote — saved in your browser">▲ <span class="up-n">{up}</span></button></td>'
             f'<td>{badge(b.get("severity"), b.get("severity"))}</td>'
             f'<td>{a("#"+b["id"], b["id"]+" — "+issue["title"], ext=False)}</td>'
@@ -362,8 +367,7 @@ CSS = r"""
 --amber:#e3b341;--amber-bg:#2a2210;--purple:#b083f0;--purple-bg:#211a33;--blue:#58a6ff;--blue-bg:#12233d;color-scheme:dark;}
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:var(--sans);background:var(--bg);color:var(--ink);line-height:1.6;padding:2rem;-webkit-font-smoothing:antialiased}
-.container{max-width:980px;margin:0 auto}
-h1{font-size:1.4rem;letter-spacing:-.01em;margin-bottom:.2rem}
+.container{max-width:980px;margin:0 auto}h1{font-size:1.4rem;letter-spacing:-.01em;margin-bottom:.2rem}
 h2{font-size:1.05rem;letter-spacing:-.01em}h3{font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin:1rem 0 .5rem}
 .sub{color:var(--mut);font-size:.9rem;margin-bottom:.8rem}.mut{color:var(--mut)}
 a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
@@ -391,13 +395,11 @@ tbody tr:hover{background:var(--panel2)}tr[hidden]{display:none}
 .bug-h{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem}
 .fork-table td.canonical,.canonical{color:var(--ok);font-weight:600}.divergent,.warn{color:var(--bad);font-weight:600}
 .delta{font:600 .9em var(--mono);color:var(--bad)}
-.timeline{border-left:2px solid var(--line);padding-left:1.1rem;margin:.4rem 0}
-.tl-item{position:relative;margin-bottom:.9rem;font-size:.88rem}
+.timeline{border-left:2px solid var(--line);padding-left:1.1rem;margin:.4rem 0}.tl-item{position:relative;margin-bottom:.9rem;font-size:.88rem}
 .tl-item::before{content:"";position:absolute;left:-1.35rem;top:.45rem;width:8px;height:8px;border-radius:50%;background:var(--accent);border:2px solid var(--panel)}
 .tl-restart::before{background:var(--bad)}.tl-timing::before{background:var(--amber)}.tl-block::before{background:var(--ok)}
 .tl-date{font-size:.76rem;color:var(--faint);margin-bottom:.15rem}
-.chart{margin:.6rem 0}.chart figcaption{font-size:.78rem;color:var(--mut);margin-bottom:.2rem}
-.chart svg{width:100%;height:90px;background:var(--panel2);border:1px solid var(--line);border-radius:8px}
+.chart{margin:.6rem 0}.chart figcaption{font-size:.78rem;color:var(--mut);margin-bottom:.2rem}.chart svg{width:100%;height:90px;background:var(--panel2);border:1px solid var(--line);border-radius:8px}
 .spark{fill:none;stroke:var(--accent);stroke-width:1.5;vector-effect:non-scaling-stroke}
 .ev{stroke:var(--amber);stroke-width:1;stroke-dasharray:3 2;vector-effect:non-scaling-stroke}
 .repro{margin:.5rem 0}.repro-h{font-size:.82rem;margin-bottom:.2rem}.cites{color:var(--mut);font-size:.82rem}
@@ -409,8 +411,7 @@ tbody tr:hover{background:var(--panel2)}tr[hidden]{display:none}
 .chip[aria-pressed=true].c-critical{background:var(--bad-bg);color:var(--bad);border-color:var(--bad)}
 .chip[aria-pressed=true].c-major{background:var(--amber-bg);color:var(--amber);border-color:var(--amber)}
 .chip[aria-pressed=true].c-minor{background:var(--panel2);color:var(--ink);border-color:var(--faint)}
-#theme{cursor:pointer;margin-left:auto}
-.note{font-size:.8rem;color:var(--mut);border:1px dashed var(--line);border-radius:8px;padding:.6rem .8rem;margin-bottom:1rem}
+#theme{cursor:pointer;margin-left:auto}.note{font-size:.8rem;color:var(--mut);border:1px dashed var(--line);border-radius:8px;padding:.6rem .8rem;margin-bottom:1rem}
 """
 
 JS = r"""
@@ -422,7 +423,7 @@ $('#theme').onclick=()=>{const d=document.documentElement.dataset;
   d.theme=d.theme==='dark'?'light':'dark';lset('panda-bug-theme',d.theme);};
 
 // upvotes: bake base counts, persist the viewer's own vote locally; count = base + own.
-let votes=new Set(JSON.parse(ls('panda-bug-votes','[]')));
+let votes=new Set();try{votes=new Set(JSON.parse(ls('panda-bug-votes','[]')))}catch(e){}
 function eff(el){return +el.dataset.base+(votes.has(el.dataset.id)?1:0);}
 function paint(){$$('[data-id]').forEach(el=>{const n=eff(el);el.dataset.up=n;
   el.querySelectorAll('.up-n').forEach(x=>x.textContent=n);
@@ -458,6 +459,7 @@ head = ('<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">'
         f'<title>{esc(NETWORK)} · bug board</title><style>' + CSS + '</style></head><body><div class="container">')
 header = (f'<h1>{esc(NETWORK)} — consensus bug board</h1>'
           f'<p class="sub">Window {esc(WINDOW)} · generated {esc(generated)} · {len(bugs)} bug(s) · <a id="theme">◐ theme</a></p>'
+          f'<p class="sub">Baseline: {esc(BASELINE)}</p>'
           '<div class="note">Static snapshot. Your upvote is saved in this browser; shared vote totals, comments '
           'and live log/chart streaming need the bug-board backend. This page bakes the snapshot and links out to live tooling.</div>')
 bar = ('<div id="bar"><input id="q" type="search" placeholder="search bugs / clients…">'
@@ -466,11 +468,11 @@ bar = ('<div id="bar"><input id="q" type="search" placeholder="search bugs / cli
        '<span class="chip c-major" data-sev="major" aria-pressed="false">major</span>'
        '<span class="chip c-minor" data-sev="minor" aria-pressed="false">minor</span></div>'
        '<select id="f-cli"><option value="">all clients</option>' +
-       "".join(f'<option>{esc(c)}</option>' for c in clients) +
+       "".join(f'<option value="{esc(c.lower())}">{esc(c)}</option>' for c in clients) +
        '</select><select id="f-pr"><option value="">any PR state</option>'
        '<option value="has">has PR</option><option value="none">no PR</option></select></div>')
 board = ('<table id="board" class="panel"><thead><tr>'
-         '<th data-sort="up">▲ Upvotes</th><th data-sort="sev">Severity</th><th>Bug</th>'
+         '<th data-sort="up">▲ Upvotes</th><th data-sort="sevrank">Severity</th><th>Bug</th>'
          '<th data-sort="clients">Clients</th><th>PRs</th></tr></thead><tbody>'
          + "".join(row(b) for b in bugs) + '</tbody></table>')
 doc = head + header + bar + board + "\n".join(bug_section(b) for b in bugs) + "<script>" + JS + "</script></div></body></html>"
@@ -481,7 +483,10 @@ print(storage.upload(path, remote_name=path.split("/")[-1]).url)
 print(path)
 ```
 
-Every field is `html.escape`'d, so log lines and titles cannot break out of the page.
+Every structured field is `html.escape`'d, so log lines, titles, and timeline text
+cannot break out of the page. The only raw-HTML inputs are the three `*_html` fields —
+agent-composed by design and restricted (by convention, not a sanitizer) to the Phase 3
+class vocabulary; never route un-reviewed upstream text through them.
 (If you later switch to an injected-JSON viewer for live mode, escape the blob with
 `json.dumps(...).replace("</", "<\\/")` so a `</script>` inside the data cannot
 terminate the script tag.)
