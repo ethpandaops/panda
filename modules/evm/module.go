@@ -2,11 +2,9 @@ package evm
 
 import (
 	"context"
-	"encoding/json"
 	"maps"
 	"sync"
 
-	"github.com/ethpandaops/panda/pkg/cartographoor"
 	"github.com/ethpandaops/panda/pkg/module"
 	"github.com/ethpandaops/panda/pkg/types"
 )
@@ -15,7 +13,6 @@ import (
 var (
 	_ module.Module                = (*Module)(nil)
 	_ module.ProxyDiscoverable     = (*Module)(nil)
-	_ module.CartographoorAware    = (*Module)(nil)
 	_ module.SandboxEnvProvider    = (*Module)(nil)
 	_ module.ExamplesProvider      = (*Module)(nil)
 	_ module.PythonAPIDocsProvider = (*Module)(nil)
@@ -28,8 +25,6 @@ var (
 type Module struct {
 	dsMu        sync.RWMutex
 	datasources []types.DatasourceInfo
-
-	cartographoorClient cartographoor.CartographoorClient
 }
 
 // New creates a new evm module.
@@ -60,11 +55,6 @@ func (m *Module) InitFromDiscovery(datasources []types.DatasourceInfo) error {
 	return nil
 }
 
-// SetCartographoorClient implements module.CartographoorAware.
-func (m *Module) SetCartographoorClient(client cartographoor.CartographoorClient) {
-	m.cartographoorClient = client
-}
-
 func (m *Module) Init(_ []byte) error { return nil }
 func (m *Module) ApplyDefaults()      {}
 func (m *Module) Validate() error     { return nil }
@@ -72,30 +62,10 @@ func (m *Module) Validate() error     { return nil }
 func (m *Module) Start(_ context.Context) error { return nil }
 func (m *Module) Stop(_ context.Context) error  { return nil }
 
-// SandboxEnv injects EVM availability and per-network faucet URLs.
+// SandboxEnv marks EVM availability for the sandbox. Faucet URLs are resolved
+// server-side by the evm.faucet operation, so no per-network env is injected.
 func (m *Module) SandboxEnv() (map[string]string, error) {
-	env := map[string]string{"ETHPANDAOPS_EVM_AVAILABLE": "true"}
-
-	if m.cartographoorClient == nil {
-		return env, nil
-	}
-
-	faucets := make(map[string]string)
-
-	for name, net := range m.cartographoorClient.GetActiveNetworks() {
-		if net.ServiceURLs != nil && net.ServiceURLs.Faucet != "" {
-			faucets[name] = net.ServiceURLs.Faucet
-		}
-	}
-
-	if len(faucets) > 0 {
-		data, err := json.Marshal(faucets)
-		if err == nil {
-			env["ETHPANDAOPS_EVM_FAUCET_NETWORKS"] = string(data)
-		}
-	}
-
-	return env, nil
+	return map[string]string{"ETHPANDAOPS_EVM_AVAILABLE": "true"}, nil
 }
 
 // Examples returns query examples for the evm module.
@@ -142,7 +112,7 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 				},
 				"faucet": {
 					Signature:   "faucet(network, address) -> str",
-					Description: "Return the PoW faucet URL for the network pre-filled with the given address. Open in a browser to request test ETH.",
+					Description: "Mine the network's PoW faucet and claim test ETH to address; returns the claim tx hash. Runs the full agent PoW flow server-side (no browser, WebSocket, or captcha). Requires panda auth.",
 				},
 			},
 		},
