@@ -1,56 +1,25 @@
 package server
 
-import "testing"
+import (
+	"testing"
 
-// score is a test helper mirroring how resolveResources scores a candidate.
-func score(query string, fields ...string) float64 {
-	return lexicalScore(tokenSet(query), trigramSet(normalizeText(query)), fields...)
-}
+	"github.com/ethpandaops/panda/pkg/textmatch"
+)
 
-func TestLexicalScore(t *testing.T) {
+func TestResolveScoreThreshold(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name   string
-		query  string
-		fields []string
-		want   func(float64) bool
-	}{
-		{
-			name:   "exact token match on slugged URI ranks high",
-			query:  "getting started",
-			fields: []string{"panda://getting-started", "Getting Started"},
-			want:   func(s float64) bool { return s >= 0.6 },
-		},
-		{
-			name:   "typo still matches via trigrams above threshold",
-			query:  "finalty",
-			fields: []string{"runbooks://finality_delay", "Investigate Finality Delay"},
-			want:   func(s float64) bool { return s >= minResolveScore },
-		},
-		{
-			name:   "unrelated query scores below threshold",
-			query:  "account abstraction",
-			fields: []string{"networks://active", "Active networks"},
-			want:   func(s float64) bool { return s < minResolveScore },
-		},
-		{
-			name:   "empty query scores zero",
-			query:  "",
-			fields: []string{"panda://getting-started"},
-			want:   func(s float64) bool { return s == 0 },
-		},
+	// The shared lexical scorer must keep typo matches above and unrelated
+	// matches below minResolveScore, or resolveResources mis-filters.
+	typo := textmatch.NewQuery("finalty").Score(
+		"runbooks://ethereum_protocol_model", "Model the Active Fork and Judge Network Health", "finality thresholds")
+	if typo < minResolveScore {
+		t.Fatalf("typo score %v fell below resolve threshold %v", typo, minResolveScore)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			got := score(tt.query, tt.fields...)
-			if !tt.want(got) {
-				t.Fatalf("score(%q, %v) = %v, failed expectation", tt.query, tt.fields, got)
-			}
-		})
+	unrelated := textmatch.NewQuery("account abstraction").Score("networks://active", "Active networks")
+	if unrelated >= minResolveScore {
+		t.Fatalf("unrelated score %v reached resolve threshold %v", unrelated, minResolveScore)
 	}
 }
 
@@ -69,17 +38,5 @@ func TestRefContent(t *testing.T) {
 		if got := refContent(in); got != want {
 			t.Errorf("refContent(%q) = %q, want %q", in, got, want)
 		}
-	}
-}
-
-func TestLexicalScoreRanksBetterMatchHigher(t *testing.T) {
-	t.Parallel()
-
-	// A direct name match must outrank an unrelated resource for the same query.
-	relevant := score("finality", "runbooks://finality_delay", "Investigate Finality Delay")
-	unrelated := score("finality", "python://ethpandaops", "Python API")
-
-	if relevant <= unrelated {
-		t.Fatalf("expected finality runbook (%v) to outrank python docs (%v)", relevant, unrelated)
 	}
 }

@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// newMockProxy creates a test server that handles /embed and /embed/check.
+// newMockProxy creates a test server that handles /embedding and /embedding/check.
 // checkHandler can be nil if the test doesn't expect a check call.
 func newMockProxy(
 	t *testing.T,
@@ -24,7 +24,7 @@ func newMockProxy(
 	t.Helper()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/embed/check", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/embedding/check", func(w http.ResponseWriter, r *http.Request) {
 		if checkHandler != nil {
 			checkHandler(w, r)
 
@@ -33,9 +33,9 @@ func newMockProxy(
 
 		// Default: nothing cached.
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(embedCheckResponse{})
+		_ = json.NewEncoder(w).Encode(embedCheckResponse{Dimensions: 8})
 	})
-	mux.HandleFunc("/embed", embedHandler)
+	mux.HandleFunc("/embedding", embedHandler)
 
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -48,7 +48,7 @@ func TestRemoteEmbedder_Embed(t *testing.T) {
 
 	fakeVector := []float32{0.1, 0.2, 0.3}
 
-	// Single embed goes directly to /embed, no /embed/check call.
+	// Single embed goes directly to /embedding, no /embedding/check call.
 	srv := newMockProxy(t, func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, http.MethodPost, r.Method)
 
@@ -56,8 +56,8 @@ func TestRemoteEmbedder_Embed(t *testing.T) {
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 		require.Len(t, req.Items, 1)
 
-		resp := embedResponse{
-			Model:   "test-model",
+		resp := embedResponse{Dimensions: 8,
+			Model:   "",
 			Results: []embedResult{{Hash: req.Items[0].Hash, Vector: fakeVector}},
 		}
 
@@ -65,7 +65,7 @@ func TestRemoteEmbedder_Embed(t *testing.T) {
 		require.NoError(t, json.NewEncoder(w).Encode(resp))
 	}, nil)
 
-	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" }, nil, nil, "")
+	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" }, nil, nil, "", 8)
 
 	vec, err := embedder.Embed("hello world")
 	require.NoError(t, err)
@@ -98,8 +98,8 @@ func TestRemoteEmbedder_EmbedBatch_AllMisses(t *testing.T) {
 			}
 
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(embedResponse{
-				Model:   "test-model",
+			require.NoError(t, json.NewEncoder(w).Encode(embedResponse{Dimensions: 8,
+				Model:   "",
 				Results: results,
 			}))
 		},
@@ -107,17 +107,17 @@ func TestRemoteEmbedder_EmbedBatch_AllMisses(t *testing.T) {
 			checkCalled.Store(true)
 			// Nothing cached.
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(embedCheckResponse{})
+			_ = json.NewEncoder(w).Encode(embedCheckResponse{Dimensions: 8})
 		},
 	)
 
-	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" }, nil, nil, "")
+	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" }, nil, nil, "", 8)
 
 	vectors, err := embedder.EmbedBatch(texts)
 	require.NoError(t, err)
 	require.Len(t, vectors, 3)
 
-	assert.True(t, checkCalled.Load(), "/embed/check should be called for batch > 1")
+	assert.True(t, checkCalled.Load(), "/embedding/check should be called for batch > 1")
 	assert.Equal(t, fakeVectors["alpha"], vectors[0])
 	assert.Equal(t, fakeVectors["beta"], vectors[1])
 	assert.Equal(t, fakeVectors["gamma"], vectors[2])
@@ -139,15 +139,16 @@ func TestRemoteEmbedder_EmbedBatch_ReportsProgress(t *testing.T) {
 			}
 
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(embedResponse{Model: "test-model", Results: results}))
+			require.NoError(t, json.NewEncoder(w).Encode(embedResponse{
+				Dimensions: 8, Results: results}))
 		},
 		func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(embedCheckResponse{})
+			_ = json.NewEncoder(w).Encode(embedCheckResponse{Dimensions: 8})
 		},
 	)
 
-	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" }, nil, nil, "")
+	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" }, nil, nil, "", 8)
 
 	var calls, lastDone, lastTotal int
 	embedder.OnProgress(func(completed, total int) {
@@ -191,17 +192,18 @@ func TestRemoteEmbedder_EmbedBatch_AllCached(t *testing.T) {
 			}
 
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(embedCheckResponse{Cached: results})
+			_ = json.NewEncoder(w).Encode(embedCheckResponse{
+				Dimensions: 8, Cached: results})
 		},
 	)
 
-	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" }, nil, nil, "")
+	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" }, nil, nil, "", 8)
 
 	vectors, err := embedder.EmbedBatch(texts)
 	require.NoError(t, err)
 	require.Len(t, vectors, 2)
 
-	assert.False(t, embedCalled.Load(), "/embed should NOT be called when everything is cached")
+	assert.False(t, embedCalled.Load(), "/embedding should NOT be called when everything is cached")
 	assert.Equal(t, cachedVectors[sha256Hex("alpha")], vectors[0])
 	assert.Equal(t, cachedVectors[sha256Hex("beta")], vectors[1])
 }
@@ -223,21 +225,21 @@ func TestRemoteEmbedder_EmbedBatch_PartialCache(t *testing.T) {
 			assert.Equal(t, "uncached-text", req.Items[0].Text)
 
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(embedResponse{
-				Model:   "test-model",
+			_ = json.NewEncoder(w).Encode(embedResponse{Dimensions: 8,
+				Model:   "",
 				Results: []embedResult{{Hash: req.Items[0].Hash, Vector: uncachedVec}},
 			})
 		},
 		func(w http.ResponseWriter, _ *http.Request) {
 			// Only "cached-text" is cached.
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(embedCheckResponse{
+			_ = json.NewEncoder(w).Encode(embedCheckResponse{Dimensions: 8,
 				Cached: []embedResult{{Hash: cachedHash, Vector: cachedVec}},
 			})
 		},
 	)
 
-	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" }, nil, nil, "")
+	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" }, nil, nil, "", 8)
 
 	vectors, err := embedder.EmbedBatch(texts)
 	require.NoError(t, err)
@@ -260,15 +262,15 @@ func TestRemoteEmbedder_EmbedBatch_DuplicateTexts(t *testing.T) {
 
 			hash := sha256Hex("duplicate")
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(embedResponse{
-				Model:   "test-model",
+			_ = json.NewEncoder(w).Encode(embedResponse{Dimensions: 8,
+				Model:   "",
 				Results: []embedResult{{Hash: hash, Vector: fakeVector}},
 			})
 		},
 		nil,
 	)
 
-	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" }, nil, nil, "")
+	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" }, nil, nil, "", 8)
 
 	vectors, err := embedder.EmbedBatch(texts)
 	require.NoError(t, err)
@@ -285,7 +287,7 @@ func TestRemoteEmbedder_ServerError(t *testing.T) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}, nil)
 
-	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" }, nil, nil, "")
+	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" }, nil, nil, "", 8)
 
 	_, err := embedder.Embed("test")
 	require.Error(t, err)
@@ -303,8 +305,8 @@ func TestRemoteEmbedder_AuthHeader(t *testing.T) {
 
 		hash := fmt.Sprintf("%x", sha256.Sum256([]byte("test")))
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(embedResponse{
-			Model:   "test-model",
+		_ = json.NewEncoder(w).Encode(embedResponse{Dimensions: 8,
+			Model:   "",
 			Results: []embedResult{{Hash: hash, Vector: []float32{0.1, 0.2, 0.3}}},
 		})
 	}, nil)
@@ -313,7 +315,7 @@ func TestRemoteEmbedder_AuthHeader(t *testing.T) {
 		tokenCalled.Store(true)
 
 		return expectedToken
-	}, nil, nil, "")
+	}, nil, nil, "", 8)
 
 	_, err := embedder.Embed("test")
 	require.NoError(t, err)

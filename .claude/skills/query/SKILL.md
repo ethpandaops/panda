@@ -49,8 +49,8 @@ panda search runbooks "finality delay"
 
 Container logs from hosted devnets and platform services ship via OpenTelemetry into
 ClickHouse (`external.otel_logs`) — there is no hosted Loki datasource. For the schema
-and the full procedure: `panda search runbooks "debug devnet"`. (Local Kurtosis devnet
-logs are the separate autodiscovered `local-kurtosis` datasource.)
+and the full procedure: `panda read runbooks://debug_ethereum_network`. (Local Kurtosis
+devnet logs are the separate autodiscovered `local-kurtosis` datasource.)
 
 ## Notes
 

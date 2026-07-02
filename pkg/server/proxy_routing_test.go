@@ -283,7 +283,6 @@ func (c *routingProxyClient) EthNodeDatasourceInfo() []types.DatasourceInfo {
 	return nil
 }
 func (c *routingProxyClient) EmbeddingAvailable() bool         { return false }
-func (c *routingProxyClient) EmbeddingModel() string           { return "" }
 func (c *routingProxyClient) Discover(_ context.Context) error { return nil }
 func (c *routingProxyClient) EnsureAuthenticated(_ context.Context) error {
 	return nil

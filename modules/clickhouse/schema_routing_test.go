@@ -144,7 +144,6 @@ func (c *schemaProxyClient) EthNodeDatasourceInfo() []types.DatasourceInfo {
 	return nil
 }
 func (c *schemaProxyClient) EmbeddingAvailable() bool         { return false }
-func (c *schemaProxyClient) EmbeddingModel() string           { return "" }
 func (c *schemaProxyClient) Discover(_ context.Context) error { return nil }
 func (c *schemaProxyClient) EnsureAuthenticated(_ context.Context) error {
 	return nil

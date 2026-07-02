@@ -217,11 +217,14 @@ loki:
 #   allowed_orgs:
 #     - ethpandaops
 
-# Embedding API (optional — enables remote embedding for semantic search)
+# Embedding API (optional — enables remote embedding for semantic search).
+# The model must support asymmetric retrieval embedding (input_type): every
+# request is task-typed as a search query or an indexed document.
 # embedding:
 #   api_key: "${OPENROUTER_API_KEY}"
-#   model: "openai/text-embedding-3-small"
+#   model: "google/gemini-embedding-2"
 #   api_url: "https://openrouter.ai/api/v1"  # base URL of the embedding API
+#   dimensions: 1536                         # fixed output dimensionality
 #   cache:
 #     backend: memory  # or "redis"
 #     # redis_url: "redis://localhost:6379"

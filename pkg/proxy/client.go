@@ -493,14 +493,6 @@ func (c *proxyClient) EmbeddingAvailable() bool {
 	return c.datasources.EmbeddingAvailable
 }
 
-// EmbeddingModel returns the configured embedding model name.
-func (c *proxyClient) EmbeddingModel() string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	return c.datasources.EmbeddingModel
-}
-
 // Discover fetches datasource information from the proxy's /datasources endpoint.
 // A 401/403 invalidates the cached token and the request is retried once with a
 // fresh one, covering proxy-side revocation before the local expiry buffer

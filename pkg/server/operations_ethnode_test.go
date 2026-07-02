@@ -146,4 +146,3 @@ func (p *ethNodeOperationProxy) EthNodeDatasourceInfo() []types.DatasourceInfo {
 	return []types.DatasourceInfo{{Type: "ethnode", Name: "ethnode"}}
 }
 func (p *ethNodeOperationProxy) EmbeddingAvailable() bool { return false }
-func (p *ethNodeOperationProxy) EmbeddingModel() string   { return "" }

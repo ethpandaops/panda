@@ -73,9 +73,9 @@ type Service interface {
 	EthNodeDatasourceInfo() []types.DatasourceInfo
 
 	// EmbeddingAvailable returns true if the proxy has embedding configured.
+	// The served embedding space (model, dimensions) is discovered by probing
+	// the proxy's /embedding/check route.
 	EmbeddingAvailable() bool
-	// EmbeddingModel returns the configured embedding model name.
-	EmbeddingModel() string
 }
 
 // ethNodeDatasourceInfo returns the ethnode datasource identity when available,

@@ -1,76 +1,63 @@
 ---
-name: Blob Propagation vs engine_getBlobs Success
-description: Investigate whether blob gossip propagation timing affects engine_getBlobs success rates
-tags: [blobs, engine_api, gossipsub, propagation, da]
+name: Correlate Blob Propagation with engine_getBlobs
+description: Investigate whether slow blob gossip propagation is causing engine_getBlobs to return EMPTY — join per-slot getBlobs success rates (refined) with blob gossip timing (raw) and compare timing across the SUCCESS vs EMPTY groups. Use when getBlobs empties or blob availability looks timing-related.
+tags: [blobs, engine-api, gossipsub, propagation, data-availability]
+triggers:
+  - engine_getBlobs returning empty
+  - blob propagation slow via gossip
+  - correlate getblobs success with blob arrival timing
 prerequisites: [clickhouse-raw, clickhouse-refined]
 ---
 
-This runbook investigates the relationship between blob propagation via gossipsub and engine_getBlobs success rates. Because the data lives on two different clusters, you run separate queries and merge in Python.
+Correlate blob gossip propagation timing with engine_getBlobs success. Reference when
+getBlobs returns EMPTY or blob availability looks propagation-bound.
 
-## Data Sources
+## Inputs
+Required: the network and a time window.
 
-| Metric | Table | Cluster | Join Key |
-|--------|-------|---------|----------|
-| getBlobs success/empty rates | `fct_engine_get_blobs_by_slot` | clickhouse-refined | `slot` |
-| Blob gossip propagation timing | `libp2p_gossipsub_blob_sidecar` | clickhouse-raw | `slot` |
+## Output
+Whether EMPTY getBlobs correlates with slower blob propagation, with the per-status
+timing comparison behind it.
 
-## Steps
+## Procedure
+The data lives on two clusters, joined in Python on `slot`. See
+`runbooks://clickhouse_querying` for cluster/partition rules and why the gossip table
+must be queried raw (deduplicated views collapse the propagation rows).
 
-### 1. Get engine_getBlobs status breakdown per slot
+1. **getBlobs status per slot** — refined `{network}.fct_engine_get_blobs_by_slot FINAL`:
+   `slot, status, observation_count, avg_duration_ms, full_return_pct` where `status ∈
+   {SUCCESS, EMPTY}` and `full_return_pct` is the fraction of nodes that got all blobs.
 
-```python
-from ethpandaops import clickhouse
+   ```python
+   from ethpandaops import clickhouse
+   getblobs = clickhouse.query("clickhouse-refined", """
+       SELECT slot, status, observation_count, avg_duration_ms, full_return_pct
+       FROM {network}.fct_engine_get_blobs_by_slot FINAL
+       WHERE slot_start_date_time >= now() - INTERVAL 1 HOUR
+   """)
+   ```
 
-getblobs = clickhouse.query("clickhouse-refined", """
-    SELECT
-        slot,
-        status,
-        observation_count,
-        avg_duration_ms,
-        full_return_pct
-    FROM {network}.fct_engine_get_blobs_by_slot FINAL
-    WHERE slot_start_date_time >= now() - INTERVAL 1 HOUR
-    ORDER BY slot DESC
-""")
-print(getblobs)
-```
+2. **Blob gossip timing per slot** — raw `libp2p_gossipsub_blob_sidecar`, filtered by
+   `meta_network_name`:
 
-The `status` column contains values like `SUCCESS` and `EMPTY`. `full_return_pct` shows what fraction of nodes got all requested blobs back.
+   ```python
+   propagation = clickhouse.query("clickhouse-raw", """
+       SELECT slot,
+              AVG(propagation_slot_start_diff) AS avg_ms,
+              quantile(0.95)(propagation_slot_start_diff) AS p95_ms,
+              COUNT() AS blob_messages
+       FROM libp2p_gossipsub_blob_sidecar
+       WHERE meta_network_name = '{network}'
+         AND slot_start_date_time >= now() - INTERVAL 1 HOUR
+       GROUP BY slot
+   """)
+   ```
 
-### 2. Get blob gossip propagation timing per slot
-
-```python
-propagation = clickhouse.query("clickhouse-raw", """
-    SELECT
-        slot,
-        AVG(propagation_slot_start_diff) AS avg_blob_propagation_ms,
-        quantile(0.95)(propagation_slot_start_diff) AS p95_blob_propagation_ms,
-        COUNT() AS blob_messages
-    FROM libp2p_gossipsub_blob_sidecar
-    WHERE meta_network_name = '{network}'
-        AND slot_start_date_time >= now() - INTERVAL 1 HOUR
-    GROUP BY slot
-    ORDER BY slot DESC
-""")
-print(propagation)
-```
-
-### 3. Merge and correlate
-
-```python
-import pandas as pd
-
-merged = pd.merge(getblobs, propagation, on="slot", how="inner")
-
-# Compare propagation timing for SUCCESS vs EMPTY getBlobs
-for status, group in merged.groupby("status"):
-    print(f"\n{status}:")
-    print(f"  avg blob propagation: {group['avg_blob_propagation_ms'].mean():.0f}ms")
-    print(f"  p95 blob propagation: {group['p95_blob_propagation_ms'].mean():.0f}ms")
-    print(f"  slots: {len(group)}")
-```
+3. **Merge on `slot`, compare timing by status** — `pd.merge(getblobs, propagation,
+   on="slot")`, then group by `status` and compare `avg_ms`/`p95_ms`.
 
 ## What to look for
-
-- Slots where getBlobs returns `EMPTY` should correlate with slower blob gossip propagation — blobs hadn't arrived via P2P yet when the EL called getBlobs.
-- High `p95_blob_propagation_ms` with low `full_return_pct` indicates the mempool isn't filling fast enough for the engine API to benefit.
+- EMPTY getBlobs correlating with slower gossip propagation → blobs hadn't arrived via
+  P2P when the EL called getBlobs.
+- High p95 propagation with low `full_return_pct` → the mempool isn't filling fast enough
+  for the engine API to benefit.

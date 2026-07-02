@@ -112,7 +112,6 @@ func (a *Authorizer) FilterDatasources(ctx context.Context, resp DatasourcesResp
 	filtered := DatasourcesResponse{
 		EthNodeAvailable:   resp.EthNodeAvailable && a.orgsMatch(userOrgs, hasUser, ruleKey("ethnode", "")),
 		EmbeddingAvailable: resp.EmbeddingAvailable,
-		EmbeddingModel:     resp.EmbeddingModel,
 	}
 
 	filtered.ClickHouseInfo = a.filterDatasourceList(userOrgs, hasUser, "clickhouse", resp.ClickHouseInfo)

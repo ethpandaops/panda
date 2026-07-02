@@ -61,14 +61,14 @@ func TestEmbeddingService_Embed_CacheMiss(t *testing.T) {
 	mockAPI := newMockOpenRouterServer(t, &apiCalls)
 
 	memCache := cache.NewInMemory(0)
-	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL+"/v1", 0.01)
+	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL+"/v1", 0.01, 3)
 
 	items := []EmbedItem{
 		{Hash: "aaa", Text: "hello"},
 		{Hash: "bbb", Text: "world"},
 	}
 
-	resp, err := svc.Embed(context.Background(), items)
+	resp, err := svc.Embed(context.Background(), items, EmbedTaskDocument)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	assert.Equal(t, testModel, resp.Model)
@@ -85,8 +85,8 @@ func TestEmbeddingService_Embed_CacheMiss(t *testing.T) {
 
 	// Verify results are cached for subsequent requests.
 	cached, err := memCache.GetMulti(context.Background(), []string{
-		testModel + ":aaa",
-		testModel + ":bbb",
+		testModel + ":3:document:aaa",
+		testModel + ":3:document:bbb",
 	})
 	require.NoError(t, err)
 	assert.Len(t, cached, 2)
@@ -107,18 +107,18 @@ func TestEmbeddingService_Embed_CacheHit(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, memCache.SetMulti(context.Background(), map[string][]byte{
-		testModel + ":aaa": vecData,
-		testModel + ":bbb": vecData,
+		testModel + ":3:document:aaa": vecData,
+		testModel + ":3:document:bbb": vecData,
 	}))
 
-	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL+"/v1", 0.01)
+	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL+"/v1", 0.01, 3)
 
 	items := []EmbedItem{
 		{Hash: "aaa", Text: "hello"},
 		{Hash: "bbb", Text: "world"},
 	}
 
-	resp, err := svc.Embed(context.Background(), items)
+	resp, err := svc.Embed(context.Background(), items, EmbedTaskDocument)
 	require.NoError(t, err)
 	require.Len(t, resp.Results, 2)
 
@@ -144,9 +144,9 @@ func TestEmbeddingService_Embed_PartialCacheHit(t *testing.T) {
 	vecData, err := json.Marshal(cachedVec)
 	require.NoError(t, err)
 
-	require.NoError(t, memCache.Set(context.Background(), testModel+":aaa", vecData))
+	require.NoError(t, memCache.Set(context.Background(), testModel+":3:document:aaa", vecData))
 
-	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL+"/v1", 0.01)
+	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL+"/v1", 0.01, 3)
 
 	items := []EmbedItem{
 		{Hash: "aaa", Text: "hello"},
@@ -154,7 +154,7 @@ func TestEmbeddingService_Embed_PartialCacheHit(t *testing.T) {
 		{Hash: "ccc", Text: "foo"},
 	}
 
-	resp, err := svc.Embed(context.Background(), items)
+	resp, err := svc.Embed(context.Background(), items, EmbedTaskDocument)
 	require.NoError(t, err)
 	require.Len(t, resp.Results, 3)
 
@@ -178,9 +178,9 @@ func TestEmbeddingService_Embed_Empty(t *testing.T) {
 	mockAPI := newMockOpenRouterServer(t, &apiCalls)
 
 	memCache := cache.NewInMemory(0)
-	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL+"/v1", 0.01)
+	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL+"/v1", 0.01, 3)
 
-	resp, err := svc.Embed(context.Background(), []EmbedItem{})
+	resp, err := svc.Embed(context.Background(), []EmbedItem{}, EmbedTaskDocument)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	assert.Equal(t, testModel, resp.Model)
@@ -198,13 +198,13 @@ func TestEmbeddingService_Embed_L2Normalized(t *testing.T) {
 	mockAPI := newMockOpenRouterServer(t, &apiCalls)
 
 	memCache := cache.NewInMemory(0)
-	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL+"/v1", 0.01)
+	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL+"/v1", 0.01, 3)
 
 	items := []EmbedItem{
 		{Hash: "aaa", Text: "test normalization"},
 	}
 
-	resp, err := svc.Embed(context.Background(), items)
+	resp, err := svc.Embed(context.Background(), items, EmbedTaskDocument)
 	require.NoError(t, err)
 	require.Len(t, resp.Results, 1)
 
@@ -230,13 +230,86 @@ func TestEmbeddingService_Embed_APIError(t *testing.T) {
 	t.Cleanup(errorServer.Close)
 
 	memCache := cache.NewInMemory(0)
-	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, errorServer.URL+"/v1", 0)
+	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, errorServer.URL+"/v1", 0, 3)
 
 	items := []EmbedItem{
 		{Hash: "aaa", Text: "hello"},
 	}
 
-	_, err := svc.Embed(context.Background(), items)
+	_, err := svc.Embed(context.Background(), items, EmbedTaskDocument)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "429")
+}
+
+// newTaskCapturingServer mimics the upstream embeddings endpoint and records
+// the input_type of each request.
+func newTaskCapturingServer(t *testing.T, inputTypes *[]string) *httptest.Server {
+	t.Helper()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req openRouterRequest
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+
+		*inputTypes = append(*inputTypes, req.InputType)
+
+		data := make([]openRouterEmbedding, 0, len(req.Input))
+		for i, text := range req.Input {
+			// Vary the vector by input_type so task-space mixing is detectable.
+			base := float32(len(req.InputType) + len(text))
+			data = append(data, openRouterEmbedding{Index: i, Embedding: []float32{base, 1, 2}})
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		require.NoError(t, json.NewEncoder(w).Encode(openRouterResponse{Data: data}))
+	}))
+	t.Cleanup(srv.Close)
+
+	return srv
+}
+
+func TestEmbeddingService_TaskScopesUpstreamAndCache(t *testing.T) {
+	t.Parallel()
+
+	var inputTypes []string
+
+	mockAPI := newTaskCapturingServer(t, &inputTypes)
+	memCache := cache.NewInMemory(0)
+	svc := NewEmbeddingService(logrus.New(), memCache, "test-api-key", testModel, mockAPI.URL, 0.01, 3)
+
+	items := []EmbedItem{{Hash: "aaa", Text: "hello"}}
+
+	// Same text under query and document tasks must hit the upstream twice
+	// (task-scoped cache keys never collide) with the right input_type each time.
+	queryResp, err := svc.Embed(context.Background(), items, EmbedTaskQuery)
+	require.NoError(t, err)
+
+	docResp, err := svc.Embed(context.Background(), items, EmbedTaskDocument)
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"search_query", "search_document"}, inputTypes)
+	assert.NotEqual(t, queryResp.Results[0].Vector, docResp.Results[0].Vector,
+		"query and document vector spaces must not collide in cache")
+
+	// Cached per task: re-embedding under each task adds no upstream calls.
+	_, err = svc.Embed(context.Background(), items, EmbedTaskQuery)
+	require.NoError(t, err)
+	_, err = svc.Embed(context.Background(), items, EmbedTaskDocument)
+	require.NoError(t, err)
+	assert.Len(t, inputTypes, 2)
+
+	// CheckCached is scoped the same way.
+	cached, err := svc.CheckCached(context.Background(), []string{"aaa"}, EmbedTaskQuery)
+	require.NoError(t, err)
+	assert.Len(t, cached, 1)
+	assert.Equal(t, queryResp.Results[0].Vector, cached[0].Vector)
+
+	// Task is required: empty and unknown tasks are rejected.
+	_, err = svc.Embed(context.Background(), items, "")
+	require.Error(t, err)
+	_, err = svc.Embed(context.Background(), items, "banana")
+	require.Error(t, err)
+	_, err = svc.CheckCached(context.Background(), []string{"aaa"}, "")
+	require.Error(t, err)
+	_, err = svc.CheckCached(context.Background(), []string{"aaa"}, "banana")
+	require.Error(t, err)
 }

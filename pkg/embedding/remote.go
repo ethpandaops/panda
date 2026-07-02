@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -17,28 +18,40 @@ import (
 
 const (
 	remoteEmbedTimeout = 2 * time.Minute
-	// maxBatchSize limits how many items are sent in a single /embed request.
+	// maxBatchSize limits how many items are sent in a single /embedding request.
 	// The proxy accepts up to 500 items and sub-batches to the upstream API internally.
 	maxBatchSize = 500
+
+	// Proxy embedding routes.
+	embedPath      = "/embedding"
+	embedCheckPath = "/embedding/check"
+
+	// Embedding task types (wire values shared with pkg/proxy). Queries and
+	// documents embed asymmetrically on retrieval-tuned models, and their
+	// vectors live in task-scoped cache spaces. The proxy requires a task on
+	// every embed and embed-check request.
+	taskQuery    = "query"
+	taskDocument = "document"
 )
 
 // embedCheckRequest is the request payload for the proxy embed-check endpoint.
 type embedCheckRequest struct {
-	Model  string   `json:"model"`
 	Hashes []string `json:"hashes"`
+	Task   string   `json:"task"`
 }
 
-// embedCheckResponse is the response from the embed-check endpoint. Model is
-// populated by the v2 route (and empty on v1) so callers can observe which
-// embedding model the proxy is currently serving.
+// embedCheckResponse is the response from the embed-check endpoint. Model and
+// Dimensions advertise the embedding space the proxy is currently serving.
 type embedCheckResponse struct {
-	Model  string        `json:"model"`
-	Cached []embedResult `json:"cached"`
+	Model      string        `json:"model"`
+	Dimensions int           `json:"dimensions"`
+	Cached     []embedResult `json:"cached"`
 }
 
 // embedRequest is the request payload for the proxy embed endpoint.
 type embedRequest struct {
 	Items []embedItem `json:"items"`
+	Task  string      `json:"task"`
 }
 
 // embedItem is a single item to embed.
@@ -47,9 +60,8 @@ type embedItem struct {
 	Text string `json:"text"`
 }
 
-// embedResponse is the response payload from the proxy embed endpoint. Both v1
-// and v2 advertise the serving model; v2 additionally reports its fixed output
-// dimensionality.
+// embedResponse is the response payload from the proxy embed endpoint. Model
+// and Dimensions advertise the embedding space the vectors belong to.
 type embedResponse struct {
 	Results    []embedResult `json:"results"`
 	Model      string        `json:"model"`
@@ -62,11 +74,9 @@ type embedResult struct {
 	Vector []float32 `json:"vector"`
 }
 
-// RemoteEmbedder implements Embedder by calling the proxy's embed endpoint.
+// RemoteEmbedder implements Embedder by calling the proxy's /embedding routes
+// (fp32 vectors at a fixed dimensionality, model advertised per response).
 // An optional local cache avoids round-trips to the proxy on warm restarts.
-// When v2 is set it targets the versioned /v2/embedding routes (fp32 at a fixed
-// dimensionality, model advertised per response); otherwise it uses the legacy
-// /embed routes.
 type RemoteEmbedder struct {
 	log          logrus.FieldLogger
 	proxyURL     string
@@ -75,19 +85,23 @@ type RemoteEmbedder struct {
 	invalidateFn func()
 	localCache   cache.Cache
 	model        string
-	v2           bool
-	progressFn   func(completed, total int)
+	// dimensions is the output dimensionality this embedder is keyed to. Part
+	// of the embedding-space identity — model/dimensions/task — folded into
+	// local cache keys so a dimensionality change never serves stale vectors.
+	dimensions int
+	progressFn func(completed, total int)
 }
 
 // Compile-time interface check.
 var _ Embedder = (*RemoteEmbedder)(nil)
 
-// NewRemote creates a RemoteEmbedder that calls the proxy's legacy /embed routes.
+// NewRemote creates a RemoteEmbedder for the given embedding space (model +
+// dimensions, both advertised by the proxy's /embedding/check probe).
 // tokenFn is called on each request to get the current auth token, and
 // invalidateFn drops the cached token so a 401/403 can be retried with a fresh
 // one (it may be nil to disable the retry).
-// localCache and model are optional — when both are set, embedding vectors are
-// cached locally using {model}:{textHash} keys to avoid proxy round-trips.
+// localCache is optional — when set, embedding vectors are cached locally
+// using {model}:{dims}:{task}:{textHash} keys to avoid proxy round-trips.
 func NewRemote(
 	log logrus.FieldLogger,
 	proxyURL string,
@@ -95,20 +109,7 @@ func NewRemote(
 	invalidateFn func(),
 	localCache cache.Cache,
 	model string,
-) *RemoteEmbedder {
-	return NewRemoteWithEndpoint(log, proxyURL, tokenFn, invalidateFn, localCache, model, false)
-}
-
-// NewRemoteWithEndpoint creates a RemoteEmbedder targeting either the v2
-// (/v2/embedding) routes when v2 is true, or the legacy /embed routes otherwise.
-func NewRemoteWithEndpoint(
-	log logrus.FieldLogger,
-	proxyURL string,
-	tokenFn func() string,
-	invalidateFn func(),
-	localCache cache.Cache,
-	model string,
-	v2 bool,
+	dimensions int,
 ) *RemoteEmbedder {
 	return &RemoteEmbedder{
 		log:          log.WithField("component", "remote-embedder"),
@@ -118,7 +119,7 @@ func NewRemoteWithEndpoint(
 		invalidateFn: invalidateFn,
 		localCache:   localCache,
 		model:        model,
-		v2:           v2,
+		dimensions:   dimensions,
 	}
 }
 
@@ -136,9 +137,10 @@ func (e *RemoteEmbedder) OnProgress(fn func(completed, total int)) {
 	e.progressFn = fn
 }
 
-// Embed returns the L2-normalized embedding vector for a single text string.
+// Embed returns the L2-normalized QUERY embedding vector for a single
+// search-query string.
 func (e *RemoteEmbedder) Embed(text string) ([]float32, error) {
-	vectors, err := e.EmbedBatch([]string{text})
+	vectors, err := e.embedAll([]string{text}, taskQuery)
 	if err != nil {
 		return nil, err
 	}
@@ -150,11 +152,22 @@ func (e *RemoteEmbedder) Embed(text string) ([]float32, error) {
 	return vectors[0], nil
 }
 
-// EmbedBatch returns L2-normalized embedding vectors for multiple texts.
-// When a local cache is configured, vectors are checked there first.
-// Remaining misses are split into sub-batches of maxBatchSize and sent
-// to the proxy (which has its own Redis cache + upstream API).
+// EmbedBatch returns L2-normalized DOCUMENT embedding vectors for multiple texts.
 func (e *RemoteEmbedder) EmbedBatch(texts []string) ([][]float32, error) {
+	return e.embedAll(texts, taskDocument)
+}
+
+// EmbedQueryBatch returns L2-normalized QUERY embedding vectors for multiple
+// query-shaped texts.
+func (e *RemoteEmbedder) EmbedQueryBatch(texts []string) ([][]float32, error) {
+	return e.embedAll(texts, taskQuery)
+}
+
+// embedAll embeds texts under one task type. When a local cache is configured,
+// vectors are checked there first. Remaining misses are split into sub-batches
+// of maxBatchSize and sent to the proxy (which has its own Redis cache +
+// upstream API).
+func (e *RemoteEmbedder) embedAll(texts []string, task string) ([][]float32, error) {
 	if len(texts) == 0 {
 		return nil, nil
 	}
@@ -172,7 +185,7 @@ func (e *RemoteEmbedder) EmbedBatch(texts []string) ([][]float32, error) {
 	// cache check — the proxy's Embed handler checks Redis internally anyway).
 	if len(texts) == 1 {
 		if e.localCache != nil {
-			key := e.localCacheKey(hashes[0])
+			key := e.localCacheKey(task, hashes[0])
 
 			data, found, err := e.localCache.Get(context.Background(), key)
 			if err == nil && found {
@@ -183,7 +196,7 @@ func (e *RemoteEmbedder) EmbedBatch(texts []string) ([][]float32, error) {
 			}
 		}
 
-		vecs, err := e.embedDirect(texts, hashes, hashToIndices)
+		vecs, err := e.embedDirect(texts, hashes, hashToIndices, task)
 		if err != nil {
 			return nil, err
 		}
@@ -191,7 +204,7 @@ func (e *RemoteEmbedder) EmbedBatch(texts []string) ([][]float32, error) {
 		// Cache the result for future queries.
 		if e.localCache != nil && len(vecs) == 1 && vecs[0] != nil {
 			toCache := make(map[string][]byte, 1)
-			e.queueLocalCache(toCache, hashes[0], vecs[0])
+			e.queueLocalCache(toCache, task, hashes[0], vecs[0])
 
 			if len(toCache) > 0 {
 				_ = e.localCache.SetMulti(context.Background(), toCache)
@@ -209,7 +222,7 @@ func (e *RemoteEmbedder) EmbedBatch(texts []string) ([][]float32, error) {
 	if e.localCache != nil {
 		cacheKeys := make([]string, len(texts))
 		for i, h := range hashes {
-			cacheKeys[i] = e.localCacheKey(h)
+			cacheKeys[i] = e.localCacheKey(task, h)
 		}
 
 		cached, err := e.localCache.GetMulti(context.Background(), cacheKeys)
@@ -277,7 +290,7 @@ func (e *RemoteEmbedder) EmbedBatch(texts []string) ([][]float32, error) {
 			batchHashes[j] = hashes[idx]
 		}
 
-		cached, err := e.checkCached(batchHashes)
+		cached, err := e.checkCached(batchHashes, task)
 		if err != nil {
 			e.log.WithError(err).Warn("Proxy cache check failed, embedding all items")
 
@@ -296,7 +309,7 @@ func (e *RemoteEmbedder) EmbedBatch(texts []string) ([][]float32, error) {
 			if vec, ok := cachedHashSet[hashes[idx]]; ok {
 				vectors[idx] = vec
 
-				e.queueLocalCache(toCache, hashes[idx], vec)
+				e.queueLocalCache(toCache, task, hashes[idx], vec)
 			} else {
 				missItems = append(missItems, embedItem{Hash: hashes[idx], Text: texts[idx]})
 			}
@@ -309,7 +322,7 @@ func (e *RemoteEmbedder) EmbedBatch(texts []string) ([][]float32, error) {
 				"misses": len(missItems),
 			}).Info("Proxy cache stats")
 
-			resp, err := e.callEmbed(missItems)
+			resp, err := e.callEmbed(missItems, task)
 			if err != nil {
 				return nil, fmt.Errorf("embedding batch %d/%d: %w", batchNum, totalBatches, err)
 			}
@@ -319,7 +332,7 @@ func (e *RemoteEmbedder) EmbedBatch(texts []string) ([][]float32, error) {
 					vectors[idx] = result.Vector
 				}
 
-				e.queueLocalCache(toCache, result.Hash, result.Vector)
+				e.queueLocalCache(toCache, task, result.Hash, result.Vector)
 			}
 		}
 
@@ -360,27 +373,15 @@ func (e *RemoteEmbedder) reportProgress(completed, total int) {
 	}
 }
 
-func (e *RemoteEmbedder) embedPath() string {
-	if e.v2 {
-		return "/v2/embedding"
-	}
-
-	return "/embed"
+// localCacheKey builds the local cache key from the embedding-space identity:
+// model, dimensionality, and task. Scoping all three keeps every vector space
+// separate — a dims or task change never serves stale vectors. Adopting this
+// key shape cold-invalidates caches written by earlier versions once, by design.
+func (e *RemoteEmbedder) localCacheKey(task, textHash string) string {
+	return e.model + ":" + strconv.Itoa(e.dimensions) + ":" + task + ":" + textHash
 }
 
-func (e *RemoteEmbedder) checkPath() string {
-	if e.v2 {
-		return "/v2/embedding/check"
-	}
-
-	return "/embed/check"
-}
-
-func (e *RemoteEmbedder) localCacheKey(textHash string) string {
-	return e.model + ":" + textHash
-}
-
-func (e *RemoteEmbedder) queueLocalCache(toCache map[string][]byte, textHash string, vec []float32) {
+func (e *RemoteEmbedder) queueLocalCache(toCache map[string][]byte, task, textHash string, vec []float32) {
 	if e.localCache == nil {
 		return
 	}
@@ -390,7 +391,7 @@ func (e *RemoteEmbedder) queueLocalCache(toCache map[string][]byte, textHash str
 		return
 	}
 
-	toCache[e.localCacheKey(textHash)] = data
+	toCache[e.localCacheKey(task, textHash)] = data
 }
 
 // embedDirect sends all items to the embed route without checking the cache first.
@@ -398,13 +399,14 @@ func (e *RemoteEmbedder) embedDirect(
 	texts []string,
 	hashes []string,
 	hashToIndices map[string][]int,
+	task string,
 ) ([][]float32, error) {
 	items := make([]embedItem, len(texts))
 	for i, text := range texts {
 		items[i] = embedItem{Hash: hashes[i], Text: text}
 	}
 
-	resp, err := e.callEmbed(items)
+	resp, err := e.callEmbed(items, task)
 	if err != nil {
 		return nil, err
 	}
@@ -460,13 +462,29 @@ func (e *RemoteEmbedder) doWithAuthRetry(path string, jsonBody []byte) (*http.Re
 	return resp, nil
 }
 
-func (e *RemoteEmbedder) checkCached(hashes []string) ([]embedResult, error) {
-	reqBody, err := json.Marshal(embedCheckRequest{Hashes: hashes})
+// verifyEmbeddingSpace fails fast when the proxy's advertised embedding space
+// differs from the one this embedder is keyed to. Vectors from another space
+// must never be cached under this space's keys or swapped into its index — a
+// proxy config change mid-build would otherwise poison both silently (a
+// same-dimensionality model swap is undetectable downstream).
+func (e *RemoteEmbedder) verifyEmbeddingSpace(model string, dimensions int) error {
+	if model != e.model || dimensions != e.dimensions {
+		return fmt.Errorf(
+			"proxy embedding space changed: serving %s/%d, expected %s/%d — re-resolve the space and re-index",
+			model, dimensions, e.model, e.dimensions,
+		)
+	}
+
+	return nil
+}
+
+func (e *RemoteEmbedder) checkCached(hashes []string, task string) ([]embedResult, error) {
+	reqBody, err := json.Marshal(embedCheckRequest{Hashes: hashes, Task: task})
 	if err != nil {
 		return nil, fmt.Errorf("marshaling check request: %w", err)
 	}
 
-	resp, err := e.doWithAuthRetry(e.checkPath(), reqBody)
+	resp, err := e.doWithAuthRetry(embedCheckPath, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("calling embed check: %w", err)
 	}
@@ -483,16 +501,20 @@ func (e *RemoteEmbedder) checkCached(hashes []string) ([]embedResult, error) {
 		return nil, fmt.Errorf("decoding check response: %w", err)
 	}
 
+	if err := e.verifyEmbeddingSpace(checkResp.Model, checkResp.Dimensions); err != nil {
+		return nil, err
+	}
+
 	return checkResp.Cached, nil
 }
 
-func (e *RemoteEmbedder) callEmbed(items []embedItem) (*embedResponse, error) {
-	reqBody, err := json.Marshal(embedRequest{Items: items})
+func (e *RemoteEmbedder) callEmbed(items []embedItem, task string) (*embedResponse, error) {
+	reqBody, err := json.Marshal(embedRequest{Items: items, Task: task})
 	if err != nil {
 		return nil, fmt.Errorf("marshaling embed request: %w", err)
 	}
 
-	resp, err := e.doWithAuthRetry(e.embedPath(), reqBody)
+	resp, err := e.doWithAuthRetry(embedPath, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("calling proxy embed: %w", err)
 	}
@@ -507,6 +529,10 @@ func (e *RemoteEmbedder) callEmbed(items []embedItem) (*embedResponse, error) {
 	var embedResp embedResponse
 	if err := json.NewDecoder(resp.Body).Decode(&embedResp); err != nil {
 		return nil, fmt.Errorf("decoding embed response: %w", err)
+	}
+
+	if err := e.verifyEmbeddingSpace(embedResp.Model, embedResp.Dimensions); err != nil {
+		return nil, err
 	}
 
 	return &embedResp, nil

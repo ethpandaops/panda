@@ -8,26 +8,26 @@ import (
 	"time"
 )
 
-// probeTimeout bounds the v2 capability probe so a slow or unreachable proxy
-// falls back to v1 quickly rather than stalling startup.
+// probeTimeout bounds the embedding capability probe so a slow or unreachable
+// proxy reports unavailable quickly rather than stalling startup.
 const probeTimeout = 15 * time.Second
 
-// ProbeV2 reports whether the proxy exposes the versioned /v2/embedding route
-// and, if so, the embedding model it currently advertises. It POSTs an empty
-// check request to /v2/embedding/check; a 200 response means v2 is available and
-// its model is returned. Any non-200 status or transport error yields
-// ("", false), signalling the caller to fall back to the legacy /embed routes.
-func ProbeV2(ctx context.Context, proxyURL string, tokenFn func() string) (string, bool) {
-	body, err := json.Marshal(embedCheckRequest{Hashes: []string{}})
+// Probe reports whether the proxy serves embedding and, if so, the embedding
+// model and output dimensionality it currently advertises. It POSTs an empty
+// check request (task is required on the wire, so the probe carries one) to
+// /embedding/check; a 200 response means embedding is available. Any non-200
+// status or transport error yields ("", 0, false) — embedding is unavailable.
+func Probe(ctx context.Context, proxyURL string, tokenFn func() string) (string, int, bool) {
+	body, err := json.Marshal(embedCheckRequest{Hashes: []string{}, Task: taskQuery})
 	if err != nil {
-		return "", false
+		return "", 0, false
 	}
 
 	req, err := http.NewRequestWithContext(
-		ctx, http.MethodPost, proxyURL+"/v2/embedding/check", bytes.NewReader(body),
+		ctx, http.MethodPost, proxyURL+embedCheckPath, bytes.NewReader(body),
 	)
 	if err != nil {
-		return "", false
+		return "", 0, false
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -42,18 +42,18 @@ func ProbeV2(ctx context.Context, proxyURL string, tokenFn func() string) (strin
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", false
+		return "", 0, false
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", false
+		return "", 0, false
 	}
 
 	var checkResp embedCheckResponse
 	if err := json.NewDecoder(resp.Body).Decode(&checkResp); err != nil {
-		return "", false
+		return "", 0, false
 	}
 
-	return checkResp.Model, true
+	return checkResp.Model, checkResp.Dimensions, true
 }

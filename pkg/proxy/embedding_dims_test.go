@@ -34,7 +34,9 @@ func newRecordingOpenRouterServer(t *testing.T, lastDims *int, mu *sync.Mutex) *
 
 		data := make([]openRouterEmbedding, 0, len(req.Input))
 		for i := range req.Input {
-			data = append(data, openRouterEmbedding{Index: i, Embedding: []float32{0.3, 0.4, 0.5}})
+			vec := make([]float32, 1536)
+			vec[0], vec[1], vec[2] = 0.3, 0.4, 0.5
+			data = append(data, openRouterEmbedding{Index: i, Embedding: vec})
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -45,7 +47,7 @@ func newRecordingOpenRouterServer(t *testing.T, lastDims *int, mu *sync.Mutex) *
 	return srv
 }
 
-func TestEmbeddingServiceV2_SendsDimensions(t *testing.T) {
+func TestEmbeddingService_SendsDimensions(t *testing.T) {
 	t.Parallel()
 
 	var (
@@ -55,7 +57,7 @@ func TestEmbeddingServiceV2_SendsDimensions(t *testing.T) {
 
 	mockAPI := newRecordingOpenRouterServer(t, &lastDims, &mu)
 
-	svc := NewEmbeddingServiceWithDimensions(
+	svc := NewEmbeddingService(
 		logrus.New(), cache.NewInMemory(0),
 		"test-api-key", "google/gemini-embedding-2", mockAPI.URL+"/v1", 0.01, 1536,
 	)
@@ -63,13 +65,13 @@ func TestEmbeddingServiceV2_SendsDimensions(t *testing.T) {
 	assert.Equal(t, "google/gemini-embedding-2", svc.Model())
 	assert.Equal(t, 1536, svc.Dimensions())
 
-	resp, err := svc.Embed(context.Background(), []EmbedItem{{Hash: "aaa", Text: "hello"}})
+	resp, err := svc.Embed(context.Background(), []EmbedItem{{Hash: "aaa", Text: "hello"}}, EmbedTaskDocument)
 	require.NoError(t, err)
 	require.Len(t, resp.Results, 1)
 	assert.Equal(t, "google/gemini-embedding-2", resp.Model)
 
 	mu.Lock()
-	assert.Equal(t, 1536, lastDims, "v2 service must request dimensions=1536 upstream")
+	assert.Equal(t, 1536, lastDims, "service must request dimensions=1536 upstream")
 	mu.Unlock()
 
 	// Vector is L2-normalized.
@@ -81,33 +83,7 @@ func TestEmbeddingServiceV2_SendsDimensions(t *testing.T) {
 	assert.InDelta(t, 1.0, math.Sqrt(norm), 1e-6)
 }
 
-func TestEmbeddingServiceV1_OmitsDimensions(t *testing.T) {
-	t.Parallel()
-
-	var (
-		lastDims = -1
-		mu       sync.Mutex
-	)
-
-	mockAPI := newRecordingOpenRouterServer(t, &lastDims, &mu)
-
-	// v1 constructor → dimensions must stay 0 and be omitted from the request.
-	svc := NewEmbeddingService(
-		logrus.New(), cache.NewInMemory(0),
-		"test-api-key", "openai/text-embedding-3-small", mockAPI.URL+"/v1", 0.01,
-	)
-
-	assert.Equal(t, 0, svc.Dimensions())
-
-	_, err := svc.Embed(context.Background(), []EmbedItem{{Hash: "aaa", Text: "hello"}})
-	require.NoError(t, err)
-
-	mu.Lock()
-	assert.Equal(t, 0, lastDims, "v1 request must omit dimensions (decodes to 0)")
-	mu.Unlock()
-}
-
-func TestEmbeddingServiceV2_CheckCached(t *testing.T) {
+func TestEmbeddingService_CheckCachedDimensions(t *testing.T) {
 	t.Parallel()
 
 	var (
@@ -118,21 +94,21 @@ func TestEmbeddingServiceV2_CheckCached(t *testing.T) {
 	mockAPI := newRecordingOpenRouterServer(t, &lastDims, &mu)
 	memCache := cache.NewInMemory(0)
 
-	svc := NewEmbeddingServiceWithDimensions(
+	svc := NewEmbeddingService(
 		logrus.New(), memCache,
 		"test-api-key", "google/gemini-embedding-2", mockAPI.URL+"/v1", 0.01, 1536,
 	)
 
 	// Nothing cached yet.
-	results, err := svc.CheckCached(context.Background(), []string{"aaa"})
+	results, err := svc.CheckCached(context.Background(), []string{"aaa"}, EmbedTaskDocument)
 	require.NoError(t, err)
 	assert.Empty(t, results)
 
 	// Embed populates the cache, then the same hash is a hit.
-	_, err = svc.Embed(context.Background(), []EmbedItem{{Hash: "aaa", Text: "hello"}})
+	_, err = svc.Embed(context.Background(), []EmbedItem{{Hash: "aaa", Text: "hello"}}, EmbedTaskDocument)
 	require.NoError(t, err)
 
-	results, err = svc.CheckCached(context.Background(), []string{"aaa"})
+	results, err = svc.CheckCached(context.Background(), []string{"aaa"}, EmbedTaskDocument)
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 	assert.Equal(t, "aaa", results[0].Hash)

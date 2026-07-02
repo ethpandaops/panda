@@ -134,9 +134,6 @@ func TestRouterPrimaryIsFirstExternalProxy(t *testing.T) {
 	if !router.EmbeddingAvailable() {
 		t.Fatalf("EmbeddingAvailable() = false, want true from hosted primary")
 	}
-	if got := router.EmbeddingModel(); got != "hosted-model" {
-		t.Fatalf("EmbeddingModel() = %q, want hosted-model", got)
-	}
 	if !router.EthNodeAvailable() {
 		t.Fatalf("EthNodeAvailable() = false, want true from hosted primary")
 	}
@@ -171,9 +168,6 @@ func TestRouterWithOnlyLocalProxyHasNoPrimary(t *testing.T) {
 	}
 	if router.EmbeddingAvailable() {
 		t.Fatalf("EmbeddingAvailable() = true, want false without external primary")
-	}
-	if got := router.EmbeddingModel(); got != "" {
-		t.Fatalf("EmbeddingModel() = %q, want empty", got)
 	}
 	if router.EthNodeAvailable() {
 		t.Fatalf("EthNodeAvailable() = true, want false without external primary")
@@ -396,8 +390,6 @@ func (f *fakeRouterClient) EthNodeDatasourceInfo() []types.DatasourceInfo {
 }
 
 func (f *fakeRouterClient) EmbeddingAvailable() bool { return f.embedding }
-
-func (f *fakeRouterClient) EmbeddingModel() string { return f.model }
 
 func (f *fakeRouterClient) Discover(_ context.Context) error {
 	f.discovers++
