@@ -1,6 +1,6 @@
 ---
-name: Devnet Consensus Bug Report
-description: Scan a devnet for consensus health issues (missed blocks, orphaned blocks, reorgs, participation drops, splits) over a time window, cluster them into a ranked summary, launch one investigation agent per confirmed issue, and publish a single self-contained interactive HTML bug board cross-referenced to ethpandaops tooling — Dora slots/epochs, instance/ssh pages, GitHub PRs and source lines, EIP-at-commit, Kurtosis config — with a per-bug overview, root cause, discovery timeline, inline charts, embedded panda reproduction scripts, and fix status. Use for periodic devnet status reports, incident roundups, and building a CL/EL client bug knowledge base.
+name: Build a Devnet Consensus Bug Board
+description: Scan a devnet for consensus issues (missed blocks, orphaned blocks, reorgs, participation drops, splits) over a pinned time window, cluster them into ranked bugs, fan out one investigation agent per confirmed bug, and publish a single self-contained interactive HTML bug board — a leaderboard with upvotes and severity/client/PR filters, and per-bug detail cross-referenced to ethpandaops tooling (Dora slots/epochs, instance ssh pages, GitHub PRs and source lines, EIP-at-commit, Kurtosis config) with overview, root cause, discovery timeline, inline charts, and embedded panda reproduction scripts. Use for periodic devnet status reports, incident roundups, and building a CL/EL client bug knowledge base.
 tags: [devnet, consensus, bug-report, leaderboard, html, orchestration]
 triggers:
   - generate a devnet consensus bug report
@@ -11,117 +11,190 @@ triggers:
 prerequisites: [clickhouse-raw, dora]
 ---
 
-This runbook produces a devnet consensus **bug board**: a single self-contained HTML page that scans a network for consensus issues, ranks them, and renders each as a richly cross-referenced bug entry wired into ethpandaops tooling. It runs in four phases — scan, summarize, investigate, report.
-
-It is an orchestrator. It does not re-implement per-issue investigation: each spawned agent runs `runbooks://debug_ethereum_network` against the report's `network_target` (hosted devnet or local Kurtosis enclave), scoped to one issue window, and returns one structured bug object. Read `runbooks://debug_ethereum_network` before starting so the Phase 3 hand-off makes sense.
-
-## What This Produces
-
-One HTML file with two layers:
-
-1. **Leaderboard index** — every bug is a row, ranked by upvotes (default), with client-side text search, clickable **severity filter chips**, client and has-PR/no-PR filters, and click-to-sort columns. This is the "bug ranking page" surface. Each row carries an **upvote button** the viewer can toggle; their own vote persists in `localStorage` and re-ranks the board live.
-2. **Per-bug detail** — for each bug: status/severity badges, an upvote button, a connections panel (network, instances, docker images, client flags, PRs + state, EIP-at-commit, source lines, Kurtosis config, labels), an overview, a root cause, a discovery timeline with event markers, inline time-series charts, an embedded panda reproduction script, and a fix section.
-
-The visual language follows the EthPandaOps bug-leaderboard product: light theme by default (indigo accent, JetBrains-Mono-first code, soft tinted status/severity chips), with a dark variant available via the "◐ theme" toggle, persisted in `localStorage`. It intentionally does not auto-switch to dark on the OS preference — the product look is the default so the page always opens in the light-indigo style. Architecturally it mirrors the repo's `tests/eval/scripts/report_template.html`: CSS design tokens, zero external fetches, safe to serve as an uploaded asset.
-
-It is a **static snapshot**. The viewer's own upvote is saved in their browser, but **shared vote totals, comments, and live ClickHouse log/chart streaming need the bug-board backend and are out of scope for the static asset** — the page bakes a snapshot and links out to live tooling. Say so plainly in the delivered report; do not imply the static file is live or that upvotes are shared.
+Owns the devnet consensus **bug board**: scan a network for consensus issues over a
+pinned window, cluster and rank them, fan out one investigation agent per confirmed
+bug, and render the returned bug objects into a single self-contained interactive HTML
+leaderboard. Consumes a `network_target`; emits one published HTML file. It is an
+orchestrator: per-bug investigation belongs to `runbooks://debug_ethereum_network` and
+the embedded issue record to `runbooks://devnet_issue_contract` — this runbook owns
+only the ranking rubric, the board presentation fields, the cross-reference vocabulary,
+and the generator. Read `runbooks://debug_ethereum_network` before starting so the
+Phase 3 hand-off makes sense.
 
 ## Inputs
 
-- **Network id** — required. Resolve it into a `network_target` with `runbooks://hosted_devnet_context` (`networks://active`, `dora.list_networks()`, `ethnode.list_networks()`); for a local enclave use `runbooks://kurtosis_devnet`. Do not guess.
-- **Time window** — the reporting period. Use the user's window verbatim if given; otherwise default to the past 4 epochs and state the default. Pin one concrete slot/epoch range and reuse it across every scan query; record it in the report header.
+- **`network_target`** — required. For a hosted devnet resolve it with
+  `runbooks://hosted_devnet_context` (`networks://active`, then the network resource);
+  for a local or compute enclave use `runbooks://kurtosis_devnet`. Do not guess.
+- **Time window** — the reporting period. Use the user's window verbatim if given;
+  otherwise default to the past 4 epochs and state the default. Pin one concrete
+  slot/epoch range and reuse it across every scan query; record it in the report header.
 
-## Workflow
+## Output
+
+One HTML file with two layers:
+
+1. **Leaderboard index** — every bug is a row, ranked by upvotes (default), with
+   client-side text search, clickable **severity filter chips**, client and
+   has-PR/no-PR filters, and click-to-sort columns. Each row carries an **upvote
+   button** the viewer can toggle; their own vote persists in `localStorage` and
+   re-ranks the board live.
+2. **Per-bug detail** — for each bug: severity/confidence/status badges, an upvote
+   button, a connections panel (network, instances, docker images, client flags,
+   PRs + state, EIP-at-commit, source lines, Kurtosis config, labels), an overview,
+   a root cause, a discovery timeline with event markers, inline time-series charts,
+   an embedded panda reproduction script, a fix section, and the evidence list.
+
+The visual language follows the EthPandaOps bug-leaderboard product: light theme by
+default (indigo accent, JetBrains-Mono-first code, soft tinted status/severity chips),
+with a dark variant available via the "◐ theme" toggle, persisted in `localStorage`.
+It intentionally does not auto-switch to dark on the OS preference — the product look
+is the default so the page always opens in the light-indigo style. Architecturally it
+mirrors the repo's `tests/eval/scripts/report_template.html`: CSS design tokens, zero
+external fetches, safe to serve as an uploaded asset.
+
+It is a **static snapshot**. The viewer's own upvote is saved in their browser, but
+shared vote totals, comments, and live log/chart streaming need the bug-board backend
+and are out of scope for the static asset — the page bakes a snapshot and links out to
+live tooling. Say so plainly in the delivered report; do not imply the static file is
+live or that upvotes are shared.
+
+## Procedure
 
 1. **Scan** — collect consensus issue candidates over the window.
-2. **Summarize** — cluster candidates into bugs, rank by severity, present the summary, and prompt the user for which to investigate.
+2. **Summarize** — cluster candidates into bugs, rank by severity, present the
+   summary, and prompt the user for which to investigate.
 3. **Investigate** — spawn one agent per confirmed bug; each returns one bug object.
 4. **Report** — render all bug objects into one HTML bug board and publish it.
 
 ## Phase 1: Scan For Consensus Issues
 
-First establish a baseline (split? finalizing? participating?) by building the protocol model with `runbooks://ethereum_protocol_model`, as `runbooks://debug_ethereum_network` does in its procedure step 2. A report on a healthy network is a valid outcome — say so.
+First establish a baseline (split? finalizing? participating?) by building the
+protocol model with `runbooks://ethereum_protocol_model`, as
+`runbooks://debug_ethereum_network` does in its procedure step 2. A report on a
+healthy network is a valid outcome — say so. For an enclave target that was already
+watched, the observation lanes from `runbooks://devnet_watch` seed the candidate table
+directly.
 
-Then collect issue candidates over the window using Panda examples; do not hardcode Dora/Forky/ClickHouse queries from memory.
+Then collect issue candidates over the window using the examples index; do not
+hardcode Dora/Forky/ClickHouse queries from memory.
 
-| Candidate class | What to collect | Example query |
+| Candidate class | What to collect | Find the query |
 | --- | --- | --- |
-| Missed blocks | `status=Missing` slots, scheduled proposer, node/client | `search(type="examples", query="missed slots over a time range")` |
-| Orphaned blocks | blocks produced but non-canonical (reorged out), orphan count per epoch | `search(type="examples", query="orphaned blocks and reorgs")` |
-| Reorgs / splits | competing head roots, fork-choice divergence, depth | `search(type="examples", query="network splits fork choice")` |
-| Participation drops | per-epoch target/head participation below threshold | `search(type="examples", query="attestation participation by epoch")` |
-| Client/EL validation errors | `INVALID` payloads, gasUsed/receiptsRoot/BAL mismatches in logs | `search(type="examples", query="Recent node errors")` |
+| Missed blocks | `status=Missing` slots, scheduled proposer, node/client | search the examples index for "missed slots over a time range" |
+| Orphaned blocks | blocks produced but non-canonical (reorged out), orphan count per epoch | search the examples index for "orphaned blocks and reorgs" |
+| Reorgs / splits | competing head roots, fork-choice divergence, depth | search the examples index for "network splits fork choice" |
+| Participation drops | per-epoch target/head participation below threshold | search the examples index for "attestation participation by epoch" |
+| Client/EL validation errors | `INVALID` payloads, gasUsed/receiptsRoot/BAL mismatches in logs | search the examples index for "recent node errors" |
 
-For every candidate record the class, exact slot/epoch(s), scheduled proposer or affected block root, implicated node/client, and the query that produced it. Keep the raw rows — they become citations and timeline events. Scanning rules: judge participation on completed epochs only (`runbooks://ethereum_protocol_model`); a split is itself top severity; record source disagreements rather than silently picking one (`runbooks://evidence_discipline`).
+For every candidate record the class, exact slot/epoch(s), scheduled proposer or
+affected block root, implicated node/client, and the query that produced it. Keep the
+raw rows — they become evidence items and timeline events. Scanning rules: judge
+participation on completed epochs only (`runbooks://ethereum_protocol_model`); a split
+is itself top severity; record source disagreements rather than silently picking one
+(`runbooks://evidence_discipline`).
 
 ## Phase 2: Cluster And Summarize
 
-Cluster candidates into bugs before reporting so one root cause is not counted fifty times. Group missed/orphaned slots sharing a proposer node, client type, validator range, or contiguous slot run into one bug. Rank each with the rubric below, assign stable ids (`MISS-01`, `ORPH-01`, `SPLIT-01`, `PART-01`, `EL-01`), and emit a summary table: `id | class | severity | window | affected | count | one-line`.
+Cluster candidates into bugs before reporting so one root cause is not counted fifty
+times — missed/orphaned slots sharing a proposer node, client type, validator range,
+or contiguous slot run are usually ONE bug (grouping recipe:
+`runbooks://devnet_issue_fingerprint_dedupe`). Rank each with the rubric below, assign
+stable ids (`MISS-01`, `ORPH-01`, `SPLIT-01`, `PART-01`, `EL-01`), and emit a summary
+table: `id | class | severity | window | affected | count | one-line`.
 
-Then **prompt the user**: present the summary and baseline, and ask which bugs to investigate (default: everything `major` and above). Do not fan out agents until the user confirms — investigation is the expensive step.
+Then **prompt the user**: present the summary and baseline, and ask which bugs to
+investigate (default: everything `major` and above). Do not fan out agents until the
+user confirms — investigation is the expensive step.
 
 ### Severity Rubric
+
+Severity ranks the board; it is not evidence confidence (that lives on the issue
+record). The thresholds restate the finality math owned by
+`runbooks://ethereum_protocol_model`.
 
 | Severity | Signal |
 | --- | --- |
 | `critical` | network split, finality stalled >8 epochs, or one client fully off the canonical chain |
-| `major` | participation below 66.7%, finality lag 4–8 epochs, a miss/orphan streak concentrated on one client type |
+| `major` | participation below the 66.7% finality threshold, finality lag 4–8 epochs, a miss/orphan streak concentrated on one client type |
 | `minor` | isolated single-node misses, orphan count in normal churn range, errors with no chain symptom |
 
 ## Phase 3: Per-Bug Investigation
 
-For each confirmed bug, launch one dedicated investigation agent. Agents run concurrently and independently; send them in a single batch.
+For each confirmed bug, launch one dedicated investigation agent. Agents run
+concurrently and independently; send them in a single batch.
 
 Each agent MUST:
 
-1. Run `runbooks://debug_ethereum_network` **scoped to this one bug's window and symptom class only**, picking the matching row from its symptom → branch table (missed → missed beacon blocks, split → network split / fork-choice, EL mismatch → EL / engine API, …).
-2. Obey every `runbooks://evidence_discipline` rule on citations, verbatim output, and data-quality caveats.
-3. Populate the bug schema from evidence. **Omit any field the evidence does not support — never fabricate a PR, image, flag, source line, or EIP commit.** Return exactly one bug object.
+1. Run `runbooks://debug_ethereum_network` **scoped to this one bug's window and
+   symptom class only**, picking the matching row from its symptom → branch table
+   (missed → missed beacon blocks, split → network split / fork-choice, EL mismatch →
+   EL / engine API, …).
+2. Obey every `runbooks://evidence_discipline` rule — re-derivable citations, verbatim
+   output, first cause over loudest symptom, data-quality caveats.
+3. Return exactly one bug object: the issue record in the shape owned by
+   `runbooks://devnet_issue_contract`, plus the board fields below. **Omit any field
+   the evidence does not support — never fabricate a PR, image, flag, source line, or
+   EIP commit.**
 
-Hand-off contract — give each agent the network id, the frozen window, the bug id/class, the candidate rows already collected, the Cross-Reference Vocabulary below, and this schema:
-
-Placeholders in `<...>` are illustrative — fill them from evidence, and drop any field you cannot support.
+Hand-off contract — give each agent the `network_target`, the frozen window, the bug
+id/class, the candidate rows already collected, the Cross-Reference Vocabulary below,
+and this schema. It is a shape to copy — values are illustrative; drop any field you
+cannot support:
 
 ```yaml
-id: <ID>                           # stable id from the summary, e.g. EL-01 / MISS-02
-title: "<one-line bug title>"
-subtitle: "<one-line mechanism>"
-severity: <critical|major|minor>
-upvotes: 0                         # baked-in snapshot count; humans/agents seed it
-first_seen: "<YYYY-MM-DD>"
-status_badges:                     # pills; kind ∈ open|confirmed|investigating|draft|fixed
-  - { text: "<label>", kind: <kind> }
-labels: ["<free-form label>"]                      # e.g. "missing from EELS testing"; chips + filterable
-connections:                       # all optional — include only what the evidence supports
-  clients: ["<el> EL", "<cl> CL"]                  # drives leaderboard client filter
-  instances: ["<instance-name>"]                   # → ethpandaops.io instance page + ssh line
-  images:  [{ role: "<CL|EL>", image: "<image:tag@digest>" }]      # one or more CL/EL images
-  flags:   [{ client: "<client>", flags: "<--flag value>" }]
-  prs:     [{ repo: "<org/repo>", number: <n>, state: <open|merged|closed|draft> }]  # one or many
-  eip:     { number: <n>, commit: "<eip-commit-sha>" }             # EIP pinned to its commit version
-  source_refs: [{ repo: "<org/repo>", ref: "<branch-or-sha>",      # any repo: client, EELS/execution-specs, consensus-specs
-                  path: "<path/to/file>", line: <n>, line_end: <n> }]
-  kurtosis_config_url: "https://github.com/ethpandaops/<network>/blob/<ref>/network-params.yaml"
-overview_html:   "<p>Plain-language summary with <code>inline code</code>.</p>"
-root_cause_html: "<p>Uses the class vocabulary: <span class=\"delta\">-180731</span>, <table class=\"fork-table\">…</table>, <pre>…</pre></p>"
-timeline:                          # kind ∈ restart|block|timing|log|note → coloured markers
-  - { ts: "<YYYY-MM-DD HH:MMZ>", kind: <kind>, slot: <n>,
-      text: "<what happened>",
-      log: "<verbatim log line, HTML-escaped by the generator>" }
-series:                            # rendered as inline SVG; events draw vertical markers
-  - { title: "<metric>", unit: "<unit>", points: [[<x>,<y>], ...],
-      events: [{ x: <x>, label: "<event>" }] }
-repro:                             # embedded panda python the reader runs to reproduce
-  - { title: "<what this proves>", code: "from ethpandaops import ethnode\n..." }
-fix_html:  "<div class=\"note\">Fix PR applies the change in the missing path — <status>.</div>"
-citations: ["panda resources read networks://<network>", "panda execute --code '...'"]
+bug:
+  id: MISS-01                        # stable id from the Phase 2 summary table
+  issue:                             # one issue record — full shape owned by runbooks://devnet_issue_contract
+    title: "geth proposers miss every slot after the Gloas boundary"
+    summary: >
+      Slots 4711-4740 scheduled on geth-paired proposers are all Missing; the first
+      bad artifact is slot 4711, the Gloas activation epoch. engine_getPayload times
+      out on all four geth ELs while both lighthouse-geth and teku-geth pairs are
+      affected, implicating the EL side. Reproduced against the frozen window.
+    classification: { category: missed-proposals, layer: execution, spread: single-client }
+    evidence:
+      - { source: clickhouse-raw, ref: "SELECT slot, status, proposer FROM ... WHERE slot BETWEEN 4711 AND 4740", at: "slot 4711", detail: "status=Missing on all 30 geth-proposed slots" }
+    confidence: high                 # scale: runbooks://evidence_discipline
+  severity: major                    # rubric above
+  board:                             # presentation fields this runbook owns
+    subtitle: "engine_getPayload timeouts on geth after Gloas activation"
+    upvotes: 0                       # baked-in snapshot count; humans/agents seed it
+    status_badges:                   # pills; kind ∈ open|confirmed|investigating|draft|fixed
+      - { text: "confirmed", kind: confirmed }
+    labels: ["missing from EELS testing"]            # free-form chips, filterable
+    connections:                     # all optional — include only what the evidence supports
+      clients: ["geth EL", "lighthouse CL"]          # drives the leaderboard client filter
+      instances: ["el-3-geth"]                       # → ethpandaops.io instance page + ssh line
+      images:  [{ role: "EL", image: "ethereum/client-go:v1.16.1@sha256:0d2e…" }]
+      flags:   [{ client: "geth", flags: "--gcmode archive" }]
+      prs:     [{ repo: "ethereum/go-ethereum", number: 31021, state: open }]
+      eip:     { number: 7732, commit: "a3b1c9d" }   # EIP pinned to its commit version
+      source_refs: [{ repo: "ethereum/go-ethereum", ref: "v1.16.1", path: "miner/payload_building.go", line: 118, line_end: 131 }]
+      kurtosis_config_url: "https://github.com/ethpandaops/<network>/blob/<ref>/network-params.yaml"
+    overview_html:   ""              # optional — the generator falls back to issue.summary
+    root_cause_html: "<p>Uses the class vocabulary: <span class=\"delta\">-180731</span>, <table class=\"fork-table\">…</table>, <pre>…</pre></p>"
+    fix_html:  "<div class=\"note\">Fix PR applies the change in the missing path — open.</div>"
+  timeline:                          # kind ∈ restart|block|timing|log|note → coloured markers
+    - { ts: "2026-07-01 10:42Z", kind: block, slot: 4711, text: "first missed geth slot", log: "<verbatim log line, HTML-escaped by the generator>" }
+  series:                            # rendered as inline SVG; events draw vertical markers
+    - { title: "missed slots per epoch", unit: "slots", points: [[147, 0], [148, 7]], events: [{ x: 148, label: "Gloas" }] }
+  repro:                             # embedded panda python the reader runs to reproduce
+    - { title: "show the miss streak", code: "from ethpandaops import clickhouse\n..." }
 ```
 
-`overview_html`, `root_cause_html`, and `fix_html` are agent-composed HTML restricted to the class vocabulary in Phase 4 (`code`, `pre`, `delta`, `fork-table` with `.canonical`/`.divergent`, `note`). HTML-escape log lines. If the investigation only narrows the bug to a class, say so — do not overstate certainty.
+`board.overview_html`, `board.root_cause_html`, and `board.fix_html` are
+agent-composed HTML restricted to the class vocabulary in Phase 4 (`code`, `pre`,
+`delta`, `fork-table` with `.canonical`/`.divergent`, `note`). HTML-escape log lines.
+If the investigation only narrows the bug to a class, say so in `issue.summary` and
+cap `issue.confidence` accordingly — do not overstate certainty.
 
 ## Cross-Reference Vocabulary
 
-Every concrete artifact links to live ethpandaops tooling. **Prefer service URLs from `networks://<network>`** (Dora, Forky, tracoor, beacon/JSON-RPC endpoints, `repository`, `node_inventory_url`); fall back to the conventional patterns below only when the resource omits them.
+Every concrete artifact links to live ethpandaops tooling. **Prefer service URLs from
+`networks://<network>`** (Dora, Forky, tracoor, beacon/JSON-RPC endpoints,
+`repository`, `node_inventory_url`); fall back to the conventional patterns below only
+when the resource omits them.
 
 | Target | URL pattern | Display |
 | --- | --- | --- |
@@ -132,16 +205,22 @@ Every concrete artifact links to live ethpandaops tooling. **Prefer service URLs
 | GitHub commit | `https://github.com/<repo>/commit/<sha>` | `<sha[:9]>` |
 | Source line(s) | `https://github.com/<repo>/blob/<ref>/<path>#L<a>-L<b>` | `<file>:<a>` |
 | EIP at commit | `https://github.com/ethereum/EIPs/blob/<commit>/EIPS/eip-<nnnn>.md` | `EIP-<n> @ <commit[:7]>` |
-| Kurtosis config | dump a config.yaml that can be used to reproduce the bug into the html document if you've verified the reproduction is possible |
-The Phase 4 generator implements each as a small `link_*` helper so agents supply structured fields, not raw URLs.
+| Kurtosis config | `https://github.com/ethpandaops/<network>/blob/<ref>/network-params.yaml` | `ethereum-package config` |
+
+Embed a reproducing Kurtosis config in the page only when the reproduction was
+actually verified. The Phase 4 generator implements each pattern as a small `link_*`
+helper so agents supply structured fields, not raw URLs.
 
 ## Phase 4: Build And Publish The Bug Board
 
-Collect every bug object into `/workspace/bugs.json`, then render and publish. The generator owns page chrome, CSS tokens, the leaderboard, the link vocabulary, and all structured rendering; agents supply only the per-bug `*_html` narrative.
+Collect every bug object into `/workspace/bugs.json`, then render and publish with the
+generator below — run it verbatim in the sandbox after filling `NETWORK` and `WINDOW`.
+The generator owns page chrome, CSS tokens, the leaderboard, the link vocabulary, and
+all structured rendering; agents supply only the per-bug `*_html` narrative.
 
 ```python
 import html, json
-from datetime import datetime
+from datetime import datetime, timezone
 from ethpandaops import storage
 
 NETWORK = "<network>"
@@ -174,7 +253,8 @@ def badge(text, kind): return f'<span class="badge b-{esc(kind)}">{esc(text)}</s
 PR_KIND = {"merged":"fixed","open":"open","draft":"draft","closed":"minor"}
 
 def connections(b):
-    c, rows = b.get("connections", {}), []
+    board = b.get("board", {})
+    c, rows = board.get("connections", {}), []
     def r(k, v):
         if v: rows.append(f'<span class="k">{esc(k)}</span><span class="v">{v}</span>')
     r("Network", a(f"https://ethpandaops.io/networks/{NETWORK}/", NETWORK))
@@ -185,7 +265,7 @@ def connections(b):
     if c.get("eip"):       r("EIP", eip_at(c["eip"]["number"], c["eip"]["commit"]))
     if c.get("source_refs"): r("Source", " · ".join(gh_line(x) for x in c["source_refs"]))
     if c.get("kurtosis_config_url"): r("Kurtosis config", a(c["kurtosis_config_url"], "ethereum-package config"))
-    if b.get("labels"):    r("Labels", " ".join(badge(l, "label") for l in b["labels"]))
+    if board.get("labels"): r("Labels", " ".join(badge(l, "label") for l in board["labels"]))
     return f'<div class="kv">{"".join(rows)}</div>' if rows else ""
 
 def timeline(events):
@@ -219,53 +299,58 @@ def repro(b):
     blocks = b.get("repro") or []
     if isinstance(blocks, str): blocks = [{"title": "Reproduce", "code": blocks}]
     return "".join(f'<div class="repro"><div class="repro-h">{esc(x.get("title","Reproduce"))} '
-                   f'<span class="mut">— run via <code>panda execute</code></span></div>'
+                   f'<span class="mut">— run in the panda sandbox</span></div>'
                    f'<pre>{esc(x["code"])}</pre></div>' for x in blocks)
 
 def part(k, frag): return f'<h3>{esc(k)}</h3>{frag}' if frag else ""
 
 def bug_section(b):
+    issue, board = b["issue"], b.get("board", {})
     sev = b.get("severity", "minor")
-    badges = badge(sev, sev) + "".join(badge(x["text"], x["kind"]) for x in b.get("status_badges", []))
+    badges = (badge(sev, sev) + badge(f"confidence: {issue.get('confidence','low')}", "label")
+              + "".join(badge(x["text"], x["kind"]) for x in board.get("status_badges", [])))
     charts = "".join(sparkline(s) for s in b.get("series", []))
-    cites = "".join(f"<li><code>{esc(c)}</code></li>" for c in b.get("citations", []))
-    cites = f'<h3>Citations</h3><ul class="cites">{cites}</ul>' if cites else ""
-    c = b.get("connections", {})
-    up = int(b.get('upvotes', 0))
+    ev = "".join(f'<li><code>{esc(e.get("source",""))}: {esc(e.get("ref",""))}</code> — {esc(e.get("detail",""))}</li>'
+                 for e in issue.get("evidence", []))
+    ev = f'<h3>Evidence</h3><ul class="cites">{ev}</ul>' if ev else ""
+    overview = board.get("overview_html") or f"<p>{esc(issue.get('summary',''))}</p>"
+    c = board.get("connections", {})
+    up = int(board.get('upvotes', 0))
     return f"""<section class="bug" id="{esc(b['id'])}" data-id="{esc(b['id'])}" data-base="{up}"
       data-sev="{esc(sev)}" data-clients="{esc(' '.join(c.get('clients',[])).lower())}"
       data-haspr="{'1' if c.get('prs') else '0'}" data-up="{up}"
-      data-text="{esc((b['title']+' '+b.get('subtitle','')).lower())}">
-      <div class="bug-h"><h2>{esc(b['id'])} — {esc(b['title'])}</h2>
+      data-text="{esc((issue['title']+' '+board.get('subtitle','')).lower())}">
+      <div class="bug-h"><h2>{esc(b['id'])} — {esc(issue['title'])}</h2>
         <button class="upbtn" data-vote="{esc(b['id'])}" title="upvote — saved in your browser">▲ <span class="up-n">{up}</span></button></div>
-      <p class="sub">{esc(b.get('subtitle',''))}</p>
+      <p class="sub">{esc(board.get('subtitle',''))}</p>
       <div class="meta">{badges}</div>
       {connections(b)}
-      {part('Overview', b.get('overview_html',''))}
-      {part('Root cause', b.get('root_cause_html',''))}
+      {part('Overview', overview)}
+      {part('Root cause', board.get('root_cause_html',''))}
       {part('Discovery timeline', timeline(b.get('timeline', [])))}
       {charts}
       {repro(b)}
-      {part('Fix', b.get('fix_html',''))}
-      {cites}
+      {part('Fix', board.get('fix_html',''))}
+      {ev}
     </section>"""
 
 # ---- leaderboard, ranked by upvotes then severity ----
 SEV_RANK = {"critical":0,"major":1,"minor":2}
-bugs.sort(key=lambda b: (-int(b.get("upvotes",0)), SEV_RANK.get(b.get("severity"),9)))
+bugs.sort(key=lambda b: (-int(b.get("board", {}).get("upvotes", 0)), SEV_RANK.get(b.get("severity"), 9)))
 def row(b):
-    c = b.get("connections", {})
+    issue, board = b["issue"], b.get("board", {})
+    c = board.get("connections", {})
     prs = " ".join(badge(f"#{p['number']} {p['state']}", PR_KIND.get(p['state'],"minor")) for p in c.get("prs",[]))
-    up = int(b.get("upvotes", 0))
+    up = int(board.get("upvotes", 0))
     return (f'<tr data-id="{esc(b["id"])}" data-base="{up}" data-sev="{esc(b.get("severity"))}" '
             f'data-haspr="{"1" if c.get("prs") else "0"}" '
             f'data-clients="{esc(" ".join(c.get("clients",[])).lower())}" data-up="{up}" '
-            f'data-text="{esc(b["title"].lower())}">'
+            f'data-text="{esc(issue["title"].lower())}">'
             f'<td><button class="upbtn" data-vote="{esc(b["id"])}" title="upvote — saved in your browser">▲ <span class="up-n">{up}</span></button></td>'
             f'<td>{badge(b.get("severity"), b.get("severity"))}</td>'
-            f'<td>{a("#"+b["id"], b["id"]+" — "+b["title"], ext=False)}</td>'
+            f'<td>{a("#"+b["id"], b["id"]+" — "+issue["title"], ext=False)}</td>'
             f'<td>{esc(", ".join(c.get("clients",[])))}</td><td>{prs}</td></tr>')
-clients = sorted({cl for b in bugs for cl in b.get("connections",{}).get("clients",[])})
+clients = sorted({cl for b in bugs for cl in b.get("board", {}).get("connections", {}).get("clients", [])})
 
 CSS = r"""
 :root{--bg:#f7f8fa;--panel:#ffffff;--panel2:#f1f2f4;--line:#e3e6ea;--line2:#eef0f2;--ink:#15181d;
@@ -367,7 +452,7 @@ $$('#board th[data-sort]').forEach(th=>th.onclick=()=>{const k=th.dataset.sort;
 paint();
 """
 
-generated = datetime.utcnow().isoformat() + "Z"
+generated = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 head = ('<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
         '<meta name="color-scheme" content="light dark">'
@@ -375,7 +460,7 @@ head = ('<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">'
 header = (f'<h1>{esc(NETWORK)} — consensus bug board</h1>'
           f'<p class="sub">Window {esc(WINDOW)} · generated {esc(generated)} · {len(bugs)} bug(s) · <a id="theme">◐ theme</a></p>'
           '<div class="note">Static snapshot. Your upvote is saved in this browser; shared vote totals, comments '
-          'and live ClickHouse log/chart streaming need the bug-board backend. This page bakes the snapshot and links out to live tooling.</div>')
+          'and live log/chart streaming need the bug-board backend. This page bakes the snapshot and links out to live tooling.</div>')
 bar = ('<div id="bar"><input id="q" type="search" placeholder="search bugs / clients…">'
        '<div id="chips" class="chips">'
        '<span class="chip c-critical" data-sev="critical" aria-pressed="false">critical</span>'
@@ -391,12 +476,31 @@ board = ('<table id="board" class="panel"><thead><tr>'
          + "".join(row(b) for b in bugs) + '</tbody></table>')
 doc = head + header + bar + board + "\n".join(bug_section(b) for b in bugs) + "<script>" + JS + "</script></div></body></html>"
 
-path = f"/workspace/{NETWORK}-bugboard-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}.html"
+path = f"/workspace/{NETWORK}-bugboard-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.html"
 open(path, "w").write(doc)
 print(storage.upload(path, remote_name=path.split("/")[-1]).url)
 print(path)
 ```
 
-Every field is `html.escape`'d, so log lines and titles cannot break out of the page. (If you later switch to an injected-JSON viewer for live mode, escape the blob with `json.dumps(...).replace("</", "<\\/")` as `report_template.html` does.)
+Every field is `html.escape`'d, so log lines and titles cannot break out of the page.
+(If you later switch to an injected-JSON viewer for live mode, escape the blob with
+`json.dumps(...).replace("</", "<\\/")` as `report_template.html` does.)
 
-Deliver the published URL and the local `/workspace/...` path. State plainly that the page is a snapshot and which features (upvotes, comments, live streaming) need the backend. If the network is healthy, still publish a board whose summary states zero bugs and shows the baseline. Only push to the external starflinger asset store on explicit request.
+Deliver the published URL and the local `/workspace/...` path. If the network is
+healthy, still publish a board whose summary states zero bugs and shows the baseline.
+Only push to the external starflinger asset store on explicit request.
+
+## Self-Check
+
+Before delivering:
+
+- The window was pinned once and is identical across every scan query, bug, and the
+  report header.
+- Every bug embeds one issue record per `runbooks://devnet_issue_contract`, with
+  summary-first reasoning and a stated confidence.
+- Every board field is evidence-backed — no fabricated PR, image, flag, source line,
+  or EIP commit.
+- Cross-reference links prefer service URLs from `networks://<network>` over the
+  conventional patterns.
+- The delivered message states the page is a static snapshot: upvotes are
+  viewer-local, and nothing on it streams live data.
