@@ -378,7 +378,9 @@ func (s *server) registerRoutes() {
 	}
 
 	if s.faucetHandler != nil {
-		s.handleSubtreeRoute("/faucet", s.metricsMiddleware(chain(s.faucetHandler)))
+		// chain (auth) runs first and sets the AuthUser the limiter keys on.
+		faucetLimiter := newFaucetSessionRateLimiter(faucetSessionLimit, faucetSessionWindow)
+		s.handleSubtreeRoute("/faucet", s.metricsMiddleware(chain(faucetLimiter.middleware(s.faucetHandler))))
 	}
 
 	if s.benchmarkoorHandler != nil {
