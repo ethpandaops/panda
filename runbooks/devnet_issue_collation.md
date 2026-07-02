@@ -3,9 +3,9 @@ name: Collate Devnet Watch Issues
 description: Turn neutral watch observations from a devnet into self-contained issue records with evidence, scope, affected components, and a restore handle — deciding what is actually an issue and packaging each one for downstream investigation. Use after a watch step, before root-cause work.
 tags: [devnet, issue, collation, triage, judgment, pipeline]
 triggers:
-  - turn watch observations into issues
+  - turn watch observations into issue records
   - decide whether devnet observations are real problems
-  - group duplicate errors across nodes into one issue
+  - collate and group duplicate watch observations into packaged issues
 ---
 
 Owns the judgment step: consumes the Output of `runbooks://devnet_watch` and emits
@@ -14,7 +14,8 @@ from `runbooks://devnet_issue_fingerprint_dedupe`; terminal issues go to
 `runbooks://devnet_issue_root_cause`, gaps to `runbooks://devnet_issue_feedback_queue`.
 
 ## Inputs
-Required: the watch output (observations, setup summary, window, final snapshot id).
+Required: the watch output (observations, setup summary, window, handles with the
+network target and any final snapshot id).
 Preferred: sandbox id + enclave (for narrow re-verification), the source devnet id, and
 prior issue records for dedupe.
 Input observations are FACTS, not verdicts. If the setup summary is missing,
@@ -24,7 +25,25 @@ unloaded network) gets over-reported as issues.
 ## Output
 A list of issue records (`runbooks://devnet_issue_contract`) — empty when the window is
 healthy, with a one-paragraph healthy-window summary in its place. Root cause and final
-blame belong to `runbooks://devnet_issue_root_cause`.
+blame belong to `runbooks://devnet_issue_root_cause`. Shape (values illustrative):
+
+```yaml
+collation:
+  healthy_window_summary: ""     # one paragraph INSTEAD of issues when nothing is wrong
+  issues:
+    - summary: >
+        Checkpoints froze at epoch 12 while head advanced; teku VCs vc-2/vc-3
+        restart-looping from epoch 11 — offline stake explains the participation loss.
+      title: "Finality stalls at epoch 12 while head advances"
+      # TRUNCATED example: emit the FULL issue record — also classification,
+      # first_bad, affected, evidence, co_present, confidence — copied from the
+      # example in runbooks://devnet_issue_contract
+      fingerprint: { decision: new }   # identity via runbooks://devnet_issue_fingerprint_dedupe
+      handles:                         # watch handles mapped in: final_snapshot_id -> snapshot_id,
+                                       # watch setup_summary copied WHOLE into handles.setup_summary
+        { snapshot_id: "snap-9", sandbox_id: "sbx-4", enclave: "devnet-1", network: "",
+          setup_summary: { fork_schedule: { gloas: 8 }, blob_schedule: {}, load: [], builders: ["buildoor"] } }
+```
 
 ## Correlation rules
 
@@ -50,7 +69,8 @@ change. The load-bearing cases:
 
 - **Gloas/ePBS:** distinguish missed beacon blocks from canonical blocks with missing
   payloads; confirm a missing payload via next-slot PTC `payload_attestations`; map
-  `builder_index` (and the self-build sentinel) through builder evidence. If head and
+  `builder_index` (and the self-build sentinel) through builder evidence — slot states,
+  PTC, and `builder_index` semantics owned by `runbooks://ethereum_protocol_model`. If head and
   finality advance while builder/VC services repeatedly fail to
   produce/reveal/register/bid, emit `builder-path-degraded` alongside — not instead
   of — the healthy-chain verdict. Anchor final/safe-block-unavailable errors only

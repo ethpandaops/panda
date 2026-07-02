@@ -6,7 +6,6 @@ triggers:
   - watch a devnet for a few epochs
   - collect observations from a running enclave
   - monitor devnet nodes without judging issues
-prerequisites: []
 ---
 
 Owns neutral observation of a running devnet over a watch window. Watchers report
@@ -14,7 +13,10 @@ FACTS; judging belongs to `runbooks://devnet_issue_collation`. For interactive
 debugging use `runbooks://debug_ethereum_network` instead.
 
 ## Inputs
-Required: a `network_target` (an enclave kind) and a watch length in epochs.
+Required: a `network_target` of kind `local-enclave` or `compute-enclave`, and a watch
+length in epochs. Hosted networks are not watched with this runbook — they lack the
+enclave service/log access it depends on; observe them live via
+`runbooks://debug_ethereum_network` instead.
 Preferred: the setup (clients, tooling, load) for context.
 
 ## Output
@@ -50,7 +52,9 @@ leave root-causing to downstream stages.
   (`runbooks://evidence_discipline` — judge against setup); on ePBS, payload presence;
   on PeerDAS, sidecar/column availability.
 
-Use bounded log pulls and the log-tail rule from `runbooks://kurtosis_devnet`.
+Use bounded log pulls. Kurtosis applies `-n` (tail) BEFORE `--match`, so pull
+`-n 2000`+ and treat an empty filtered result as absent from the fetched tail, not
+globally absent (owner: `runbooks://kurtosis_devnet`).
 
 ## Output shape
 
@@ -69,12 +73,17 @@ watch:
   setup_summary: { fork_schedule: { gloas: 8 }, blob_schedule: {}, load: [], builders: ["buildoor"] }
   observations:
     consensus:
-      - { source: "cl-1-lighthouse-geth", ref: "GET /eth/v1/beacon/states/head/finality_checkpoints", at: "epoch 13", detail: "finalized epoch 12, unchanged for 2 epochs" }
+      # source is the tool/datasource; the observed service goes in its own label
+      # (evidence item shape: runbooks://devnet_issue_contract)
+      - { service: "cl-1-lighthouse-geth", role: cl, source: beacon-api, ref: "GET /eth/v1/beacon/states/head/finality_checkpoints", at: "epoch 13", detail: "finalized epoch 12, unchanged for 2 epochs" }
     execution: []
     validators_builders: []
     network: []
     tooling: []
-  final_snapshot_id: ""   # compute-enclave targets only; capture exactly one after end_epoch
+  handles:                # collation copies these into each issue's handles block
+    network_target: { kind: compute-enclave, sandbox_id: "sbx-4", enclave: "devnet-1" }
+    final_snapshot_id: "" # compute-enclave targets only; capture exactly one after
+                          # end_epoch (runbooks://panda_compute_kurtosis_lifecycle)
 ```
 
 ## Self-Check

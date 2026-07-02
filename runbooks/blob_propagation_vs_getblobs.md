@@ -1,11 +1,12 @@
 ---
 name: Correlate Blob Propagation with engine_getBlobs
-description: Investigate whether slow blob gossip propagation is causing engine_getBlobs to return EMPTY — join per-slot getBlobs success rates (refined) with blob gossip timing (raw) and compare timing across the SUCCESS vs EMPTY groups. Use when getBlobs empties or blob availability looks timing-related.
+description: Investigate whether slow blob gossip propagation is causing engine_getBlobs to return EMPTY — join per-slot getBlobs success rates (refined fct_engine_get_blobs_by_slot) with blob gossip timing (raw libp2p_gossipsub_blob_sidecar, propagation_slot_start_diff) and compare timing across the SUCCESS vs EMPTY groups. Use when getBlobs empties or blob availability looks timing-related.
 tags: [blobs, engine-api, gossipsub, propagation, data-availability]
 triggers:
   - engine_getBlobs returning empty
   - blob propagation slow via gossip
   - correlate getblobs success with blob arrival timing
+  - join fct_engine_get_blobs_by_slot with libp2p_gossipsub_blob_sidecar
 prerequisites: [clickhouse-raw, clickhouse-refined]
 ---
 
@@ -22,7 +23,8 @@ timing comparison behind it.
 ## Procedure
 The data lives on two clusters, joined in Python on `slot`. See
 `runbooks://clickhouse_querying` for cluster/partition rules and why the gossip table
-must be queried raw (deduplicated views collapse the propagation rows).
+must be queried raw (deduplicated views collapse the propagation rows). The Python
+below is a shape to adapt — substitute `{network}` and the time window.
 
 1. **getBlobs status per slot** — refined `{network}.fct_engine_get_blobs_by_slot FINAL`:
    `slot, status, observation_count, avg_duration_ms, full_return_pct` where `status ∈

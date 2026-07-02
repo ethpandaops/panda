@@ -68,10 +68,12 @@ inspected path not tied to a runtime input → `reachability-trace`; unclear spe
 a client/protocol bug.
 
 **Report next_action:** file client bug → `publish` only when reproduction, trace, and
-citations are strong (queue the missing trace/source work first otherwise); config
-fix → `config`; tooling fix → `config` or `manual-review`; rerun with more evidence →
-`watch` or `investigate` scoped to the missing evidence; no issue reproduced →
-`no-op`, or `snapshot` if a broken-state start would change the outcome.
+citations are strong (queue the missing trace/source work first otherwise); spec
+issue → `source-trace` with the EIP/spec target, then `publish` once the spec
+comparison is resolved; config fix → `config`; tooling fix → `config` or
+`manual-review`; rerun with more evidence → `watch` or `investigate` scoped to the
+missing evidence; no issue reproduced → `no-op`, or `snapshot` if a broken-state start
+would change the outcome.
 
 **Fingerprint decision:** `duplicate` → occurrence-attachment via
 `publish`/`manual-review` only (plus `watch` only for a missing variant dimension);

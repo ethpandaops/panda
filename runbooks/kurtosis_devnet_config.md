@@ -53,8 +53,8 @@ handed directly to `kurtosis run --args-file`. Emit the file, not a prose plan.
 Preserve hosted chain id + selected images; use the `minimal` preset only as an
 explicit local acceleration (recorded as a deviation, not a faithful clone); keep BPO
 changes before Gloas for a clean smoke (BPO epochs 1 and 2 → local Gloas at epoch ≥3
-unless deliberately stressing a stacked boundary); include Buildoor when observing the
-builder path.
+unless deliberately stressing a stacked boundary — fork/BPO boundary semantics:
+`runbooks://ethereum_protocol_model`); include Buildoor when observing the builder path.
 
 ## Output shape
 

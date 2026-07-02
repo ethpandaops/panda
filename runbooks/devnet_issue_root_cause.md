@@ -5,7 +5,7 @@ tags: [devnet, issue, root-cause, reproduction, hypotheses, orchestration]
 triggers:
   - find the root cause of a devnet issue
   - reproduce and investigate a reported bug
-  - why did the devnet break investigate this issue
+  - investigate this collated issue record end to end
 ---
 
 Orchestrates root-cause investigation for ONE issue in the shape of
@@ -99,15 +99,21 @@ report:
     Finality stalled at epoch 12 because ~45% of stake (teku VCs vc-2/vc-3) entered a
     restart loop at epoch 11; reproduced on restore; participation recovered when the
     VCs were held up. Buildoor reveal errors are chronic and unrelated (co-present).
-  root_cause: { statement: "teku VC restart loop removed >1/3 stake", family: "lifecycle/participation", confidence: high }
-  reproduction: { status: reproduced, recipe: ["restore snap-9", "observe epochs 11-14"] }
-  timeline: ["epoch 11: vc-2 first restart (log ref)", "epoch 12: checkpoints freeze"]
+  root_cause: { statement: "teku VC restart loop removed >1/3 stake", family: "lifecycle/participation", confidence: high }   # >1/3 stall threshold: runbooks://ethereum_protocol_model
+  reproduction: { status: reproduced, recipe: ["restore snap-9", "observe epochs 11-14"] }   # status: reproduced|partial|not-reproduced|local-live|hosted-live|historical-only
+  timeline:                      # objects, board-renderer-ready; kind: restart|block|timing|log|note
+    - { ts: "2026-07-01T10:41:55Z", kind: restart, text: "vc-2 first restart", log: "<verbatim log line>" }
+    - { ts: "2026-07-01T10:48:00Z", kind: timing, text: "checkpoints freeze at epoch 12" }
   hypotheses: { supported: ["h1"], rejected: ["h2 consensus bug — participation math explains loss"], partial: [] }
-  trace_verdict: reachable
-  review_verdict: survives
-  feedback: { terminal: true, terminal_reason: "cause demonstrated; config fix filed", tasks: [] }
-  citations: ["kurtosis service logs devnet-1 vc-2-teku -n 3000", "GET /api/v1/epoch/12"]
-  next_action: "config fix"   # client bug | spec issue | config fix | tooling fix | rerun with more evidence | no issue reproduced
+  trace_verdict: reachable       # reachable|partially-reachable|not-reachable|insufficient-evidence
+  review_verdict: survives       # survives|weakened|refuted
+  feedback:                      # shape owned by runbooks://devnet_issue_feedback_queue
+    { priority_summary: "no follow-ups — cause demonstrated and reviewed",
+      terminal: true, terminal_reason: "cause demonstrated; config fix filed", tasks: [] }
+  citations:                     # evidence items (runbooks://devnet_issue_contract), not bare strings
+    - { source: kurtosis, ref: "kurtosis service logs devnet-1 vc-2-teku -n 3000", at: "epoch 11", detail: "restart loop from 10:41:55Z" }
+    - { source: dora, ref: "GET /api/v1/epoch/12", at: "epoch 12", detail: "participation 41.2% on completed epoch 12" }
+  next_action: "config fix"   # file client bug | spec issue | config fix | tooling fix | rerun with more evidence | no issue reproduced
 ```
 
 ## Self-Check

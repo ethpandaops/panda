@@ -26,8 +26,9 @@ without its neighbors present. Everything in this standard follows from that.
 ```yaml
 ---
 name: Imperative Title             # required — "Debug X", "Query Y Well"
-description: What + when           # required — ≤1024 chars, third person, packed with
-                                   # the exact identifiers and symptoms callers search
+description: What + when           # required — ≤1024 chars, task-verb ("Debug…",
+                                   # "Resolve…") or third person, packed with the
+                                   # exact identifiers and symptoms callers search
 tags: [keyword, keyword]           # 3-6 lowercase keywords
 triggers:                          # required — 3-6 example queries a caller would
   - why is finality stalled        # actually type; embedded verbatim for search

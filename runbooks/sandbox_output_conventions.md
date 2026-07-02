@@ -5,6 +5,8 @@ tags: [sandbox, chartkit, storage, session, visualization, output]
 triggers:
   - make a chart or plot of query results
   - save results to a shareable file or url
+  - publish an html report from the sandbox
+  - storage upload url and workspace host path
   - keep dataframes between execution turns
   - which plotting library to use in the sandbox
 ---

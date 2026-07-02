@@ -76,7 +76,8 @@ Use the CL/EL matrix in `runbooks://debug_ethereum_network` and the artifact mod
 - **VC:** duty schedule, attestation/proposal production, builder
   registration/proposer preferences, slashing-protection/keymanager state. For
   finality stalls, VC reachability means connecting availability/duty failures to
-  >1/3 effective stake or the observed participation loss.
+  >1/3 effective stake (stall threshold: `runbooks://ethereum_protocol_model`) or the
+  observed participation loss.
 - **Builder/relay/buildoor:** registration, bid production and reveal, payload build
   errors, proposer-preference publication, relay API responses, ePBS activation and
   safe/finalized-head dependencies. Builder-path failure can be reachable WITHOUT

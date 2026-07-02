@@ -21,7 +21,6 @@ MATRIX=(
   "epoch aligned snapshot restore|panda_compute_kurtosis_lifecycle"
   "compute sandbox snapshot lifecycle|panda_compute_kurtosis_lifecycle"
   "can this component cause the failure|devnet_issue_reachability_trace"
-  "why is finality stalled|ethereum_protocol_model"
   "engine_getBlobs returning empty|blob_propagation_vs_getblobs"
   "generate a devnet consensus bug report|devnet_bug_report"
   # intent phrases (mirror runbook names/owns-lines)
@@ -40,25 +39,43 @@ MATRIX=(
   "reachability trace|devnet_issue_reachability_trace"
   "spec and client source drilldown|ethereum_spec_source_drilldown"
   "shape investigation follow-up tasks|devnet_issue_feedback_queue"
-  "html bug board leaderboard with upvotes|devnet_bug_report"
+  "review this investigation plan before running it|devnet_issue_adversarial_review"
+  "does this root cause conclusion hold up|devnet_issue_adversarial_review"
+  "html bug board leaderboard with upvotes|devnet_bug_board_html"
+  "render bug objects into an html bug board|devnet_bug_board_html"
   "clickhouse block number range time window|clickhouse_querying"
   "panda compute devnet lifecycle|panda_compute_kurtosis_lifecycle"
+  "devnet node metrics prometheus peer count|prometheus_devnet_health"
+  "dora and the beacon node disagree|reconcile_chain_sources"
+  "same bytecode different gas across clients|debug_evm_execution_divergence"
+  "invalid beacon block which client rejected it|tracoor_invalid_artifact_forensics"
   # confusable pairs (the near-miss neighbor must not win)
   "prysm is forked can you investigate|debug_ethereum_network"
   "grandine is forked can you investigate|debug_ethereum_network"
+  "why is finality stalled on this devnet|debug_ethereum_network"
+  "finality lag thresholds offline stake fraction|ethereum_protocol_model"
+  "why did the devnet break|debug_ethereum_network"
   "watch a running devnet live for a few epochs|devnet_watch"
   "restore a snapshot on remote compute|panda_compute_kurtosis_lifecycle"
   "read logs from a local kurtosis enclave|kurtosis_devnet"
   "clickhouse query slow timing out|clickhouse_querying"
   "make a chart of query results|sandbox_output_conventions"
   "periodic devnet status report incident roundup|devnet_bug_report"
+  "are these two devnet issues the same bug|devnet_issue_fingerprint_dedupe"
+  "turn watch observations into issue records|devnet_issue_collation"
+  "inspect client source code for this error|ethereum_spec_source_drilldown"
+  "is the blamed client really the trigger or a victim|devnet_issue_reachability_trace"
+  "two datasources disagree which one to trust|reconcile_chain_sources"
+  "how should findings be cited in a report|evidence_discipline"
+  "one node stuck offline or out of sync|debug_ethereum_network"
+  "is a service up according to metrics|prometheus_devnet_health"
 )
 
 # Out-of-scope probes: nothing in the registry covers these. Informational
 # only (absolute score thresholds are corpus-dependent) — they print the top
 # hit + score so a human can spot the registry claiming expertise it lacks.
 OUT_OF_SCOPE=(
-  "write a promql alerting rule"
+  "kubernetes pod stuck in crashloopbackoff"
   "solidity reentrancy vulnerability"
 )
 

@@ -4,8 +4,8 @@ description: The evidence rules for any investigation — re-derivable citations
 tags: [evidence, citations, confidence, investigation, method, reporting]
 triggers:
   - how should findings be cited
-  - two datasources disagree which one to trust
-  - how confident should the report be
+  - how to report a disagreement between sources in a report
+  - how confident should the report be low medium high
   - root cause vs co-present symptom
 ---
 

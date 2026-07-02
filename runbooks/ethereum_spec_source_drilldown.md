@@ -1,7 +1,7 @@
 ---
 name: Drill Into Specs and Client Source
 description: Resolve protocol specs, EIPs, and the exact consensus/execution client source at the running commit for an observed devnet issue, and produce bounded source findings for a reachability trace. An escalation step for protocol-semantics and client-code questions — runtime evidence comes first.
-tags: [ethereum, specs, eip, source, client, code, commit]
+tags: [ethereum, specs, eip, source, client, commit]
 triggers:
   - which spec rule or eip governs this behavior
   - inspect client source code for this error
@@ -54,6 +54,8 @@ evidence first: (1) image digest + OCI labels; (2) version endpoint / startup lo
 commit; (3) image tag containing a git SHA or release tag; (4) ethpandaops inventory /
 network source metadata; (5) release notes mapping a tag to a commit.
 
+Shapes to adapt — substitute the target's enclave, service, image, and endpoints:
+
 ```shell
 kurtosis service inspect <enclave> <service>
 docker image inspect <image>
@@ -96,7 +98,7 @@ source_finding:
   commit: { repo: "github.com/ethpandaops/buildoor", commit: "a1b2c3d", status: exact }   # exact|release-tag|nearest-known|unresolved
   entry_artifact: { kind: log, value: "Failed to submit reveal ... status 400", ref: "kurtosis service logs devnet-1 buildoor -n 3000" }
   source_path: { file: "pkg/reveal/envelope.go", function: "serializeEnvelope", branch_condition: "bpo_epoch < gloas_epoch" }
-  spec_comparison: mismatches-spec
+  spec_comparison: mismatches-spec   # matches-spec|mismatches-spec|ambiguous-spec|code-path-unresolved|wrong-component
   rejected_paths: [ { file: "pkg/bid/creator.go", reason: "logs the error but downstream of serializer" } ]
   confidence: medium           # scale: runbooks://evidence_discipline
   citations: ["git show a1b2c3d:pkg/reveal/envelope.go", "eips index search: 7732"]

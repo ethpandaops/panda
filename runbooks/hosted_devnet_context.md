@@ -1,11 +1,12 @@
 ---
 name: Ground a Hosted Devnet's Context
-description: Resolve a hosted ethpandaops devnet into authoritative metadata — network id, node inventory, fork and blob schedule, slot timing, endpoints, participant images — before config generation or incident triage. Emits a hosted network_target and a grounded context summary.
+description: Resolve a hosted ethpandaops devnet into authoritative metadata — network id from networks://active and the networks://<network> resource, node inventory from node_inventory_url, fork and blob schedule, slot timing, endpoints, participant images (panda devnets info|endpoints|forks|clients) — before config generation or incident triage. Emits a hosted network_target and a grounded context summary.
 tags: [devnet, hosted, network, inventory, forks, context]
 triggers:
   - which devnet is currently active resolve network id
   - node inventory client pairs images for a hosted devnet
   - fork schedule slot timing endpoints of a devnet
+  - read networks://active or node_inventory_url for a devnet
   - ground devnet context before reproducing it locally
 ---
 

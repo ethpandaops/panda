@@ -1,10 +1,10 @@
 ---
 name: Model the Active Fork and Judge Network Health
 description: The Ethereum protocol reference — which actors, artifacts, and invariants each protocol upgrade introduces (pre-ePBS vs Gloas/ePBS vs Fulu/PeerDAS), plus the finality and participation thresholds for judging whether a network is healthy. Use when interpreting what a symptom means under the active fork's rules — missed slots, missing payloads, finality stalls, low participation, builder failures, or data-availability warnings.
-tags: [ethereum, forks, epbs, gloas, peerdas, finality, participation, health]
+tags: [forks, epbs, gloas, peerdas, finality, health]
 triggers:
   - is the network healthy or finalizing
-  - why is finality stalled or delayed
+  - finality lag thresholds and how much offline stake stalls finality
   - canonical block but execution payload missing on gloas epbs
   - participation below two thirds threshold
   - blob sidecar or data column availability failing on fulu peerdas

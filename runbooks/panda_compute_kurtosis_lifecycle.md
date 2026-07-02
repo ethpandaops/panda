@@ -7,6 +7,7 @@ triggers:
   - snapshot a devnet at an epoch and restore it later
   - provision a panda compute sandbox with kurtosis
   - restore a broken devnet state from a snapshot
+prerequisites: [compute]
 ---
 
 Owns the remote-compute devnet lifecycle: provision, launch, snapshot, restore. Emits a

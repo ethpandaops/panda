@@ -84,11 +84,13 @@ evidence_review:
 
 - Ground every criticism in evidence, missing evidence, or a concrete claim in the
   input; treat absence of evidence as a confidence limit, not proof of the opposite.
-- Require spec/source drilldown when the report names a client bug, protocol bug,
-  fork-rule mismatch, invalid block, execution mismatch, DA issue, or cross-client
-  disagreement; runtime evidence alone closes config/load/lifecycle/tooling issues.
-- Require a reachability trace when a source path, component, builder/relay path, load
-  generator, or topology condition is named causal; flag untraced blame for downgrade.
+- Require spec/source drilldown (`runbooks://ethereum_spec_source_drilldown`) when the
+  report names a client bug, protocol bug, fork-rule mismatch, invalid block, execution
+  mismatch, DA issue, or cross-client disagreement; runtime evidence alone closes
+  config/load/lifecycle/tooling issues.
+- Require a reachability trace (`runbooks://devnet_issue_reachability_trace`) when a
+  source path, component, builder/relay path, load generator, or topology condition is
+  named causal; flag untraced blame for downgrade.
 - A duplicate already covered by dedupe context gets occurrence-attachment, not
   re-publication as a new issue.
 - Convert actionable gaps into `required_next_queries` for the feedback queue; keep

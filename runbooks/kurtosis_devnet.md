@@ -1,11 +1,12 @@
 ---
 name: Run and Reach a Kurtosis Devnet
-description: Start an Ethereum devnet locally with Kurtosis (ethereum-package) or attach to a running enclave, then map its CL/EL/VC/tooling services, resolve endpoints by port name, verify the rendered config, and read its logs and OTel data correctly. Use to launch a local devnet, reach an existing or restored enclave, or pull service logs without the tail-before-filter trap.
-tags: [kurtosis, devnet, enclave, local, services, logs, otel]
+description: Start an Ethereum devnet locally with Kurtosis (ethereum-package) or attach to a running enclave, then map its CL/EL/VC/tooling services, resolve endpoints by port name, verify the rendered config, and read its logs and OTel data correctly — local OTel logs live in the local-kurtosis datasource (db otel, table otel_logs, always filter by EnclaveName). Use to launch a local devnet, reach an existing or restored enclave, or pull service logs without the tail-before-filter trap.
+tags: [kurtosis, devnet, enclave, local, logs, otel]
 triggers:
   - run a devnet locally with kurtosis
   - kurtosis enclave services endpoints ports
   - read kurtosis service logs or otel logs for an enclave
+  - query otel_logs by EnclaveName on local-kurtosis
   - attach to a running local enclave
   - verify devnet config fork epochs after launch
 ---
@@ -24,7 +25,11 @@ Preferred: the package ref (default `github.com/ethpandaops/ethereum-package`).
 
 ## Output
 A reachable enclave: name, service map, verified rendered config, and working log
-access — as a `network_target` (`kind: local-enclave`) when a downstream step consumes it.
+access — as a `network_target` when a downstream step consumes it:
+
+```yaml
+network_target: { kind: local-enclave, enclave: "devnet-1" }
+```
 
 ## Start or attach
 

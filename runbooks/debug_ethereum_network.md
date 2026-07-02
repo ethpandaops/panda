@@ -3,9 +3,10 @@ name: Debug an Ethereum Network
 description: Systematically debug any Ethereum network — local Kurtosis enclave, remote compute-hosted enclave, or live hosted devnet — by resolving a network_target, building the active fork model, establishing a health baseline, classifying the symptom, and localizing the fault to the CL, EL, engine API, or shared infrastructure. Use to diagnose splits, stalls, missed blocks, missing payloads, engine_newPayload failures, execution errors, or data-availability failures.
 tags: [ethereum, devnet, debugging, consensus, execution, engine-api, forks]
 triggers:
-  - debug a devnet or ethereum network
+  - debug a devnet or ethereum network why did it break
   - network split nodes disagree on head
-  - a client (prysm, lighthouse, teku, nimbus, lodestar, grandine, geth, nethermind, besu, erigon, reth, ethrex, nimbus-el) is forked off the network investigate
+  - a client (prysm, lighthouse, teku, nimbus, lodestar, grandine, geth, nethermind, besu, erigon, reth, ethrex, nimbus-el) is forked off the network, can you investigate
+  - the network_target contract for reaching a devnet
   - missed blocks or stalled finality
   - engine_newPayload invalid payload validation errors
   - is the fault in the consensus or execution client
@@ -35,7 +36,7 @@ degrade gracefully — to live observation or historical evidence — instead of
 | --- | --- | --- |
 | Topology / services | `kurtosis enclave inspect`, `service ls` | network resource + node inventory |
 | Endpoints | Kurtosis port names (`runbooks://kurtosis_devnet`) | published endpoints (beacon RPC, Dora, Forky, Ethnode) |
-| Logs | `local-kurtosis` OTel, or `kurtosis service logs` | `clickhouse-raw` `external.otel_logs`, filtered by `ResourceAttributes['network']` |
+| Logs | `local-kurtosis` OTel, or `kurtosis service logs` | the hosted otel-logs datasource (commonly `external.otel_logs` on `clickhouse-raw`), filtered by `ResourceAttributes['network']` |
 | Chain view | direct beacon / EL RPC | Dora / Forky / Ethnode + direct RPC |
 
 ## Inputs
@@ -67,7 +68,7 @@ distinguishing query — every concrete claim cited (`runbooks://evidence_discip
 | Finalized checkpoint not advancing | finality / participation | run the finality-stall triage in `runbooks://ethereum_protocol_model` (service status, offline stake, completed-epoch participation) |
 | `status=Missing` slots | missed beacon blocks | proposer duties → proposer node health/logs → sync/peers |
 | Canonical block but no payload (ePBS) | missing payload | PTC verdict in block S+1, `builder_index`, buildoor logs (`runbooks://ethereum_protocol_model`) |
-| Payload/block validation or engine errors | EL / engine API | CL engine-API logs + matching EL logs, block/payload detail (matrix below) |
+| Payload/block validation or engine errors | EL / engine API | CL engine-API logs + matching EL logs, block/payload detail (matrix below); rejected-artifact inventory: `runbooks://tracoor_invalid_artifact_forensics` |
 | Missing blobs / data-column warnings | DA / PeerDAS | sidecars, PTC `blob_data_available`, data-column logs (`runbooks://ethereum_protocol_model`) |
 | One node stuck/offline | node drilldown | direct sync/peers + node logs; distinguish down vs not-shipping-logs |
 | One client type failing across nodes | client-specific bug | grouped logs by client + image/version, fork/spec context |
