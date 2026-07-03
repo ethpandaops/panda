@@ -36,7 +36,9 @@ each side has rows in the window before merging.
    from ethpandaops import clickhouse
    getblobs = clickhouse.query("clickhouse-refined", """
        SELECT slot, status,
-              sum(observation_count) AS observation_count,
+              -- alias must differ from the weight column: reusing the name makes
+              -- ClickHouse substitute the sum() into avgWeighted (ILLEGAL_AGGREGATION)
+              sum(observation_count) AS total_observations,
               avgWeighted(avg_duration_ms, observation_count) AS avg_duration_ms,
               avgWeighted(full_return_pct, observation_count) AS full_return_pct
        FROM {network}.fct_engine_get_blobs_by_slot FINAL
@@ -50,7 +52,9 @@ each side has rows in the window before merging.
    on Fulu/PeerDAS networks blobs travel as data columns, so use
    `libp2p_gossipsub_data_column_sidecar`; use `libp2p_gossipsub_blob_sidecar` only
    pre-Fulu (on current networks it is historical and goes quiet after the fork).
-   Filter by `meta_network_name`:
+   Filter `meta_network_name` and both time columns — these tables partition on
+   `(meta_network_name, toYYYYMM(event_date_time))`, so the `event_date_time`
+   predicate is what prunes partitions:
 
    ```python
    propagation = clickhouse.query("<raw-datasource-per-placement>", """
@@ -60,6 +64,7 @@ each side has rows in the window before merging.
               COUNT() AS gossip_messages
        FROM libp2p_gossipsub_data_column_sidecar
        WHERE meta_network_name = '{network}'
+         AND event_date_time >= now() - INTERVAL 1 HOUR
          AND slot_start_date_time >= now() - INTERVAL 1 HOUR
        GROUP BY slot
    """)

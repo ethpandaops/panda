@@ -1,6 +1,6 @@
 ---
 name: Reconcile Disagreeing Chain Sources
-description: Resolve disagreements between chain data sources — Dora/explorer, direct beacon and EL RPC, indexed ClickHouse (raw events, refined _head, canonical _canonical), OTel logs, and Prometheus metrics — about slot status, head roots, node liveness, or participation. Owns the source-authority matrix (what each view is evidence FOR and its blind spots) and the verification order. Use when an indexer shows a node offline but its RPC responds, participation numbers differ between sources, or a slot exists in one view and not another.
+description: Resolve disagreements between chain data sources — Dora/explorer, direct beacon and EL RPC, indexed ClickHouse (raw events, refined _head live tables, finalized tables like fct_block), OTel logs, and Prometheus metrics — about slot status, head roots, node liveness, or participation. Owns the source-authority matrix (what each view is evidence FOR and its blind spots) and the verification order. Use when an indexer shows a node offline but its RPC responds, participation numbers differ between sources, or a slot exists in one view and not another.
 tags: [datasources, reconciliation, dora, beacon-api, clickhouse, evidence]
 triggers:
   - dora and the beacon node disagree
@@ -47,8 +47,8 @@ reconciliation:
 | Direct beacon / EL RPC (one node) | that node's own live view: head, finality checkpoints, sync, peers | one node ≠ the network; no history; a minority-fork node reports its fork confidently |
 | Dora / explorer | canonical-chain history: slot status, epoch summaries, duties, participation | reflects the canonical fork only — minority-fork nodes look "offline"; indexing lags the head |
 | ClickHouse raw (xatu events) | how many / how often / how late / from whom: gossip timing, per-peer and per-observer counts | observer coverage limits; events ≠ canonical truth (`runbooks://clickhouse_querying`) |
-| ClickHouse refined `_head` | live one-value-per-slot state for real-time monitoring | may reorg — not finalized truth; CBT coverage gaps read as missing data (`runbooks://clickhouse_querying`) |
-| ClickHouse `_canonical` | finalized chain-state history, no reorgs | lags finality; hides orphans/reorgs by design (`runbooks://clickhouse_querying`) |
+| ClickHouse refined `_head` | live/unfinalized state for real-time monitoring | may reorg, and forks can leave multiple roots for one slot — not finalized truth, not one-value-per-slot; CBT coverage gaps read as missing data (`runbooks://clickhouse_querying`) |
+| ClickHouse refined finalized (e.g. `fct_block`) | finalized chain-state history, no reorgs | coverage can lag finality by days — check transformation coverage before reading absence; deduplicated canonical views drop orphans, though `fct_block` keeps them with `status = 'orphaned'` (`runbooks://clickhouse_querying`) |
 | OTel logs | what a service said, verbatim, with timestamps | absence means "not in the fetched window or not shipping", never "the service is down" (`runbooks://kurtosis_devnet`) |
 | Prometheus metrics | time-series liveness and resource trends | scrape gaps mimic downtime; a native client scrape job and an API-derived exporter probe of the same service have different semantics — one failing while the other answers is itself evidence (`runbooks://prometheus_devnet_health`) |
 
@@ -58,7 +58,7 @@ reconciliation:
    it, and what it anchors to (`runbooks://devnet_issue_contract`). Most
    "disagreements" dissolve here: the two refs answer different questions.
 2. **Classify the axis of disagreement:** per-node view vs canonical history, raw
-   events vs deduplicated truth, `_head` vs `_canonical`, staleness/lag, metadata
+   events vs deduplicated truth, `_head` vs finalized, staleness/lag, metadata
    field semantics, or coverage (observer, scrape, log shipping, CBT transformation).
 3. **Verify against a third source of a different kind** — a second indexer inherits
    the first's blind spot; a direct RPC read settles what an indexer and a log

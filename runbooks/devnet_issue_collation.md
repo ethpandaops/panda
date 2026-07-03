@@ -25,7 +25,9 @@ unloaded network) gets over-reported as issues.
 ## Output
 A list of issue records (`runbooks://devnet_issue_contract`) — empty when the window is
 healthy, with a one-paragraph healthy-window summary in its place. Root cause and final
-blame belong to `runbooks://devnet_issue_root_cause`. Shape (values illustrative):
+blame belong to `runbooks://devnet_issue_root_cause`; the emitted issues ARE the
+handoff — an orchestrator feeds each one to that runbook, there is no separate
+handoff field. Shape (values illustrative):
 
 ```yaml
 collation:
@@ -46,6 +48,8 @@ collation:
                                        # watch setup_summary copied WHOLE into handles.setup_summary
         { snapshot_id: "snap-9", sandbox_id: "sbx-4", enclave: "devnet-1", network: "",
           setup_summary: { fork_schedule: { gloas: 8 }, blob_schedule: {}, load: [], builders: ["buildoor"] } }
+  feedback: []                   # gap tasks (runbooks://devnet_issue_feedback_queue),
+                                 # emitted here beside issues — not embedded inside them
 ```
 
 ## Correlation rules
@@ -95,8 +99,8 @@ downstream stage.
 
 When an issue is real but missing a handoff field, shape the gap with
 `runbooks://devnet_issue_feedback_queue` (a `snapshot` task for a missing broken-state
-handle, `watch` for a too-short window, `investigate` for one missing query) instead of
-hiding it in prose.
+handle, `watch` for a too-short window, `investigate` for one missing query) and emit
+it in the top-level `feedback` list instead of hiding it in prose.
 
 ## Self-Check
 

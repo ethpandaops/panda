@@ -54,6 +54,9 @@ Report source disagreements rather than silently choosing
 1. Resolve the network id: read the `networks://active` resource;
    `panda devnets -o json` (use `active_devnet_groups` to pick the active member).
 2. Read the network resource: `panda devnets info|endpoints|forks|clients <network> -o json`.
+   Per-node inventory `beacon_uri` endpoints usually require auth (401); the public
+   `checkpoint_sync` endpoint serves the standard beacon API read paths
+   (`/eth/v1/...`) and can stand in as `beacon_rpc` when none is published.
 3. Fetch the node inventory when present — record RAW inventory, not just a summary
    (labels are how later logs, validator ranges, builders, and client pairs get mapped).
 4. Fetch CL config (slot timing, fork epochs, validator counts) and EL

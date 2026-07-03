@@ -77,7 +77,10 @@ Python is a shape to adapt — substitute network and window.
 
 5. **Hand off.** Feed the inventory into the issue record as evidence; escalate a
    client-specific rejection to `runbooks://ethereum_spec_source_drilldown` with the
-   exact artifact root and the rejecting client's image.
+   exact artifact root and the rejecting client's identity. Tracoor rows expose
+   `node`/`node_version` (and `execution_implementation`), not a container image —
+   resolve the image from the network's node inventory
+   (`runbooks://hosted_devnet_context`), or pass `node_version` when that suffices.
 
 ## Rules
 

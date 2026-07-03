@@ -4,9 +4,9 @@ description: The Ethereum protocol reference — which actors, artifacts, and in
 tags: [forks, epbs, gloas, peerdas, finality, health]
 triggers:
   - is the network healthy or finalizing
-  - finality lag thresholds and how much offline stake stalls finality
+  - which fork is this devnet running check the active fork
+  - finality lag thresholds participation below two thirds offline stake stalls finality
   - canonical block but execution payload missing on gloas epbs
-  - participation below two thirds threshold
   - blob sidecar or data column availability failing on fulu peerdas
   - builder failed to reveal payload
 ---
@@ -21,7 +21,9 @@ Start from the network's own configuration, not a fixed mental model ("missed sl
 proposer failed"). Write a short, explicit active protocol model — active fork, nearest
 boundary, new actors, new artifacts, invariants that must hold — before classifying
 symptoms. Read slot timing (seconds/slot, slots/epoch) and fork epochs from the beacon
-`/config/spec`; every network differs from mainnet defaults.
+`/eth/v1/config/spec`; hosted spec endpoints sometimes omit fork-epoch keys (e.g.
+`FULU_FORK_EPOCH`) — fall back to the network resource and CL config artifact
+(`runbooks://hosted_devnet_context`). Every network differs from mainnet defaults.
 
 ## Slot model by era
 
@@ -37,7 +39,10 @@ the slot model has changed.
 ## ePBS / Gloas glossary
 
 - `builder_index`: an on-chain REGISTRY index, NOT a validator index — map it through
-  builder sidecar logs, never via `/validators/{index}`.
+  builder sidecar logs, never via `/validators/{index}`. Spec sources disagree on this
+  today: `eips://7732` types it as a builder-registry index while the
+  `consensus-specs://gloas` resources still type it `ValidatorIndex` — verify against
+  the running network's builder evidence rather than either source alone.
 - self-build: `builder_index = 18446744073709551615`. A missing payload on self-build
   points to the proposer/local-EL path, not an external builder.
 - bid: `signed_execution_payload_bid` — a commitment/value, not the payload.
@@ -70,7 +75,7 @@ DA logs before blaming payload construction.
 
 ## Health thresholds
 
-- Finality requires **>66.7% (2/3)** of effective stake attesting correctly.
+- Finality requires **at least 2/3 (≈66.7%)** of effective stake attesting correctly.
 - Normal finality lag ≈ **2 epochs**. **>4** epochs is concerning; **>8** is a
   significant issue.
 - If ≤2 epochs behind, the network is finalizing normally — report healthy and stop
