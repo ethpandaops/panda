@@ -15,6 +15,15 @@ import (
 //go:embed *.md
 var runbookFiles embed.FS
 
+// nonRunbookDocs are markdown files in this directory that are repository
+// documentation (authoring guides, agent instructions), not runbooks. They are
+// embedded by the wildcard but must not be parsed as runbooks.
+var nonRunbookDocs = map[string]bool{
+	"AGENTS.md": true,
+	"CLAUDE.md": true,
+	"README.md": true,
+}
+
 // Load reads all embedded markdown files and parses them into Runbook objects.
 // Each file must have YAML frontmatter delimited by "---" markers.
 func Load() ([]types.Runbook, error) {
@@ -27,6 +36,10 @@ func Load() ([]types.Runbook, error) {
 
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+			continue
+		}
+
+		if nonRunbookDocs[entry.Name()] {
 			continue
 		}
 
@@ -69,6 +82,10 @@ func parseRunbook(data []byte, filename string) (types.Runbook, error) {
 		return types.Runbook{}, fmt.Errorf("runbook must have a description in frontmatter")
 	}
 
+	if len(rb.Triggers) == 0 {
+		return types.Runbook{}, fmt.Errorf("runbook must have triggers in frontmatter (example caller queries)")
+	}
+
 	return rb, nil
 }
 
@@ -86,13 +103,10 @@ func splitFrontmatter(data []byte) (frontmatter, body []byte, err error) {
 	data = data[len(delimiter):]
 
 	// Find end delimiter
-	idx := bytes.Index(data, []byte("\n"+delimiter))
-	if idx == -1 {
+	before, after, found := bytes.Cut(data, []byte("\n"+delimiter))
+	if !found {
 		return nil, nil, fmt.Errorf("missing closing frontmatter delimiter '---'")
 	}
 
-	frontmatter = bytes.TrimSpace(data[:idx])
-	body = bytes.TrimSpace(data[idx+len("\n"+delimiter):])
-
-	return frontmatter, body, nil
+	return bytes.TrimSpace(before), bytes.TrimSpace(after), nil
 }

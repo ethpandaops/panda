@@ -26,7 +26,7 @@ Supported ref schemes:
   consensus-specs://{fork}/{topic}  Full consensus spec document
 
 Examples:
-  panda read runbooks://finality_delay
+  panda read runbooks://debug_ethereum_network
   panda read eips://4844
   panda read consensus-specs://deneb/beacon-chain`,
 	Args: cobra.ExactArgs(1),
@@ -95,7 +95,7 @@ func formatResourceReadError(input string, status int, data []byte) error {
 }
 
 // searchHintQuery reduces a failed ref input to plain search terms for the
-// "search by meaning" tip (e.g. runbooks://finalty → "finalty").
+// "search by meaning" tip (a typo'd "finalty" ref → the search query "finalty").
 func searchHintQuery(input string) string {
 	var b strings.Builder
 

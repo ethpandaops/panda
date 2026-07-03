@@ -25,7 +25,14 @@ var (
 
 // dotProduct computes the dot product of two vectors.
 // For L2-normalized vectors this equals cosine similarity.
+// Mismatched lengths (e.g. an embedding model or dimensionality change between
+// index build and query embed) score 0 instead of panicking or computing a
+// meaningless prefix product.
 func dotProduct(a, b []float32) float64 {
+	if len(a) != len(b) {
+		return 0
+	}
+
 	var sum float64
 	for i := range a {
 		sum += float64(a[i]) * float64(b[i])

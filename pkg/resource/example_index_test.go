@@ -22,6 +22,10 @@ func (e *captureEmbedder) Embed(text string) ([]float32, error) {
 }
 
 func (e *captureEmbedder) EmbedBatch(texts []string) ([][]float32, error) {
+	return e.EmbedQueryBatch(texts)
+}
+
+func (e *captureEmbedder) EmbedQueryBatch(texts []string) ([][]float32, error) {
 	e.texts = append(e.texts, texts...)
 
 	vectors := make([][]float32, len(texts))

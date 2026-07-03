@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,6 +20,414 @@ import (
 	"github.com/ethpandaops/panda/pkg/auth"
 	"github.com/ethpandaops/panda/pkg/proxy/handlers"
 )
+
+func TestEmbeddingRoutesAreVersioned(t *testing.T) {
+	t.Parallel()
+
+	var inputTypes []string
+	var inputTypesMu sync.Mutex
+	embeddingAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/models":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		case "/v1/embeddings":
+			var req openRouterRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode upstream request: %v", err)
+			}
+
+			inputTypesMu.Lock()
+			inputTypes = append(inputTypes, req.InputType)
+			inputTypesMu.Unlock()
+
+			dims := req.Dimensions
+			if dims == 0 {
+				dims = 3
+			}
+			data := make([]openRouterEmbedding, 0, len(req.Input))
+			for i := range req.Input {
+				vec := make([]float32, dims)
+				vec[0] = 1
+				data = append(data, openRouterEmbedding{Index: i, Embedding: vec})
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(openRouterResponse{Data: data}); err != nil {
+				t.Fatalf("encode upstream response: %v", err)
+			}
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(embeddingAPI.Close)
+
+	cfg := ServerConfig{
+		Auth: AuthConfig{Mode: AuthModeNone},
+		ClickHouse: []ClickHouseClusterConfig{{
+			BaseDatasourceConfig: BaseDatasourceConfig{Name: "clickhouse"},
+			Host:                 "example.com",
+			Port:                 8123,
+			Username:             "user",
+			Password:             "pass",
+		}},
+		Embedding: &EmbeddingConfig{
+			APIKey: "test-api-key",
+			Model:  "openai/text-embedding-3-small",
+			APIURL: embeddingAPI.URL + "/v1",
+		},
+		EmbeddingV2: &EmbeddingConfig{
+			APIKey:     "test-api-key",
+			Model:      "google/gemini-embedding-2",
+			APIURL:     embeddingAPI.URL + "/v1",
+			Dimensions: 3,
+		},
+	}
+	cfg.ApplyDefaults()
+
+	srv, err := newServer(logrus.New(), cfg, "http://proxy.test", "18081")
+	if err != nil {
+		t.Fatalf("newServer failed: %v", err)
+	}
+
+	postJSON := func(path, body string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		srv.mux.ServeHTTP(rec, req)
+
+		return rec
+	}
+
+	rec := httptest.NewRecorder()
+	srv.mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/datasources", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/datasources status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var ds DatasourcesResponse
+	if err := json.NewDecoder(rec.Body).Decode(&ds); err != nil {
+		t.Fatalf("decode datasources: %v", err)
+	}
+	if !ds.EmbeddingAvailable {
+		t.Fatal("EmbeddingAvailable = false, want true")
+	}
+	if ds.EmbeddingModel != "openai/text-embedding-3-small" {
+		t.Fatalf("EmbeddingModel = %q, want v1 model", ds.EmbeddingModel)
+	}
+
+	rec = postJSON("/embedding", `{"items":[]}`)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("/embedding status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+
+	rec = postJSON("/embed", `{"items":[{"hash":"v1","text":"hello"}]}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/embed status = %d body=%q, want %d", rec.Code, rec.Body.String(), http.StatusOK)
+	}
+
+	var v1Resp map[string]json.RawMessage
+	if err := json.NewDecoder(rec.Body).Decode(&v1Resp); err != nil {
+		t.Fatalf("decode v1 response: %v", err)
+	}
+	if _, ok := v1Resp["dimensions"]; ok {
+		t.Fatal("v1 response included dimensions")
+	}
+
+	rec = postJSON("/v2/embedding", `{"items":[{"hash":"v2","text":"hello"}]}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/v2/embedding status = %d body=%q, want %d", rec.Code, rec.Body.String(), http.StatusOK)
+	}
+
+	var v2Resp EmbedResponse
+	if err := json.NewDecoder(rec.Body).Decode(&v2Resp); err != nil {
+		t.Fatalf("decode v2 response: %v", err)
+	}
+	if v2Resp.Model != "google/gemini-embedding-2" || v2Resp.Dimensions != 3 {
+		t.Fatalf("v2 response model/dims = %s/%d, want google/gemini-embedding-2/3", v2Resp.Model, v2Resp.Dimensions)
+	}
+
+	rec = postJSON("/v3/embedding", `{"items":[{"hash":"v3","text":"hello"}]}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("/v3/embedding missing task status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+
+	rec = postJSON("/v3/embedding", `{"items":[{"hash":"v3","text":"hello"}],"task":"banana"}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("/v3/embedding invalid task status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+
+	rec = postJSON("/v3/embedding", `{"items":[{"hash":"v3","text":"hello"}],"task":"query"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/v3/embedding status = %d body=%q, want %d", rec.Code, rec.Body.String(), http.StatusOK)
+	}
+
+	rec = postJSON("/v2/embedding/check", `{"hashes":[]}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/v2/embedding/check status = %d body=%q, want %d", rec.Code, rec.Body.String(), http.StatusOK)
+	}
+
+	var checkResp EmbedCheckResponse
+	if err := json.NewDecoder(rec.Body).Decode(&checkResp); err != nil {
+		t.Fatalf("decode v2 check response: %v", err)
+	}
+	if checkResp.Model != "google/gemini-embedding-2" || checkResp.Dimensions != 3 {
+		t.Fatalf("v2 check model/dims = %s/%d, want google/gemini-embedding-2/3", checkResp.Model, checkResp.Dimensions)
+	}
+
+	rec = postJSON("/v3/embedding/check", `{"hashes":[]}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("/v3/embedding/check missing task status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+
+	rec = postJSON("/v3/embedding/check", `{"hashes":[],"task":"banana"}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("/v3/embedding/check invalid task status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+
+	inputTypesMu.Lock()
+	gotInputTypes := append([]string(nil), inputTypes...)
+	inputTypesMu.Unlock()
+
+	wantInputTypes := []string{"", "", "search_query"}
+	if len(gotInputTypes) != len(wantInputTypes) {
+		t.Fatalf("upstream input_types = %#v, want %#v", gotInputTypes, wantInputTypes)
+	}
+	for i := range wantInputTypes {
+		if gotInputTypes[i] != wantInputTypes[i] {
+			t.Fatalf("upstream input_types = %#v, want %#v", gotInputTypes, wantInputTypes)
+		}
+	}
+}
+
+func TestEmbeddingCheckRoutesRejectTooManyHashes(t *testing.T) {
+	t.Parallel()
+
+	embeddingAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/models":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(embeddingAPI.Close)
+
+	cfg := ServerConfig{
+		Auth: AuthConfig{Mode: AuthModeNone},
+		ClickHouse: []ClickHouseClusterConfig{{
+			BaseDatasourceConfig: BaseDatasourceConfig{Name: "clickhouse"},
+			Host:                 "example.com",
+			Port:                 8123,
+			Username:             "user",
+			Password:             "pass",
+		}},
+		Embedding: &EmbeddingConfig{
+			APIKey: "test-api-key",
+			Model:  "openai/text-embedding-3-small",
+			APIURL: embeddingAPI.URL + "/v1",
+		},
+		EmbeddingV2: &EmbeddingConfig{
+			APIKey:     "test-api-key",
+			Model:      "google/gemini-embedding-2",
+			APIURL:     embeddingAPI.URL + "/v1",
+			Dimensions: 3,
+		},
+	}
+
+	srv, err := newServer(logrus.New(), cfg, "http://proxy.test", "18081")
+	if err != nil {
+		t.Fatalf("newServer failed: %v", err)
+	}
+
+	hashes := make([]string, maxEmbedItems+1)
+	for i := range hashes {
+		hashes[i] = "hash-" + strconv.Itoa(i)
+	}
+
+	body, err := json.Marshal(EmbedCheckRequest{Hashes: hashes, Task: EmbedTaskQuery})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	for _, path := range []string{"/embed/check", "/v2/embedding/check", "/v3/embedding/check"} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		srv.mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("%s status = %d body=%q, want %d", path, rec.Code, rec.Body.String(), http.StatusBadRequest)
+		}
+		if !strings.Contains(rec.Body.String(), "too many hashes: 501 exceeds maximum of 500") {
+			t.Fatalf("%s body = %q, want too many hashes error", path, rec.Body.String())
+		}
+	}
+}
+
+func TestEmbeddingV1V2IgnoreTaskAndUseSymmetricCacheKeys(t *testing.T) {
+	t.Parallel()
+
+	var (
+		inputTypes   []string
+		inputTypesMu sync.Mutex
+	)
+
+	embeddingAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/models":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		case "/v1/embeddings":
+			var req openRouterRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode upstream request: %v", err)
+			}
+
+			inputTypesMu.Lock()
+			inputTypes = append(inputTypes, req.InputType)
+			inputTypesMu.Unlock()
+
+			dims := req.Dimensions
+			if dims == 0 {
+				dims = 3
+			}
+
+			data := make([]openRouterEmbedding, 0, len(req.Input))
+			for i := range req.Input {
+				vec := make([]float32, dims)
+				vec[0] = 1
+				if dims > 1 {
+					vec[1] = 2
+				}
+				if dims > 2 {
+					vec[2] = 3
+				}
+				data = append(data, openRouterEmbedding{Index: i, Embedding: vec})
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(openRouterResponse{Data: data}); err != nil {
+				t.Fatalf("encode upstream response: %v", err)
+			}
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(embeddingAPI.Close)
+
+	cfg := ServerConfig{
+		Auth: AuthConfig{Mode: AuthModeNone},
+		ClickHouse: []ClickHouseClusterConfig{{
+			BaseDatasourceConfig: BaseDatasourceConfig{Name: "clickhouse"},
+			Host:                 "example.com",
+			Port:                 8123,
+			Username:             "user",
+			Password:             "pass",
+		}},
+		Embedding: &EmbeddingConfig{
+			APIKey: "test-api-key",
+			Model:  "v1-model",
+			APIURL: embeddingAPI.URL + "/v1",
+		},
+		EmbeddingV2: &EmbeddingConfig{
+			APIKey:     "test-api-key",
+			Model:      "v2-model",
+			APIURL:     embeddingAPI.URL + "/v1",
+			Dimensions: 3,
+		},
+	}
+
+	srv, err := newServer(logrus.New(), cfg, "http://proxy.test", "18081")
+	if err != nil {
+		t.Fatalf("newServer failed: %v", err)
+	}
+
+	postJSON := func(path string) *httptest.ResponseRecorder {
+		body := `{"items":[{"hash":"same-hash","text":"hello"}],"task":"query"}`
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		srv.mux.ServeHTTP(rec, req)
+
+		return rec
+	}
+
+	v1Rec := postJSON("/embed")
+	if v1Rec.Code != http.StatusOK {
+		t.Fatalf("/embed status = %d body=%q, want %d", v1Rec.Code, v1Rec.Body.String(), http.StatusOK)
+	}
+
+	v2Rec := postJSON("/v2/embedding")
+	if v2Rec.Code != http.StatusOK {
+		t.Fatalf("/v2/embedding status = %d body=%q, want %d", v2Rec.Code, v2Rec.Body.String(), http.StatusOK)
+	}
+
+	var v1Resp, v2Resp EmbedResponse
+	if err := json.NewDecoder(v1Rec.Body).Decode(&v1Resp); err != nil {
+		t.Fatalf("decode v1 response: %v", err)
+	}
+	if err := json.NewDecoder(v2Rec.Body).Decode(&v2Resp); err != nil {
+		t.Fatalf("decode v2 response: %v", err)
+	}
+	if len(v1Resp.Results) != 1 || len(v2Resp.Results) != 1 {
+		t.Fatalf("response result lengths = %d/%d, want 1/1", len(v1Resp.Results), len(v2Resp.Results))
+	}
+	if !float32SlicesEqual(v1Resp.Results[0].Vector, v2Resp.Results[0].Vector) {
+		t.Fatalf("v1/v2 vectors = %v/%v, want symmetric result", v1Resp.Results[0].Vector, v2Resp.Results[0].Vector)
+	}
+
+	inputTypesMu.Lock()
+	gotInputTypes := append([]string(nil), inputTypes...)
+	inputTypesMu.Unlock()
+	if len(gotInputTypes) != 2 || gotInputTypes[0] != "" || gotInputTypes[1] != "" {
+		t.Fatalf("upstream input_types = %#v, want empty input_type for v1/v2", gotInputTypes)
+	}
+
+	ctx := context.Background()
+	v1Cached, err := srv.embeddingService.cache.GetMulti(ctx, []string{
+		"v1-model:same-hash",
+		"v1-model:query:same-hash",
+	})
+	if err != nil {
+		t.Fatalf("read v1 cache: %v", err)
+	}
+	if _, ok := v1Cached["v1-model:same-hash"]; !ok {
+		t.Fatalf("v1 cache keys = %#v, want task-less key", v1Cached)
+	}
+	if _, ok := v1Cached["v1-model:query:same-hash"]; ok {
+		t.Fatalf("v1 cache keys = %#v, did not expect task key", v1Cached)
+	}
+
+	v2Cached, err := srv.embeddingServiceV2.cache.GetMulti(ctx, []string{
+		"v2-model:3:same-hash",
+		"v2-model:3:query:same-hash",
+	})
+	if err != nil {
+		t.Fatalf("read v2 cache: %v", err)
+	}
+	if _, ok := v2Cached["v2-model:3:same-hash"]; !ok {
+		t.Fatalf("v2 cache keys = %#v, want task-less key", v2Cached)
+	}
+	if _, ok := v2Cached["v2-model:3:query:same-hash"]; ok {
+		t.Fatalf("v2 cache keys = %#v, did not expect task key", v2Cached)
+	}
+}
+
+func float32SlicesEqual(a, b []float32) bool {
+	if len(a) != len(b) {
+		return false
+	}
+
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+
+	return true
+}
 
 func TestRegisterRoutesMatchesClickHouseSubpaths(t *testing.T) {
 	t.Parallel()

@@ -54,9 +54,8 @@ type ServerConfig struct {
 	// Embedding holds optional embedding API configuration (v1 route: /embed).
 	Embedding *EmbeddingConfig `yaml:"embedding,omitempty"`
 
-	// EmbeddingV2 holds optional configuration for the v2 embedding route
-	// (/v2/embedding). The route's contract is fixed (fp32, model advertised in
-	// the response); the model itself is swappable here without touching v1.
+	// EmbeddingV2 holds optional configuration for the v2/v3 embedding routes.
+	// v3 is a protocol upgrade over the same fixed-dimensional embedding space.
 	EmbeddingV2 *EmbeddingConfig `yaml:"embedding_v2,omitempty"`
 
 	// GitHub holds optional GitHub API configuration for triggering workflows.
@@ -321,14 +320,15 @@ type EmbeddingConfig struct {
 	// APIKey is the API key for the embedding provider (e.g., OpenRouter).
 	APIKey string `yaml:"api_key"`
 
-	// Model is the embedding model name (default: "openai/text-embedding-3-small").
+	// Model is the embedding model name (default: "openai/text-embedding-3-small"
+	// for v1, "google/gemini-embedding-2" for v2/v3).
 	Model string `yaml:"model,omitempty"`
 
 	// APIURL is the base URL of the embedding API (default: "https://openrouter.ai/api/v1").
 	APIURL string `yaml:"api_url,omitempty"`
 
-	// Dimensions, when > 0, requests a fixed output dimensionality (Matryoshka)
-	// from the embedding API. Used by the v2 embedding route; ignored by v1.
+	// Dimensions requests a fixed output dimensionality (Matryoshka) from the
+	// embedding API. Used by embedding_v2; ignored by the v1 embedding block.
 	Dimensions int `yaml:"dimensions,omitempty"`
 
 	// Cache holds embedding cache configuration.
@@ -429,7 +429,7 @@ func (c *ServerConfig) ApplyDefaults() {
 		}
 	}
 
-	// Embedding v2 defaults.
+	// Embedding v2/v3 defaults.
 	if c.EmbeddingV2 != nil {
 		if c.EmbeddingV2.Model == "" {
 			c.EmbeddingV2.Model = "google/gemini-embedding-2"
@@ -521,10 +521,16 @@ func (c *ServerConfig) Validate() error {
 		}
 	}
 
-	// Validate embedding v2 config.
+	// Validate embedding v2/v3 config.
 	if c.EmbeddingV2 != nil {
 		if c.EmbeddingV2.APIKey == "" {
 			return fmt.Errorf("embedding_v2.api_key is required when embedding_v2 is configured")
+		}
+
+		// Dimensions is embedding-space identity; a non-positive value would
+		// start cleanly, advertise a bad space, then fail every embed request.
+		if c.EmbeddingV2.Dimensions < 1 {
+			return fmt.Errorf("embedding_v2.dimensions must be positive, got %d", c.EmbeddingV2.Dimensions)
 		}
 
 		if c.EmbeddingV2.Cache.Backend == "redis" && c.EmbeddingV2.Cache.RedisURL == "" {

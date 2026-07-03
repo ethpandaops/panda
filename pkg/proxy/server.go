@@ -202,6 +202,13 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 
 	// Create embedding service if configured.
 	if cfg.Embedding != nil {
+		if cfg.Embedding.Dimensions != 0 {
+			log.WithFields(logrus.Fields{
+				"dimensions": cfg.Embedding.Dimensions,
+				"model":      cfg.Embedding.Model,
+			}).Warn("embedding.dimensions is ignored by v1 embedding; use embedding_v2")
+		}
+
 		embCache, err := buildEmbeddingCache(cfg.Embedding.Cache)
 		if err != nil {
 			return nil, fmt.Errorf("creating embedding cache: %w", err)
@@ -217,7 +224,7 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 		)
 	}
 
-	// Create v2 embedding service if configured (independent model + dimensions).
+	// Create v2/v3 embedding service if configured.
 	if cfg.EmbeddingV2 != nil {
 		embCacheV2, err := buildEmbeddingCache(cfg.EmbeddingV2.Cache)
 		if err != nil {
@@ -304,6 +311,8 @@ func (s *server) registerRoutes() {
 	if s.embeddingServiceV2 != nil {
 		s.mux.Method(http.MethodPost, "/v2/embedding", s.metricsMiddleware(chain(http.HandlerFunc(s.handleEmbedV2))))
 		s.mux.Method(http.MethodPost, "/v2/embedding/check", s.metricsMiddleware(chain(http.HandlerFunc(s.handleEmbedCheckV2))))
+		s.mux.Method(http.MethodPost, "/v3/embedding", s.metricsMiddleware(chain(http.HandlerFunc(s.handleEmbedV3))))
+		s.mux.Method(http.MethodPost, "/v3/embedding/check", s.metricsMiddleware(chain(http.HandlerFunc(s.handleEmbedCheckV3))))
 	}
 
 	// Authenticated routes.
@@ -497,7 +506,7 @@ func (s *server) handleDatasources(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleEmbed handles embedding requests by delegating to the embedding service.
+// handleEmbed handles v1 embedding requests by delegating to the v1 service.
 func (s *server) handleEmbed(w http.ResponseWriter, r *http.Request) {
 	var req EmbedRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -512,7 +521,7 @@ func (s *server) handleEmbed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := s.embeddingService.Embed(r.Context(), req.Items)
+	resp, err := s.embeddingService.Embed(r.Context(), req.Items, "")
 	if err != nil {
 		s.log.WithError(err).Error("Embedding request failed")
 		http.Error(w, fmt.Sprintf("embedding failed: %v", err), http.StatusInternalServerError)
@@ -528,7 +537,8 @@ func (s *server) handleEmbed(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleEmbedCheck returns cached vectors for the given hashes without embedding new content.
+// handleEmbedCheck returns cached v1 vectors for the given hashes without
+// embedding new content.
 func (s *server) handleEmbedCheck(w http.ResponseWriter, r *http.Request) {
 	var req EmbedCheckRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -537,7 +547,13 @@ func (s *server) handleEmbedCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results, err := s.embeddingService.CheckCached(r.Context(), req.Hashes)
+	if len(req.Hashes) > maxEmbedItems {
+		http.Error(w, fmt.Sprintf("too many hashes: %d exceeds maximum of %d", len(req.Hashes), maxEmbedItems), http.StatusBadRequest)
+
+		return
+	}
+
+	results, err := s.embeddingService.CheckCached(r.Context(), req.Hashes, "")
 	if err != nil {
 		s.log.WithError(err).Error("Embed check failed")
 		http.Error(w, fmt.Sprintf("embed check failed: %v", err), http.StatusInternalServerError)
@@ -548,15 +564,15 @@ func (s *server) handleEmbedCheck(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
-	if err := json.NewEncoder(w).Encode(EmbedCheckResponse{Cached: results}); err != nil {
+	if err := json.NewEncoder(w).Encode(EmbedCheckResponse{
+		Model:  s.embeddingService.Model(),
+		Cached: results,
+	}); err != nil {
 		s.log.WithError(err).Error("Failed to encode embed check response")
 	}
 }
 
-// handleEmbedV2 embeds items via the v2 embedding service. The response
-// advertises the model and dimensions; vectors are fp32. The model behind this
-// route is config-swappable, and the advertised model lets clients detect a
-// change and re-index.
+// handleEmbedV2 handles symmetric fixed-dimensional embedding requests.
 func (s *server) handleEmbedV2(w http.ResponseWriter, r *http.Request) {
 	var req EmbedRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -571,7 +587,7 @@ func (s *server) handleEmbedV2(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := s.embeddingServiceV2.Embed(r.Context(), req.Items)
+	resp, err := s.embeddingServiceV2.Embed(r.Context(), req.Items, "")
 	if err != nil {
 		s.log.WithError(err).Error("V2 embedding request failed")
 		http.Error(w, fmt.Sprintf("embedding failed: %v", err), http.StatusInternalServerError)
@@ -582,19 +598,12 @@ func (s *server) handleEmbedV2(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
-	out := EmbedV2Response{
-		Model:      resp.Model,
-		Dimensions: s.embeddingServiceV2.Dimensions(),
-		Results:    resp.Results,
-	}
-
-	if err := json.NewEncoder(w).Encode(out); err != nil {
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		s.log.WithError(err).Error("Failed to encode v2 embedding response")
 	}
 }
 
-// handleEmbedCheckV2 returns cached v2 vectors for the given hashes without
-// embedding new content. The response advertises the model.
+// handleEmbedCheckV2 returns cached v2 vectors for the given hashes.
 func (s *server) handleEmbedCheckV2(w http.ResponseWriter, r *http.Request) {
 	var req EmbedCheckRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -603,7 +612,13 @@ func (s *server) handleEmbedCheckV2(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results, err := s.embeddingServiceV2.CheckCached(r.Context(), req.Hashes)
+	if len(req.Hashes) > maxEmbedItems {
+		http.Error(w, fmt.Sprintf("too many hashes: %d exceeds maximum of %d", len(req.Hashes), maxEmbedItems), http.StatusBadRequest)
+
+		return
+	}
+
+	results, err := s.embeddingServiceV2.CheckCached(r.Context(), req.Hashes, "")
 	if err != nil {
 		s.log.WithError(err).Error("V2 embed check failed")
 		http.Error(w, fmt.Sprintf("embed check failed: %v", err), http.StatusInternalServerError)
@@ -614,13 +629,98 @@ func (s *server) handleEmbedCheckV2(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
-	out := EmbedV2CheckResponse{
-		Model:  s.embeddingServiceV2.Model(),
-		Cached: results,
+	if err := json.NewEncoder(w).Encode(EmbedCheckResponse{
+		Model:      s.embeddingServiceV2.Model(),
+		Dimensions: s.embeddingServiceV2.Dimensions(),
+		Cached:     results,
+	}); err != nil {
+		s.log.WithError(err).Error("Failed to encode v2 embed check response")
+	}
+}
+
+// handleEmbedV3 handles task-typed fixed-dimensional embedding requests.
+func (s *server) handleEmbedV3(w http.ResponseWriter, r *http.Request) {
+	var req EmbedRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
+
+		return
 	}
 
-	if err := json.NewEncoder(w).Encode(out); err != nil {
-		s.log.WithError(err).Error("Failed to encode v2 embed check response")
+	if len(req.Items) > maxEmbedItems {
+		http.Error(w, fmt.Sprintf("too many items: %d exceeds maximum of %d", len(req.Items), maxEmbedItems), http.StatusBadRequest)
+
+		return
+	}
+
+	if _, _, err := embedTaskParams(req.Task); err != nil || req.Task == "" {
+		if err == nil {
+			err = fmt.Errorf("embed task is required and must be %q or %q", EmbedTaskQuery, EmbedTaskDocument)
+		}
+
+		http.Error(w, err.Error(), http.StatusBadRequest)
+
+		return
+	}
+
+	resp, err := s.embeddingServiceV2.Embed(r.Context(), req.Items, req.Task)
+	if err != nil {
+		s.log.WithError(err).Error("V3 embedding request failed")
+		http.Error(w, fmt.Sprintf("embedding failed: %v", err), http.StatusInternalServerError)
+
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		s.log.WithError(err).Error("Failed to encode v3 embedding response")
+	}
+}
+
+// handleEmbedCheckV3 returns cached task-scoped v3 vectors for the given hashes.
+func (s *server) handleEmbedCheckV3(w http.ResponseWriter, r *http.Request) {
+	var req EmbedCheckRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
+
+		return
+	}
+
+	if len(req.Hashes) > maxEmbedItems {
+		http.Error(w, fmt.Sprintf("too many hashes: %d exceeds maximum of %d", len(req.Hashes), maxEmbedItems), http.StatusBadRequest)
+
+		return
+	}
+
+	if _, _, err := embedTaskParams(req.Task); err != nil || req.Task == "" {
+		if err == nil {
+			err = fmt.Errorf("embed task is required and must be %q or %q", EmbedTaskQuery, EmbedTaskDocument)
+		}
+
+		http.Error(w, err.Error(), http.StatusBadRequest)
+
+		return
+	}
+
+	results, err := s.embeddingServiceV2.CheckCached(r.Context(), req.Hashes, req.Task)
+	if err != nil {
+		s.log.WithError(err).Error("V3 embed check failed")
+		http.Error(w, fmt.Sprintf("embed check failed: %v", err), http.StatusInternalServerError)
+
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	if err := json.NewEncoder(w).Encode(EmbedCheckResponse{
+		Model:      s.embeddingServiceV2.Model(),
+		Dimensions: s.embeddingServiceV2.Dimensions(),
+		Cached:     results,
+	}); err != nil {
+		s.log.WithError(err).Error("Failed to encode v3 embed check response")
 	}
 }
 
@@ -756,7 +856,6 @@ func (s *server) Stop(ctx context.Context) error {
 		}
 	}
 
-	// Close v2 embedding service.
 	if s.embeddingServiceV2 != nil {
 		if err := s.embeddingServiceV2.Close(); err != nil {
 			s.log.WithError(err).Warn("Error closing v2 embedding service")
@@ -1051,17 +1150,14 @@ func (s *server) EthNodeDatasourceInfo() []types.DatasourceInfo {
 	return ethNodeDatasourceInfo(s.EthNodeAvailable())
 }
 
-// EmbeddingAvailable returns true if either the v1 or the v2 embedding service
-// is configured. A proxy that only configures embedding_v2 still offers
-// embedding (via /v2/embedding), and the search runtime discovers v2 by probe.
+// EmbeddingAvailable returns true if either embedding service is configured.
 func (s *server) EmbeddingAvailable() bool {
 	return s.embeddingService != nil || s.embeddingServiceV2 != nil
 }
 
-// EmbeddingModel returns the advertised embedding model name. It prefers the v1
-// model — what /embed serves and what unspecified/legacy clients get — and falls
-// through to the v2 model so a v2-only proxy still advertises a non-empty model.
-// v2-capable clients discover the v2 model from the /v2/embedding response.
+// EmbeddingModel returns the legacy advertised embedding model. It prefers the
+// v1 service and falls through to v2 so v2-only proxies still advertise a model
+// to older discovery clients.
 func (s *server) EmbeddingModel() string {
 	if s.embeddingService != nil {
 		return s.embeddingService.Model()

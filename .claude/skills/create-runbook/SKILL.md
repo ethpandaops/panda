@@ -1,6 +1,6 @@
 ---
 name: create-runbook
-description: Extract a reusable runbook from a successful investigation or troubleshooting session. Use after completing a multi-step diagnosis that could help future investigations.
+description: Author a reusable runbook, or extract one from a completed investigation, following this repo's runbook standard. Use whenever a multi-step procedure, diagnosis, or recipe should be captured so future agents can reuse it.
 disable-model-invocation: true
 metadata:
   internal: true
@@ -8,79 +8,51 @@ metadata:
 
 # Create Runbook
 
-Extract procedural knowledge from this conversation into a reusable runbook.
+Capture procedural knowledge as a runbook in `runbooks/`, following the authoring
+standard in `runbooks/AGENTS.md`. Read that file first — it defines the retrieval
+mechanics, frontmatter contract, split/merge rules, fact-ownership model, contract
+style, and validation. This skill is the procedure for producing one runbook.
 
-## When to use this
+## When to use
 
-After completing a multi-step investigation that:
-- Spanned multiple datasources (ClickHouse, Prometheus, Dora)
-- Followed a diagnostic pattern others could reuse
-- Discovered insights that would help future investigations
+- After a multi-step investigation whose pattern others could reuse.
+- To add a new stage to the investigation pipeline.
+- To turn an ad-hoc recipe (a query pattern, an optimization) into a durable how-to.
 
-## Runbook format
+## Steps
 
-Create a markdown file with YAML frontmatter in the `runbooks/` directory:
+1. **Check it should be a new file.** Search the existing registry
+   (`panda search runbooks "…"` with a few phrasings). Content that would always be
+   retrieved together with an existing runbook belongs IN that runbook — the split
+   axis is co-retrieval, not topic count. Only mutually-exclusive-in-use content gets
+   its own file.
 
-```markdown
----
-name: [Imperative title, e.g., "Investigate Finality Delay"]
-description: [1-2 sentence summary for semantic search matching]
-tags: [keywords for search, 3-6 tags]
-prerequisites: [datasources needed, e.g., clickhouse-raw, prometheus, dora]
----
+2. **Extract the pattern, not the incident.** Generalize: what is the reusable
+   diagnostic shape? Drop run-specific ids, timestamps, and host names.
 
-[Opening paragraph explaining WHEN this runbook applies and WHAT problem it solves.
-Use MUST/SHOULD/MAY keywords inline to indicate requirement levels.]
+3. **Engineer the retrieval surface first.** Write the `description` (what + when,
+   third person, ≤1024 chars) and 3-6 `triggers` as the literal queries a caller would
+   type, packed with exact identifiers (table names, error strings, API names). Body
+   sections are embedded too (per-section child vectors), so mid-document facts are
+   findable — but the metadata surface dominates ranking, so it decides whether the
+   runbook wins the queries it should.
 
-## Approach
+4. **Make it self-contained for its task.** Restate load-bearing facts briefly with a
+   pointer to their canonical owner (`runbooks://<owner>`); reserve links for adjacent
+   tasks. A required fact that lives only behind a link is a bug.
 
-1. **[Step title]** - [Description with MUST/SHOULD/MAY constraints inline]
+5. **Write to the standard's structure**: owns-line, Inputs (liberal), Output,
+   Procedure; tables for decision matrices, numbered lists for procedures, positive
+   directives, decisive rule up front. If the output feeds another stage: one filled
+   example, ≤10 top-level fields, summary/reasoning before verdicts, confidence as
+   `low|medium|high` per `runbooks://evidence_discipline`.
 
-   ```python
-   [Optional: Example code if helpful, but prefer referencing search_examples]
-   ```
+## Verify
 
-2. **[Next step]** - Use `search_examples("relevant query")` for the query pattern.
-   You SHOULD [constraint]. You MAY [optional action].
-
-## Key Thresholds
-
-[If applicable, include a table of healthy/warning/critical thresholds]
-
-## Notes
-
-- [Key insight or gotcha learned during the investigation]
-- [Threshold values or timing considerations]
-```
-
-## Constraint keywords (RFC 2119)
-
-Use these keywords inline in the prose to indicate requirement levels:
-
-- **MUST** - Non-negotiable requirement. The investigation will fail or produce wrong results without this.
-- **SHOULD** - Strongly recommended. Skip only with good reason and document why.
-- **MAY** - Optional. Use judgment based on context and time available.
-
-## Guidelines for extraction
-
-1. **Focus on the diagnostic pattern**, not the specific incident details
-2. **Reference examples** instead of embedding queries - use `search_examples("...")`
-3. **Include key thresholds** discovered during the investigation
-4. **Document gotchas** - what would have tripped you up without prior knowledge?
-5. **Keep it actionable** - every step should tell the user what to do, not just what to think about
-
-## Naming conventions
-
-- File name: `kebab-case.md` (e.g., `finality_delay.md`, `block-propagation.md`)
-- Runbook name: Imperative mood (e.g., "Investigate X", "Diagnose Y", "Debug Z")
-- Tags: lowercase, single words or short phrases
-
-## Output
-
-Save the runbook to: `runbooks/[kebab-case-name].md`
-
-After creating the runbook, verify it loads correctly:
-1. The server should log "Runbook registry loaded" with the updated count
-2. The runbook should be searchable via `search_runbooks`
+- `go test ./runbooks/...` — frontmatter, refs, uniqueness.
+- `panda search runbooks "<one of your triggers>"` returns the new runbook.
+- `scripts/runbook-retrieval-check.sh` still passes (add a golden query for the
+  new runbook while you're there).
+- The server logs `Runbook registry loaded` with the new count.
 
 $ARGUMENTS

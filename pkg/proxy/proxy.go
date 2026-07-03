@@ -74,7 +74,7 @@ type Service interface {
 
 	// EmbeddingAvailable returns true if the proxy has embedding configured.
 	EmbeddingAvailable() bool
-	// EmbeddingModel returns the configured embedding model name.
+	// EmbeddingModel returns the configured legacy embedding model name.
 	EmbeddingModel() string
 }
 

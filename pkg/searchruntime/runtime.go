@@ -41,7 +41,11 @@ type Runtime struct {
 	moduleRegistry *module.Registry
 	proxyService   proxy.Service
 	localCache     cache.Cache
-	builtModel     string
+	// builtModel, builtDims, and builtProtocol identify the embedding space the
+	// current indices were built in; a change of any requires a full re-embed.
+	builtModel    string
+	builtDims     int
+	builtProtocol embedding.Protocol
 
 	// activated reports whether search has been brought online (indices built
 	// and the background refresher started). activating is a single-flight guard
@@ -162,12 +166,19 @@ func (r *Runtime) activate(ctx context.Context) {
 		return
 	}
 
-	model, useV2 := resolveModel(ctx, r.proxyService)
+	model, dims, protocol := resolveModel(ctx, r.proxyService)
 	if model == "" {
-		return // embedding not available yet
+		// Embedding not available yet. A proxy that advertises embedding while
+		// all protocol probes fail is broken or unreachable — surface it instead
+		// of leaving search silently inactive.
+		if r.proxyService.EmbeddingAvailable() {
+			r.log.Warn("Proxy advertises embedding but all embedding protocol probes failed; semantic search stays inactive")
+		}
+
+		return
 	}
 
-	r.reindex(model, useV2)
+	r.reindex(model, dims, protocol)
 	if r.builtModel == "" {
 		return // build failed; a later discovery retries
 	}
@@ -267,34 +278,30 @@ func (r *Runtime) Close() error {
 	return nil
 }
 
-// resolveModel returns the embedding model the server should use and whether it
-// is reached via the versioned /v2/embedding route. It probes for v2 and falls
-// back to the proxy's advertised v1 model. This is the single source of truth
-// for "which model is the proxy serving right now" — used at startup and by the
-// background refresher to detect a model change.
-func resolveModel(ctx context.Context, proxyService proxy.Service) (string, bool) {
+// resolveModel returns the embedding space the proxy is serving: model,
+// dimensionality, and protocol. This is the single source of truth for "which
+// embedding space is the proxy serving right now" — used at startup and by the
+// background refresher to detect changes.
+func resolveModel(ctx context.Context, proxyService proxy.Service) (string, int, embedding.Protocol) {
 	tokenFn := func() string { return proxyService.RegisterToken() }
 
-	if v2Model, ok := embedding.ProbeV2(ctx, proxyService.URL(), tokenFn); ok && v2Model != "" {
-		return v2Model, true
-	}
-
-	return proxyService.EmbeddingModel(), false
+	return embedding.Probe(ctx, proxyService.URL(), tokenFn, proxyService.EmbeddingModel())
 }
 
-// newEmbedder builds a proxy-backed embedder for the given model and route,
+// newEmbedder builds a proxy-backed embedder for the given embedding space,
 // reusing the runtime's shared local cache.
-func (r *Runtime) newEmbedder(model string, useV2 bool) *embedding.RemoteEmbedder {
+func (r *Runtime) newEmbedder(model string, dims int, protocol embedding.Protocol) *embedding.RemoteEmbedder {
 	tokenFn := func() string { return r.proxyService.RegisterToken() }
 
-	embedder := embedding.NewRemoteWithEndpoint(
+	embedder := embedding.NewRemote(
 		r.log,
 		r.proxyService.URL(),
 		tokenFn,
 		r.proxyService.Invalidate,
 		r.localCache,
 		model,
-		useV2,
+		dims,
+		protocol,
 	)
 
 	// Log document-level progress so operators can watch an index build advance
@@ -334,9 +341,9 @@ func (r *Runtime) startRefresh(initialSig uint64) {
 			case <-r.stop:
 				return
 			case <-ticker.C:
-				model, useV2 := resolveModel(context.Background(), r.proxyService)
-				if model != "" && model != r.builtModel {
-					r.reindex(model, useV2)
+				model, dims, protocol := resolveModel(context.Background(), r.proxyService)
+				if model != "" && embeddingSpaceChanged(r.builtModel, r.builtDims, r.builtProtocol, model, dims, protocol) {
+					r.reindex(model, dims, protocol)
 					lastSig = exampleSignature(resource.GetQueryExamples(r.moduleRegistry))
 
 					continue
@@ -365,25 +372,33 @@ func (r *Runtime) startRefresh(initialSig uint64) {
 	}()
 }
 
-// reindex builds every active search index under the given embedding model from
-// its retained registry and swaps the fresh index in. It serves two cases: the
-// first build when search activates (builtModel == ""), and a rebuild after the
-// proxy's served model changed. It parks all indices not-ready first so no
-// in-flight search dot-products a query against a stale- or mixed-model index. A
-// brief not-ready window during the rebuild is the intended, correct behaviour —
-// far better than silently mixing embedding spaces. The old embedder is dropped
-// (not closed): it shares the local cache with the new one, which the runtime
-// closes once at shutdown.
-func (r *Runtime) reindex(model string, useV2 bool) {
+// reindex builds every active search index under the given embedding space
+// (model + dims + protocol) from its retained registry and swaps the fresh index in. It
+// serves two cases: the first build when search activates (builtModel == ""),
+// and a rebuild after the proxy's served model or dimensionality changed. It
+// parks all indices not-ready first so no in-flight search dot-products a query
+// against a stale- or mixed-space index. A brief not-ready window during the
+// rebuild is the intended, correct behaviour — far better than silently mixing
+// embedding spaces. The old embedder is dropped (not closed): it shares the
+// local cache with the new one, which the runtime closes once at shutdown.
+func (r *Runtime) reindex(model string, dims int, protocol embedding.Protocol) {
 	if r.builtModel == "" {
-		r.log.WithFields(logrus.Fields{"model": model, "v2": useV2}).
+		r.log.WithFields(logrus.Fields{"model": model, "dims": dims, "protocol": protocol}).
 			Info("Activating semantic search; building index corpus")
+		if protocol != embedding.ProtocolV3 {
+			r.log.WithField("protocol", protocol).
+				Warn("Task-typed retrieval requires v3 and stays inactive until v3 is negotiated")
+		}
 	} else {
-		r.log.WithFields(logrus.Fields{"from": r.builtModel, "to": model, "v2": useV2}).
-			Warn("Proxy embedding model changed; re-indexing search corpus")
+		r.log.WithFields(logrus.Fields{
+			"from": r.builtModel, "from_dims": r.builtDims,
+			"from_protocol": r.builtProtocol,
+			"to":            model, "to_dims": dims,
+			"to_protocol": protocol,
+		}).Warn("Proxy embedding space changed; re-indexing search corpus")
 	}
 
-	embedder := r.newEmbedder(model, useV2)
+	embedder := r.newEmbedder(model, dims, protocol)
 
 	// Park everything not-ready up front so search never mixes model spaces.
 	r.ExampleIndex.Swap(nil)
@@ -457,8 +472,21 @@ func (r *Runtime) reindex(model string, useV2 bool) {
 
 	r.embedder = embedder
 	r.builtModel = model
+	r.builtDims = dims
+	r.builtProtocol = protocol
 
-	r.log.WithField("model", model).Info("Re-index complete")
+	r.log.WithFields(logrus.Fields{"model": model, "dims": dims, "protocol": protocol}).Info("Re-index complete")
+}
+
+func embeddingSpaceChanged(
+	builtModel string,
+	builtDims int,
+	builtProtocol embedding.Protocol,
+	model string,
+	dims int,
+	protocol embedding.Protocol,
+) bool {
+	return model != builtModel || dims != builtDims || protocol != builtProtocol
 }
 
 // exampleSignature is a cheap fingerprint of the example set (category, name and

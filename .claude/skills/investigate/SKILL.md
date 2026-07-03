@@ -7,11 +7,12 @@ user-invocable: false
 
 # Investigate Ethereum Network Issues
 
-This skill routes to the appropriate debugging runbook based on whether the target is a local Kurtosis devnet or a remote hosted deployment.
+This skill resolves the target network, then hands off to the debugging runbook. One
+runbook owns the procedure for every network kind — only the access layer differs.
 
 **The user MUST specify which network to debug.** If not provided, ask them.
 
-## Step 1: Detect local vs remote
+## Step 1: Resolve the network target
 
 Run both checks in parallel:
 
@@ -23,24 +24,28 @@ kurtosis enclave ls 2>/dev/null
 panda datasources --json 2>/dev/null
 ```
 
-## Step 2: Route to the right runbook
+- Target matches a **Kurtosis enclave name** → `kind: local-enclave`.
+- Target is found in **panda datasources** (Dora networks, or container logs in
+  `external.otel_logs` on `clickhouse-raw`) → `kind: hosted`.
+- Found in **neither** → stop and tell the user the network was not found in any local
+  enclave or remote datasource.
 
-- If the target network matches a **Kurtosis enclave name** → **local devnet**. Load the local debugging procedure:
-  ```bash
-  panda search runbooks "debug local devnet"
-  ```
-  Then follow that runbook. It covers Kurtosis service discovery, local Dora detection, `local-kurtosis` ClickHouse datasource detection for OTel logs/traces, direct CL/EL API queries, and `kurtosis service logs` fallback.
+## Step 2: Follow the debugging runbook
 
-- If the target network is found in **panda datasources** (Dora networks, or shipping container logs to `external.otel_logs` in the `clickhouse-raw` datasource) → **remote deployment**. Load the remote debugging procedure:
-  ```bash
-  panda search runbooks "debug devnet"
-  ```
-  Then follow that runbook. It covers remote datasource discovery, Dora data collection, ClickHouse OTel log investigation (`external.otel_logs`), and ethnode RPC validation.
+```bash
+panda read runbooks://debug_ethereum_network
+```
 
-- If found in **neither** → stop, tell the user the network was not found in any local enclave or remote datasource.
+Follow it with the resolved target and the user's symptom. It owns the symptom→branch
+table, the CL-vs-EL localization matrix, and the per-kind access table (local OTel via
+`local-kurtosis` vs hosted `external.otel_logs`, Kurtosis ports vs published
+endpoints). Unsure which runbook applies at any point →
+`panda search runbooks "<symptom>"`.
 
 ## Notes
 
-- The runbooks are the source of truth for each debugging path — this skill only routes to them.
-- Both runbooks use `panda search examples` for query patterns — search before writing complex queries from scratch.
-- Both runbooks produce a debug report file at `/workspace/` — provide the path to the user at the end.
+- The runbooks are the source of truth for the debugging path — this skill only
+  resolves the target and routes.
+- Use `panda search examples` for query patterns before writing complex queries from
+  scratch.
+- Produce a debug report file at `/workspace/` and give the user the path at the end.

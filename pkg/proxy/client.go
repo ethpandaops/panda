@@ -493,7 +493,7 @@ func (c *proxyClient) EmbeddingAvailable() bool {
 	return c.datasources.EmbeddingAvailable
 }
 
-// EmbeddingModel returns the configured embedding model name.
+// EmbeddingModel returns the configured legacy embedding model name.
 func (c *proxyClient) EmbeddingModel() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

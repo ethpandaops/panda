@@ -317,7 +317,7 @@ func (r *routerClient) EmbeddingAvailable() bool {
 	return primary.EmbeddingAvailable()
 }
 
-// EmbeddingModel returns the primary-proxy embedding model.
+// EmbeddingModel returns the primary-proxy legacy embedding model.
 func (r *routerClient) EmbeddingModel() string {
 	primary := r.Primary()
 	if primary == nil {
