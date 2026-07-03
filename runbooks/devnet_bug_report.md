@@ -8,6 +8,7 @@ triggers:
   - periodic devnet status report or incident roundup
   - build a CL EL client bug knowledge base
   - cluster and rank devnet issue candidates by severity
+  - find issues on a hosted devnet
 prerequisites: [clickhouse-raw, dora]
 ---
 

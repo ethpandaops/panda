@@ -74,5 +74,6 @@ args parse — not live health, image behavior, or post-fork liveness.
 
 ## Useful CL endpoints
 
-`/eth/v1/node/syncing`, `/node/peer_count`, `/beacon/headers/head`,
-`/beacon/states/head/finality_checkpoints`, `/config/spec`.
+`/eth/v1/node/syncing`, `/eth/v1/node/peer_count`, `/eth/v1/beacon/headers/head`,
+`/eth/v1/beacon/states/head/finality_checkpoints`, `/eth/v1/config/spec` — spell the
+full `/eth/v1/...` path; shorthand forms like `/config/spec` return 404.

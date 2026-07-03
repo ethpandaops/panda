@@ -29,9 +29,9 @@ The `fingerprint` block, reasoning first:
 ```yaml
 fingerprint:
   rationale: >
-    Same normalized reveal-400 error and component signature (vc:teku+builder:buildoor)
+    Same normalized reveal-400 error and component signature (builder:buildoor+vc:teku)
     as issue-3, but at a different fork boundary — variant, dimension: fork epoch.
-  key: "v1:builder-path-degraded:tooling:gloas:builder-reveal-fails:subset:vc:teku+builder:buildoor:reveal-400"
+  key: "v1:builder-path-degraded:tooling:gloas:builder-reveal-fails:subset:builder:buildoor+vc:teku:reveal-400"
   decision: variant            # new|duplicate|variant|insufficient-context
   matched: "issue-3"
   variant_dimension: "fork boundary (gloas at epoch 3 vs 8)"
@@ -51,8 +51,10 @@ v1:<category>:<layer>:<active_fork_or_phase>:<symptom_class>:<scope>:<component_
   `head-advances-finality-stalled`, `gloas-builder-reveal-fails`,
   `engine-newpayload-invalid`, `payload-attestation-missing`,
   `client-service-restarting`.
-- `component_signature`: sorted `role:client` families joined with `+` —
-  `builder:buildoor+cl:lighthouse+el:geth`, `vc:teku+builder:buildoor`, `multi-client`.
+- `component_signature`: `role:client` families, lexically sorted, joined with `+` —
+  `builder:buildoor+cl:lighthouse+el:geth`, `builder:buildoor+vc:teku`, `multi-client`.
+  The sort is plain string order — two agents fingerprinting the same issue must
+  produce the same key.
 - `artifact_signature`: a short stable phrase for the normalized artifact/error shape.
 
 Lowercase, hyphen-separated. Normalize by stripping UUIDs, container ids, ports,
@@ -82,7 +84,8 @@ ordering; speculation not yet backed by reproduction or trace.
   `variant_dimension`.
 - **Separate:** different first bad artifacts where neither explains the other; a
   chronic co-present signal; different layers with no causal link; missing-demand vs
-  runtime-failure-under-demand.
+  runtime-failure-under-demand. A separate issue is emitted with `decision: new` —
+  there is no `separate` value in the decision enum.
 - **Insufficient-context:** no first bad artifact, no setup, no affected components, or
   only a prose title without evidence.
 

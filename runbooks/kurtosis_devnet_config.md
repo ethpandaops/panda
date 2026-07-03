@@ -56,7 +56,9 @@ handed directly to `kurtosis run --args-file`. Emit the file, not a prose plan.
 ### Accelerated Gloas/ePBS smoke
 
 Preserve hosted chain id + selected images; use the `minimal` preset only as an
-explicit local acceleration (recorded as a deviation, not a faithful clone); keep BPO
+explicit local acceleration (recorded as a deviation, not a faithful clone — and
+expect some client images to lack a minimal-preset build: a participant that fails to
+parse the rendered config is an image/preset mismatch; drop or swap it); keep BPO
 changes before Gloas for a clean smoke (BPO epochs 1 and 2 → local Gloas at epoch ≥3
 unless deliberately stressing a stacked boundary — fork/BPO boundary semantics:
 `runbooks://ethereum_protocol_model`); with Fulu active and a small validator set,

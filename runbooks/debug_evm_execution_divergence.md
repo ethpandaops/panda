@@ -13,8 +13,9 @@ prerequisites: [ethnode]
 
 Owns the JUDGMENT of cross-client EVM divergence: tracing one input on every client,
 finding the first diverging step, and classifying it. The `evm` library owns the
-mechanics (`assemble`, `disassemble`, `call`, `trace`, `trace_tx` — look up exact
-call patterns by searching the examples index for "evm opcode trace"); escalation to
+mechanics (`assemble`, `disassemble`, `call`, `trace`, `trace_tx` — read the evm docs
+surface for exact call patterns; if the docs and examples index miss, import
+`ethpandaops.evm` in the sandbox and inspect the signatures); escalation to
 spec text belongs to `runbooks://ethereum_spec_source_drilldown`, and a confirmed
 divergence enters the issue pipeline as an issue record
 (`runbooks://devnet_issue_contract`, category `execution-mismatch`).
