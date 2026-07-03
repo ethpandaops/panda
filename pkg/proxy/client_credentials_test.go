@@ -76,7 +76,7 @@ func newFakeProxy(t *testing.T, accept func(token string) bool) *httptest.Server
 		}
 
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"clickhouse": []string{"xatu-experimental"},
+			"clickhouse": []string{"clickhouse-raw"},
 		})
 	}))
 
@@ -168,7 +168,7 @@ func TestClientCredentialsDiscoverRetriesOn401(t *testing.T) {
 		t.Fatalf("expected 2 mints (initial + retry), got %d", got)
 	}
 
-	if names := client.ClickHouseDatasources(); len(names) != 1 || names[0] != "xatu-experimental" {
+	if names := client.ClickHouseDatasources(); len(names) != 1 || names[0] != "clickhouse-raw" {
 		t.Fatalf("unexpected datasources after retry: %v", names)
 	}
 }

@@ -1,6 +1,6 @@
 ---
 name: Correlate Blob Propagation with engine_getBlobs
-description: Investigate whether slow blob/data-column gossip propagation is causing engine_getBlobs to return EMPTY — join per-slot getBlobs success rates (refined fct_engine_get_blobs_by_slot) with gossip timing (raw libp2p_gossipsub_data_column_sidecar on PeerDAS networks, libp2p_gossipsub_blob_sidecar pre-Fulu; propagation_slot_start_diff) and compare timing across the SUCCESS vs EMPTY groups. Use when getBlobs empties or blob availability looks timing-related.
+description: Investigate whether slow blob/data-column gossip propagation is causing engine_getBlobs to return EMPTY — join per-slot getBlobs success rates (refined fct_engine_get_blobs_by_slot, or raw consensus_engine_api_get_blobs on raw-only devnets) with gossip timing (raw libp2p_gossipsub_data_column_sidecar on PeerDAS networks, libp2p_gossipsub_blob_sidecar pre-Fulu; propagation_slot_start_diff) and compare timing across the SUCCESS vs EMPTY groups. Use when getBlobs empties or blob availability looks timing-related.
 tags: [blobs, engine-api, gossipsub, propagation, data-availability]
 triggers:
   - engine_getBlobs returning empty
@@ -22,15 +22,19 @@ timing comparison behind it.
 
 ## Procedure
 The data lives on two clusters, joined in Python on `slot`. See
-`runbooks://clickhouse_querying` for cluster/partition rules, dataset placement (the
-raw datasource differs per network), and why the gossip table must be queried raw
-(deduplicated views collapse the propagation rows). The Python below is a shape to
-adapt — substitute `{network}`, the raw datasource, and the time window, and verify
-each side has rows in the window before merging.
+`runbooks://clickhouse_querying` for cluster/partition rules, raw addressing (devnets
+live in their own `<network>` database on `clickhouse-raw`), and why the gossip table
+must be queried raw (deduplicated views collapse the propagation rows). The Python
+below is a shape to adapt — substitute `{network}` and the time window, prefix raw
+tables with `` `{network}`. `` on a devnet, and verify each side has rows in the
+window before merging.
 
-1. **getBlobs status per slot** — refined `{network}.fct_engine_get_blobs_by_slot
-   FINAL`. The table's grain includes `node_class`, so aggregate to one row per
-   `(slot, status)`; `full_return_pct` is the fraction of nodes that got all blobs.
+1. **getBlobs status per slot.** The refined aggregate `fct_engine_get_blobs_by_slot`
+   is refined-only — if the network has no `clickhouse-refined` database (a raw-only
+   devnet; `runbooks://clickhouse_querying`), skip to the raw fallback below rather
+   than failing. Prefer refined where it exists: its grain includes `node_class`, so
+   aggregate to one row per `(slot, status)`; `full_return_pct` is the fraction of
+   nodes that got all blobs. Backtick-quote a hyphenated devnet database name.
 
    ```python
    from ethpandaops import clickhouse
@@ -41,12 +45,20 @@ each side has rows in the window before merging.
               sum(observation_count) AS total_observations,
               avgWeighted(avg_duration_ms, observation_count) AS avg_duration_ms,
               avgWeighted(full_return_pct, observation_count) AS full_return_pct
-       FROM {network}.fct_engine_get_blobs_by_slot FINAL
+       FROM `{network}`.fct_engine_get_blobs_by_slot FINAL
        WHERE slot_start_date_time >= now() - INTERVAL 1 HOUR
          AND status IN ('SUCCESS', 'EMPTY')
        GROUP BY slot, status
    """)
    ```
+
+   **Raw fallback (raw-only devnets).** The per-observation event table
+   `` `{network}`.consensus_engine_api_get_blobs `` on `clickhouse-raw` carries the
+   same `status` (`SUCCESS`/`EMPTY`) with `requested_count`/`returned_count` per node
+   — there is no precomputed `full_return_pct`, so derive the fill rate as
+   `avg(returned_count / nullIf(requested_count, 0))`. Aggregate one row per
+   `(slot, status)` and filter `meta_network_name = '{network}'` plus a
+   `slot_start_date_time` bound, exactly like the raw gossip query in step 2.
 
 2. **Gossip timing per slot** — pick the propagation table by the network's DA era:
    on Fulu/PeerDAS networks blobs travel as data columns, so use
@@ -57,7 +69,7 @@ each side has rows in the window before merging.
    predicate is what prunes partitions:
 
    ```python
-   propagation = clickhouse.query("<raw-datasource-per-placement>", """
+   propagation = clickhouse.query("clickhouse-raw", """
        SELECT slot,
               AVG(propagation_slot_start_diff) AS avg_ms,
               quantile(0.95)(propagation_slot_start_diff) AS p95_ms,

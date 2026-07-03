@@ -21,6 +21,14 @@ var (
 	// validIdentifier matches valid ClickHouse table/column identifiers.
 	validIdentifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
+	// validDatabaseIdentifier matches ClickHouse database names. Unlike table and
+	// column identifiers, database names can contain hyphens (per-devnet databases
+	// like `glamsterdam-devnet-6`). The name is always backtick-quoted at the query
+	// site, so injection safety rests on this allow-list excluding the backtick and
+	// every other quoting/statement character — hence a strict character class
+	// rather than escaping.
+	validDatabaseIdentifier = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
 	// enginePattern extracts the engine name from a CREATE TABLE statement.
 	enginePattern = regexp.MustCompile(`ENGINE\s*=\s*(\w+)`)
 
@@ -910,7 +918,7 @@ func (c *clickhouseSchemaClient) fetchDatabases(ctx context.Context, datasourceN
 
 // fetchTablesFromDatabase lists tables in a specific database.
 func (c *clickhouseSchemaClient) fetchTablesFromDatabase(ctx context.Context, datasourceName, database string) ([]string, error) {
-	if err := validateIdentifier(database); err != nil {
+	if err := validateDatabaseIdentifier(database); err != nil {
 		return nil, fmt.Errorf("validating database name: %w", err)
 	}
 
@@ -952,6 +960,17 @@ func validateIdentifier(name string) error {
 	return nil
 }
 
+// validateDatabaseIdentifier validates a ClickHouse database name. Database names
+// permit hyphens (per-devnet databases like `glamsterdam-devnet-6`); the value is
+// backtick-quoted at the query site, so the allow-list is what prevents injection.
+func validateDatabaseIdentifier(name string) error {
+	if !validDatabaseIdentifier.MatchString(name) {
+		return fmt.Errorf("invalid database name %q: must match [A-Za-z0-9_-]", name)
+	}
+
+	return nil
+}
+
 // fetchTableSchema fetches the schema for a specific table.
 // When database is non-empty, the query is qualified as `database`.`table`.
 func (c *clickhouseSchemaClient) fetchTableSchema(
@@ -966,7 +985,7 @@ func (c *clickhouseSchemaClient) fetchTableSchema(
 
 	query := fmt.Sprintf("SHOW CREATE TABLE `%s`", tableName)
 	if database != "" {
-		if err := validateIdentifier(database); err != nil {
+		if err := validateDatabaseIdentifier(database); err != nil {
 			return nil, fmt.Errorf("validating database name: %w", err)
 		}
 

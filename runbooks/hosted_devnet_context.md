@@ -1,6 +1,6 @@
 ---
 name: Ground a Hosted Devnet's Context
-description: Resolve a hosted ethpandaops devnet into authoritative metadata — network id from networks://active and the networks://<network> resource, node inventory from node_inventory_url, fork and blob schedule, slot timing, endpoints, participant images (panda devnets info|endpoints|forks|clients) — before config generation or incident triage. Emits a hosted network_target and a grounded context summary.
+description: Resolve a hosted ethpandaops devnet into authoritative metadata — network id from networks://active and the networks://<network> resource, fork and blob schedule, slot timing, endpoints, and the client list (panda devnets info|endpoints|forks|clients), plus per-node client pairs and participant images from the node_inventory_url — before config generation or incident triage. Emits a hosted network_target and a grounded context summary.
 tags: [devnet, hosted, network, inventory, forks, context]
 triggers:
   - which devnet is currently active resolve network id
@@ -30,7 +30,7 @@ whenever a field the caller's next step needs is unresolved.
 | --- | --- | --- |
 | `networks://active` | Active ids and devnet groups | Display names may be duplicated |
 | `networks://<network>` | Repo/path, chain id, genesis artifact URLs, service URLs, fork/blob schedule, spec notes, participant images, `node_inventory_url` | Spec notes can be aspirational; timestamp fields may derive from `MIN_GENESIS_TIME`, not live consensus genesis |
-| `node_inventory_url` | Deployed labels, roles, client pairs, host composition | May not describe protocol constants |
+| `node_inventory_url` | Deployed labels, roles, client pairs, per-node images, host composition (`panda devnets clients` gives only the client list, not images) | May not describe protocol constants |
 | CL config (`.../cl/config.yaml`) + live beacon `/eth/v1/config/spec` and `/eth/v1/beacon/genesis` | Slot timing, fork epochs, presets, live consensus `genesis_time` | Prefer over memory/defaults; if config.yaml omits a constant, read it from live `/config/spec` and cite it |
 | Package schema (`network_params.yaml`) | Valid ethereum-package args fields | Package versions move |
 

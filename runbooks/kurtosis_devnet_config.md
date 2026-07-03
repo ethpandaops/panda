@@ -79,7 +79,7 @@ config_synthesis:
   deviations: ["gloas epoch 256 -> 3 (accelerated smoke, caller steering)"]
   source_disagreements: []
   dry_run: { attempted: true, command: "kurtosis run --dry-run ...", passed: true }
-  citations: ["panda devnets clients peerdas-devnet-6 -o json"]
+  citations: ["node inventory (node_inventory_url) for client pairs + images", "panda devnets forks peerdas-devnet-6 -o json"]
 ```
 
 ## Self-Check
