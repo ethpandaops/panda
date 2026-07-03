@@ -62,8 +62,9 @@ Python below is a shape to adapt — substitute the datasource, terms, and windo
 
 4. **Query bounded.** `prometheus.query(datasource, promql)` for current state;
    `prometheus.query_range(datasource, promql, step, start=start, end=end)` for
-   trends — `step` comes before the window bounds, and `start`/`end` are RFC3339
-   timestamps (relative bounds like `"-1h"` are rejected). Keep the window to the
+   trends — `step` comes before the window bounds, and `start`/`end` take RFC3339
+   timestamps or `now`-relative forms like `"now-1h"` (a bare offset like `"-1h"` is
+   rejected); prefer RFC3339 in citations so the evidence re-derives. Keep the window to the
    incident, and search the examples index for "prometheus" query patterns rather
    than inventing them.
 

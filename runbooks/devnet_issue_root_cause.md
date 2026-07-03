@@ -6,6 +6,8 @@ triggers:
   - find the root cause of a devnet issue
   - reproduce and investigate a reported bug
   - investigate this collated issue record end to end
+  - why did validators fail to produce blocks on my kurtosis devnet
+  - investigate missed blocks on a local enclave
 ---
 
 Orchestrates root-cause investigation for ONE issue in the shape of

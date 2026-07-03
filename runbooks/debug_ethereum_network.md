@@ -34,7 +34,7 @@ degrade gracefully — to live observation or historical evidence — instead of
 
 | Concern | local-enclave / compute-enclave | hosted |
 | --- | --- | --- |
-| Topology / services | `kurtosis enclave inspect`, `service ls` | network resource + node inventory |
+| Topology / services | `kurtosis enclave inspect <enclave>` (there is no `service ls` subcommand) | network resource + node inventory |
 | Endpoints | Kurtosis port names (`runbooks://kurtosis_devnet`) | published endpoints (beacon RPC, Dora, Forky, Ethnode) |
 | Logs | `local-kurtosis` OTel, or `kurtosis service logs` | the hosted otel-logs datasource (commonly `external.otel_logs` on `clickhouse-raw`), filtered by `ResourceAttributes['network']` |
 | Chain view | direct beacon / EL RPC | Dora / Forky / Ethnode + direct RPC |

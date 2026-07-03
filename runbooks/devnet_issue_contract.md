@@ -7,6 +7,7 @@ triggers:
   - issue record format between pipeline stages
   - evidence item shape citation format
   - where do first_bad affected handles fingerprint go in an issue
+  - schema for reporting a missed slot or orphaned block as an issue
 ---
 
 Owns the ISSUE record and EVIDENCE item shapes exchanged by the investigation pipeline.
@@ -42,13 +43,17 @@ issue:
     - { node: "vc-3-teku", role: vc, client: teku, image: "consensys/teku:26.1.0" }
   evidence:
     - source: dora
-      ref: "GET /api/v1/epoch/12"
+      ref: "GET {dora}/api/v1/epoch/12 — {dora} from kurtosis port print devnet-1 dora http"
       at: "epoch 12"
-      detail: "participation 41.2% on completed epoch 12"
+      detail: "participation 41.2% on completed epoch 12 (matches beacon-api attestation counts)"
+    - source: beacon-api
+      ref: "GET /eth/v1/beacon/states/head/finality_checkpoints on each CL, two reads 2 slots apart"
+      at: "slots 415-417"
+      detail: "head advanced 415→417 on every CL; finalized checkpoint pinned at epoch 12"
     - source: kurtosis
       ref: "kurtosis service logs devnet-1 vc-2-teku -n 3000"
       at: "2026-07-01T10:41:55Z"
-      detail: "restart loop from 10:41:55Z"
+      detail: "restart loop from 10:41:55Z; vc-2+vc-3 hold ≈45% of keys per validator-ranges"
   co_present: ["chronic buildoor reveal 400s since genesis (separate signal)"]
   fingerprint:                   # full block owned by runbooks://devnet_issue_fingerprint_dedupe — reasoning first
     rationale: "no prior issue shares first artifact or component signature"
@@ -71,11 +76,18 @@ Field rules:
   `unknown`); `spread` is extent, not blame.
 - `first_bad` anchors the issue at the earliest artifact that explains later symptoms.
 - `affected` identifies components by role + client + image — a node name alone is
-  evidence, not identity.
+  evidence, not identity. When a dimension cannot be resolved without guessing
+  (hosted networks often expose no validator→node mapping), keep what is known and
+  set the rest to `unknown`; the gap becomes a feedback task
+  (`runbooks://devnet_issue_feedback_queue`), never an invented value.
 - `handles` carries whatever makes the issue reproducible: ids (snapshot, sandbox,
   enclave, or hosted network) plus the `setup_summary` (fork/blob schedule, load,
   builders) that reproduction and reachability judge against. An issue with no handle
   gets a `snapshot` feedback task (`runbooks://devnet_issue_feedback_queue`).
+  Fill only the id kind that exists — a hosted-only issue carries `network` with the
+  other ids empty. Inside `setup_summary`, fork/blob schedule are required; `load`
+  and `builders` may be empty when the grounded context does not establish them —
+  empty means "not established", not "none configured".
 
 ## Evidence item
 

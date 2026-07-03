@@ -6,6 +6,7 @@ triggers:
   - can this component actually cause the observed failure
   - verify the suspected code path is reachable at runtime
   - is the blamed client really the trigger or a victim
+  - trace a bad artifact or failure back to the component that caused it
 ---
 
 Owns the REACHABILITY verdict: a bounded trace from an existing candidate cause to the
@@ -22,6 +23,9 @@ Preferred: reproduction status + recipe, hypothesis results, source findings wit
 rejected paths.
 With source findings, trace from the runtime entry point into the inspected code path;
 without them, trace runtime reachability between components and the artifact.
+When topology sources disagree (inventory vs validator ranges vs hosts observed in
+logs), record the disagreement per `runbooks://reconcile_chain_sources`, trace against
+the union, and note which source each actor in the chain came from.
 
 ## Output
 
@@ -92,7 +96,10 @@ Use the CL/EL matrix in `runbooks://debug_ethereum_network` and the artifact mod
 Each chain edge is `direct` (both sides show the same request/response/duty/payload/
 slot/error id), `one-sided` (one side shows it, the other lacks logging),
 `topology-only` (route exists, no runtime evidence it executed), or `contradicted`
-(evidence shows it could not have occurred).
+(evidence shows it could not have occurred). The level names the strength; the
+citation makes it re-derivable — back every `direct`, `one-sided`, and `contradicted`
+edge with an evidence item (source/ref/at/detail, `runbooks://devnet_issue_contract`)
+in the issue's evidence list.
 
 ## Verdict calibration
 

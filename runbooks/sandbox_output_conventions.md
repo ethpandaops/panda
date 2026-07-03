@@ -31,7 +31,9 @@ reused session — as the task requires.
   `storage.upload(path, remote_name=...)` returns `.url` and `.host_path`; surface
   both. Search the examples index for "storage upload file url"; if the index
   misses, read the storage docs surface.
-- **Sessions:** for multi-step work, reuse one session (`session_id`) across turns.
+- **Sessions:** for multi-step work, reuse one session across turns — create/attach
+  via the session surface (the CLI spells it `panda session create` and
+  `panda execute --session <id>`; there is no `--session-id` flag).
   What persists is the `/workspace` FILESYSTEM, not Python variables — each call is
   a fresh process, so save intermediate dataframes to `/workspace` (parquet/CSV/
   pickle) and reload them in later calls.

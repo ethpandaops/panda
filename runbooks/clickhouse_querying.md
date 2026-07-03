@@ -34,10 +34,11 @@ fixes it and why.
    devnet's raw data lives in its own database on `clickhouse-raw`, named after the
    network (backtick-quoted, e.g. `` `blob-devnet-0`.table_name ``).
 3. **Filter on the partition key.** Use native date columns (`slot_start_date_time`,
-   `wallclock_date_time`) bare — wrapping them in functions like `toDate(...)` defeats
-   the partition index. In `clickhouse-raw`'s `default` database also filter
-   `meta_network_name = '<network>'`; devnet databases hold one network each, so the
-   database prefix is the filter; on refined use the `<network>.` table prefix.
+   `wallclock_slot_start_date_time`) bare — wrapping them in functions like
+   `toDate(...)` defeats the partition index. In `clickhouse-raw`'s `default` database
+   also filter `meta_network_name = '<network>'`; devnet databases hold one network
+   each, so the database prefix is the filter; on refined use the `<network>.` table
+   prefix.
 4. **Bound the result.** Add `ORDER BY … LIMIT N`; cap high-cardinality `GROUP BY`
    (e.g. grouping by validator index).
 5. **Order JOINs** with the smaller table on the RIGHT — ClickHouse loads the right
@@ -57,11 +58,13 @@ Using the wrong view silently drops the very rows the question is about.
 - Use **raw** event-level data when the question is about *how many, how often, how
   late, or from whom*: propagation timing, duplicate/late gossip re-sends, per-peer or
   per-observer counts. Deduplicated views collapse exactly these rows.
-- Use **canonical/refined** data for chain-state truth: finalized history,
-  one-value-per-slot metrics. Refined tables come in two variants — `_canonical`
-  (finalized, never reorgs; use for historical analysis) and `_head` (live, may
-  reorg; use for real-time monitoring), e.g. `fct_block_canonical` vs
-  `fct_block_head`. A `_head` read is not finalized truth.
+- Use **canonical/refined** data for chain-state truth: finalized history and
+  per-slot metrics. Refined tables come in two flavors — finalized (never reorgs;
+  use for historical analysis) and `_head` (live/unfinalized, may reorg, and forks
+  can leave multiple roots for one slot; use for real-time monitoring). For blocks
+  the pair is `fct_block` (finalized chain, keeps orphaned rows with
+  `status = 'canonical' | 'orphaned'`) vs `fct_block_head` — there is no
+  `fct_block_canonical`. A `_head` read is not finalized truth.
 - **Coverage before absence.** Refined/CBT tables contain only what the pipeline has
   processed — an empty result can mean "not yet transformed", not "didn't happen".
   Check `cbt.get_transformation_coverage(network, "{network}.<table>")` before
@@ -69,8 +72,9 @@ Using the wrong view silently drops the very rows the question is about.
   gaps) with `cbt.debug_coverage(network, id, position)`. A 404 from the coverage
   calls means the network is not registered with CBT — record coverage as
   unavailable, not empty, and verify with a bounded raw-table probe instead.
-- **Orphans and reorgs:** canonical-only tables hide them. For stale parents, reorgs,
-  or orphan rate, include orphaned blocks explicitly.
+- **Orphans and reorgs:** deduplicated canonical views hide them. For stale parents,
+  reorgs, or orphan rate, use a table that keeps orphaned rows — `fct_block` retains
+  them with `status = 'orphaned'` — not a canonical-only view.
 - When unsure whether a table is deduplicated, check its grain: one row per slot is
   canonical; many rows per (slot, node/peer) is raw.
 
@@ -94,7 +98,11 @@ To query a time window:
    `slot_start_date_time >= now() - INTERVAL <window>` (a `_head` table — fine for
    resolving a recent range, but it may reorg; not finalized truth).
 2. **Pass the results as literals** into
-   `WHERE block_number BETWEEN <min> AND <max>` (or `= <n>` for one block). An empty
+   `WHERE block_number BETWEEN <min> AND <max>` (or `= <n>` for one block) — an
+   in-query subquery bridge is rejected (`distributed_product_mode = 'deny'`). If
+   the range query fails with a `force_primary_key` error, append
+   `SETTINGS force_primary_key=0`: `block_number` is the partition key, so the
+   pruning you need still happens. An empty
    bridge result (0/0 aggregates) is not a range — treat it as no data for the window
    and check placement/coverage rather than querying `BETWEEN 0 AND 0`.
 

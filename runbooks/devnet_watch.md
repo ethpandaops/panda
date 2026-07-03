@@ -82,8 +82,9 @@ watch:
     tooling: []
   handles:                # collation copies these into each issue's handles block
     network_target: { kind: compute-enclave, sandbox_id: "sbx-4", enclave: "devnet-1" }
-    final_snapshot_id: "" # compute-enclave targets only; capture exactly one after
-                          # end_epoch (runbooks://panda_compute_kurtosis_lifecycle)
+    final_snapshot_id: "" # compute-enclave targets only — local enclaves keep the
+                          # key with ""; capture exactly one after end_epoch
+                          # (runbooks://panda_compute_kurtosis_lifecycle)
 ```
 
 ## Self-Check

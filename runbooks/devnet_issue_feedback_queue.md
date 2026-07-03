@@ -45,6 +45,11 @@ feedback:
 (bounded runtime verification), `config` (config-fidelity gap), or `snapshot` (missing
 broken-state starting point). `inputs` carries handles and query params only. Every
 task closes ONE named gap and has both a success and a stop condition.
+`runbook_refs` names the workflow the task hands to, by kind: `investigate`/`snapshot`
+→ `runbooks://devnet_issue_root_cause`, `watch` → `runbooks://devnet_watch`, `config`
+→ `runbooks://kurtosis_devnet_config`, `source-trace` →
+`runbooks://ethereum_spec_source_drilldown`, `reachability-trace` →
+`runbooks://devnet_issue_reachability_trace`.
 
 ## Mapping rules
 
@@ -52,7 +57,10 @@ task closes ONE named gap and has both a success and a stop condition.
 `investigate`; broader window → `watch`; missing setup/config field → `config`; missing
 broken state → `snapshot`; exact image/commit/code path → `source-trace`; connecting a
 finding to the observed failure → `reachability-trace`; ambiguous operator policy or a
-destructive action → `manual-review`. Preserve each query's support and reject conditions.
+destructive action → `manual-review`. Preserve each query's support and reject
+conditions: the support condition becomes the task's `success_condition`; carry the
+reject condition in `inputs` (e.g. `inputs.reject_condition`) so a requeue gets both
+without reading prose.
 
 **Partial reproduction:** shifted slot/epoch → `investigate` with a narrowed window;
 different network shape → `config`; timing/load dependent → `watch` with explicit load
@@ -97,7 +105,9 @@ needing no variant info; all useful non-destructive evidence is collected and
 compute/source access is unavailable; or the remaining step needs human policy approval
 or a destructive action (name the blocker in `terminal_reason`). Terminal means no
 useful bounded follow-up remains with the available handles — low confidence alone is a
-reason to queue work, not to stop.
+reason to queue work, not to stop. The `manual-review` boundary: when a human decision
+would UNBLOCK further bounded automated work, queue a `manual-review` task; when the
+human-gated step is itself the only remaining step, set `terminal=true` instead.
 
 ## Self-Check
 
