@@ -31,11 +31,13 @@ fixes it and why.
    use `clickhouse-raw` only when the question needs event-level detail (large, slow).
    Not every network is on every cluster — if the refined `<network>` database is
    absent, check the dataset placements (`panda datasets`) before falling back: a
-   devnet's raw data may live on a different datasource (e.g. an experimental cluster).
+   devnet's raw data lives in its own database on `clickhouse-raw`, named after the
+   network (backtick-quoted, e.g. `` `blob-devnet-0`.table_name ``).
 3. **Filter on the partition key.** Use native date columns (`slot_start_date_time`,
    `wallclock_date_time`) bare — wrapping them in functions like `toDate(...)` defeats
-   the partition index. On `clickhouse-raw` also filter
-   `meta_network_name = '<network>'`; on refined use the `<network>.` table prefix.
+   the partition index. In `clickhouse-raw`'s `default` database also filter
+   `meta_network_name = '<network>'`; devnet databases hold one network each, so the
+   database prefix is the filter; on refined use the `<network>.` table prefix.
 4. **Bound the result.** Add `ORDER BY … LIMIT N`; cap high-cardinality `GROUP BY`
    (e.g. grouping by validator index).
 5. **Order JOINs** with the smaller table on the RIGHT — ClickHouse loads the right

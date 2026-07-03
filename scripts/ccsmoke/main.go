@@ -47,7 +47,7 @@ func main() {
 	fmt.Println("token minted:", len(t1) > 0, "| cached reuse:", t1 == t2)
 
 	// Real query through the proxy as the service account.
-	out, err := c.ClickHouseQuery(ctx, "xatu-experimental", "SELECT 1", nil)
+	out, err := c.ClickHouseQuery(ctx, "clickhouse-raw", "SELECT 1", nil)
 	if err != nil {
 		log.WithError(err).Fatal("query failed")
 	}

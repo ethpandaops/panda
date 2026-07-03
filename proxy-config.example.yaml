@@ -102,6 +102,9 @@ clickhouse:
     contains:
       - dataset: xatu-raw
         params: { database: default }
+      - dataset: xatu-raw
+        params: { database_pattern: "*-devnet-*" }
+        notes: "Devnet networks — one database per network, named after the network (e.g. blob-devnet-0)."
       - dataset: otel-logs
         params: { database: external }
         notes: "Devnet/testnet node container logs (tracked networks)."
@@ -126,23 +129,6 @@ clickhouse:
     contains:
       - dataset: xatu-cbt
         params: { database_pattern: "*" } # per-network databases (mainnet, holesky, …)
-    # allowed_orgs:
-    #   - ethpandaops
-
-  - name: xatu-experimental
-    description: "Experimental ClickHouse cluster with devnet data"
-    host: "${CLICKHOUSE_EXPERIMENTAL_HOST}"
-    port: 8443
-    database: "${CLICKHOUSE_EXPERIMENTAL_DATABASE}"
-    username: "${CLICKHOUSE_EXPERIMENTAL_USERNAME}"
-    password: "${CLICKHOUSE_EXPERIMENTAL_PASSWORD}"
-    secure: true
-    skip_verify: false
-    timeout: 300
-    contains:
-      - dataset: xatu-raw
-        params: { database: default }
-        notes: "Devnet networks only."
     # allowed_orgs:
     #   - ethpandaops
 

@@ -71,7 +71,7 @@ For examples specifically:
 - Put them in the appropriate category (create a new one if needed)
 - Be clear about which cluster to use (`clickhouse-raw` vs `clickhouse-refined`)
 - Include the partition key filter (`slot_start_date_time`) and network filter
-- Use `{network}` placeholder for network name in refined/CBT tables, or `meta_network_name` filter for `clickhouse-raw` tables
+- Use `{network}` placeholder for network name in refined/CBT tables. For `clickhouse-raw` tables: mainnet/testnets live in the `default` database with a `meta_network_name` filter; devnets each have their own database named after the network (backtick-quoted, e.g. `` `blob-devnet-0`.table_name ``)
 - Use hardcoded literal values (block numbers, slots) in examples — never subqueries like `SELECT max(block_number) FROM ...` that cause full table scans
 
 Read existing files before modifying them.
