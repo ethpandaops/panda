@@ -107,3 +107,32 @@ func TestInlineSafe(t *testing.T) {
 		}
 	}
 }
+
+func TestForceDownload(t *testing.T) {
+	off := &UploadsHandler{cfg: UploadsConfig{RenderHTML: false}}
+	on := &UploadsHandler{cfg: UploadsConfig{RenderHTML: true}}
+
+	// Inline-safe types never download, regardless of RenderHTML.
+	for _, ct := range []string{"image/png", "application/pdf", "text/plain"} {
+		if off.forceDownload(ct) || on.forceDownload(ct) {
+			t.Errorf("forceDownload(%q) = true, want false", ct)
+		}
+	}
+
+	// HTML downloads by default and renders inline only when RenderHTML is on.
+	for _, ct := range []string{"text/html", "text/html; charset=utf-8"} {
+		if !off.forceDownload(ct) {
+			t.Errorf("forceDownload(%q) with RenderHTML off = false, want true", ct)
+		}
+		if on.forceDownload(ct) {
+			t.Errorf("forceDownload(%q) with RenderHTML on = true, want false", ct)
+		}
+	}
+
+	// SVG and other scriptable markup stay download-only even with RenderHTML on.
+	for _, ct := range []string{"image/svg+xml", "text/javascript", "application/xhtml+xml"} {
+		if !on.forceDownload(ct) {
+			t.Errorf("forceDownload(%q) with RenderHTML on = false, want true", ct)
+		}
+	}
+}

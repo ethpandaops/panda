@@ -30,6 +30,17 @@ type UploadsConfig struct {
 	AccessKeyID    string
 	SecretKey      string
 	MaxObjectBytes int64
+
+	// RenderHTML lets text/html serve inline instead of being forced to
+	// download. Enable it ONLY once the bucket's public domain carries a
+	// Cloudflare Transform Rule that sets
+	//   Content-Security-Policy: sandbox allow-scripts allow-downloads
+	// on text/html responses. That header pins uploaded HTML to an opaque
+	// origin (no cookies, no credentialed same-origin fetch, can't act as the
+	// bucket domain), which is what makes rendering shared HTML diagnostics
+	// safe. Without the rule, inline HTML would execute with full privileges
+	// on the bucket origin — so this defaults off and forces download.
+	RenderHTML bool
 }
 
 // UploadsHandler streams request bodies to an R2 bucket and returns a durable
@@ -125,10 +136,12 @@ func (h *UploadsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	key := h.cfg.KeyPrefix + hex.EncodeToString(hasher.Sum(nil))[:6] + "/" + name
 
 	opts := minio.PutObjectOptions{ContentType: contentType}
-	// Force types that a browser would execute in the ethpandaops origin (HTML,
-	// SVG, JS) to download instead — defuses phishing/XSS on a public bucket
-	// while charts, PDFs and text still render inline.
-	if !inlineSafe(contentType) {
+	// Types a browser would execute in the bucket origin (HTML, SVG, JS) are
+	// forced to download — defuses phishing/XSS on a public bucket while charts,
+	// PDFs and text render inline. The one exception is text/html when RenderHTML
+	// is on: the operator has confirmed the Cloudflare CSP-sandbox rule, so HTML
+	// diagnostics can render inside that opaque origin instead of downloading.
+	if h.forceDownload(contentType) {
 		opts.ContentDisposition = fmt.Sprintf("attachment; filename=%q", name)
 	}
 
@@ -193,13 +206,40 @@ func sanitizeUploadName(raw string) string {
 	return name
 }
 
-// inlineSafe reports whether a Content-Type is safe to serve inline from a
-// public bucket. Scriptable/markup types (html, svg, xml, js) are not.
-func inlineSafe(contentType string) bool {
+// forceDownload reports whether an object must be served as an attachment
+// rather than rendered inline. Scriptable/markup types download by default;
+// text/html is the sole opt-in exception, gated on RenderHTML (which asserts the
+// bucket's CSP-sandbox rule is in place). SVG stays download-only regardless,
+// since a top-level image/svg+xml can execute script and the html-scoped CSP
+// rule does not cover it.
+func (h *UploadsHandler) forceDownload(contentType string) bool {
+	if inlineSafe(contentType) {
+		return false
+	}
+
+	// text/html is the sole opt-in exception once the CSP-sandbox rule is set.
+	if h.cfg.RenderHTML && baseContentType(contentType) == "text/html" {
+		return false
+	}
+
+	return true
+}
+
+// baseContentType strips any parameters (e.g. "; charset=utf-8") and lowercases.
+func baseContentType(contentType string) string {
 	ct := strings.ToLower(strings.TrimSpace(contentType))
 	if i := strings.IndexByte(ct, ';'); i >= 0 {
 		ct = strings.TrimSpace(ct[:i])
 	}
+
+	return ct
+}
+
+// inlineSafe reports whether a Content-Type is inert enough to serve inline from
+// a public bucket unconditionally. Scriptable/markup types (html, svg, xml, js)
+// are not — they are governed by forceDownload.
+func inlineSafe(contentType string) bool {
+	ct := baseContentType(contentType)
 
 	switch ct {
 	case "application/pdf", "text/plain", "text/csv", "text/markdown", "application/json":

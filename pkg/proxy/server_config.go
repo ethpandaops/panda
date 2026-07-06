@@ -75,6 +75,11 @@ type UploadsConfig struct {
 	AccessKeyID     string `yaml:"access_key_id"`
 	SecretAccessKey string `yaml:"secret_access_key"`
 	MaxObjectBytes  int64  `yaml:"max_object_bytes,omitempty"`
+
+	// RenderHTML serves uploaded text/html inline instead of forcing download.
+	// Enable only after the bucket domain has the Cloudflare CSP-sandbox rule
+	// (see UploadsConfig.RenderHTML in pkg/proxy/handlers).
+	RenderHTML bool `yaml:"render_html,omitempty"`
 }
 
 // ToUploadsHandlerConfig maps the uploads block to its handler config, or nil
@@ -92,6 +97,7 @@ func (c *ServerConfig) ToUploadsHandlerConfig() *handlers.UploadsConfig {
 		AccessKeyID:    c.Uploads.AccessKeyID,
 		SecretKey:      c.Uploads.SecretAccessKey,
 		MaxObjectBytes: c.Uploads.MaxObjectBytes,
+		RenderHTML:     c.Uploads.RenderHTML,
 	}
 }
 

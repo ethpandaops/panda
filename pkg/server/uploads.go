@@ -138,6 +138,20 @@ func (s *service) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ct := uploadContentType(name)
+
+	// Markdown diagnostics are far easier to read rendered, so convert to a
+	// self-contained, sanitized HTML document up front. Everything downstream
+	// (preview, publish) then treats it as ordinary HTML.
+	if isMarkdown(name) {
+		htmlName, htmlData, err := renderMarkdown(name, data)
+		if err != nil {
+			writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("rendering markdown: %v", err))
+			return
+		}
+
+		name, data, ct = htmlName, htmlData, "text/html; charset=utf-8"
+	}
+
 	id := s.uploads.put(name, ct, data)
 
 	writeJSON(w, http.StatusOK, uploadStoredResponse{
