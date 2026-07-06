@@ -52,6 +52,10 @@ ClickHouse (`external.otel_logs`) — there is no hosted Loki datasource. For th
 and the full procedure: `panda read runbooks://debug_ethereum_network`. (Local Kurtosis
 devnet logs are the separate autodiscovered `local-kurtosis` datasource.)
 
+Devnet xatu event data also lives on clickhouse-raw: each devnet has its own database
+named after the network — backtick-quote it, e.g.
+`` FROM `blob-devnet-0`.beacon_api_eth_v1_events_block ``.
+
 ## Notes
 
 - Prefer the CLI (`panda` binary); use the MCP tools (`execute_python`,
