@@ -293,6 +293,7 @@ var uploadPreviewTmpl = template.Must(template.New("preview").Parse(`<!doctype h
  button{background:#111;color:#fff;border:0;border-radius:8px;padding:.6rem 1.25rem;font-size:1rem;cursor:pointer;white-space:nowrap}
  button:disabled{opacity:.5;cursor:default}
  .url{font-family:monospace;font-size:.95rem;word-break:break-all}
+ #out{display:flex;align-items:center;gap:.75rem}
  a{color:#2563eb}
  main{flex:1;min-height:0;display:flex}
  main iframe{flex:1;width:100%;border:0}
@@ -330,7 +331,14 @@ btn.addEventListener('click',async()=>{
   if(!r.ok){throw new Error((await r.text())||('HTTP '+r.status))}
   const d=await r.json();
   status.textContent='Public · expires in 60 days';
-  out.innerHTML='<span class="url"><a href="'+d.url+'">'+d.url+'</a></span>';
+  const link=document.createElement('a');link.href=d.url;link.textContent=d.url;
+  const wrap=document.createElement('span');wrap.className='url';wrap.append(link);
+  const copy=document.createElement('button');copy.textContent='Copy link';
+  copy.addEventListener('click',async()=>{
+   await navigator.clipboard.writeText(d.url);
+   copy.textContent='Copied ✓';setTimeout(()=>{copy.textContent='Copy link'},1500);
+  });
+  out.replaceChildren(wrap,copy);
   btn.remove();
  }catch(e){btn.disabled=false;btn.textContent='Make public';out.innerHTML='<span class="meta" style="color:#b00">'+e.message+'</span>'}
 });
