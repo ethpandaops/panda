@@ -382,7 +382,7 @@ var uploadPreviewTmpl = template.Must(template.New("preview").Parse(`<!doctype h
  <span class="meta" id="status">Private · in memory on this machine</span>
  <span class="spacer"></span>
  <span id="out"></span>
- <button id="team" data-id="{{.ID}}" class="secondary">Share with team</button>
+ <button id="team" data-id="{{.ID}}" class="secondary">Share with ethPandaOps</button>
  <button id="pub" data-id="{{.ID}}">Make public</button>
 </header>
 <main>
