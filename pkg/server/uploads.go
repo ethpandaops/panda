@@ -153,10 +153,10 @@ func uploadContentType(name string) string {
 }
 
 // handleUploadsDisabled answers every /api/v1/uploads* route when the operator
-// has set server.disable_uploads, so `panda upload` fails with the reason
+// has set server.uploads: false, so `panda upload` fails with the reason
 // instead of a bare 404.
 func (s *service) handleUploadsDisabled(w http.ResponseWriter, _ *http.Request) {
-	writeAPIError(w, http.StatusForbidden, "uploads are disabled on this server (server.disable_uploads in config.yaml)")
+	writeAPIError(w, http.StatusForbidden, "uploads are disabled on this server (server.uploads: false in config.yaml)")
 }
 
 // handleUpload buffers a file into the in-memory session store and returns a

@@ -192,7 +192,8 @@ func TestPublishUnknownID(t *testing.T) {
 
 func TestDisableUploadsGatesAllRoutes(t *testing.T) {
 	svc := testUploadService()
-	svc.cfg.DisableUploads = true
+	off := false
+	svc.cfg.Uploads = &off
 
 	r := chi.NewRouter()
 	svc.mountAPIRoutes(r)
@@ -209,7 +210,7 @@ func TestDisableUploadsGatesAllRoutes(t *testing.T) {
 			t.Errorf("%s %s: status = %d, want 403", req.Method, req.URL.Path, rec.Code)
 		}
 
-		if !strings.Contains(rec.Body.String(), "disable_uploads") {
+		if !strings.Contains(rec.Body.String(), "server.uploads") {
 			t.Errorf("%s: body should name the config knob: %s", req.URL.Path, rec.Body.String())
 		}
 	}

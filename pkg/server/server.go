@@ -406,7 +406,7 @@ func (s *service) buildHTTPHandler(routes map[string]http.Handler) http.Handler 
 	})
 
 	// Private upload preview page (in-memory, session-only) with a publish button.
-	if !s.cfg.DisableUploads {
+	if s.cfg.UploadsEnabled() {
 		r.Get("/u/{id}", s.handleUploadPreviewPage)
 		r.Get("/u/{id}/raw", s.handleUploadServeRaw)
 	}

@@ -45,7 +45,7 @@ func (s *service) mountAPIRoutes(r chi.Router) {
 		r.Post("/build/trigger", s.handleAPIBuildTrigger)
 		r.Post("/build/status", s.handleAPIBuildStatus)
 		r.HandleFunc("/operations/{operationID}", s.handleAPIOperation)
-		if s.cfg.DisableUploads {
+		if !s.cfg.UploadsEnabled() {
 			// Explicit refusal (not a bare 404) so `panda upload` explains itself.
 			r.HandleFunc("/uploads", s.handleUploadsDisabled)
 			r.HandleFunc("/uploads/*", s.handleUploadsDisabled)
