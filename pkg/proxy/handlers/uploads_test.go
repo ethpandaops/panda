@@ -47,14 +47,38 @@ func TestNewUploadsHandlerDefaultsMaxObjectBytes(t *testing.T) {
 	}
 }
 
-func TestUploadsHandlerRejectsNonPost(t *testing.T) {
+func TestUploadsHandlerRejectsUnknownMethod(t *testing.T) {
 	h := testUploadsHandler(t)
 
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/uploads", nil))
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPut, "/uploads", nil))
 
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestUploadsHandlerDeleteRequiresKey(t *testing.T) {
+	h := testUploadsHandler(t)
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, "/uploads", nil))
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestUploadsHandlerDeleteRejectsKeyOutsidePrefix(t *testing.T) {
+	h := testUploadsHandler(t)
+
+	for _, key := range []string{"other/file.html", "uploads/../secrets.txt", "/uploads/x"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, "/uploads?key="+key, nil))
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("key %q: status = %d, want 400", key, rec.Code)
+		}
 	}
 }
 

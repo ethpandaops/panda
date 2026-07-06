@@ -47,6 +47,8 @@ func (s *service) mountAPIRoutes(r chi.Router) {
 		r.HandleFunc("/operations/{operationID}", s.handleAPIOperation)
 		r.Post("/uploads", s.handleUpload)
 		r.Post("/uploads/publish", s.handleUploadPublish)
+		r.Get("/uploads/published", s.handleUploadListPublished)
+		r.Delete("/uploads/published", s.handleUploadDeletePublished)
 
 		// Public file serving (no auth — same as MinIO anonymous download).
 		r.Get("/storage/files/*", s.handleStorageServeFile)

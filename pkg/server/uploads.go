@@ -278,6 +278,38 @@ func (s *service) handleUploadPublish(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
+// handleUploadListPublished relays the proxy's authenticated published-uploads
+// listing back to the CLI.
+func (s *service) handleUploadListPublished(w http.ResponseWriter, r *http.Request) {
+	s.relayUploadsRequest(w, r, http.MethodGet, "/uploads")
+}
+
+// handleUploadDeletePublished relays a published-upload delete (?key=) to the proxy.
+func (s *service) handleUploadDeletePublished(w http.ResponseWriter, r *http.Request) {
+	key := strings.TrimSpace(r.URL.Query().Get("key"))
+	if key == "" {
+		writeAPIError(w, http.StatusBadRequest, "key is required")
+		return
+	}
+
+	s.relayUploadsRequest(w, r, http.MethodDelete, "/uploads?key="+url.QueryEscape(key))
+}
+
+func (s *service) relayUploadsRequest(w http.ResponseWriter, r *http.Request, method, requestPath string) {
+	data, status, header, err := s.proxyRequest(r.Context(), method, requestPath, nil, nil)
+	if err != nil {
+		writeAPIError(w, http.StatusBadGateway, fmt.Sprintf("proxy request failed: %v", err))
+		return
+	}
+
+	if ct := header.Get("Content-Type"); ct != "" {
+		w.Header().Set("Content-Type", ct)
+	}
+
+	w.WriteHeader(status)
+	_, _ = w.Write(data)
+}
+
 // handleUploadPreviewPage renders the private preview page with a publish button.
 func (s *service) handleUploadPreviewPage(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")

@@ -86,13 +86,24 @@ func NewUploadsHandler(log logrus.FieldLogger, cfg UploadsConfig) (*UploadsHandl
 	return &UploadsHandler{log: log.WithField("handler", "uploads"), client: client, cfg: cfg}, nil
 }
 
-// ServeHTTP accepts POST /uploads with the raw body and ?name=&content_type=.
+// ServeHTTP routes the authenticated /uploads surface: POST publishes a new
+// object, GET lists published objects, DELETE removes one. All callers have
+// passed proxy auth, so in this first iteration any authenticated user may
+// list and delete any published upload.
 func (h *UploadsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
+	switch r.Method {
+	case http.MethodPost:
+		h.handlePut(w, r)
+	case http.MethodGet:
+		h.handleList(w, r)
+	case http.MethodDelete:
+		h.handleDelete(w, r)
+	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
 	}
+}
 
+func (h *UploadsHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 	name := sanitizeUploadName(r.URL.Query().Get("name"))
 
 	// Content-address the object so identical bytes dedup and every URL is
@@ -157,6 +168,76 @@ func (h *UploadsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Size:        size,
 		ContentType: contentType,
 	})
+}
+
+// listedObject is one bucket entry in the list response.
+type listedObject struct {
+	Key          string `json:"key"`
+	URL          string `json:"url"`
+	Size         int64  `json:"size"`
+	LastModified string `json:"last_modified"`
+}
+
+// handleList returns every published object under the configured prefix.
+func (h *UploadsHandler) handleList(w http.ResponseWriter, r *http.Request) {
+	objects := []listedObject{}
+
+	for obj := range h.client.ListObjects(r.Context(), h.cfg.Bucket, minio.ListObjectsOptions{
+		Prefix:    h.cfg.KeyPrefix,
+		Recursive: true,
+	}) {
+		if obj.Err != nil {
+			h.fail(w, http.StatusBadGateway, "listing objects", obj.Err)
+			return
+		}
+
+		objects = append(objects, listedObject{
+			Key:          obj.Key,
+			URL:          strings.TrimRight(h.cfg.PublicBaseURL, "/") + "/" + obj.Key,
+			Size:         obj.Size,
+			LastModified: obj.LastModified.UTC().Format("2006-01-02T15:04:05Z"),
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(struct {
+		Objects []listedObject `json:"objects"`
+	}{objects})
+}
+
+// handleDelete removes a single published object by ?key=. The key must sit
+// under the configured prefix so this route can never touch anything else in
+// the bucket.
+func (h *UploadsHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
+	key := strings.TrimSpace(r.URL.Query().Get("key"))
+	if key == "" {
+		h.fail(w, http.StatusBadRequest, "key is required", nil)
+		return
+	}
+
+	if !strings.HasPrefix(key, h.cfg.KeyPrefix) || strings.Contains(key, "..") {
+		h.fail(w, http.StatusBadRequest, "key outside the uploads prefix", nil)
+		return
+	}
+
+	// Distinguish "deleted" from "never existed" so the caller gets an honest 404.
+	if _, err := h.client.StatObject(r.Context(), h.cfg.Bucket, key, minio.StatObjectOptions{}); err != nil {
+		if minio.ToErrorResponse(err).Code == "NoSuchKey" {
+			h.fail(w, http.StatusNotFound, "object not found", nil)
+			return
+		}
+
+		h.fail(w, http.StatusBadGateway, "checking object", err)
+
+		return
+	}
+
+	if err := h.client.RemoveObject(r.Context(), h.cfg.Bucket, key, minio.RemoveObjectOptions{}); err != nil {
+		h.fail(w, http.StatusBadGateway, "removing object", err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *UploadsHandler) fail(w http.ResponseWriter, status int, msg string, err error) {
