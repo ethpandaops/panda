@@ -255,6 +255,11 @@ loki:
 #   secret_access_key: "${R2_UPLOADS_SECRET_ACCESS_KEY}"
 #   max_object_bytes: 104857600             # 100 MiB (default if omitted)
 #   render_html: false                      # true only with the CSP rule above
+#   # Optional team tier (`panda upload --team` / the preview's "Share with team"):
+#   # same bucket, separate prefix, served from a Cloudflare-Access-protected
+#   # domain (GitHub org login) instead of the public one. Set both or neither.
+#   team_key_prefix: "panda/team/"
+#   team_base_url: "https://panda-notes.example.io"
 
 # Rate limiting
 rate_limiting:

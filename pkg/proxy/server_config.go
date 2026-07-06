@@ -76,6 +76,12 @@ type UploadsConfig struct {
 	SecretAccessKey string `yaml:"secret_access_key"`
 	MaxObjectBytes  int64  `yaml:"max_object_bytes,omitempty"`
 
+	// Team enables `panda upload --team`: objects published under a separate
+	// key prefix, served from an Access-protected domain instead of the public
+	// one. Both fields must be set together; omit them to disable.
+	TeamKeyPrefix string `yaml:"team_key_prefix,omitempty"`
+	TeamBaseURL   string `yaml:"team_base_url,omitempty"`
+
 	// RenderHTML serves uploaded text/html inline instead of forcing download.
 	// Enable only after the bucket domain has the Cloudflare CSP-sandbox rule
 	// (see UploadsConfig.RenderHTML in pkg/proxy/handlers).
@@ -97,6 +103,8 @@ func (c *ServerConfig) ToUploadsHandlerConfig() *handlers.UploadsConfig {
 		AccessKeyID:    c.Uploads.AccessKeyID,
 		SecretKey:      c.Uploads.SecretAccessKey,
 		MaxObjectBytes: c.Uploads.MaxObjectBytes,
+		TeamKeyPrefix:  normalizeKeyPrefix(c.Uploads.TeamKeyPrefix),
+		TeamBaseURL:    c.Uploads.TeamBaseURL,
 		RenderHTML:     c.Uploads.RenderHTML,
 	}
 }

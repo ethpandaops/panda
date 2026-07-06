@@ -245,7 +245,8 @@ func (s *service) handleUploadServeRaw(w http.ResponseWriter, r *http.Request) {
 // route (which holds the R2 credentials), making it public.
 func (s *service) handleUploadPublish(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		ID string `json:"id"`
+		ID         string `json:"id"`
+		Visibility string `json:"visibility,omitempty"` // "" | "public" | "team"
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.ID) == "" {
 		writeAPIError(w, http.StatusBadRequest, "id is required")
@@ -262,6 +263,9 @@ func (s *service) handleUploadPublish(w http.ResponseWriter, r *http.Request) {
 	// every other proxy-bound request: s.httpClient (User-Agent), attribution
 	// forwarding, and the 401/403 invalidate-and-retry.
 	requestPath := "/uploads?name=" + url.QueryEscape(it.name)
+	if v := strings.TrimSpace(req.Visibility); v != "" {
+		requestPath += "&visibility=" + url.QueryEscape(v)
+	}
 	headers := http.Header{"Content-Type": {"application/octet-stream"}}
 
 	data, status, header, err := s.proxyRequest(r.Context(), http.MethodPost, requestPath, bytes.NewReader(it.data), headers)
@@ -354,6 +358,7 @@ var uploadPreviewTmpl = template.Must(template.New("preview").Parse(`<!doctype h
  .spacer{flex:1}
  button{background:#111;color:#fff;border:0;border-radius:8px;padding:.6rem 1.25rem;font-size:1rem;cursor:pointer;white-space:nowrap}
  button:disabled{opacity:.5;cursor:default}
+ button.secondary{background:transparent;color:inherit;border:1px solid #bbb}
  .url{font-family:monospace;font-size:.95rem;word-break:break-all}
  #out{display:flex;align-items:center;gap:.75rem}
  a{color:#2563eb}
@@ -377,6 +382,7 @@ var uploadPreviewTmpl = template.Must(template.New("preview").Parse(`<!doctype h
  <span class="meta" id="status">Private · in memory on this machine</span>
  <span class="spacer"></span>
  <span id="out"></span>
+ <button id="team" data-id="{{.ID}}" class="secondary">Share with team</button>
  <button id="pub" data-id="{{.ID}}">Make public</button>
 </header>
 <main>
@@ -385,14 +391,16 @@ var uploadPreviewTmpl = template.Must(template.New("preview").Parse(`<!doctype h
  {{else}}<a class="fallback" href="{{.RawURL}}" download="{{.Name}}">Download {{.Name}}</a>{{end}}
 </main>
 <script>
-const btn=document.getElementById('pub'),out=document.getElementById('out'),status=document.getElementById('status');
-btn.addEventListener('click',async()=>{
- btn.disabled=true;btn.textContent='Publishing…';
+const pub=document.getElementById('pub'),team=document.getElementById('team'),
+      out=document.getElementById('out'),status=document.getElementById('status');
+async function publish(btn,visibility,statusText){
+ const other=btn===pub?team:pub, label=btn.textContent;
+ btn.disabled=true;other.disabled=true;btn.textContent='Publishing…';
  try{
-  const r=await fetch('/api/v1/uploads/publish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:btn.dataset.id})});
+  const r=await fetch('/api/v1/uploads/publish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:btn.dataset.id,visibility})});
   if(!r.ok){throw new Error((await r.text())||('HTTP '+r.status))}
   const d=await r.json();
-  status.textContent='Public · expires in 60 days';
+  status.textContent=statusText;
   const link=document.createElement('a');link.href=d.url;link.textContent=d.url;
   const wrap=document.createElement('span');wrap.className='url';wrap.append(link);
   const copy=document.createElement('button');copy.textContent='Copy link';
@@ -401,9 +409,14 @@ btn.addEventListener('click',async()=>{
    copy.textContent='Copied ✓';setTimeout(()=>{copy.textContent='Copy link'},1500);
   });
   out.replaceChildren(wrap,copy);
-  btn.remove();
- }catch(e){btn.disabled=false;btn.textContent='Make public';out.innerHTML='<span class="meta" style="color:#b00">'+e.message+'</span>'}
-});
+  pub.remove();team.remove();
+ }catch(e){
+  btn.disabled=false;other.disabled=false;btn.textContent=label;
+  out.innerHTML='<span class="meta" style="color:#b00">'+e.message+'</span>';
+ }
+}
+pub.addEventListener('click',()=>publish(pub,'public','Public · expires in 60 days'));
+team.addEventListener('click',()=>publish(team,'team','Team-only · GitHub login required · expires in 60 days'));
 </script>
 </body>
 </html>`))

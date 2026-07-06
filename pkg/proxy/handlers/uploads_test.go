@@ -160,3 +160,45 @@ func TestForceDownload(t *testing.T) {
 		}
 	}
 }
+
+func TestDestinationForVisibility(t *testing.T) {
+	h := testUploadsHandler(t)
+
+	prefix, base, err := h.destinationFor("")
+	if err != nil || prefix != "uploads/" || base != "https://data.example.io" {
+		t.Fatalf("default: (%q, %q, %v)", prefix, base, err)
+	}
+
+	// Team unconfigured → explicit refusal, not a silent public publish.
+	if _, _, err := h.destinationFor("team"); err == nil {
+		t.Fatal("team visibility must fail when team config is absent")
+	}
+
+	if _, _, err := h.destinationFor("everyone"); err == nil {
+		t.Fatal("unknown visibility must fail")
+	}
+
+	h.cfg.TeamKeyPrefix, h.cfg.TeamBaseURL = "team/", "https://notes.example.io"
+
+	prefix, base, err = h.destinationFor("team")
+	if err != nil || prefix != "team/" || base != "https://notes.example.io" {
+		t.Fatalf("team: (%q, %q, %v)", prefix, base, err)
+	}
+}
+
+func TestDeletableKeyCoversBothPrefixes(t *testing.T) {
+	h := testUploadsHandler(t)
+	h.cfg.TeamKeyPrefix = "team/"
+
+	for key, want := range map[string]bool{
+		"uploads/ab/x.html": true,
+		"team/ab/x.html":    true,
+		"other/x.html":      false,
+		"uploads/../secret": false,
+		"":                  false,
+	} {
+		if got := h.deletableKey(key); got != want {
+			t.Errorf("deletableKey(%q) = %v, want %v", key, got, want)
+		}
+	}
+}

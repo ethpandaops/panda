@@ -19,6 +19,7 @@ import (
 var (
 	uploadName   string
 	uploadPublic bool
+	uploadTeam   bool
 	uploadNoOpen bool
 )
 
@@ -97,8 +98,13 @@ func uploadOne(cmd *cobra.Command, arg string, single bool) error {
 		return fmt.Errorf("decoding response: %w", err)
 	}
 
-	if uploadPublic {
-		return publishUpload(cmd, stored.ID)
+	if uploadPublic || uploadTeam {
+		visibility := "public"
+		if uploadTeam {
+			visibility = "team"
+		}
+
+		return publishUpload(cmd, stored.ID, visibility)
 	}
 
 	base, err := serverBaseURL()
@@ -127,8 +133,8 @@ func uploadOne(cmd *cobra.Command, arg string, single bool) error {
 	return nil
 }
 
-func publishUpload(cmd *cobra.Command, id string) error {
-	reqBody, err := json.Marshal(map[string]string{"id": id})
+func publishUpload(cmd *cobra.Command, id, visibility string) error {
+	reqBody, err := json.Marshal(map[string]string{"id": id, "visibility": visibility})
 	if err != nil {
 		return err
 	}
@@ -218,6 +224,9 @@ func init() {
 		"Object filename; its extension sets Content-Type (required for stdin)")
 	uploadCmd.Flags().BoolVar(&uploadPublic, "public", false,
 		"Publish immediately and print the public URL, skipping the preview")
+	uploadCmd.Flags().BoolVar(&uploadTeam, "team", false,
+		"Publish immediately to the team-only (GitHub-login-gated) domain, skipping the preview")
+	uploadCmd.MarkFlagsMutuallyExclusive("public", "team")
 	uploadCmd.Flags().BoolVar(&uploadNoOpen, "no-open", false,
 		"Do not open the preview page in a browser")
 }

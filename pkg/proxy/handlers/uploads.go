@@ -31,6 +31,12 @@ type UploadsConfig struct {
 	SecretKey      string
 	MaxObjectBytes int64
 
+	// TeamKeyPrefix/TeamBaseURL enable team-visibility publishes: same bucket,
+	// separate prefix, served from an Access-protected domain. Both must be set
+	// for ?visibility=team to be accepted.
+	TeamKeyPrefix string
+	TeamBaseURL   string
+
 	// RenderHTML lets text/html serve inline instead of being forced to
 	// download. Enable it ONLY once the bucket's public domain carries a
 	// Cloudflare Transform Rule that sets
@@ -102,8 +108,30 @@ func (h *UploadsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// destinationFor maps a visibility to the key prefix and serving base URL.
+func (h *UploadsHandler) destinationFor(visibility string) (prefix, baseURL string, err error) {
+	switch visibility {
+	case "", "public":
+		return h.cfg.KeyPrefix, h.cfg.PublicBaseURL, nil
+	case "team":
+		if h.cfg.TeamKeyPrefix == "" || h.cfg.TeamBaseURL == "" {
+			return "", "", fmt.Errorf("team uploads are not configured on this proxy")
+		}
+
+		return h.cfg.TeamKeyPrefix, h.cfg.TeamBaseURL, nil
+	default:
+		return "", "", fmt.Errorf("unknown visibility %q", visibility)
+	}
+}
+
 func (h *UploadsHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 	name := sanitizeUploadName(r.URL.Query().Get("name"))
+
+	prefix, baseURL, err := h.destinationFor(strings.TrimSpace(r.URL.Query().Get("visibility")))
+	if err != nil {
+		h.fail(w, http.StatusBadRequest, err.Error(), nil)
+		return
+	}
 
 	// Content-address the object so identical bytes dedup and every URL is
 	// immutable; the hash needs the whole body, so buffer to a temp file first.
@@ -143,7 +171,7 @@ func (h *UploadsHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 		contentType = "application/octet-stream"
 	}
 
-	key := h.cfg.KeyPrefix + hex.EncodeToString(hasher.Sum(nil))[:6] + "/" + name
+	key := prefix + hex.EncodeToString(hasher.Sum(nil))[:6] + "/" + name
 
 	opts := minio.PutObjectOptions{ContentType: contentType}
 	// Types a browser would execute in the bucket origin (HTML, SVG, JS) are
@@ -162,16 +190,29 @@ func (h *UploadsHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(uploadResponse{
-		URL:         strings.TrimRight(h.cfg.PublicBaseURL, "/") + "/" + key,
+		URL:         strings.TrimRight(baseURL, "/") + "/" + key,
 		Key:         key,
 		Size:        size,
 		ContentType: contentType,
 	})
 }
 
-// handleDelete removes a single published object by ?key=. The key must sit
-// under the configured prefix so this route can never touch anything else in
+// deletableKey reports whether a key sits under one of the prefixes this
+// handler publishes to, so the delete route can never touch anything else in
 // the bucket.
+func (h *UploadsHandler) deletableKey(key string) bool {
+	if strings.Contains(key, "..") {
+		return false
+	}
+
+	if strings.HasPrefix(key, h.cfg.KeyPrefix) {
+		return true
+	}
+
+	return h.cfg.TeamKeyPrefix != "" && strings.HasPrefix(key, h.cfg.TeamKeyPrefix)
+}
+
+// handleDelete removes a single published object by ?key=.
 func (h *UploadsHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	key := strings.TrimSpace(r.URL.Query().Get("key"))
 	if key == "" {
@@ -179,8 +220,8 @@ func (h *UploadsHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !strings.HasPrefix(key, h.cfg.KeyPrefix) || strings.Contains(key, "..") {
-		h.fail(w, http.StatusBadRequest, "key outside the uploads prefix", nil)
+	if !h.deletableKey(key) {
+		h.fail(w, http.StatusBadRequest, "key outside the uploads prefixes", nil)
 		return
 	}
 
