@@ -162,9 +162,32 @@ func (s *service) handleUpload(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleUploadServeRaw serves a private upload's bytes for the preview page. A
-// sandbox CSP ensures uploaded HTML can never execute scripts in the server's
-// origin, even if opened directly.
+// previewCSP mirrors the panda-uploads Worker's serving policy so the preview
+// renders exactly as the published object will: HTML gets a scripted opaque
+// origin, SVG/XML render script-less, inert types get no sandbox. Unlike the
+// Worker, raw previews are served from the server's own origin, so HTML
+// additionally gets connect-src/form-action 'none' — a hostile document must
+// not be able to call localhost APIs (e.g. self-publish) before the user
+// clicks "Make public".
+func previewCSP(contentType string) string {
+	ct := strings.ToLower(strings.TrimSpace(contentType))
+	if i := strings.IndexByte(ct, ';'); i >= 0 {
+		ct = strings.TrimSpace(ct[:i])
+	}
+
+	switch ct {
+	case "text/html":
+		return "sandbox allow-scripts allow-downloads; connect-src 'none'; form-action 'none'"
+	case "image/svg+xml", "application/xhtml+xml", "application/xml", "text/xml":
+		return "sandbox"
+	default:
+		return ""
+	}
+}
+
+// handleUploadServeRaw serves a private upload's bytes for the preview page
+// under the same policy the published Worker URL will apply, so the preview is
+// a faithful render of the eventual public page.
 func (s *service) handleUploadServeRaw(w http.ResponseWriter, r *http.Request) {
 	it, ok := s.uploads.get(chi.URLParam(r, "id"))
 	if !ok {
@@ -173,7 +196,9 @@ func (s *service) handleUploadServeRaw(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", it.contentType)
-	w.Header().Set("Content-Security-Policy", "sandbox")
+	if csp := previewCSP(it.contentType); csp != "" {
+		w.Header().Set("Content-Security-Policy", csp)
+	}
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	_, _ = w.Write(it.data)
 }
@@ -249,6 +274,9 @@ type uploadPreviewData struct {
 	IsFrame bool
 }
 
+// The preview page is the published page plus an injected header bar: the
+// content fills the viewport and renders under the same policy the Worker will
+// apply, so what the user sees is exactly what "Make public" will publish.
 var uploadPreviewTmpl = template.Must(template.New("preview").Parse(`<!doctype html>
 <html lang="en">
 <head>
@@ -256,41 +284,55 @@ var uploadPreviewTmpl = template.Must(template.New("preview").Parse(`<!doctype h
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>panda upload — {{.Name}}</title>
 <style>
- body{font-family:system-ui,-apple-system,sans-serif;max-width:720px;margin:3rem auto;padding:0 1rem;color:#111}
- h2{word-break:break-all}
- .card{border:1px solid #ddd;border-radius:12px;padding:1.25rem}
- .preview img,.preview iframe{max-width:100%;border-radius:8px;border:1px solid #eee}
- .preview iframe{width:100%;height:60vh}
- .meta{color:#666;font-size:.9rem;margin:.5rem 0}
- button{background:#111;color:#fff;border:0;border-radius:8px;padding:.6rem 1rem;font-size:1rem;cursor:pointer}
+ html,body{height:100%;margin:0}
+ body{display:flex;flex-direction:column;font-family:system-ui,-apple-system,sans-serif;color:#111}
+ header{flex:none;display:flex;align-items:center;gap:.75rem;padding:.5rem .9rem;border-bottom:1px solid #ddd;background:#fafafa}
+ .name{font-weight:600;word-break:break-all}
+ .meta{color:#666;font-size:.85rem}
+ .spacer{flex:1}
+ button{background:#111;color:#fff;border:0;border-radius:8px;padding:.45rem .9rem;font-size:.9rem;cursor:pointer;white-space:nowrap}
  button:disabled{opacity:.5;cursor:default}
- .url{margin-top:1rem;padding:.6rem;background:#f5f5f5;border-radius:8px;word-break:break-all;font-family:monospace}
+ .url{font-family:monospace;font-size:.85rem;word-break:break-all}
  a{color:#2563eb}
+ main{flex:1;min-height:0;display:flex}
+ main iframe{flex:1;width:100%;border:0}
+ .imgwrap{flex:1;overflow:auto;display:flex;align-items:center;justify-content:center}
+ .imgwrap img{max-width:100%;max-height:100%}
+ .fallback{margin:auto}
+ @media(prefers-color-scheme:dark){
+  body{background:#0d1117;color:#e6edf3}
+  header{background:#161b22;border-color:#30363d}
+  .meta{color:#8b949e}
+  button{background:#e6edf3;color:#0d1117}
+  a{color:#4493f8}
+ }
 </style>
 </head>
 <body>
-<h2>{{.Name}}</h2>
-<div class="card">
- <div class="preview">
- {{if .IsImage}}<img src="{{.RawURL}}" alt="{{.Name}}">
- {{else if .IsFrame}}<iframe src="{{.RawURL}}" title="{{.Name}}" sandbox></iframe>
- {{else}}<a href="{{.RawURL}}" download="{{.Name}}">Download {{.Name}}</a>{{end}}
- </div>
- <p class="meta">Private · in memory on your machine for this session only.</p>
+<header>
+ <span class="name">{{.Name}}</span>
+ <span class="meta" id="status">Private · in memory on this machine</span>
+ <span class="spacer"></span>
+ <span id="out"></span>
  <button id="pub" data-id="{{.ID}}">Make public</button>
- <div id="out"></div>
-</div>
+</header>
+<main>
+ {{if .IsImage}}<div class="imgwrap"><img src="{{.RawURL}}" alt="{{.Name}}"></div>
+ {{else if .IsFrame}}<iframe src="{{.RawURL}}" title="{{.Name}}"></iframe>
+ {{else}}<a class="fallback" href="{{.RawURL}}" download="{{.Name}}">Download {{.Name}}</a>{{end}}
+</main>
 <script>
-const btn=document.getElementById('pub'),out=document.getElementById('out');
+const btn=document.getElementById('pub'),out=document.getElementById('out'),status=document.getElementById('status');
 btn.addEventListener('click',async()=>{
  btn.disabled=true;btn.textContent='Publishing…';
  try{
   const r=await fetch('/api/v1/uploads/publish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:btn.dataset.id})});
   if(!r.ok){throw new Error((await r.text())||('HTTP '+r.status))}
   const d=await r.json();
-  out.innerHTML='<p class="meta">Public · expires in 60 days</p><div class="url"><a href="'+d.url+'">'+d.url+'</a></div>';
+  status.textContent='Public · expires in 60 days';
+  out.innerHTML='<span class="url"><a href="'+d.url+'">'+d.url+'</a></span>';
   btn.remove();
- }catch(e){btn.disabled=false;btn.textContent='Make public';out.innerHTML='<p class="meta" style="color:#b00">'+e.message+'</p>'}
+ }catch(e){btn.disabled=false;btn.textContent='Make public';out.innerHTML='<span class="meta" style="color:#b00">'+e.message+'</span>'}
 });
 </script>
 </body>

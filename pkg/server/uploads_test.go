@@ -91,26 +91,39 @@ func TestHandleUploadRejectsEmpty(t *testing.T) {
 	}
 }
 
-func TestServeRawSetsSandboxCSP(t *testing.T) {
-	svc := testUploadService()
-	id := svc.uploads.put("page.html", "text/html; charset=utf-8", []byte("<script>alert(1)</script>"))
+func TestServeRawMirrorsWorkerCSP(t *testing.T) {
+	cases := []struct {
+		name, contentType, wantCSP string
+	}{
+		// HTML previews like published: scripted opaque origin, but the local
+		// origin's APIs must stay unreachable (connect-src/form-action 'none').
+		{"page.html", "text/html; charset=utf-8", "sandbox allow-scripts allow-downloads; connect-src 'none'; form-action 'none'"},
+		{"pic.svg", "image/svg+xml", "sandbox"},
+		{"chart.png", "image/png", ""},
+		{"notes.txt", "text/plain", ""},
+	}
 
+	svc := testUploadService()
 	r := chi.NewRouter()
 	r.Get("/u/{id}/raw", svc.handleUploadServeRaw)
 
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/u/"+id+"/raw", nil))
+	for _, tc := range cases {
+		id := svc.uploads.put(tc.name, tc.contentType, []byte("<script>alert(1)</script>"))
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
-	}
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/u/"+id+"/raw", nil))
 
-	if got := rec.Header().Get("Content-Security-Policy"); got != "sandbox" {
-		t.Fatalf("CSP = %q, want sandbox", got)
-	}
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status = %d, want 200", tc.name, rec.Code)
+		}
 
-	if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
-		t.Fatalf("nosniff header = %q", got)
+		if got := rec.Header().Get("Content-Security-Policy"); got != tc.wantCSP {
+			t.Errorf("%s: CSP = %q, want %q", tc.name, got, tc.wantCSP)
+		}
+
+		if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+			t.Errorf("%s: nosniff header = %q", tc.name, got)
+		}
 	}
 }
 
