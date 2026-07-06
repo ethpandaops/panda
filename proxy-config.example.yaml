@@ -229,6 +229,38 @@ loki:
 # github:
 #   token: "${GITHUB_TOKEN}"  # PAT or app token with actions:write permission
 
+# Uploads (optional — the publish target for `panda upload`). Private previews
+# stay in the local server; this bucket holds only files the user chose to make
+# public. Content-addressed: key is <key_prefix><6-hex-of-sha256>/<filename>.
+# Built-in abuse guards: a per-user rate limit, a size cap (max_object_bytes),
+# filename sanitization, and forced download (Content-Disposition: attachment)
+# for scriptable types (html/svg/js) so a public bucket can't serve them inline.
+# Set a 60-day object lifecycle scoped to key_prefix for retention.
+#
+# render_html serves uploaded text/html inline (so HTML/markdown diagnostics
+# render in the browser) instead of downloading. Turn it on ONLY after adding a
+# Cloudflare Transform Rule on public_base_url's hostname that sets, on text/html
+# responses:
+#   Content-Security-Policy: sandbox allow-scripts allow-downloads
+# That header pins uploaded HTML to an opaque origin — no cookies, no
+# credentialed same-origin requests, cannot impersonate the bucket domain — which
+# is what makes rendering shared HTML safe. Use a dedicated bucket/domain that
+# shares no auth cookies with any product site. Without the rule, leave this off.
+# uploads:
+#   bucket: "ethpandaops-panda-uploads"
+#   key_prefix: "panda/uploads/"            # namespaces panda uploads in the bucket
+#   public_base_url: "https://assets.ethpandaops.io"
+#   endpoint: "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+#   access_key_id: "${R2_UPLOADS_ACCESS_KEY_ID}"
+#   secret_access_key: "${R2_UPLOADS_SECRET_ACCESS_KEY}"
+#   max_object_bytes: 104857600             # 100 MiB (default if omitted)
+#   render_html: false                      # true only with the CSP rule above
+#   # Optional team tier (`panda upload --team` / the preview's "Share with team"):
+#   # same bucket, separate prefix, served from a Cloudflare-Access-protected
+#   # domain (GitHub org login) instead of the public one. Set both or neither.
+#   team_key_prefix: "panda/team/"
+#   team_base_url: "https://panda-notes.example.io"
+
 # Rate limiting
 rate_limiting:
   enabled: true

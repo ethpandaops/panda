@@ -274,6 +274,8 @@ func extractDatasourceType(path string) string {
 		return "compute"
 	case "github":
 		return "github"
+	case "uploads":
+		return "uploads"
 	case "datasources":
 		return "datasources"
 	case "embed":

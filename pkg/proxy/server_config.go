@@ -60,6 +60,62 @@ type ServerConfig struct {
 
 	// GitHub holds optional GitHub API configuration for triggering workflows.
 	GitHub *GitHubAPIConfig `yaml:"github,omitempty"`
+
+	// Uploads holds optional R2 (S3-compatible) object-store config backing the
+	// /uploads route (`panda upload`).
+	Uploads *UploadsConfig `yaml:"uploads,omitempty"`
+}
+
+// UploadsConfig configures the R2 bucket that backs the /uploads route.
+type UploadsConfig struct {
+	Bucket          string `yaml:"bucket"`
+	KeyPrefix       string `yaml:"key_prefix,omitempty"`
+	PublicBaseURL   string `yaml:"public_base_url"`
+	Endpoint        string `yaml:"endpoint"`
+	AccessKeyID     string `yaml:"access_key_id"`
+	SecretAccessKey string `yaml:"secret_access_key"`
+	MaxObjectBytes  int64  `yaml:"max_object_bytes,omitempty"`
+
+	// Team enables `panda upload --team`: objects published under a separate
+	// key prefix, served from an Access-protected domain instead of the public
+	// one. Both fields must be set together; omit them to disable.
+	TeamKeyPrefix string `yaml:"team_key_prefix,omitempty"`
+	TeamBaseURL   string `yaml:"team_base_url,omitempty"`
+
+	// RenderHTML serves uploaded text/html inline instead of forcing download.
+	// Enable only after the bucket domain has the Cloudflare CSP-sandbox rule
+	// (see UploadsConfig.RenderHTML in pkg/proxy/handlers).
+	RenderHTML bool `yaml:"render_html,omitempty"`
+}
+
+// ToUploadsHandlerConfig maps the uploads block to its handler config, or nil
+// when uploads are not configured.
+func (c *ServerConfig) ToUploadsHandlerConfig() *handlers.UploadsConfig {
+	if c.Uploads == nil {
+		return nil
+	}
+
+	return &handlers.UploadsConfig{
+		Bucket:         c.Uploads.Bucket,
+		KeyPrefix:      normalizeKeyPrefix(c.Uploads.KeyPrefix),
+		PublicBaseURL:  c.Uploads.PublicBaseURL,
+		Endpoint:       c.Uploads.Endpoint,
+		AccessKeyID:    c.Uploads.AccessKeyID,
+		SecretKey:      c.Uploads.SecretAccessKey,
+		MaxObjectBytes: c.Uploads.MaxObjectBytes,
+		TeamKeyPrefix:  normalizeKeyPrefix(c.Uploads.TeamKeyPrefix),
+		TeamBaseURL:    c.Uploads.TeamBaseURL,
+		RenderHTML:     c.Uploads.RenderHTML,
+	}
+}
+
+// normalizeKeyPrefix ensures a non-empty prefix ends with exactly one slash.
+func normalizeKeyPrefix(p string) string {
+	if p = strings.TrimSpace(p); p == "" {
+		return ""
+	}
+
+	return strings.TrimRight(p, "/") + "/"
 }
 
 // GitHubAPIConfig holds GitHub API configuration for the proxy.

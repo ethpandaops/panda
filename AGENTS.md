@@ -169,6 +169,7 @@ CLI commands and groups include:
 - `session`
 - `tracoor`
 - `upgrade`
+- `upload`
 - `version`
 
 The proxy is a separate binary, built with `make build-proxy`.
