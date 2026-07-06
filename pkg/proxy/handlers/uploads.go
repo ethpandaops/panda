@@ -87,15 +87,14 @@ func NewUploadsHandler(log logrus.FieldLogger, cfg UploadsConfig) (*UploadsHandl
 }
 
 // ServeHTTP routes the authenticated /uploads surface: POST publishes a new
-// object, GET lists published objects, DELETE removes one. All callers have
-// passed proxy auth, so in this first iteration any authenticated user may
-// list and delete any published upload.
+// object, DELETE removes one. There is deliberately no list route — published
+// URLs are content-addressed capability URLs, and deleting requires already
+// knowing the URL; a listing would let any authenticated user enumerate
+// everything anyone has shared.
 func (h *UploadsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
 		h.handlePut(w, r)
-	case http.MethodGet:
-		h.handleList(w, r)
 	case http.MethodDelete:
 		h.handleDelete(w, r)
 	default:
@@ -168,41 +167,6 @@ func (h *UploadsHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 		Size:        size,
 		ContentType: contentType,
 	})
-}
-
-// listedObject is one bucket entry in the list response.
-type listedObject struct {
-	Key          string `json:"key"`
-	URL          string `json:"url"`
-	Size         int64  `json:"size"`
-	LastModified string `json:"last_modified"`
-}
-
-// handleList returns every published object under the configured prefix.
-func (h *UploadsHandler) handleList(w http.ResponseWriter, r *http.Request) {
-	objects := []listedObject{}
-
-	for obj := range h.client.ListObjects(r.Context(), h.cfg.Bucket, minio.ListObjectsOptions{
-		Prefix:    h.cfg.KeyPrefix,
-		Recursive: true,
-	}) {
-		if obj.Err != nil {
-			h.fail(w, http.StatusBadGateway, "listing objects", obj.Err)
-			return
-		}
-
-		objects = append(objects, listedObject{
-			Key:          obj.Key,
-			URL:          strings.TrimRight(h.cfg.PublicBaseURL, "/") + "/" + obj.Key,
-			Size:         obj.Size,
-			LastModified: obj.LastModified.UTC().Format("2006-01-02T15:04:05Z"),
-		})
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(struct {
-		Objects []listedObject `json:"objects"`
-	}{objects})
 }
 
 // handleDelete removes a single published object by ?key=. The key must sit

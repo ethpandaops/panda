@@ -278,13 +278,9 @@ func (s *service) handleUploadPublish(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
-// handleUploadListPublished relays the proxy's authenticated published-uploads
-// listing back to the CLI.
-func (s *service) handleUploadListPublished(w http.ResponseWriter, r *http.Request) {
-	s.relayUploadsRequest(w, r, http.MethodGet, "/uploads")
-}
-
-// handleUploadDeletePublished relays a published-upload delete (?key=) to the proxy.
+// handleUploadDeletePublished relays a published-upload delete (?key=) to the
+// proxy. There is no list counterpart: published URLs are capability URLs, so
+// deletion requires already knowing the URL.
 func (s *service) handleUploadDeletePublished(w http.ResponseWriter, r *http.Request) {
 	key := strings.TrimSpace(r.URL.Query().Get("key"))
 	if key == "" {
@@ -292,11 +288,7 @@ func (s *service) handleUploadDeletePublished(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	s.relayUploadsRequest(w, r, http.MethodDelete, "/uploads?key="+url.QueryEscape(key))
-}
-
-func (s *service) relayUploadsRequest(w http.ResponseWriter, r *http.Request, method, requestPath string) {
-	data, status, header, err := s.proxyRequest(r.Context(), method, requestPath, nil, nil)
+	data, status, header, err := s.proxyRequest(r.Context(), http.MethodDelete, "/uploads?key="+url.QueryEscape(key), nil, nil)
 	if err != nil {
 		writeAPIError(w, http.StatusBadGateway, fmt.Sprintf("proxy request failed: %v", err))
 		return

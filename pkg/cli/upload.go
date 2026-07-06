@@ -159,53 +159,12 @@ func publishUpload(cmd *cobra.Command, id string) error {
 	return nil
 }
 
-var uploadListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List published uploads (requires proxy auth)",
-	Args:  cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, _ []string) error {
-		data, status, _, err := serverDo(commandContext(cmd), http.MethodGet, "/api/v1/uploads/published", nil, nil, nil)
-		if err != nil {
-			return err
-		}
-
-		if status < 200 || status >= 300 {
-			return decodeAPIError(status, data)
-		}
-
-		if isJSON() {
-			return printJSONBytes(data)
-		}
-
-		var result struct {
-			Objects []struct {
-				Key          string `json:"key"`
-				URL          string `json:"url"`
-				Size         int64  `json:"size"`
-				LastModified string `json:"last_modified"`
-			} `json:"objects"`
-		}
-		if err := json.Unmarshal(data, &result); err != nil {
-			return fmt.Errorf("decoding response: %w", err)
-		}
-
-		if len(result.Objects) == 0 {
-			fmt.Println("no published uploads")
-			return nil
-		}
-
-		for _, o := range result.Objects {
-			fmt.Printf("%s  %8d  %s\n", o.LastModified, o.Size, o.URL)
-		}
-
-		return nil
-	},
-}
-
 var uploadDeleteCmd = &cobra.Command{
-	Use:   "delete <url|key>...",
-	Short: "Delete published upload(s) by URL or key (requires proxy auth)",
-	Args:  cobra.MinimumNArgs(1),
+	Use:   "delete <url>...",
+	Short: "Delete published upload(s) by URL (requires proxy auth)",
+	Long: `Delete published upload(s). Takes the public URL (or object key) — knowing the
+URL is the capability: there is deliberately no way to list what others shared.`,
+	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		for _, arg := range args {
 			key := uploadKeyFromArg(arg)
@@ -254,7 +213,7 @@ func openBrowser(target string) error {
 
 func init() {
 	rootCmd.AddCommand(uploadCmd)
-	uploadCmd.AddCommand(uploadListCmd, uploadDeleteCmd)
+	uploadCmd.AddCommand(uploadDeleteCmd)
 	uploadCmd.Flags().StringVar(&uploadName, "name", "",
 		"Object filename; its extension sets Content-Type (required for stdin)")
 	uploadCmd.Flags().BoolVar(&uploadPublic, "public", false,
