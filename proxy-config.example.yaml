@@ -102,9 +102,10 @@ clickhouse:
     contains:
       - dataset: xatu-raw
         params: { database: default }
+        notes: "Public networks (mainnet, testnets)."
       - dataset: xatu-raw
-        params: { database_pattern: "*-devnet-*" }
-        notes: "Devnet networks — one database per network, named after the network (e.g. blob-devnet-0)."
+        params: { database_pattern: "*" } # per-devnet databases (glamsterdam-devnet-6, …)
+        notes: "Devnet networks; one database per devnet."
       - dataset: otel-logs
         params: { database: external }
         notes: "Devnet/testnet node container logs (tracked networks)."

@@ -1,6 +1,6 @@
 ---
 name: Check Devnet Health with Prometheus
-description: Read the metrics lane of devnet health — discover Prometheus datasources and metric names (prometheus.list_datasources, get_label_values on __name__), inspect labels before filtering, then run bounded PromQL (query, query_range) for service liveness (up), peer counts, restarts, and CPU/memory/disk pressure. Use when a devnet question is about metrics — is a node scraped and up, how many peers, is a service resource-starved — rather than chain state or logs.
+description: Read the metrics lane of devnet health — discover Prometheus datasources and metric names (prometheus.list_datasources, get_label_values on __name__), scope every selector to the shared devnets datasource's network label (network="<devnet>"), inspect labels before filtering, then run bounded PromQL (query, query_range) for service liveness (up), peer counts, restarts, and CPU/memory/disk pressure. Use when a devnet question is about metrics — is a node scraped and up, how many peers, is a service resource-starved — rather than chain state or logs.
 tags: [prometheus, promql, metrics, devnet, health, monitoring]
 triggers:
   - check devnet node metrics with prometheus
@@ -29,7 +29,7 @@ Cited metric readings and what they support — each reading is an evidence item
 
 ```yaml
 - source: prometheus
-  ref: "query_range(ds, 'up{job=\"beacon\"}', '30s', start='2026-07-01T10:40:00Z', end='2026-07-01T11:40:00Z')"
+  ref: "query_range(ds, 'up{network=\"glamsterdam-devnet-6\",job=\"beacon\"}', '30s', start='2026-07-01T10:40:00Z', end='2026-07-01T11:40:00Z')"
   at: "2026-07-01T10:40Z-11:40Z"
   detail: "cl-3 target up==0 from 10:41Z; all other targets up==1"
 ```
@@ -38,14 +38,20 @@ Cited metric readings and what they support — each reading is an evidence item
 
 Python below is a shape to adapt — substitute the datasource, terms, and window.
 
-1. **Discover the datasource.** Never assume one exists or guess its name — list
-   them and pick the one that matches the target network; if more than one plausibly
-   matches, stop and surface the candidates instead of querying an arbitrary one:
+1. **Discover the datasource, then the network label.** Never assume one exists or
+   guess its name — list them first. Hosted devnets are NOT one datasource per
+   network: they share a single datasource (commonly `devnets`) that multiplexes many
+   networks behind a `network` label, so selecting the datasource is only half the
+   job — every selector must also carry `network="<devnet>"`, or the reading silently
+   mixes networks. If more than one datasource plausibly matches, stop and surface the
+   candidates.
 
    ```python
    from ethpandaops import prometheus
    names = [d["name"] for d in prometheus.list_datasources()]
-   datasource = "<the name matching the target network>"   # stop if ambiguous
+   datasource = "devnets"                                   # the shared devnet datasource; stop if ambiguous
+   network = "glamsterdam-devnet-6"                          # confirm it exists as a label value:
+   prometheus.get_label_values(datasource, "network", contains=network, limit=20)
    ```
 
 2. **Discover metric names before writing PromQL.** Client metric names differ per
@@ -68,10 +74,13 @@ Python below is a shape to adapt — substitute the datasource, terms, and windo
    incident, and search the examples index for "prometheus" query patterns rather
    than inventing them.
 
-5. **Start from `up`.** It is the universal scrape-liveness signal: `up == 0` means
-   the target failed scraping, and a missing series means the target isn't configured
-   or the metric never existed. Counter resets on `process_*`/uptime-style metrics
-   indicate restarts.
+5. **Start from `up`.** It is the universal scrape-liveness signal, but on the shared
+   datasource always scope it: `up{network="<devnet>"}` — a bare `up` mixes every
+   network on the datasource. `up == 0` means the target failed scraping, and a
+   missing series means the target isn't configured or the metric never existed.
+   Counter resets on `process_*`/uptime-style metrics indicate restarts. `up` (and
+   other universal metrics) are known signals — you don't need to rediscover them, and
+   a `contains="up"` filter buries the exact `up` among many names that contain it.
 
 ## Rules
 

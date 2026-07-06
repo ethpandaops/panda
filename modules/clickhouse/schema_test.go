@@ -96,3 +96,34 @@ func TestExtractCreateClause_IgnoresNestedKeywords(t *testing.T) {
 
 	assert.Equal(t, "(if(kind = 'PRIMARY KEY', a, b), c)", extractCreateClause(suffix, "ORDER BY"))
 }
+
+func TestValidateDatabaseIdentifier(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{name: "public database", input: "default", wantErr: false},
+		{name: "underscored database", input: "gas_analysis", wantErr: false},
+		{name: "hyphenated devnet database", input: "glamsterdam-devnet-6", wantErr: false},
+		{name: "mixed case", input: "INFORMATION_SCHEMA", wantErr: false},
+		{name: "leading digit", input: "6-devnet", wantErr: false},
+		{name: "empty", input: "", wantErr: true},
+		{name: "backtick breakout", input: "db`.`system.tables", wantErr: true},
+		{name: "space", input: "my db", wantErr: true},
+		{name: "semicolon injection", input: "db;DROP", wantErr: true},
+		{name: "dot qualified", input: "a.b", wantErr: true},
+		{name: "quote", input: "db'", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateDatabaseIdentifier(tt.input)
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}

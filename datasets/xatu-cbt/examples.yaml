@@ -122,8 +122,8 @@ block_status:
   name: Block Status (Orphans & Reorgs)
   description: Queries for analyzing orphaned and reorged blocks using the fct_block table.
     Use fct_block for orphan/reorg queries — it has a `status` column with values like 'canonical' and
-    'orphaned'. Do NOT use fct_block_canonical or fct_block_head for orphan detection. Note that fct_block
-    does NOT include missed slots — only blocks that were actually produced.
+    'orphaned'. Do NOT use fct_block_head for orphan detection (it may reorg); there is no fct_block_canonical.
+    Note that fct_block does NOT include missed slots — only blocks that were actually produced.
   examples:
   - name: Orphaned block count
     description: Count orphaned (reorged) blocks over a time window using fct_block. Filter on status

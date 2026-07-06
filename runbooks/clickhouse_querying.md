@@ -1,6 +1,6 @@
 ---
 name: Query ClickHouse Well
-description: Write ClickHouse queries that read only what they need, and fix slow ones — EXPLAIN first, pick clickhouse-raw vs clickhouse-refined, filter on the partition key (slot_start_date_time, or block_number via the fct_block_head bridge for trace tables like int_transaction_call_frame), choose raw event data vs canonical deduplicated views, and bound the result. Use before any non-trivial query and whenever a query is slow, scans too much, or times out.
+description: Write ClickHouse queries that read only what they need, and fix slow ones — EXPLAIN first, pick clickhouse-raw vs clickhouse-refined, address the network's database (public networks in default with meta_network_name, devnets in their own <network> database on clickhouse-raw, refined via the <network>. prefix), filter on the partition key (slot_start_date_time, or block_number via the fct_block_head bridge for trace tables like int_transaction_call_frame), choose raw event data vs canonical deduplicated views, and bound the result. Use before any non-trivial query and whenever a query is slow, scans too much, or times out.
 tags: [clickhouse, performance, partition, raw, canonical, block-number]
 triggers:
   - clickhouse query slow or timing out
@@ -9,6 +9,7 @@ triggers:
   - propagation timing duplicate gossip per peer counts
   - orphaned or reorged blocks missing from results
   - full table scan memory limit exceeded
+  - which database has devnet data in raw clickhouse
 prerequisites: [clickhouse-raw, clickhouse-refined]
 ---
 
@@ -24,21 +25,55 @@ Preferred: the table(s) involved and the time or block window.
 A query that reads only what it needs — or, for a slow query, the specific change that
 fixes it and why.
 
+## Running a query
+
+Use the query surface that matches your environment — never reach ClickHouse directly
+with `clickhouse-client`, `curl`, or credentials from the environment.
+
+- **Terminal / CLI worker** — run through the `panda` CLI:
+
+  ```
+  panda clickhouse query <datasource> "<sql>"
+  ```
+
+  `EXPLAIN <query>` runs the same way. Look up a table's columns rather than guessing:
+  `panda schema <datasource> <database> <table>` for a `default`/public-network table,
+  but it cannot address a hyphenated devnet database (the name fails identifier
+  validation and the listing shows zero tables) — for those, describe the table with a
+  query instead: ``panda clickhouse query clickhouse-raw "DESCRIBE TABLE `<network>`.<table>"``
+  (and ``SHOW TABLES FROM `<network>``` to list them).
+
+- **Python sandbox (`execute_python`)** — use the `ethpandaops` library:
+
+  ```python
+  from ethpandaops import clickhouse
+  df = clickhouse.query("<datasource>", "<sql>")
+  ```
+
+Both take the same `<datasource>` — the datasource that holds the dataset's placement
+(list them with `panda datasets`). Addressing by cluster:
+
+- **Refined (`clickhouse-refined`)** — always the `<network>.` table prefix.
+- **Raw (`clickhouse-raw`)** — public networks (mainnet, testnets) live in the
+  `default` database; each devnet has its own database named after the network,
+  e.g. ``FROM `glamsterdam-devnet-6`.beacon_api_eth_v1_events_block``. In both
+  layouts keep `meta_network_name = '<network>'` plus a `slot_start_date_time`
+  bound in the WHERE — the primary key leads with them, and the cluster rejects
+  queries that use neither (`force_primary_key`). An empty result from the wrong
+  database looks like missing data — `SHOW DATABASES` settles where the network
+  lives.
+
 ## Core procedure
 
 1. **EXPLAIN first.** Run `EXPLAIN <query>` and read the plan before changing anything.
 2. **Pick the cluster.** Prefer `clickhouse-refined` (pre-aggregated, fast) for metrics;
    use `clickhouse-raw` only when the question needs event-level detail (large, slow).
    Not every network is on every cluster — if the refined `<network>` database is
-   absent, check the dataset placements (`panda datasets`) before falling back: a
-   devnet's raw data lives in its own database on `clickhouse-raw`, named after the
-   network (backtick-quoted, e.g. `` `blob-devnet-0`.table_name ``).
+   absent, the devnet is raw-only: query its `<network>` database on `clickhouse-raw`.
 3. **Filter on the partition key.** Use native date columns (`slot_start_date_time`,
    `wallclock_slot_start_date_time`) bare — wrapping them in functions like
-   `toDate(...)` defeats the partition index. In `clickhouse-raw`'s `default` database
-   also filter `meta_network_name = '<network>'`; devnet databases hold one network
-   each, so the database prefix is the filter; on refined use the `<network>.` table
-   prefix.
+   `toDate(...)` defeats the partition index. Address the network's database and keep
+   the `meta_network_name` filter per "Running a query" above.
 4. **Bound the result.** Add `ORDER BY … LIMIT N`; cap high-cardinality `GROUP BY`
    (e.g. grouping by validator index).
 5. **Order JOINs** with the smaller table on the RIGHT — ClickHouse loads the right
@@ -70,8 +105,10 @@ Using the wrong view silently drops the very rows the question is about.
   Check `cbt.get_transformation_coverage(network, "{network}.<table>")` before
   concluding data is missing, and explain an unprocessed position (dependency bounds,
   gaps) with `cbt.debug_coverage(network, id, position)`. A 404 from the coverage
-  calls means the network is not registered with CBT — record coverage as
-  unavailable, not empty, and verify with a bounded raw-table probe instead.
+  calls means coverage is unavailable — the network may be unregistered with CBT, or
+  listed by `cbt networks` yet not serving a coverage API (common for raw-only
+  devnets). Either way, record coverage as unavailable, not empty, and verify with a
+  bounded raw-table probe instead.
 - **Orphans and reorgs:** deduplicated canonical views hide them. For stale parents,
   reorgs, or orphan rate, use a table that keeps orphaned rows — `fct_block` retains
   them with `status = 'orphaned'` — not a canonical-only view.

@@ -64,7 +64,9 @@ args parse — not live health, image behavior, or post-fork liveness.
   `SeverityText`/`SeverityNumber` empty, so triage severity with
   `match(Body, '(?i)(crit|err|error|fatal)')`. Local enclave logs live here — the
   hosted `clickhouse-raw`/`clickhouse-refined` clusters carry hosted networks only.
-  Query rules: `runbooks://clickhouse_querying`.
+  Run it like any other datasource — `panda clickhouse query local-kurtosis "<sql>"`
+  in a terminal, or `clickhouse.query("local-kurtosis", "<sql>")` in a Python sandbox;
+  full query rules in `runbooks://clickhouse_querying`.
 - **Otherwise `kurtosis service logs <enclave> <service>`.** LOG-TAIL GOTCHA: Kurtosis
   applies `-n` (tail) BEFORE `--match`/`--regex-match`, so a small tail hides older
   matches. Use `-n 2000`–`5000` or `-a` for small logs, and treat an empty filtered
