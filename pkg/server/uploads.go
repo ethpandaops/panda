@@ -152,6 +152,13 @@ func uploadContentType(name string) string {
 	return "application/octet-stream"
 }
 
+// handleUploadsDisabled answers every /api/v1/uploads* route when the operator
+// has set server.disable_uploads, so `panda upload` fails with the reason
+// instead of a bare 404.
+func (s *service) handleUploadsDisabled(w http.ResponseWriter, _ *http.Request) {
+	writeAPIError(w, http.StatusForbidden, "uploads are disabled on this server (server.disable_uploads in config.yaml)")
+}
+
 // handleUpload buffers a file into the in-memory session store and returns a
 // private preview link. Nothing leaves the machine until the user publishes.
 func (s *service) handleUpload(w http.ResponseWriter, r *http.Request) {

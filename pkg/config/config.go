@@ -74,6 +74,11 @@ type ServerConfig struct {
 	SandboxURL string `yaml:"sandbox_url,omitempty"`
 	URL        string `yaml:"url,omitempty"`
 
+	// DisableUploads turns off the `panda upload` surface (the upload/publish
+	// API and the /u/ preview pages). Uploads are on by default; nothing leaves
+	// the machine without an explicit publish either way.
+	DisableUploads bool `yaml:"disable_uploads,omitempty"`
+
 	// Deprecated: Transport is accepted for backwards compatibility but ignored.
 	// The server always runs HTTP with both SSE and streamable-http transports.
 	Transport string `yaml:"transport,omitempty"`

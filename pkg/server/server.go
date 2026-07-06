@@ -406,8 +406,10 @@ func (s *service) buildHTTPHandler(routes map[string]http.Handler) http.Handler 
 	})
 
 	// Private upload preview page (in-memory, session-only) with a publish button.
-	r.Get("/u/{id}", s.handleUploadPreviewPage)
-	r.Get("/u/{id}/raw", s.handleUploadServeRaw)
+	if !s.cfg.DisableUploads {
+		r.Get("/u/{id}", s.handleUploadPreviewPage)
+		r.Get("/u/{id}/raw", s.handleUploadServeRaw)
+	}
 
 	s.mountAPIRoutes(r)
 
