@@ -324,15 +324,20 @@ jobs:
         run: |
           echo "workflow=$(gh api "repos/$GITHUB_REPOSITORY/pages" --jq '.build_type == "workflow"' 2>/dev/null || echo false)" >> "$GITHUB_OUTPUT"
 
+      # The artifact name carries the run attempt: artifacts survive job reruns, and
+      # deploy-pages fails when two artifacts share its name.
       - name: Upload site artifact
         if: steps.pagesmode.outputs.workflow == 'true'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
+          name: github-pages-${{ github.run_attempt }}
           path: /tmp/pages-site
 
       - name: Deploy to GitHub Pages
         if: steps.pagesmode.outputs.workflow == 'true'
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+        with:
+          artifact_name: github-pages-${{ github.run_attempt }}
 
       - name: Attach scorecard to release
         env:
