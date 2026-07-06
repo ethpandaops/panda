@@ -13,6 +13,7 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -24,10 +25,13 @@ const maxLocalUploadBytes int64 = 100 << 20
 // Private uploads live only in memory for the server's lifetime ("just for the
 // session") — nothing touches disk or leaves the machine until the user
 // publishes. The oldest are evicted past either bound, so worst-case memory is
-// capped regardless of upload size.
+// capped regardless of upload size, and previews unused for uploadTTL are freed
+// by a background sweeper so an idle server doesn't pin memory indefinitely.
 const (
 	uploadMaxItems            = 32
 	uploadMaxTotalBytes int64 = 256 << 20 // 256 MiB across all held previews
+	uploadTTL                 = time.Hour
+	uploadSweepInterval       = 5 * time.Minute
 )
 
 type uploadItem struct {
@@ -35,6 +39,7 @@ type uploadItem struct {
 	contentType string
 	data        []byte
 	seq         uint64
+	lastAccess  time.Time
 }
 
 type uploadStore struct {
@@ -44,6 +49,7 @@ type uploadStore struct {
 	totalBytes    int64
 	maxItems      int
 	maxTotalBytes int64
+	ttl           time.Duration
 }
 
 func newUploadStore() *uploadStore {
@@ -51,6 +57,7 @@ func newUploadStore() *uploadStore {
 		items:         make(map[string]*uploadItem, uploadMaxItems),
 		maxItems:      uploadMaxItems,
 		maxTotalBytes: uploadMaxTotalBytes,
+		ttl:           uploadTTL,
 	}
 }
 
@@ -60,7 +67,7 @@ func (s *uploadStore) put(name, contentType string, data []byte) string {
 
 	s.seq++
 	id := uuid.NewString()
-	s.items[id] = &uploadItem{name: name, contentType: contentType, data: data, seq: s.seq}
+	s.items[id] = &uploadItem{name: name, contentType: contentType, data: data, seq: s.seq, lastAccess: time.Now()}
 	s.totalBytes += int64(len(data))
 
 	// Evict oldest past either bound, but never the item we just added.
@@ -84,8 +91,39 @@ func (s *uploadStore) get(id string) (*uploadItem, bool) {
 	defer s.mu.Unlock()
 
 	it, ok := s.items[id]
+	if ok {
+		it.lastAccess = time.Now()
+	}
 
 	return it, ok
+}
+
+// sweep frees previews that have gone unused for the TTL.
+func (s *uploadStore) sweep(now time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for id, it := range s.items {
+		if now.Sub(it.lastAccess) > s.ttl {
+			s.totalBytes -= int64(len(it.data))
+			delete(s.items, id)
+		}
+	}
+}
+
+// sweeper periodically frees expired previews until done closes.
+func (s *uploadStore) sweeper(done <-chan struct{}) {
+	t := time.NewTicker(uploadSweepInterval)
+	defer t.Stop()
+
+	for {
+		select {
+		case <-done:
+			return
+		case now := <-t.C:
+			s.sweep(now)
+		}
+	}
 }
 
 // uploadStoredResponse is returned by POST /api/v1/uploads. The file is private

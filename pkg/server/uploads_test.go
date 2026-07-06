@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sirupsen/logrus"
@@ -58,6 +59,46 @@ func TestUploadStoreKeepsItemLargerThanTotalCap(t *testing.T) {
 	id := store.put("big.bin", "application/octet-stream", make([]byte, 9))
 	if _, ok := store.get(id); !ok {
 		t.Fatal("the only item must be retained even if it exceeds the byte cap")
+	}
+}
+
+func TestUploadStoreSweepFreesIdlePreviews(t *testing.T) {
+	store := newUploadStore()
+
+	stale := store.put("stale.txt", "text/plain", make([]byte, 4))
+	fresh := store.put("fresh.txt", "text/plain", make([]byte, 4))
+	store.items[stale].lastAccess = time.Now().Add(-2 * uploadTTL)
+
+	store.sweep(time.Now())
+
+	if _, ok := store.items[stale]; ok {
+		t.Fatal("idle preview should have been swept")
+	}
+
+	if _, ok := store.items[fresh]; !ok {
+		t.Fatal("fresh preview must survive the sweep")
+	}
+
+	if store.totalBytes != 4 {
+		t.Fatalf("totalBytes = %d, want 4", store.totalBytes)
+	}
+}
+
+func TestUploadStoreGetRefreshesTTL(t *testing.T) {
+	store := newUploadStore()
+
+	id := store.put("kept.txt", "text/plain", make([]byte, 4))
+	store.items[id].lastAccess = time.Now().Add(-2 * uploadTTL)
+
+	// An access (e.g. the preview page being reloaded) resets the idle clock.
+	if _, ok := store.get(id); !ok {
+		t.Fatal("item should still be present before the sweep")
+	}
+
+	store.sweep(time.Now())
+
+	if _, ok := store.items[id]; !ok {
+		t.Fatal("recently accessed preview must survive the sweep")
 	}
 }
 

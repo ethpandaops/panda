@@ -144,6 +144,9 @@ func (s *service) Start(ctx context.Context) error {
 	// Register resources
 	s.registerResources()
 
+	// Free idle upload previews for the server's lifetime.
+	go s.uploads.sweeper(s.done)
+
 	return s.runHTTP(ctx)
 }
 
