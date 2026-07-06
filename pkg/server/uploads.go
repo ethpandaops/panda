@@ -286,13 +286,13 @@ var uploadPreviewTmpl = template.Must(template.New("preview").Parse(`<!doctype h
 <style>
  html,body{height:100%;margin:0}
  body{display:flex;flex-direction:column;font-family:system-ui,-apple-system,sans-serif;color:#111}
- header{flex:none;display:flex;align-items:center;gap:.75rem;padding:.5rem .9rem;border-bottom:1px solid #ddd;background:#fafafa}
+ header{flex:none;display:flex;align-items:center;gap:1rem;padding:.8rem 1.25rem;border-bottom:1px solid #ddd;background:#fafafa;font-size:1.05rem}
  .name{font-weight:600;word-break:break-all}
- .meta{color:#666;font-size:.85rem}
+ .meta{color:#666;font-size:.95rem}
  .spacer{flex:1}
- button{background:#111;color:#fff;border:0;border-radius:8px;padding:.45rem .9rem;font-size:.9rem;cursor:pointer;white-space:nowrap}
+ button{background:#111;color:#fff;border:0;border-radius:8px;padding:.6rem 1.25rem;font-size:1rem;cursor:pointer;white-space:nowrap}
  button:disabled{opacity:.5;cursor:default}
- .url{font-family:monospace;font-size:.85rem;word-break:break-all}
+ .url{font-family:monospace;font-size:.95rem;word-break:break-all}
  a{color:#2563eb}
  main{flex:1;min-height:0;display:flex}
  main iframe{flex:1;width:100%;border:0}
