@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -143,12 +144,43 @@ func (s *service) handleComputeOperation(operationID string, w http.ResponseWrit
 			return c.GetSandboxOperations(ctx, id)
 		})
 	case "compute.get_sandbox_logs":
-		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, _ map[string]any) (*http.Response, error) {
-			return c.GetSandboxLogs(ctx, id)
+		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
+			params := &compute.GetSandboxLogsParams{}
+			if v := optionalIntArg(args, "tail_bytes", 0); v > 0 {
+				tail := int64(v)
+				params.TailBytes = &tail
+			}
+			if v := optionalStringArg(args, "source"); v != "" {
+				source := compute.GetSandboxLogsParamsSource(v)
+				params.Source = &source
+			}
+			return c.GetSandboxLogs(ctx, id, params)
 		})
 	case "compute.get_sandbox_lineage":
 		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, _ map[string]any) (*http.Response, error) {
 			return c.GetSandboxLineage(ctx, id)
+		})
+	case "compute.exec_sandbox":
+		s.computeOpWithID(w, r, "id", s.computeExecSandbox)
+	case "compute.get_sandbox_metrics":
+		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, _ map[string]any) (*http.Response, error) {
+			return c.GetSandboxMetrics(ctx, id, nil)
+		})
+	case "compute.pause_sandbox":
+		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
+			return c.PauseSandbox(ctx, id, &compute.PauseSandboxParams{IdempotencyKey: computeIdem(args)})
+		})
+	case "compute.resume_sandbox":
+		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
+			return c.ResumeSandbox(ctx, id, &compute.ResumeSandboxParams{IdempotencyKey: computeIdem(args)})
+		})
+	case "compute.get_sandbox_hooks":
+		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, _ map[string]any) (*http.Response, error) {
+			return c.GetSandboxHooks(ctx, id, nil)
+		})
+	case "compute.get_sandbox_hook_runs":
+		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, _ map[string]any) (*http.Response, error) {
+			return c.GetSandboxHookRuns(ctx, id, nil)
 		})
 
 	// Snapshots.
@@ -181,6 +213,10 @@ func (s *service) handleComputeOperation(operationID string, w http.ResponseWrit
 	case "compute.get_snapshot_restored_by":
 		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, _ map[string]any) (*http.Response, error) {
 			return c.GetSnapshotRestoredBy(ctx, id)
+		})
+	case "compute.get_snapshot_lineage":
+		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, _ map[string]any) (*http.Response, error) {
+			return c.GetSnapshotLineage(ctx, id)
 		})
 
 	// Templates.
@@ -325,14 +361,61 @@ func (s *service) computeOpWithID(w http.ResponseWriter, r *http.Request, idArg 
 }
 
 func (s *service) computeCreateSandbox(ctx context.Context, c *compute.Client, args map[string]any) (*http.Response, error) {
-	template, err := requiredStringArg(args, "template")
-	if err != nil {
-		return nil, &computeArgError{err: err}
+	template := optionalStringArg(args, "template")
+	snapshotID := optionalStringArg(args, "snapshot_id")
+	if (template == "") == (snapshotID == "") {
+		return nil, &computeArgError{err: fmt.Errorf("exactly one of template or snapshot_id is required")}
 	}
 
 	body := compute.CreateSandboxJSONRequestBody{
-		Template: &template,
 		Ttl:      computeOptStr(args, "ttl"),
+		Name:     computeOptStr(args, "name"),
+		Vcpu:     computeOptInt(args, "vcpu"),
+		MemoryMb: computeOptInt(args, "memory_mb"),
+		DiskGb:   computeOptInt(args, "disk_gb"),
+	}
+	if template != "" {
+		body.Template = &template
+	} else {
+		source := compute.SnapshotBootSource{
+			Kind:       compute.SnapshotBootSourceKind("snapshot"),
+			SnapshotId: snapshotID,
+		}
+		if v := optionalStringArg(args, "flavor"); v != "" {
+			flavor := compute.SnapshotBootSourceFlavor(v)
+			source.Flavor = &flavor
+		}
+		var union compute.CreateSandboxSource
+		if err := union.FromSnapshotBootSource(source); err != nil {
+			return nil, &computeArgError{err: err}
+		}
+		body.Source = &union
+	}
+
+	env, err := computeOptStringMap(args, "env")
+	if err != nil {
+		return nil, &computeArgError{err: err}
+	}
+	body.Env = env
+	labels, err := computeOptStringMap(args, "labels")
+	if err != nil {
+		return nil, &computeArgError{err: err}
+	}
+	body.Labels = labels
+
+	if raw, ok := args["hooks"]; ok {
+		var hooks []compute.HookDeclaration
+		if err := reencodeJSONArg(raw, &hooks); err != nil {
+			return nil, &computeArgError{err: fmt.Errorf("hooks: %w", err)}
+		}
+		body.Hooks = &hooks
+	}
+	if raw, ok := args["watchdog"]; ok {
+		var watchdog compute.WatchdogDeclaration
+		if err := reencodeJSONArg(raw, &watchdog); err != nil {
+			return nil, &computeArgError{err: fmt.Errorf("watchdog: %w", err)}
+		}
+		body.Watchdog = &watchdog
 	}
 
 	if onDelete := optionalStringArg(args, "on_delete"); onDelete != "" {
@@ -341,6 +424,26 @@ func (s *service) computeCreateSandbox(ctx context.Context, c *compute.Client, a
 	}
 
 	return c.CreateSandbox(ctx, &compute.CreateSandboxParams{IdempotencyKey: computeIdem(args)}, body)
+}
+
+func (s *service) computeExecSandbox(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
+	rawCommand, ok := args["command"].([]any)
+	if !ok || len(rawCommand) == 0 {
+		return nil, &computeArgError{err: fmt.Errorf("command is required and must be a non-empty argument vector")}
+	}
+	command := make([]string, 0, len(rawCommand))
+	for _, item := range rawCommand {
+		arg, ok := item.(string)
+		if !ok {
+			return nil, &computeArgError{err: fmt.Errorf("command entries must be strings")}
+		}
+		command = append(command, arg)
+	}
+
+	return c.ExecSandbox(ctx, id, compute.ExecSandboxJSONRequestBody{
+		Command: command,
+		Timeout: computeOptStr(args, "timeout"),
+	})
 }
 
 func (s *service) computeLeaseSandbox(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
@@ -364,7 +467,6 @@ func (s *service) computePromoteSnapshot(ctx context.Context, c *compute.Client,
 	}
 
 	return c.PromoteSnapshot(ctx, id,
-		&compute.PromoteSnapshotParams{IdempotencyKey: computeIdem(args)},
 		compute.PromoteSnapshotJSONRequestBody{
 			Name:        name,
 			Version:     computeOptStr(args, "version"),
@@ -372,7 +474,20 @@ func (s *service) computePromoteSnapshot(ctx context.Context, c *compute.Client,
 			Description: computeOptStr(args, "description"),
 			Tags:        computeOptStringSlice(args, "tags"),
 		},
+		computeIdemHeaderEditor(args),
 	)
+}
+
+// computeIdemHeaderEditor forwards the caller's idempotency key on operations
+// whose generated client no longer models the header as a parameter.
+func computeIdemHeaderEditor(args map[string]any) compute.RequestEditorFn {
+	return func(_ context.Context, req *http.Request) error {
+		if key := optionalStringArg(args, "idempotency_key"); key != "" {
+			req.Header.Set("Idempotency-Key", key)
+		}
+
+		return nil
+	}
 }
 
 func (s *service) computeGetTemplate(ctx context.Context, c *compute.Client, args map[string]any) (*http.Response, error) {
@@ -613,4 +728,44 @@ func computeOptStringSlice(args map[string]any, key string) *[]string {
 	}
 
 	return &items
+}
+
+func computeOptInt(args map[string]any, key string) *int {
+	if v := optionalIntArg(args, key, 0); v > 0 {
+		return &v
+	}
+
+	return nil
+}
+
+func computeOptStringMap(args map[string]any, key string) (*map[string]string, error) {
+	raw, ok := args[key]
+	if !ok || raw == nil {
+		return nil, nil
+	}
+	entries, ok := raw.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("%s must be an object of string values", key)
+	}
+	out := make(map[string]string, len(entries))
+	for k, v := range entries {
+		value, ok := v.(string)
+		if !ok {
+			return nil, fmt.Errorf("%s.%s must be a string", key, k)
+		}
+		out[k] = value
+	}
+
+	return &out, nil
+}
+
+// reencodeJSONArg round-trips a decoded JSON arg into a typed struct so op
+// payloads reuse the generated API models without bespoke field mapping.
+func reencodeJSONArg(raw any, target any) error {
+	encoded, err := json.Marshal(raw)
+	if err != nil {
+		return err
+	}
+
+	return json.Unmarshal(encoded, target)
 }

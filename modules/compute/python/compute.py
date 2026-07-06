@@ -127,25 +127,50 @@ def get_sandbox(sandbox_id: str, datasource: str | None = None) -> Any:
 
 
 def create_sandbox(
-    template: str,
+    template: str | None = None,
     ttl: str | None = None,
     on_delete: str | None = None,
     idempotency_key: str | None = None,
     datasource: str | None = None,
+    snapshot_id: str | None = None,
+    flavor: str | None = None,
+    name: str | None = None,
+    vcpu: int | None = None,
+    memory_mb: int | None = None,
+    disk_gb: int | None = None,
+    env: dict[str, str] | None = None,
+    labels: dict[str, str] | None = None,
+    hooks: list[dict[str, Any]] | None = None,
+    watchdog: dict[str, Any] | None = None,
 ) -> Any:
-    """Create a sandbox from a template.
+    """Create a sandbox from a template or a snapshot.
 
-    ``ttl`` is a Go-duration string (e.g. ``"1h"``). ``on_delete`` is one of
-    ``archive``, ``cold``, ``delete``, ``hot``. Returns an operation object;
-    poll its ``id`` with :func:`get_operation`.
+    Exactly one of ``template`` or ``snapshot_id`` is required. ``flavor``
+    applies to snapshot sources: ``"warm"`` (default) resumes the captured
+    memory image; ``"cold"`` boots a fresh kernel on the snapshot's disk with
+    freely chosen ``vcpu``/``memory_mb``. ``ttl`` is a Go-duration string
+    (e.g. ``"1h"``). ``on_delete`` is one of ``archive``, ``cold``,
+    ``delete``, ``hot``. ``hooks`` is a list of hook declarations and
+    ``watchdog`` a watchdog declaration, as accepted by the compute API.
+    Returns an operation object; poll its ``id`` with :func:`get_operation`.
     """
     _require_compute_available()
     args = _args(
         datasource,
         template=template,
+        snapshot_id=snapshot_id,
+        flavor=flavor,
         ttl=ttl,
         on_delete=on_delete,
         idempotency_key=idempotency_key,
+        name=name,
+        vcpu=vcpu,
+        memory_mb=memory_mb,
+        disk_gb=disk_gb,
+        env=env,
+        labels=labels,
+        hooks=hooks,
+        watchdog=watchdog,
     )
     return _runtime.invoke_json("compute.create_sandbox", args)
 
@@ -232,11 +257,21 @@ def get_sandbox_operations(sandbox_id: str, datasource: str | None = None) -> An
     )
 
 
-def get_sandbox_logs(sandbox_id: str, datasource: str | None = None) -> Any:
-    """Fetch a sandbox's logs."""
+def get_sandbox_logs(
+    sandbox_id: str,
+    datasource: str | None = None,
+    source: str | None = None,
+    tail_bytes: int | None = None,
+) -> Any:
+    """Fetch a sandbox's logs.
+
+    ``source`` restricts output to ``"console"`` or ``"firecracker"``;
+    ``tail_bytes`` bounds the per-source byte tail.
+    """
     _require_compute_available()
     return _runtime.invoke_json(
-        "compute.get_sandbox_logs", _args(datasource, id=sandbox_id)
+        "compute.get_sandbox_logs",
+        _args(datasource, id=sandbox_id, source=source, tail_bytes=tail_bytes),
     )
 
 
@@ -245,6 +280,76 @@ def get_sandbox_lineage(sandbox_id: str, datasource: str | None = None) -> Any:
     _require_compute_available()
     return _runtime.invoke_json(
         "compute.get_sandbox_lineage", _args(datasource, id=sandbox_id)
+    )
+
+
+def exec_sandbox(
+    sandbox_id: str,
+    command: list[str],
+    timeout: str | None = None,
+    datasource: str | None = None,
+) -> Any:
+    """Run a command inside a sandbox and return its output.
+
+    ``command`` is an argument vector executed directly in the guest (no
+    shell) — wrap in ``["/bin/sh", "-c", ...]`` for shell semantics.
+    ``timeout`` is a Go-duration string (server default 30s, max 5m).
+    Returns exit_code, stdout, and stderr.
+    """
+    _require_compute_available()
+    return _runtime.invoke_json(
+        "compute.exec_sandbox",
+        _args(datasource, id=sandbox_id, command=command, timeout=timeout),
+    )
+
+
+def get_sandbox_metrics(sandbox_id: str, datasource: str | None = None) -> Any:
+    """Fetch guest resource metrics (cpu, memory, disk) for a sandbox."""
+    _require_compute_available()
+    return _runtime.invoke_json(
+        "compute.get_sandbox_metrics", _args(datasource, id=sandbox_id)
+    )
+
+
+def pause_sandbox(
+    sandbox_id: str,
+    idempotency_key: str | None = None,
+    datasource: str | None = None,
+) -> Any:
+    """Pause a running sandbox's vCPUs. Returns an operation to poll."""
+    _require_compute_available()
+    return _runtime.invoke_json(
+        "compute.pause_sandbox",
+        _args(datasource, id=sandbox_id, idempotency_key=idempotency_key),
+    )
+
+
+def resume_sandbox(
+    sandbox_id: str,
+    idempotency_key: str | None = None,
+    datasource: str | None = None,
+) -> Any:
+    """Resume a paused sandbox. Returns an operation to poll."""
+    _require_compute_available()
+    return _runtime.invoke_json(
+        "compute.resume_sandbox",
+        _args(datasource, id=sandbox_id, idempotency_key=idempotency_key),
+    )
+
+
+def get_sandbox_hooks(sandbox_id: str, datasource: str | None = None) -> Any:
+    """List lifecycle hooks declared on a sandbox."""
+    _require_compute_available()
+    return _runtime.invoke_json(
+        "compute.get_sandbox_hooks", _args(datasource, id=sandbox_id)
+    )
+
+
+def get_sandbox_hook_runs(sandbox_id: str, datasource: str | None = None) -> Any:
+    """List lifecycle hook executions for a sandbox."""
+    _require_compute_available()
+    return _runtime.invoke_json(
+        "compute.get_sandbox_hook_runs", _args(datasource, id=sandbox_id)
     )
 
 
@@ -297,6 +402,14 @@ def restore_snapshot(
     _require_compute_available()
     args = _args(datasource, id=snapshot_id, ttl=ttl, idempotency_key=idempotency_key)
     return _runtime.invoke_json("compute.restore_snapshot", args)
+
+
+def get_snapshot_lineage(snapshot_id: str, datasource: str | None = None) -> Any:
+    """Show the full lineage tree rooted at a snapshot."""
+    _require_compute_available()
+    return _runtime.invoke_json(
+        "compute.get_snapshot_lineage", _args(datasource, id=snapshot_id)
+    )
 
 
 def get_snapshot_restored_by(snapshot_id: str, datasource: str | None = None) -> Any:
