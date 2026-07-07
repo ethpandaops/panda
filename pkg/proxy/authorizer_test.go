@@ -156,14 +156,12 @@ func TestAuthorizerFilterDatasources(t *testing.T) {
 	cfg := testConfig()
 	authorizer := NewAuthorizer(logrus.New(), cfg)
 
-	const testEmbeddingModel = "test-embed-model"
-
 	resp := DatasourcesResponse{
 		ClickHouseInfo:     []types.DatasourceInfo{{Type: "clickhouse", Name: "restricted"}, {Type: "clickhouse", Name: "public"}},
 		PrometheusInfo:     []types.DatasourceInfo{{Type: "prometheus", Name: "internal"}},
 		LokiInfo:           []types.DatasourceInfo{{Type: "loki", Name: "logs"}},
 		EmbeddingAvailable: true,
-		EmbeddingModel:     testEmbeddingModel,
+		EmbeddingModel:     "openai/text-embedding-3-small",
 	}
 
 	// Embedding is infrastructure metadata, not a per-user datasource — it must
@@ -171,7 +169,7 @@ func TestAuthorizerFilterDatasources(t *testing.T) {
 	assertEmbeddingPreserved := func(t *testing.T, filtered DatasourcesResponse) {
 		t.Helper()
 		assert.True(t, filtered.EmbeddingAvailable)
-		assert.Equal(t, testEmbeddingModel, filtered.EmbeddingModel)
+		assert.Equal(t, "openai/text-embedding-3-small", filtered.EmbeddingModel)
 	}
 
 	// User in ethpandaops — should see everything.

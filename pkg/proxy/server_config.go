@@ -54,13 +54,68 @@ type ServerConfig struct {
 	// Embedding holds optional embedding API configuration (v1 route: /embed).
 	Embedding *EmbeddingConfig `yaml:"embedding,omitempty"`
 
-	// EmbeddingV2 holds optional configuration for the v2 embedding route
-	// (/v2/embedding). The route's contract is fixed (fp32, model advertised in
-	// the response); the model itself is swappable here without touching v1.
+	// EmbeddingV2 holds optional configuration for the v2/v3 embedding routes.
+	// v3 is a protocol upgrade over the same fixed-dimensional embedding space.
 	EmbeddingV2 *EmbeddingConfig `yaml:"embedding_v2,omitempty"`
 
 	// GitHub holds optional GitHub API configuration for triggering workflows.
 	GitHub *GitHubAPIConfig `yaml:"github,omitempty"`
+
+	// Uploads holds optional R2 (S3-compatible) object-store config backing the
+	// /uploads route (`panda upload`).
+	Uploads *UploadsConfig `yaml:"uploads,omitempty"`
+}
+
+// UploadsConfig configures the R2 bucket that backs the /uploads route.
+type UploadsConfig struct {
+	Bucket          string `yaml:"bucket"`
+	KeyPrefix       string `yaml:"key_prefix,omitempty"`
+	PublicBaseURL   string `yaml:"public_base_url"`
+	Endpoint        string `yaml:"endpoint"`
+	AccessKeyID     string `yaml:"access_key_id"`
+	SecretAccessKey string `yaml:"secret_access_key"`
+	MaxObjectBytes  int64  `yaml:"max_object_bytes,omitempty"`
+
+	// Team enables `panda upload --team`: objects published under a separate
+	// key prefix, served from an Access-protected domain instead of the public
+	// one. Both fields must be set together; omit them to disable.
+	TeamKeyPrefix string `yaml:"team_key_prefix,omitempty"`
+	TeamBaseURL   string `yaml:"team_base_url,omitempty"`
+
+	// RenderHTML serves uploaded text/html inline instead of forcing download.
+	// Enable only after the bucket domain has the Cloudflare CSP-sandbox rule
+	// (see UploadsConfig.RenderHTML in pkg/proxy/handlers).
+	RenderHTML bool `yaml:"render_html,omitempty"`
+}
+
+// ToUploadsHandlerConfig maps the uploads block to its handler config, or nil
+// when uploads are not configured.
+func (c *ServerConfig) ToUploadsHandlerConfig() *handlers.UploadsConfig {
+	if c.Uploads == nil {
+		return nil
+	}
+
+	return &handlers.UploadsConfig{
+		Bucket:         c.Uploads.Bucket,
+		KeyPrefix:      normalizeKeyPrefix(c.Uploads.KeyPrefix),
+		PublicBaseURL:  c.Uploads.PublicBaseURL,
+		Endpoint:       c.Uploads.Endpoint,
+		AccessKeyID:    c.Uploads.AccessKeyID,
+		SecretKey:      c.Uploads.SecretAccessKey,
+		MaxObjectBytes: c.Uploads.MaxObjectBytes,
+		TeamKeyPrefix:  normalizeKeyPrefix(c.Uploads.TeamKeyPrefix),
+		TeamBaseURL:    c.Uploads.TeamBaseURL,
+		RenderHTML:     c.Uploads.RenderHTML,
+	}
+}
+
+// normalizeKeyPrefix ensures a non-empty prefix ends with exactly one slash.
+func normalizeKeyPrefix(p string) string {
+	if p = strings.TrimSpace(p); p == "" {
+		return ""
+	}
+
+	return strings.TrimRight(p, "/") + "/"
 }
 
 // GitHubAPIConfig holds GitHub API configuration for the proxy.
@@ -321,14 +376,15 @@ type EmbeddingConfig struct {
 	// APIKey is the API key for the embedding provider (e.g., OpenRouter).
 	APIKey string `yaml:"api_key"`
 
-	// Model is the embedding model name (default: "openai/text-embedding-3-small").
+	// Model is the embedding model name (default: "openai/text-embedding-3-small"
+	// for v1, "google/gemini-embedding-2" for v2/v3).
 	Model string `yaml:"model,omitempty"`
 
 	// APIURL is the base URL of the embedding API (default: "https://openrouter.ai/api/v1").
 	APIURL string `yaml:"api_url,omitempty"`
 
-	// Dimensions, when > 0, requests a fixed output dimensionality (Matryoshka)
-	// from the embedding API. Used by the v2 embedding route; ignored by v1.
+	// Dimensions requests a fixed output dimensionality (Matryoshka) from the
+	// embedding API. Used by embedding_v2; ignored by the v1 embedding block.
 	Dimensions int `yaml:"dimensions,omitempty"`
 
 	// Cache holds embedding cache configuration.
@@ -429,7 +485,7 @@ func (c *ServerConfig) ApplyDefaults() {
 		}
 	}
 
-	// Embedding v2 defaults.
+	// Embedding v2/v3 defaults.
 	if c.EmbeddingV2 != nil {
 		if c.EmbeddingV2.Model == "" {
 			c.EmbeddingV2.Model = "google/gemini-embedding-2"
@@ -521,10 +577,16 @@ func (c *ServerConfig) Validate() error {
 		}
 	}
 
-	// Validate embedding v2 config.
+	// Validate embedding v2/v3 config.
 	if c.EmbeddingV2 != nil {
 		if c.EmbeddingV2.APIKey == "" {
 			return fmt.Errorf("embedding_v2.api_key is required when embedding_v2 is configured")
+		}
+
+		// Dimensions is embedding-space identity; a non-positive value would
+		// start cleanly, advertise a bad space, then fail every embed request.
+		if c.EmbeddingV2.Dimensions < 1 {
+			return fmt.Errorf("embedding_v2.dimensions must be positive, got %d", c.EmbeddingV2.Dimensions)
 		}
 
 		if c.EmbeddingV2.Cache.Backend == "redis" && c.EmbeddingV2.Cache.RedisURL == "" {

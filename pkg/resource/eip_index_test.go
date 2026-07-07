@@ -45,6 +45,10 @@ func (s *stubEmbedder) Embed(text string) ([]float32, error) {
 }
 
 func (s *stubEmbedder) EmbedBatch(texts []string) ([][]float32, error) {
+	return s.EmbedQueryBatch(texts)
+}
+
+func (s *stubEmbedder) EmbedQueryBatch(texts []string) ([][]float32, error) {
 	vecs := make([][]float32, len(texts))
 	for i, t := range texts {
 		v, err := s.Embed(t)
