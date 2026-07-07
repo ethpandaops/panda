@@ -11,6 +11,7 @@ tags:
   - name: ssh
   - name: sandboxes
   - name: snapshots
+  - name: forks
   - name: templates
   - name: hook-templates
   - name: operations
@@ -244,6 +245,34 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AcceptedResponse'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/sandboxes/{id}/fork:
+    parameters:
+      - $ref: '#/components/parameters/SandboxID'
+    post:
+      tags: [sandboxes]
+      operationId: forkSandbox
+      description: >-
+        Capture the sandbox as an ephemeral snapshot and fan out `count`
+        sandboxes from it. The source keeps running. Every child requires a
+        TTL; children default to the source's TTL duration restarted at their
+        own boot and parent expiry never cascades.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForkRequest'
+      responses:
+        '202':
+          description: Fork accepted. Poll the returned operation ID or GET /v1/forks/{id}.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForkAccepted'
         default:
           $ref: '#/components/responses/Error'
   /v1/sandboxes/{id}/lease:
@@ -494,27 +523,66 @@ paths:
                 $ref: '#/components/schemas/AcceptedResponse'
         default:
           $ref: '#/components/responses/Error'
-  /v1/snapshots/{id}/restore:
+  /v1/snapshots/{id}/fork:
     parameters:
       - $ref: '#/components/parameters/SnapshotID'
     post:
       tags: [snapshots]
-      operationId: restoreSnapshot
+      operationId: forkSnapshot
+      description: >-
+        Fan out `count` sandboxes from a published snapshot. To reconstitute a
+        single sandbox from a snapshot (the former "restore"), create a sandbox
+        with a snapshot source instead (POST /v1/sandboxes). Every child
+        requires a TTL.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RestoreSnapshotRequest'
+              $ref: '#/components/schemas/ForkRequest'
       responses:
         '202':
-          description: Restore accepted. Poll the returned operation ID.
+          description: Fork accepted. Poll the returned operation ID or GET /v1/forks/{id}.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AcceptedResponse'
+                $ref: '#/components/schemas/ForkAccepted'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/forks:
+    get:
+      tags: [forks]
+      operationId: listForks
+      description: List fork operations and their progress counts.
+      responses:
+        '200':
+          description: Fork operations.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Fork'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/forks/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ForkID'
+    get:
+      tags: [forks]
+      operationId: getFork
+      description: Progress of a single fork operation, including per-child state.
+      responses:
+        '200':
+          description: Fork operation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Fork'
+        '404':
+          $ref: '#/components/responses/NotFound'
         default:
           $ref: '#/components/responses/Error'
   /v1/snapshots/{id}/promote:
@@ -1141,6 +1209,12 @@ components:
       required: true
       schema:
         type: string
+    ForkID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
     SSHPublicKeyID:
       name: id
       in: path
@@ -1281,6 +1355,13 @@ components:
           type: integer
           minimum: 1
           description: Optional disk override in GiB. Cold creates require disk_gb to be greater than or equal to the cold template disk size. Warm restores require disk_gb to be at least the recorded warm snapshot disk size. This resizes the backing zvol only; extra space becomes available to the guest only after the guest resizes its filesystem.
+        paused:
+          type: boolean
+          description: >-
+            When true the restored sandbox is left paused (its fully-booted
+            memory image loaded but not resumed) instead of running. Valid only
+            for a warm-flavor snapshot source; a template source or the cold
+            flavor is rejected because there is no frozen image to hold.
         hooks:
           type: array
           maxItems: 16
@@ -1330,18 +1411,121 @@ components:
           type: string
         ttl:
           type: string
-          description: Optional Go-style duration string. Omit to use lifecycle.default_snapshot_ttl; "0" means no expiry.
-    RestoreSnapshotRequest:
+          description: >-
+            Go-style duration string. Snapshots always carry a TTL: omit to
+            fall back to the configured lifecycle.default_snapshot_ttl (a
+            required server default). If neither is present the request is
+            rejected.
+    ForkRequest:
       type: object
       additionalProperties: false
+      required: [count]
       properties:
+        count:
+          type: integer
+          minimum: 1
+          description: Number of sandboxes to create. The only multiplier in the API.
         ttl:
           type: string
-          description: Optional positive Go-style duration string.
-        on_delete:
+          description: >-
+            Go-style duration string applied to every child. Fork children
+            always carry a TTL: omit to fall back to the configured
+            lifecycle.default_ttl (a required server default). If neither is
+            present the request is rejected.
+        min_ready:
+          type: integer
+          minimum: 0
+          description: >-
+            Floor of ready children below which the fork reports failure
+            (min_ready_not_met). Running children are never destroyed to meet
+            it. Must not exceed count.
+        deadline:
           type: string
-          enum: [delete, hot, archive]
-          description: Disposition to apply when the restored sandbox is deleted.
+          description: >-
+            Go-style duration string bounding how long queued children may wait
+            for capacity before the sweeper cancels the still-queued ones.
+        flavor:
+          type: string
+          enum: [warm, cold]
+          description: >-
+            How each child boots from the source snapshot. "warm" (default)
+            resumes the captured memory image; "cold" boots a fresh kernel on
+            the snapshot's disk.
+        paused:
+          type: boolean
+          description: >-
+            Whether children land paused instead of running. Omit to inherit
+            the default: sandbox-source children inherit the source's state at
+            fork time (a paused source yields paused children), snapshot-source
+            children run. Set true/false to override. paused true with the cold
+            flavor is rejected because cold children fresh-boot.
+    ForkAccepted:
+      type: object
+      additionalProperties: false
+      required: [fork_id, op_id]
+      properties:
+        fork_id:
+          type: string
+        op_id:
+          type: string
+    ForkSource:
+      type: object
+      additionalProperties: false
+      required: [kind, id]
+      properties:
+        kind:
+          type: string
+          enum: [sandbox, snapshot]
+        id:
+          type: string
+    ForkChild:
+      type: object
+      additionalProperties: false
+      required: [ordinal, sandbox_id, state]
+      properties:
+        ordinal:
+          type: integer
+        sandbox_id:
+          type: string
+        state:
+          type: string
+    Fork:
+      type: object
+      additionalProperties: false
+      required: [id, source, state, requested, queued, running, failed, cancelled, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        source:
+          $ref: '#/components/schemas/ForkSource'
+        state:
+          type: string
+        requested:
+          type: integer
+        min_ready:
+          type: integer
+        queued:
+          type: integer
+        running:
+          type: integer
+        failed:
+          type: integer
+        cancelled:
+          type: integer
+        deadline_at:
+          type: string
+        failure_reason:
+          type: string
+        failure_message:
+          type: string
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/ForkChild'
+        created_at:
+          type: string
+        updated_at:
+          type: string
     HookDeclaration:
       type: object
       additionalProperties: false
@@ -1540,8 +1724,6 @@ components:
         createdAt:
           type: string
           format: date-time
-        tier:
-          type: string
     SSHAuthorizeRequest:
       type: object
       required: [routing_username, gateway_public_key]
@@ -1842,7 +2024,7 @@ components:
             type: string
     Sandbox:
       type: object
-      required: [id, name, state, template, ver, vcpu, mem, createdAt, onDelete, snap, tier, frozen, restored, clockPolicy, workload, tags, labels, procs, idempotencyKey, err, metrics, network]
+      required: [id, name, state, template, ver, vcpu, mem, createdAt, onDelete, snap, frozen, restored, clockPolicy, workload, tags, labels, procs, idempotencyKey, err, metrics, network]
       properties:
         id:
           type: string
@@ -1878,8 +2060,6 @@ components:
           enum: [delete, hot, archive]
         snap:
           type: integer
-        tier:
-          type: string
         frozen:
           type: boolean
         restored:
@@ -1931,7 +2111,7 @@ components:
           $ref: '#/components/schemas/WatchdogSummary'
     Snapshot:
       type: object
-      required: [id, sandbox, sandboxId, template, ver, size, sizeGiB, tier, restores, createdAt, frozenAt, frozen, owner, tags, note, description, digest, state]
+      required: [id, sandbox, sandboxId, template, ver, size, sizeGiB, restores, createdAt, frozenAt, frozen, owner, tags, note, description, digest, state]
       properties:
         id:
           type: string
@@ -1947,15 +2127,9 @@ components:
           type: string
         sizeGiB:
           type: number
-        tier:
-          type: string
         node:
           type: string
           nullable: true
-        archiveState:
-          type: string
-        archiveRef:
-          type: string
         restores:
           type: integer
         createdAt:
@@ -1965,6 +2139,10 @@ components:
           type: string
           format: date-time
           nullable: true
+          description: >-
+            When the snapshot is reaped. Snapshots always carry a TTL (request
+            ttl or the configured lifecycle.default_snapshot_ttl), so this is
+            populated for every live snapshot.
         frozenAt:
           type: string
         clock:
@@ -1989,7 +2167,7 @@ components:
           type: string
         state:
           type: string
-          enum: [creating, available, claimed, consumed, failed, unavailable]
+          enum: [creating, available, failed, deleted, unavailable]
     Operation:
       type: object
       required: [id, type, target, state, startedAt, actor, idempotencyKey, err, warnings]

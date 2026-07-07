@@ -182,6 +182,26 @@ func (s *service) handleComputeOperation(operationID string, w http.ResponseWrit
 		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, _ map[string]any) (*http.Response, error) {
 			return c.GetSandboxHookRuns(ctx, id, nil)
 		})
+	case "compute.fork_sandbox":
+		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
+			body, err := computeForkRequest(args)
+			if err != nil {
+				return nil, err
+			}
+
+			return c.ForkSandbox(ctx, id,
+				&compute.ForkSandboxParams{IdempotencyKey: computeIdem(args)}, *body)
+		})
+
+	// Forks.
+	case "compute.list_forks":
+		s.computeOp(w, r, func(ctx context.Context, c *compute.Client, _ map[string]any) (*http.Response, error) {
+			return c.ListForks(ctx)
+		})
+	case "compute.get_fork":
+		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, _ map[string]any) (*http.Response, error) {
+			return c.GetFork(ctx, id)
+		})
 
 	// Snapshots.
 	case "compute.list_snapshots":
@@ -201,12 +221,15 @@ func (s *service) handleComputeOperation(operationID string, w http.ResponseWrit
 		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
 			return c.DeleteSnapshot(ctx, id, &compute.DeleteSnapshotParams{IdempotencyKey: computeIdem(args)})
 		})
-	case "compute.restore_snapshot":
+	case "compute.fork_snapshot":
 		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
-			return c.RestoreSnapshot(ctx, id,
-				&compute.RestoreSnapshotParams{IdempotencyKey: computeIdem(args)},
-				compute.RestoreSnapshotJSONRequestBody{Ttl: computeOptStr(args, "ttl")},
-			)
+			body, err := computeForkRequest(args)
+			if err != nil {
+				return nil, err
+			}
+
+			return c.ForkSnapshot(ctx, id,
+				&compute.ForkSnapshotParams{IdempotencyKey: computeIdem(args)}, *body)
 		})
 	case "compute.promote_snapshot":
 		s.computeOpWithID(w, r, "id", s.computePromoteSnapshot)
@@ -423,7 +446,42 @@ func (s *service) computeCreateSandbox(ctx context.Context, c *compute.Client, a
 		body.OnDelete = &disposition
 	}
 
+	paused, err := optionalBoolArg(args, "paused")
+	if err != nil {
+		return nil, &computeArgError{err: err}
+	}
+	body.Paused = paused
+
 	return c.CreateSandbox(ctx, &compute.CreateSandboxParams{IdempotencyKey: computeIdem(args)}, body)
+}
+
+// computeForkRequest builds the fork body shared by the sandbox- and
+// snapshot-sourced fork operations.
+func computeForkRequest(args map[string]any) (*compute.ForkRequest, error) {
+	count := optionalIntArg(args, "count", 0)
+	if count < 1 {
+		return nil, &computeArgError{err: fmt.Errorf("count is required and must be at least 1")}
+	}
+
+	body := &compute.ForkRequest{
+		Count:    count,
+		Ttl:      computeOptStr(args, "ttl"),
+		Deadline: computeOptStr(args, "deadline"),
+		MinReady: computeOptInt(args, "min_ready"),
+	}
+
+	if v := optionalStringArg(args, "flavor"); v != "" {
+		flavor := compute.ForkRequestFlavor(v)
+		body.Flavor = &flavor
+	}
+
+	paused, err := optionalBoolArg(args, "paused")
+	if err != nil {
+		return nil, &computeArgError{err: err}
+	}
+	body.Paused = paused
+
+	return body, nil
 }
 
 func (s *service) computeExecSandbox(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {

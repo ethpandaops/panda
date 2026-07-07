@@ -60,7 +60,8 @@ func TestOpenAPISpecHasExpectedOperations(t *testing.T) {
 	want := []string{
 		"listSandboxes", "createSandbox", "getSandbox", "deleteSandbox",
 		"stopSandbox", "startSandbox", "snapshotSandbox", "leaseSandbox",
-		"listSnapshots", "getSnapshot", "deleteSnapshot", "restoreSnapshot",
+		"listSnapshots", "getSnapshot", "deleteSnapshot",
+		"forkSandbox", "forkSnapshot", "listForks", "getFork",
 		"promoteSnapshot", "listTemplates", "getTemplate", "listOperations", "getOperation",
 		"listSSHPublicKeys", "addSSHPublicKey", "deleteSSHPublicKey",
 		"authSession",

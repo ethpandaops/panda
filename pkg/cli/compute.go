@@ -46,16 +46,22 @@ var (
 	computeExecTimeout  string
 	computeLogSource    string
 	computeLogTail      int
+	computePaused       bool
+	computeForkCount    int
+	computeForkMinReady int
+	computeForkDeadline string
+	computeForkFlavor   string
+	computeForkPaused   bool
 )
 
 var computeCmd = &cobra.Command{
 	GroupID: groupDirect,
 	Use:     "compute <resource> <command>",
-	Short:   "Manage ephemeral compute sandboxes: create, snapshot, restore, lease",
+	Short:   "Manage ephemeral compute sandboxes: create, snapshot, fork, lease",
 	Long: `Manage compute, the ethpandaops ephemeral-sandbox control plane. A sandbox is
 a short-lived microVM created from a template; you can snapshot it, stop and
-start it, extend its lease (TTL), restore snapshots into new sandboxes, and
-poll the async operations that back every mutation.
+start it, extend its lease (TTL), create new sandboxes from snapshots, fan out
+copies with fork, and poll the async operations that back every mutation.
 
 Commands are grouped by resource. Most mutations are asynchronous: they return
 an operation id you can poll with 'panda compute operations get <id>'.
@@ -74,7 +80,10 @@ Examples:
   panda compute sandboxes get <id>
   panda compute sandboxes snapshot <id> --note "before upgrade"
   panda compute sandboxes lease <id> --extend 30m
-  panda compute snapshots restore <snapshot_id> --ttl 2h
+  panda compute sandboxes create --snapshot <snapshot_id> --ttl 2h
+  panda compute sandboxes fork <id> --count 5 --ttl 1h
+  panda compute snapshots fork <snapshot_id> --count 5 --ttl 1h
+  panda compute forks get <fork_id>
   panda compute operations get <id>
   panda compute sandboxes delete <id>`,
 }
@@ -110,7 +119,7 @@ func init() {
 		"Snapshot boot flavor: warm (resume memory, default) or cold (fresh boot on the snapshot disk)")
 	computeSandboxesCreateCmd.Flags().StringVar(&computeTTL, "ttl", "", "Lease duration (Go duration, e.g. 1h)")
 	computeSandboxesCreateCmd.Flags().StringVar(&computeOnDelete, "on-delete", "",
-		"Disposition on delete: archive, cold, delete, or hot")
+		"Disposition on delete: archive, delete, or hot")
 	computeSandboxesCreateCmd.Flags().StringVar(&computeName, "name", "", "Display name for the sandbox")
 	computeSandboxesCreateCmd.Flags().IntVar(&computeVCPU, "vcpu", 0, "vCPU override")
 	computeSandboxesCreateCmd.Flags().IntVar(&computeMemoryMB, "memory-mb", 0, "Memory override in MiB")
@@ -121,6 +130,23 @@ func init() {
 		"Lifecycle hooks as a JSON array of hook declarations")
 	computeSandboxesCreateCmd.Flags().StringVar(&computeWatchdogJSON, "watchdog-json", "",
 		"Watchdog declaration as a JSON object")
+	computeSandboxesCreateCmd.Flags().BoolVar(&computePaused, "paused", false,
+		"Leave the sandbox paused after a warm snapshot boot instead of running")
+
+	for _, cmd := range []*cobra.Command{computeSandboxesForkCmd, computeSnapshotsForkCmd} {
+		cmd.Flags().IntVar(&computeForkCount, "count", 0, "Number of sandboxes to create (required)")
+		_ = cmd.MarkFlagRequired("count")
+		cmd.Flags().StringVar(&computeTTL, "ttl", "",
+			"Lease duration applied to every child (Go duration; omit for the server default)")
+		cmd.Flags().IntVar(&computeForkMinReady, "min-ready", 0,
+			"Floor of ready children below which the fork reports failure")
+		cmd.Flags().StringVar(&computeForkDeadline, "deadline", "",
+			"How long queued children may wait for capacity (Go duration)")
+		cmd.Flags().StringVar(&computeForkFlavor, "flavor", "",
+			"Child boot flavor: warm (resume memory, default) or cold (fresh boot on the snapshot disk)")
+		cmd.Flags().BoolVar(&computeForkPaused, "paused", false,
+			"Whether children land paused instead of running (omit to inherit the source default)")
+	}
 
 	computeSandboxesExecCmd.Flags().StringVar(&computeExecTimeout, "timeout", "",
 		"Command timeout (Go duration, server default 30s, max 5m)")
@@ -133,8 +159,6 @@ func init() {
 	computeSandboxesLeaseCmd.Flags().StringVar(&computeExtend, "extend", "",
 		"Lease extension (Go duration, e.g. 30m) (required)")
 	_ = computeSandboxesLeaseCmd.MarkFlagRequired("extend")
-	computeSnapshotsRestoreCmd.Flags().StringVar(&computeTTL, "ttl", "",
-		"Lease duration for the restored sandbox (Go duration)")
 	computeSnapshotsPromoteCmd.Flags().StringVar(&computeName, "name", "", "Warm template name (required)")
 	computeSnapshotsPromoteCmd.Flags().StringVar(&computeVersion, "version", "", "Warm template version")
 	computeSnapshotsPromoteCmd.Flags().StringVar(&computeDescription, "description", "", "Warm template description")
@@ -149,8 +173,8 @@ func init() {
 	for _, cmd := range []*cobra.Command{
 		computeSandboxesCreateCmd, computeSandboxesDeleteCmd, computeSandboxesStopCmd,
 		computeSandboxesStartCmd, computeSandboxesSnapshotCmd, computeSandboxesPauseCmd,
-		computeSandboxesResumeCmd, computeSnapshotsDeleteCmd,
-		computeSnapshotsRestoreCmd, computeSnapshotsPromoteCmd,
+		computeSandboxesResumeCmd, computeSandboxesForkCmd, computeSnapshotsDeleteCmd,
+		computeSnapshotsForkCmd, computeSnapshotsPromoteCmd,
 	} {
 		cmd.Flags().StringVar(&computeIdempotency, "idempotency-key", "",
 			"Idempotency key to make the mutation safely retryable")
@@ -163,12 +187,14 @@ func init() {
 		computeSandboxesOperationsCmd, computeSandboxesLogsCmd, computeSandboxesLineageCmd,
 		computeSandboxesExecCmd, computeSandboxesMetricsCmd, computeSandboxesPauseCmd,
 		computeSandboxesResumeCmd, computeSandboxesHooksCmd, computeSandboxesHookRunsCmd,
+		computeSandboxesForkCmd,
 	)
 	computeSnapshotsCmd.AddCommand(
 		computeSnapshotsListCmd, computeSnapshotsGetCmd, computeSnapshotsDeleteCmd,
-		computeSnapshotsRestoreCmd, computeSnapshotsPromoteCmd, computeSnapshotsChildrenCmd,
+		computeSnapshotsForkCmd, computeSnapshotsPromoteCmd, computeSnapshotsChildrenCmd,
 		computeSnapshotsLineageCmd,
 	)
+	computeForksCmd.AddCommand(computeForksListCmd, computeForksGetCmd)
 	computeTemplatesCmd.AddCommand(computeTemplatesListCmd, computeTemplatesGetCmd)
 	computeOperationsCmd.AddCommand(computeOperationsListCmd, computeOperationsGetCmd)
 	computeKeysCmd.AddCommand(computeKeysListCmd, computeKeysAddCmd, computeKeysDeleteCmd)
@@ -182,6 +208,7 @@ func init() {
 		computeSessionCmd,
 		computeSandboxesCmd,
 		computeSnapshotsCmd,
+		computeForksCmd,
 		computeTemplatesCmd,
 		computeOperationsCmd,
 		computeKeysCmd,
@@ -247,7 +274,12 @@ var computeSandboxesCmd = &cobra.Command{
 
 var computeSnapshotsCmd = &cobra.Command{
 	Use:   "snapshots <command>",
-	Short: "List, restore, and delete snapshots",
+	Short: "List, fork, promote, and delete snapshots",
+}
+
+var computeForksCmd = &cobra.Command{
+	Use:   "forks <command>",
+	Short: "Inspect fork operations and their per-child progress",
 }
 
 var computeTemplatesCmd = &cobra.Command{
@@ -386,6 +418,9 @@ var computeSandboxesCreateCmd = &cobra.Command{
 				return fmt.Errorf("--watchdog-json: %w", err)
 			}
 			opArgs["watchdog"] = watchdog
+		}
+		if cmd.Flags().Changed("paused") {
+			opArgs["paused"] = computePaused
 		}
 
 		return runComputeRaw(cmd, "compute.create_sandbox", opArgs)
@@ -548,6 +583,17 @@ var computeSandboxesHookRunsCmd = &cobra.Command{
 	},
 }
 
+var computeSandboxesForkCmd = &cobra.Command{
+	Use:   "fork <id>",
+	Short: "Fan out copies of a running sandbox (async)",
+	Long: `Capture the sandbox as an ephemeral snapshot and fan out --count sandboxes
+from it. The source keeps running.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runComputeRaw(cmd, "compute.fork_sandbox", computeForkArgs(cmd, args[0]))
+	},
+}
+
 // Snapshots.
 
 var computeSnapshotsListCmd = &cobra.Command{
@@ -577,15 +623,15 @@ var computeSnapshotsDeleteCmd = &cobra.Command{
 	},
 }
 
-var computeSnapshotsRestoreCmd = &cobra.Command{
-	Use:   "restore <id>",
-	Short: "Restore a snapshot into a new sandbox (async)",
-	Args:  cobra.ExactArgs(1),
+var computeSnapshotsForkCmd = &cobra.Command{
+	Use:   "fork <id>",
+	Short: "Fan out sandboxes from a snapshot (async)",
+	Long: `Fan out --count sandboxes from a published snapshot. To reconstitute a single
+sandbox from a snapshot, use 'panda compute sandboxes create --snapshot <id>'
+instead.`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		opArgs := computeMutationArgs(args[0])
-		setIfNotEmpty(opArgs, "ttl", computeTTL)
-
-		return runComputeRaw(cmd, "compute.restore_snapshot", opArgs)
+		return runComputeRaw(cmd, "compute.fork_snapshot", computeForkArgs(cmd, args[0]))
 	},
 }
 
@@ -626,6 +672,26 @@ var computeSnapshotsChildrenCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runComputeRaw(cmd, "compute.get_snapshot_restored_by", computeIDArgs(args[0]))
+	},
+}
+
+// Forks.
+
+var computeForksListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List fork operations and their progress counts",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		return runComputeRaw(cmd, "compute.list_forks", computeArgs())
+	},
+}
+
+var computeForksGetCmd = &cobra.Command{
+	Use:   "get <id>",
+	Short: "Get one fork operation, including per-child state",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runComputeRaw(cmd, "compute.get_fork", computeIDArgs(args[0]))
 	},
 }
 
@@ -787,6 +853,27 @@ func computeIDArgs(id string) map[string]any {
 func computeMutationArgs(id string) map[string]any {
 	args := computeIDArgs(id)
 	args["idempotency_key"] = computeIdemOrGenerated()
+
+	return args
+}
+
+// computeForkArgs assembles the shared fork mutation arguments. The paused
+// flag is forwarded only when set so the server default (inherit from the
+// source) applies otherwise.
+func computeForkArgs(cmd *cobra.Command, id string) map[string]any {
+	args := computeMutationArgs(id)
+	args["count"] = computeForkCount
+	setIfNotEmpty(args, "ttl", computeTTL)
+	setIfNotEmpty(args, "deadline", computeForkDeadline)
+	setIfNotEmpty(args, "flavor", computeForkFlavor)
+
+	if computeForkMinReady > 0 {
+		args["min_ready"] = computeForkMinReady
+	}
+
+	if cmd.Flags().Changed("paused") {
+		args["paused"] = computeForkPaused
+	}
 
 	return args
 }

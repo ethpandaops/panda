@@ -1,11 +1,11 @@
 """Thin compute wrappers over server operations.
 
 Compute is a control-plane for ephemeral compute sandboxes (Firecracker
-microVMs). You create a sandbox from a template, it runs, and you can snapshot
-it, stop/start/lease (extend its TTL) it, restore snapshots into fresh
-sandboxes, and poll asynchronous operations.
+microVMs). You create a sandbox from a template or snapshot, it runs, and you
+can snapshot it, stop/start/lease (extend its TTL) it, fan out copies with
+fork, and poll asynchronous operations.
 
-Mutations (create/delete/stop/start/snapshot/restore) are asynchronous: they
+Mutations (create/delete/stop/start/snapshot/fork) are asynchronous: they
 return an operation object whose ``id`` you poll with :func:`get_operation`
 until its ``status`` settles (e.g. ``succeeded``/``failed``).
 
@@ -142,16 +142,19 @@ def create_sandbox(
     labels: dict[str, str] | None = None,
     hooks: list[dict[str, Any]] | None = None,
     watchdog: dict[str, Any] | None = None,
+    paused: bool | None = None,
 ) -> Any:
     """Create a sandbox from a template or a snapshot.
 
     Exactly one of ``template`` or ``snapshot_id`` is required. ``flavor``
     applies to snapshot sources: ``"warm"`` (default) resumes the captured
     memory image; ``"cold"`` boots a fresh kernel on the snapshot's disk with
-    freely chosen ``vcpu``/``memory_mb``. ``ttl`` is a Go-duration string
-    (e.g. ``"1h"``). ``on_delete`` is one of ``archive``, ``cold``,
-    ``delete``, ``hot``. ``hooks`` is a list of hook declarations and
-    ``watchdog`` a watchdog declaration, as accepted by the compute API.
+    freely chosen ``vcpu``/``memory_mb``. ``paused=True`` leaves a
+    warm-flavor snapshot boot paused (memory image loaded but not resumed)
+    instead of running. ``ttl`` is a Go-duration string (e.g. ``"1h"``).
+    ``on_delete`` is one of ``archive``, ``delete``, ``hot``.
+    ``hooks`` is a list of hook declarations and ``watchdog`` a watchdog
+    declaration, as accepted by the compute API.
     Returns an operation object; poll its ``id`` with :func:`get_operation`.
     """
     _require_compute_available()
@@ -171,6 +174,7 @@ def create_sandbox(
         labels=labels,
         hooks=hooks,
         watchdog=watchdog,
+        paused=paused,
     )
     return _runtime.invoke_json("compute.create_sandbox", args)
 
@@ -353,6 +357,39 @@ def get_sandbox_hook_runs(sandbox_id: str, datasource: str | None = None) -> Any
     )
 
 
+def fork_sandbox(
+    sandbox_id: str,
+    count: int,
+    ttl: str | None = None,
+    min_ready: int | None = None,
+    deadline: str | None = None,
+    flavor: str | None = None,
+    paused: bool | None = None,
+    idempotency_key: str | None = None,
+    datasource: str | None = None,
+) -> Any:
+    """Capture a sandbox as an ephemeral snapshot and fan out ``count`` copies.
+
+    The source sandbox keeps running. Parameters match
+    :func:`fork_snapshot`; children default to the source's TTL duration
+    restarted at their own boot. Returns ``fork_id`` and ``op_id``; poll with
+    :func:`get_fork` or :func:`get_operation`.
+    """
+    _require_compute_available()
+    args = _args(
+        datasource,
+        id=sandbox_id,
+        count=count,
+        ttl=ttl,
+        min_ready=min_ready,
+        deadline=deadline,
+        flavor=flavor,
+        paused=paused,
+        idempotency_key=idempotency_key,
+    )
+    return _runtime.invoke_json("compute.fork_sandbox", args)
+
+
 # --- Snapshots ---------------------------------------------------------------
 
 
@@ -388,20 +425,42 @@ def delete_snapshot(
     return _runtime.invoke_json("compute.delete_snapshot", args)
 
 
-def restore_snapshot(
+def fork_snapshot(
     snapshot_id: str,
+    count: int,
     ttl: str | None = None,
+    min_ready: int | None = None,
+    deadline: str | None = None,
+    flavor: str | None = None,
+    paused: bool | None = None,
     idempotency_key: str | None = None,
     datasource: str | None = None,
 ) -> Any:
-    """Restore a snapshot into a new sandbox.
+    """Fan out ``count`` sandboxes from a published snapshot.
 
-    ``ttl`` is a Go-duration string (e.g. ``"1h"``). Returns an operation to
-    poll for the new sandbox.
+    To reconstitute a single sandbox from a snapshot, use
+    :func:`create_sandbox` with ``snapshot_id`` instead. ``ttl`` is a
+    Go-duration string applied to every child (omit for the server default).
+    ``min_ready`` is the floor of ready children below which the fork reports
+    failure; ``deadline`` bounds how long queued children may wait for
+    capacity. ``flavor`` is ``"warm"`` (default) or ``"cold"``; ``paused``
+    controls whether children land paused instead of running. Returns
+    ``fork_id`` and ``op_id``; poll with :func:`get_fork` or
+    :func:`get_operation`.
     """
     _require_compute_available()
-    args = _args(datasource, id=snapshot_id, ttl=ttl, idempotency_key=idempotency_key)
-    return _runtime.invoke_json("compute.restore_snapshot", args)
+    args = _args(
+        datasource,
+        id=snapshot_id,
+        count=count,
+        ttl=ttl,
+        min_ready=min_ready,
+        deadline=deadline,
+        flavor=flavor,
+        paused=paused,
+        idempotency_key=idempotency_key,
+    )
+    return _runtime.invoke_json("compute.fork_snapshot", args)
 
 
 def get_snapshot_lineage(snapshot_id: str, datasource: str | None = None) -> Any:
@@ -418,6 +477,21 @@ def get_snapshot_restored_by(snapshot_id: str, datasource: str | None = None) ->
     return _runtime.invoke_json(
         "compute.get_snapshot_restored_by", _args(datasource, id=snapshot_id)
     )
+
+
+# --- Forks -------------------------------------------------------------------
+
+
+def list_forks(datasource: str | None = None) -> Any:
+    """List fork operations and their progress counts."""
+    _require_compute_available()
+    return _runtime.invoke_json("compute.list_forks", _args(datasource))
+
+
+def get_fork(fork_id: str, datasource: str | None = None) -> Any:
+    """Get one fork operation by id, including per-child state."""
+    _require_compute_available()
+    return _runtime.invoke_json("compute.get_fork", _args(datasource, id=fork_id))
 
 
 # --- Templates ---------------------------------------------------------------
