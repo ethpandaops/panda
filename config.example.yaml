@@ -7,6 +7,7 @@ server:
   port: 2480
   base_url: "http://localhost:2480"  # ep clients should point at this URL
   sandbox_url: "http://ethpandaops-panda-server:2480"  # URL sandbox containers use to call the local server
+  # uploads: false  # opt out of `panda upload` (upload/publish API + /u/ preview pages)
 
 # Sandbox configuration
 sandbox:

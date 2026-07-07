@@ -45,9 +45,15 @@ func (s *service) mountAPIRoutes(r chi.Router) {
 		r.Post("/build/trigger", s.handleAPIBuildTrigger)
 		r.Post("/build/status", s.handleAPIBuildStatus)
 		r.HandleFunc("/operations/{operationID}", s.handleAPIOperation)
-		r.Post("/uploads", s.handleUpload)
-		r.Post("/uploads/publish", s.handleUploadPublish)
-		r.Delete("/uploads/published", s.handleUploadDeletePublished)
+		if !s.cfg.UploadsEnabled() {
+			// Explicit refusal (not a bare 404) so `panda upload` explains itself.
+			r.HandleFunc("/uploads", s.handleUploadsDisabled)
+			r.HandleFunc("/uploads/*", s.handleUploadsDisabled)
+		} else {
+			r.Post("/uploads", s.handleUpload)
+			r.Post("/uploads/publish", s.handleUploadPublish)
+			r.Delete("/uploads/published", s.handleUploadDeletePublished)
+		}
 
 		// Public file serving (no auth — same as MinIO anonymous download).
 		r.Get("/storage/files/*", s.handleStorageServeFile)

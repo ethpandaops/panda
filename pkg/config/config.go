@@ -74,9 +74,20 @@ type ServerConfig struct {
 	SandboxURL string `yaml:"sandbox_url,omitempty"`
 	URL        string `yaml:"url,omitempty"`
 
+	// Uploads gates the `panda upload` surface (the upload/publish API and the
+	// /u/ preview pages). Unset means enabled; set it to false to opt out.
+	// Nothing leaves the machine without an explicit publish either way.
+	Uploads *bool `yaml:"uploads,omitempty"`
+
 	// Deprecated: Transport is accepted for backwards compatibility but ignored.
 	// The server always runs HTTP with both SSE and streamable-http transports.
 	Transport string `yaml:"transport,omitempty"`
+}
+
+// UploadsEnabled reports whether the `panda upload` surface is on (the default
+// when server.uploads is unset).
+func (c ServerConfig) UploadsEnabled() bool {
+	return c.Uploads == nil || *c.Uploads
 }
 
 // SandboxConfig holds sandbox execution configuration.

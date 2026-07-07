@@ -189,3 +189,29 @@ func TestPublishUnknownID(t *testing.T) {
 		t.Fatalf("status = %d, want 404", rec.Code)
 	}
 }
+
+func TestDisableUploadsGatesAllRoutes(t *testing.T) {
+	svc := testUploadService()
+	off := false
+	svc.cfg.Uploads = &off
+
+	r := chi.NewRouter()
+	svc.mountAPIRoutes(r)
+
+	for _, req := range []*http.Request{
+		httptest.NewRequest(http.MethodPost, "/api/v1/uploads?name=x.txt", strings.NewReader("hi")),
+		httptest.NewRequest(http.MethodPost, "/api/v1/uploads/publish", strings.NewReader(`{"id":"x"}`)),
+		httptest.NewRequest(http.MethodDelete, "/api/v1/uploads/published?key=panda/uploads/x", nil),
+	} {
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("%s %s: status = %d, want 403", req.Method, req.URL.Path, rec.Code)
+		}
+
+		if !strings.Contains(rec.Body.String(), "server.uploads") {
+			t.Errorf("%s: body should name the config knob: %s", req.URL.Path, rec.Body.String())
+		}
+	}
+}
