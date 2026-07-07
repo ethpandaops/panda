@@ -159,6 +159,7 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 				"start_sandbox":            {Signature: "start_sandbox(sandbox_id, idempotency_key=None, datasource=None) -> dict", Description: "Start a stopped sandbox; returns an operation to poll"},
 				"snapshot_sandbox":         {Signature: "snapshot_sandbox(sandbox_id, note=None, ttl=None, idempotency_key=None, datasource=None) -> dict", Description: "Snapshot a sandbox; returns an operation to poll"},
 				"lease_sandbox":            {Signature: "lease_sandbox(sandbox_id, extend, datasource=None) -> dict", Description: "Extend a sandbox's TTL; extend is a Go-duration string (e.g. '1h', '30m')"},
+				"prepare_sandbox_ssh":      {Signature: "prepare_sandbox_ssh(sandbox_id, public_key, datasource=None) -> dict", Description: "Mint a short-lived SSH gateway certificate for a registered public key; returns host, port, username, and client_certificate"},
 				"get_sandbox_snapshots":    {Signature: "get_sandbox_snapshots(sandbox_id, datasource=None) -> dict", Description: "List snapshots taken from a sandbox"},
 				"get_sandbox_operations":   {Signature: "get_sandbox_operations(sandbox_id, datasource=None) -> dict", Description: "List async operations for a sandbox"},
 				"get_sandbox_logs":         {Signature: "get_sandbox_logs(sandbox_id, datasource=None, source=None, tail_bytes=None) -> dict", Description: "Fetch a sandbox's logs; source is console or firecracker"},
