@@ -11,7 +11,9 @@ tags:
   - name: ssh
   - name: sandboxes
   - name: snapshots
+  - name: forks
   - name: templates
+  - name: hook-templates
   - name: operations
   - name: system
 paths:
@@ -134,6 +136,13 @@ paths:
       operationId: deleteSandbox
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
+        - name: retain
+          in: query
+          required: false
+          description: Set to false to discard retained state and delete without honoring the sandbox on_delete disposition. Omit or set true to use the stored disposition.
+          schema:
+            type: boolean
+            default: true
       responses:
         '202':
           description: Sandbox deletion accepted. Poll the returned operation ID.
@@ -181,6 +190,40 @@ paths:
                 $ref: '#/components/schemas/AcceptedResponse'
         default:
           $ref: '#/components/responses/Error'
+  /v1/sandboxes/{id}/pause:
+    parameters:
+      - $ref: '#/components/parameters/SandboxID'
+    post:
+      tags: [sandboxes]
+      operationId: pauseSandbox
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: Pause accepted. Poll the returned operation ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptedResponse'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/sandboxes/{id}/resume:
+    parameters:
+      - $ref: '#/components/parameters/SandboxID'
+    post:
+      tags: [sandboxes]
+      operationId: resumeSandbox
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: Resume accepted. Poll the returned operation ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptedResponse'
+        default:
+          $ref: '#/components/responses/Error'
   /v1/sandboxes/{id}/snapshot:
     parameters:
       - $ref: '#/components/parameters/SandboxID'
@@ -202,6 +245,34 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AcceptedResponse'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/sandboxes/{id}/fork:
+    parameters:
+      - $ref: '#/components/parameters/SandboxID'
+    post:
+      tags: [sandboxes]
+      operationId: forkSandbox
+      description: >-
+        Capture the sandbox as an ephemeral snapshot and fan out `count`
+        sandboxes from it. The source keeps running. Every child requires a
+        TTL; children default to the source's TTL duration restarted at their
+        own boot and parent expiry never cascades.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForkRequest'
+      responses:
+        '202':
+          description: Fork accepted. Poll the returned operation ID or GET /v1/forks/{id}.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForkAccepted'
         default:
           $ref: '#/components/responses/Error'
   /v1/sandboxes/{id}/lease:
@@ -231,10 +302,112 @@ paths:
       - $ref: '#/components/parameters/SandboxID'
     get:
       tags: [sandboxes]
-      operationId: execSandbox
+      operationId: streamExecSandbox
+      summary: Execute a command in a running sandbox over WebSocket.
+      description: |
+        Pre-upgrade validation returns JSON errors. On success this endpoint upgrades to a WebSocket.
+        Client binary messages are stdin with a 0x00 prefix. Server binary messages use 0x01 for stdout
+        and 0x02 for stderr; PTY output is sent on stdout. Client text messages may resize the PTY with
+        {"type":"resize","rows":N,"cols":N}. Server text messages report {"type":"exit","exit_code":N}
+        or {"type":"error","message":"..."}.
+      parameters:
+        - name: cmd
+          in: query
+          required: true
+          description: Repeated argv item, in order. The server shell-quotes and joins these items for SSH exec.
+          style: form
+          explode: true
+          schema:
+            type: array
+            minItems: 1
+            items:
+              type: string
+        - name: pty
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - name: rows
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 24
+        - name: cols
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 80
       responses:
-        '501':
-          $ref: '#/components/responses/StreamingNotImplemented'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [sandboxes]
+      operationId: execSandbox
+      summary: Run a command in the sandbox and wait for it to complete.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecSandboxRequest'
+      responses:
+        '200':
+          description: Command completed (any exit code). Output is truncated by the guest at 1 MiB per stream.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecSandboxResult'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/sandboxes/{id}/hooks:
+    parameters:
+      - $ref: '#/components/parameters/SandboxID'
+    get:
+      tags: [sandboxes]
+      operationId: getSandboxHooks
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Filter'
+      responses:
+        '200':
+          description: Lifecycle hook contract attached to the sandbox.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HookSummaryList'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/sandboxes/{id}/hook-runs:
+    parameters:
+      - $ref: '#/components/parameters/SandboxID'
+    get:
+      tags: [sandboxes]
+      operationId: getSandboxHookRuns
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Filter'
+      responses:
+        '200':
+          description: Hook execution history, newest first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HookRunList'
+        default:
+          $ref: '#/components/responses/Error'
   /v1/sandboxes/{id}/ssh:
     parameters:
       - $ref: '#/components/parameters/SandboxID'
@@ -253,7 +426,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SSHPreparation'
+                $ref: '#/components/schemas/PrepareSandboxSSHResult'
         default:
           $ref: '#/components/responses/Error'
   /v1/sandboxes/{id}/tunnel/{port}:
@@ -269,11 +442,19 @@ paths:
     get:
       tags: [sandboxes]
       operationId: tunnelSandbox
+      summary: Open a raw TCP tunnel to a port inside a running sandbox over WebSocket.
+      description: |
+        Pre-upgrade validation returns JSON errors. On success this endpoint upgrades to a WebSocket.
+        Binary messages are raw bytes in both directions. A single WebSocket maps to one guest TCP
+        connection to 127.0.0.1:{port}. Server text messages report {"type":"error","message":"..."}
+        before close when a runtime tunnel failure occurs.
       responses:
         '400':
           $ref: '#/components/responses/BadRequest'
-        '501':
-          $ref: '#/components/responses/StreamingNotImplemented'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
   /v1/ssh/authorize:
     post:
       tags: [ssh]
@@ -342,27 +523,66 @@ paths:
                 $ref: '#/components/schemas/AcceptedResponse'
         default:
           $ref: '#/components/responses/Error'
-  /v1/snapshots/{id}/restore:
+  /v1/snapshots/{id}/fork:
     parameters:
       - $ref: '#/components/parameters/SnapshotID'
     post:
       tags: [snapshots]
-      operationId: restoreSnapshot
+      operationId: forkSnapshot
+      description: >-
+        Fan out `count` sandboxes from a published snapshot. To reconstitute a
+        single sandbox from a snapshot (the former "restore"), create a sandbox
+        with a snapshot source instead (POST /v1/sandboxes). Every child
+        requires a TTL.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RestoreSnapshotRequest'
+              $ref: '#/components/schemas/ForkRequest'
       responses:
         '202':
-          description: Restore accepted. Poll the returned operation ID.
+          description: Fork accepted. Poll the returned operation ID or GET /v1/forks/{id}.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AcceptedResponse'
+                $ref: '#/components/schemas/ForkAccepted'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/forks:
+    get:
+      tags: [forks]
+      operationId: listForks
+      description: List fork operations and their progress counts.
+      responses:
+        '200':
+          description: Fork operations.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Fork'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/forks/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ForkID'
+    get:
+      tags: [forks]
+      operationId: getFork
+      description: Progress of a single fork operation, including per-child state.
+      responses:
+        '200':
+          description: Fork operation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Fork'
+        '404':
+          $ref: '#/components/responses/NotFound'
         default:
           $ref: '#/components/responses/Error'
   /v1/snapshots/{id}/promote:
@@ -371,8 +591,6 @@ paths:
     post:
       tags: [snapshots]
       operationId: promoteSnapshot
-      parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -406,6 +624,23 @@ paths:
                 $ref: '#/components/schemas/TemplateList'
         default:
           $ref: '#/components/responses/Error'
+  /v1/templates/{name}/deactivate:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [templates]
+      operationId: deactivateTemplate
+      responses:
+        '204':
+          description: Active warm template deactivated.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
   /v1/templates/{name}/{version}:
     parameters:
       - name: name
@@ -432,6 +667,87 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
+  /v1/hook-templates:
+    get:
+      tags: [hook-templates]
+      operationId: listHookTemplates
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Filter'
+      responses:
+        '200':
+          description: Hook templates in stable name order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HookTemplateList'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [hook-templates]
+      operationId: createHookTemplate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HookTemplateRequest'
+      responses:
+        '201':
+          description: Hook template created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HookTemplate'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/hook-templates/{name}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [hook-templates]
+      operationId: getHookTemplate
+      responses:
+        '200':
+          description: Hook template.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HookTemplate'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [hook-templates]
+      operationId: updateHookTemplate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HookTemplateRequest'
+      responses:
+        '200':
+          description: Hook template updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HookTemplate'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [hook-templates]
+      operationId: deleteHookTemplate
+      responses:
+        '204':
+          description: Hook template deleted.
+        default:
+          $ref: '#/components/responses/Error'
   /v1/operations:
     get:
       tags: [operations]
@@ -526,6 +842,20 @@ paths:
                 $ref: '#/components/schemas/AuthSession'
         default:
           $ref: '#/components/responses/Error'
+  /v1/auth/cli-config:
+    get:
+      tags: [auth]
+      operationId: authCLIConfig
+      security: []
+      responses:
+        '200':
+          description: Public OIDC settings used by native CLI login.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthCLIConfig'
+        default:
+          $ref: '#/components/responses/Error'
   /v1/meta:
     get:
       tags: [system]
@@ -541,9 +871,73 @@ paths:
     get:
       tags: [sandboxes]
       operationId: getSandboxLogs
+      parameters:
+        - name: tail_bytes
+          in: query
+          required: false
+          description: Per-source byte tail to return. Defaults to 256 KiB and is capped by the server.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+        - name: source
+          in: query
+          required: false
+          description: Restrict logs to one source.
+          schema:
+            type: string
+            enum: [console, firecracker]
       responses:
         '200':
           description: Guest log lines (empty in deferred mode).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogsResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/sandboxes/{id}/metrics:
+    parameters:
+      - $ref: '#/components/parameters/SandboxID'
+    get:
+      tags: [sandboxes]
+      operationId: getSandboxMetrics
+      summary: Return raw sampled sandbox resource metrics.
+      description: |
+        Returns stored point samples only. The server does not calculate rates or downsample by step.
+        Clients derive CPU and network rates from consecutive counter samples. At most 5000 samples
+        are returned per request.
+      parameters:
+        - name: since
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: until
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: step
+          in: query
+          required: false
+          description: Positive duration hint accepted for client compatibility; raw samples are still returned.
+          schema:
+            type: string
+            example: 30s
+      responses:
+        '200':
+          description: Raw metric samples ordered by sampled_at ascending.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SandboxMetricsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '404':
           $ref: '#/components/responses/NotFound'
         default:
@@ -557,6 +951,10 @@ paths:
       responses:
         '200':
           description: Derived provenance graph for the sandbox.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LineageResponse'
         '404':
           $ref: '#/components/responses/NotFound'
         default:
@@ -596,6 +994,23 @@ paths:
       responses:
         '200':
           description: Sandboxes restored from the snapshot.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/snapshots/{id}/lineage:
+    parameters:
+      - $ref: '#/components/parameters/SnapshotID'
+    get:
+      tags: [snapshots]
+      operationId: getSnapshotLineage
+      responses:
+        '200':
+          description: Derived provenance graph centered on the snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LineageResponse'
         '404':
           $ref: '#/components/responses/NotFound'
         default:
@@ -648,6 +1063,57 @@ paths:
       responses:
         '200':
           description: A user.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/users/{handle}/ssh-keys:
+    parameters:
+      - name: handle
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [ssh-keys]
+      operationId: addUserSSHPublicKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddSSHPublicKeyRequest'
+      responses:
+        '201':
+          description: SSH public key registered for the target user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SSHPublicKey'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/users/{handle}/ssh-keys/{id}:
+    parameters:
+      - name: handle
+        in: path
+        required: true
+        schema:
+          type: string
+      - $ref: '#/components/parameters/SSHPublicKeyID'
+    delete:
+      tags: [ssh-keys]
+      operationId: deleteUserSSHPublicKey
+      responses:
+        '204':
+          description: SSH public key removed from the target user.
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         default:
@@ -743,6 +1209,12 @@ components:
       required: true
       schema:
         type: string
+    ForkID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
     SSHPublicKeyID:
       name: id
       in: path
@@ -764,6 +1236,12 @@ components:
             $ref: '#/components/schemas/ErrorEnvelope'
     NotFound:
       description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Forbidden:
+      description: Caller does not have the required role.
       content:
         application/json:
           schema:
@@ -792,12 +1270,6 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorEnvelope'
-    StreamingNotImplemented:
-      description: Streaming API placeholder that is not implemented in this v1 chunk.
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorEnvelope'
   schemas:
     AuthSession:
       type: object
@@ -809,6 +1281,21 @@ components:
           type: boolean
         user:
           $ref: '#/components/schemas/WebSessionIdentity'
+    AuthCLIConfig:
+      type: object
+      required: [oidc_enabled, scopes]
+      properties:
+        oidc_enabled:
+          type: boolean
+        issuer:
+          type: string
+          format: uri
+        client_id:
+          type: string
+        scopes:
+          type: array
+          items:
+            type: string
     WebSessionIdentity:
       type: object
       required: [subject, handle, email, name, avatarUrl]
@@ -840,8 +1327,48 @@ components:
           description: Optional positive Go-style duration string.
         on_delete:
           type: string
-          enum: [delete, hot, cold, archive]
+          enum: [delete, hot, archive]
           description: Disposition to apply when the sandbox is deleted.
+        name:
+          type: string
+          maxLength: 128
+          description: Optional display name stored as sandbox web metadata.
+        env:
+          type: object
+          additionalProperties:
+            type: string
+          description: Optional write-only guest environment delivered to shells and execs.
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+          description: Optional service metadata labels for the sandbox.
+        vcpu:
+          type: integer
+          minimum: 1
+          description: Optional vCPU override, bounded by operator override_limits. Cold creates may override freely within limits. Warm restores require vCPU to be at least the recorded warm snapshot value because supervisor pod sizing is derived from this metadata.
+        memory_mb:
+          type: integer
+          minimum: 1
+          description: Optional memory override in MiB, bounded by operator override_limits. Warm restores pin memory to the recorded snapshot value because Firecracker restore loads the saved memory image; requests with a different memory value are rejected with override_not_allowed. Snapshot sources currently resolve through warm restore, so the same rule applies.
+        disk_gb:
+          type: integer
+          minimum: 1
+          description: Optional disk override in GiB. Cold creates require disk_gb to be greater than or equal to the cold template disk size. Warm restores require disk_gb to be at least the recorded warm snapshot disk size. This resizes the backing zvol only; extra space becomes available to the guest only after the guest resizes its filesystem.
+        paused:
+          type: boolean
+          description: >-
+            When true the restored sandbox is left paused (its fully-booted
+            memory image loaded but not resumed) instead of running. Valid only
+            for a warm-flavor snapshot source; a template source or the cold
+            flavor is rejected because there is no frozen image to hold.
+        hooks:
+          type: array
+          maxItems: 16
+          items:
+            $ref: '#/components/schemas/HookDeclaration'
+        watchdog:
+          $ref: '#/components/schemas/WatchdogDeclaration'
     CreateSandboxSource:
       oneOf:
         - $ref: '#/components/schemas/TemplateBootSource'
@@ -868,6 +1395,14 @@ components:
           enum: [snapshot]
         snapshot_id:
           type: string
+        flavor:
+          type: string
+          enum: [warm, cold]
+          description: >-
+            How the snapshot boots. "warm" (default) resumes the captured
+            memory image and pins memory to the snapshot's size. "cold" boots
+            a fresh kernel on the snapshot's disk state with freely chosen
+            vcpu and memory.
     SnapshotSandboxRequest:
       type: object
       additionalProperties: false
@@ -876,14 +1411,179 @@ components:
           type: string
         ttl:
           type: string
-          description: Optional Go-style duration string. Omit to use lifecycle.default_snapshot_ttl; "0" means no expiry.
-    RestoreSnapshotRequest:
+          description: >-
+            Go-style duration string. Snapshots always carry a TTL: omit to
+            fall back to the configured lifecycle.default_snapshot_ttl (a
+            required server default). If neither is present the request is
+            rejected.
+    ForkRequest:
       type: object
       additionalProperties: false
+      required: [count]
       properties:
+        count:
+          type: integer
+          minimum: 1
+          description: Number of sandboxes to create. The only multiplier in the API.
         ttl:
           type: string
-          description: Optional positive Go-style duration string.
+          description: >-
+            Go-style duration string applied to every child. Fork children
+            always carry a TTL: omit to fall back to the configured
+            lifecycle.default_ttl (a required server default). If neither is
+            present the request is rejected.
+        min_ready:
+          type: integer
+          minimum: 0
+          description: >-
+            Floor of ready children below which the fork reports failure
+            (min_ready_not_met). Running children are never destroyed to meet
+            it. Must not exceed count.
+        deadline:
+          type: string
+          description: >-
+            Go-style duration string bounding how long queued children may wait
+            for capacity before the sweeper cancels the still-queued ones.
+        flavor:
+          type: string
+          enum: [warm, cold]
+          description: >-
+            How each child boots from the source snapshot. "warm" (default)
+            resumes the captured memory image; "cold" boots a fresh kernel on
+            the snapshot's disk.
+        paused:
+          type: boolean
+          description: >-
+            Whether children land paused instead of running. Omit to inherit
+            the default: sandbox-source children inherit the source's state at
+            fork time (a paused source yields paused children), snapshot-source
+            children run. Set true/false to override. paused true with the cold
+            flavor is rejected because cold children fresh-boot.
+    ForkAccepted:
+      type: object
+      additionalProperties: false
+      required: [fork_id, op_id]
+      properties:
+        fork_id:
+          type: string
+        op_id:
+          type: string
+    ForkSource:
+      type: object
+      additionalProperties: false
+      required: [kind, id]
+      properties:
+        kind:
+          type: string
+          enum: [sandbox, snapshot]
+        id:
+          type: string
+    ForkChild:
+      type: object
+      additionalProperties: false
+      required: [ordinal, sandbox_id, state]
+      properties:
+        ordinal:
+          type: integer
+        sandbox_id:
+          type: string
+        state:
+          type: string
+    Fork:
+      type: object
+      additionalProperties: false
+      required: [id, source, state, requested, queued, running, failed, cancelled, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        source:
+          $ref: '#/components/schemas/ForkSource'
+        state:
+          type: string
+        requested:
+          type: integer
+        min_ready:
+          type: integer
+        queued:
+          type: integer
+        running:
+          type: integer
+        failed:
+          type: integer
+        cancelled:
+          type: integer
+        deadline_at:
+          type: string
+        failure_reason:
+          type: string
+        failure_message:
+          type: string
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/ForkChild'
+        created_at:
+          type: string
+        updated_at:
+          type: string
+    HookDeclaration:
+      type: object
+      additionalProperties: false
+      required: [event]
+      properties:
+        event:
+          type: string
+          enum: [after_create, after_restore, after_resume, before_pause, before_stop, before_snapshot, before_delete]
+        template:
+          type: string
+          description: Hook template name. Mutually exclusive with script.
+        script:
+          type: string
+          maxLength: 65536
+          description: Inline shell script. Mutually exclusive with template.
+        timeout_seconds:
+          type: integer
+          minimum: 1
+          maximum: 600
+        on_failure:
+          type: string
+          enum: [abort, continue]
+        env:
+          type: object
+          additionalProperties:
+            type: string
+        run_order:
+          type: integer
+    WatchdogDeclaration:
+      type: object
+      additionalProperties: false
+      required: [interval_seconds, action]
+      properties:
+        template:
+          type: string
+          description: Hook template name. Mutually exclusive with script.
+        script:
+          type: string
+          maxLength: 65536
+          description: Inline shell script. Mutually exclusive with template.
+        interval_seconds:
+          type: integer
+          minimum: 30
+        action:
+          type: string
+          enum: [stop, snapshot, none]
+        failure_threshold:
+          type: integer
+          minimum: 1
+          default: 3
+        timeout_seconds:
+          type: integer
+          minimum: 1
+          maximum: 600
+        env:
+          type: object
+          additionalProperties:
+            type: string
     PromoteSnapshotRequest:
       type: object
       additionalProperties: false
@@ -920,6 +1620,110 @@ components:
           type: string
           format: date-time
           description: New expiry after the lease extension.
+    ExecSandboxRequest:
+      type: object
+      additionalProperties: false
+      required: [command]
+      properties:
+        command:
+          type: array
+          minItems: 1
+          maxItems: 256
+          items:
+            type: string
+          description: Argument vector executed directly in the guest (no shell). Wrap in ["/bin/sh", "-c", ...] for shell semantics.
+        timeout:
+          type: string
+          description: Positive Go-style duration bounding the command's runtime. Defaults to 30s; maximum 5m.
+    ExecSandboxResult:
+      type: object
+      required: [exit_code, stdout, stderr]
+      properties:
+        exit_code:
+          type: integer
+          description: Command exit code. -1 when the process was killed (including on timeout).
+        stdout:
+          type: string
+        stderr:
+          type: string
+        stdout_truncated:
+          type: boolean
+        stderr_truncated:
+          type: boolean
+        timed_out:
+          type: boolean
+          description: True when the command hit the timeout and was killed.
+    LogsResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LogLine'
+        truncated:
+          type: boolean
+          description: True when at least one source was tailed from a larger log.
+    LogLine:
+      type: object
+      required: [ts, level, src, msg]
+      properties:
+        ts:
+          type: string
+        level:
+          type: string
+        src:
+          type: string
+          description: Backward-compatible source/process field.
+        source:
+          type: string
+          enum: [console, firecracker]
+          description: Log stream source when provided by the real sandbox log backend.
+        msg:
+          type: string
+    LineageResponse:
+      type: object
+      required: [nodes]
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/LineageNode'
+    LineageNode:
+      type: object
+      required: [key, kind, variant, label, sub, depth, isLast]
+      properties:
+        key:
+          type: string
+        kind:
+          type: string
+          enum: [SNAPSHOT, SANDBOX, "—"]
+        variant:
+          type: string
+          enum: [snapshot, current, restored-live, historical, none]
+        label:
+          type: string
+        sub:
+          type: string
+        depth:
+          type: integer
+        isLast:
+          type: boolean
+        href:
+          type: string
+          nullable: true
+        parentKey:
+          type: string
+        edge:
+          type: string
+          enum: [created-from, snapshotted-to]
+        entityId:
+          type: string
+        state:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
     SSHAuthorizeRequest:
       type: object
       required: [routing_username, gateway_public_key]
@@ -933,7 +1737,7 @@ components:
           description: SHA256 fingerprint of a live registered public key already proven by the gateway.
         client_certificate:
           type: string
-          description: Gateway-auth SSH certificate presented by the client.
+          description: Service-issued gateway-auth SSH certificate presented by the client.
         gateway_public_key:
           type: string
           description: One OpenSSH public key generated by the gateway for this session.
@@ -964,7 +1768,7 @@ components:
         public_key:
           type: string
           description: One registered OpenSSH public key to certify for gateway authentication.
-    SSHPreparation:
+    PrepareSandboxSSHResult:
       type: object
       required: [host, port, username, key_fingerprint, client_certificate, expires_at]
       properties:
@@ -989,6 +1793,9 @@ components:
         name:
           type: string
           description: Optional display name. Defaults to the key comment or fingerprint.
+        label:
+          type: string
+          description: Optional display label. Defaults to the key comment or fingerprint.
         public_key:
           type: string
           description: One OpenSSH public key line.
@@ -1023,6 +1830,119 @@ components:
           type: string
         op_id:
           type: string
+        hooks:
+          type: array
+          items:
+            $ref: '#/components/schemas/HookSummary'
+        watchdog:
+          $ref: '#/components/schemas/WatchdogSummary'
+    HookSummary:
+      type: object
+      required: [event, timeout_seconds, on_failure, run_order]
+      properties:
+        event:
+          type: string
+        source_template_name:
+          type: string
+        timeout_seconds:
+          type: integer
+        on_failure:
+          type: string
+          enum: [abort, continue]
+        run_order:
+          type: integer
+    WatchdogSummary:
+      type: object
+      required: [interval_seconds, action, failure_threshold, timeout_seconds]
+      properties:
+        source_template_name:
+          type: string
+        interval_seconds:
+          type: integer
+        action:
+          type: string
+          enum: [stop, snapshot, none]
+        failure_threshold:
+          type: integer
+        timeout_seconds:
+          type: integer
+    HookTemplateRequest:
+      type: object
+      additionalProperties: false
+      required: [script]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        script:
+          type: string
+          maxLength: 65536
+        timeout_seconds:
+          type: integer
+          minimum: 1
+          maximum: 600
+        env:
+          type: object
+          additionalProperties:
+            type: string
+    HookTemplate:
+      type: object
+      required: [id, name, script, timeout_seconds, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        script:
+          type: string
+        timeout_seconds:
+          type: integer
+        env:
+          type: object
+          additionalProperties:
+            type: string
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    HookRun:
+      type: object
+      required: [id, sandbox_id, event, status, started_at]
+      properties:
+        id:
+          type: string
+        sandbox_id:
+          type: string
+        hook_id:
+          type: string
+        event:
+          type: string
+        operation_id:
+          type: string
+        status:
+          type: string
+          enum: [running, succeeded, failed, timed_out, skipped]
+        exit_code:
+          type: integer
+        stdout_tail:
+          type: string
+        stderr_tail:
+          type: string
+        error:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
     LiveMetrics:
       type: object
       required: [cpuPct, memUsedGiB, memTotalGiB, diskUsedGiB, diskTotalGiB]
@@ -1037,6 +1957,43 @@ components:
           type: number
         diskTotalGiB:
           type: number
+    SandboxMetricsResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 5000
+          items:
+            $ref: '#/components/schemas/SandboxMetricSample'
+    SandboxMetricSample:
+      type: object
+      required: [sampled_at, cpu_seconds_total, memory_bytes, net_rx_bytes, net_tx_bytes]
+      properties:
+        sampled_at:
+          type: string
+          format: date-time
+          description: Wall-clock sample timestamp produced by the supervisor/control-plane sampler.
+        cpu_seconds_total:
+          type: number
+          description: Cumulative counter of Firecracker process user+system CPU seconds.
+        memory_bytes:
+          type: integer
+          format: int64
+          description: Point-in-time RSS memory gauge for the Firecracker process.
+        disk_used_bytes:
+          type: integer
+          format: int64
+          nullable: true
+          description: Point-in-time sandbox disk usage gauge; null when per-sandbox usage is unavailable.
+        net_rx_bytes:
+          type: integer
+          format: int64
+          description: Cumulative receive byte counter from the sandbox TAP device.
+        net_tx_bytes:
+          type: integer
+          format: int64
+          description: Cumulative transmit byte counter from the sandbox TAP device.
     GuestNetwork:
       type: object
       required: [guestIp, node, uplinkCidr, tapDevice, dns, nftables, jailer, egressAllow, egressDeny]
@@ -1067,7 +2024,7 @@ components:
             type: string
     Sandbox:
       type: object
-      required: [id, name, state, template, ver, vcpu, mem, createdAt, onDelete, snap, tier, frozen, restored, clockPolicy, workload, tags, procs, idempotencyKey, err, metrics, network]
+      required: [id, name, state, template, ver, vcpu, mem, createdAt, onDelete, snap, frozen, restored, clockPolicy, workload, tags, labels, procs, idempotencyKey, err, metrics, network]
       properties:
         id:
           type: string
@@ -1075,7 +2032,7 @@ components:
           type: string
         state:
           type: string
-          enum: [pending, running, snapshotting, stopped, restoring, failed, degraded, gone]
+          enum: [pending, running, paused, snapshotting, stopped, restoring, failed, degraded, gone]
         template:
           type: string
         ver:
@@ -1100,11 +2057,9 @@ components:
           nullable: true
         onDelete:
           type: string
-          enum: [delete, hot, cold, archive]
+          enum: [delete, hot, archive]
         snap:
           type: integer
-        tier:
-          type: string
         frozen:
           type: boolean
         restored:
@@ -1129,6 +2084,10 @@ components:
           type: array
           items:
             type: string
+        labels:
+          type: object
+          additionalProperties:
+            type: string
         procs:
           type: array
           items:
@@ -1144,9 +2103,15 @@ components:
           $ref: '#/components/schemas/LiveMetrics'
         network:
           $ref: '#/components/schemas/GuestNetwork'
+        hooks:
+          type: array
+          items:
+            $ref: '#/components/schemas/HookSummary'
+        watchdog:
+          $ref: '#/components/schemas/WatchdogSummary'
     Snapshot:
       type: object
-      required: [id, sandbox, sandboxId, template, ver, size, sizeGiB, tier, restores, createdAt, frozenAt, frozen, owner, tags, description, digest, state]
+      required: [id, sandbox, sandboxId, template, ver, size, sizeGiB, restores, createdAt, frozenAt, frozen, owner, tags, note, description, digest, state]
       properties:
         id:
           type: string
@@ -1162,15 +2127,9 @@ components:
           type: string
         sizeGiB:
           type: number
-        tier:
-          type: string
         node:
           type: string
           nullable: true
-        archiveState:
-          type: string
-        archiveRef:
-          type: string
         restores:
           type: integer
         createdAt:
@@ -1180,6 +2139,10 @@ components:
           type: string
           format: date-time
           nullable: true
+          description: >-
+            When the snapshot is reaped. Snapshots always carry a TTL (request
+            ttl or the configured lifecycle.default_snapshot_ttl), so this is
+            populated for every live snapshot.
         frozenAt:
           type: string
         clock:
@@ -1196,16 +2159,18 @@ components:
           type: array
           items:
             type: string
+        note:
+          type: string
         description:
           type: string
         digest:
           type: string
         state:
           type: string
-          enum: [creating, available, claimed, consumed, failed, unavailable]
+          enum: [creating, available, failed, deleted, unavailable]
     Operation:
       type: object
-      required: [id, type, target, state, startedAt, actor, idempotencyKey, err]
+      required: [id, type, target, state, startedAt, actor, idempotencyKey, err, warnings]
       properties:
         id:
           type: string
@@ -1232,14 +2197,21 @@ components:
           type: string
         err:
           type: string
+        warnings:
+          type: array
+          items:
+            type: string
     Template:
       type: object
-      required: [name, ver, clock, clockPolicy, sizing, vcpuOptions, tags, rootfs, kernel, artifact, pinned]
+      required: [name, ver, flavor, clock, clockPolicy, sizing, vcpu, memoryMb, diskGb, vcpuOptions, tags, rootfs, kernel, artifact, pinned, build]
       properties:
         name:
           type: string
         ver:
           type: string
+        flavor:
+          type: string
+          enum: [cold, warm]
         clock:
           type: string
         clockPolicy:
@@ -1247,6 +2219,12 @@ components:
           enum: [frozen, realtime]
         sizing:
           type: string
+        vcpu:
+          type: integer
+        memoryMb:
+          type: integer
+        diskGb:
+          type: integer
         vcpuOptions:
           type: array
           items:
@@ -1263,6 +2241,24 @@ components:
           type: string
         pinned:
           type: string
+        description:
+          type: string
+        build:
+          $ref: '#/components/schemas/TemplateBuild'
+        sourceSnapshotId:
+          type: string
+    TemplateBuild:
+      type: object
+      required: [source, steps]
+      properties:
+        source:
+          type: string
+          description: Freeform provenance for the template build recipe or warm snapshot lineage.
+        steps:
+          type: array
+          items:
+            type: string
+          description: Ordered human-readable commands that produced the rootfs. Warm promoted templates return an empty list.
     ErrorEnvelope:
       type: object
       required: [error]
@@ -1278,8 +2274,11 @@ components:
           enum:
             - missing_idempotency_key
             - unauthorized
+            - forbidden
             - invalid_json
             - request_too_large
+            - invalid_request
+            - invalid_source
             - missing_template
             - template_not_found
             - ambiguous_template
@@ -1287,18 +2286,25 @@ components:
             - invalid_cursor
             - invalid_offset
             - invalid_filter
+            - invalid_hook
             - invalid_ttl
             - invalid_on_delete
+            - invalid_override
             - ambiguous_pagination
             - invalid_port
             - invalid_ssh_authorization
             - invalid_ssh_public_key
+            - invalid_template
             - not_found
             - conflict
             - not_ready
-            - streaming_not_implemented
+            - override_not_allowed
+            - streaming_unavailable
+            - hook_template_not_found
             - internal_error
             - invalid_ssh_key
+            - invalid_exec_request
+            - exec_unavailable
         message:
           type: string
         details:
@@ -1332,6 +2338,33 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/Template'
+    HookTemplateList:
+      allOf:
+        - $ref: '#/components/schemas/ListEnvelope'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/HookTemplate'
+    HookSummaryList:
+      allOf:
+        - $ref: '#/components/schemas/ListEnvelope'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/HookSummary'
+    HookRunList:
+      allOf:
+        - $ref: '#/components/schemas/ListEnvelope'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/HookRun'
     OperationList:
       allOf:
         - $ref: '#/components/schemas/ListEnvelope'
