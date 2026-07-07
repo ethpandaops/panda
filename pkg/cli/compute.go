@@ -2,6 +2,11 @@ package cli
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -12,33 +17,51 @@ import (
 const computeProbeTimeout = 2 * time.Second
 
 var (
-	computeDatasource  string
-	computeTTL         string
-	computeOnDelete    string
-	computeNote        string
-	computeExtend      string
-	computeTemplate    string
-	computeName        string
-	computeVersion     string
-	computeDescription string
-	computeReplace     bool
-	computePublicKey   string
-	computeIdempotency string
-	computeLimit       int
-	computeOffset      int
-	computeCursor      string
-	computeFilters     []string
-	computeTags        []string
+	computeDatasource   string
+	computeTTL          string
+	computeOnDelete     string
+	computeNote         string
+	computeExtend       string
+	computeTemplate     string
+	computeName         string
+	computeVersion      string
+	computeDescription  string
+	computeReplace      bool
+	computePublicKey    string
+	computeIdempotency  string
+	computeLimit        int
+	computeOffset       int
+	computeCursor       string
+	computeFilters      []string
+	computeTags         []string
+	computeSnapshotID   string
+	computeBootFlavor   string
+	computeVCPU         int
+	computeMemoryMB     int
+	computeDiskGB       int
+	computeEnvValues    []string
+	computeLabelValues  []string
+	computeHooksJSON    string
+	computeWatchdogJSON string
+	computeExecTimeout  string
+	computeLogSource    string
+	computeLogTail      int
+	computePaused       bool
+	computeForkCount    int
+	computeForkMinReady int
+	computeForkDeadline string
+	computeForkFlavor   string
+	computeForkPaused   bool
 )
 
 var computeCmd = &cobra.Command{
 	GroupID: groupDirect,
 	Use:     "compute <resource> <command>",
-	Short:   "Manage ephemeral compute sandboxes: create, snapshot, restore, lease",
+	Short:   "Manage ephemeral compute sandboxes: create, snapshot, fork, lease",
 	Long: `Manage compute, the ethpandaops ephemeral-sandbox control plane. A sandbox is
 a short-lived microVM created from a template; you can snapshot it, stop and
-start it, extend its lease (TTL), restore snapshots into new sandboxes, and
-poll the async operations that back every mutation.
+start it, extend its lease (TTL), create new sandboxes from snapshots, fan out
+copies with fork, and poll the async operations that back every mutation.
 
 Commands are grouped by resource. Most mutations are asynchronous: they return
 an operation id you can poll with 'panda compute operations get <id>'.
@@ -57,7 +80,10 @@ Examples:
   panda compute sandboxes get <id>
   panda compute sandboxes snapshot <id> --note "before upgrade"
   panda compute sandboxes lease <id> --extend 30m
-  panda compute snapshots restore <snapshot_id> --ttl 2h
+  panda compute sandboxes create --snapshot <snapshot_id> --ttl 2h
+  panda compute sandboxes fork <id> --count 5 --ttl 1h
+  panda compute snapshots fork <snapshot_id> --count 5 --ttl 1h
+  panda compute forks get <fork_id>
   panda compute operations get <id>
   panda compute sandboxes delete <id>`,
 }
@@ -87,11 +113,45 @@ func init() {
 			"Filter results, key<op>value where op is =, !=, ~=, >, <, >=, <= (e.g. state=running); repeatable")
 	}
 
-	computeSandboxesCreateCmd.Flags().StringVar(&computeTemplate, "template", "", "Template to launch (required)")
+	computeSandboxesCreateCmd.Flags().StringVar(&computeTemplate, "template", "", "Template to launch")
+	computeSandboxesCreateCmd.Flags().StringVar(&computeSnapshotID, "snapshot", "", "Snapshot to boot from instead of a template")
+	computeSandboxesCreateCmd.Flags().StringVar(&computeBootFlavor, "boot-flavor", "",
+		"Snapshot boot flavor: warm (resume memory, default) or cold (fresh boot on the snapshot disk)")
 	computeSandboxesCreateCmd.Flags().StringVar(&computeTTL, "ttl", "", "Lease duration (Go duration, e.g. 1h)")
 	computeSandboxesCreateCmd.Flags().StringVar(&computeOnDelete, "on-delete", "",
-		"Disposition on delete: archive, cold, delete, or hot")
-	_ = computeSandboxesCreateCmd.MarkFlagRequired("template")
+		"Disposition on delete: archive, delete, or hot")
+	computeSandboxesCreateCmd.Flags().StringVar(&computeName, "name", "", "Display name for the sandbox")
+	computeSandboxesCreateCmd.Flags().IntVar(&computeVCPU, "vcpu", 0, "vCPU override")
+	computeSandboxesCreateCmd.Flags().IntVar(&computeMemoryMB, "memory-mb", 0, "Memory override in MiB")
+	computeSandboxesCreateCmd.Flags().IntVar(&computeDiskGB, "disk-gb", 0, "Disk override in GiB")
+	computeSandboxesCreateCmd.Flags().StringArrayVar(&computeEnvValues, "env", nil, "Guest environment KEY=VALUE; repeatable")
+	computeSandboxesCreateCmd.Flags().StringArrayVar(&computeLabelValues, "label", nil, "Metadata label KEY=VALUE; repeatable")
+	computeSandboxesCreateCmd.Flags().StringVar(&computeHooksJSON, "hooks-json", "",
+		"Lifecycle hooks as a JSON array of hook declarations")
+	computeSandboxesCreateCmd.Flags().StringVar(&computeWatchdogJSON, "watchdog-json", "",
+		"Watchdog declaration as a JSON object")
+	computeSandboxesCreateCmd.Flags().BoolVar(&computePaused, "paused", false,
+		"Leave the sandbox paused after a warm snapshot boot instead of running")
+
+	for _, cmd := range []*cobra.Command{computeSandboxesForkCmd, computeSnapshotsForkCmd} {
+		cmd.Flags().IntVar(&computeForkCount, "count", 0, "Number of sandboxes to create (required)")
+		_ = cmd.MarkFlagRequired("count")
+		cmd.Flags().StringVar(&computeTTL, "ttl", "",
+			"Lease duration applied to every child (Go duration; omit for the server default)")
+		cmd.Flags().IntVar(&computeForkMinReady, "min-ready", 0,
+			"Floor of ready children below which the fork reports failure")
+		cmd.Flags().StringVar(&computeForkDeadline, "deadline", "",
+			"How long queued children may wait for capacity (Go duration)")
+		cmd.Flags().StringVar(&computeForkFlavor, "flavor", "",
+			"Child boot flavor: warm (resume memory, default) or cold (fresh boot on the snapshot disk)")
+		cmd.Flags().BoolVar(&computeForkPaused, "paused", false,
+			"Whether children land paused instead of running (omit to inherit the source default)")
+	}
+
+	computeSandboxesExecCmd.Flags().StringVar(&computeExecTimeout, "timeout", "",
+		"Command timeout (Go duration, server default 30s, max 5m)")
+	computeSandboxesLogsCmd.Flags().StringVar(&computeLogSource, "source", "", "Restrict logs to one source: console or firecracker")
+	computeSandboxesLogsCmd.Flags().IntVar(&computeLogTail, "tail-bytes", 0, "Per-source byte tail to return")
 
 	computeSandboxesSnapshotCmd.Flags().StringVar(&computeNote, "note", "", "Optional note recorded with the snapshot")
 	computeSandboxesSnapshotCmd.Flags().StringVar(&computeTTL, "ttl", "",
@@ -99,8 +159,6 @@ func init() {
 	computeSandboxesLeaseCmd.Flags().StringVar(&computeExtend, "extend", "",
 		"Lease extension (Go duration, e.g. 30m) (required)")
 	_ = computeSandboxesLeaseCmd.MarkFlagRequired("extend")
-	computeSnapshotsRestoreCmd.Flags().StringVar(&computeTTL, "ttl", "",
-		"Lease duration for the restored sandbox (Go duration)")
 	computeSnapshotsPromoteCmd.Flags().StringVar(&computeName, "name", "", "Warm template name (required)")
 	computeSnapshotsPromoteCmd.Flags().StringVar(&computeVersion, "version", "", "Warm template version")
 	computeSnapshotsPromoteCmd.Flags().StringVar(&computeDescription, "description", "", "Warm template description")
@@ -119,8 +177,9 @@ func init() {
 
 	for _, cmd := range []*cobra.Command{
 		computeSandboxesCreateCmd, computeSandboxesDeleteCmd, computeSandboxesStopCmd,
-		computeSandboxesStartCmd, computeSandboxesSnapshotCmd, computeSnapshotsDeleteCmd,
-		computeSnapshotsRestoreCmd, computeSnapshotsPromoteCmd,
+		computeSandboxesStartCmd, computeSandboxesSnapshotCmd, computeSandboxesPauseCmd,
+		computeSandboxesResumeCmd, computeSandboxesForkCmd, computeSnapshotsDeleteCmd,
+		computeSnapshotsForkCmd, computeSnapshotsPromoteCmd,
 	} {
 		cmd.Flags().StringVar(&computeIdempotency, "idempotency-key", "",
 			"Idempotency key to make the mutation safely retryable")
@@ -131,12 +190,16 @@ func init() {
 		computeSandboxesDeleteCmd, computeSandboxesStopCmd, computeSandboxesStartCmd,
 		computeSandboxesSnapshotCmd, computeSandboxesLeaseCmd, computeSandboxesSnapshotsCmd,
 		computeSandboxesOperationsCmd, computeSandboxesLogsCmd, computeSandboxesLineageCmd,
-		computeSandboxesSSHCmd,
+		computeSandboxesExecCmd, computeSandboxesMetricsCmd, computeSandboxesPauseCmd,
+		computeSandboxesResumeCmd, computeSandboxesHooksCmd, computeSandboxesHookRunsCmd,
+		computeSandboxesForkCmd, computeSandboxesSSHCmd,
 	)
 	computeSnapshotsCmd.AddCommand(
 		computeSnapshotsListCmd, computeSnapshotsGetCmd, computeSnapshotsDeleteCmd,
-		computeSnapshotsRestoreCmd, computeSnapshotsPromoteCmd, computeSnapshotsChildrenCmd,
+		computeSnapshotsForkCmd, computeSnapshotsPromoteCmd, computeSnapshotsChildrenCmd,
+		computeSnapshotsLineageCmd,
 	)
+	computeForksCmd.AddCommand(computeForksListCmd, computeForksGetCmd)
 	computeTemplatesCmd.AddCommand(computeTemplatesListCmd, computeTemplatesGetCmd)
 	computeOperationsCmd.AddCommand(computeOperationsListCmd, computeOperationsGetCmd)
 	computeKeysCmd.AddCommand(computeKeysListCmd, computeKeysAddCmd, computeKeysDeleteCmd)
@@ -150,6 +213,7 @@ func init() {
 		computeSessionCmd,
 		computeSandboxesCmd,
 		computeSnapshotsCmd,
+		computeForksCmd,
 		computeTemplatesCmd,
 		computeOperationsCmd,
 		computeKeysCmd,
@@ -215,7 +279,12 @@ var computeSandboxesCmd = &cobra.Command{
 
 var computeSnapshotsCmd = &cobra.Command{
 	Use:   "snapshots <command>",
-	Short: "List, restore, and delete snapshots",
+	Short: "List, fork, promote, and delete snapshots",
+}
+
+var computeForksCmd = &cobra.Command{
+	Use:   "forks <command>",
+	Short: "Inspect fork operations and their per-child progress",
 }
 
 var computeTemplatesCmd = &cobra.Command{
@@ -308,14 +377,56 @@ var computeSandboxesGetCmd = &cobra.Command{
 
 var computeSandboxesCreateCmd = &cobra.Command{
 	Use:   "create",
-	Short: "Create a sandbox from a template (async)",
+	Short: "Create a sandbox from a template or snapshot (async)",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
+		if (computeTemplate == "") == (computeSnapshotID == "") {
+			return fmt.Errorf("exactly one of --template or --snapshot is required")
+		}
 		opArgs := computeArgs()
-		opArgs["template"] = computeTemplate
+		setIfNotEmpty(opArgs, "template", computeTemplate)
+		setIfNotEmpty(opArgs, "snapshot_id", computeSnapshotID)
+		setIfNotEmpty(opArgs, "flavor", computeBootFlavor)
 		setIfNotEmpty(opArgs, "ttl", computeTTL)
 		setIfNotEmpty(opArgs, "on_delete", computeOnDelete)
-		setIfNotEmpty(opArgs, "idempotency_key", computeIdempotency)
+		opArgs["idempotency_key"] = computeIdemOrGenerated()
+		setIfNotEmpty(opArgs, "name", computeName)
+		if computeVCPU > 0 {
+			opArgs["vcpu"] = computeVCPU
+		}
+		if computeMemoryMB > 0 {
+			opArgs["memory_mb"] = computeMemoryMB
+		}
+		if computeDiskGB > 0 {
+			opArgs["disk_gb"] = computeDiskGB
+		}
+		if env, err := keyValueArgsToMap(computeEnvValues); err != nil {
+			return fmt.Errorf("--env: %w", err)
+		} else if len(env) > 0 {
+			opArgs["env"] = env
+		}
+		if labels, err := keyValueArgsToMap(computeLabelValues); err != nil {
+			return fmt.Errorf("--label: %w", err)
+		} else if len(labels) > 0 {
+			opArgs["labels"] = labels
+		}
+		if computeHooksJSON != "" {
+			var hooks []any
+			if err := json.Unmarshal([]byte(computeHooksJSON), &hooks); err != nil {
+				return fmt.Errorf("--hooks-json: %w", err)
+			}
+			opArgs["hooks"] = hooks
+		}
+		if computeWatchdogJSON != "" {
+			var watchdog map[string]any
+			if err := json.Unmarshal([]byte(computeWatchdogJSON), &watchdog); err != nil {
+				return fmt.Errorf("--watchdog-json: %w", err)
+			}
+			opArgs["watchdog"] = watchdog
+		}
+		if cmd.Flags().Changed("paused") {
+			opArgs["paused"] = computePaused
+		}
 
 		return runComputeRaw(cmd, "compute.create_sandbox", opArgs)
 	},
@@ -396,7 +507,13 @@ var computeSandboxesLogsCmd = &cobra.Command{
 	Short: "Fetch logs for a sandbox",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runComputeRaw(cmd, "compute.get_sandbox_logs", computeIDArgs(args[0]))
+		opArgs := computeIDArgs(args[0])
+		setIfNotEmpty(opArgs, "source", computeLogSource)
+		if computeLogTail > 0 {
+			opArgs["tail_bytes"] = computeLogTail
+		}
+
+		return runComputeRaw(cmd, "compute.get_sandbox_logs", opArgs)
 	},
 }
 
@@ -406,6 +523,79 @@ var computeSandboxesLineageCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runComputeRaw(cmd, "compute.get_sandbox_lineage", computeIDArgs(args[0]))
+	},
+}
+
+var computeSandboxesExecCmd = &cobra.Command{
+	Use:   "exec <id> -- <command> [args...]",
+	Short: "Run a command inside a sandbox and print its output",
+	Args:  cobra.MinimumNArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		opArgs := computeIDArgs(args[0])
+		command := make([]any, 0, len(args)-1)
+		for _, arg := range args[1:] {
+			command = append(command, arg)
+		}
+		opArgs["command"] = command
+		setIfNotEmpty(opArgs, "timeout", computeExecTimeout)
+
+		return runComputeRaw(cmd, "compute.exec_sandbox", opArgs)
+	},
+}
+
+var computeSandboxesMetricsCmd = &cobra.Command{
+	Use:   "metrics <id>",
+	Short: "Fetch guest resource metrics for a sandbox",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runComputeRaw(cmd, "compute.get_sandbox_metrics", computeIDArgs(args[0]))
+	},
+}
+
+var computeSandboxesPauseCmd = &cobra.Command{
+	Use:   "pause <id>",
+	Short: "Pause a running sandbox's vCPUs (async)",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runComputeRaw(cmd, "compute.pause_sandbox", computeMutationArgs(args[0]))
+	},
+}
+
+var computeSandboxesResumeCmd = &cobra.Command{
+	Use:   "resume <id>",
+	Short: "Resume a paused sandbox (async)",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runComputeRaw(cmd, "compute.resume_sandbox", computeMutationArgs(args[0]))
+	},
+}
+
+var computeSandboxesHooksCmd = &cobra.Command{
+	Use:   "hooks <id>",
+	Short: "List lifecycle hooks declared on a sandbox",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runComputeRaw(cmd, "compute.get_sandbox_hooks", computeIDArgs(args[0]))
+	},
+}
+
+var computeSandboxesHookRunsCmd = &cobra.Command{
+	Use:   "hook-runs <id>",
+	Short: "List lifecycle hook executions for a sandbox",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runComputeRaw(cmd, "compute.get_sandbox_hook_runs", computeIDArgs(args[0]))
+	},
+}
+
+var computeSandboxesForkCmd = &cobra.Command{
+	Use:   "fork <id>",
+	Short: "Fan out copies of a running sandbox (async)",
+	Long: `Capture the sandbox as an ephemeral snapshot and fan out --count sandboxes
+from it. The source keeps running.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runComputeRaw(cmd, "compute.fork_sandbox", computeForkArgs(cmd, args[0]))
 	},
 }
 
@@ -438,15 +628,15 @@ var computeSnapshotsDeleteCmd = &cobra.Command{
 	},
 }
 
-var computeSnapshotsRestoreCmd = &cobra.Command{
-	Use:   "restore <id>",
-	Short: "Restore a snapshot into a new sandbox (async)",
-	Args:  cobra.ExactArgs(1),
+var computeSnapshotsForkCmd = &cobra.Command{
+	Use:   "fork <id>",
+	Short: "Fan out sandboxes from a snapshot (async)",
+	Long: `Fan out --count sandboxes from a published snapshot. To reconstitute a single
+sandbox from a snapshot, use 'panda compute sandboxes create --snapshot <id>'
+instead.`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		opArgs := computeMutationArgs(args[0])
-		setIfNotEmpty(opArgs, "ttl", computeTTL)
-
-		return runComputeRaw(cmd, "compute.restore_snapshot", opArgs)
+		return runComputeRaw(cmd, "compute.fork_snapshot", computeForkArgs(cmd, args[0]))
 	},
 }
 
@@ -472,12 +662,41 @@ var computeSnapshotsPromoteCmd = &cobra.Command{
 	},
 }
 
+var computeSnapshotsLineageCmd = &cobra.Command{
+	Use:   "lineage <id>",
+	Short: "Show the full lineage tree rooted at a snapshot",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runComputeRaw(cmd, "compute.get_snapshot_lineage", computeIDArgs(args[0]))
+	},
+}
+
 var computeSnapshotsChildrenCmd = &cobra.Command{
 	Use:   "children <id>",
 	Short: "List sandboxes restored from a snapshot",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runComputeRaw(cmd, "compute.get_snapshot_restored_by", computeIDArgs(args[0]))
+	},
+}
+
+// Forks.
+
+var computeForksListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List fork operations and their progress counts",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		return runComputeRaw(cmd, "compute.list_forks", computeArgs())
+	},
+}
+
+var computeForksGetCmd = &cobra.Command{
+	Use:   "get <id>",
+	Short: "Get one fork operation, including per-child state",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runComputeRaw(cmd, "compute.get_fork", computeIDArgs(args[0]))
 	},
 }
 
@@ -638,9 +857,45 @@ func computeIDArgs(id string) map[string]any {
 
 func computeMutationArgs(id string) map[string]any {
 	args := computeIDArgs(id)
-	setIfNotEmpty(args, "idempotency_key", computeIdempotency)
+	args["idempotency_key"] = computeIdemOrGenerated()
 
 	return args
+}
+
+// computeForkArgs assembles the shared fork mutation arguments. The paused
+// flag is forwarded only when set so the server default (inherit from the
+// source) applies otherwise.
+func computeForkArgs(cmd *cobra.Command, id string) map[string]any {
+	args := computeMutationArgs(id)
+	args["count"] = computeForkCount
+	setIfNotEmpty(args, "ttl", computeTTL)
+	setIfNotEmpty(args, "deadline", computeForkDeadline)
+	setIfNotEmpty(args, "flavor", computeForkFlavor)
+
+	if computeForkMinReady > 0 {
+		args["min_ready"] = computeForkMinReady
+	}
+
+	if cmd.Flags().Changed("paused") {
+		args["paused"] = computeForkPaused
+	}
+
+	return args
+}
+
+// computeIdemOrGenerated returns the user-supplied idempotency key or mints a
+// random one: the upstream API requires the header on every mutation, and a
+// per-invocation key preserves safe manual retries via --idempotency-key.
+func computeIdemOrGenerated() string {
+	if computeIdempotency != "" {
+		return computeIdempotency
+	}
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return fmt.Sprintf("panda-%d", time.Now().UnixNano())
+	}
+
+	return "panda-" + hex.EncodeToString(buf)
 }
 
 // runComputeRaw runs a compute operation and renders the response. Output is
@@ -654,4 +909,20 @@ func runComputeRaw(cmd *cobra.Command, operationID string, args map[string]any) 
 	}
 
 	return renderComputeRaw(operationID, response.Body)
+}
+
+func keyValueArgsToMap(values []string) (map[string]any, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]any, len(values))
+	for _, entry := range values {
+		key, value, found := strings.Cut(entry, "=")
+		if !found || key == "" {
+			return nil, fmt.Errorf("%q is not KEY=VALUE", entry)
+		}
+		out[key] = value
+	}
+
+	return out, nil
 }

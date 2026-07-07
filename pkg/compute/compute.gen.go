@@ -26,7 +26,6 @@ const (
 // Defines values for CreateSandboxRequestOnDelete.
 const (
 	CreateSandboxRequestOnDeleteArchive CreateSandboxRequestOnDelete = "archive"
-	CreateSandboxRequestOnDeleteCold    CreateSandboxRequestOnDelete = "cold"
 	CreateSandboxRequestOnDeleteDelete  CreateSandboxRequestOnDelete = "delete"
 	CreateSandboxRequestOnDeleteHot     CreateSandboxRequestOnDelete = "hot"
 )
@@ -35,8 +34,6 @@ const (
 func (e CreateSandboxRequestOnDelete) Valid() bool {
 	switch e {
 	case CreateSandboxRequestOnDeleteArchive:
-		return true
-	case CreateSandboxRequestOnDeleteCold:
 		return true
 	case CreateSandboxRequestOnDeleteDelete:
 		return true
@@ -52,24 +49,34 @@ const (
 	ErrorBodyCodeAmbiguousPagination     ErrorBodyCode = "ambiguous_pagination"
 	ErrorBodyCodeAmbiguousTemplate       ErrorBodyCode = "ambiguous_template"
 	ErrorBodyCodeConflict                ErrorBodyCode = "conflict"
+	ErrorBodyCodeExecUnavailable         ErrorBodyCode = "exec_unavailable"
+	ErrorBodyCodeForbidden               ErrorBodyCode = "forbidden"
+	ErrorBodyCodeHookTemplateNotFound    ErrorBodyCode = "hook_template_not_found"
 	ErrorBodyCodeInternalError           ErrorBodyCode = "internal_error"
 	ErrorBodyCodeInvalidCursor           ErrorBodyCode = "invalid_cursor"
+	ErrorBodyCodeInvalidExecRequest      ErrorBodyCode = "invalid_exec_request"
 	ErrorBodyCodeInvalidFilter           ErrorBodyCode = "invalid_filter"
+	ErrorBodyCodeInvalidHook             ErrorBodyCode = "invalid_hook"
 	ErrorBodyCodeInvalidJson             ErrorBodyCode = "invalid_json"
 	ErrorBodyCodeInvalidLimit            ErrorBodyCode = "invalid_limit"
 	ErrorBodyCodeInvalidOffset           ErrorBodyCode = "invalid_offset"
 	ErrorBodyCodeInvalidOnDelete         ErrorBodyCode = "invalid_on_delete"
+	ErrorBodyCodeInvalidOverride         ErrorBodyCode = "invalid_override"
 	ErrorBodyCodeInvalidPort             ErrorBodyCode = "invalid_port"
+	ErrorBodyCodeInvalidRequest          ErrorBodyCode = "invalid_request"
+	ErrorBodyCodeInvalidSource           ErrorBodyCode = "invalid_source"
 	ErrorBodyCodeInvalidSshAuthorization ErrorBodyCode = "invalid_ssh_authorization"
 	ErrorBodyCodeInvalidSshKey           ErrorBodyCode = "invalid_ssh_key"
 	ErrorBodyCodeInvalidSshPublicKey     ErrorBodyCode = "invalid_ssh_public_key"
+	ErrorBodyCodeInvalidTemplate         ErrorBodyCode = "invalid_template"
 	ErrorBodyCodeInvalidTtl              ErrorBodyCode = "invalid_ttl"
 	ErrorBodyCodeMissingIdempotencyKey   ErrorBodyCode = "missing_idempotency_key"
 	ErrorBodyCodeMissingTemplate         ErrorBodyCode = "missing_template"
 	ErrorBodyCodeNotFound                ErrorBodyCode = "not_found"
 	ErrorBodyCodeNotReady                ErrorBodyCode = "not_ready"
+	ErrorBodyCodeOverrideNotAllowed      ErrorBodyCode = "override_not_allowed"
 	ErrorBodyCodeRequestTooLarge         ErrorBodyCode = "request_too_large"
-	ErrorBodyCodeStreamingNotImplemented ErrorBodyCode = "streaming_not_implemented"
+	ErrorBodyCodeStreamingUnavailable    ErrorBodyCode = "streaming_unavailable"
 	ErrorBodyCodeTemplateNotFound        ErrorBodyCode = "template_not_found"
 	ErrorBodyCodeUnauthorized            ErrorBodyCode = "unauthorized"
 )
@@ -83,11 +90,21 @@ func (e ErrorBodyCode) Valid() bool {
 		return true
 	case ErrorBodyCodeConflict:
 		return true
+	case ErrorBodyCodeExecUnavailable:
+		return true
+	case ErrorBodyCodeForbidden:
+		return true
+	case ErrorBodyCodeHookTemplateNotFound:
+		return true
 	case ErrorBodyCodeInternalError:
 		return true
 	case ErrorBodyCodeInvalidCursor:
 		return true
+	case ErrorBodyCodeInvalidExecRequest:
+		return true
 	case ErrorBodyCodeInvalidFilter:
+		return true
+	case ErrorBodyCodeInvalidHook:
 		return true
 	case ErrorBodyCodeInvalidJson:
 		return true
@@ -97,13 +114,21 @@ func (e ErrorBodyCode) Valid() bool {
 		return true
 	case ErrorBodyCodeInvalidOnDelete:
 		return true
+	case ErrorBodyCodeInvalidOverride:
+		return true
 	case ErrorBodyCodeInvalidPort:
+		return true
+	case ErrorBodyCodeInvalidRequest:
+		return true
+	case ErrorBodyCodeInvalidSource:
 		return true
 	case ErrorBodyCodeInvalidSshAuthorization:
 		return true
 	case ErrorBodyCodeInvalidSshKey:
 		return true
 	case ErrorBodyCodeInvalidSshPublicKey:
+		return true
+	case ErrorBodyCodeInvalidTemplate:
 		return true
 	case ErrorBodyCodeInvalidTtl:
 		return true
@@ -115,13 +140,231 @@ func (e ErrorBodyCode) Valid() bool {
 		return true
 	case ErrorBodyCodeNotReady:
 		return true
+	case ErrorBodyCodeOverrideNotAllowed:
+		return true
 	case ErrorBodyCodeRequestTooLarge:
 		return true
-	case ErrorBodyCodeStreamingNotImplemented:
+	case ErrorBodyCodeStreamingUnavailable:
 		return true
 	case ErrorBodyCodeTemplateNotFound:
 		return true
 	case ErrorBodyCodeUnauthorized:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ForkRequestFlavor.
+const (
+	ForkRequestFlavorCold ForkRequestFlavor = "cold"
+	ForkRequestFlavorWarm ForkRequestFlavor = "warm"
+)
+
+// Valid indicates whether the value is a known member of the ForkRequestFlavor enum.
+func (e ForkRequestFlavor) Valid() bool {
+	switch e {
+	case ForkRequestFlavorCold:
+		return true
+	case ForkRequestFlavorWarm:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ForkSourceKind.
+const (
+	ForkSourceKindSandbox  ForkSourceKind = "sandbox"
+	ForkSourceKindSnapshot ForkSourceKind = "snapshot"
+)
+
+// Valid indicates whether the value is a known member of the ForkSourceKind enum.
+func (e ForkSourceKind) Valid() bool {
+	switch e {
+	case ForkSourceKindSandbox:
+		return true
+	case ForkSourceKindSnapshot:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HookDeclarationEvent.
+const (
+	AfterCreate    HookDeclarationEvent = "after_create"
+	AfterRestore   HookDeclarationEvent = "after_restore"
+	AfterResume    HookDeclarationEvent = "after_resume"
+	BeforeDelete   HookDeclarationEvent = "before_delete"
+	BeforePause    HookDeclarationEvent = "before_pause"
+	BeforeSnapshot HookDeclarationEvent = "before_snapshot"
+	BeforeStop     HookDeclarationEvent = "before_stop"
+)
+
+// Valid indicates whether the value is a known member of the HookDeclarationEvent enum.
+func (e HookDeclarationEvent) Valid() bool {
+	switch e {
+	case AfterCreate:
+		return true
+	case AfterRestore:
+		return true
+	case AfterResume:
+		return true
+	case BeforeDelete:
+		return true
+	case BeforePause:
+		return true
+	case BeforeSnapshot:
+		return true
+	case BeforeStop:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HookDeclarationOnFailure.
+const (
+	HookDeclarationOnFailureAbort    HookDeclarationOnFailure = "abort"
+	HookDeclarationOnFailureContinue HookDeclarationOnFailure = "continue"
+)
+
+// Valid indicates whether the value is a known member of the HookDeclarationOnFailure enum.
+func (e HookDeclarationOnFailure) Valid() bool {
+	switch e {
+	case HookDeclarationOnFailureAbort:
+		return true
+	case HookDeclarationOnFailureContinue:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HookRunStatus.
+const (
+	HookRunStatusFailed    HookRunStatus = "failed"
+	HookRunStatusRunning   HookRunStatus = "running"
+	HookRunStatusSkipped   HookRunStatus = "skipped"
+	HookRunStatusSucceeded HookRunStatus = "succeeded"
+	HookRunStatusTimedOut  HookRunStatus = "timed_out"
+)
+
+// Valid indicates whether the value is a known member of the HookRunStatus enum.
+func (e HookRunStatus) Valid() bool {
+	switch e {
+	case HookRunStatusFailed:
+		return true
+	case HookRunStatusRunning:
+		return true
+	case HookRunStatusSkipped:
+		return true
+	case HookRunStatusSucceeded:
+		return true
+	case HookRunStatusTimedOut:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HookSummaryOnFailure.
+const (
+	HookSummaryOnFailureAbort    HookSummaryOnFailure = "abort"
+	HookSummaryOnFailureContinue HookSummaryOnFailure = "continue"
+)
+
+// Valid indicates whether the value is a known member of the HookSummaryOnFailure enum.
+func (e HookSummaryOnFailure) Valid() bool {
+	switch e {
+	case HookSummaryOnFailureAbort:
+		return true
+	case HookSummaryOnFailureContinue:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LineageNodeEdge.
+const (
+	CreatedFrom   LineageNodeEdge = "created-from"
+	SnapshottedTo LineageNodeEdge = "snapshotted-to"
+)
+
+// Valid indicates whether the value is a known member of the LineageNodeEdge enum.
+func (e LineageNodeEdge) Valid() bool {
+	switch e {
+	case CreatedFrom:
+		return true
+	case SnapshottedTo:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LineageNodeKind.
+const (
+	Empty    LineageNodeKind = "—"
+	SANDBOX  LineageNodeKind = "SANDBOX"
+	SNAPSHOT LineageNodeKind = "SNAPSHOT"
+)
+
+// Valid indicates whether the value is a known member of the LineageNodeKind enum.
+func (e LineageNodeKind) Valid() bool {
+	switch e {
+	case Empty:
+		return true
+	case SANDBOX:
+		return true
+	case SNAPSHOT:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LineageNodeVariant.
+const (
+	LineageNodeVariantCurrent      LineageNodeVariant = "current"
+	LineageNodeVariantHistorical   LineageNodeVariant = "historical"
+	LineageNodeVariantNone         LineageNodeVariant = "none"
+	LineageNodeVariantRestoredLive LineageNodeVariant = "restored-live"
+	LineageNodeVariantSnapshot     LineageNodeVariant = "snapshot"
+)
+
+// Valid indicates whether the value is a known member of the LineageNodeVariant enum.
+func (e LineageNodeVariant) Valid() bool {
+	switch e {
+	case LineageNodeVariantCurrent:
+		return true
+	case LineageNodeVariantHistorical:
+		return true
+	case LineageNodeVariantNone:
+		return true
+	case LineageNodeVariantRestoredLive:
+		return true
+	case LineageNodeVariantSnapshot:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LogLineSource.
+const (
+	LogLineSourceConsole     LogLineSource = "console"
+	LogLineSourceFirecracker LogLineSource = "firecracker"
+)
+
+// Valid indicates whether the value is a known member of the LogLineSource enum.
+func (e LogLineSource) Valid() bool {
+	switch e {
+	case LogLineSourceConsole:
+		return true
+	case LogLineSourceFirecracker:
 		return true
 	default:
 		return false
@@ -155,7 +398,6 @@ func (e OperationState) Valid() bool {
 // Defines values for SandboxOnDelete.
 const (
 	SandboxOnDeleteArchive SandboxOnDelete = "archive"
-	SandboxOnDeleteCold    SandboxOnDelete = "cold"
 	SandboxOnDeleteDelete  SandboxOnDelete = "delete"
 	SandboxOnDeleteHot     SandboxOnDelete = "hot"
 )
@@ -164,8 +406,6 @@ const (
 func (e SandboxOnDelete) Valid() bool {
 	switch e {
 	case SandboxOnDeleteArchive:
-		return true
-	case SandboxOnDeleteCold:
 		return true
 	case SandboxOnDeleteDelete:
 		return true
@@ -181,6 +421,7 @@ const (
 	SandboxStateDegraded     SandboxState = "degraded"
 	SandboxStateFailed       SandboxState = "failed"
 	SandboxStateGone         SandboxState = "gone"
+	SandboxStatePaused       SandboxState = "paused"
 	SandboxStatePending      SandboxState = "pending"
 	SandboxStateRestoring    SandboxState = "restoring"
 	SandboxStateRunning      SandboxState = "running"
@@ -196,6 +437,8 @@ func (e SandboxState) Valid() bool {
 	case SandboxStateFailed:
 		return true
 	case SandboxStateGone:
+		return true
+	case SandboxStatePaused:
 		return true
 	case SandboxStatePending:
 		return true
@@ -214,28 +457,43 @@ func (e SandboxState) Valid() bool {
 
 // Defines values for SnapshotState.
 const (
-	Available   SnapshotState = "available"
-	Claimed     SnapshotState = "claimed"
-	Consumed    SnapshotState = "consumed"
-	Creating    SnapshotState = "creating"
-	Failed      SnapshotState = "failed"
-	Unavailable SnapshotState = "unavailable"
+	SnapshotStateAvailable   SnapshotState = "available"
+	SnapshotStateCreating    SnapshotState = "creating"
+	SnapshotStateDeleted     SnapshotState = "deleted"
+	SnapshotStateFailed      SnapshotState = "failed"
+	SnapshotStateUnavailable SnapshotState = "unavailable"
 )
 
 // Valid indicates whether the value is a known member of the SnapshotState enum.
 func (e SnapshotState) Valid() bool {
 	switch e {
-	case Available:
+	case SnapshotStateAvailable:
 		return true
-	case Claimed:
+	case SnapshotStateCreating:
 		return true
-	case Consumed:
+	case SnapshotStateDeleted:
 		return true
-	case Creating:
+	case SnapshotStateFailed:
 		return true
-	case Failed:
+	case SnapshotStateUnavailable:
 		return true
-	case Unavailable:
+	default:
+		return false
+	}
+}
+
+// Defines values for SnapshotBootSourceFlavor.
+const (
+	SnapshotBootSourceFlavorCold SnapshotBootSourceFlavor = "cold"
+	SnapshotBootSourceFlavorWarm SnapshotBootSourceFlavor = "warm"
+)
+
+// Valid indicates whether the value is a known member of the SnapshotBootSourceFlavor enum.
+func (e SnapshotBootSourceFlavor) Valid() bool {
+	switch e {
+	case SnapshotBootSourceFlavorCold:
+		return true
+	case SnapshotBootSourceFlavorWarm:
 		return true
 	default:
 		return false
@@ -275,6 +533,24 @@ func (e TemplateClockPolicy) Valid() bool {
 	}
 }
 
+// Defines values for TemplateFlavor.
+const (
+	Cold TemplateFlavor = "cold"
+	Warm TemplateFlavor = "warm"
+)
+
+// Valid indicates whether the value is a known member of the TemplateFlavor enum.
+func (e TemplateFlavor) Valid() bool {
+	switch e {
+	case Cold:
+		return true
+	case Warm:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TemplateBootSourceKind.
 const (
 	TemplateBootSourceKindTemplate TemplateBootSourceKind = "template"
@@ -290,22 +566,96 @@ func (e TemplateBootSourceKind) Valid() bool {
 	}
 }
 
+// Defines values for WatchdogDeclarationAction.
+const (
+	WatchdogDeclarationActionNone     WatchdogDeclarationAction = "none"
+	WatchdogDeclarationActionSnapshot WatchdogDeclarationAction = "snapshot"
+	WatchdogDeclarationActionStop     WatchdogDeclarationAction = "stop"
+)
+
+// Valid indicates whether the value is a known member of the WatchdogDeclarationAction enum.
+func (e WatchdogDeclarationAction) Valid() bool {
+	switch e {
+	case WatchdogDeclarationActionNone:
+		return true
+	case WatchdogDeclarationActionSnapshot:
+		return true
+	case WatchdogDeclarationActionStop:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WatchdogSummaryAction.
+const (
+	WatchdogSummaryActionNone     WatchdogSummaryAction = "none"
+	WatchdogSummaryActionSnapshot WatchdogSummaryAction = "snapshot"
+	WatchdogSummaryActionStop     WatchdogSummaryAction = "stop"
+)
+
+// Valid indicates whether the value is a known member of the WatchdogSummaryAction enum.
+func (e WatchdogSummaryAction) Valid() bool {
+	switch e {
+	case WatchdogSummaryActionNone:
+		return true
+	case WatchdogSummaryActionSnapshot:
+		return true
+	case WatchdogSummaryActionStop:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetSandboxLogsParamsSource.
+const (
+	GetSandboxLogsParamsSourceConsole     GetSandboxLogsParamsSource = "console"
+	GetSandboxLogsParamsSourceFirecracker GetSandboxLogsParamsSource = "firecracker"
+)
+
+// Valid indicates whether the value is a known member of the GetSandboxLogsParamsSource enum.
+func (e GetSandboxLogsParamsSource) Valid() bool {
+	switch e {
+	case GetSandboxLogsParamsSourceConsole:
+		return true
+	case GetSandboxLogsParamsSourceFirecracker:
+		return true
+	default:
+		return false
+	}
+}
+
 // AcceptedResponse defines model for AcceptedResponse.
 type AcceptedResponse struct {
+	Hooks *[]HookSummary `json:"hooks,omitempty"`
+
 	// Id Resource ID for create-style operations.
-	Id         *string `json:"id,omitempty"`
-	OpId       string  `json:"op_id"`
-	SandboxId  *string `json:"sandbox_id,omitempty"`
-	SnapshotId *string `json:"snapshot_id,omitempty"`
+	Id         *string          `json:"id,omitempty"`
+	OpId       string           `json:"op_id"`
+	SandboxId  *string          `json:"sandbox_id,omitempty"`
+	SnapshotId *string          `json:"snapshot_id,omitempty"`
+	Watchdog   *WatchdogSummary `json:"watchdog,omitempty"`
 }
 
 // AddSSHPublicKeyRequest defines model for AddSSHPublicKeyRequest.
 type AddSSHPublicKeyRequest struct {
+	// Label Optional display label. Defaults to the key comment or fingerprint.
+	Label *string `json:"label,omitempty"`
+
 	// Name Optional display name. Defaults to the key comment or fingerprint.
 	Name *string `json:"name,omitempty"`
 
 	// PublicKey One OpenSSH public key line.
 	PublicKey string `json:"public_key"`
+}
+
+// AuthCLIConfig defines model for AuthCLIConfig.
+type AuthCLIConfig struct {
+	ClientId    *string  `json:"client_id,omitempty"`
+	Issuer      *string  `json:"issuer,omitempty"`
+	OidcEnabled bool     `json:"oidc_enabled"`
+	Scopes      []string `json:"scopes"`
 }
 
 // AuthSession defines model for AuthSession.
@@ -317,15 +667,38 @@ type AuthSession struct {
 
 // CreateSandboxRequest defines model for CreateSandboxRequest.
 type CreateSandboxRequest struct {
+	// DiskGb Optional disk override in GiB. Cold creates require disk_gb to be greater than or equal to the cold template disk size. Warm restores require disk_gb to be at least the recorded warm snapshot disk size. This resizes the backing zvol only; extra space becomes available to the guest only after the guest resizes its filesystem.
+	DiskGb *int `json:"disk_gb,omitempty"`
+
+	// Env Optional write-only guest environment delivered to shells and execs.
+	Env   *map[string]string `json:"env,omitempty"`
+	Hooks *[]HookDeclaration `json:"hooks,omitempty"`
+
+	// Labels Optional service metadata labels for the sandbox.
+	Labels *map[string]string `json:"labels,omitempty"`
+
+	// MemoryMb Optional memory override in MiB, bounded by operator override_limits. Warm restores pin memory to the recorded snapshot value because Firecracker restore loads the saved memory image; requests with a different memory value are rejected with override_not_allowed. Snapshot sources currently resolve through warm restore, so the same rule applies.
+	MemoryMb *int `json:"memory_mb,omitempty"`
+
+	// Name Optional display name stored as sandbox web metadata.
+	Name *string `json:"name,omitempty"`
+
 	// OnDelete Disposition to apply when the sandbox is deleted.
 	OnDelete *CreateSandboxRequestOnDelete `json:"on_delete,omitempty"`
-	Source   *CreateSandboxSource          `json:"source,omitempty"`
+
+	// Paused When true the restored sandbox is left paused (its fully-booted memory image loaded but not resumed) instead of running. Valid only for a warm-flavor snapshot source; a template source or the cold flavor is rejected because there is no frozen image to hold.
+	Paused *bool                `json:"paused,omitempty"`
+	Source *CreateSandboxSource `json:"source,omitempty"`
 
 	// Template Legacy template name. Mutually exclusive with source.
 	Template *string `json:"template,omitempty"`
 
 	// Ttl Optional positive Go-style duration string.
 	Ttl *string `json:"ttl,omitempty"`
+
+	// Vcpu Optional vCPU override, bounded by operator override_limits. Cold creates may override freely within limits. Warm restores require vCPU to be at least the recorded warm snapshot value because supervisor pod sizing is derived from this metadata.
+	Vcpu     *int                 `json:"vcpu,omitempty"`
+	Watchdog *WatchdogDeclaration `json:"watchdog,omitempty"`
 }
 
 // CreateSandboxRequestOnDelete Disposition to apply when the sandbox is deleted.
@@ -351,6 +724,93 @@ type ErrorEnvelope struct {
 	Error ErrorBody `json:"error"`
 }
 
+// ExecSandboxRequest defines model for ExecSandboxRequest.
+type ExecSandboxRequest struct {
+	// Command Argument vector executed directly in the guest (no shell). Wrap in ["/bin/sh", "-c", ...] for shell semantics.
+	Command []string `json:"command"`
+
+	// Timeout Positive Go-style duration bounding the command's runtime. Defaults to 30s; maximum 5m.
+	Timeout *string `json:"timeout,omitempty"`
+}
+
+// ExecSandboxResult defines model for ExecSandboxResult.
+type ExecSandboxResult struct {
+	// ExitCode Command exit code. -1 when the process was killed (including on timeout).
+	ExitCode        int    `json:"exit_code"`
+	Stderr          string `json:"stderr"`
+	StderrTruncated *bool  `json:"stderr_truncated,omitempty"`
+	Stdout          string `json:"stdout"`
+	StdoutTruncated *bool  `json:"stdout_truncated,omitempty"`
+
+	// TimedOut True when the command hit the timeout and was killed.
+	TimedOut *bool `json:"timed_out,omitempty"`
+}
+
+// Fork defines model for Fork.
+type Fork struct {
+	Cancelled      int          `json:"cancelled"`
+	Children       *[]ForkChild `json:"children,omitempty"`
+	CreatedAt      string       `json:"created_at"`
+	DeadlineAt     *string      `json:"deadline_at,omitempty"`
+	Failed         int          `json:"failed"`
+	FailureMessage *string      `json:"failure_message,omitempty"`
+	FailureReason  *string      `json:"failure_reason,omitempty"`
+	Id             string       `json:"id"`
+	MinReady       *int         `json:"min_ready,omitempty"`
+	Queued         int          `json:"queued"`
+	Requested      int          `json:"requested"`
+	Running        int          `json:"running"`
+	Source         ForkSource   `json:"source"`
+	State          string       `json:"state"`
+	UpdatedAt      string       `json:"updated_at"`
+}
+
+// ForkAccepted defines model for ForkAccepted.
+type ForkAccepted struct {
+	ForkId string `json:"fork_id"`
+	OpId   string `json:"op_id"`
+}
+
+// ForkChild defines model for ForkChild.
+type ForkChild struct {
+	Ordinal   int    `json:"ordinal"`
+	SandboxId string `json:"sandbox_id"`
+	State     string `json:"state"`
+}
+
+// ForkRequest defines model for ForkRequest.
+type ForkRequest struct {
+	// Count Number of sandboxes to create. The only multiplier in the API.
+	Count int `json:"count"`
+
+	// Deadline Go-style duration string bounding how long queued children may wait for capacity before the sweeper cancels the still-queued ones.
+	Deadline *string `json:"deadline,omitempty"`
+
+	// Flavor How each child boots from the source snapshot. "warm" (default) resumes the captured memory image; "cold" boots a fresh kernel on the snapshot's disk.
+	Flavor *ForkRequestFlavor `json:"flavor,omitempty"`
+
+	// MinReady Floor of ready children below which the fork reports failure (min_ready_not_met). Running children are never destroyed to meet it. Must not exceed count.
+	MinReady *int `json:"min_ready,omitempty"`
+
+	// Paused Whether children land paused instead of running. Omit to inherit the default: sandbox-source children inherit the source's state at fork time (a paused source yields paused children), snapshot-source children run. Set true/false to override. paused true with the cold flavor is rejected because cold children fresh-boot.
+	Paused *bool `json:"paused,omitempty"`
+
+	// Ttl Go-style duration string applied to every child. Fork children always carry a TTL: omit to fall back to the configured lifecycle.default_ttl (a required server default). If neither is present the request is rejected.
+	Ttl *string `json:"ttl,omitempty"`
+}
+
+// ForkRequestFlavor How each child boots from the source snapshot. "warm" (default) resumes the captured memory image; "cold" boots a fresh kernel on the snapshot's disk.
+type ForkRequestFlavor string
+
+// ForkSource defines model for ForkSource.
+type ForkSource struct {
+	Id   string         `json:"id"`
+	Kind ForkSourceKind `json:"kind"`
+}
+
+// ForkSourceKind defines model for ForkSource.Kind.
+type ForkSourceKind string
+
 // GuestNetwork defines model for GuestNetwork.
 type GuestNetwork struct {
 	Dns         string   `json:"dns"`
@@ -364,6 +824,101 @@ type GuestNetwork struct {
 	UplinkCidr  string   `json:"uplinkCidr"`
 }
 
+// HookDeclaration defines model for HookDeclaration.
+type HookDeclaration struct {
+	Env       *map[string]string        `json:"env,omitempty"`
+	Event     HookDeclarationEvent      `json:"event"`
+	OnFailure *HookDeclarationOnFailure `json:"on_failure,omitempty"`
+	RunOrder  *int                      `json:"run_order,omitempty"`
+
+	// Script Inline shell script. Mutually exclusive with template.
+	Script *string `json:"script,omitempty"`
+
+	// Template Hook template name. Mutually exclusive with script.
+	Template       *string `json:"template,omitempty"`
+	TimeoutSeconds *int    `json:"timeout_seconds,omitempty"`
+}
+
+// HookDeclarationEvent defines model for HookDeclaration.Event.
+type HookDeclarationEvent string
+
+// HookDeclarationOnFailure defines model for HookDeclaration.OnFailure.
+type HookDeclarationOnFailure string
+
+// HookRun defines model for HookRun.
+type HookRun struct {
+	Error       *string       `json:"error,omitempty"`
+	Event       string        `json:"event"`
+	ExitCode    *int          `json:"exit_code,omitempty"`
+	FinishedAt  *time.Time    `json:"finished_at,omitempty"`
+	HookId      *string       `json:"hook_id,omitempty"`
+	Id          string        `json:"id"`
+	OperationId *string       `json:"operation_id,omitempty"`
+	SandboxId   string        `json:"sandbox_id"`
+	StartedAt   time.Time     `json:"started_at"`
+	Status      HookRunStatus `json:"status"`
+	StderrTail  *string       `json:"stderr_tail,omitempty"`
+	StdoutTail  *string       `json:"stdout_tail,omitempty"`
+}
+
+// HookRunStatus defines model for HookRun.Status.
+type HookRunStatus string
+
+// HookRunList defines model for HookRunList.
+type HookRunList struct {
+	Items      []HookRun `json:"items"`
+	NextCursor *string   `json:"next_cursor,omitempty"`
+	Total      int       `json:"total"`
+}
+
+// HookSummary defines model for HookSummary.
+type HookSummary struct {
+	Event              string               `json:"event"`
+	OnFailure          HookSummaryOnFailure `json:"on_failure"`
+	RunOrder           int                  `json:"run_order"`
+	SourceTemplateName *string              `json:"source_template_name,omitempty"`
+	TimeoutSeconds     int                  `json:"timeout_seconds"`
+}
+
+// HookSummaryOnFailure defines model for HookSummary.OnFailure.
+type HookSummaryOnFailure string
+
+// HookSummaryList defines model for HookSummaryList.
+type HookSummaryList struct {
+	Items      []HookSummary `json:"items"`
+	NextCursor *string       `json:"next_cursor,omitempty"`
+	Total      int           `json:"total"`
+}
+
+// HookTemplate defines model for HookTemplate.
+type HookTemplate struct {
+	CreatedAt      time.Time          `json:"created_at"`
+	CreatedBy      *string            `json:"created_by,omitempty"`
+	Description    *string            `json:"description,omitempty"`
+	Env            *map[string]string `json:"env,omitempty"`
+	Id             string             `json:"id"`
+	Name           string             `json:"name"`
+	Script         string             `json:"script"`
+	TimeoutSeconds int                `json:"timeout_seconds"`
+	UpdatedAt      time.Time          `json:"updated_at"`
+}
+
+// HookTemplateList defines model for HookTemplateList.
+type HookTemplateList struct {
+	Items      []HookTemplate `json:"items"`
+	NextCursor *string        `json:"next_cursor,omitempty"`
+	Total      int            `json:"total"`
+}
+
+// HookTemplateRequest defines model for HookTemplateRequest.
+type HookTemplateRequest struct {
+	Description    *string            `json:"description,omitempty"`
+	Env            *map[string]string `json:"env,omitempty"`
+	Name           *string            `json:"name,omitempty"`
+	Script         string             `json:"script"`
+	TimeoutSeconds *int               `json:"timeout_seconds,omitempty"`
+}
+
 // LeaseResponse defines model for LeaseResponse.
 type LeaseResponse struct {
 	// ExpiresAt New expiry after the lease extension.
@@ -375,6 +930,37 @@ type LeaseResponse struct {
 type LeaseSandboxRequest struct {
 	// Extend Positive Go-style duration to extend the lease by, clamped to max_lease_extension and max TTL.
 	Extend string `json:"extend"`
+}
+
+// LineageNode defines model for LineageNode.
+type LineageNode struct {
+	CreatedAt *time.Time         `json:"createdAt,omitempty"`
+	Depth     int                `json:"depth"`
+	Edge      *LineageNodeEdge   `json:"edge,omitempty"`
+	EntityId  *string            `json:"entityId,omitempty"`
+	Href      *string            `json:"href,omitempty"`
+	IsLast    bool               `json:"isLast"`
+	Key       string             `json:"key"`
+	Kind      LineageNodeKind    `json:"kind"`
+	Label     string             `json:"label"`
+	ParentKey *string            `json:"parentKey,omitempty"`
+	State     *string            `json:"state,omitempty"`
+	Sub       string             `json:"sub"`
+	Variant   LineageNodeVariant `json:"variant"`
+}
+
+// LineageNodeEdge defines model for LineageNode.Edge.
+type LineageNodeEdge string
+
+// LineageNodeKind defines model for LineageNode.Kind.
+type LineageNodeKind string
+
+// LineageNodeVariant defines model for LineageNode.Variant.
+type LineageNodeVariant string
+
+// LineageResponse defines model for LineageResponse.
+type LineageResponse struct {
+	Nodes []LineageNode `json:"nodes"`
 }
 
 // ListEnvelope defines model for ListEnvelope.
@@ -393,6 +979,30 @@ type LiveMetrics struct {
 	MemUsedGiB   float32 `json:"memUsedGiB"`
 }
 
+// LogLine defines model for LogLine.
+type LogLine struct {
+	Level string `json:"level"`
+	Msg   string `json:"msg"`
+
+	// Source Log stream source when provided by the real sandbox log backend.
+	Source *LogLineSource `json:"source,omitempty"`
+
+	// Src Backward-compatible source/process field.
+	Src string `json:"src"`
+	Ts  string `json:"ts"`
+}
+
+// LogLineSource Log stream source when provided by the real sandbox log backend.
+type LogLineSource string
+
+// LogsResponse defines model for LogsResponse.
+type LogsResponse struct {
+	Items []LogLine `json:"items"`
+
+	// Truncated True when at least one source was tailed from a larger log.
+	Truncated *bool `json:"truncated,omitempty"`
+}
+
 // Operation defines model for Operation.
 type Operation struct {
 	Actor          string         `json:"actor"`
@@ -405,6 +1015,7 @@ type Operation struct {
 	Target         string         `json:"target"`
 	TargetId       *string        `json:"targetId,omitempty"`
 	Type           string         `json:"type"`
+	Warnings       []string       `json:"warnings"`
 }
 
 // OperationState defines model for Operation.State.
@@ -423,6 +1034,16 @@ type PrepareSandboxSSHRequest struct {
 	PublicKey string `json:"public_key"`
 }
 
+// PrepareSandboxSSHResult defines model for PrepareSandboxSSHResult.
+type PrepareSandboxSSHResult struct {
+	ClientCertificate string    `json:"client_certificate"`
+	ExpiresAt         time.Time `json:"expires_at"`
+	Host              string    `json:"host"`
+	KeyFingerprint    string    `json:"key_fingerprint"`
+	Port              int       `json:"port"`
+	Username          string    `json:"username"`
+}
+
 // PromoteSnapshotRequest defines model for PromoteSnapshotRequest.
 type PromoteSnapshotRequest struct {
 	Description *string   `json:"description,omitempty"`
@@ -432,15 +1053,9 @@ type PromoteSnapshotRequest struct {
 	Version     *string   `json:"version,omitempty"`
 }
 
-// RestoreSnapshotRequest defines model for RestoreSnapshotRequest.
-type RestoreSnapshotRequest struct {
-	// Ttl Optional positive Go-style duration string.
-	Ttl *string `json:"ttl,omitempty"`
-}
-
 // SSHAuthorizeRequest defines model for SSHAuthorizeRequest.
 type SSHAuthorizeRequest struct {
-	// ClientCertificate Gateway-auth SSH certificate presented by the client.
+	// ClientCertificate Service-issued gateway-auth SSH certificate presented by the client.
 	ClientCertificate *string `json:"client_certificate,omitempty"`
 
 	// GatewayPublicKey One OpenSSH public key generated by the gateway for this session.
@@ -464,16 +1079,6 @@ type SSHAuthorizeResponse struct {
 	SupervisorPort     int       `json:"supervisor_port"`
 }
 
-// SSHPreparation defines model for SSHPreparation.
-type SSHPreparation struct {
-	ClientCertificate string    `json:"client_certificate"`
-	ExpiresAt         time.Time `json:"expires_at"`
-	Host              string    `json:"host"`
-	KeyFingerprint    string    `json:"key_fingerprint"`
-	Port              int       `json:"port"`
-	Username          string    `json:"username"`
-}
-
 // SSHPublicKey defines model for SSHPublicKey.
 type SSHPublicKey struct {
 	CreatedAt   time.Time `json:"created_at"`
@@ -493,35 +1098,37 @@ type SSHPublicKeyList struct {
 
 // Sandbox defines model for Sandbox.
 type Sandbox struct {
-	Clock          *string         `json:"clock,omitempty"`
-	ClockPolicy    string          `json:"clockPolicy"`
-	CreatedAt      time.Time       `json:"createdAt"`
-	Err            string          `json:"err"`
-	ExpiresAt      *time.Time      `json:"expiresAt,omitempty"`
-	Frozen         bool            `json:"frozen"`
-	Id             string          `json:"id"`
-	IdempotencyKey string          `json:"idempotencyKey"`
-	Ip             *string         `json:"ip,omitempty"`
-	LeaseRenews    *string         `json:"leaseRenews,omitempty"`
-	LeasedBy       *string         `json:"leasedBy,omitempty"`
-	MaxExpiresAt   *time.Time      `json:"maxExpiresAt,omitempty"`
-	Mem            int             `json:"mem"`
-	Metrics        LiveMetrics     `json:"metrics"`
-	Name           string          `json:"name"`
-	Network        GuestNetwork    `json:"network"`
-	Node           *string         `json:"node,omitempty"`
-	OnDelete       SandboxOnDelete `json:"onDelete"`
-	Procs          []string        `json:"procs"`
-	Restored       bool            `json:"restored"`
-	Snap           int             `json:"snap"`
-	SourceSnapshot *string         `json:"sourceSnapshot,omitempty"`
-	State          SandboxState    `json:"state"`
-	Tags           []string        `json:"tags"`
-	Template       string          `json:"template"`
-	Tier           string          `json:"tier"`
-	Vcpu           int             `json:"vcpu"`
-	Ver            string          `json:"ver"`
-	Workload       string          `json:"workload"`
+	Clock          *string           `json:"clock,omitempty"`
+	ClockPolicy    string            `json:"clockPolicy"`
+	CreatedAt      time.Time         `json:"createdAt"`
+	Err            string            `json:"err"`
+	ExpiresAt      *time.Time        `json:"expiresAt,omitempty"`
+	Frozen         bool              `json:"frozen"`
+	Hooks          *[]HookSummary    `json:"hooks,omitempty"`
+	Id             string            `json:"id"`
+	IdempotencyKey string            `json:"idempotencyKey"`
+	Ip             *string           `json:"ip,omitempty"`
+	Labels         map[string]string `json:"labels"`
+	LeaseRenews    *string           `json:"leaseRenews,omitempty"`
+	LeasedBy       *string           `json:"leasedBy,omitempty"`
+	MaxExpiresAt   *time.Time        `json:"maxExpiresAt,omitempty"`
+	Mem            int               `json:"mem"`
+	Metrics        LiveMetrics       `json:"metrics"`
+	Name           string            `json:"name"`
+	Network        GuestNetwork      `json:"network"`
+	Node           *string           `json:"node,omitempty"`
+	OnDelete       SandboxOnDelete   `json:"onDelete"`
+	Procs          []string          `json:"procs"`
+	Restored       bool              `json:"restored"`
+	Snap           int               `json:"snap"`
+	SourceSnapshot *string           `json:"sourceSnapshot,omitempty"`
+	State          SandboxState      `json:"state"`
+	Tags           []string          `json:"tags"`
+	Template       string            `json:"template"`
+	Vcpu           int               `json:"vcpu"`
+	Ver            string            `json:"ver"`
+	Watchdog       *WatchdogSummary  `json:"watchdog,omitempty"`
+	Workload       string            `json:"workload"`
 }
 
 // SandboxOnDelete defines model for Sandbox.OnDelete.
@@ -537,31 +1144,57 @@ type SandboxList struct {
 	Total      int       `json:"total"`
 }
 
+// SandboxMetricSample defines model for SandboxMetricSample.
+type SandboxMetricSample struct {
+	// CpuSecondsTotal Cumulative counter of Firecracker process user+system CPU seconds.
+	CpuSecondsTotal float32 `json:"cpu_seconds_total"`
+
+	// DiskUsedBytes Point-in-time sandbox disk usage gauge; null when per-sandbox usage is unavailable.
+	DiskUsedBytes *int64 `json:"disk_used_bytes,omitempty"`
+
+	// MemoryBytes Point-in-time RSS memory gauge for the Firecracker process.
+	MemoryBytes int64 `json:"memory_bytes"`
+
+	// NetRxBytes Cumulative receive byte counter from the sandbox TAP device.
+	NetRxBytes int64 `json:"net_rx_bytes"`
+
+	// NetTxBytes Cumulative transmit byte counter from the sandbox TAP device.
+	NetTxBytes int64 `json:"net_tx_bytes"`
+
+	// SampledAt Wall-clock sample timestamp produced by the supervisor/control-plane sampler.
+	SampledAt time.Time `json:"sampled_at"`
+}
+
+// SandboxMetricsResponse defines model for SandboxMetricsResponse.
+type SandboxMetricsResponse struct {
+	Items []SandboxMetricSample `json:"items"`
+}
+
 // Snapshot defines model for Snapshot.
 type Snapshot struct {
-	ArchiveRef   *string       `json:"archiveRef,omitempty"`
-	ArchiveState *string       `json:"archiveState,omitempty"`
-	Clock        *string       `json:"clock,omitempty"`
-	CreatedAt    time.Time     `json:"createdAt"`
-	Description  string        `json:"description"`
-	Digest       string        `json:"digest"`
-	ExpiresAt    *time.Time    `json:"expiresAt,omitempty"`
-	Frozen       bool          `json:"frozen"`
-	FrozenAt     string        `json:"frozenAt"`
-	Id           string        `json:"id"`
-	Node         *string       `json:"node,omitempty"`
-	Owner        string        `json:"owner"`
-	Parent       *string       `json:"parent,omitempty"`
-	Restores     int           `json:"restores"`
-	Sandbox      string        `json:"sandbox"`
-	SandboxId    string        `json:"sandboxId"`
-	Size         string        `json:"size"`
-	SizeGiB      float32       `json:"sizeGiB"`
-	State        SnapshotState `json:"state"`
-	Tags         []string      `json:"tags"`
-	Template     string        `json:"template"`
-	Tier         string        `json:"tier"`
-	Ver          string        `json:"ver"`
+	Clock       *string   `json:"clock,omitempty"`
+	CreatedAt   time.Time `json:"createdAt"`
+	Description string    `json:"description"`
+	Digest      string    `json:"digest"`
+
+	// ExpiresAt When the snapshot is reaped. Snapshots always carry a TTL (request ttl or the configured lifecycle.default_snapshot_ttl), so this is populated for every live snapshot.
+	ExpiresAt *time.Time    `json:"expiresAt,omitempty"`
+	Frozen    bool          `json:"frozen"`
+	FrozenAt  string        `json:"frozenAt"`
+	Id        string        `json:"id"`
+	Node      *string       `json:"node,omitempty"`
+	Note      string        `json:"note"`
+	Owner     string        `json:"owner"`
+	Parent    *string       `json:"parent,omitempty"`
+	Restores  int           `json:"restores"`
+	Sandbox   string        `json:"sandbox"`
+	SandboxId string        `json:"sandboxId"`
+	Size      string        `json:"size"`
+	SizeGiB   float32       `json:"sizeGiB"`
+	State     SnapshotState `json:"state"`
+	Tags      []string      `json:"tags"`
+	Template  string        `json:"template"`
+	Ver       string        `json:"ver"`
 }
 
 // SnapshotState defines model for Snapshot.State.
@@ -569,9 +1202,14 @@ type SnapshotState string
 
 // SnapshotBootSource defines model for SnapshotBootSource.
 type SnapshotBootSource struct {
-	Kind       SnapshotBootSourceKind `json:"kind"`
-	SnapshotId string                 `json:"snapshot_id"`
+	// Flavor How the snapshot boots. "warm" (default) resumes the captured memory image and pins memory to the snapshot's size. "cold" boots a fresh kernel on the snapshot's disk state with freely chosen vcpu and memory.
+	Flavor     *SnapshotBootSourceFlavor `json:"flavor,omitempty"`
+	Kind       SnapshotBootSourceKind    `json:"kind"`
+	SnapshotId string                    `json:"snapshot_id"`
 }
+
+// SnapshotBootSourceFlavor How the snapshot boots. "warm" (default) resumes the captured memory image and pins memory to the snapshot's size. "cold" boots a fresh kernel on the snapshot's disk state with freely chosen vcpu and memory.
+type SnapshotBootSourceFlavor string
 
 // SnapshotBootSourceKind defines model for SnapshotBootSource.Kind.
 type SnapshotBootSourceKind string
@@ -587,27 +1225,37 @@ type SnapshotList struct {
 type SnapshotSandboxRequest struct {
 	Note *string `json:"note,omitempty"`
 
-	// Ttl Optional Go-style duration string. Omit to use lifecycle.default_snapshot_ttl; "0" means no expiry.
+	// Ttl Go-style duration string. Snapshots always carry a TTL: omit to fall back to the configured lifecycle.default_snapshot_ttl (a required server default). If neither is present the request is rejected.
 	Ttl *string `json:"ttl,omitempty"`
 }
 
 // Template defines model for Template.
 type Template struct {
-	Artifact    string              `json:"artifact"`
-	Clock       string              `json:"clock"`
-	ClockPolicy TemplateClockPolicy `json:"clockPolicy"`
-	Kernel      string              `json:"kernel"`
-	Name        string              `json:"name"`
-	Pinned      string              `json:"pinned"`
-	Rootfs      string              `json:"rootfs"`
-	Sizing      string              `json:"sizing"`
-	Tags        []string            `json:"tags"`
-	VcpuOptions []int               `json:"vcpuOptions"`
-	Ver         string              `json:"ver"`
+	Artifact         string              `json:"artifact"`
+	Build            TemplateBuild       `json:"build"`
+	Clock            string              `json:"clock"`
+	ClockPolicy      TemplateClockPolicy `json:"clockPolicy"`
+	Description      *string             `json:"description,omitempty"`
+	DiskGb           int                 `json:"diskGb"`
+	Flavor           TemplateFlavor      `json:"flavor"`
+	Kernel           string              `json:"kernel"`
+	MemoryMb         int                 `json:"memoryMb"`
+	Name             string              `json:"name"`
+	Pinned           string              `json:"pinned"`
+	Rootfs           string              `json:"rootfs"`
+	Sizing           string              `json:"sizing"`
+	SourceSnapshotId *string             `json:"sourceSnapshotId,omitempty"`
+	Tags             []string            `json:"tags"`
+	Vcpu             int                 `json:"vcpu"`
+	VcpuOptions      []int               `json:"vcpuOptions"`
+	Ver              string              `json:"ver"`
 }
 
 // TemplateClockPolicy defines model for Template.ClockPolicy.
 type TemplateClockPolicy string
+
+// TemplateFlavor defines model for Template.Flavor.
+type TemplateFlavor string
 
 // TemplateBootSource defines model for TemplateBootSource.
 type TemplateBootSource struct {
@@ -619,12 +1267,51 @@ type TemplateBootSource struct {
 // TemplateBootSourceKind defines model for TemplateBootSource.Kind.
 type TemplateBootSourceKind string
 
+// TemplateBuild defines model for TemplateBuild.
+type TemplateBuild struct {
+	// Source Freeform provenance for the template build recipe or warm snapshot lineage.
+	Source string `json:"source"`
+
+	// Steps Ordered human-readable commands that produced the rootfs. Warm promoted templates return an empty list.
+	Steps []string `json:"steps"`
+}
+
 // TemplateList defines model for TemplateList.
 type TemplateList struct {
 	Items      []Template `json:"items"`
 	NextCursor *string    `json:"next_cursor,omitempty"`
 	Total      int        `json:"total"`
 }
+
+// WatchdogDeclaration defines model for WatchdogDeclaration.
+type WatchdogDeclaration struct {
+	Action           WatchdogDeclarationAction `json:"action"`
+	Env              *map[string]string        `json:"env,omitempty"`
+	FailureThreshold *int                      `json:"failure_threshold,omitempty"`
+	IntervalSeconds  int                       `json:"interval_seconds"`
+
+	// Script Inline shell script. Mutually exclusive with template.
+	Script *string `json:"script,omitempty"`
+
+	// Template Hook template name. Mutually exclusive with script.
+	Template       *string `json:"template,omitempty"`
+	TimeoutSeconds *int    `json:"timeout_seconds,omitempty"`
+}
+
+// WatchdogDeclarationAction defines model for WatchdogDeclaration.Action.
+type WatchdogDeclarationAction string
+
+// WatchdogSummary defines model for WatchdogSummary.
+type WatchdogSummary struct {
+	Action             WatchdogSummaryAction `json:"action"`
+	FailureThreshold   int                   `json:"failure_threshold"`
+	IntervalSeconds    int                   `json:"interval_seconds"`
+	SourceTemplateName *string               `json:"source_template_name,omitempty"`
+	TimeoutSeconds     int                   `json:"timeout_seconds"`
+}
+
+// WatchdogSummaryAction defines model for WatchdogSummary.Action.
+type WatchdogSummaryAction string
 
 // WebSessionIdentity defines model for WebSessionIdentity.
 type WebSessionIdentity struct {
@@ -641,6 +1328,9 @@ type Cursor = string
 
 // Filter defines model for Filter.
 type Filter = []string
+
+// ForkID defines model for ForkID.
+type ForkID = string
 
 // IdempotencyKey defines model for IdempotencyKey.
 type IdempotencyKey = string
@@ -672,6 +1362,9 @@ type Conflict = ErrorEnvelope
 // Error defines model for Error.
 type Error = ErrorEnvelope
 
+// Forbidden defines model for Forbidden.
+type Forbidden = ErrorEnvelope
+
 // InternalError defines model for InternalError.
 type InternalError = ErrorEnvelope
 
@@ -681,14 +1374,25 @@ type NotFound = ErrorEnvelope
 // NotReady defines model for NotReady.
 type NotReady = ErrorEnvelope
 
-// StreamingNotImplemented defines model for StreamingNotImplemented.
-type StreamingNotImplemented = ErrorEnvelope
-
 // UnprocessableEntity defines model for UnprocessableEntity.
 type UnprocessableEntity = ErrorEnvelope
 
 // bearerAuthContextKey is the context key for bearerAuth security scheme
 type bearerAuthContextKey string
+
+// ListHookTemplatesParams defines parameters for ListHookTemplates.
+type ListHookTemplatesParams struct {
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor Integer offset cursor returned as next_cursor.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// Offset Integer offset alternative to cursor.
+	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+
+	// Filter Filter results by field, formatted as key<op>value where op is one of =, !=, ~= (contains), >, <, >=, <=. Keys are response field names and may be dotted to reach nested fields (e.g. error.reason). Comparison is numeric when both sides are numbers and case-insensitive otherwise. Repeatable; all filters must match. Applied before pagination.
+	Filter *Filter `form:"filter,omitempty" json:"filter,omitempty"`
+}
 
 // ListSSHPublicKeysParams defines parameters for ListSSHPublicKeys.
 type ListSSHPublicKeysParams struct {
@@ -740,6 +1444,85 @@ type CreateSandboxParams struct {
 
 // DeleteSandboxParams defines parameters for DeleteSandbox.
 type DeleteSandboxParams struct {
+	// Retain Set to false to discard retained state and delete without honoring the sandbox on_delete disposition. Omit or set true to use the stored disposition.
+	Retain *bool `form:"retain,omitempty" json:"retain,omitempty"`
+
+	// IdempotencyKey Required for mutating requests. Reusing a key with the same request returns the same accepted operation; reusing it with a different request returns 409.
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// StreamExecSandboxParams defines parameters for StreamExecSandbox.
+type StreamExecSandboxParams struct {
+	// Cmd Repeated argv item, in order. The server shell-quotes and joins these items for SSH exec.
+	Cmd  []string `form:"cmd" json:"cmd"`
+	Pty  *bool    `form:"pty,omitempty" json:"pty,omitempty"`
+	Rows *int     `form:"rows,omitempty" json:"rows,omitempty"`
+	Cols *int     `form:"cols,omitempty" json:"cols,omitempty"`
+}
+
+// ForkSandboxParams defines parameters for ForkSandbox.
+type ForkSandboxParams struct {
+	// IdempotencyKey Required for mutating requests. Reusing a key with the same request returns the same accepted operation; reusing it with a different request returns 409.
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// GetSandboxHookRunsParams defines parameters for GetSandboxHookRuns.
+type GetSandboxHookRunsParams struct {
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor Integer offset cursor returned as next_cursor.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// Offset Integer offset alternative to cursor.
+	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+
+	// Filter Filter results by field, formatted as key<op>value where op is one of =, !=, ~= (contains), >, <, >=, <=. Keys are response field names and may be dotted to reach nested fields (e.g. error.reason). Comparison is numeric when both sides are numbers and case-insensitive otherwise. Repeatable; all filters must match. Applied before pagination.
+	Filter *Filter `form:"filter,omitempty" json:"filter,omitempty"`
+}
+
+// GetSandboxHooksParams defines parameters for GetSandboxHooks.
+type GetSandboxHooksParams struct {
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor Integer offset cursor returned as next_cursor.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// Offset Integer offset alternative to cursor.
+	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+
+	// Filter Filter results by field, formatted as key<op>value where op is one of =, !=, ~= (contains), >, <, >=, <=. Keys are response field names and may be dotted to reach nested fields (e.g. error.reason). Comparison is numeric when both sides are numbers and case-insensitive otherwise. Repeatable; all filters must match. Applied before pagination.
+	Filter *Filter `form:"filter,omitempty" json:"filter,omitempty"`
+}
+
+// GetSandboxLogsParams defines parameters for GetSandboxLogs.
+type GetSandboxLogsParams struct {
+	// TailBytes Per-source byte tail to return. Defaults to 256 KiB and is capped by the server.
+	TailBytes *int64 `form:"tail_bytes,omitempty" json:"tail_bytes,omitempty"`
+
+	// Source Restrict logs to one source.
+	Source *GetSandboxLogsParamsSource `form:"source,omitempty" json:"source,omitempty"`
+}
+
+// GetSandboxLogsParamsSource defines parameters for GetSandboxLogs.
+type GetSandboxLogsParamsSource string
+
+// GetSandboxMetricsParams defines parameters for GetSandboxMetrics.
+type GetSandboxMetricsParams struct {
+	Since *time.Time `form:"since,omitempty" json:"since,omitempty"`
+	Until *time.Time `form:"until,omitempty" json:"until,omitempty"`
+
+	// Step Positive duration hint accepted for client compatibility; raw samples are still returned.
+	Step *string `form:"step,omitempty" json:"step,omitempty"`
+}
+
+// PauseSandboxParams defines parameters for PauseSandbox.
+type PauseSandboxParams struct {
+	// IdempotencyKey Required for mutating requests. Reusing a key with the same request returns the same accepted operation; reusing it with a different request returns 409.
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// ResumeSandboxParams defines parameters for ResumeSandbox.
+type ResumeSandboxParams struct {
 	// IdempotencyKey Required for mutating requests. Reusing a key with the same request returns the same accepted operation; reusing it with a different request returns 409.
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
@@ -782,14 +1565,8 @@ type DeleteSnapshotParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
-// PromoteSnapshotParams defines parameters for PromoteSnapshot.
-type PromoteSnapshotParams struct {
-	// IdempotencyKey Required for mutating requests. Reusing a key with the same request returns the same accepted operation; reusing it with a different request returns 409.
-	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
-}
-
-// RestoreSnapshotParams defines parameters for RestoreSnapshot.
-type RestoreSnapshotParams struct {
+// ForkSnapshotParams defines parameters for ForkSnapshot.
+type ForkSnapshotParams struct {
 	// IdempotencyKey Required for mutating requests. Reusing a key with the same request returns the same accepted operation; reusing it with a different request returns 409.
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
@@ -808,11 +1585,23 @@ type ListTemplatesParams struct {
 	Filter *Filter `form:"filter,omitempty" json:"filter,omitempty"`
 }
 
+// CreateHookTemplateJSONRequestBody defines body for CreateHookTemplate for application/json ContentType.
+type CreateHookTemplateJSONRequestBody = HookTemplateRequest
+
+// UpdateHookTemplateJSONRequestBody defines body for UpdateHookTemplate for application/json ContentType.
+type UpdateHookTemplateJSONRequestBody = HookTemplateRequest
+
 // AddSSHPublicKeyJSONRequestBody defines body for AddSSHPublicKey for application/json ContentType.
 type AddSSHPublicKeyJSONRequestBody = AddSSHPublicKeyRequest
 
 // CreateSandboxJSONRequestBody defines body for CreateSandbox for application/json ContentType.
 type CreateSandboxJSONRequestBody = CreateSandboxRequest
+
+// ExecSandboxJSONRequestBody defines body for ExecSandbox for application/json ContentType.
+type ExecSandboxJSONRequestBody = ExecSandboxRequest
+
+// ForkSandboxJSONRequestBody defines body for ForkSandbox for application/json ContentType.
+type ForkSandboxJSONRequestBody = ForkRequest
 
 // LeaseSandboxJSONRequestBody defines body for LeaseSandbox for application/json ContentType.
 type LeaseSandboxJSONRequestBody = LeaseSandboxRequest
@@ -823,14 +1612,17 @@ type SnapshotSandboxJSONRequestBody = SnapshotSandboxRequest
 // PrepareSandboxSSHJSONRequestBody defines body for PrepareSandboxSSH for application/json ContentType.
 type PrepareSandboxSSHJSONRequestBody = PrepareSandboxSSHRequest
 
+// ForkSnapshotJSONRequestBody defines body for ForkSnapshot for application/json ContentType.
+type ForkSnapshotJSONRequestBody = ForkRequest
+
 // PromoteSnapshotJSONRequestBody defines body for PromoteSnapshot for application/json ContentType.
 type PromoteSnapshotJSONRequestBody = PromoteSnapshotRequest
 
-// RestoreSnapshotJSONRequestBody defines body for RestoreSnapshot for application/json ContentType.
-type RestoreSnapshotJSONRequestBody = RestoreSnapshotRequest
-
 // AuthorizeSSHJSONRequestBody defines body for AuthorizeSSH for application/json ContentType.
 type AuthorizeSSHJSONRequestBody = SSHAuthorizeRequest
+
+// AddUserSSHPublicKeyJSONRequestBody defines body for AddUserSSHPublicKey for application/json ContentType.
+type AddUserSSHPublicKeyJSONRequestBody = AddSSHPublicKeyRequest
 
 // AsTemplateBootSource returns the union data inside the CreateSandboxSource as a TemplateBootSource
 func (t CreateSandboxSource) AsTemplateBootSource() (TemplateBootSource, error) {
@@ -970,11 +1762,39 @@ type ClientInterface interface {
 	// ListAudit request
 	ListAudit(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// AuthCLIConfig request
+	AuthCLIConfig(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// AuthSession request
 	AuthSession(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListForks request
+	ListForks(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetFork request
+	GetFork(ctx context.Context, id ForkID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// Healthz request
 	Healthz(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListHookTemplates request
+	ListHookTemplates(ctx context.Context, params *ListHookTemplatesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateHookTemplateWithBody request with any body
+	CreateHookTemplateWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateHookTemplate(ctx context.Context, body CreateHookTemplateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteHookTemplate request
+	DeleteHookTemplate(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetHookTemplate request
+	GetHookTemplate(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateHookTemplateWithBody request with any body
+	UpdateHookTemplateWithBody(ctx context.Context, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	UpdateHookTemplate(ctx context.Context, name string, body UpdateHookTemplateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListSSHPublicKeys request
 	ListSSHPublicKeys(ctx context.Context, params *ListSSHPublicKeysParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1025,8 +1845,24 @@ type ClientInterface interface {
 	// GetSandbox request
 	GetSandbox(ctx context.Context, id SandboxID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// ExecSandbox request
-	ExecSandbox(ctx context.Context, id SandboxID, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// StreamExecSandbox request
+	StreamExecSandbox(ctx context.Context, id SandboxID, params *StreamExecSandboxParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ExecSandboxWithBody request with any body
+	ExecSandboxWithBody(ctx context.Context, id SandboxID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	ExecSandbox(ctx context.Context, id SandboxID, body ExecSandboxJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ForkSandboxWithBody request with any body
+	ForkSandboxWithBody(ctx context.Context, id SandboxID, params *ForkSandboxParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	ForkSandbox(ctx context.Context, id SandboxID, params *ForkSandboxParams, body ForkSandboxJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetSandboxHookRuns request
+	GetSandboxHookRuns(ctx context.Context, id SandboxID, params *GetSandboxHookRunsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetSandboxHooks request
+	GetSandboxHooks(ctx context.Context, id SandboxID, params *GetSandboxHooksParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// LeaseSandboxWithBody request with any body
 	LeaseSandboxWithBody(ctx context.Context, id SandboxID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1037,10 +1873,19 @@ type ClientInterface interface {
 	GetSandboxLineage(ctx context.Context, id SandboxID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetSandboxLogs request
-	GetSandboxLogs(ctx context.Context, id SandboxID, reqEditors ...RequestEditorFn) (*http.Response, error)
+	GetSandboxLogs(ctx context.Context, id SandboxID, params *GetSandboxLogsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetSandboxMetrics request
+	GetSandboxMetrics(ctx context.Context, id SandboxID, params *GetSandboxMetricsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetSandboxOperations request
 	GetSandboxOperations(ctx context.Context, id SandboxID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PauseSandbox request
+	PauseSandbox(ctx context.Context, id SandboxID, params *PauseSandboxParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ResumeSandbox request
+	ResumeSandbox(ctx context.Context, id SandboxID, params *ResumeSandboxParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// SnapshotSandboxWithBody request with any body
 	SnapshotSandboxWithBody(ctx context.Context, id SandboxID, params *SnapshotSandboxParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1073,15 +1918,18 @@ type ClientInterface interface {
 	// GetSnapshot request
 	GetSnapshot(ctx context.Context, id SnapshotID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ForkSnapshotWithBody request with any body
+	ForkSnapshotWithBody(ctx context.Context, id SnapshotID, params *ForkSnapshotParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	ForkSnapshot(ctx context.Context, id SnapshotID, params *ForkSnapshotParams, body ForkSnapshotJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetSnapshotLineage request
+	GetSnapshotLineage(ctx context.Context, id SnapshotID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// PromoteSnapshotWithBody request with any body
-	PromoteSnapshotWithBody(ctx context.Context, id SnapshotID, params *PromoteSnapshotParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	PromoteSnapshotWithBody(ctx context.Context, id SnapshotID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	PromoteSnapshot(ctx context.Context, id SnapshotID, params *PromoteSnapshotParams, body PromoteSnapshotJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// RestoreSnapshotWithBody request with any body
-	RestoreSnapshotWithBody(ctx context.Context, id SnapshotID, params *RestoreSnapshotParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	RestoreSnapshot(ctx context.Context, id SnapshotID, params *RestoreSnapshotParams, body RestoreSnapshotJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	PromoteSnapshot(ctx context.Context, id SnapshotID, body PromoteSnapshotJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetSnapshotRestoredBy request
 	GetSnapshotRestoredBy(ctx context.Context, id SnapshotID, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1094,6 +1942,9 @@ type ClientInterface interface {
 	// ListTemplates request
 	ListTemplates(ctx context.Context, params *ListTemplatesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// DeactivateTemplate request
+	DeactivateTemplate(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetTemplate request
 	GetTemplate(ctx context.Context, name string, version string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -1102,10 +1953,30 @@ type ClientInterface interface {
 
 	// GetUser request
 	GetUser(ctx context.Context, handle string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AddUserSSHPublicKeyWithBody request with any body
+	AddUserSSHPublicKeyWithBody(ctx context.Context, handle string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	AddUserSSHPublicKey(ctx context.Context, handle string, body AddUserSSHPublicKeyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteUserSSHPublicKey request
+	DeleteUserSSHPublicKey(ctx context.Context, handle string, id SSHPublicKeyID, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) ListAudit(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListAuditRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) AuthCLIConfig(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAuthCLIConfigRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -1128,8 +1999,116 @@ func (c *Client) AuthSession(ctx context.Context, reqEditors ...RequestEditorFn)
 	return c.Client.Do(req)
 }
 
+func (c *Client) ListForks(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListForksRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetFork(ctx context.Context, id ForkID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetForkRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) Healthz(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewHealthzRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListHookTemplates(ctx context.Context, params *ListHookTemplatesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListHookTemplatesRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateHookTemplateWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateHookTemplateRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateHookTemplate(ctx context.Context, body CreateHookTemplateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateHookTemplateRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteHookTemplate(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteHookTemplateRequest(c.Server, name)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetHookTemplate(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetHookTemplateRequest(c.Server, name)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateHookTemplateWithBody(ctx context.Context, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateHookTemplateRequestWithBody(c.Server, name, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateHookTemplate(ctx context.Context, name string, body UpdateHookTemplateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateHookTemplateRequest(c.Server, name, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1344,8 +2323,80 @@ func (c *Client) GetSandbox(ctx context.Context, id SandboxID, reqEditors ...Req
 	return c.Client.Do(req)
 }
 
-func (c *Client) ExecSandbox(ctx context.Context, id SandboxID, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewExecSandboxRequest(c.Server, id)
+func (c *Client) StreamExecSandbox(ctx context.Context, id SandboxID, params *StreamExecSandboxParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewStreamExecSandboxRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ExecSandboxWithBody(ctx context.Context, id SandboxID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewExecSandboxRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ExecSandbox(ctx context.Context, id SandboxID, body ExecSandboxJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewExecSandboxRequest(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ForkSandboxWithBody(ctx context.Context, id SandboxID, params *ForkSandboxParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewForkSandboxRequestWithBody(c.Server, id, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ForkSandbox(ctx context.Context, id SandboxID, params *ForkSandboxParams, body ForkSandboxJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewForkSandboxRequest(c.Server, id, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetSandboxHookRuns(ctx context.Context, id SandboxID, params *GetSandboxHookRunsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSandboxHookRunsRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetSandboxHooks(ctx context.Context, id SandboxID, params *GetSandboxHooksParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSandboxHooksRequest(c.Server, id, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1392,8 +2443,20 @@ func (c *Client) GetSandboxLineage(ctx context.Context, id SandboxID, reqEditors
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetSandboxLogs(ctx context.Context, id SandboxID, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetSandboxLogsRequest(c.Server, id)
+func (c *Client) GetSandboxLogs(ctx context.Context, id SandboxID, params *GetSandboxLogsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSandboxLogsRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetSandboxMetrics(ctx context.Context, id SandboxID, params *GetSandboxMetricsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSandboxMetricsRequest(c.Server, id, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1406,6 +2469,30 @@ func (c *Client) GetSandboxLogs(ctx context.Context, id SandboxID, reqEditors ..
 
 func (c *Client) GetSandboxOperations(ctx context.Context, id SandboxID, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetSandboxOperationsRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PauseSandbox(ctx context.Context, id SandboxID, params *PauseSandboxParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPauseSandboxRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ResumeSandbox(ctx context.Context, id SandboxID, params *ResumeSandboxParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewResumeSandboxRequest(c.Server, id, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1548,8 +2635,8 @@ func (c *Client) GetSnapshot(ctx context.Context, id SnapshotID, reqEditors ...R
 	return c.Client.Do(req)
 }
 
-func (c *Client) PromoteSnapshotWithBody(ctx context.Context, id SnapshotID, params *PromoteSnapshotParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPromoteSnapshotRequestWithBody(c.Server, id, params, contentType, body)
+func (c *Client) ForkSnapshotWithBody(ctx context.Context, id SnapshotID, params *ForkSnapshotParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewForkSnapshotRequestWithBody(c.Server, id, params, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1560,8 +2647,8 @@ func (c *Client) PromoteSnapshotWithBody(ctx context.Context, id SnapshotID, par
 	return c.Client.Do(req)
 }
 
-func (c *Client) PromoteSnapshot(ctx context.Context, id SnapshotID, params *PromoteSnapshotParams, body PromoteSnapshotJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPromoteSnapshotRequest(c.Server, id, params, body)
+func (c *Client) ForkSnapshot(ctx context.Context, id SnapshotID, params *ForkSnapshotParams, body ForkSnapshotJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewForkSnapshotRequest(c.Server, id, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1572,8 +2659,8 @@ func (c *Client) PromoteSnapshot(ctx context.Context, id SnapshotID, params *Pro
 	return c.Client.Do(req)
 }
 
-func (c *Client) RestoreSnapshotWithBody(ctx context.Context, id SnapshotID, params *RestoreSnapshotParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewRestoreSnapshotRequestWithBody(c.Server, id, params, contentType, body)
+func (c *Client) GetSnapshotLineage(ctx context.Context, id SnapshotID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSnapshotLineageRequest(c.Server, id)
 	if err != nil {
 		return nil, err
 	}
@@ -1584,8 +2671,20 @@ func (c *Client) RestoreSnapshotWithBody(ctx context.Context, id SnapshotID, par
 	return c.Client.Do(req)
 }
 
-func (c *Client) RestoreSnapshot(ctx context.Context, id SnapshotID, params *RestoreSnapshotParams, body RestoreSnapshotJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewRestoreSnapshotRequest(c.Server, id, params, body)
+func (c *Client) PromoteSnapshotWithBody(ctx context.Context, id SnapshotID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPromoteSnapshotRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PromoteSnapshot(ctx context.Context, id SnapshotID, body PromoteSnapshotJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPromoteSnapshotRequest(c.Server, id, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1644,6 +2743,18 @@ func (c *Client) ListTemplates(ctx context.Context, params *ListTemplatesParams,
 	return c.Client.Do(req)
 }
 
+func (c *Client) DeactivateTemplate(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeactivateTemplateRequest(c.Server, name)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) GetTemplate(ctx context.Context, name string, version string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetTemplateRequest(c.Server, name, version)
 	if err != nil {
@@ -1680,6 +2791,42 @@ func (c *Client) GetUser(ctx context.Context, handle string, reqEditors ...Reque
 	return c.Client.Do(req)
 }
 
+func (c *Client) AddUserSSHPublicKeyWithBody(ctx context.Context, handle string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAddUserSSHPublicKeyRequestWithBody(c.Server, handle, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) AddUserSSHPublicKey(ctx context.Context, handle string, body AddUserSSHPublicKeyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAddUserSSHPublicKeyRequest(c.Server, handle, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteUserSSHPublicKey(ctx context.Context, handle string, id SSHPublicKeyID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteUserSSHPublicKeyRequest(c.Server, handle, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // NewListAuditRequest generates requests for ListAudit
 func NewListAuditRequest(server string) (*http.Request, error) {
 	var err error
@@ -1690,6 +2837,33 @@ func NewListAuditRequest(server string) (*http.Request, error) {
 	}
 
 	operationPath := fmt.Sprintf("/v1/audit")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewAuthCLIConfigRequest generates requests for AuthCLIConfig
+func NewAuthCLIConfigRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/auth/cli-config")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -1734,6 +2908,67 @@ func NewAuthSessionRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewListForksRequest generates requests for ListForks
+func NewListForksRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/forks")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetForkRequest generates requests for GetFork
+func NewGetForkRequest(server string, id ForkID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/forks/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewHealthzRequest generates requests for Healthz
 func NewHealthzRequest(server string) (*http.Request, error) {
 	var err error
@@ -1757,6 +2992,251 @@ func NewHealthzRequest(server string) (*http.Request, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewListHookTemplatesRequest generates requests for ListHookTemplates
+func NewListHookTemplatesRequest(server string, params *ListHookTemplatesParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/hook-templates")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Offset != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "offset", *params.Offset, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Filter != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "filter", *params.Filter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateHookTemplateRequest calls the generic CreateHookTemplate builder with application/json body
+func NewCreateHookTemplateRequest(server string, body CreateHookTemplateJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateHookTemplateRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateHookTemplateRequestWithBody generates requests for CreateHookTemplate with any type of body
+func NewCreateHookTemplateRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/hook-templates")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteHookTemplateRequest generates requests for DeleteHookTemplate
+func NewDeleteHookTemplateRequest(server string, name string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/hook-templates/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetHookTemplateRequest generates requests for GetHookTemplate
+func NewGetHookTemplateRequest(server string, name string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/hook-templates/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateHookTemplateRequest calls the generic UpdateHookTemplate builder with application/json body
+func NewUpdateHookTemplateRequest(server string, name string, body UpdateHookTemplateJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateHookTemplateRequestWithBody(server, name, "application/json", bodyReader)
+}
+
+// NewUpdateHookTemplateRequestWithBody generates requests for UpdateHookTemplate with any type of body
+func NewUpdateHookTemplateRequestWithBody(server string, name string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/hook-templates/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -2387,6 +3867,33 @@ func NewDeleteSandboxRequest(server string, id SandboxID, params *DeleteSandboxP
 		return nil, err
 	}
 
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Retain != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "retain", *params.Retain, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
 	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
@@ -2442,8 +3949,8 @@ func NewGetSandboxRequest(server string, id SandboxID) (*http.Request, error) {
 	return req, nil
 }
 
-// NewExecSandboxRequest generates requests for ExecSandbox
-func NewExecSandboxRequest(server string, id SandboxID) (*http.Request, error) {
+// NewStreamExecSandboxRequest generates requests for StreamExecSandbox
+func NewStreamExecSandboxRequest(server string, id SandboxID, params *StreamExecSandboxParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -2466,6 +3973,370 @@ func NewExecSandboxRequest(server string, id SandboxID) (*http.Request, error) {
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Cmd != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cmd", params.Cmd, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Pty != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pty", *params.Pty, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Rows != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "rows", *params.Rows, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cols != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cols", *params.Cols, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewExecSandboxRequest calls the generic ExecSandbox builder with application/json body
+func NewExecSandboxRequest(server string, id SandboxID, body ExecSandboxJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewExecSandboxRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewExecSandboxRequestWithBody generates requests for ExecSandbox with any type of body
+func NewExecSandboxRequestWithBody(server string, id SandboxID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/sandboxes/%s/exec", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewForkSandboxRequest calls the generic ForkSandbox builder with application/json body
+func NewForkSandboxRequest(server string, id SandboxID, params *ForkSandboxParams, body ForkSandboxJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewForkSandboxRequestWithBody(server, id, params, "application/json", bodyReader)
+}
+
+// NewForkSandboxRequestWithBody generates requests for ForkSandbox with any type of body
+func NewForkSandboxRequestWithBody(server string, id SandboxID, params *ForkSandboxParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/sandboxes/%s/fork", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+	}
+
+	return req, nil
+}
+
+// NewGetSandboxHookRunsRequest generates requests for GetSandboxHookRuns
+func NewGetSandboxHookRunsRequest(server string, id SandboxID, params *GetSandboxHookRunsParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/sandboxes/%s/hook-runs", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Offset != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "offset", *params.Offset, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Filter != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "filter", *params.Filter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetSandboxHooksRequest generates requests for GetSandboxHooks
+func NewGetSandboxHooksRequest(server string, id SandboxID, params *GetSandboxHooksParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/sandboxes/%s/hooks", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Offset != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "offset", *params.Offset, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Filter != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "filter", *params.Filter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -2558,7 +4429,7 @@ func NewGetSandboxLineageRequest(server string, id SandboxID) (*http.Request, er
 }
 
 // NewGetSandboxLogsRequest generates requests for GetSandboxLogs
-func NewGetSandboxLogsRequest(server string, id SandboxID) (*http.Request, error) {
+func NewGetSandboxLogsRequest(server string, id SandboxID, params *GetSandboxLogsParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -2581,6 +4452,130 @@ func NewGetSandboxLogsRequest(server string, id SandboxID) (*http.Request, error
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.TailBytes != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "tail_bytes", *params.TailBytes, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Source != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "source", *params.Source, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetSandboxMetricsRequest generates requests for GetSandboxMetrics
+func NewGetSandboxMetricsRequest(server string, id SandboxID, params *GetSandboxMetricsParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/sandboxes/%s/metrics", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Since != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "since", *params.Since, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "date-time"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Until != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "until", *params.Until, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "date-time"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Step != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "step", *params.Step, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -2620,6 +4615,100 @@ func NewGetSandboxOperationsRequest(server string, id SandboxID) (*http.Request,
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPauseSandboxRequest generates requests for PauseSandbox
+func NewPauseSandboxRequest(server string, id SandboxID, params *PauseSandboxParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/sandboxes/%s/pause", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+	}
+
+	return req, nil
+}
+
+// NewResumeSandboxRequest generates requests for ResumeSandbox
+func NewResumeSandboxRequest(server string, id SandboxID, params *ResumeSandboxParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/sandboxes/%s/resume", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
 	}
 
 	return req, nil
@@ -3072,19 +5161,19 @@ func NewGetSnapshotRequest(server string, id SnapshotID) (*http.Request, error) 
 	return req, nil
 }
 
-// NewPromoteSnapshotRequest calls the generic PromoteSnapshot builder with application/json body
-func NewPromoteSnapshotRequest(server string, id SnapshotID, params *PromoteSnapshotParams, body PromoteSnapshotJSONRequestBody) (*http.Request, error) {
+// NewForkSnapshotRequest calls the generic ForkSnapshot builder with application/json body
+func NewForkSnapshotRequest(server string, id SnapshotID, params *ForkSnapshotParams, body ForkSnapshotJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewPromoteSnapshotRequestWithBody(server, id, params, "application/json", bodyReader)
+	return NewForkSnapshotRequestWithBody(server, id, params, "application/json", bodyReader)
 }
 
-// NewPromoteSnapshotRequestWithBody generates requests for PromoteSnapshot with any type of body
-func NewPromoteSnapshotRequestWithBody(server string, id SnapshotID, params *PromoteSnapshotParams, contentType string, body io.Reader) (*http.Request, error) {
+// NewForkSnapshotRequestWithBody generates requests for ForkSnapshot with any type of body
+func NewForkSnapshotRequestWithBody(server string, id SnapshotID, params *ForkSnapshotParams, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -3099,7 +5188,7 @@ func NewPromoteSnapshotRequestWithBody(server string, id SnapshotID, params *Pro
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/v1/snapshots/%s/promote", pathParam0)
+	operationPath := fmt.Sprintf("/v1/snapshots/%s/fork", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -3132,19 +5221,8 @@ func NewPromoteSnapshotRequestWithBody(server string, id SnapshotID, params *Pro
 	return req, nil
 }
 
-// NewRestoreSnapshotRequest calls the generic RestoreSnapshot builder with application/json body
-func NewRestoreSnapshotRequest(server string, id SnapshotID, params *RestoreSnapshotParams, body RestoreSnapshotJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewRestoreSnapshotRequestWithBody(server, id, params, "application/json", bodyReader)
-}
-
-// NewRestoreSnapshotRequestWithBody generates requests for RestoreSnapshot with any type of body
-func NewRestoreSnapshotRequestWithBody(server string, id SnapshotID, params *RestoreSnapshotParams, contentType string, body io.Reader) (*http.Request, error) {
+// NewGetSnapshotLineageRequest generates requests for GetSnapshotLineage
+func NewGetSnapshotLineageRequest(server string, id SnapshotID) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -3159,7 +5237,52 @@ func NewRestoreSnapshotRequestWithBody(server string, id SnapshotID, params *Res
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/v1/snapshots/%s/restore", pathParam0)
+	operationPath := fmt.Sprintf("/v1/snapshots/%s/lineage", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPromoteSnapshotRequest calls the generic PromoteSnapshot builder with application/json body
+func NewPromoteSnapshotRequest(server string, id SnapshotID, body PromoteSnapshotJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPromoteSnapshotRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewPromoteSnapshotRequestWithBody generates requests for PromoteSnapshot with any type of body
+func NewPromoteSnapshotRequestWithBody(server string, id SnapshotID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/snapshots/%s/promote", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -3175,19 +5298,6 @@ func NewRestoreSnapshotRequestWithBody(server string, id SnapshotID, params *Res
 	}
 
 	req.Header.Add("Content-Type", contentType)
-
-	if params != nil {
-
-		var headerParam0 string
-
-		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
-		if err != nil {
-			return nil, err
-		}
-
-		req.Header.Set("Idempotency-Key", headerParam0)
-
-	}
 
 	return req, nil
 }
@@ -3356,6 +5466,40 @@ func NewListTemplatesRequest(server string, params *ListTemplatesParams) (*http.
 	return req, nil
 }
 
+// NewDeactivateTemplateRequest generates requests for DeactivateTemplate
+func NewDeactivateTemplateRequest(server string, name string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/templates/%s/deactivate", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetTemplateRequest generates requests for GetTemplate
 func NewGetTemplateRequest(server string, name string, version string) (*http.Request, error) {
 	var err error
@@ -3458,6 +5602,94 @@ func NewGetUserRequest(server string, handle string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewAddUserSSHPublicKeyRequest calls the generic AddUserSSHPublicKey builder with application/json body
+func NewAddUserSSHPublicKeyRequest(server string, handle string, body AddUserSSHPublicKeyJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewAddUserSSHPublicKeyRequestWithBody(server, handle, "application/json", bodyReader)
+}
+
+// NewAddUserSSHPublicKeyRequestWithBody generates requests for AddUserSSHPublicKey with any type of body
+func NewAddUserSSHPublicKeyRequestWithBody(server string, handle string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "handle", handle, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/users/%s/ssh-keys", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteUserSSHPublicKeyRequest generates requests for DeleteUserSSHPublicKey
+func NewDeleteUserSSHPublicKeyRequest(server string, handle string, id SSHPublicKeyID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "handle", handle, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/users/%s/ssh-keys/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -3504,11 +5736,39 @@ type ClientWithResponsesInterface interface {
 	// ListAuditWithResponse request
 	ListAuditWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListAuditResponse, error)
 
+	// AuthCLIConfigWithResponse request
+	AuthCLIConfigWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*AuthCLIConfigResponse, error)
+
 	// AuthSessionWithResponse request
 	AuthSessionWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*AuthSessionResponse, error)
 
+	// ListForksWithResponse request
+	ListForksWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListForksResponse, error)
+
+	// GetForkWithResponse request
+	GetForkWithResponse(ctx context.Context, id ForkID, reqEditors ...RequestEditorFn) (*GetForkResponse, error)
+
 	// HealthzWithResponse request
 	HealthzWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*HealthzResponse, error)
+
+	// ListHookTemplatesWithResponse request
+	ListHookTemplatesWithResponse(ctx context.Context, params *ListHookTemplatesParams, reqEditors ...RequestEditorFn) (*ListHookTemplatesResponse, error)
+
+	// CreateHookTemplateWithBodyWithResponse request with any body
+	CreateHookTemplateWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateHookTemplateResponse, error)
+
+	CreateHookTemplateWithResponse(ctx context.Context, body CreateHookTemplateJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateHookTemplateResponse, error)
+
+	// DeleteHookTemplateWithResponse request
+	DeleteHookTemplateWithResponse(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*DeleteHookTemplateResponse, error)
+
+	// GetHookTemplateWithResponse request
+	GetHookTemplateWithResponse(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*GetHookTemplateResponse, error)
+
+	// UpdateHookTemplateWithBodyWithResponse request with any body
+	UpdateHookTemplateWithBodyWithResponse(ctx context.Context, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateHookTemplateResponse, error)
+
+	UpdateHookTemplateWithResponse(ctx context.Context, name string, body UpdateHookTemplateJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateHookTemplateResponse, error)
 
 	// ListSSHPublicKeysWithResponse request
 	ListSSHPublicKeysWithResponse(ctx context.Context, params *ListSSHPublicKeysParams, reqEditors ...RequestEditorFn) (*ListSSHPublicKeysResponse, error)
@@ -3559,8 +5819,24 @@ type ClientWithResponsesInterface interface {
 	// GetSandboxWithResponse request
 	GetSandboxWithResponse(ctx context.Context, id SandboxID, reqEditors ...RequestEditorFn) (*GetSandboxResponse, error)
 
-	// ExecSandboxWithResponse request
-	ExecSandboxWithResponse(ctx context.Context, id SandboxID, reqEditors ...RequestEditorFn) (*ExecSandboxResponse, error)
+	// StreamExecSandboxWithResponse request
+	StreamExecSandboxWithResponse(ctx context.Context, id SandboxID, params *StreamExecSandboxParams, reqEditors ...RequestEditorFn) (*StreamExecSandboxResponse, error)
+
+	// ExecSandboxWithBodyWithResponse request with any body
+	ExecSandboxWithBodyWithResponse(ctx context.Context, id SandboxID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ExecSandboxResponse, error)
+
+	ExecSandboxWithResponse(ctx context.Context, id SandboxID, body ExecSandboxJSONRequestBody, reqEditors ...RequestEditorFn) (*ExecSandboxResponse, error)
+
+	// ForkSandboxWithBodyWithResponse request with any body
+	ForkSandboxWithBodyWithResponse(ctx context.Context, id SandboxID, params *ForkSandboxParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ForkSandboxResponse, error)
+
+	ForkSandboxWithResponse(ctx context.Context, id SandboxID, params *ForkSandboxParams, body ForkSandboxJSONRequestBody, reqEditors ...RequestEditorFn) (*ForkSandboxResponse, error)
+
+	// GetSandboxHookRunsWithResponse request
+	GetSandboxHookRunsWithResponse(ctx context.Context, id SandboxID, params *GetSandboxHookRunsParams, reqEditors ...RequestEditorFn) (*GetSandboxHookRunsResponse, error)
+
+	// GetSandboxHooksWithResponse request
+	GetSandboxHooksWithResponse(ctx context.Context, id SandboxID, params *GetSandboxHooksParams, reqEditors ...RequestEditorFn) (*GetSandboxHooksResponse, error)
 
 	// LeaseSandboxWithBodyWithResponse request with any body
 	LeaseSandboxWithBodyWithResponse(ctx context.Context, id SandboxID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LeaseSandboxResponse, error)
@@ -3571,10 +5847,19 @@ type ClientWithResponsesInterface interface {
 	GetSandboxLineageWithResponse(ctx context.Context, id SandboxID, reqEditors ...RequestEditorFn) (*GetSandboxLineageResponse, error)
 
 	// GetSandboxLogsWithResponse request
-	GetSandboxLogsWithResponse(ctx context.Context, id SandboxID, reqEditors ...RequestEditorFn) (*GetSandboxLogsResponse, error)
+	GetSandboxLogsWithResponse(ctx context.Context, id SandboxID, params *GetSandboxLogsParams, reqEditors ...RequestEditorFn) (*GetSandboxLogsResponse, error)
+
+	// GetSandboxMetricsWithResponse request
+	GetSandboxMetricsWithResponse(ctx context.Context, id SandboxID, params *GetSandboxMetricsParams, reqEditors ...RequestEditorFn) (*GetSandboxMetricsResponse, error)
 
 	// GetSandboxOperationsWithResponse request
 	GetSandboxOperationsWithResponse(ctx context.Context, id SandboxID, reqEditors ...RequestEditorFn) (*GetSandboxOperationsResponse, error)
+
+	// PauseSandboxWithResponse request
+	PauseSandboxWithResponse(ctx context.Context, id SandboxID, params *PauseSandboxParams, reqEditors ...RequestEditorFn) (*PauseSandboxResponse, error)
+
+	// ResumeSandboxWithResponse request
+	ResumeSandboxWithResponse(ctx context.Context, id SandboxID, params *ResumeSandboxParams, reqEditors ...RequestEditorFn) (*ResumeSandboxResponse, error)
 
 	// SnapshotSandboxWithBodyWithResponse request with any body
 	SnapshotSandboxWithBodyWithResponse(ctx context.Context, id SandboxID, params *SnapshotSandboxParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SnapshotSandboxResponse, error)
@@ -3607,15 +5892,18 @@ type ClientWithResponsesInterface interface {
 	// GetSnapshotWithResponse request
 	GetSnapshotWithResponse(ctx context.Context, id SnapshotID, reqEditors ...RequestEditorFn) (*GetSnapshotResponse, error)
 
+	// ForkSnapshotWithBodyWithResponse request with any body
+	ForkSnapshotWithBodyWithResponse(ctx context.Context, id SnapshotID, params *ForkSnapshotParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ForkSnapshotResponse, error)
+
+	ForkSnapshotWithResponse(ctx context.Context, id SnapshotID, params *ForkSnapshotParams, body ForkSnapshotJSONRequestBody, reqEditors ...RequestEditorFn) (*ForkSnapshotResponse, error)
+
+	// GetSnapshotLineageWithResponse request
+	GetSnapshotLineageWithResponse(ctx context.Context, id SnapshotID, reqEditors ...RequestEditorFn) (*GetSnapshotLineageResponse, error)
+
 	// PromoteSnapshotWithBodyWithResponse request with any body
-	PromoteSnapshotWithBodyWithResponse(ctx context.Context, id SnapshotID, params *PromoteSnapshotParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PromoteSnapshotResponse, error)
+	PromoteSnapshotWithBodyWithResponse(ctx context.Context, id SnapshotID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PromoteSnapshotResponse, error)
 
-	PromoteSnapshotWithResponse(ctx context.Context, id SnapshotID, params *PromoteSnapshotParams, body PromoteSnapshotJSONRequestBody, reqEditors ...RequestEditorFn) (*PromoteSnapshotResponse, error)
-
-	// RestoreSnapshotWithBodyWithResponse request with any body
-	RestoreSnapshotWithBodyWithResponse(ctx context.Context, id SnapshotID, params *RestoreSnapshotParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RestoreSnapshotResponse, error)
-
-	RestoreSnapshotWithResponse(ctx context.Context, id SnapshotID, params *RestoreSnapshotParams, body RestoreSnapshotJSONRequestBody, reqEditors ...RequestEditorFn) (*RestoreSnapshotResponse, error)
+	PromoteSnapshotWithResponse(ctx context.Context, id SnapshotID, body PromoteSnapshotJSONRequestBody, reqEditors ...RequestEditorFn) (*PromoteSnapshotResponse, error)
 
 	// GetSnapshotRestoredByWithResponse request
 	GetSnapshotRestoredByWithResponse(ctx context.Context, id SnapshotID, reqEditors ...RequestEditorFn) (*GetSnapshotRestoredByResponse, error)
@@ -3628,6 +5916,9 @@ type ClientWithResponsesInterface interface {
 	// ListTemplatesWithResponse request
 	ListTemplatesWithResponse(ctx context.Context, params *ListTemplatesParams, reqEditors ...RequestEditorFn) (*ListTemplatesResponse, error)
 
+	// DeactivateTemplateWithResponse request
+	DeactivateTemplateWithResponse(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*DeactivateTemplateResponse, error)
+
 	// GetTemplateWithResponse request
 	GetTemplateWithResponse(ctx context.Context, name string, version string, reqEditors ...RequestEditorFn) (*GetTemplateResponse, error)
 
@@ -3636,6 +5927,14 @@ type ClientWithResponsesInterface interface {
 
 	// GetUserWithResponse request
 	GetUserWithResponse(ctx context.Context, handle string, reqEditors ...RequestEditorFn) (*GetUserResponse, error)
+
+	// AddUserSSHPublicKeyWithBodyWithResponse request with any body
+	AddUserSSHPublicKeyWithBodyWithResponse(ctx context.Context, handle string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AddUserSSHPublicKeyResponse, error)
+
+	AddUserSSHPublicKeyWithResponse(ctx context.Context, handle string, body AddUserSSHPublicKeyJSONRequestBody, reqEditors ...RequestEditorFn) (*AddUserSSHPublicKeyResponse, error)
+
+	// DeleteUserSSHPublicKeyWithResponse request
+	DeleteUserSSHPublicKeyWithResponse(ctx context.Context, handle string, id SSHPublicKeyID, reqEditors ...RequestEditorFn) (*DeleteUserSSHPublicKeyResponse, error)
 }
 
 type ListAuditResponse struct {
@@ -3662,6 +5961,37 @@ func (r ListAuditResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r ListAuditResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type AuthCLIConfigResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *AuthCLIConfig
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r AuthCLIConfigResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AuthCLIConfigResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r AuthCLIConfigResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -3699,6 +6029,69 @@ func (r AuthSessionResponse) ContentType() string {
 	return ""
 }
 
+type ListForksResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *[]Fork
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r ListForksResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListForksResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListForksResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetForkResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *Fork
+	JSON404      *NotFound
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r GetForkResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetForkResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetForkResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type HealthzResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -3722,6 +6115,160 @@ func (r HealthzResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r HealthzResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListHookTemplatesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *HookTemplateList
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r ListHookTemplatesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListHookTemplatesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListHookTemplatesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateHookTemplateResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON201      *HookTemplate
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateHookTemplateResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateHookTemplateResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateHookTemplateResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteHookTemplateResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteHookTemplateResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteHookTemplateResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteHookTemplateResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetHookTemplateResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *HookTemplate
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r GetHookTemplateResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetHookTemplateResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetHookTemplateResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdateHookTemplateResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *HookTemplate
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateHookTemplateResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateHookTemplateResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdateHookTemplateResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -4196,10 +6743,43 @@ func (r GetSandboxResponse) ContentType() string {
 	return ""
 }
 
+type StreamExecSandboxResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *BadRequest
+	JSON409      *Conflict
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r StreamExecSandboxResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r StreamExecSandboxResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r StreamExecSandboxResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ExecSandboxResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON501      *StreamingNotImplemented
+	JSON200      *ExecSandboxResult
+	JSONDefault  *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -4220,6 +6800,99 @@ func (r ExecSandboxResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r ExecSandboxResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ForkSandboxResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON202      *ForkAccepted
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r ForkSandboxResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ForkSandboxResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ForkSandboxResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetSandboxHookRunsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *HookRunList
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSandboxHookRunsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSandboxHookRunsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetSandboxHookRunsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetSandboxHooksResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *HookSummaryList
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSandboxHooksResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSandboxHooksResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetSandboxHooksResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -4260,6 +6933,7 @@ func (r LeaseSandboxResponse) ContentType() string {
 type GetSandboxLineageResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
+	JSON200      *LineageResponse
 	JSON404      *NotFound
 	JSONDefault  *Error
 }
@@ -4291,6 +6965,7 @@ func (r GetSandboxLineageResponse) ContentType() string {
 type GetSandboxLogsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
+	JSON200      *LogsResponse
 	JSON404      *NotFound
 	JSONDefault  *Error
 }
@@ -4313,6 +6988,39 @@ func (r GetSandboxLogsResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetSandboxLogsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetSandboxMetricsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *SandboxMetricsResponse
+	JSON400      *BadRequest
+	JSON404      *NotFound
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSandboxMetricsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSandboxMetricsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetSandboxMetricsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -4344,6 +7052,68 @@ func (r GetSandboxOperationsResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetSandboxOperationsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PauseSandboxResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON202      *AcceptedResponse
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r PauseSandboxResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PauseSandboxResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PauseSandboxResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ResumeSandboxResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON202      *AcceptedResponse
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r ResumeSandboxResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ResumeSandboxResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ResumeSandboxResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -4415,7 +7185,7 @@ func (r GetSandboxSnapshotsResponse) ContentType() string {
 type PrepareSandboxSSHResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *SSHPreparation
+	JSON200      *PrepareSandboxSSHResult
 	JSONDefault  *Error
 }
 
@@ -4509,7 +7279,8 @@ type TunnelSandboxResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON400      *BadRequest
-	JSON501      *StreamingNotImplemented
+	JSON409      *Conflict
+	JSONDefault  *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -4630,6 +7401,69 @@ func (r GetSnapshotResponse) ContentType() string {
 	return ""
 }
 
+type ForkSnapshotResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON202      *ForkAccepted
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r ForkSnapshotResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ForkSnapshotResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ForkSnapshotResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetSnapshotLineageResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *LineageResponse
+	JSON404      *NotFound
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSnapshotLineageResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSnapshotLineageResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetSnapshotLineageResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type PromoteSnapshotResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -4655,37 +7489,6 @@ func (r PromoteSnapshotResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r PromoteSnapshotResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type RestoreSnapshotResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON202      *AcceptedResponse
-	JSONDefault  *Error
-}
-
-// Status returns HTTPResponse.Status
-func (r RestoreSnapshotResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r RestoreSnapshotResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r RestoreSnapshotResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -4785,6 +7588,37 @@ func (r ListTemplatesResponse) ContentType() string {
 	return ""
 }
 
+type DeactivateTemplateResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON404      *NotFound
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r DeactivateTemplateResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeactivateTemplateResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeactivateTemplateResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetTemplateResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -4878,6 +7712,72 @@ func (r GetUserResponse) ContentType() string {
 	return ""
 }
 
+type AddUserSSHPublicKeyResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON201      *SSHPublicKey
+	JSON403      *Forbidden
+	JSON404      *NotFound
+	JSON409      *Conflict
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r AddUserSSHPublicKeyResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AddUserSSHPublicKeyResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r AddUserSSHPublicKeyResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteUserSSHPublicKeyResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON403      *Forbidden
+	JSON404      *NotFound
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteUserSSHPublicKeyResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteUserSSHPublicKeyResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteUserSSHPublicKeyResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // ListAuditWithResponse request returning *ListAuditResponse
 func (c *ClientWithResponses) ListAuditWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListAuditResponse, error) {
 	rsp, err := c.ListAudit(ctx, reqEditors...)
@@ -4885,6 +7785,15 @@ func (c *ClientWithResponses) ListAuditWithResponse(ctx context.Context, reqEdit
 		return nil, err
 	}
 	return ParseListAuditResponse(rsp)
+}
+
+// AuthCLIConfigWithResponse request returning *AuthCLIConfigResponse
+func (c *ClientWithResponses) AuthCLIConfigWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*AuthCLIConfigResponse, error) {
+	rsp, err := c.AuthCLIConfig(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAuthCLIConfigResponse(rsp)
 }
 
 // AuthSessionWithResponse request returning *AuthSessionResponse
@@ -4896,6 +7805,24 @@ func (c *ClientWithResponses) AuthSessionWithResponse(ctx context.Context, reqEd
 	return ParseAuthSessionResponse(rsp)
 }
 
+// ListForksWithResponse request returning *ListForksResponse
+func (c *ClientWithResponses) ListForksWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListForksResponse, error) {
+	rsp, err := c.ListForks(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListForksResponse(rsp)
+}
+
+// GetForkWithResponse request returning *GetForkResponse
+func (c *ClientWithResponses) GetForkWithResponse(ctx context.Context, id ForkID, reqEditors ...RequestEditorFn) (*GetForkResponse, error) {
+	rsp, err := c.GetFork(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetForkResponse(rsp)
+}
+
 // HealthzWithResponse request returning *HealthzResponse
 func (c *ClientWithResponses) HealthzWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*HealthzResponse, error) {
 	rsp, err := c.Healthz(ctx, reqEditors...)
@@ -4903,6 +7830,67 @@ func (c *ClientWithResponses) HealthzWithResponse(ctx context.Context, reqEditor
 		return nil, err
 	}
 	return ParseHealthzResponse(rsp)
+}
+
+// ListHookTemplatesWithResponse request returning *ListHookTemplatesResponse
+func (c *ClientWithResponses) ListHookTemplatesWithResponse(ctx context.Context, params *ListHookTemplatesParams, reqEditors ...RequestEditorFn) (*ListHookTemplatesResponse, error) {
+	rsp, err := c.ListHookTemplates(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListHookTemplatesResponse(rsp)
+}
+
+// CreateHookTemplateWithBodyWithResponse request with arbitrary body returning *CreateHookTemplateResponse
+func (c *ClientWithResponses) CreateHookTemplateWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateHookTemplateResponse, error) {
+	rsp, err := c.CreateHookTemplateWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateHookTemplateResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateHookTemplateWithResponse(ctx context.Context, body CreateHookTemplateJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateHookTemplateResponse, error) {
+	rsp, err := c.CreateHookTemplate(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateHookTemplateResponse(rsp)
+}
+
+// DeleteHookTemplateWithResponse request returning *DeleteHookTemplateResponse
+func (c *ClientWithResponses) DeleteHookTemplateWithResponse(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*DeleteHookTemplateResponse, error) {
+	rsp, err := c.DeleteHookTemplate(ctx, name, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteHookTemplateResponse(rsp)
+}
+
+// GetHookTemplateWithResponse request returning *GetHookTemplateResponse
+func (c *ClientWithResponses) GetHookTemplateWithResponse(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*GetHookTemplateResponse, error) {
+	rsp, err := c.GetHookTemplate(ctx, name, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetHookTemplateResponse(rsp)
+}
+
+// UpdateHookTemplateWithBodyWithResponse request with arbitrary body returning *UpdateHookTemplateResponse
+func (c *ClientWithResponses) UpdateHookTemplateWithBodyWithResponse(ctx context.Context, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateHookTemplateResponse, error) {
+	rsp, err := c.UpdateHookTemplateWithBody(ctx, name, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateHookTemplateResponse(rsp)
+}
+
+func (c *ClientWithResponses) UpdateHookTemplateWithResponse(ctx context.Context, name string, body UpdateHookTemplateJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateHookTemplateResponse, error) {
+	rsp, err := c.UpdateHookTemplate(ctx, name, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateHookTemplateResponse(rsp)
 }
 
 // ListSSHPublicKeysWithResponse request returning *ListSSHPublicKeysResponse
@@ -5056,13 +8044,65 @@ func (c *ClientWithResponses) GetSandboxWithResponse(ctx context.Context, id San
 	return ParseGetSandboxResponse(rsp)
 }
 
-// ExecSandboxWithResponse request returning *ExecSandboxResponse
-func (c *ClientWithResponses) ExecSandboxWithResponse(ctx context.Context, id SandboxID, reqEditors ...RequestEditorFn) (*ExecSandboxResponse, error) {
-	rsp, err := c.ExecSandbox(ctx, id, reqEditors...)
+// StreamExecSandboxWithResponse request returning *StreamExecSandboxResponse
+func (c *ClientWithResponses) StreamExecSandboxWithResponse(ctx context.Context, id SandboxID, params *StreamExecSandboxParams, reqEditors ...RequestEditorFn) (*StreamExecSandboxResponse, error) {
+	rsp, err := c.StreamExecSandbox(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseStreamExecSandboxResponse(rsp)
+}
+
+// ExecSandboxWithBodyWithResponse request with arbitrary body returning *ExecSandboxResponse
+func (c *ClientWithResponses) ExecSandboxWithBodyWithResponse(ctx context.Context, id SandboxID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ExecSandboxResponse, error) {
+	rsp, err := c.ExecSandboxWithBody(ctx, id, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
 	return ParseExecSandboxResponse(rsp)
+}
+
+func (c *ClientWithResponses) ExecSandboxWithResponse(ctx context.Context, id SandboxID, body ExecSandboxJSONRequestBody, reqEditors ...RequestEditorFn) (*ExecSandboxResponse, error) {
+	rsp, err := c.ExecSandbox(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseExecSandboxResponse(rsp)
+}
+
+// ForkSandboxWithBodyWithResponse request with arbitrary body returning *ForkSandboxResponse
+func (c *ClientWithResponses) ForkSandboxWithBodyWithResponse(ctx context.Context, id SandboxID, params *ForkSandboxParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ForkSandboxResponse, error) {
+	rsp, err := c.ForkSandboxWithBody(ctx, id, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseForkSandboxResponse(rsp)
+}
+
+func (c *ClientWithResponses) ForkSandboxWithResponse(ctx context.Context, id SandboxID, params *ForkSandboxParams, body ForkSandboxJSONRequestBody, reqEditors ...RequestEditorFn) (*ForkSandboxResponse, error) {
+	rsp, err := c.ForkSandbox(ctx, id, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseForkSandboxResponse(rsp)
+}
+
+// GetSandboxHookRunsWithResponse request returning *GetSandboxHookRunsResponse
+func (c *ClientWithResponses) GetSandboxHookRunsWithResponse(ctx context.Context, id SandboxID, params *GetSandboxHookRunsParams, reqEditors ...RequestEditorFn) (*GetSandboxHookRunsResponse, error) {
+	rsp, err := c.GetSandboxHookRuns(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSandboxHookRunsResponse(rsp)
+}
+
+// GetSandboxHooksWithResponse request returning *GetSandboxHooksResponse
+func (c *ClientWithResponses) GetSandboxHooksWithResponse(ctx context.Context, id SandboxID, params *GetSandboxHooksParams, reqEditors ...RequestEditorFn) (*GetSandboxHooksResponse, error) {
+	rsp, err := c.GetSandboxHooks(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSandboxHooksResponse(rsp)
 }
 
 // LeaseSandboxWithBodyWithResponse request with arbitrary body returning *LeaseSandboxResponse
@@ -5092,12 +8132,21 @@ func (c *ClientWithResponses) GetSandboxLineageWithResponse(ctx context.Context,
 }
 
 // GetSandboxLogsWithResponse request returning *GetSandboxLogsResponse
-func (c *ClientWithResponses) GetSandboxLogsWithResponse(ctx context.Context, id SandboxID, reqEditors ...RequestEditorFn) (*GetSandboxLogsResponse, error) {
-	rsp, err := c.GetSandboxLogs(ctx, id, reqEditors...)
+func (c *ClientWithResponses) GetSandboxLogsWithResponse(ctx context.Context, id SandboxID, params *GetSandboxLogsParams, reqEditors ...RequestEditorFn) (*GetSandboxLogsResponse, error) {
+	rsp, err := c.GetSandboxLogs(ctx, id, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
 	return ParseGetSandboxLogsResponse(rsp)
+}
+
+// GetSandboxMetricsWithResponse request returning *GetSandboxMetricsResponse
+func (c *ClientWithResponses) GetSandboxMetricsWithResponse(ctx context.Context, id SandboxID, params *GetSandboxMetricsParams, reqEditors ...RequestEditorFn) (*GetSandboxMetricsResponse, error) {
+	rsp, err := c.GetSandboxMetrics(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSandboxMetricsResponse(rsp)
 }
 
 // GetSandboxOperationsWithResponse request returning *GetSandboxOperationsResponse
@@ -5107,6 +8156,24 @@ func (c *ClientWithResponses) GetSandboxOperationsWithResponse(ctx context.Conte
 		return nil, err
 	}
 	return ParseGetSandboxOperationsResponse(rsp)
+}
+
+// PauseSandboxWithResponse request returning *PauseSandboxResponse
+func (c *ClientWithResponses) PauseSandboxWithResponse(ctx context.Context, id SandboxID, params *PauseSandboxParams, reqEditors ...RequestEditorFn) (*PauseSandboxResponse, error) {
+	rsp, err := c.PauseSandbox(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePauseSandboxResponse(rsp)
+}
+
+// ResumeSandboxWithResponse request returning *ResumeSandboxResponse
+func (c *ClientWithResponses) ResumeSandboxWithResponse(ctx context.Context, id SandboxID, params *ResumeSandboxParams, reqEditors ...RequestEditorFn) (*ResumeSandboxResponse, error) {
+	rsp, err := c.ResumeSandbox(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseResumeSandboxResponse(rsp)
 }
 
 // SnapshotSandboxWithBodyWithResponse request with arbitrary body returning *SnapshotSandboxResponse
@@ -5206,38 +8273,47 @@ func (c *ClientWithResponses) GetSnapshotWithResponse(ctx context.Context, id Sn
 	return ParseGetSnapshotResponse(rsp)
 }
 
+// ForkSnapshotWithBodyWithResponse request with arbitrary body returning *ForkSnapshotResponse
+func (c *ClientWithResponses) ForkSnapshotWithBodyWithResponse(ctx context.Context, id SnapshotID, params *ForkSnapshotParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ForkSnapshotResponse, error) {
+	rsp, err := c.ForkSnapshotWithBody(ctx, id, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseForkSnapshotResponse(rsp)
+}
+
+func (c *ClientWithResponses) ForkSnapshotWithResponse(ctx context.Context, id SnapshotID, params *ForkSnapshotParams, body ForkSnapshotJSONRequestBody, reqEditors ...RequestEditorFn) (*ForkSnapshotResponse, error) {
+	rsp, err := c.ForkSnapshot(ctx, id, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseForkSnapshotResponse(rsp)
+}
+
+// GetSnapshotLineageWithResponse request returning *GetSnapshotLineageResponse
+func (c *ClientWithResponses) GetSnapshotLineageWithResponse(ctx context.Context, id SnapshotID, reqEditors ...RequestEditorFn) (*GetSnapshotLineageResponse, error) {
+	rsp, err := c.GetSnapshotLineage(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSnapshotLineageResponse(rsp)
+}
+
 // PromoteSnapshotWithBodyWithResponse request with arbitrary body returning *PromoteSnapshotResponse
-func (c *ClientWithResponses) PromoteSnapshotWithBodyWithResponse(ctx context.Context, id SnapshotID, params *PromoteSnapshotParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PromoteSnapshotResponse, error) {
-	rsp, err := c.PromoteSnapshotWithBody(ctx, id, params, contentType, body, reqEditors...)
+func (c *ClientWithResponses) PromoteSnapshotWithBodyWithResponse(ctx context.Context, id SnapshotID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PromoteSnapshotResponse, error) {
+	rsp, err := c.PromoteSnapshotWithBody(ctx, id, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
 	return ParsePromoteSnapshotResponse(rsp)
 }
 
-func (c *ClientWithResponses) PromoteSnapshotWithResponse(ctx context.Context, id SnapshotID, params *PromoteSnapshotParams, body PromoteSnapshotJSONRequestBody, reqEditors ...RequestEditorFn) (*PromoteSnapshotResponse, error) {
-	rsp, err := c.PromoteSnapshot(ctx, id, params, body, reqEditors...)
+func (c *ClientWithResponses) PromoteSnapshotWithResponse(ctx context.Context, id SnapshotID, body PromoteSnapshotJSONRequestBody, reqEditors ...RequestEditorFn) (*PromoteSnapshotResponse, error) {
+	rsp, err := c.PromoteSnapshot(ctx, id, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
 	return ParsePromoteSnapshotResponse(rsp)
-}
-
-// RestoreSnapshotWithBodyWithResponse request with arbitrary body returning *RestoreSnapshotResponse
-func (c *ClientWithResponses) RestoreSnapshotWithBodyWithResponse(ctx context.Context, id SnapshotID, params *RestoreSnapshotParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RestoreSnapshotResponse, error) {
-	rsp, err := c.RestoreSnapshotWithBody(ctx, id, params, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseRestoreSnapshotResponse(rsp)
-}
-
-func (c *ClientWithResponses) RestoreSnapshotWithResponse(ctx context.Context, id SnapshotID, params *RestoreSnapshotParams, body RestoreSnapshotJSONRequestBody, reqEditors ...RequestEditorFn) (*RestoreSnapshotResponse, error) {
-	rsp, err := c.RestoreSnapshot(ctx, id, params, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseRestoreSnapshotResponse(rsp)
 }
 
 // GetSnapshotRestoredByWithResponse request returning *GetSnapshotRestoredByResponse
@@ -5275,6 +8351,15 @@ func (c *ClientWithResponses) ListTemplatesWithResponse(ctx context.Context, par
 	return ParseListTemplatesResponse(rsp)
 }
 
+// DeactivateTemplateWithResponse request returning *DeactivateTemplateResponse
+func (c *ClientWithResponses) DeactivateTemplateWithResponse(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*DeactivateTemplateResponse, error) {
+	rsp, err := c.DeactivateTemplate(ctx, name, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeactivateTemplateResponse(rsp)
+}
+
 // GetTemplateWithResponse request returning *GetTemplateResponse
 func (c *ClientWithResponses) GetTemplateWithResponse(ctx context.Context, name string, version string, reqEditors ...RequestEditorFn) (*GetTemplateResponse, error) {
 	rsp, err := c.GetTemplate(ctx, name, version, reqEditors...)
@@ -5302,6 +8387,32 @@ func (c *ClientWithResponses) GetUserWithResponse(ctx context.Context, handle st
 	return ParseGetUserResponse(rsp)
 }
 
+// AddUserSSHPublicKeyWithBodyWithResponse request with arbitrary body returning *AddUserSSHPublicKeyResponse
+func (c *ClientWithResponses) AddUserSSHPublicKeyWithBodyWithResponse(ctx context.Context, handle string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AddUserSSHPublicKeyResponse, error) {
+	rsp, err := c.AddUserSSHPublicKeyWithBody(ctx, handle, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAddUserSSHPublicKeyResponse(rsp)
+}
+
+func (c *ClientWithResponses) AddUserSSHPublicKeyWithResponse(ctx context.Context, handle string, body AddUserSSHPublicKeyJSONRequestBody, reqEditors ...RequestEditorFn) (*AddUserSSHPublicKeyResponse, error) {
+	rsp, err := c.AddUserSSHPublicKey(ctx, handle, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAddUserSSHPublicKeyResponse(rsp)
+}
+
+// DeleteUserSSHPublicKeyWithResponse request returning *DeleteUserSSHPublicKeyResponse
+func (c *ClientWithResponses) DeleteUserSSHPublicKeyWithResponse(ctx context.Context, handle string, id SSHPublicKeyID, reqEditors ...RequestEditorFn) (*DeleteUserSSHPublicKeyResponse, error) {
+	rsp, err := c.DeleteUserSSHPublicKey(ctx, handle, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteUserSSHPublicKeyResponse(rsp)
+}
+
 // ParseListAuditResponse parses an HTTP response from a ListAuditWithResponse call
 func ParseListAuditResponse(rsp *http.Response) (*ListAuditResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -5316,6 +8427,39 @@ func ParseListAuditResponse(rsp *http.Response) (*ListAuditResponse, error) {
 	}
 
 	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseAuthCLIConfigResponse parses an HTTP response from a AuthCLIConfigWithResponse call
+func ParseAuthCLIConfigResponse(rsp *http.Response) (*AuthCLIConfigResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AuthCLIConfigResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AuthCLIConfig
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -5361,6 +8505,79 @@ func ParseAuthSessionResponse(rsp *http.Response) (*AuthSessionResponse, error) 
 	return response, nil
 }
 
+// ParseListForksResponse parses an HTTP response from a ListForksWithResponse call
+func ParseListForksResponse(rsp *http.Response) (*ListForksResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListForksResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []Fork
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetForkResponse parses an HTTP response from a GetForkWithResponse call
+func ParseGetForkResponse(rsp *http.Response) (*GetForkResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetForkResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Fork
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseHealthzResponse parses an HTTP response from a HealthzWithResponse call
 func ParseHealthzResponse(rsp *http.Response) (*HealthzResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -5372,6 +8589,164 @@ func ParseHealthzResponse(rsp *http.Response) (*HealthzResponse, error) {
 	response := &HealthzResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParseListHookTemplatesResponse parses an HTTP response from a ListHookTemplatesWithResponse call
+func ParseListHookTemplatesResponse(rsp *http.Response) (*ListHookTemplatesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListHookTemplatesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest HookTemplateList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateHookTemplateResponse parses an HTTP response from a CreateHookTemplateWithResponse call
+func ParseCreateHookTemplateResponse(rsp *http.Response) (*CreateHookTemplateResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateHookTemplateResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest HookTemplate
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteHookTemplateResponse parses an HTTP response from a DeleteHookTemplateWithResponse call
+func ParseDeleteHookTemplateResponse(rsp *http.Response) (*DeleteHookTemplateResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteHookTemplateResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetHookTemplateResponse parses an HTTP response from a GetHookTemplateWithResponse call
+func ParseGetHookTemplateResponse(rsp *http.Response) (*GetHookTemplateResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetHookTemplateResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest HookTemplate
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateHookTemplateResponse parses an HTTP response from a UpdateHookTemplateWithResponse call
+func ParseUpdateHookTemplateResponse(rsp *http.Response) (*UpdateHookTemplateResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateHookTemplateResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest HookTemplate
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
 	}
 
 	return response, nil
@@ -5890,6 +9265,46 @@ func ParseGetSandboxResponse(rsp *http.Response) (*GetSandboxResponse, error) {
 	return response, nil
 }
 
+// ParseStreamExecSandboxResponse parses an HTTP response from a StreamExecSandboxWithResponse call
+func ParseStreamExecSandboxResponse(rsp *http.Response) (*StreamExecSandboxResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &StreamExecSandboxResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseExecSandboxResponse parses an HTTP response from a ExecSandboxWithResponse call
 func ParseExecSandboxResponse(rsp *http.Response) (*ExecSandboxResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -5904,12 +9319,118 @@ func ParseExecSandboxResponse(rsp *http.Response) (*ExecSandboxResponse, error) 
 	}
 
 	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 501:
-		var dest StreamingNotImplemented
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ExecSandboxResult
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.JSON501 = &dest
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseForkSandboxResponse parses an HTTP response from a ForkSandboxWithResponse call
+func ParseForkSandboxResponse(rsp *http.Response) (*ForkSandboxResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ForkSandboxResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest ForkAccepted
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetSandboxHookRunsResponse parses an HTTP response from a GetSandboxHookRunsWithResponse call
+func ParseGetSandboxHookRunsResponse(rsp *http.Response) (*GetSandboxHookRunsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSandboxHookRunsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest HookRunList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetSandboxHooksResponse parses an HTTP response from a GetSandboxHooksWithResponse call
+func ParseGetSandboxHooksResponse(rsp *http.Response) (*GetSandboxHooksResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSandboxHooksResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest HookSummaryList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
 
 	}
 
@@ -5963,6 +9484,13 @@ func ParseGetSandboxLineageResponse(rsp *http.Response) (*GetSandboxLineageRespo
 	}
 
 	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest LineageResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest NotFound
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -5996,6 +9524,60 @@ func ParseGetSandboxLogsResponse(rsp *http.Response) (*GetSandboxLogsResponse, e
 	}
 
 	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest LogsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetSandboxMetricsResponse parses an HTTP response from a GetSandboxMetricsWithResponse call
+func ParseGetSandboxMetricsResponse(rsp *http.Response) (*GetSandboxMetricsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSandboxMetricsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SandboxMetricsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest NotFound
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -6035,6 +9617,72 @@ func ParseGetSandboxOperationsResponse(rsp *http.Response) (*GetSandboxOperation
 			return nil, err
 		}
 		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePauseSandboxResponse parses an HTTP response from a PauseSandboxWithResponse call
+func ParsePauseSandboxResponse(rsp *http.Response) (*PauseSandboxResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PauseSandboxResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest AcceptedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseResumeSandboxResponse parses an HTTP response from a ResumeSandboxWithResponse call
+func ParseResumeSandboxResponse(rsp *http.Response) (*ResumeSandboxResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ResumeSandboxResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest AcceptedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error
@@ -6129,7 +9777,7 @@ func ParsePrepareSandboxSSHResponse(rsp *http.Response) (*PrepareSandboxSSHRespo
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SSHPreparation
+		var dest PrepareSandboxSSHResult
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -6234,12 +9882,19 @@ func ParseTunnelSandboxResponse(rsp *http.Response) (*TunnelSandboxResponse, err
 		}
 		response.JSON400 = &dest
 
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 501:
-		var dest StreamingNotImplemented
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.JSON501 = &dest
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
 
 	}
 
@@ -6352,6 +10007,79 @@ func ParseGetSnapshotResponse(rsp *http.Response) (*GetSnapshotResponse, error) 
 	return response, nil
 }
 
+// ParseForkSnapshotResponse parses an HTTP response from a ForkSnapshotWithResponse call
+func ParseForkSnapshotResponse(rsp *http.Response) (*ForkSnapshotResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ForkSnapshotResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest ForkAccepted
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetSnapshotLineageResponse parses an HTTP response from a GetSnapshotLineageWithResponse call
+func ParseGetSnapshotLineageResponse(rsp *http.Response) (*GetSnapshotLineageResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSnapshotLineageResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest LineageResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParsePromoteSnapshotResponse parses an HTTP response from a PromoteSnapshotWithResponse call
 func ParsePromoteSnapshotResponse(rsp *http.Response) (*PromoteSnapshotResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -6372,39 +10100,6 @@ func ParsePromoteSnapshotResponse(rsp *http.Response) (*PromoteSnapshotResponse,
 			return nil, err
 		}
 		response.JSON201 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseRestoreSnapshotResponse parses an HTTP response from a RestoreSnapshotWithResponse call
-func ParseRestoreSnapshotResponse(rsp *http.Response) (*RestoreSnapshotResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &RestoreSnapshotResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
-		var dest AcceptedResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON202 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error
@@ -6517,6 +10212,39 @@ func ParseListTemplatesResponse(rsp *http.Response) (*ListTemplatesResponse, err
 	return response, nil
 }
 
+// ParseDeactivateTemplateResponse parses an HTTP response from a DeactivateTemplateWithResponse call
+func ParseDeactivateTemplateResponse(rsp *http.Response) (*DeactivateTemplateResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeactivateTemplateResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetTemplateResponse parses an HTTP response from a GetTemplateWithResponse call
 func ParseGetTemplateResponse(rsp *http.Response) (*GetTemplateResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -6597,6 +10325,100 @@ func ParseGetUserResponse(rsp *http.Response) (*GetUserResponse, error) {
 	}
 
 	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseAddUserSSHPublicKeyResponse parses an HTTP response from a AddUserSSHPublicKeyWithResponse call
+func ParseAddUserSSHPublicKeyResponse(rsp *http.Response) (*AddUserSSHPublicKeyResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AddUserSSHPublicKeyResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest SSHPublicKey
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteUserSSHPublicKeyResponse parses an HTTP response from a DeleteUserSSHPublicKeyWithResponse call
+func ParseDeleteUserSSHPublicKeyResponse(rsp *http.Response) (*DeleteUserSSHPublicKeyResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteUserSSHPublicKeyResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest NotFound
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {

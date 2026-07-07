@@ -86,13 +86,13 @@ compute_sandbox_lifecycle:
         print("delete operation:", op.get("id"))
 
 compute_snapshots:
-  name: Snapshots and Restore
+  name: Snapshots and Forks
   description: >-
-    Capture a sandbox's state as a snapshot and restore it into a fresh sandbox.
-    Snapshot and restore are asynchronous operations.
+    Capture a sandbox's state as a snapshot, boot fresh sandboxes from it, and
+    fan out many copies with fork. All are asynchronous operations.
   examples:
     - name: Snapshot a sandbox
-      description: Capture the current state of a sandbox for later restore
+      description: Capture the current state of a sandbox for later reuse
       query: |
         from ethpandaops import compute
 
@@ -100,18 +100,31 @@ compute_snapshots:
         op = compute.snapshot_sandbox(sandbox_id, note="before upgrade")
         print("snapshot operation:", op.get("id"))
 
-    - name: Restore a snapshot into a new sandbox
+    - name: Boot a sandbox from a snapshot
       description: >-
-        Boot a fresh sandbox from a previously captured snapshot; returns an
-        operation to poll for the new sandbox id
+        Reconstitute a single sandbox from a previously captured snapshot;
+        returns an operation to poll for the new sandbox id
       query: |
         from ethpandaops import compute
 
         snapshots = compute.list_snapshots(limit=1)
         snapshot_id = snapshots.get("items", snapshots.get("data", []))[0]["id"]
 
-        op = compute.restore_snapshot(snapshot_id, ttl="1h")
-        print("restore operation:", op.get("id"))
+        op = compute.create_sandbox(snapshot_id=snapshot_id, ttl="1h")
+        print("create operation:", op.get("id"))
+
+    - name: Fork a snapshot into many sandboxes
+      description: >-
+        Fan out several sandboxes from one snapshot and watch the fork's
+        per-child progress
+      query: |
+        from ethpandaops import compute
+
+        snapshot_id = compute.list_snapshots(limit=1).get("items")[0]["id"]
+
+        accepted = compute.fork_snapshot(snapshot_id, count=3, ttl="1h")
+        fork = compute.get_fork(accepted["fork_id"])
+        print("fork state:", fork["state"], "running:", fork["running"])
 
     - name: Trace snapshot lineage
       description: >-

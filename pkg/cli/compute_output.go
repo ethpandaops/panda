@@ -31,6 +31,7 @@ var computeColumnsByOperation = map[string][]computeColumn{
 	"compute.list_ssh_keys":            sshKeyColumns,
 	"compute.list_nodes":               nodeColumns,
 	"compute.list_users":               userColumns,
+	"compute.list_forks":               forkColumns,
 }
 
 var sandboxColumns = []computeColumn{
@@ -46,7 +47,6 @@ var sandboxColumns = []computeColumn{
 var snapshotColumns = []computeColumn{
 	{header: "ID", path: "id"},
 	{header: "STATE", path: "state"},
-	{header: "TIER", path: "tier"},
 	{header: "SANDBOX", path: "sandboxId"},
 	{header: "TEMPLATE", path: "template"},
 	{header: "VER", path: "ver"},
@@ -60,6 +60,18 @@ var templateColumns = []computeColumn{
 	{header: "SIZING", path: "sizing"},
 	{header: "CLOCK", path: "clockPolicy"},
 	{header: "PINNED", path: "pinned"},
+}
+
+var forkColumns = []computeColumn{
+	{header: "ID", path: "id"},
+	{header: "STATE", path: "state"},
+	{header: "SOURCE", path: "source.kind"},
+	{header: "SOURCE-ID", path: "source.id"},
+	{header: "REQUESTED", path: "requested"},
+	{header: "RUNNING", path: "running"},
+	{header: "QUEUED", path: "queued"},
+	{header: "FAILED", path: "failed"},
+	{header: "CREATED", path: "created_at", format: formatComputeTime},
 }
 
 var operationColumns = []computeColumn{
@@ -239,7 +251,7 @@ func renderComputeAccepted(obj map[string]any, opID string) error {
 	pairs := make([][2]string, 0, 4)
 	pairs = append(pairs, [2]string{"operation", opID})
 
-	for _, key := range []string{"id", "sandbox_id", "snapshot_id"} {
+	for _, key := range []string{"id", "sandbox_id", "snapshot_id", "fork_id"} {
 		if value, ok := obj[key].(string); ok && value != "" {
 			pairs = append(pairs, [2]string{key, value})
 		}
