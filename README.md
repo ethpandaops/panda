@@ -189,4 +189,4 @@ See [docs/architecture.md](docs/architecture.md) for the full boundary definitio
 
 ## License
 
-MIT
+This project is licensed under the MIT License.
