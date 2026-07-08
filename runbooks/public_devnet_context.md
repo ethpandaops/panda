@@ -1,17 +1,17 @@
 ---
-name: Ground a Hosted Devnet's Context
-description: Resolve a hosted ethpandaops devnet into authoritative metadata — network id from networks://active and the networks://<network> resource, fork and blob schedule, slot timing, endpoints, and the client list (panda devnets info|endpoints|forks|clients), plus per-node client pairs and participant images from the node_inventory_url — before config generation or incident triage. Emits a hosted network_target and a grounded context summary.
-tags: [devnet, hosted, network, inventory, forks, context]
+name: Ground a Public Devnet's Context
+description: Resolve a public (hosted) ethpandaops devnet into authoritative metadata — network id from networks://active and the networks://<network> resource, fork and blob schedule, slot timing, endpoints, and the client list (panda devnets info|endpoints|forks|clients), plus per-node client pairs and participant images from the node_inventory_url — before config generation or incident triage. Emits a public network_target and a grounded context summary.
+tags: [devnet, public, hosted, inventory, forks, context]
 triggers:
   - which devnet is currently active resolve network id
-  - node inventory client pairs images for a hosted devnet
+  - node inventory client pairs images for a public devnet
   - fork schedule slot timing endpoints of a devnet
   - read networks://active or node_inventory_url for a devnet
   - ground devnet context before reproducing it locally
 ---
 
-Owns grounding a hosted devnet into authoritative context. Emits a `network_target`
-(`kind: hosted`) plus the context summary below. Config synthesis builds on this
+Owns grounding a public devnet into authoritative context. Emits a `network_target`
+(`kind: public`) plus the context summary below. Config synthesis builds on this
 (`runbooks://kurtosis_devnet_config`); judging behavior stays with
 `runbooks://debug_ethereum_network`.
 
@@ -21,7 +21,7 @@ Required: a concrete network id, or a devnet group to resolve. A display name li
 an ambiguous name stops here and surfaces the candidates.
 
 ## Output
-A hosted `network_target` and the context summary below, with `context_complete: false`
+A public `network_target` and the context summary below, with `context_complete: false`
 whenever a field the caller's next step needs is unresolved.
 
 ## Source authority
@@ -47,15 +47,15 @@ Report source disagreements rather than silently choosing
 - CL config unreadable → mark incomplete rather than inferring slot timing/fork epochs
   from defaults.
 - Endpoints missing but inventory/artifacts present → config generation may continue;
-  hosted-live debugging stops.
+  public-live debugging stops.
 
 ## Intake
 
 1. Resolve the network id: read the `networks://active` resource;
    `panda devnets -o json` (use `active_devnet_groups` to pick the active member).
 2. Read the network resource: `panda devnets info|endpoints|forks|clients <network> -o json`.
-   Per-node inventory `beacon_uri` endpoints usually require auth (401); the public
-   `checkpoint_sync` endpoint serves the standard beacon API read paths
+   Per-node inventory `beacon_uri` endpoints usually require auth (401); the
+   unauthenticated `checkpoint_sync` endpoint serves the standard beacon API read paths
    (`/eth/v1/...`) and can stand in as `beacon_rpc` when none is published.
 3. Fetch the node inventory when present — record RAW inventory, not just a summary
    (labels are how later logs, validator ranges, builders, and client pairs get mapped).
@@ -77,7 +77,7 @@ context:
     clients; Fulu at epoch 0, Gloas at 256; 6s slots, 32/epoch. Inventory and CL
     config agree; the network resource's blob note is aspirational (disagreement
     recorded).
-  network_target: { kind: hosted, network_id: "peerdas-devnet-6" }
+  network_target: { kind: public, network_id: "peerdas-devnet-6" }
   endpoints: { dora: [], forky: [], beacon_rpc: [], json_rpc: [], prometheus: [] }
   fork_and_timing: { fork_schedule: {}, blob_schedule: {}, seconds_per_slot: 6, slots_per_epoch: 32, chain_id: "", genesis_time: "" }
   topology: { participants: [], client_pairs: [], validator_ranges: [], raw_inventory_ref: "" }

@@ -80,7 +80,7 @@ Python is a shape to adapt — substitute network and window.
    exact artifact root and the rejecting client's identity. Tracoor rows expose
    `node`/`node_version` (and `execution_implementation`), not a container image —
    resolve the image from the network's node inventory
-   (`runbooks://hosted_devnet_context`), or pass `node_version` when that suffices.
+   (`runbooks://public_devnet_context`), or pass `node_version` when that suffices.
 
 ## Rules
 

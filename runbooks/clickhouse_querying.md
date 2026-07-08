@@ -1,6 +1,6 @@
 ---
 name: Query ClickHouse Well
-description: Write ClickHouse queries that read only what they need, and fix slow ones — EXPLAIN first, pick clickhouse-raw vs clickhouse-refined, address the network's database (public networks in default with meta_network_name, devnets in their own <network> database on clickhouse-raw, refined via the <network>. prefix), filter on the partition key (slot_start_date_time, or block_number via the fct_block_head bridge for trace tables like int_transaction_call_frame), choose raw event data vs canonical deduplicated views, and bound the result. Use before any non-trivial query and whenever a query is slow, scans too much, or times out.
+description: Write ClickHouse queries that read only what they need, and fix slow ones — EXPLAIN first, pick clickhouse-raw vs clickhouse-refined, address the network's database (mainnet/testnets in default with meta_network_name, public devnets in their own <network> database on clickhouse-raw, refined via the <network>. prefix), filter on the partition key (slot_start_date_time, or block_number via the fct_block_head bridge for trace tables like int_transaction_call_frame), choose raw event data vs canonical deduplicated views, and bound the result. Use before any non-trivial query and whenever a query is slow, scans too much, or times out.
 tags: [clickhouse, performance, partition, raw, canonical, block-number]
 triggers:
   - clickhouse query slow or timing out
@@ -37,7 +37,7 @@ with `clickhouse-client`, `curl`, or credentials from the environment.
   ```
 
   `EXPLAIN <query>` runs the same way. Look up a table's columns rather than guessing:
-  `panda schema <datasource> <database> <table>` for a `default`/public-network table,
+  `panda schema <datasource> <database> <table>` for a `default`-database (mainnet/testnet) table,
   but it cannot address a hyphenated devnet database (the name fails identifier
   validation and the listing shows zero tables) — for those, describe the table with a
   query instead: ``panda clickhouse query clickhouse-raw "DESCRIBE TABLE `<network>`.<table>"``
@@ -54,9 +54,11 @@ Both take the same `<datasource>` — the datasource that holds the dataset's pl
 (list them with `panda datasets`). Addressing by cluster:
 
 - **Refined (`clickhouse-refined`)** — always the `<network>.` table prefix.
-- **Raw (`clickhouse-raw`)** — public networks (mainnet, testnets) live in the
-  `default` database; each devnet has its own database named after the network,
-  e.g. ``FROM `glamsterdam-devnet-6`.beacon_api_eth_v1_events_block``. In both
+- **Raw (`clickhouse-raw`)** — mainnet and testnets live in the
+  `default` database; each public devnet has its own database named after the
+  network, e.g. ``FROM `glamsterdam-devnet-6`.beacon_api_eth_v1_events_block``.
+  Local Kurtosis enclaves are on neither cluster — their data is the
+  `local-kurtosis` datasource (`runbooks://kurtosis_devnet`). In both
   layouts keep `meta_network_name = '<network>'` plus a `slot_start_date_time`
   bound in the WHERE — the primary key leads with them, and the cluster rejects
   queries that use neither (`force_primary_key`). An empty result from the wrong

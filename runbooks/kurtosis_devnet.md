@@ -13,7 +13,7 @@ triggers:
 
 Owns starting a local Kurtosis devnet and reaching any Kurtosis enclave (local or
 restored): service discovery, endpoints, config verification, and log access. Emits a
-`network_target` with `kind: local-enclave` — see `runbooks://debug_ethereum_network`
+`network_target` with `kind: local` — see `runbooks://debug_ethereum_network`
 for how targets are consumed. Snapshot and restore live on remote compute only
 (`runbooks://panda_compute_kurtosis_lifecycle`); a local devnet is observed live or its
 evidence preserved as historical.
@@ -28,7 +28,7 @@ A reachable enclave: name, service map, verified rendered config, and working lo
 access — as a `network_target` when a downstream step consumes it:
 
 ```yaml
-network_target: { kind: local-enclave, enclave: "devnet-1" }
+network_target: { kind: local, enclave: "devnet-1" }
 ```
 
 ## Start or attach
@@ -63,7 +63,8 @@ args parse — not live health, image behavior, or post-fork liveness.
   always filter by `EnclaveName`. The collector often leaves
   `SeverityText`/`SeverityNumber` empty, so triage severity with
   `match(Body, '(?i)(crit|err|error|fatal)')`. Local enclave logs live here — the
-  hosted `clickhouse-raw`/`clickhouse-refined` clusters carry hosted networks only.
+  remote `clickhouse-raw`/`clickhouse-refined` clusters carry public devnets and
+  mainnet/testnets, never local enclaves.
   Run it like any other datasource — `panda clickhouse query local-kurtosis "<sql>"`
   in a terminal, or `clickhouse.query("local-kurtosis", "<sql>")` in a Python sandbox;
   full query rules in `runbooks://clickhouse_querying`.

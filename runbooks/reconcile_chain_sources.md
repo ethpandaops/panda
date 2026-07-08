@@ -12,9 +12,9 @@ triggers:
 
 Owns the source-authority matrix for chain views and the reconciliation procedure.
 The principle — report the disagreement and what each source is evidence FOR, never
-silently pick one — is owned by `runbooks://evidence_discipline`; authority for hosted
-*metadata* (inventory, fork schedule, endpoints) is owned by
-`runbooks://hosted_devnet_context`.
+silently pick one — is owned by `runbooks://evidence_discipline`; authority for
+public-devnet *metadata* (inventory, fork schedule, endpoints) is owned by
+`runbooks://public_devnet_context`.
 
 ## Inputs
 Required: the disagreeing claims, each with its source.
@@ -74,7 +74,7 @@ reconciliation:
 | Participation differs between sources | one side read the in-progress head epoch — judge completed epochs only; a "finalized" epoch showing <66.7% participation means distrust that source (both rules: `runbooks://ethereum_protocol_model`) | re-read both for the last completed epoch; verify against checkpoints |
 | Slot present in raw events, absent in refined | block was orphaned/reorged out — canonical views drop it; or the CBT pipeline has not processed that range yet (`runbooks://clickhouse_querying`) | query the raw table for the block root; check transformation coverage |
 | Logs silent, metrics healthy (or inverse) | log-shipping or scrape gap, not service state (gap semantics: `runbooks://prometheus_devnet_health`) | hit the service API directly; with no direct RPC, compare an API-derived exporter probe against a different-kind chain-progress source |
-| Hosted metadata genesisTime differs from live genesis_time | `MIN_GENESIS_TIME` vs live consensus genesis (`+ GENESIS_DELAY`) — field semantics, owner: `runbooks://hosted_devnet_context` | derive genesis from a slot's timestamp minus `slot × SECONDS_PER_SLOT` |
+| Network-resource genesisTime differs from live genesis_time | `MIN_GENESIS_TIME` vs live consensus genesis (`+ GENESIS_DELAY`) — field semantics, owner: `runbooks://public_devnet_context` | derive genesis from a slot's timestamp minus `slot × SECONDS_PER_SLOT` |
 | Two nodes report different heads | that is a finding, not a data-quality issue — a split | switch to `runbooks://debug_ethereum_network` (network split branch) |
 
 ## Self-Check

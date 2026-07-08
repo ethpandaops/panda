@@ -39,7 +39,7 @@ Cited metric readings and what they support — each reading is an evidence item
 Python below is a shape to adapt — substitute the datasource, terms, and window.
 
 1. **Discover the datasource, then the network label.** Never assume one exists or
-   guess its name — list them first. Hosted devnets are NOT one datasource per
+   guess its name — list them first. Public devnets are NOT one datasource per
    network: they share a single datasource (commonly `devnets`) that multiplexes many
    networks behind a `network` label, so selecting the datasource is only half the
    job — every selector must also carry `network="<devnet>"`, or the reading silently

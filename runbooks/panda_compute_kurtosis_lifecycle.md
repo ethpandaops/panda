@@ -1,6 +1,6 @@
 ---
 name: Run a Devnet on Panda Compute
-description: Provision a panda-compute sandbox, run an ethereum-package devnet inside it, capture epoch-aligned snapshots, and restore them — the remote-compute provider with snapshot/restore, emitting a compute-enclave network_target. Use for devnets that need snapshotting or must run off the local machine.
+description: Provision a panda-compute sandbox, run an ethereum-package devnet inside it, capture epoch-aligned snapshots, and restore them — the remote-compute provider with snapshot/restore, emitting a compute network_target. Use for devnets that need snapshotting or must run off the local machine.
 tags: [panda-compute, kurtosis, sandbox, snapshot, restore, devnet]
 triggers:
   - run a devnet on remote compute
@@ -11,7 +11,7 @@ prerequisites: [compute]
 ---
 
 Owns the remote-compute devnet lifecycle: provision, launch, snapshot, restore. Emits a
-`network_target` (`kind: compute-enclave`). Config synthesis comes from
+`network_target` (`kind: compute`). Config synthesis comes from
 `runbooks://kurtosis_devnet_config`; enclave access and service discovery follow
 `runbooks://kurtosis_devnet` once the sandbox is up. For a devnet with no compute, use
 a local enclave instead (`runbooks://kurtosis_devnet`).
@@ -21,7 +21,7 @@ Required: a compute template (and, to launch, an args file), or a snapshot id to
 Preferred: a TTL, and the target snapshot epochs for a capture run.
 
 ## Output
-A `network_target` (`kind: compute-enclave`) plus the lifecycle summary below — enough
+A `network_target` (`kind: compute`) plus the lifecycle summary below — enough
 metadata for a later watch or investigation to restore the exact state.
 
 ## Capability check
@@ -73,7 +73,7 @@ lifecycle:
     Provisioned sbx-4 from template kurtosis-xl (ttl 4h), launched peerdas smoke
     enclave devnet-1 (genesis 10:02:11Z), captured snapshots at epochs 3 and 5,
     final snapshot snap-9 after end epoch 14.
-  network_target: { kind: compute-enclave, sandbox_id: "sbx-4", enclave: "devnet-1" }
+  network_target: { kind: compute, sandbox_id: "sbx-4", enclave: "devnet-1" }
   sandbox: { id: "sbx-4", template: "kurtosis-xl", ttl: "4h" }
   launch: { package_ref: "github.com/ethpandaops/ethereum-package", args_file: "./local.yaml", genesis_time: "2026-07-01T10:02:11Z", blocks_produced: true }
   snapshots: [ { epoch: 3, snapshot_id: "snap-7", operation_id: "op-31" }, { epoch: 5, snapshot_id: "snap-8", operation_id: "op-38" } ]

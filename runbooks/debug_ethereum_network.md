@@ -1,6 +1,6 @@
 ---
 name: Debug an Ethereum Network
-description: Systematically debug any Ethereum network — local Kurtosis enclave, remote compute-hosted enclave, or live hosted devnet — by resolving a network_target, building the active fork model, establishing a health baseline, classifying the symptom, and localizing the fault to the CL, EL, engine API, or shared infrastructure. Use to diagnose splits, stalls, missed blocks, missing payloads, engine_newPayload failures, execution errors, or data-availability failures.
+description: Systematically debug any Ethereum network — local Kurtosis enclave, remote compute-sandbox enclave, or live public devnet — by resolving a network_target, building the active fork model, establishing a health baseline, classifying the symptom, and localizing the fault to the CL, EL, engine API, or shared infrastructure. Use to diagnose splits, stalls, missed blocks, missing payloads, engine_newPayload failures, execution errors, or data-availability failures.
 tags: [ethereum, devnet, debugging, consensus, execution, engine-api, forks]
 triggers:
   - debug a devnet or ethereum network why did it break
@@ -21,22 +21,22 @@ regardless of where the network runs — only the access layer changes.
 
 A `network_target` is how you reach the network under study:
 
-- `kind: local-enclave` — a Kurtosis devnet on this machine
+- `kind: local` — a Kurtosis devnet on this machine
   (`runbooks://kurtosis_devnet`).
-- `kind: compute-enclave` — a Kurtosis devnet in a panda-compute sandbox; adds
+- `kind: compute` — a Kurtosis devnet in a panda-compute sandbox; adds
   snapshot/restore (`runbooks://panda_compute_kurtosis_lifecycle`).
-- `kind: hosted` — a live hosted devnet: resolved network id + published endpoints
-  (`runbooks://hosted_devnet_context`).
+- `kind: public` — a live public (ethpandaops-hosted) devnet: resolved network id +
+  published endpoints (`runbooks://public_devnet_context`).
 
 Downstream steps consume a target and reason identically for every kind; providers are
 swappable. Steps that want a capability one kind lacks (e.g. restore on a local enclave)
 degrade gracefully — to live observation or historical evidence — instead of failing.
 
-| Concern | local-enclave / compute-enclave | hosted |
+| Concern | local / compute | public |
 | --- | --- | --- |
 | Topology / services | `kurtosis enclave inspect <enclave>` (there is no `service ls` subcommand) | network resource + node inventory |
 | Endpoints | Kurtosis port names (`runbooks://kurtosis_devnet`) | published endpoints (beacon RPC, Dora, Forky, Ethnode) |
-| Logs | `local-kurtosis` OTel, or `kurtosis service logs` | the hosted otel-logs datasource (commonly `external.otel_logs` on `clickhouse-raw`), filtered by `ResourceAttributes['network']` |
+| Logs | `local-kurtosis` OTel, or `kurtosis service logs` | the public-devnet otel-logs datasource (commonly `external.otel_logs` on `clickhouse-raw`), filtered by `ResourceAttributes['network']` |
 | Chain view | direct beacon / EL RPC | Dora / Forky / Ethnode + direct RPC |
 
 ## Inputs

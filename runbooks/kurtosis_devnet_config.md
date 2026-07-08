@@ -1,20 +1,20 @@
 ---
-name: Build a Kurtosis Config From a Hosted Devnet
-description: Generate one runnable ethereum-package args file that reproduces a hosted ethpandaops devnet locally — from grounded inventory, the package schema, and optional steering. The primary output is the args file itself, ready for kurtosis run.
+name: Build a Kurtosis Config From a Public Devnet
+description: Generate one runnable ethereum-package args file that reproduces a public (hosted) ethpandaops devnet locally — from grounded inventory, the package schema, and optional steering. The primary output is the args file itself, ready for kurtosis run.
 tags: [kurtosis, ethereum-package, config, args-file, reproduction]
 triggers:
-  - reproduce a hosted devnet locally with kurtosis
+  - reproduce a public devnet locally with kurtosis
   - generate an ethereum-package args file
   - local kurtosis config matching a devnet's forks clients images
 ---
 
-Owns synthesis of a runnable ethereum-package args file that models a hosted devnet
-locally. Consumes the Output of `runbooks://hosted_devnet_context` (network id,
+Owns synthesis of a runnable ethereum-package args file that models a public devnet
+locally. Consumes the Output of `runbooks://public_devnet_context` (network id,
 inventory, fork/blob schedule, images); the file it emits feeds
 `runbooks://kurtosis_devnet` or `runbooks://panda_compute_kurtosis_lifecycle`.
 
 ## Inputs
-Required: grounded hosted context (`runbooks://hosted_devnet_context`).
+Required: grounded public-devnet context (`runbooks://public_devnet_context`).
 Preferred: a package ref (default `github.com/ethpandaops/ethereum-package`) and any
 steering (client matrix, node count, fork epochs, load).
 
@@ -30,16 +30,16 @@ handed directly to `kurtosis run --args-file`. Emit the file, not a prose plan.
    `network_params.yaml` can lag real keys (e.g. `preset`); when a key you need is
    absent, check the package's schema/sanity-check code or a shipped example before
    concluding it is unsupported.
-2. **Topology.** Without steering, build a minimal faithful slice: hosted fork schedule
-   + slot timing, ≥1 representative CL/EL pair, preserved client/image versions where
-   the package supports explicit images, only necessary tooling. With steering, adjust
-   the client matrix / node count / validator distribution / fork epochs / services /
-   load, recording every deviation — steering is a reproduction request, not evidence
-   about the hosted network.
+2. **Topology.** Without steering, build a minimal faithful slice: the deployed fork
+   schedule + slot timing, ≥1 representative CL/EL pair, preserved client/image
+   versions where the package supports explicit images, only necessary tooling. With
+   steering, adjust the client matrix / node count / validator distribution / fork
+   epochs / services / load, recording every deviation — steering is a reproduction
+   request, not evidence about the public network.
 3. **Params from sources** (`runbooks://ethereum_protocol_model` for what matters per
    fork): chain id, genesis timing, seconds/slot, slots/epoch, fork epochs, blob
    schedule + limits, validator counts.
-4. **Clients + images** from inventory; if a field can't express a hosted image
+4. **Clients + images** from inventory; if a field can't express a deployed image
    exactly, use the closest mechanism and record it. Flag a stray image tag that
    conflicts with deployed inventory instead of copying it.
 5. **Tooling** via supported `additional_services`/params: Dora, Prometheus (when a
@@ -55,7 +55,7 @@ handed directly to `kurtosis run --args-file`. Emit the file, not a prose plan.
 
 ### Accelerated Gloas/ePBS smoke
 
-Preserve hosted chain id + selected images; use the `minimal` preset only as an
+Preserve the deployed chain id + selected images; use the `minimal` preset only as an
 explicit local acceleration (recorded as a deviation, not a faithful clone — and
 expect some client images to lack a minimal-preset build: a participant that fails to
 parse the rendered config is an image/preset mismatch; drop or swap it); keep BPO
@@ -70,7 +70,7 @@ fails in tiny topologies without one; include Buildoor when observing the builde
 ```yaml
 config_synthesis:
   summary: >
-    Faithful 2-pair slice of peerdas-devnet-6: lighthouse/geth + teku/besu at hosted
+    Faithful 2-pair slice of peerdas-devnet-6: lighthouse/geth + teku/besu at deployed
     images, Fulu at 0, Gloas moved 256 -> 3 (steering: accelerated smoke), Dora +
     Buildoor enabled. Dry-run passed.
   args_file: "./peerdas-devnet-6-local.yaml"
@@ -87,5 +87,5 @@ config_synthesis:
 Before returning:
 - The output includes a runnable args-file path or artifact reference.
 - Every YAML key was checked against the package schema or an example.
-- Hosted facts and steering deviations are separated; disagreements preserved.
+- Deployed facts and steering deviations are separated; disagreements preserved.
 - Dry-run status is explicit, including unavailable/failed states.

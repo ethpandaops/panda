@@ -8,7 +8,7 @@ triggers:
   - periodic devnet status report or incident roundup
   - build a CL EL client bug knowledge base
   - cluster and rank devnet issue candidates by severity
-  - find issues on a hosted devnet
+  - find issues on a public devnet
 prerequisites: [clickhouse-raw, dora]
 ---
 
@@ -23,8 +23,8 @@ rubric, the bug-object schema, and the hand-offs.
 
 ## Inputs
 
-- **`network_target`** — required. For a hosted devnet resolve it with
-  `runbooks://hosted_devnet_context` (`networks://active`, then the network resource);
+- **`network_target`** — required. For a public devnet resolve it with
+  `runbooks://public_devnet_context` (`networks://active`, then the network resource);
   for a local enclave use `runbooks://kurtosis_devnet`; for a compute enclave use
   `runbooks://panda_compute_kurtosis_lifecycle`. Do not guess.
 - **Time window** — the reporting period. Use the user's window verbatim if given;
@@ -55,7 +55,7 @@ healthy network is a valid outcome: an empty list plus the baseline.
 
 First establish a baseline (split? finalizing? participating?) by building the
 protocol model with `runbooks://ethereum_protocol_model` — judge finality from
-checkpoints, participation on completed epochs only. For an enclave target that was
+checkpoints, participation on completed epochs only. For a target that was
 already watched, the observation lanes from `runbooks://devnet_watch` seed the
 candidate table directly.
 

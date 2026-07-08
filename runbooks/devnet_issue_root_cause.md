@@ -41,7 +41,7 @@ in the summary and bind `confidence` to the deeper claim.
    occurrence evidence, and a `publish`/`manual-review` feedback task.
 3. **Reproduce or restore before blaming.** Prefer the watch snapshot; otherwise pick
    the cheapest faithful target kind (`runbooks://debug_ethereum_network`) and label the
-   mode explicitly: `reproduced | partial | not-reproduced | local-live | hosted-live |
+   mode explicitly: `reproduced | partial | not-reproduced | local-live | public-live |
    historical-only` (naming the historical evidence).
 4. **Hypotheses are bounded.** 3–5 concrete hypotheses, each with an angle, a test, a
    supporting observable, AND a rejecting observable.
@@ -65,8 +65,8 @@ in the summary and bind `confidence` to the deeper claim.
 2. **Choose the reproduction path** (first viable): restore the broken-state snapshot
    (`runbooks://panda_compute_kurtosis_lifecycle`); reuse an existing enclave
    (`runbooks://kurtosis_devnet`); relaunch the provided config and drive it to the
-   window; synthesize a faithful config (`runbooks://hosted_devnet_context` +
-   `runbooks://kurtosis_devnet_config`); or investigate the hosted network live
+   window; synthesize a faithful config (`runbooks://public_devnet_context` +
+   `runbooks://kurtosis_devnet_config`); or investigate the public network live
    (`runbooks://debug_ethereum_network`). When replaying rather than restoring, record
    the non-determinism sources (validator assignment, peer/builder timing, load, image
    drift, fork epochs).
@@ -104,7 +104,7 @@ report:
     restart loop at epoch 11; reproduced on restore; participation recovered when the
     VCs were held up. Buildoor reveal errors are chronic and unrelated (co-present).
   root_cause: { statement: "teku VC restart loop removed >1/3 stake", family: "lifecycle/participation", confidence: high }   # >1/3 stall threshold: runbooks://ethereum_protocol_model
-  reproduction: { status: reproduced, recipe: ["restore snap-9", "observe epochs 11-14"] }   # status: reproduced|partial|not-reproduced|local-live|hosted-live|historical-only
+  reproduction: { status: reproduced, recipe: ["restore snap-9", "observe epochs 11-14"] }   # status: reproduced|partial|not-reproduced|local-live|public-live|historical-only
   timeline:                      # objects, board-renderer-ready; kind: restart|block|timing|log|note
     - { ts: "2026-07-01T10:41:55Z", kind: restart, text: "vc-2 first restart", log: "<verbatim log line>" }
     - { ts: "2026-07-01T10:48:00Z", kind: timing, text: "checkpoints freeze at epoch 12" }

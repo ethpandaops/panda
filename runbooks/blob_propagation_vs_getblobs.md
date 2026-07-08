@@ -22,8 +22,8 @@ timing comparison behind it.
 
 ## Procedure
 The data lives on two clusters, joined in Python on `slot`. See
-`runbooks://clickhouse_querying` for cluster/partition rules, raw addressing (devnets
-live in their own `<network>` database on `clickhouse-raw`), and why the gossip table
+`runbooks://clickhouse_querying` for cluster/partition rules, raw addressing (public
+devnets live in their own `<network>` database on `clickhouse-raw`), and why the gossip table
 must be queried raw (deduplicated views collapse the propagation rows). The Python
 below is a shape to adapt — substitute `{network}` and the time window, prefix raw
 tables with `` `{network}`. `` on a devnet, and verify each side has rows in the
