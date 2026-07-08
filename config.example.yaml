@@ -45,6 +45,12 @@ proxies:
     #   mode: "oidc"         # "oidc", "oauth", or "client_credentials"
     #   issuer_url: "https://panda-proxy.ethpandaops.io"
     #   client_id: "panda"
+    #   # Extra scopes requested at login. To use `panda workflow ...` against a
+    #   # proxy running the workflow engine in passthrough mode, request the
+    #   # "workflows" scope: Authentik cross-grants the workflow-engine audience
+    #   # into this token so the same credential is accepted upstream. When set,
+    #   # the list is sent verbatim — keep the base scopes and add "workflows".
+    #   scopes: ["openid", "email", "groups", "offline_access", "workflows"]
     #
     # Non-interactive service accounts (e.g. bots) use the client_credentials
     # grant with an Authentik service account + app password. Access tokens are
@@ -82,6 +88,13 @@ proxies:
 # consensus_specs:
 #   repository: "ethereum/consensus-specs"  # GitHub owner/repo (for forks)
 #   ref: ""                                 # Branch, tag, or SHA (empty = latest release)
+
+# Workflow-engine access has NO server-side config. The server relays
+# `panda workflow ...` calls to whichever proxy advertises the workflow engine;
+# the credential is held only by the proxy. Configure the engine in the
+# `workflow:` block of proxy-config.yaml, not here. When that proxy runs the
+# engine in passthrough mode, request the "workflows" scope in the proxy
+# auth.scopes above so your login token is accepted upstream.
 
 # Observability configuration
 observability:

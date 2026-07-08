@@ -253,6 +253,7 @@ func buildProxyAuthMetadata(cfg *config.Config) *serverapi.ProxyAuthMetadataResp
 		IssuerURL: issuerURL,
 		ClientID:  cfg.Proxy.Auth.ClientID,
 		Resource:  cfg.Proxy.ResolvedAuthResource(),
+		Scopes:    cfg.Proxy.Auth.Scopes,
 	}
 }
 
@@ -278,6 +279,9 @@ func (b *Builder) buildResourceRegistry(
 
 	// Register getting-started resource.
 	resource.RegisterGettingStartedResources(b.log, reg, toolReg)
+
+	// Register workflow-engine docs resources (dialect-rendered).
+	resource.RegisterWorkflowDocsResources(b.log, reg)
 
 	// Register module-specific resources (e.g., clickhouse://tables/{cluster}).
 	for _, ext := range moduleReg.Initialized() {

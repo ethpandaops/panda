@@ -27,6 +27,13 @@ type Router interface {
 
 	// ClientForDatasource returns the proxy client that owns a datasource by type/name.
 	ClientForDatasource(datasourceType, datasourceName string) (Client, bool)
+
+	// WorkflowRoute returns the proxy client for the first route, in priority
+	// order, that advertises the workflow engine. The server relays /workflow
+	// traffic to it. It shares selection logic with WorkflowInfo so human links
+	// and forwarded traffic never disagree. It is NOT necessarily Primary(): a
+	// secondary route may carry the engine when the primary does not.
+	WorkflowRoute() (Client, bool)
 }
 
 // DatasourceOwner identifies the proxy that owns a datasource.
@@ -327,6 +334,46 @@ func (r *routerClient) EmbeddingModel() string {
 	return primary.EmbeddingModel()
 }
 
+// WorkflowInfo reports whether any wrapped route advertises a workflow engine
+// and, when one does, its web URL. It selects the first route in priority order
+// that advertises the engine (not necessarily Primary()), sharing selection
+// logic with WorkflowRoute so links and traffic never disagree.
+func (r *routerClient) WorkflowInfo() (enabled bool, webURL string) {
+	if _, webURL, ok := r.selectWorkflowRoute(); ok {
+		return true, webURL
+	}
+
+	return false, ""
+}
+
+// WorkflowRoute returns the proxy client for the first route, in priority order,
+// that advertises the workflow engine.
+func (r *routerClient) WorkflowRoute() (Client, bool) {
+	if route, _, ok := r.selectWorkflowRoute(); ok {
+		return route, true
+	}
+
+	return nil, false
+}
+
+// selectWorkflowRoute returns the first wrapped client (in configured order)
+// that both implements WorkflowInfoProvider and advertises an enabled workflow
+// engine, along with the resolved web URL.
+func (r *routerClient) selectWorkflowRoute() (Client, string, bool) {
+	for i := range r.routes {
+		provider, ok := r.routes[i].client.(WorkflowInfoProvider)
+		if !ok {
+			continue
+		}
+
+		if enabled, webURL := provider.WorkflowInfo(); enabled {
+			return r.routes[i].client, webURL, true
+		}
+	}
+
+	return nil, "", false
+}
+
 // OwnerForDatasource returns the proxy that owns a datasource by type/name.
 func (r *routerClient) OwnerForDatasource(datasourceType, datasourceName string) (DatasourceOwner, bool) {
 	_, owners := r.mergeDatasourceInfo(datasourceType)
@@ -436,7 +483,8 @@ func (r *routerClient) warnCollision(datasourceType, datasourceName, winnerProxy
 }
 
 var (
-	_ Client  = (*routerClient)(nil)
-	_ Router  = (*routerClient)(nil)
-	_ Service = (*routerClient)(nil)
+	_ Client               = (*routerClient)(nil)
+	_ Router               = (*routerClient)(nil)
+	_ Service              = (*routerClient)(nil)
+	_ WorkflowInfoProvider = (*routerClient)(nil)
 )

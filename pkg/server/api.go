@@ -55,6 +55,16 @@ func (s *service) mountAPIRoutes(r chi.Router) {
 			r.Delete("/uploads/published", s.handleUploadDeletePublished)
 		}
 
+		// Workflow-engine passthrough: a streaming relay to the proxy route that
+		// advertises the engine (the proxy holds the credential).
+		r.HandleFunc("/workflow/*", s.handleAPIWorkflowProxy)
+
+		// Workflow integration metadata (served by panda-server, NOT proxied):
+		// the web origin for human-facing frontend links, answered from proxy
+		// discovery. Deliberately outside the /workflow/* wildcard so it can
+		// never shadow a real workflow route.
+		r.Get("/workflow-info", s.handleAPIWorkflowInfo)
+
 		// Public file serving (no auth — same as MinIO anonymous download).
 		r.Get("/storage/files/*", s.handleStorageServeFile)
 
@@ -113,6 +123,19 @@ func (s *service) runtimeAuthMiddleware(next http.Handler) http.Handler {
 		}
 
 		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// handleAPIWorkflowInfo reports whether a proxy advertises the workflow engine
+// and the web origin for frontend links, answered from proxy discovery. It
+// never exposes tokens; users log into the workflow UI themselves. When no
+// proxy advertises the engine it returns an empty `{}` body (Enabled false).
+func (s *service) handleAPIWorkflowInfo(w http.ResponseWriter, _ *http.Request) {
+	enabled, webURL := s.workflowInfo()
+
+	writeJSON(w, http.StatusOK, serverapi.WorkflowInfoResponse{
+		Enabled:    enabled,
+		WebBaseURL: webURL,
 	})
 }
 

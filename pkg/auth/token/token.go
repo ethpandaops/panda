@@ -41,6 +41,8 @@ type Config struct {
 	ClientID string
 	// Resource is the optional RFC 8707 resource indicator.
 	Resource string
+	// Scopes are the OAuth scopes to request; empty means the client's defaults.
+	Scopes []string
 	// Username and Password are the service-account credentials for
 	// ModeClientCredentials.
 	Username string
@@ -103,6 +105,7 @@ func NewSource(log logrus.FieldLogger, cfg Config) Source {
 		IssuerURL: issuer,
 		ClientID:  clientID,
 		Resource:  resource,
+		Scopes:    cfg.Scopes,
 		Username:  cfg.Username,
 		Password:  cfg.Password,
 	})

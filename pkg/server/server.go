@@ -45,6 +45,7 @@ type Service interface {
 type service struct {
 	log                  logrus.FieldLogger
 	cfg                  config.ServerConfig
+	workflow             *workflowPassthrough
 	toolRegistry         tool.Registry
 	resourceRegistry     resource.Registry
 	searchService        *searchsvc.Service
@@ -92,7 +93,7 @@ func NewService(
 	runtimeTokens *tokenstore.Store,
 	cleanup func(context.Context) error,
 ) Service {
-	return &service{
+	s := &service{
 		log:                 log.WithField("component", "server"),
 		cfg:                 cfg,
 		toolRegistry:        toolRegistry,
@@ -113,6 +114,13 @@ func NewService(
 		httpClient:          &http.Client{Transport: &version.Transport{}, Timeout: 0},
 		done:                make(chan struct{}),
 	}
+
+	// The workflow passthrough holds no credential or config: it relays to the
+	// proxy route that advertises the workflow engine, resolved per request. It
+	// is always built; availability is decided at request time from discovery.
+	s.workflow = newWorkflowPassthrough(s.log, nil)
+
+	return s
 }
 
 // Start initializes and starts the MCP server.

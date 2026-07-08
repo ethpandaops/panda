@@ -1,9 +1,12 @@
 package proxy
 
 import (
+	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -60,6 +63,10 @@ type ServerConfig struct {
 
 	// GitHub holds optional GitHub API configuration for triggering workflows.
 	GitHub *GitHubAPIConfig `yaml:"github,omitempty"`
+
+	// Workflow holds optional workflow-engine passthrough configuration. Nil
+	// disables the /workflow route entirely.
+	Workflow *WorkflowConfig `yaml:"workflow,omitempty"`
 
 	// Uploads holds optional R2 (S3-compatible) object-store config backing the
 	// /uploads route (`panda upload`).
@@ -122,6 +129,56 @@ func normalizeKeyPrefix(p string) string {
 type GitHubAPIConfig struct {
 	// Token is a GitHub personal access token or app token with actions:write permission.
 	Token string `yaml:"token"`
+}
+
+// Workflow auth modes select how the proxy credentials the upstream workflow
+// engine on each request.
+const (
+	// WorkflowAuthModeToken injects the proxy's configured api_token as the
+	// bearer — one generic all-users key. This is the default and the
+	// local-testing shape.
+	WorkflowAuthModeToken = "token"
+	// WorkflowAuthModePassthrough re-attaches the caller's own verified bearer
+	// so the engine validates the user's OIDC token directly. It requires the
+	// proxy to run in an authenticated mode (oauth/oidc).
+	WorkflowAuthModePassthrough = "passthrough"
+)
+
+// WorkflowConfig holds the workflow-engine passthrough configuration. The API
+// token lives HERE, at the proxy layer, never on the panda server.
+type WorkflowConfig struct {
+	// URL is the workflow engine API origin. Bare scheme+host[:port]; no
+	// path/query/fragment/userinfo.
+	URL string `yaml:"url"`
+	// AuthMode is "token" (default; inject APIToken) or "passthrough" (forward
+	// the caller's own bearer for the engine to validate directly).
+	AuthMode string `yaml:"auth_mode,omitempty"`
+	// APIToken is required when AuthMode is "token". ${ENV}-substitutable.
+	APIToken string `yaml:"api_token,omitempty"`
+	// WebURL is the frontend-link origin (may carry a path). Defaults to URL.
+	WebURL string `yaml:"web_url,omitempty"`
+	// AllowedOrgs restricts /workflow access to members of these GitHub orgs.
+	AllowedOrgs []string `yaml:"allowed_orgs,omitempty"`
+}
+
+// ResolvedAuthMode returns the effective auth mode, defaulting to "token".
+func (w *WorkflowConfig) ResolvedAuthMode() string {
+	if strings.TrimSpace(w.AuthMode) == "" {
+		return WorkflowAuthModeToken
+	}
+
+	return strings.TrimSpace(w.AuthMode)
+}
+
+// ResolvedWebURL returns the frontend-link origin: web_url when set, else url,
+// with a single trailing slash trimmed. It never returns the api_token.
+func (w *WorkflowConfig) ResolvedWebURL() string {
+	base := strings.TrimSpace(w.WebURL)
+	if base == "" {
+		base = strings.TrimSpace(w.URL)
+	}
+
+	return strings.TrimRight(base, "/")
 }
 
 // HTTPServerConfig holds HTTP server configuration.
@@ -594,9 +651,10 @@ func (c *ServerConfig) Validate() error {
 		}
 	}
 
-	// Validate at least one datasource is configured.
-	if len(c.ClickHouse) == 0 && len(c.Prometheus) == 0 && len(c.Loki) == 0 && c.EthNode == nil && len(c.Benchmarkoor) == 0 && len(c.Compute) == 0 {
-		return fmt.Errorf("at least one datasource (clickhouse, prometheus, loki, ethnode, benchmarkoor, or compute) must be configured")
+	// Validate the proxy serves something: at least one datasource, or the
+	// workflow engine (a proxy dedicated to engine passthrough is valid).
+	if len(c.ClickHouse) == 0 && len(c.Prometheus) == 0 && len(c.Loki) == 0 && c.EthNode == nil && len(c.Benchmarkoor) == 0 && len(c.Compute) == 0 && c.Workflow == nil {
+		return fmt.Errorf("at least one datasource (clickhouse, prometheus, loki, ethnode, benchmarkoor, or compute) or the workflow engine must be configured")
 	}
 
 	// Validate ClickHouse configs.
@@ -725,6 +783,118 @@ func (c *ServerConfig) Validate() error {
 		if loki.URL == "" {
 			return fmt.Errorf("loki[%d].url is required", i)
 		}
+	}
+
+	if err := c.validateWorkflow(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateWorkflow validates the optional workflow block. It asserts only when
+// workflow is enabled (non-nil) so existing no-workflow configs keep validating.
+func (c *ServerConfig) validateWorkflow() error {
+	if c.Workflow == nil {
+		return nil
+	}
+
+	parsed, err := url.Parse(strings.TrimSpace(c.Workflow.URL))
+	if err != nil {
+		return fmt.Errorf("workflow.url is invalid: %w", err)
+	}
+
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("workflow.url must use an http or https scheme, got %q", parsed.Scheme)
+	}
+
+	if parsed.Host == "" {
+		return errors.New("workflow.url must include a host")
+	}
+
+	// The passthrough injects its own bearer, so embedded credentials would be a
+	// silent trap — reject them rather than ignore them.
+	if parsed.User != nil {
+		return errors.New("workflow.url must not include userinfo")
+	}
+
+	// url.Port() returns only an all-digit port (or ""), so validate the range.
+	if portStr := parsed.Port(); portStr != "" {
+		port, portErr := strconv.Atoi(portStr)
+		if portErr != nil || port < 1 || port > 65535 {
+			return fmt.Errorf("workflow.url has an invalid port %q, must be 1..65535", portStr)
+		}
+	}
+
+	// A bare host or a single trailing slash is path-less; anything else would
+	// corrupt the /api/v1/<rest> join the passthrough builds.
+	if parsed.Path != "" && parsed.Path != "/" {
+		return fmt.Errorf("workflow.url must not include a path, got %q", parsed.Path)
+	}
+
+	if parsed.RawQuery != "" {
+		return fmt.Errorf("workflow.url must not include a query, got %q", parsed.RawQuery)
+	}
+
+	if parsed.Fragment != "" {
+		return fmt.Errorf("workflow.url must not include a fragment, got %q", parsed.Fragment)
+	}
+
+	if err := validateWorkflowWebURL(c.Workflow.WebURL); err != nil {
+		return err
+	}
+
+	switch c.Workflow.ResolvedAuthMode() {
+	case WorkflowAuthModeToken:
+		if strings.TrimSpace(c.Workflow.APIToken) == "" {
+			return errors.New("workflow.api_token is required when workflow.auth_mode is token")
+		}
+	case WorkflowAuthModePassthrough:
+		if strings.TrimSpace(c.Workflow.APIToken) != "" {
+			return errors.New("workflow.api_token must be empty when workflow.auth_mode is passthrough")
+		}
+
+		if c.Auth.Mode != AuthModeOAuth && c.Auth.Mode != AuthModeOIDC {
+			return fmt.Errorf(
+				"workflow.auth_mode passthrough requires proxy auth.mode oauth or oidc, got %q",
+				c.Auth.Mode,
+			)
+		}
+	default:
+		return fmt.Errorf(
+			"workflow.auth_mode must be one of {%s, %s}, got %q",
+			WorkflowAuthModeToken, WorkflowAuthModePassthrough, c.Workflow.AuthMode,
+		)
+	}
+
+	return nil
+}
+
+// validateWorkflowWebURL validates the optional frontend-link origin. Unlike
+// url it may carry a path (a UI mounted under a subpath), but it is a link
+// prefix for humans, so scheme+host are still required and query/fragment still
+// make no sense.
+func validateWorkflowWebURL(raw string) error {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("workflow.web_url is invalid: %w", err)
+	}
+
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("workflow.web_url must use an http or https scheme, got %q", parsed.Scheme)
+	}
+
+	if parsed.Host == "" {
+		return errors.New("workflow.web_url must include a host")
+	}
+
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return errors.New("workflow.web_url must not include a query or fragment")
 	}
 
 	return nil

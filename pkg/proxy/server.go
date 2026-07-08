@@ -78,6 +78,7 @@ type server struct {
 	ethNodeHandler      *handlers.EthNodeHandler
 	benchmarkoorHandler *handlers.BenchmarkoorHandler
 	computeHandler      *handlers.ComputeHandler
+	workflowHandler     *handlers.WorkflowHandler
 	uploadsHandler      *handlers.UploadsHandler
 	uploadsLimiter      *RateLimiter
 	embeddingService    *EmbeddingService
@@ -99,8 +100,9 @@ type server struct {
 
 // Compile-time interface check.
 var (
-	_ Server  = (*server)(nil)
-	_ Service = (*server)(nil)
+	_ Server               = (*server)(nil)
+	_ Service              = (*server)(nil)
+	_ WorkflowInfoProvider = (*server)(nil)
 )
 
 // NewServer creates a new proxy server.
@@ -206,6 +208,20 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 
 	if computeConfigs := cfg.ToComputeHandlerConfigs(); len(computeConfigs) > 0 {
 		s.computeHandler = handlers.NewComputeHandler(log, computeConfigs)
+	}
+
+	if cfg.Workflow != nil {
+		workflowHandler, err := handlers.NewWorkflowHandler(log, handlers.WorkflowConfig{
+			URL:         cfg.Workflow.URL,
+			AuthMode:    cfg.Workflow.ResolvedAuthMode(),
+			APIToken:    cfg.Workflow.APIToken,
+			AllowedOrgs: append([]string(nil), cfg.Workflow.AllowedOrgs...),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("creating workflow handler: %w", err)
+		}
+
+		s.workflowHandler = workflowHandler
 	}
 
 	if uploadsCfg := cfg.ToUploadsHandlerConfig(); uploadsCfg != nil {
@@ -362,6 +378,10 @@ func (s *server) registerRoutes() {
 		s.handleSubtreeRoute("/compute", s.metricsMiddleware(chain(s.computeHandler)))
 	}
 
+	if s.workflowHandler != nil {
+		s.handleSubtreeRoute("/workflow", s.metricsMiddleware(chain(s.workflowHandler)))
+	}
+
 	if s.githubHandler != nil {
 		s.handleSubtreeRoute("/github", s.metricsMiddleware(chain(s.githubHandler)))
 	}
@@ -431,6 +451,17 @@ type DatasourcesResponse struct {
 	EthNodeAvailable   bool                   `json:"ethnode_available,omitempty"`
 	EmbeddingAvailable bool                   `json:"embedding_available,omitempty"`
 	EmbeddingModel     string                 `json:"embedding_model,omitempty"`
+	// Workflow advertises the workflow engine as a capability. Nil when the
+	// proxy does not expose one (or the caller is not authorized for it).
+	Workflow *WorkflowAdvert `json:"workflow,omitempty"`
+}
+
+// WorkflowAdvert advertises the workflow engine capability in discovery. It
+// carries only whether the engine is enabled and the web URL for building human
+// links — never the api_token.
+type WorkflowAdvert struct {
+	Enabled bool   `json:"enabled"`
+	WebURL  string `json:"web_url,omitempty"`
 }
 
 // datasourcesResponseWire is the on-the-wire shape of DatasourcesResponse,
@@ -447,6 +478,7 @@ type datasourcesResponseWire struct {
 	EthNodeAvailable   bool                   `json:"ethnode_available,omitempty"`
 	EmbeddingAvailable bool                   `json:"embedding_available,omitempty"`
 	EmbeddingModel     string                 `json:"embedding_model,omitempty"`
+	Workflow           *WorkflowAdvert        `json:"workflow,omitempty"`
 }
 
 // MarshalJSON emits both the detailed *Info lists and the derived name-only
@@ -464,6 +496,7 @@ func (d DatasourcesResponse) MarshalJSON() ([]byte, error) {
 		EthNodeAvailable:   d.EthNodeAvailable,
 		EmbeddingAvailable: d.EmbeddingAvailable,
 		EmbeddingModel:     d.EmbeddingModel,
+		Workflow:           d.Workflow,
 	})
 }
 
@@ -483,6 +516,7 @@ func (d *DatasourcesResponse) UnmarshalJSON(data []byte) error {
 	d.EthNodeAvailable = wire.EthNodeAvailable
 	d.EmbeddingAvailable = wire.EmbeddingAvailable
 	d.EmbeddingModel = wire.EmbeddingModel
+	d.Workflow = wire.Workflow
 
 	return nil
 }
@@ -525,6 +559,7 @@ func (s *server) handleDatasources(w http.ResponseWriter, r *http.Request) {
 		EthNodeAvailable:   s.EthNodeAvailable(),
 		EmbeddingAvailable: s.EmbeddingAvailable(),
 		EmbeddingModel:     s.EmbeddingModel(),
+		Workflow:           s.workflowAdvert(),
 	}
 
 	if s.authorizer != nil {
@@ -1180,6 +1215,30 @@ func (s *server) ComputeDatasourceInfo() []types.DatasourceInfo {
 // EthNodeAvailable returns true if the ethnode handler is configured.
 func (s *server) EthNodeAvailable() bool {
 	return s.ethNodeHandler != nil
+}
+
+// workflowAdvert returns the workflow discovery advert, or nil when the proxy
+// is not configured with a workflow engine. The web URL is derived from config
+// (web_url else url); the api_token is never advertised.
+func (s *server) workflowAdvert() *WorkflowAdvert {
+	if s.cfg.Workflow == nil {
+		return nil
+	}
+
+	return &WorkflowAdvert{
+		Enabled: true,
+		WebURL:  s.cfg.Workflow.ResolvedWebURL(),
+	}
+}
+
+// WorkflowInfo reports whether this proxy advertises a workflow engine and the
+// web URL for building human links to it, resolved from config.
+func (s *server) WorkflowInfo() (enabled bool, webURL string) {
+	if s.cfg.Workflow == nil {
+		return false, ""
+	}
+
+	return true, s.cfg.Workflow.ResolvedWebURL()
 }
 
 // EthNodeDatasourceInfo returns the ethnode datasource info when configured.

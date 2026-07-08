@@ -25,6 +25,7 @@ type credentialTarget struct {
 	issuerURL string
 	clientID  string
 	resource  string
+	scopes    []string
 	enabled   bool
 }
 
@@ -66,6 +67,7 @@ func newCredentialController(log logrus.FieldLogger, meta *serverapi.ProxyAuthMe
 		issuerURL: meta.IssuerURL,
 		clientID:  meta.ClientID,
 		resource:  meta.Resource,
+		scopes:    meta.Scopes,
 		enabled:   meta.Enabled,
 	}
 
@@ -77,6 +79,7 @@ func newCredentialController(log logrus.FieldLogger, meta *serverapi.ProxyAuthMe
 				IssuerURL: t.issuerURL,
 				ClientID:  t.clientID,
 				Resource:  t.resource,
+				Scopes:    t.scopes,
 			})
 		},
 		newStore: func(t credentialTarget, c authclient.Client) authstore.Store {

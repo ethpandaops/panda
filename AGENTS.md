@@ -171,6 +171,10 @@ CLI commands and groups include:
 - `upgrade`
 - `upload`
 - `version`
+- `workflow` — CLI for the external workflow engine, routed `server /api/v1/workflow/*
+  → proxy /workflow/*`. The proxy holds the bearer token (or forwards the user's own
+  in passthrough mode); the server and CLI never handle it. It is **not** a module and
+  adds **no** MCP tool.
 
 The proxy is a separate binary, built with `make build-proxy`.
 
@@ -250,6 +254,7 @@ pkg/
   embedding/       # Remote embedding client for semantic search
   config/          # Configuration loading and validation
   observability/   # Prometheus metrics
+  workflowrelay/   # Workflow-passthrough contract shared by the server and proxy hops
   types/           # Shared data types
 datasets/          # Dataset knowledge packs (content-only module)
 modules/
