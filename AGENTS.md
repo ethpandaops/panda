@@ -171,10 +171,8 @@ CLI commands and groups include:
 - `upgrade`
 - `upload`
 - `version`
-- `workflow` — CLI for the external workflow engine, routed `server /api/v1/workflow/*
-  → proxy /workflow/*`. The proxy holds the bearer token (or forwards the user's own
-  in passthrough mode); the server and CLI never handle it. It is **not** a module and
-  adds **no** MCP tool.
+- `workflow` — client for the external workflow engine, relayed server → proxy; the
+  proxy holds the credential (not a module, no MCP tool or resources)
 
 The proxy is a separate binary, built with `make build-proxy`.
 
