@@ -840,11 +840,15 @@ func (s *server) handleAuthMetadata(w http.ResponseWriter, _ *http.Request) {
 		}
 
 		// Advertise the extra scopes advertised features require so `panda init`
-		// provisions them. A configured workflow engine needs the "workflows"
-		// scope: Authentik cross-grants the engine audience only to eligible
-		// users, so requesting it is safe for everyone. Only emitted when the
-		// engine is present, so non-workflow proxies keep the client defaults.
-		if s.cfg.Workflow != nil && strings.TrimSpace(s.cfg.Workflow.URL) != "" {
+		// provisions them. The "workflows" scope matters only when the caller's
+		// own token reaches the engine — oidc mode with workflow passthrough
+		// auth, where Authentik cross-grants the engine audience to eligible
+		// users (safe to request for everyone). In token mode the proxy injects
+		// its api_token, and in oauth (GitHub) mode these OIDC scope names would
+		// be meaningless, so both keep the client defaults.
+		if s.cfg.Auth.Mode == AuthModeOIDC &&
+			s.cfg.Workflow != nil && strings.TrimSpace(s.cfg.Workflow.URL) != "" &&
+			s.cfg.Workflow.ResolvedAuthMode() == WorkflowAuthModePassthrough {
 			resp.Scopes = append(append([]string(nil), authclient.DefaultScopes...), "workflows")
 		}
 	}

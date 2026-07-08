@@ -114,9 +114,3 @@ func TestCLIDiscoveryGuideHasWorkflowSection(t *testing.T) {
 	assert.NotContains(t, mcpGuide, "## Workflows")
 	assert.NotContains(t, mcpGuide, "panda workflow")
 }
-
-func TestCLIResourceRefWorkflow(t *testing.T) {
-	assert.Equal(t, "`panda workflow docs`", CLI.ResourceRef("workflow://guide"))
-	assert.Equal(t, "`panda workflow docs api`", CLI.ResourceRef("workflow://api"))
-	assert.Equal(t, "`workflow://guide`", MCP.ResourceRef("workflow://guide"))
-}

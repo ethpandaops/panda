@@ -79,11 +79,9 @@ type Service interface {
 }
 
 // WorkflowInfoProvider reports whether the proxy advertises a workflow engine
-// and the web URL for building human links to it. It is a capability interface
-// kept separate from Service so existing Service implementations (including
-// test mocks outside this package) are unaffected by the workflow addition; the
-// server resolves it with a type assertion. server, proxyClient, and
-// routerClient all implement it.
+// and the web URL for building human links to it. It is a capability interface,
+// deliberately separate from Service: the server resolves it with a type
+// assertion, and implementations that lack it simply have no workflow engine.
 type WorkflowInfoProvider interface {
 	// WorkflowInfo returns whether a workflow engine is advertised and, when it
 	// is, the web URL for human links (never a credential).

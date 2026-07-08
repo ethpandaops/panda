@@ -10,8 +10,6 @@ var cliResourceCommands = map[string]string{
 	"datasets://list":      "panda datasets",
 	"networks://active":    "panda networks",
 	"python://ethpandaops": "panda docs",
-	"workflow://guide":     "panda workflow docs",
-	"workflow://api":       "panda workflow docs api",
 }
 
 // cliDialect speaks the CLI dialect: panda commands and flags.

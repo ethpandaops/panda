@@ -199,8 +199,8 @@ type ProxyAuthConfig struct {
 	// this list is sent verbatim — so include those base scopes plus any extras.
 	// For example, requesting the workflow-engine audience makes Authentik
 	// cross-grant that audience to the panda-proxy token so the same credential
-	// works against the workflow engine in passthrough mode. Omit offline_access
-	// at your peril: without it no refresh token is issued.
+	// works against the workflow engine in passthrough mode. Omitting
+	// offline_access means no refresh token is issued.
 	Scopes []string `yaml:"scopes,omitempty"`
 
 	// RefreshTokenTTL is the expected lifetime of the refresh token issued by the

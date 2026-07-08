@@ -1,54 +1,74 @@
 package cli
 
 import (
+	"embed"
 	"fmt"
 
 	"github.com/spf13/cobra"
 )
 
-// workflowDocsTopics maps a `panda workflow docs [topic]` topic to its resource URI.
+// The workflow docs are embedded in the CLI and never registered as server
+// resources: the workflow engine has no MCP surface, so MCP clients neither
+// list nor read these docs.
+//
+//go:embed workflowdocs/*.md
+var workflowDocFiles embed.FS
+
+// workflowDocsTopics maps a `panda workflow docs [topic]` topic to its
+// embedded file.
 var workflowDocsTopics = map[string]string{
-	"":      "workflow://guide",
-	"guide": "workflow://guide",
-	"api":   "workflow://api",
+	"":      "workflowdocs/guide.md",
+	"guide": "workflowdocs/guide.md",
+	"api":   "workflowdocs/api.md",
 }
 
 var workflowDocsCmd = &cobra.Command{
 	Use:   "docs [topic]",
 	Short: "Show the workflow-engine lifecycle guide and API cheat-sheet",
-	Long: `Show the embedded workflow-engine documentation, served from a server resource
-(like 'panda docs'). No topic (or 'guide') shows the lifecycle guide; 'api'
-shows the endpoint cheat-sheet.
+	Long: `Show the embedded workflow-engine documentation. No topic (or 'guide')
+shows the lifecycle guide; 'api' shows the endpoint cheat-sheet.
 
 Examples:
   panda workflow docs
   panda workflow docs guide
   panda workflow docs api`,
 	Args: cobra.MaximumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		topic := ""
 		if len(args) == 1 {
 			topic = args[0]
 		}
 
-		uri, ok := workflowDocsTopics[topic]
+		path, ok := workflowDocsTopics[topic]
 		if !ok {
 			return fmt.Errorf("unknown docs topic %q; valid topics: guide, api", topic)
 		}
 
-		response, err := readResource(cmd.Context(), uri)
+		data, err := workflowDocFiles.ReadFile(path)
 		if err != nil {
-			return err
+			return fmt.Errorf("reading embedded doc %s: %w", path, err)
 		}
 
 		if isJSON() {
-			return printJSON(response)
+			return printJSON(map[string]string{
+				"topic":   topicOrGuide(topic),
+				"content": string(data),
+			})
 		}
 
-		fmt.Print(response.Content)
+		fmt.Print(string(data))
 
 		return nil
 	},
+}
+
+// topicOrGuide normalizes the empty default topic to its real name.
+func topicOrGuide(topic string) string {
+	if topic == "" {
+		return "guide"
+	}
+
+	return topic
 }
 
 func init() {

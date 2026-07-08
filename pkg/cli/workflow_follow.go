@@ -15,8 +15,8 @@ import (
 )
 
 // workflowRunFollowCmd is the background-friendly sibling of `run watch`. watch
-// streams a full state snapshot per event (right for a foreground tail, a
-// context bomb for a background task whose accumulated output gets read later);
+// streams a full state snapshot per event — right for a foreground tail, far
+// too verbose for a background task whose accumulated output gets read later;
 // follow inverts the contract: change-only progress lines on stderr, exactly
 // one final JSON summary on stdout, and the run-status exit code.
 var workflowRunFollowCmd = &cobra.Command{
@@ -169,7 +169,7 @@ func followWorkflowRun(ctx context.Context, wf, run string) error {
 			fruitless++
 		}
 
-		if fruitless > followReconnects {
+		if fruitless >= followReconnects {
 			return fmt.Errorf("stream failed after %d consecutive reconnects: %w", followReconnects, streamErr)
 		}
 

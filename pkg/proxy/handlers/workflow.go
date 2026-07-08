@@ -124,7 +124,7 @@ func (h *WorkflowHandler) rewrite(pr *httputil.ProxyRequest) {
 	switch h.authMode {
 	case WorkflowAuthModePassthrough:
 		// Re-attach the caller's own verified bearer unchanged; the engine
-		// validates it directly (compute-style).
+		// validates it directly.
 		if inbound := pr.In.Header.Get("Authorization"); inbound != "" {
 			allowed.Set("Authorization", inbound)
 		}
@@ -140,8 +140,8 @@ func (h *WorkflowHandler) rewrite(pr *httputil.ProxyRequest) {
 
 	pr.SetXForwarded()
 
-	// Belt and braces: SetXForwarded and the allow-list both run, but make the
-	// attribution drop explicit against future header additions.
+	// The allow-list already drops attribution; delete it explicitly so a
+	// future addition to ForwardedHeaders cannot leak it upstream.
 	pr.Out.Header.Del(attribution.Header)
 }
 

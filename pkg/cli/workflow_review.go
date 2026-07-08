@@ -9,10 +9,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// workflowDraftShowCmd renders the human-facing review of a draft — the "plan"
-// presented at the review checkpoint before publish/run approval. It is the
-// terraform-plan analogue for the workflow lifecycle: `draft show` renders what
-// would run, `draft run --approved` applies it.
+// workflowDraftShowCmd renders the human-facing review of a draft — the plan
+// presented at the review checkpoint before publish/run approval: `draft show`
+// renders what would run, `draft run --approved` applies it.
 var workflowDraftShowCmd = &cobra.Command{
 	Use:   "show <wb> <draft>",
 	Short: "Render a draft review for the user (DAG, inputs, outputs)",

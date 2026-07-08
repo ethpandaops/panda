@@ -560,7 +560,7 @@ func TestDispatchFoldedCommandsHitEngineEndpoints(t *testing.T) {
 }
 
 // Bare `panda workflow run <wf>` must print the two-line pointer to `run create`
-// and `draft run` (gh muscle memory), not cobra's unknown-command error.
+// and `draft run`, not cobra's unknown-command error.
 func TestBareWorkflowRunPrintsPointer(t *testing.T) {
 	cmd := testCommand()
 

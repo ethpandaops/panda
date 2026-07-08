@@ -149,9 +149,9 @@ func (wp *workflowPassthrough) serve(w http.ResponseWriter, r *http.Request, rou
 		return
 	}
 
-	// Preserve a base path on the proxy URL (a proxy mounted under a subpath),
-	// matching the string-concat join every other proxy call uses; the rewrite
-	// overwrites Path/RawPath wholesale, so the prefix must be baked in here.
+	// Preserve a base path on the proxy URL (a proxy mounted under a subpath).
+	// The rewrite overwrites Path/RawPath wholesale, so the prefix must be
+	// baked in here.
 	if basePath := baseURL.Path; basePath != "" && basePath != "/" {
 		outPath = basePath + outPath
 		rawPath = baseURL.EscapedPath() + rawPath

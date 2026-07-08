@@ -75,9 +75,9 @@ func NewAuthorizer(log logrus.FieldLogger, cfg ServerConfig) *Authorizer {
 		}}
 	}
 
-	// Workflow is gated at the type level (no per-name granularity), like
-	// ethnode. A rule is only installed when allowed_orgs is set; otherwise the
-	// engine is open to all authenticated users.
+	// Workflow is gated at the type level (no per-name granularity). A rule is
+	// only installed when allowed_orgs is set; otherwise the engine is open to
+	// all authenticated users.
 	if cfg.Workflow != nil && len(cfg.Workflow.AllowedOrgs) > 0 {
 		a.rules[ruleKey("workflow", "")] = []datasourceVariantRule{{
 			allowedOrgs: append([]string(nil), cfg.Workflow.AllowedOrgs...),
@@ -130,8 +130,8 @@ func (a *Authorizer) FilterDatasources(ctx context.Context, resp DatasourcesResp
 	filtered.BenchmarkoorInfo = a.filterDatasourceList(userOrgs, hasUser, "benchmarkoor", resp.BenchmarkoorInfo)
 	filtered.ComputeInfo = a.filterDatasourceList(userOrgs, hasUser, "compute", resp.ComputeInfo)
 
-	// The workflow advert is type-level, gated like ethnode: hide it entirely
-	// from callers who lack the required org membership.
+	// The workflow advert is type-level: hide it entirely from callers who
+	// lack the required org membership.
 	if resp.Workflow != nil && a.orgsMatch(userOrgs, hasUser, ruleKey("workflow", "")) {
 		filtered.Workflow = resp.Workflow
 	}

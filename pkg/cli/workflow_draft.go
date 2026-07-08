@@ -16,11 +16,10 @@ var (
 
 // requireDraftApproval is the tripwire in front of the publish/run side-effect
 // boundary: the caller must re-type the exact draft id as --approved, proving
-// the review checkpoint happened against THIS draft (clig.dev's
-// "--confirm=<name-of-thing>" pattern — hard to pass by accident, still
-// scriptable). A stale approval (older draft id after a new revision) fails the
-// match by construction. The flag is proof of review, not the approval itself —
-// that must come from the user.
+// the review checkpoint happened against THIS draft — hard to pass by
+// accident, still scriptable. A stale approval (older draft id after a new
+// revision) fails the match by construction. The flag is proof of review, not
+// the approval itself — that must come from the user.
 func requireDraftApproval(approved, draftID string) error {
 	switch {
 	case approved == "":

@@ -110,12 +110,10 @@ func init() {
 const workflowProbeTimeout = 2 * time.Second
 
 // registerWorkflowVisibility wraps the root help function so the workflow command
-// is revealed only when the proxy advertises the workflow engine to this caller.
-// Access is gated on the proxy by allowed_orgs (e.g. ethpandaops:Core), which
-// strips the advert from per-caller discovery for those who lack it; this mirrors
-// that gate in the CLI's help output. Execution is never blocked — a hidden
-// command still runs and fails with the proxy's 403/503 — so this controls
-// advertisement only.
+// is revealed only when the proxy advertises the workflow engine to this caller
+// (the proxy strips the advert from per-caller discovery when allowed_orgs
+// excludes them). Execution is never blocked — a hidden command still runs and
+// fails with the proxy's 403/503 — so this controls advertisement only.
 func registerWorkflowVisibility() {
 	defaultHelp := rootCmd.HelpFunc()
 

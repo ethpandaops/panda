@@ -928,6 +928,48 @@ func TestAuthMetadataEndpointAdvertisesWorkflowScope(t *testing.T) {
 	}
 }
 
+func TestAuthMetadataEndpointNoWorkflowScopeInTokenMode(t *testing.T) {
+	t.Parallel()
+
+	cfg := ServerConfig{
+		Auth: AuthConfig{
+			Mode: AuthModeOIDC,
+			Issuers: []OIDCIssuerConfig{
+				{IssuerURL: "https://authentik.example.com/application/o/panda-proxy/", ClientID: "panda-proxy"},
+			},
+		},
+		// In token mode the proxy injects its api_token; the caller's token never
+		// reaches the engine, so no extra scope is advertised.
+		Workflow: &WorkflowConfig{
+			URL:      "https://workflows.example.com",
+			AuthMode: WorkflowAuthModeToken,
+			APIToken: "secret",
+		},
+		ClickHouse: []ClickHouseClusterConfig{
+			{BaseDatasourceConfig: BaseDatasourceConfig{Name: "clickhouse-raw"}, Host: "example.com", Port: 8123, Username: "user", Password: "pass"},
+		},
+	}
+	cfg.ApplyDefaults()
+
+	srv, err := newServer(logrus.New(), cfg, "http://proxy.test", "18081")
+	if err != nil {
+		t.Fatalf("newServer failed: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/auth/metadata", nil)
+	srv.mux.ServeHTTP(rec, req)
+
+	var got AuthMetadataResponse
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	if len(got.Scopes) != 0 {
+		t.Fatalf("expected no advertised scopes for token-mode workflow, got %v", got.Scopes)
+	}
+}
+
 func TestAuthMetadataEndpointNoAuth(t *testing.T) {
 	t.Parallel()
 

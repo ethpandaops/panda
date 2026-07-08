@@ -95,8 +95,8 @@ Examples:
   panda workflow run follow <wf> <run>      # background-friendly: deltas on stderr, summary on stdout
   panda workflow run logs <wf> <run> -f --json
   panda workflow run cancel <wf> <run>`,
-	// Bare `panda workflow run <wf>` is gh muscle memory: point at the two real
-	// entry points instead of cobra's unknown-command error.
+	// Bare `panda workflow run <wf>` is a likely first guess: point at the two
+	// real entry points instead of cobra's unknown-command error.
 	RunE: func(cmd *cobra.Command, args []string) error {
 		wf := "<wf>"
 		if len(args) > 0 {
