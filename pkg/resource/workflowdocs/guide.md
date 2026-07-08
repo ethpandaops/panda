@@ -189,7 +189,9 @@ the run is still going and name the active task(s). **Background:** launch
 `run follow` as a background task, keep working with the user, and when the
 task exits read its stdout summary (the exit code already says
 completed-vs-not) and report; don't rely solely on the completion notification
-— check the task on your next natural turn if none arrived. **Wait quietly:**
+— check the task on your next natural turn if none arrived. When you hand the
+run to the background, tell the user they can steer any running task mid-flight
+(step 10) — redirect it without cancelling and without disturbing the follow. **Wait quietly:**
 check at terminal and report once — but still look at failures rather than
 assuming success. Do not disappear mid-run in any mode.
 
@@ -198,10 +200,24 @@ Redirect a task mid-flight without cancelling it:
 ```
 panda workflow steer send <wf> <run> <task> --message "<new direction>" --json
 ```
-`<task>` is the task's `specNodeKey` from `run tasks` (e.g. `tasks.analyze`) — read
-the real keys from `run tasks` first. The task interrupts, applies your direction,
-and still finishes with valid output. Steer to redirect; cancel (`run cancel`) only
-to stop a task entirely.
+When the user asks you to steer, **read the current run state first** — don't
+steer blind. Pull `run tasks <wf> <run> --json` and confirm the task you mean to
+target is actually in flight and `steerable`; a steer to a task that has already
+settled returns `409`, and the loop parent silently accepts nothing (see below).
+If more than one task is running, don't guess which one they mean: name the
+in-flight tasks back to the user and confirm the target — and the exact
+direction — before sending.
+
+`<task>` is the task's `specNodeKey` from `run tasks` (e.g. `tasks.analyze`) — use
+the real key you just read, never a guessed name. The task interrupts, applies your
+direction, and still finishes with valid output. Steer to redirect; cancel
+(`run cancel`) only to stop a task entirely.
+
+Pass the user's steer direction through as close to verbatim as you can — it goes
+straight to the running task. Don't paraphrase, expand, or "improve" it; only touch
+the wording when it genuinely needs it (resolve a "that"/"it" that the task can't
+see, or drop conversational filler), and keep their intent and specifics intact. If
+their direction is ambiguous, ask them rather than guessing a rewrite.
 
 For a **loop** task, steer the **inner iteration** node that `run tasks` shows
 (`tasks.<loop>.<child>[iter=NNNN]`), not the loop parent — the parent isn't
