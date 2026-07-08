@@ -17,7 +17,7 @@ the target workflows.
 ## Inputs
 Any of: `required_next_queries` from evidence review; a report's `next_action`;
 low-confidence source findings; a trace verdict + `missing_evidence`; partial/failed
-reproduction details; the fingerprint decision; and the available handles (devnet,
+reproduction details; the fingerprint decision; and the available handles (network,
 config artifact, snapshot id, sandbox id, enclave).
 
 ## Output
@@ -66,7 +66,7 @@ without reading prose.
 different network shape → `config`; timing/load dependent → `watch` with explicit load
 and epoch window; remaining gap is source reachability → `reachability-trace`.
 **Not reproduced:** unfaithful local args file → `config`; no broken-state snapshot →
-`snapshot`; hosted devnet still observable non-destructively → `investigate`; otherwise
+`snapshot`; public devnet still observable non-destructively → `investigate`; otherwise
 `terminal=true`, reason `non-reproducible-with-current-handles`.
 
 **Low-confidence source findings:** unresolved runtime image → `source-trace`;

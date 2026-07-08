@@ -1,6 +1,6 @@
 ---
 name: investigate
-description: Debug Ethereum devnet or network issues. Use when diagnosing finality delays, network splits, offline nodes, client bugs, or general network health problems. Works for both local Kurtosis devnets and remote hosted deployments.
+description: Debug Ethereum devnet or network issues. Use when diagnosing finality delays, network splits, offline nodes, client bugs, or general network health problems. Works for both local Kurtosis devnets and live public devnets.
 argument-hint: <network-name and/or issue description>
 user-invocable: false
 ---
@@ -24,9 +24,9 @@ kurtosis enclave ls 2>/dev/null
 panda datasources --json 2>/dev/null
 ```
 
-- Target matches a **Kurtosis enclave name** → `kind: local-enclave`.
+- Target matches a **Kurtosis enclave name** → `kind: local`.
 - Target is found in **panda datasources** (Dora networks, or container logs in
-  `external.otel_logs` on `clickhouse-raw`) → `kind: hosted`.
+  `external.otel_logs` on `clickhouse-raw`) → `kind: public`.
 - Found in **neither** → stop and tell the user the network was not found in any local
   enclave or remote datasource.
 
@@ -38,7 +38,7 @@ panda read runbooks://debug_ethereum_network
 
 Follow it with the resolved target and the user's symptom. It owns the symptom→branch
 table, the CL-vs-EL localization matrix, and the per-kind access table (local OTel via
-`local-kurtosis` vs hosted `external.otel_logs`, Kurtosis ports vs published
+`local-kurtosis` vs public-devnet `external.otel_logs`, Kurtosis ports vs published
 endpoints). Unsure which runbook applies at any point →
 `panda search runbooks "<symptom>"`.
 

@@ -21,9 +21,9 @@ Start from the network's own configuration, not a fixed mental model ("missed sl
 proposer failed"). Write a short, explicit active protocol model — active fork, nearest
 boundary, new actors, new artifacts, invariants that must hold — before classifying
 symptoms. Read slot timing (seconds/slot, slots/epoch) and fork epochs from the beacon
-`/eth/v1/config/spec`; hosted spec endpoints sometimes omit fork-epoch keys (e.g.
+`/eth/v1/config/spec`; public-devnet spec endpoints sometimes omit fork-epoch keys (e.g.
 `FULU_FORK_EPOCH`) — fall back to the network resource and CL config artifact
-(`runbooks://hosted_devnet_context`). Every network differs from mainnet defaults.
+(`runbooks://public_devnet_context`). Every network differs from mainnet defaults.
 
 ## Slot model by era
 

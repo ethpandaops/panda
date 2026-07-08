@@ -20,7 +20,7 @@ rendering — bug narrative arrives as plain text and is HTML-escaped without ex
 Required: `/workspace/bugs.json`, plus `NETWORK`, `WINDOW` (the pinned slot/epoch
 range), and `BASELINE` (the one-line health baseline from the scan).
 Preferred: the network's service URLs from the `networks://<network>` resource
-(authority: `runbooks://hosted_devnet_context`) — set `DORA_BASE` from the published
+(authority: `runbooks://public_devnet_context`) — set `DORA_BASE` from the published
 Dora URL; the `dora.<network>.ethpandaops.io` convention is only a fallback.
 
 ## Output

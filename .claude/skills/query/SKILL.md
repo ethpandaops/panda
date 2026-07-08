@@ -47,13 +47,13 @@ panda search runbooks "finality delay"
 
 ## Logs are in ClickHouse, not Loki
 
-Container logs from hosted devnets and platform services ship via OpenTelemetry into
-ClickHouse (`external.otel_logs`) — there is no hosted Loki datasource. For the schema
+Container logs from public devnets and platform services ship via OpenTelemetry into
+ClickHouse (`external.otel_logs`) — there is no Loki datasource for them. For the schema
 and the full procedure: `panda read runbooks://debug_ethereum_network`. (Local Kurtosis
 devnet logs are the separate autodiscovered `local-kurtosis` datasource.)
 
-Devnet xatu event data also lives on clickhouse-raw: each devnet has its own database
-named after the network — backtick-quote it, e.g.
+Public-devnet xatu event data also lives on clickhouse-raw: each public devnet has its
+own database named after the network — backtick-quote it, e.g.
 `` FROM `blob-devnet-0`.beacon_api_eth_v1_events_block ``.
 
 ## Notes

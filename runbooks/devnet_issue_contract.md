@@ -77,14 +77,14 @@ Field rules:
 - `first_bad` anchors the issue at the earliest artifact that explains later symptoms.
 - `affected` identifies components by role + client + image — a node name alone is
   evidence, not identity. When a dimension cannot be resolved without guessing
-  (hosted networks often expose no validator→node mapping), keep what is known and
+  (public devnets often expose no validator→node mapping), keep what is known and
   set the rest to `unknown`; the gap becomes a feedback task
   (`runbooks://devnet_issue_feedback_queue`), never an invented value.
 - `handles` carries whatever makes the issue reproducible: ids (snapshot, sandbox,
-  enclave, or hosted network) plus the `setup_summary` (fork/blob schedule, load,
+  enclave, or public network) plus the `setup_summary` (fork/blob schedule, load,
   builders) that reproduction and reachability judge against. An issue with no handle
   gets a `snapshot` feedback task (`runbooks://devnet_issue_feedback_queue`).
-  Fill only the id kind that exists — a hosted-only issue carries `network` with the
+  Fill only the id kind that exists — a public-network issue carries `network` with the
   other ids empty. Inside `setup_summary`, fork/blob schedule are required; `load`
   and `builders` may be empty when the grounded context does not establish them —
   empty means "not established", not "none configured".

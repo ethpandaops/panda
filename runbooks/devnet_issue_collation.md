@@ -45,6 +45,7 @@ collation:
       # example in runbooks://devnet_issue_contract
       fingerprint: { decision: new }   # identity via runbooks://devnet_issue_fingerprint_dedupe
       handles:                         # watch handles mapped in: final_snapshot_id -> snapshot_id,
+                                       # network_target flattened (sandbox_id/enclave copied, network_id -> network),
                                        # watch setup_summary copied WHOLE into handles.setup_summary
         { snapshot_id: "snap-9", sandbox_id: "sbx-4", enclave: "devnet-1", network: "",
           setup_summary: { fork_schedule: { gloas: 8 }, blob_schedule: {}, load: [], builders: ["buildoor"] } }
@@ -91,7 +92,7 @@ change. The load-bearing cases:
 
 ## Verification
 
-For a borderline issue and a still-live enclave, run ONE narrow query — re-check
+For a borderline issue and a still-reachable target, run ONE narrow query — re-check
 head/finality on a node or two, re-pull a bounded log window around `first_bad`, verify
 a service image, or inspect the named block/payload/tx. Keep it to that one query; if
 evidence still only narrows the class, say so and name the next query for the
