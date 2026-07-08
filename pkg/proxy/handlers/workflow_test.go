@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -317,19 +318,34 @@ func TestWorkflowHandler204NoBody(t *testing.T) {
 	assert.Empty(t, rec.Body.String())
 }
 
+// failingTransport always errors, standing in for an unreachable upstream. A
+// closed httptest server's port can be re-bound by a concurrent test's server,
+// turning the expected dial error into a live 404 — so the failure is injected
+// at the transport instead of relying on a freed port staying dead.
+type failingTransport struct{}
+
+func (failingTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, errors.New("dial tcp: connection refused")
+}
+
 func TestWorkflowHandlerUpstreamDownReturns502(t *testing.T) {
 	t.Parallel()
 
-	// Point at a closed server to force a dial error.
-	closed := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
-	closedURL := closed.URL
-	closed.Close()
+	h, err := NewWorkflowHandler(logrus.New(), WorkflowConfig{
+		URL:      "http://workflow-engine.invalid",
+		AuthMode: WorkflowAuthModeToken,
+		APIToken: "tok",
+	})
+	require.NoError(t, err)
 
-	handler := newWorkflowTestHandler(t, closedURL, WorkflowAuthModeToken, "tok")
+	h.proxy.Transport = failingTransport{}
+
+	r := chi.NewRouter()
+	r.Handle("/workflow/*", h)
 
 	req := httptest.NewRequest(http.MethodGet, "/workflow/whiteboards", nil)
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	r.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusBadGateway, rec.Code)
 	assert.Equal(t, "application/problem+json", rec.Header().Get("Content-Type"))

@@ -1,0 +1,135 @@
+package cli
+
+import (
+	"context"
+	"fmt"
+	"net/url"
+	"strings"
+
+	"github.com/spf13/cobra"
+)
+
+var (
+	workflowAPIData   string
+	workflowAPIFollow bool
+)
+
+var workflowAPICmd = &cobra.Command{
+	Use:   "api <METHOD> <path>",
+	Short: "Call an uncurated workflow-engine endpoint directly",
+	Long: `Call any workflow-engine endpoint through the passthrough. <path> is relative to
+/api/v1 (e.g. 'whiteboards' or 'whiteboards/{wb}/state'); a leading '/' or
+'/api/v1' is stripped. --data is the request body (inline JSON or @file.json),
+passed verbatim. -f streams the response as NDJSON under --json.
+
+Examples:
+  panda workflow api GET whiteboards
+  panda workflow api GET workflows/{wf}/runs/{run}
+  panda workflow api POST dispatch/simulate --data @sim.json
+  panda workflow api GET workflows/{wf}/runs/{run}/state/stream -f --json`,
+	Args: cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		method := strings.ToUpper(args[0])
+
+		segments, query, err := normalizeWorkflowAPIPath(args[1])
+		if err != nil {
+			return err
+		}
+
+		data, err := readInlineOrFile(workflowAPIData)
+		if err != nil {
+			return err
+		}
+
+		if workflowAPIFollow {
+			return followWorkflowAPI(commandContext(cmd), method, data, query, segments)
+		}
+
+		body, err := workflowSend(cmd.Context(), method, data, nil, query, segments...)
+		if err != nil {
+			return err
+		}
+
+		if isJSON() {
+			return printJSONBytes(body)
+		}
+
+		summarizeWorkflowObject(body)
+
+		return nil
+	},
+}
+
+func init() {
+	workflowAPICmd.Flags().StringVar(&workflowAPIData, "data", "",
+		"Request body as inline JSON or @file.json")
+	workflowAPICmd.Flags().BoolVarP(&workflowAPIFollow, "follow", "f", false,
+		"Stream the response (SSE) as NDJSON under --json")
+
+	workflowAPICmd.ValidArgsFunction = noCompletions
+}
+
+// normalizeWorkflowAPIPath splits a raw `api` path into percent-encodable segments
+// and an optional query. A leading '/' or a leading 'api/v1' SEGMENT is stripped
+// so there is no double '/api/v1' (the engine's base path); 'api/v1foo' is left
+// intact. Each segment is passed to workflowPath, which percent-encodes it. A
+// malformed query string is surfaced as an error rather than silently dropped.
+func normalizeWorkflowAPIPath(raw string) ([]string, url.Values, error) {
+	pathPart := raw
+	queryPart := ""
+
+	if idx := strings.IndexByte(raw, '?'); idx >= 0 {
+		pathPart = raw[:idx]
+		queryPart = raw[idx+1:]
+	}
+
+	pathPart = strings.TrimPrefix(pathPart, "/")
+
+	// Strip a leading api/v1 only on a full-segment boundary so 'api/v1foo' is
+	// not mangled into 'foo'.
+	switch {
+	case pathPart == "api/v1":
+		pathPart = ""
+	case strings.HasPrefix(pathPart, "api/v1/"):
+		pathPart = strings.TrimPrefix(pathPart, "api/v1/")
+	}
+
+	var segments []string
+
+	for _, seg := range strings.Split(pathPart, "/") {
+		if seg != "" {
+			segments = append(segments, seg)
+		}
+	}
+
+	var query url.Values
+
+	if queryPart != "" {
+		parsed, err := url.ParseQuery(queryPart)
+		if err != nil {
+			return nil, nil, fmt.Errorf("parsing query %q: %w", queryPart, err)
+		}
+
+		query = parsed
+	}
+
+	return segments, query, nil
+}
+
+// followWorkflowAPI streams a raw workflow endpoint, emitting each SSE data payload as
+// NDJSON (under --json) or a text line. Worker-log endpoints frame events as a
+// `page` batch, so a data payload with an items[] array is flattened to one
+// line per item; other payloads (e.g. state-stream snapshots) pass through
+// whole. It runs until EOF or Ctrl-C; there is no terminal-status contract for
+// the raw hatch.
+func followWorkflowAPI(ctx context.Context, method string, body []byte, query url.Values, segments []string) error {
+	resp, err := workflowStream(ctx, method, body, sseHeaders(), query, workflowPath(segments...))
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	streamErr := parseSSE(ctx, resp.Body, emitStreamItems)
+
+	return resolveStreamResult(ctx, streamErr, nil)
+}

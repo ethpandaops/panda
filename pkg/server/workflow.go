@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -180,13 +181,22 @@ func (wp *workflowPassthrough) serve(w http.ResponseWriter, r *http.Request, rou
 	rc := http.NewResponseController(w)
 	_ = rc.SetWriteDeadline(time.Time{})
 
+	// Snapshot the pre-relay response headers (set by middleware, if any) so a
+	// retry resets to this baseline instead of an empty map: stale upstream
+	// headers from a trapped attempt are dropped without stripping headers
+	// middleware set before the relay ran.
+	pristine := w.Header().Clone()
+
 	runOnce := func(trap bool, body io.ReadCloser) *workflowStatusRecorder {
-		// Clear any response headers a prior (trapped) attempt copied in, so a
-		// retried response never carries stale upstream headers.
+		// Reset response headers to the pre-relay baseline, dropping anything a
+		// prior (trapped) attempt copied in so a retried response never carries
+		// stale upstream headers.
 		h := w.Header()
 		for k := range h {
 			delete(h, k)
 		}
+
+		maps.Copy(h, pristine.Clone())
 
 		rec := &workflowStatusRecorder{ResponseWriter: w, status: http.StatusOK, trap: trap}
 

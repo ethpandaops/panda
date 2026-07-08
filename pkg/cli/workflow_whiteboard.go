@@ -260,3 +260,36 @@ func watchWorkflowState(
 
 	return resolveStreamResult(ctx, streamErr, termErr)
 }
+
+// completeWorkflowWhiteboardIDs completes the first positional arg with whiteboard
+// ids from 'whiteboard list'. Subsequent args are free text (nested ids the CLI
+// cannot cheaply enumerate).
+func completeWorkflowWhiteboardIDs(cmd *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
+	if len(args) > 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	body, err := workflowGet(commandContext(cmd), nil, "whiteboards")
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	var payload struct {
+		Items []struct {
+			ID string `json:"id"`
+		} `json:"items"`
+	}
+
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	ids := make([]string, 0, len(payload.Items))
+	for _, item := range payload.Items {
+		if item.ID != "" {
+			ids = append(ids, item.ID)
+		}
+	}
+
+	return ids, cobra.ShellCompDirectiveNoFileComp
+}

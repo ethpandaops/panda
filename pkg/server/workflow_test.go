@@ -525,6 +525,49 @@ func TestWorkflowRelayAuthRetryRelaysFinal401(t *testing.T) {
 	assert.Equal(t, 2, calls, "attempted twice then relayed")
 }
 
+func TestWorkflowRelayAuthRetryPreservesMiddlewareHeaders(t *testing.T) {
+	t.Parallel()
+
+	proxySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer good-tok" {
+			// Set a header only the rejected attempt carries: the retry must
+			// reset it rather than leak it into the final response.
+			w.Header().Set("X-Stale-Upstream", "yes")
+			w.WriteHeader(http.StatusUnauthorized)
+
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	}))
+	defer proxySrv.Close()
+
+	fp := &fakeProxy{url: proxySrv.URL, enabled: true, tokens: []string{"bad-tok", "good-tok"}}
+	s := &service{proxyService: fp, workflow: newWorkflowPassthrough(logrus.New(), nil)}
+
+	r := chi.NewRouter()
+	// A middleware-set response header is the pre-relay baseline: the retry's
+	// header reset must restore it, not strip it along with the stale ones.
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			w.Header().Set("X-Middleware", "kept")
+			next.ServeHTTP(w, req)
+		})
+	})
+	r.HandleFunc("/api/v1/workflow/*", s.handleAPIWorkflowProxy)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/workflow/whiteboards", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "kept", rec.Header().Get("X-Middleware"),
+		"middleware header survives the auth-retry header reset")
+	assert.Empty(t, rec.Header().Get("X-Stale-Upstream"),
+		"trapped attempt's upstream header does not leak into the retried response")
+}
+
 // flushWriter is an http.ResponseWriter that records flushes so we can assert
 // SSE frames are streamed, not buffered to the end.
 type flushWriter struct {
