@@ -40,22 +40,64 @@ Most mutations return an operation id. Poll `panda compute operations get <op_id
 terminal state, THEN resolve the concrete sandbox/snapshot id from the result or a
 list/get. Record op ids, terminal states, and created ids as you go.
 
+## Clock and boot flavor
+
+`templates list` reports a CLOCK per template: `frozen` or `realtime`.
+Snapshot/restore is only coherent on a **frozen-clock** template — its guest clock does
+not track wall-clock, so a devnet does not skip epochs across a stop/snapshot/restore
+gap and a restored VM resumes without drift. A `realtime` template keeps advancing
+against wall-clock: restore it after any real gap and the consensus layer is far
+behind, attestations flood, and finality may never recover. Use a frozen template
+(`ethereum-devnet`, `kurtosis-warm`) for any capture-and-restore run; reject a realtime
+one for this purpose.
+
+Always treat the sandbox clock as independent of wall-clock and check it before you
+rely on timing. A frozen template in particular boots at a stale baked-in time (it can
+be hours or a day behind wall-clock): run `date -u` inside the sandbox first, and if
+launch or epoch math depends on wall-clock, set it explicitly
+(`sandboxes exec <id> -- date -u -s "<UTC>"`) before `kurtosis run`. Genesis time and
+every epoch target time are in the SANDBOX clock frame, not the orchestrator's — carry
+them forward as such.
+
+Restore boots a sandbox from a snapshot with `sandboxes create --snapshot`. Keep the
+default `--boot-flavor warm`: it resumes the snapshot's memory so the network continues
+in its exact in-flight state — same genesis time, same peers. `--boot-flavor cold` does
+a fresh boot on the snapshot disk instead (OS and clients restart and resync) — a
+reboot, not a continuation; use it only when a cold start is what you want.
+
+## Teardown
+
+- **Stop/start** (`sandboxes stop <id>` … `sandboxes start <id>`) keeps the same
+  sandbox and its id for a later restart; **pause/resume** only parks the vCPUs.
+- **Delete** (`sandboxes delete <id>`) releases the sandbox entirely. Its snapshots
+  survive independently and stay restorable into new sandboxes, so when a run captures a
+  snapshot and then hands off through that snapshot, delete the source sandbox — the
+  snapshot is the durable artifact, not the sandbox. Deleting still requires an explicit
+  caller request (see Safety).
+
 ## Lifecycle
 
 - **Provision:** `panda compute sandboxes create --template <t> --ttl <ttl>` → poll →
   `sandboxes get <id>` for connection details → confirm Docker + Kurtosis present.
   When the caller separated provision from deployment, stop after provisioning.
-- **Launch:** copy the args file in, `kurtosis run --args-file <config> <package_ref>`;
-  record package ref, args path, enclave, genesis time, and blocks-produced. Discover
-  services via `runbooks://kurtosis_devnet`.
+- **Launch (sandbox-side):** drive everything inside the sandbox with
+  `sandboxes exec <id> -- …`. Copy the args file in, then `kurtosis run --args-file
+  <config> <package_ref>`. Image pulls can take several minutes and outlast a short exec
+  timeout, so launch detached (`nohup kurtosis run … &`) and poll the log to completion;
+  on a retry, first clear a stale enclave and its leftover docker network / logs-collector
+  container (`kurtosis enclave rm -f <name>`, then `docker network rm kt-<name>`) or the
+  rerun collides. Record package ref, args path, enclave, genesis time, and
+  blocks-produced. Discover services via `runbooks://kurtosis_devnet`.
 - **Epoch-aligned snapshots:** snapshot for epoch N at the START of epoch N. Compute
   `target_time = genesis_time + N * slots_per_epoch * seconds_per_slot` before launch,
   and use the SANDBOX clock (restored VMs may drift from wall-clock). Snapshot from the
   orchestrator side only: `panda compute sandboxes snapshot <id> --note "…"` → poll →
   resolve id. Preserve target-epoch order.
-- **Restore:** `panda compute snapshots restore <snapshot_id> --ttl <ttl>` → poll → a
-  NEW sandbox id (unrelated to the original). Then establish enclave, current
-  epoch/slot, slot timing, service inventory, and setup summary.
+- **Restore:** `panda compute sandboxes create --snapshot <snapshot_id> --ttl <ttl>`
+  (keep the default `--boot-flavor warm`) → poll → a NEW sandbox id (unrelated to the
+  original). Genesis time is preserved, so epoch target times still compute from it on
+  the sandbox clock. Then establish enclave, current epoch/slot, slot timing, service
+  inventory, and setup summary.
 - **Final snapshot (watch runs):** exactly one after the end epoch is reached; poll and
   resolve before any downstream judgment.
 
