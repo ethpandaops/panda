@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,6 +19,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/ethpandaops/panda/pkg/auth"
+	authclient "github.com/ethpandaops/panda/pkg/auth/client"
 	"github.com/ethpandaops/panda/pkg/proxy/handlers"
 )
 
@@ -878,6 +880,51 @@ func TestAuthMetadataEndpointReturnsConfig(t *testing.T) {
 
 	if got.ClientID != "panda-proxy" {
 		t.Fatalf("expected client_id=panda-proxy, got %q", got.ClientID)
+	}
+
+	if len(got.Scopes) != 0 {
+		t.Fatalf("expected no advertised scopes without a workflow engine, got %v", got.Scopes)
+	}
+}
+
+func TestAuthMetadataEndpointAdvertisesWorkflowScope(t *testing.T) {
+	t.Parallel()
+
+	cfg := ServerConfig{
+		Auth: AuthConfig{
+			Mode: AuthModeOIDC,
+			Issuers: []OIDCIssuerConfig{
+				{IssuerURL: "https://authentik.example.com/application/o/panda-proxy/", ClientID: "panda-proxy"},
+			},
+		},
+		Workflow: &WorkflowConfig{
+			URL:      "https://workflows.example.com",
+			AuthMode: WorkflowAuthModePassthrough,
+		},
+		ClickHouse: []ClickHouseClusterConfig{
+			{BaseDatasourceConfig: BaseDatasourceConfig{Name: "clickhouse-raw"}, Host: "example.com", Port: 8123, Username: "user", Password: "pass"},
+		},
+	}
+	cfg.ApplyDefaults()
+
+	srv, err := newServer(logrus.New(), cfg, "http://proxy.test", "18081")
+	if err != nil {
+		t.Fatalf("newServer failed: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/auth/metadata", nil)
+	srv.mux.ServeHTTP(rec, req)
+
+	var got AuthMetadataResponse
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	// The complete request set: client defaults plus the workflow feature scope.
+	want := append(append([]string(nil), authclient.DefaultScopes...), "workflows")
+	if !reflect.DeepEqual(got.Scopes, want) {
+		t.Fatalf("expected advertised scopes %v, got %v", want, got.Scopes)
 	}
 }
 

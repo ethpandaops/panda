@@ -16,6 +16,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/ethpandaops/panda/pkg/auth"
+	authclient "github.com/ethpandaops/panda/pkg/auth/client"
 	"github.com/ethpandaops/panda/pkg/proxy/handlers"
 	"github.com/ethpandaops/panda/pkg/types"
 )
@@ -812,6 +813,11 @@ type AuthMetadataResponse struct {
 	Mode      string `json:"mode"`
 	IssuerURL string `json:"issuer_url,omitempty"`
 	ClientID  string `json:"client_id,omitempty"`
+	// Scopes is the complete scope set clients should request at login to use
+	// this proxy fully. Empty means "use the client defaults". It carries the
+	// extra scopes required by advertised features (e.g. "workflows" when a
+	// workflow engine is configured) so `panda init` can provision them.
+	Scopes []string `json:"scopes,omitempty"`
 }
 
 // handleAuthMetadata returns the proxy's auth config so clients can discover
@@ -831,6 +837,15 @@ func (s *server) handleAuthMetadata(w http.ResponseWriter, _ *http.Request) {
 		if s.cfg.Auth.Mode == AuthModeOIDC && len(s.cfg.Auth.Issuers) > 0 {
 			resp.IssuerURL = s.cfg.Auth.Issuers[0].IssuerURL
 			resp.ClientID = s.cfg.Auth.Issuers[0].ClientID
+		}
+
+		// Advertise the extra scopes advertised features require so `panda init`
+		// provisions them. A configured workflow engine needs the "workflows"
+		// scope: Authentik cross-grants the engine audience only to eligible
+		// users, so requesting it is safe for everyone. Only emitted when the
+		// engine is present, so non-workflow proxies keep the client defaults.
+		if s.cfg.Workflow != nil && strings.TrimSpace(s.cfg.Workflow.URL) != "" {
+			resp.Scopes = append(append([]string(nil), authclient.DefaultScopes...), "workflows")
 		}
 	}
 

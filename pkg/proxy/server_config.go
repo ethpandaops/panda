@@ -157,7 +157,9 @@ type WorkflowConfig struct {
 	APIToken string `yaml:"api_token,omitempty"`
 	// WebURL is the frontend-link origin (may carry a path). Defaults to URL.
 	WebURL string `yaml:"web_url,omitempty"`
-	// AllowedOrgs restricts /workflow access to members of these GitHub orgs.
+	// AllowedOrgs restricts /workflow access to members of these orgs/groups:
+	// OIDC groups (e.g. "ethpandaops:Core") in oidc mode, or GitHub orgs in oauth
+	// mode. Empty leaves the engine open to all authenticated callers.
 	AllowedOrgs []string `yaml:"allowed_orgs,omitempty"`
 }
 

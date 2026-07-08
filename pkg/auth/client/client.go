@@ -165,10 +165,17 @@ type DeviceAuth struct {
 	Interval                int
 }
 
+// DefaultScopes are the OAuth scopes the client requests when none are
+// configured: OIDC identity, the groups claim the proxy authorizes on, and
+// offline_access for refresh tokens. It is the single source of truth so that
+// callers advertising or provisioning scopes (e.g. proxy /auth/metadata,
+// `panda init`) stay in sync with what the client actually requests.
+var DefaultScopes = []string{"openid", "email", "groups", "offline_access"}
+
 // New creates a new OAuth client.
 func New(log logrus.FieldLogger, cfg Config) Client {
 	if len(cfg.Scopes) == 0 {
-		cfg.Scopes = []string{"openid", "email", "groups", "offline_access"}
+		cfg.Scopes = append([]string(nil), DefaultScopes...)
 	}
 
 	return &client{

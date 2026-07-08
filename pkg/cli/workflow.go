@@ -14,6 +14,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -76,6 +77,14 @@ var workflowCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(workflowCmd)
+
+	// Hidden until a help-time probe confirms the proxy advertises the workflow
+	// engine to this caller; see registerWorkflowVisibility. Access is gated on
+	// the proxy by allowed_orgs (e.g. ethpandaops:Core), which filters the advert
+	// out of discovery for callers who lack it, so the command stays hidden for
+	// them.
+	workflowCmd.Hidden = true
+
 	workflowCmd.AddCommand(
 		// Base workflow-noun verbs live directly on `panda workflow`.
 		workflowListCmd,
@@ -92,6 +101,72 @@ func init() {
 		workflowDocsCmd,
 		workflowAPICmd,
 	)
+
+	registerWorkflowVisibility()
+}
+
+// workflowProbeTimeout bounds the help-time workflow-info probe that decides
+// whether the workflow command is advertised.
+const workflowProbeTimeout = 2 * time.Second
+
+// registerWorkflowVisibility wraps the root help function so the workflow command
+// is revealed only when the proxy advertises the workflow engine to this caller.
+// Access is gated on the proxy by allowed_orgs (e.g. ethpandaops:Core), which
+// strips the advert from per-caller discovery for those who lack it; this mirrors
+// that gate in the CLI's help output. Execution is never blocked — a hidden
+// command still runs and fails with the proxy's 403/503 — so this controls
+// advertisement only.
+func registerWorkflowVisibility() {
+	defaultHelp := rootCmd.HelpFunc()
+
+	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		if cmd == rootCmd || commandInWorkflowTree(cmd) {
+			workflowCmd.Hidden = !workflowAvailable(cmd.Context())
+		}
+
+		defaultHelp(cmd, args)
+	})
+}
+
+// commandInWorkflowTree reports whether cmd is the workflow command or one of its
+// descendants.
+func commandInWorkflowTree(cmd *cobra.Command) bool {
+	for c := cmd; c != nil; c = c.Parent() {
+		if c == workflowCmd {
+			return true
+		}
+	}
+
+	return false
+}
+
+// workflowAvailable reports whether the server advertises the workflow engine to
+// this caller, read from /api/v1/workflow-info (which the proxy answers from
+// per-caller filtered discovery, gated by allowed_orgs). It fails safe (returns
+// false) on any error so the command stays hidden when the server is unreachable
+// or the caller lacks access.
+func workflowAvailable(ctx context.Context) bool {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	probeCtx, cancel := context.WithTimeout(ctx, workflowProbeTimeout)
+	defer cancel()
+
+	data, status, _, err := serverDo(probeCtx, http.MethodGet, "/api/v1/workflow-info", nil, nil, nil)
+	if err != nil || status < 200 || status >= 300 {
+		return false
+	}
+
+	var payload struct {
+		Enabled bool `json:"enabled"`
+	}
+
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return false
+	}
+
+	return payload.Enabled
 }
 
 // workflowPath builds a `/api/v1/workflow/<segments>` passthrough path, percent-

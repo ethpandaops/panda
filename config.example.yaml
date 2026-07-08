@@ -50,6 +50,10 @@ proxies:
     #   # "workflows" scope: Authentik cross-grants the workflow-engine audience
     #   # into this token so the same credential is accepted upstream. When set,
     #   # the list is sent verbatim — keep the base scopes and add "workflows".
+    #   # `panda init` provisions this automatically: a proxy that advertises a
+    #   # workflow engine returns the scope set via /auth/metadata, so a freshly
+    #   # generated config already includes it. Set it by hand only when writing
+    #   # config manually or overriding what the proxy advertises.
     #   scopes: ["openid", "email", "groups", "offline_access", "workflows"]
     #
     # Non-interactive service accounts (e.g. bots) use the client_credentials

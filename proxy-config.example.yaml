@@ -213,8 +213,12 @@ loki:
 #   auth_mode: "passthrough"                    # token | passthrough
 #   # api_token: "${WORKFLOW_ENGINE_API_TOKEN}" # required for auth_mode: token; omit for passthrough
 #   web_url: ""                                 # optional, defaults to url
+#   # allowed_orgs gates the engine to members of these orgs/groups: OIDC groups
+#   # (e.g. "ethpandaops:Core") in oidc mode, or GitHub orgs in oauth mode. The
+#   # proxy filters the advert out of discovery for callers who lack it, so the
+#   # panda CLI hides `panda workflow` from them too. Empty leaves it open to all.
 #   allowed_orgs:
-#     - ethpandaops
+#     - ethpandaops:Core
 
 # Ethereum node API access (beacon and execution nodes)
 # Single credential pair for all bn-*.srv.*.ethpandaops.io and rpc-*.srv.*.ethpandaops.io endpoints
