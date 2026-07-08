@@ -17,6 +17,7 @@ import (
 
 	authclient "github.com/ethpandaops/panda/pkg/auth/client"
 	authstore "github.com/ethpandaops/panda/pkg/auth/store"
+	"github.com/ethpandaops/panda/pkg/proxy"
 	"github.com/ethpandaops/panda/pkg/serverapi"
 )
 
@@ -92,13 +93,13 @@ func seedTokens(t *testing.T, path string, tokens *authclient.Tokens) {
 func TestNewCredentialController(t *testing.T) {
 	t.Parallel()
 
-	require.Nil(t, newCredentialController(logrus.New(), nil), "nil metadata yields nil controller")
-	require.Nil(t, newCredentialController(logrus.New(), &serverapi.ProxyAuthMetadataResponse{}),
+	require.Nil(t, newCredentialController(logrus.New(), nil, ""), "nil metadata yields nil controller")
+	require.Nil(t, newCredentialController(logrus.New(), &serverapi.ProxyAuthMetadataResponse{}, ""),
 		"disabled auth yields nil controller (e.g. client_credentials)")
 
 	ctrl := newCredentialController(logrus.New(), &serverapi.ProxyAuthMetadataResponse{
 		Enabled: true, IssuerURL: "https://i", ClientID: "panda", Resource: "https://r",
-	})
+	}, "")
 	require.NotNil(t, ctrl)
 	require.Equal(t, "https://i", ctrl.target.issuerURL)
 	require.Equal(t, "panda", ctrl.target.clientID)
@@ -362,4 +363,158 @@ func callJSON(t *testing.T, h http.HandlerFunc, method string) *httptest.Respons
 	h(rec, req)
 
 	return rec
+}
+
+// TestBeginLoginScopeSelection verifies login requests the proxy-advertised
+// scopes (never the configured ones) and aborts before minting a token when
+// scope discovery fails, while leaving the credential-file keying
+// (issuer/client/resource) untouched.
+func TestBeginLoginScopeSelection(t *testing.T) {
+	t.Parallel()
+
+	t.Run("proxy scopes replace configured scopes", func(t *testing.T) {
+		t.Parallel()
+
+		var gotScopes []string
+
+		path := filepath.Join(t.TempDir(), "creds.json")
+		fake := &fakeAuthClient{
+			beginResp: &authclient.DeviceAuth{DeviceCode: "d", UserCode: "U", ExpiresIn: 600},
+			pollResp:  &authclient.Tokens{AccessToken: "at", ExpiresAt: time.Now().Add(time.Hour)},
+		}
+
+		ctrl := &credentialController{
+			log: logrus.New(),
+			target: credentialTarget{
+				issuerURL: "https://issuer.example", clientID: "panda", resource: "https://r",
+				enabled: true, scopes: []string{"stale-config-scope"},
+			},
+			discoverScopes: func(context.Context) ([]string, error) {
+				return []string{"openid", "workflows"}, nil
+			},
+			newClient: func(tg credentialTarget) authclient.Client {
+				gotScopes = tg.scopes
+
+				return fake
+			},
+			newStore: func(_ credentialTarget, c authclient.Client) authstore.Store {
+				return authstore.New(logrus.New(), authstore.Config{Path: path, AuthClient: c})
+			},
+		}
+
+		_, err := ctrl.BeginLogin(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, []string{"openid", "workflows"}, gotScopes, "configured scopes must not be used")
+
+		require.Eventually(t, func() bool {
+			return ctrl.LoginState().State == serverapi.AuthLoginAuthenticated
+		}, 2*time.Second, 10*time.Millisecond)
+	})
+
+	t.Run("discovery failure aborts login before minting a token", func(t *testing.T) {
+		t.Parallel()
+
+		clientBuilt := false
+		ctrl := &credentialController{
+			log: logrus.New(),
+			target: credentialTarget{
+				issuerURL: "https://issuer.example", clientID: "panda",
+				enabled: true, scopes: []string{"stale-config-scope"},
+			},
+			discoverScopes: func(context.Context) ([]string, error) {
+				return nil, errors.New("proxy unreachable")
+			},
+			newClient: func(credentialTarget) authclient.Client {
+				clientBuilt = true
+
+				return &fakeAuthClient{}
+			},
+			newStore: func(_ credentialTarget, c authclient.Client) authstore.Store {
+				return authstore.New(logrus.New(), authstore.Config{Path: filepath.Join(t.TempDir(), "c.json"), AuthClient: c})
+			},
+		}
+
+		_, err := ctrl.BeginLogin(context.Background())
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "proxy unreachable")
+		require.False(t, clientBuilt, "login must not mint a token when scopes are unknown")
+		require.Equal(t, serverapi.AuthLoginNone, ctrl.LoginState().State)
+	})
+}
+
+// TestFetchProxyLoginScopes verifies scope discovery reads /auth/metadata,
+// returns the advertised scopes (empty is a valid answer), and errors on any
+// unreachable or non-200 proxy so the caller can fail the login loudly.
+func TestFetchProxyLoginScopes(t *testing.T) {
+	t.Parallel()
+
+	t.Run("empty url errors", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := fetchProxyLoginScopes(context.Background(), "")
+		require.Error(t, err)
+	})
+
+	t.Run("unreachable proxy errors", func(t *testing.T) {
+		t.Parallel()
+
+		srv := httptest.NewServer(http.NotFoundHandler())
+		url := srv.URL
+		srv.Close()
+
+		_, err := fetchProxyLoginScopes(context.Background(), url)
+		require.Error(t, err)
+	})
+
+	tests := []struct {
+		name       string
+		handler    http.HandlerFunc
+		wantScopes []string
+		wantErr    bool
+	}{
+		{
+			name: "advertised scopes returned",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				require.Equal(t, "/auth/metadata", r.URL.Path)
+				_ = json.NewEncoder(w).Encode(proxy.AuthMetadataResponse{
+					Enabled: true,
+					Scopes:  []string{"openid", "email", "groups", "offline_access", "workflows"},
+				})
+			},
+			wantScopes: []string{"openid", "email", "groups", "offline_access", "workflows"},
+		},
+		{
+			name: "empty scopes are a valid result",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				_ = json.NewEncoder(w).Encode(proxy.AuthMetadataResponse{Enabled: true})
+			},
+			wantScopes: nil,
+		},
+		{
+			name: "non-200 errors",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			srv := httptest.NewServer(tt.handler)
+			defer srv.Close()
+
+			scopes, err := fetchProxyLoginScopes(context.Background(), srv.URL)
+			if tt.wantErr {
+				require.Error(t, err)
+
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, tt.wantScopes, scopes)
+		})
+	}
 }

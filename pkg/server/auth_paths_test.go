@@ -58,7 +58,7 @@ func TestCredentialPathMatchesProxyTokenSource(t *testing.T) {
 			}).Path()
 
 			// The credential file the server's controller operates on.
-			ctrl := newCredentialController(logrus.New(), buildProxyAuthMetadata(&config.Config{Proxy: tt.pc}))
+			ctrl := newCredentialController(logrus.New(), buildProxyAuthMetadata(&config.Config{Proxy: tt.pc}), tt.pc.URL)
 			require.NotNil(t, ctrl)
 			require.Equal(t, proxyPath, ctrl.Status().CredentialsPath)
 		})
