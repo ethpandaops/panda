@@ -8,6 +8,7 @@ triggers:
   - investigate this collated issue record end to end
   - why did validators fail to produce blocks on my kurtosis devnet
   - investigate missed blocks on a local enclave
+  - which snapshot should I restore to investigate an issue
 ---
 
 Orchestrates root-cause investigation for ONE issue in the shape of
@@ -39,10 +40,17 @@ in the summary and bind `confidence` to the deeper claim.
 2. **Fingerprint before expensive work.** A `duplicate` with a matched prior issue and
    no new variant dimension is a valid early exit: return the fingerprint block,
    occurrence evidence, and a `publish`/`manual-review` feedback task.
-3. **Reproduce or restore before blaming.** Prefer the watch snapshot; otherwise pick
-   the cheapest faithful target kind (`runbooks://debug_ethereum_network`) and label the
-   mode explicitly: `reproduced | partial | not-reproduced | local-live | public-live |
-   historical-only` (naming the historical evidence).
+3. **Reproduce or restore before blaming.** Prefer a snapshot restore
+   (`runbooks://panda_compute_kurtosis_lifecycle`); otherwise pick the cheapest faithful
+   target kind (`runbooks://debug_ethereum_network`) and label the mode explicitly:
+   `reproduced | partial | not-reproduced | local-live | public-live |
+   historical-only` (naming the historical evidence). Given several snapshots of the
+   same network, choose the restore point by what the investigation needs: the
+   broken-state (latest) snapshot to inspect the failure as it stands, or the latest
+   snapshot strictly BEFORE the issue's `first_bad` to re-run the window and watch the
+   failure develop under targeted observation. A pre-`first_bad` restore re-executes
+   rather than replays — peer, proposer, and builder timing re-randomize — so a failure
+   that does not recur is a determinism finding to record, not a dead end.
 4. **Hypotheses are bounded.** 3–5 concrete hypotheses, each with an angle, a test, a
    supporting observable, AND a rejecting observable.
 5. **Judge twice.** Adversarial plan review before compute-heavy work; adversarial
@@ -62,8 +70,8 @@ in the summary and bind `confidence` to the deeper claim.
 1. **Canonicalize** the input into the issue record shape and fill the fingerprint
    block. Preserve upstream snapshot handles and evidence verbatim; add fields without
    rewriting facts.
-2. **Choose the reproduction path** (first viable): restore the broken-state snapshot
-   (`runbooks://panda_compute_kurtosis_lifecycle`); reuse an existing enclave
+2. **Choose the reproduction path** (first viable): restore a snapshot, picking the
+   restore point per rule 3 (`runbooks://panda_compute_kurtosis_lifecycle`); reuse an existing enclave
    (`runbooks://kurtosis_devnet`); relaunch the provided config and drive it to the
    window; synthesize a faithful config (`runbooks://public_devnet_context` +
    `runbooks://kurtosis_devnet_config`); or investigate the public network live

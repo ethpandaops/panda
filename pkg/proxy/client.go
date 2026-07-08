@@ -65,6 +65,9 @@ type ClientConfig struct {
 	// Leave empty for standard OIDC providers that do not use RFC 8707 resource parameters.
 	Resource string
 
+	// Scopes are the OAuth scopes to request; empty means the auth client's defaults.
+	Scopes []string
+
 	// RefreshTokenTTL is the expected lifetime of the refresh token.
 	// When set, the credential store will refresh at 50% of this duration
 	// to keep the refresh token alive via provider rotation.
@@ -136,8 +139,9 @@ var ErrAuthenticationRequired = errors.New("proxy authentication required")
 
 // Compile-time interface checks.
 var (
-	_ Client  = (*proxyClient)(nil)
-	_ Service = (*proxyClient)(nil)
+	_ Client               = (*proxyClient)(nil)
+	_ Service              = (*proxyClient)(nil)
+	_ WorkflowInfoProvider = (*proxyClient)(nil)
 )
 
 // NewClient creates a new proxy client.
@@ -170,6 +174,7 @@ func NewClient(log logrus.FieldLogger, cfg ClientConfig) Client {
 		IssuerURL:       issuerURL,
 		ClientID:        cfg.ClientID,
 		Resource:        cfg.Resource,
+		Scopes:          cfg.Scopes,
 		Username:        cfg.Username,
 		Password:        cfg.Password,
 		Mode:            cfg.AuthMode,
@@ -499,6 +504,19 @@ func (c *proxyClient) EmbeddingModel() string {
 	defer c.mu.RUnlock()
 
 	return c.datasources.EmbeddingModel
+}
+
+// WorkflowInfo reports whether the proxy advertises a workflow engine and its
+// web URL, read from the cached datasource discovery.
+func (c *proxyClient) WorkflowInfo() (enabled bool, webURL string) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if c.datasources.Workflow == nil {
+		return false, ""
+	}
+
+	return c.datasources.Workflow.Enabled, c.datasources.Workflow.WebURL
 }
 
 // Discover fetches datasource information from the proxy's /datasources endpoint.

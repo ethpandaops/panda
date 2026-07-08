@@ -78,6 +78,16 @@ type Service interface {
 	EmbeddingModel() string
 }
 
+// WorkflowInfoProvider reports whether the proxy advertises a workflow engine
+// and the web URL for building human links to it. It is a capability interface,
+// deliberately separate from Service: the server resolves it with a type
+// assertion, and implementations that lack it simply have no workflow engine.
+type WorkflowInfoProvider interface {
+	// WorkflowInfo returns whether a workflow engine is advertised and, when it
+	// is, the web URL for human links (never a credential).
+	WorkflowInfo() (enabled bool, webURL string)
+}
+
 // ethNodeDatasourceInfo returns the ethnode datasource identity when available,
 // or nil. Ethnode is a single type-level datasource, not a discoverable list.
 func ethNodeDatasourceInfo(available bool) []types.DatasourceInfo {

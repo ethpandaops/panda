@@ -103,3 +103,14 @@ func TestDiscoveryGuide(t *testing.T) {
 	assert.Contains(t, cliGuide, "panda search consensus-specs")
 	assert.Contains(t, cliGuide, "panda search runbooks")
 }
+
+func TestCLIDiscoveryGuideHasWorkflowSection(t *testing.T) {
+	cliGuide := CLI.DiscoveryGuide(Discovery{})
+	assert.Contains(t, cliGuide, "## Workflows")
+	assert.Contains(t, cliGuide, "panda workflow docs")
+
+	// The workflow section is CLI-only; the MCP dialect must not carry it.
+	mcpGuide := MCP.DiscoveryGuide(Discovery{})
+	assert.NotContains(t, mcpGuide, "## Workflows")
+	assert.NotContains(t, mcpGuide, "panda workflow")
+}

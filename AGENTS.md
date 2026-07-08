@@ -171,6 +171,8 @@ CLI commands and groups include:
 - `upgrade`
 - `upload`
 - `version`
+- `workflow` — client for the external workflow engine, relayed server → proxy; the
+  proxy holds the credential (not a module, no MCP tool or resources)
 
 The proxy is a separate binary, built with `make build-proxy`.
 
@@ -250,6 +252,7 @@ pkg/
   embedding/       # Remote embedding client for semantic search
   config/          # Configuration loading and validation
   observability/   # Prometheus metrics
+  workflowrelay/   # Workflow-passthrough contract shared by the server and proxy hops
   types/           # Shared data types
 datasets/          # Dataset knowledge packs (content-only module)
 modules/

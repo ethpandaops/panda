@@ -66,7 +66,7 @@ hits as query-shape guidance and translate them to the network's raw tables at t
 actual placement. One translation trap: **participation** — a raw attestation-event
 aggregate measures observation coverage, not attestation correctness, so it is NOT the
 66.7% finality-participation figure the severity rubric compares against. Read epoch
-participation from Dora (`panda dora epoch <network> <epoch>` → `globalParticipationRate`)
+participation from Dora (`panda dora epoch <network> <epoch>` → `data.globalparticipationrate`)
 when the refined/CBT participation tables are absent, rather than passing off a raw
 observed-share proxy as participation.
 

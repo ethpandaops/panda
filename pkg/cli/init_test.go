@@ -80,6 +80,51 @@ func TestBuildConfigTemplate(t *testing.T) {
 	}
 }
 
+func TestBuildConfigTemplateScopes(t *testing.T) {
+	t.Parallel()
+
+	t.Run("advertised scopes are pinned verbatim", func(t *testing.T) {
+		t.Parallel()
+
+		authCfg := initAuthConfig{
+			IssuerURL: "https://authentik.example.com/application/o/panda-proxy/",
+			ClientID:  "panda-proxy",
+			Scopes:    []string{"openid", "email", "groups", "offline_access", "workflows"},
+		}
+		result := buildConfigTemplate(defaultProxyURL, defaultSandboxImage, authCfg)
+
+		var parsed map[string]any
+		require.NoError(t, yaml.Unmarshal([]byte(result), &parsed), "generated config must be valid YAML")
+
+		auth := parsed["proxy"].(map[string]any)["auth"].(map[string]any)
+		scopes, ok := auth["scopes"].([]any)
+		require.True(t, ok, "auth block must carry the advertised scopes")
+
+		got := make([]string, len(scopes))
+		for i, s := range scopes {
+			got[i] = s.(string)
+		}
+		assert.Equal(t, authCfg.Scopes, got)
+	})
+
+	t.Run("no scopes key when the proxy advertises none", func(t *testing.T) {
+		t.Parallel()
+
+		authCfg := initAuthConfig{
+			IssuerURL: "https://dex.example.com",
+			ClientID:  "panda-proxy",
+		}
+		result := buildConfigTemplate(defaultProxyURL, defaultSandboxImage, authCfg)
+
+		var parsed map[string]any
+		require.NoError(t, yaml.Unmarshal([]byte(result), &parsed), "generated config must be valid YAML")
+
+		auth := parsed["proxy"].(map[string]any)["auth"].(map[string]any)
+		_, hasScopes := auth["scopes"]
+		assert.False(t, hasScopes, "omitting scopes lets the client defaults apply")
+	})
+}
+
 func TestBuildComposeTemplate(t *testing.T) {
 	t.Parallel()
 

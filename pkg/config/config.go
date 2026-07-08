@@ -194,6 +194,15 @@ type ProxyAuthConfig struct {
 	// Leave empty for standard OIDC providers that do not use RFC 8707 resource parameters.
 	Resource string `yaml:"resource,omitempty"`
 
+	// Scopes are the OAuth scopes requested at login. When empty, the auth client
+	// requests its defaults (openid, email, groups, offline_access). When set,
+	// this list is sent verbatim — so include those base scopes plus any extras.
+	// For example, requesting the workflow-engine audience makes Authentik
+	// cross-grant that audience to the panda-proxy token so the same credential
+	// works against the workflow engine in passthrough mode. Omitting
+	// offline_access means no refresh token is issued.
+	Scopes []string `yaml:"scopes,omitempty"`
+
 	// RefreshTokenTTL is the expected lifetime of the refresh token issued by the
 	// OIDC provider. When set, the client will proactively refresh at 50% of this
 	// duration to keep the refresh token alive via provider rotation.

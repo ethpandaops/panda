@@ -136,5 +136,28 @@ Before writing a query from scratch, search for prior art:
 - ` + "`panda search \"<topic>\"`" + ` — search everything at once
 
 Runbooks codify how to debug specific scenarios end-to-end (which datasources to query, which fields to filter on, common pitfalls). For anything non-trivial, start with a runbook search instead of probing raw tables.
-`
+` + cliWorkflowSection
 }
+
+// cliWorkflowSection is the CLI-dialect getting-started section for the workflow
+// engine. It is a different axis from the Ethereum-data funnel, so it renders as
+// its own section and stays out of the MCP dialect entirely.
+const cliWorkflowSection = `
+## Workflows
+
+` + "`panda workflow`" + ` is a client for the workflow engine — design (whiteboard →
+draft), publish, run, monitor, and steer multi-step agent workflows.
+
+- **Use it when** the task is to create, inspect, run, steer, or read the outputs
+  of a workflow.
+- **Do not use it** to query Ethereum data — that is the datasets → search →
+  execute workflow above.
+- It exposes raw CRUD + streaming primitives, not orchestration: the design →
+  publish → run sequence is yours to drive.
+- **The workflow engine owns drafting.** It has templates and knows
+  devnets/networks and inputs. Describe what you want to the session in plain
+  language and let the engine draft it — do not hand-author specs, and pass
+  iteration feedback verbatim.
+
+Read ` + "`panda workflow docs`" + ` for the lifecycle and examples, then ` + "`panda workflow --help`" + `.
+`

@@ -28,6 +28,16 @@ type rawServerResponse struct {
 	ContentType string
 }
 
+// applyEnvAttribution stamps the caller-attribution (on-behalf-of) header from
+// the environment onto an outbound server request, when set. Every server
+// request — buffered (serverDo) and streaming (workflowStream) alike — must go
+// through this so the proxy's audit log attributes all of them.
+func applyEnvAttribution(h http.Header) {
+	if v := strings.TrimSpace(os.Getenv(attribution.EnvVar)); v != "" {
+		h.Set(attribution.Header, v)
+	}
+}
+
 func serverBaseURL() (string, error) {
 	cfg, err := config.LoadClient(cfgFile)
 	if err != nil {
@@ -63,9 +73,7 @@ func serverDo(
 		req.Header.Set(key, value)
 	}
 
-	if v := strings.TrimSpace(os.Getenv(attribution.EnvVar)); v != "" {
-		req.Header.Set(attribution.Header, v)
-	}
+	applyEnvAttribution(req.Header)
 
 	resp, err := serverHTTP.Do(req)
 	if err != nil {
@@ -216,20 +224,26 @@ func (e *apiError) Error() string {
 }
 
 func decodeAPIError(status int, data []byte) error {
-	var message string
+	return &apiError{Status: status, Message: apiErrorMessage(data)}
+}
 
+// apiErrorMessage extracts a human-readable message from an error response body.
+// It tries the common JSON error fields in order — panda's `error`, then RFC
+// 7807 problem+json `detail` and `title` — before falling back to the raw body.
+// The raw-body fallback covers non-JSON responses (e.g. an unknown route's
+// `text/plain` "404 page not found"), so decoding never panics or loses the
+// message.
+func apiErrorMessage(data []byte) string {
 	var payload map[string]any
 	if err := json.Unmarshal(data, &payload); err == nil {
-		if msg, ok := payload["error"].(string); ok && msg != "" {
-			message = msg
+		for _, key := range []string{"error", "detail", "title"} {
+			if msg, ok := payload[key].(string); ok && msg != "" {
+				return msg
+			}
 		}
 	}
 
-	if message == "" {
-		message = strings.TrimSpace(string(data))
-	}
-
-	return &apiError{Status: status, Message: message}
+	return strings.TrimSpace(string(data))
 }
 
 func serverErrorHint(status int, message string) string {

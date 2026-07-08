@@ -196,6 +196,30 @@ loki:
 #     allowed_orgs:
 #       - ethpandaops:Core
 
+# Workflow engine passthrough (optional). Relays /workflow/* to the workflow
+# engine API; SSE streams end-to-end. Two auth modes:
+#
+#   token       - the proxy injects the api_token below; the caller's bearer
+#                 never reaches upstream. api_token is required.
+#   passthrough - the proxy re-attaches the caller's own verified bearer
+#                 unchanged; the engine validates it directly. api_token must
+#                 be empty, and this proxy's auth.mode must be oauth or oidc.
+#                 Callers must request the "workflows" scope at login so
+#                 Authentik cross-grants the engine audience into their token.
+#
+# The api_token lives HERE, never on the panda server.
+# workflow:
+#   url: "${WORKFLOW_ENGINE_URL}"               # bare scheme+host[:port], no path
+#   auth_mode: "passthrough"                    # token | passthrough
+#   # api_token: "${WORKFLOW_ENGINE_API_TOKEN}" # required for auth_mode: token; omit for passthrough
+#   web_url: ""                                 # optional, defaults to url
+#   # allowed_orgs gates the engine to members of these orgs/groups: OIDC groups
+#   # (e.g. "ethpandaops:Core") in oidc mode, or GitHub orgs in oauth mode. The
+#   # proxy filters the advert out of discovery for callers who lack it, so the
+#   # panda CLI hides `panda workflow` from them too. Empty leaves it open to all.
+#   allowed_orgs:
+#     - ethpandaops:Core
+
 # Ethereum node API access (beacon and execution nodes)
 # Single credential pair for all bn-*.srv.*.ethpandaops.io and rpc-*.srv.*.ethpandaops.io endpoints
 # ethnode:

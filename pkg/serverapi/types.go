@@ -19,11 +19,21 @@ type DatasourcesResponse struct {
 }
 
 type ProxyAuthMetadataResponse struct {
-	Enabled   bool   `json:"enabled"`
-	Mode      string `json:"mode,omitempty"`
-	IssuerURL string `json:"issuer_url,omitempty"`
-	ClientID  string `json:"client_id,omitempty"`
-	Resource  string `json:"resource,omitempty"`
+	Enabled   bool     `json:"enabled"`
+	Mode      string   `json:"mode,omitempty"`
+	IssuerURL string   `json:"issuer_url,omitempty"`
+	ClientID  string   `json:"client_id,omitempty"`
+	Resource  string   `json:"resource,omitempty"`
+	Scopes    []string `json:"scopes,omitempty"`
+}
+
+// WorkflowInfoResponse describes the workflow engine to CLI clients: whether a
+// proxy advertises it, and the web origin for human-facing frontend links
+// (users authenticate there themselves; no credential is exposed). It is
+// answered from proxy discovery, so an absent engine encodes as `{}`.
+type WorkflowInfoResponse struct {
+	Enabled    bool   `json:"enabled,omitempty"`
+	WebBaseURL string `json:"web_base_url,omitempty"`
 }
 
 // AuthStatusResponse reports the server's credential state. It deliberately

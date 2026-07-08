@@ -65,6 +65,38 @@ unless deliberately stressing a stacked boundary — fork/BPO boundary semantics
 give at least one participant full custody (`supernode: true`) — PeerDAS validation
 fails in tiny topologies without one; include Buildoor when observing the builder path.
 
+## Minimal args-file
+
+The load-bearing shape is small — one or two participant pairs, network params, and the
+tooling you actually need. Confirm exact keys against the package's `network_params.yaml`
+and a shipped example; do NOT reconstruct the schema by reading the package's Starlark
+source.
+
+```yaml   # shape to ADAPT — swap images, epochs, and counts for the deployed devnet
+participants:
+  - el_type: geth
+    el_image: ethpandaops/geth:<devnet-tag>
+    cl_type: lighthouse
+    cl_image: ethpandaops/lighthouse:<devnet-tag>
+    use_separate_vc: true
+    vc_type: lighthouse
+    validator_count: 64
+    supernode: true          # ≥1 full-custody node keeps a tiny PeerDAS topology viable
+  - el_type: nethermind
+    el_image: ethpandaops/nethermind:<devnet-tag>
+    cl_type: teku
+    cl_image: ethpandaops/teku:<devnet-tag>
+    validator_count: 64
+network_params:
+  preset: mainnet            # `minimal` only as a recorded acceleration deviation
+  seconds_per_slot: 12
+  genesis_delay: 60          # short, so the network reaches genesis promptly
+  # fork activation epochs + blob (BPO) schedule copied from the deployed config, e.g.:
+  # fulu_fork_epoch: 0
+additional_services:
+  - dora                     # add per-participant buildoor when ePBS is in scope
+```
+
 ## Output shape
 
 ```yaml

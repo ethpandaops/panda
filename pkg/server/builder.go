@@ -253,6 +253,7 @@ func buildProxyAuthMetadata(cfg *config.Config) *serverapi.ProxyAuthMetadataResp
 		IssuerURL: issuerURL,
 		ClientID:  cfg.Proxy.Auth.ClientID,
 		Resource:  cfg.Proxy.ResolvedAuthResource(),
+		Scopes:    cfg.Proxy.Auth.Scopes,
 	}
 }
 
