@@ -171,10 +171,18 @@ func workflowErrorHint(status int, message string) string {
 		return "the workflow engine returned a server error upstream — retry; " +
 			"if it persists contact the operator"
 	case http.StatusUnauthorized:
-		// A proxy problem+json 401 (the proxy rejected the caller's credential)
-		// mentions the proxy; an engine 401 body is relayed verbatim and does not.
-		if strings.Contains(lower, "proxy") {
-			return "the proxy rejected your credential — run 'panda auth login' and retry"
+		// The proxy's own bearer rejections carry the exact plain-text phrases
+		// from its writeBearerError (pkg/proxy/oidc_auth.go); an engine 401 body
+		// is relayed verbatim and uses its own wording.
+		for _, phrase := range []string{
+			"missing or invalid authorization header",
+			"missing bearer token",
+			"invalid token",
+			"token subject is missing",
+		} {
+			if strings.Contains(lower, phrase) {
+				return "the proxy rejected your credential — run 'panda auth login' and retry"
+			}
 		}
 
 		return "the workflow engine rejected the credential — if your proxy uses " +

@@ -148,6 +148,14 @@ func (wp *workflowPassthrough) serve(w http.ResponseWriter, r *http.Request, rou
 		return
 	}
 
+	// Preserve a base path on the proxy URL (a proxy mounted under a subpath),
+	// matching the string-concat join every other proxy call uses; the rewrite
+	// overwrites Path/RawPath wholesale, so the prefix must be baked in here.
+	if basePath := baseURL.Path; basePath != "" && basePath != "/" {
+		outPath = basePath + outPath
+		rawPath = baseURL.EscapedPath() + rawPath
+	}
+
 	// Buffer the request body so an auth retry can replay it. Beyond the cap the
 	// body streams once and the retry is skipped.
 	buffered, replayable, firstBody, err := bufferWorkflowBody(r.Body)

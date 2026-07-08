@@ -56,7 +56,10 @@ func (s *service) mountAPIRoutes(r chi.Router) {
 		}
 
 		// Workflow-engine passthrough: a streaming relay to the proxy route that
-		// advertises the engine (the proxy holds the credential).
+		// advertises the engine (the proxy holds the credential). The bare route
+		// (no wildcard match in chi) relays to the engine API root, so a probe
+		// like `panda workflow api GET /` is not a misleading 404.
+		r.HandleFunc("/workflow", s.handleAPIWorkflowProxy)
 		r.HandleFunc("/workflow/*", s.handleAPIWorkflowProxy)
 
 		// Workflow integration metadata (served by panda-server, NOT proxied):

@@ -141,11 +141,20 @@ func TestWorkflowErrorHintByStatus(t *testing.T) {
 	err504 := workflowError(504, []byte("504 Gateway Time-out"))
 	assert.Contains(t, err504.Error(), "server error upstream")
 
-	// 401 picks proxy vs upstream wording by body origin: a proxy problem+json
-	// body mentions the proxy; an engine body relayed verbatim does not.
-	err401proxy := workflowError(401, []byte(`{"detail":"the proxy rejected the bearer token"}`))
-	assert.Contains(t, err401proxy.Error(), "proxy rejected your credential")
-	assert.Contains(t, err401proxy.Error(), "panda auth login")
+	// 401 picks proxy vs upstream wording by body origin: the proxy's bearer
+	// rejections use the exact writeBearerError phrases; an engine body relayed
+	// verbatim uses its own wording.
+	for _, body := range []string{
+		"missing or invalid Authorization header",
+		"missing bearer token",
+		"invalid token",
+		"invalid token claims",
+		"token subject is missing",
+	} {
+		err401proxy := workflowError(401, []byte(body))
+		assert.Contains(t, err401proxy.Error(), "proxy rejected your credential", body)
+		assert.Contains(t, err401proxy.Error(), "panda auth login", body)
+	}
 
 	err401upstream := workflowError(401, []byte(`{"error":"invalid api key"}`))
 	assert.Contains(t, err401upstream.Error(), "workflow engine rejected the credential")

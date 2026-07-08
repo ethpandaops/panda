@@ -112,6 +112,7 @@ func newWorkflowHandler(proxyURL string, tokens []string) http.Handler {
 
 	r := chi.NewRouter()
 	r.Use(attributionMiddleware)
+	r.HandleFunc("/api/v1/workflow", s.handleAPIWorkflowProxy)
 	r.HandleFunc("/api/v1/workflow/*", s.handleAPIWorkflowProxy)
 
 	return r
@@ -171,6 +172,55 @@ func TestWorkflowRelayTargetsRouteAndInjectsBearer(t *testing.T) {
 	// Cookie stripped; attribution forwarded for proxy audit.
 	assert.Empty(t, captured.header.Get("Cookie"))
 	assert.Equal(t, "someone", captured.header.Get("X-Panda-On-Behalf-Of"))
+}
+
+func TestWorkflowRelayPreservesProxyBasePath(t *testing.T) {
+	t.Parallel()
+
+	var captured capturedRequest
+
+	proxySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		captured = capturedRequest{path: r.URL.Path, rawURI: r.URL.RequestURI()}
+
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	defer proxySrv.Close()
+
+	// A proxy mounted under a subpath: the relay must join /workflow onto the
+	// base path (like every other proxy call), not overwrite it away.
+	handler := newWorkflowHandler(proxySrv.URL+"/sub/mount/", []string{"tok"})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/workflow/whiteboards?limit=5", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "/sub/mount/workflow/whiteboards", captured.path)
+	assert.Equal(t, "/sub/mount/workflow/whiteboards?limit=5", captured.rawURI)
+}
+
+func TestWorkflowRelayBareRouteRelaysEngineRoot(t *testing.T) {
+	t.Parallel()
+
+	var captured capturedRequest
+
+	proxySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		captured = capturedRequest{path: r.URL.Path}
+
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	defer proxySrv.Close()
+
+	handler := newWorkflowHandler(proxySrv.URL, []string{"tok"})
+
+	// `panda workflow api GET /` produces the bare /api/v1/workflow path; it
+	// must relay to the engine root, not 404.
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/workflow", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "/workflow/", captured.path)
 }
 
 func TestWorkflowRelayNoAuthTokenSendsNoAuthorization(t *testing.T) {

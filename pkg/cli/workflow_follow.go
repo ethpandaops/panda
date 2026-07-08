@@ -42,9 +42,12 @@ Foreground alternatives: 'run watch' (full snapshot stream), 'run logs -f'
 	},
 }
 
-// followReconnects bounds automatic stream reconnect attempts. Each reconnect
-// refetches the state snapshot first, so a run that finished while the stream
-// was down terminates immediately instead of burning an attempt waiting.
+// followReconnects bounds CONSECUTIVE fruitless stream reconnect attempts: a
+// stream that delivered at least one event resets the budget, so a long run
+// behind an idle-timeouting load balancer is not bounded to 10 drops over its
+// lifetime. Each reconnect refetches the state snapshot first, so a run that
+// finished while the stream was down terminates immediately instead of burning
+// an attempt waiting.
 const followReconnects = 10
 
 // followReconnectGap is the pause between stream reconnect attempts.
@@ -131,8 +134,9 @@ func followWorkflowRun(ctx context.Context, wf, run string) error {
 	webBase := workflowWebBaseBestEffort(ctx)
 
 	prev := followView{}
+	fruitless := 0
 
-	for attempt := 0; ; attempt++ {
+	for {
 		snap, err := workflowGet(ctx, nil, statePath...)
 		if err != nil {
 			return err
@@ -146,7 +150,7 @@ func followWorkflowRun(ctx context.Context, wf, run string) error {
 			return emitFollowSummary(os.Stdout, snap, wf, run, webBase)
 		}
 
-		termErr, streamErr := followStreamOnce(ctx, statePath, streamPath, &prev, wf, run, webBase)
+		termErr, streamErr, delivered := followStreamOnce(ctx, statePath, streamPath, &prev, wf, run, webBase)
 		if streamErr == nil || errors.Is(streamErr, errStreamComplete) {
 			return resolveStreamResult(ctx, streamErr, termErr)
 		}
@@ -157,8 +161,16 @@ func followWorkflowRun(ctx context.Context, wf, run string) error {
 			return nil
 		}
 
-		if attempt >= followReconnects {
-			return fmt.Errorf("stream failed after %d reconnects: %w", followReconnects, streamErr)
+		// The budget bounds consecutive fruitless attempts, not lifetime drops:
+		// a stream that made progress before dropping resets it.
+		if delivered {
+			fruitless = 0
+		} else {
+			fruitless++
+		}
+
+		if fruitless > followReconnects {
+			return fmt.Errorf("stream failed after %d consecutive reconnects: %w", followReconnects, streamErr)
 		}
 
 		fmt.Fprintf(os.Stderr, "stream dropped (%v) — reconnecting\n", streamErr)
@@ -173,21 +185,25 @@ func followWorkflowRun(ctx context.Context, wf, run string) error {
 
 // followStreamOnce opens the state stream and refetches + diffs the snapshot
 // per event until the run is terminal (summary emitted, errStreamComplete) or
-// the stream drops (streamErr for the caller's reconnect loop).
+// the stream drops (streamErr for the caller's reconnect loop). delivered
+// reports whether the stream yielded at least one event before dropping, so
+// the caller can reset its consecutive-reconnect budget.
 func followStreamOnce(
 	ctx context.Context,
 	statePath []string,
 	streamPath string,
 	prev *followView,
 	wf, run, webBase string,
-) (termErr, streamErr error) {
+) (termErr, streamErr error, delivered bool) {
 	resp, err := workflowStream(ctx, "GET", nil, sseHeaders(), url.Values{}, streamPath)
 	if err != nil {
-		return nil, err
+		return nil, err, false
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	streamErr = parseSSE(ctx, resp.Body, func(_ sseEvent) error {
+		delivered = true
+
 		snap, refetchErr := workflowGet(ctx, nil, statePath...)
 		if refetchErr != nil {
 			return refetchErr
@@ -212,7 +228,7 @@ func followStreamOnce(
 		streamErr = errors.New("stream closed before terminal status")
 	}
 
-	return termErr, streamErr
+	return termErr, streamErr, delivered
 }
 
 // parseFollowView digests a /state snapshot into the diffable view.

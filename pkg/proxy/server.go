@@ -212,10 +212,9 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 
 	if cfg.Workflow != nil {
 		workflowHandler, err := handlers.NewWorkflowHandler(log, handlers.WorkflowConfig{
-			URL:         cfg.Workflow.URL,
-			AuthMode:    cfg.Workflow.ResolvedAuthMode(),
-			APIToken:    cfg.Workflow.APIToken,
-			AllowedOrgs: append([]string(nil), cfg.Workflow.AllowedOrgs...),
+			URL:      cfg.Workflow.URL,
+			AuthMode: cfg.Workflow.ResolvedAuthMode(),
+			APIToken: cfg.Workflow.APIToken,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("creating workflow handler: %w", err)

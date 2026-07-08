@@ -36,9 +36,6 @@ type WorkflowConfig struct {
 	AuthMode string
 	// APIToken is the bearer injected in "token" mode.
 	APIToken string
-	// AllowedOrgs restricts access; enforced by the authorizer, kept here for
-	// completeness.
-	AllowedOrgs []string
 }
 
 // workflowReqData carries the per-request path values the reverse-proxy Rewrite
