@@ -316,6 +316,25 @@ proxy:
 	assert.Empty(t, cfg.Sandbox.Image)
 }
 
+func TestLoadAllowsNoneBackendWithImageSet(t *testing.T) {
+	t.Parallel()
+
+	path := writeConfig(t, `
+server:
+  base_url: "http://localhost:2480"
+sandbox:
+  backend: none
+  image: "ethpandaops-panda-sandbox:latest"
+proxy:
+  url: "http://hosted.example:18081"
+`)
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, "none", cfg.Sandbox.Backend)
+	assert.Equal(t, "ethpandaops-panda-sandbox:latest", cfg.Sandbox.Image)
+}
+
 func TestLoadRequiresImageForDockerBackend(t *testing.T) {
 	t.Parallel()
 

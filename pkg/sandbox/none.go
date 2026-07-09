@@ -13,7 +13,7 @@ import (
 // without a container runtime, so execute_python and sandbox sessions are
 // unavailable.
 var ErrSandboxDisabled = errors.New(
-	`sandbox.backend is "none": this panda-server runs without a Python sandbox, so execute_python is unavailable`,
+	`sandbox.backend is "none": this panda-server runs without a Python sandbox, so execute_python and sandbox sessions are unavailable`,
 )
 
 // NoneBackend is a no-op sandbox backend for deployments that run panda-server
@@ -33,12 +33,12 @@ func NewNoneBackend(log logrus.FieldLogger) *NoneBackend {
 
 // Name returns the backend name.
 func (b *NoneBackend) Name() string {
-	return "none"
+	return string(BackendNone)
 }
 
 // Start is a no-op; there is no container runtime to connect to.
 func (b *NoneBackend) Start(context.Context) error {
-	b.log.Info(`Sandbox disabled (backend "none"); execute_python is unavailable`)
+	b.log.Info(`Sandbox disabled (backend "none"); execute_python and sandbox sessions are unavailable`)
 
 	return nil
 }

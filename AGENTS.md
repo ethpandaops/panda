@@ -84,7 +84,7 @@ uv run python -m scripts.repl
 - **CLI** (`pkg/cli/`, `cmd/panda/`): HTTP client for the server API with human-friendly output
 - **Credential proxy** (`pkg/proxy/`, `cmd/proxy/`): Trust boundary that holds datasource credentials and executes raw upstream requests on behalf of the server
 - **Storage** (`pkg/storage/`): Local file storage for sandbox outputs, backed by afero filesystem
-- **Sandbox** (`pkg/sandbox/`): Data plane that executes Python in isolated containers (Docker for dev, gVisor for production)
+- **Sandbox** (`pkg/sandbox/`): Data plane that executes Python in isolated containers (Docker for dev, gVisor for production, `none` to disable execution)
 - **Modules** (`modules/`): Per-integration packages that provide config, examples, docs, resources, and server-side operation behavior
 
 ### Data Flow
