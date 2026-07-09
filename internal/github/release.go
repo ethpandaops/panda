@@ -130,16 +130,9 @@ func (r *Release) FindCurrentPlatformAsset() (*Asset, error) {
 	return r.FindAsset(runtime.GOOS, runtime.GOARCH, RepoName)
 }
 
-// AssetsReady reports whether the release carries every asset the upgrade
-// flow needs for the current platform: the CLI binary archive and the
-// checksums file used to verify it.
-//
-// goreleaser publishes the GitHub release — making it visible in the API
-// listing and the /releases/latest response — before it finishes uploading
-// assets, so a just-published release can briefly appear with missing or
-// partial assets. Selecting one would fail at download time (or silently
-// skip checksum verification), so the resolver treats it as not yet
-// installable until its assets exist.
+// AssetsReady reports whether the current-platform CLI archive and
+// checksums.txt are both present. goreleaser publishes the release before
+// uploading assets, so a just-published release may briefly lack them.
 func (r *Release) AssetsReady() bool {
 	if _, err := r.FindCurrentPlatformAsset(); err != nil {
 		return false
