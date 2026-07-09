@@ -1,9 +1,9 @@
 """Thin compute wrappers over server operations.
 
 Compute is a control-plane for ephemeral compute sandboxes (Firecracker
-microVMs). You create a sandbox from a template or snapshot, it runs, and you
-can snapshot it, stop/start/lease (extend its TTL) it, fan out copies with
-fork, and poll asynchronous operations.
+microVMs). You create a sandbox from an image — a named template or a raw
+snapshot — it runs, and you can snapshot it, stop/start/lease (extend its TTL)
+it, fan out copies with fork, and poll asynchronous operations.
 
 Mutations (create/delete/stop/start/snapshot/fork) are asynchronous: they
 return an operation object whose ``id`` you poll with :func:`get_operation`
@@ -261,12 +261,49 @@ def prepare_sandbox_ssh(
     return _runtime.invoke_json("compute.prepare_sandbox_ssh", args)
 
 
-def get_sandbox_snapshots(sandbox_id: str, datasource: str | None = None) -> Any:
-    """List snapshots taken from a sandbox."""
+def get_sandbox_images(sandbox_id: str, datasource: str | None = None) -> Any:
+    """List raw images captured from a sandbox."""
     _require_compute_available()
     return _runtime.invoke_json(
-        "compute.get_sandbox_snapshots", _args(datasource, id=sandbox_id)
+        "compute.get_sandbox_images", _args(datasource, id=sandbox_id)
     )
+
+
+def expose_port(
+    sandbox_id: str,
+    port: int,
+    name: str | None = None,
+    protocol: str | None = None,
+    service: str | None = None,
+    managed: bool | None = None,
+    idempotency_key: str | None = None,
+    datasource: str | None = None,
+) -> Any:
+    """Expose a sandbox port through the ingress gateway."""
+    _require_compute_available()
+    args = _args(
+        datasource,
+        id=sandbox_id,
+        port=port,
+        name=name,
+        protocol=protocol,
+        service=service,
+        managed=managed,
+        idempotency_key=idempotency_key,
+    )
+    return _runtime.invoke_json("compute.expose_port", args)
+
+
+def unexpose_port(
+    sandbox_id: str,
+    port: int,
+    idempotency_key: str | None = None,
+    datasource: str | None = None,
+) -> Any:
+    """Remove an exposed sandbox port."""
+    _require_compute_available()
+    args = _args(datasource, id=sandbox_id, port=port, idempotency_key=idempotency_key)
+    return _runtime.invoke_json("compute.unexpose_port", args)
 
 
 def get_sandbox_operations(sandbox_id: str, datasource: str | None = None) -> Any:
@@ -387,7 +424,7 @@ def fork_sandbox(
     """Capture a sandbox as an ephemeral snapshot and fan out ``count`` copies.
 
     The source sandbox keeps running. Parameters match
-    :func:`fork_snapshot`; children default to the source's TTL duration
+    :func:`fork_image`; children default to the source's TTL duration
     restarted at their own boot. Returns ``fork_id`` and ``op_id``; poll with
     :func:`get_fork` or :func:`get_operation`.
     """
@@ -406,43 +443,85 @@ def fork_sandbox(
     return _runtime.invoke_json("compute.fork_sandbox", args)
 
 
-# --- Snapshots ---------------------------------------------------------------
+# --- Images ------------------------------------------------------------------
 
 
-def list_snapshots(
+def list_images(
     datasource: str | None = None,
     limit: int = 100,
     offset: int = 0,
     cursor: str | None = None,
 ) -> Any:
-    """List snapshots (paginated)."""
+    """List images (paginated): named images first, then raw snapshots.
+
+    Each image has a ``kind`` (``"named"`` or ``"raw"``) and a ``flavor``
+    (``"warm"`` or ``"cold"``). Raw images are addressed by snapshot id,
+    named images by ``name@version``.
+    """
     _require_compute_available()
     return _runtime.invoke_json(
-        "compute.list_snapshots", _page_args(datasource, limit, offset, cursor)
+        "compute.list_images", _page_args(datasource, limit, offset, cursor)
     )
 
 
-def get_snapshot(snapshot_id: str, datasource: str | None = None) -> Any:
-    """Get one snapshot by id."""
+def get_image(image_id: str, datasource: str | None = None) -> Any:
+    """Get one image by snapshot id (raw) or ``name@version`` (named)."""
     _require_compute_available()
-    return _runtime.invoke_json(
-        "compute.get_snapshot", _args(datasource, id=snapshot_id)
-    )
+    return _runtime.invoke_json("compute.get_image", _args(datasource, id=image_id))
 
 
-def delete_snapshot(
-    snapshot_id: str,
+def delete_image(
+    image_id: str,
     idempotency_key: str | None = None,
     datasource: str | None = None,
 ) -> Any:
-    """Delete a snapshot. Returns an operation to poll."""
+    """Delete a raw image. Returns an operation to poll.
+
+    Named images are deactivated instead; use :func:`deactivate_image`.
+    """
     _require_compute_available()
-    args = _args(datasource, id=snapshot_id, idempotency_key=idempotency_key)
-    return _runtime.invoke_json("compute.delete_snapshot", args)
+    args = _args(datasource, id=image_id, idempotency_key=idempotency_key)
+    return _runtime.invoke_json("compute.delete_image", args)
 
 
-def fork_snapshot(
-    snapshot_id: str,
+def promote_image(
+    image_id: str,
+    name: str,
+    version: str | None = None,
+    replace: bool | None = None,
+    description: str | None = None,
+    tags: list[str] | None = None,
+    idempotency_key: str | None = None,
+    datasource: str | None = None,
+) -> Any:
+    """Promote a raw image into a named warm image."""
+    _require_compute_available()
+    args = _args(
+        datasource,
+        id=image_id,
+        name=name,
+        version=version,
+        replace=replace,
+        description=description,
+        tags=tags,
+        idempotency_key=idempotency_key,
+    )
+    return _runtime.invoke_json("compute.promote_image", args)
+
+
+def deactivate_image(
+    image_id: str,
+    idempotency_key: str | None = None,
+    datasource: str | None = None,
+) -> Any:
+    """Retire a named image. Accepts ``name`` or ``name@version``."""
+    _require_compute_available()
+    args = _args(datasource, id=image_id, idempotency_key=idempotency_key)
+    return _runtime.invoke_json("compute.deactivate_image", args)
+
+
+def fork_image(
+    image_id: str,
     count: int,
     ttl: str | None = None,
     min_ready: int | None = None,
@@ -452,22 +531,22 @@ def fork_snapshot(
     idempotency_key: str | None = None,
     datasource: str | None = None,
 ) -> Any:
-    """Fan out ``count`` sandboxes from a published snapshot.
+    """Fan out ``count`` sandboxes from an image.
 
-    To reconstitute a single sandbox from a snapshot, use
-    :func:`create_sandbox` with ``snapshot_id`` instead. ``ttl`` is a
-    Go-duration string applied to every child (omit for the server default).
-    ``min_ready`` is the floor of ready children below which the fork reports
-    failure; ``deadline`` bounds how long queued children may wait for
-    capacity. ``flavor`` is ``"warm"`` (default) or ``"cold"``; ``paused``
-    controls whether children land paused instead of running. Returns
-    ``fork_id`` and ``op_id``; poll with :func:`get_fork` or
-    :func:`get_operation`.
+    Raw images fork directly; named warm images fork their backing snapshot.
+    To reconstitute a single sandbox, use :func:`create_sandbox` with
+    ``snapshot_id`` instead. ``ttl`` is a Go-duration string applied to every
+    child (omit for the server default). ``min_ready`` is the floor of ready
+    children below which the fork reports failure; ``deadline`` bounds how
+    long queued children may wait for capacity. ``flavor`` is ``"warm"``
+    (default) or ``"cold"``; ``paused`` controls whether children land paused
+    instead of running. Returns ``fork_id`` and ``op_id``; poll with
+    :func:`get_fork` or :func:`get_operation`.
     """
     _require_compute_available()
     args = _args(
         datasource,
-        id=snapshot_id,
+        id=image_id,
         count=count,
         ttl=ttl,
         min_ready=min_ready,
@@ -476,22 +555,22 @@ def fork_snapshot(
         paused=paused,
         idempotency_key=idempotency_key,
     )
-    return _runtime.invoke_json("compute.fork_snapshot", args)
+    return _runtime.invoke_json("compute.fork_image", args)
 
 
-def get_snapshot_lineage(snapshot_id: str, datasource: str | None = None) -> Any:
-    """Show the full lineage tree rooted at a snapshot."""
+def get_image_lineage(image_id: str, datasource: str | None = None) -> Any:
+    """Show the full lineage tree rooted at an image."""
     _require_compute_available()
     return _runtime.invoke_json(
-        "compute.get_snapshot_lineage", _args(datasource, id=snapshot_id)
+        "compute.get_image_lineage", _args(datasource, id=image_id)
     )
 
 
-def get_snapshot_restored_by(snapshot_id: str, datasource: str | None = None) -> Any:
-    """List sandboxes restored from a snapshot."""
+def get_image_restored_by(image_id: str, datasource: str | None = None) -> Any:
+    """List sandboxes created from an image."""
     _require_compute_available()
     return _runtime.invoke_json(
-        "compute.get_snapshot_restored_by", _args(datasource, id=snapshot_id)
+        "compute.get_image_restored_by", _args(datasource, id=image_id)
     )
 
 
@@ -510,28 +589,31 @@ def get_fork(fork_id: str, datasource: str | None = None) -> Any:
     return _runtime.invoke_json("compute.get_fork", _args(datasource, id=fork_id))
 
 
-# --- Templates ---------------------------------------------------------------
+# --- Bakes -------------------------------------------------------------------
 
 
-def list_templates(
+def list_bakes(
     datasource: str | None = None,
     limit: int = 100,
     offset: int = 0,
     cursor: str | None = None,
 ) -> Any:
-    """List sandbox templates (paginated)."""
+    """List scheduled image bakes and their status (paginated)."""
     _require_compute_available()
     return _runtime.invoke_json(
-        "compute.list_templates", _page_args(datasource, limit, offset, cursor)
+        "compute.list_bakes", _page_args(datasource, limit, offset, cursor)
     )
 
 
-def get_template(name: str, version: str, datasource: str | None = None) -> Any:
-    """Get one template by name and version."""
+def run_bake(
+    name: str,
+    idempotency_key: str | None = None,
+    datasource: str | None = None,
+) -> Any:
+    """Trigger a bake outside its schedule. Returns an operation to poll."""
     _require_compute_available()
-    return _runtime.invoke_json(
-        "compute.get_template", _args(datasource, name=name, version=version)
-    )
+    args = _args(datasource, name=name, idempotency_key=idempotency_key)
+    return _runtime.invoke_json("compute.run_bake", args)
 
 
 # --- Operations --------------------------------------------------------------

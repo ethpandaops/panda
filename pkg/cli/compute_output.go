@@ -21,17 +21,17 @@ type computeColumn struct {
 // computeColumnsByOperation curates table columns for the well-known list-shaped
 // operations. Operations without an entry fall back to inferred columns.
 var computeColumnsByOperation = map[string][]computeColumn{
-	"compute.list_sandboxes":           sandboxColumns,
-	"compute.get_snapshot_restored_by": sandboxColumns,
-	"compute.list_snapshots":           snapshotColumns,
-	"compute.get_sandbox_snapshots":    snapshotColumns,
-	"compute.list_templates":           templateColumns,
-	"compute.list_operations":          operationColumns,
-	"compute.get_sandbox_operations":   operationColumns,
-	"compute.list_ssh_keys":            sshKeyColumns,
-	"compute.list_nodes":               nodeColumns,
-	"compute.list_users":               userColumns,
-	"compute.list_forks":               forkColumns,
+	"compute.list_sandboxes":         sandboxColumns,
+	"compute.get_image_restored_by":  sandboxColumns,
+	"compute.list_images":            imageColumns,
+	"compute.get_sandbox_images":     imageColumns,
+	"compute.list_bakes":             bakeColumns,
+	"compute.list_operations":        operationColumns,
+	"compute.get_sandbox_operations": operationColumns,
+	"compute.list_ssh_keys":          sshKeyColumns,
+	"compute.list_nodes":             nodeColumns,
+	"compute.list_users":             userColumns,
+	"compute.list_forks":             forkColumns,
 }
 
 var sandboxColumns = []computeColumn{
@@ -44,22 +44,26 @@ var sandboxColumns = []computeColumn{
 	{header: "EXPIRES", path: "expiresAt", format: formatComputeTime},
 }
 
-var snapshotColumns = []computeColumn{
+// imageColumns spans both image kinds: named images fill NAME/VERSION, raw
+// images fill the snapshot-derived STATE/SANDBOX/CREATED columns.
+var imageColumns = []computeColumn{
 	{header: "ID", path: "id"},
-	{header: "STATE", path: "state"},
-	{header: "SANDBOX", path: "sandboxId"},
-	{header: "TEMPLATE", path: "template"},
-	{header: "VER", path: "ver"},
+	{header: "KIND", path: "kind"},
+	{header: "FLAVOR", path: "flavor"},
+	{header: "CLOCK", path: "template.clockPolicy"},
+	{header: "STATE", path: "snapshot.state"},
+	{header: "SANDBOX", path: "snapshot.sandboxId"},
 	{header: "CREATED", path: "createdAt", format: formatComputeTime},
-	{header: "EXPIRES", path: "expiresAt", format: formatComputeTime},
 }
 
-var templateColumns = []computeColumn{
+var bakeColumns = []computeColumn{
 	{header: "NAME", path: "name"},
-	{header: "VERSION", path: "ver"},
-	{header: "SIZING", path: "sizing"},
-	{header: "CLOCK", path: "clockPolicy"},
-	{header: "PINNED", path: "pinned"},
+	{header: "ENABLED", path: "enabled"},
+	{header: "RUNNING", path: "running"},
+	{header: "INTERVAL", path: "interval"},
+	{header: "ACTIVE", path: "active_version"},
+	{header: "LAST-RESULT", path: "last_result"},
+	{header: "NEXT-DUE", path: "next_due_at", format: formatComputeTime},
 }
 
 var forkColumns = []computeColumn{

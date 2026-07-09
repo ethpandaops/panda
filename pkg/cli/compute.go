@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -52,6 +53,8 @@ var (
 	computeForkDeadline string
 	computeForkFlavor   string
 	computeForkPaused   bool
+	computePortProtocol string
+	computePortService  string
 )
 
 var computeCmd = &cobra.Command{
@@ -74,7 +77,7 @@ configured.
 
 Examples:
   panda compute datasources
-  panda compute templates list
+  panda compute images list
   panda compute sandboxes create --template ubuntu/24.04 --ttl 1h
   panda compute sandboxes list
   panda compute sandboxes get <id>
@@ -82,7 +85,7 @@ Examples:
   panda compute sandboxes lease <id> --extend 30m
   panda compute sandboxes create --snapshot <snapshot_id> --ttl 2h
   panda compute sandboxes fork <id> --count 5 --ttl 1h
-  panda compute snapshots fork <snapshot_id> --count 5 --ttl 1h
+  panda compute images fork <image_id> --count 5 --ttl 1h
   panda compute forks get <fork_id>
   panda compute operations get <id>
   panda compute sandboxes delete <id>`,
@@ -103,7 +106,7 @@ func init() {
 
 	// List flags shared by the per-resource `list` commands.
 	for _, cmd := range []*cobra.Command{
-		computeSandboxesListCmd, computeSnapshotsListCmd, computeTemplatesListCmd,
+		computeSandboxesListCmd, computeImagesListCmd, computeBakesListCmd,
 		computeOperationsListCmd, computeKeysListCmd,
 	} {
 		cmd.Flags().IntVar(&computeLimit, "limit", 0, "Maximum items to return")
@@ -133,7 +136,7 @@ func init() {
 	computeSandboxesCreateCmd.Flags().BoolVar(&computePaused, "paused", false,
 		"Leave the sandbox paused after a warm snapshot boot instead of running")
 
-	for _, cmd := range []*cobra.Command{computeSandboxesForkCmd, computeSnapshotsForkCmd} {
+	for _, cmd := range []*cobra.Command{computeSandboxesForkCmd, computeImagesForkCmd} {
 		cmd.Flags().IntVar(&computeForkCount, "count", 0, "Number of sandboxes to create (required)")
 		_ = cmd.MarkFlagRequired("count")
 		cmd.Flags().StringVar(&computeTTL, "ttl", "",
@@ -159,12 +162,16 @@ func init() {
 	computeSandboxesLeaseCmd.Flags().StringVar(&computeExtend, "extend", "",
 		"Lease extension (Go duration, e.g. 30m) (required)")
 	_ = computeSandboxesLeaseCmd.MarkFlagRequired("extend")
-	computeSnapshotsPromoteCmd.Flags().StringVar(&computeName, "name", "", "Warm template name (required)")
-	computeSnapshotsPromoteCmd.Flags().StringVar(&computeVersion, "version", "", "Warm template version")
-	computeSnapshotsPromoteCmd.Flags().StringVar(&computeDescription, "description", "", "Warm template description")
-	computeSnapshotsPromoteCmd.Flags().BoolVar(&computeReplace, "replace", false, "Replace an existing template version")
-	computeSnapshotsPromoteCmd.Flags().StringArrayVar(&computeTags, "tags", nil, "Warm template tag; repeatable")
-	_ = computeSnapshotsPromoteCmd.MarkFlagRequired("name")
+	computeImagesPromoteCmd.Flags().StringVar(&computeName, "name", "", "Named image name (required)")
+	computeImagesPromoteCmd.Flags().StringVar(&computeVersion, "version", "", "Named image version")
+	computeImagesPromoteCmd.Flags().StringVar(&computeDescription, "description", "", "Named image description")
+	computeImagesPromoteCmd.Flags().BoolVar(&computeReplace, "replace", false, "Replace an existing image version")
+	computeImagesPromoteCmd.Flags().StringArrayVar(&computeTags, "tags", nil, "Named image tag; repeatable")
+	_ = computeImagesPromoteCmd.MarkFlagRequired("name")
+
+	computeSandboxesExposeCmd.Flags().StringVar(&computeName, "name", "", "Display name for the exposed port")
+	computeSandboxesExposeCmd.Flags().StringVar(&computePortProtocol, "protocol", "", "Port protocol (e.g. http)")
+	computeSandboxesExposeCmd.Flags().StringVar(&computePortService, "service", "", "Service label for the exposed port")
 
 	computeKeysAddCmd.Flags().StringVar(&computePublicKey, "public-key", "", "SSH public key material (required)")
 	computeKeysAddCmd.Flags().StringVar(&computeName, "name", "", "Optional label for the key")
@@ -178,8 +185,9 @@ func init() {
 	for _, cmd := range []*cobra.Command{
 		computeSandboxesCreateCmd, computeSandboxesDeleteCmd, computeSandboxesStopCmd,
 		computeSandboxesStartCmd, computeSandboxesSnapshotCmd, computeSandboxesPauseCmd,
-		computeSandboxesResumeCmd, computeSandboxesForkCmd, computeSnapshotsDeleteCmd,
-		computeSnapshotsForkCmd, computeSnapshotsPromoteCmd,
+		computeSandboxesResumeCmd, computeSandboxesForkCmd, computeSandboxesExposeCmd,
+		computeSandboxesUnexposeCmd, computeImagesDeleteCmd, computeImagesForkCmd,
+		computeImagesPromoteCmd, computeImagesDeactivateCmd, computeBakesRunCmd,
 	} {
 		cmd.Flags().StringVar(&computeIdempotency, "idempotency-key", "",
 			"Idempotency key to make the mutation safely retryable")
@@ -188,19 +196,20 @@ func init() {
 	computeSandboxesCmd.AddCommand(
 		computeSandboxesListCmd, computeSandboxesGetCmd, computeSandboxesCreateCmd,
 		computeSandboxesDeleteCmd, computeSandboxesStopCmd, computeSandboxesStartCmd,
-		computeSandboxesSnapshotCmd, computeSandboxesLeaseCmd, computeSandboxesSnapshotsCmd,
+		computeSandboxesSnapshotCmd, computeSandboxesLeaseCmd, computeSandboxesImagesCmd,
 		computeSandboxesOperationsCmd, computeSandboxesLogsCmd, computeSandboxesLineageCmd,
 		computeSandboxesExecCmd, computeSandboxesMetricsCmd, computeSandboxesPauseCmd,
 		computeSandboxesResumeCmd, computeSandboxesHooksCmd, computeSandboxesHookRunsCmd,
-		computeSandboxesForkCmd, computeSandboxesSSHCmd,
+		computeSandboxesForkCmd, computeSandboxesSSHCmd, computeSandboxesExposeCmd,
+		computeSandboxesUnexposeCmd,
 	)
-	computeSnapshotsCmd.AddCommand(
-		computeSnapshotsListCmd, computeSnapshotsGetCmd, computeSnapshotsDeleteCmd,
-		computeSnapshotsForkCmd, computeSnapshotsPromoteCmd, computeSnapshotsChildrenCmd,
-		computeSnapshotsLineageCmd,
+	computeImagesCmd.AddCommand(
+		computeImagesListCmd, computeImagesGetCmd, computeImagesDeleteCmd,
+		computeImagesForkCmd, computeImagesPromoteCmd, computeImagesDeactivateCmd,
+		computeImagesChildrenCmd, computeImagesLineageCmd,
 	)
 	computeForksCmd.AddCommand(computeForksListCmd, computeForksGetCmd)
-	computeTemplatesCmd.AddCommand(computeTemplatesListCmd, computeTemplatesGetCmd)
+	computeBakesCmd.AddCommand(computeBakesListCmd, computeBakesRunCmd)
 	computeOperationsCmd.AddCommand(computeOperationsListCmd, computeOperationsGetCmd)
 	computeKeysCmd.AddCommand(computeKeysListCmd, computeKeysAddCmd, computeKeysDeleteCmd)
 	computeUsersCmd.AddCommand(computeUsersListCmd, computeUsersGetCmd)
@@ -212,9 +221,9 @@ func init() {
 		computeAuditCmd,
 		computeSessionCmd,
 		computeSandboxesCmd,
-		computeSnapshotsCmd,
+		computeImagesCmd,
 		computeForksCmd,
-		computeTemplatesCmd,
+		computeBakesCmd,
 		computeOperationsCmd,
 		computeKeysCmd,
 		computeUsersCmd,
@@ -277,9 +286,12 @@ var computeSandboxesCmd = &cobra.Command{
 	Short: "Create, inspect, and control sandboxes",
 }
 
-var computeSnapshotsCmd = &cobra.Command{
-	Use:   "snapshots <command>",
-	Short: "List, fork, promote, and delete snapshots",
+var computeImagesCmd = &cobra.Command{
+	Use:   "images <command>",
+	Short: "List, fork, promote, and delete bootable images",
+	Long: `Manage bootable images. An image is either raw (a snapshot captured from a
+sandbox, addressed by snapshot id) or named (a published name@version). Promote
+turns a raw image into a named one; deactivate retires a named image.`,
 }
 
 var computeForksCmd = &cobra.Command{
@@ -287,9 +299,9 @@ var computeForksCmd = &cobra.Command{
 	Short: "Inspect fork operations and their per-child progress",
 }
 
-var computeTemplatesCmd = &cobra.Command{
-	Use:   "templates <command>",
-	Short: "List available sandbox templates",
+var computeBakesCmd = &cobra.Command{
+	Use:   "bakes <command>",
+	Short: "Inspect and trigger scheduled image bakes",
 }
 
 var computeOperationsCmd = &cobra.Command{
@@ -484,12 +496,12 @@ var computeSandboxesLeaseCmd = &cobra.Command{
 	},
 }
 
-var computeSandboxesSnapshotsCmd = &cobra.Command{
-	Use:   "snapshots <id>",
-	Short: "List snapshots taken from a sandbox",
+var computeSandboxesImagesCmd = &cobra.Command{
+	Use:   "images <id>",
+	Short: "List raw images captured from a sandbox",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runComputeRaw(cmd, "compute.get_sandbox_snapshots", computeIDArgs(args[0]))
+		return runComputeRaw(cmd, "compute.get_sandbox_images", computeIDArgs(args[0]))
 	},
 }
 
@@ -599,50 +611,85 @@ from it. The source keeps running.`,
 	},
 }
 
-// Snapshots.
+var computeSandboxesExposeCmd = &cobra.Command{
+	Use:   "expose <id> <port>",
+	Short: "Expose a sandbox port through the ingress gateway",
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		port, err := strconv.Atoi(args[1])
+		if err != nil || port < 1 {
+			return fmt.Errorf("port must be a positive integer, got %q", args[1])
+		}
+		opArgs := computeMutationArgs(args[0])
+		opArgs["port"] = port
+		setIfNotEmpty(opArgs, "name", computeName)
+		setIfNotEmpty(opArgs, "protocol", computePortProtocol)
+		setIfNotEmpty(opArgs, "service", computePortService)
 
-var computeSnapshotsListCmd = &cobra.Command{
+		return runComputeRaw(cmd, "compute.expose_port", opArgs)
+	},
+}
+
+var computeSandboxesUnexposeCmd = &cobra.Command{
+	Use:   "unexpose <id> <port>",
+	Short: "Remove an exposed sandbox port",
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		port, err := strconv.Atoi(args[1])
+		if err != nil || port < 1 {
+			return fmt.Errorf("port must be a positive integer, got %q", args[1])
+		}
+		opArgs := computeMutationArgs(args[0])
+		opArgs["port"] = port
+
+		return runComputeRaw(cmd, "compute.unexpose_port", opArgs)
+	},
+}
+
+// Images.
+
+var computeImagesListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List snapshots",
+	Short: "List images (named first, then raw snapshots)",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		return runComputeRaw(cmd, "compute.list_snapshots", computeListArgs())
+		return runComputeRaw(cmd, "compute.list_images", computeListArgs())
 	},
 }
 
-var computeSnapshotsGetCmd = &cobra.Command{
+var computeImagesGetCmd = &cobra.Command{
 	Use:   "get <id>",
-	Short: "Get one snapshot by id",
+	Short: "Get one image by snapshot id or name@version",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runComputeRaw(cmd, "compute.get_snapshot", computeIDArgs(args[0]))
+		return runComputeRaw(cmd, "compute.get_image", computeIDArgs(args[0]))
 	},
 }
 
-var computeSnapshotsDeleteCmd = &cobra.Command{
+var computeImagesDeleteCmd = &cobra.Command{
 	Use:   "delete <id>",
-	Short: "Delete a snapshot (async)",
+	Short: "Delete a raw image (async); named images are deactivated instead",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runComputeRaw(cmd, "compute.delete_snapshot", computeMutationArgs(args[0]))
+		return runComputeRaw(cmd, "compute.delete_image", computeMutationArgs(args[0]))
 	},
 }
 
-var computeSnapshotsForkCmd = &cobra.Command{
+var computeImagesForkCmd = &cobra.Command{
 	Use:   "fork <id>",
-	Short: "Fan out sandboxes from a snapshot (async)",
-	Long: `Fan out --count sandboxes from a published snapshot. To reconstitute a single
-sandbox from a snapshot, use 'panda compute sandboxes create --snapshot <id>'
-instead.`,
+	Short: "Fan out sandboxes from an image (async)",
+	Long: `Fan out --count sandboxes from an image. Raw images fork directly; named warm
+images fork their backing snapshot. To reconstitute a single sandbox, use
+'panda compute sandboxes create --snapshot <id>' instead.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runComputeRaw(cmd, "compute.fork_snapshot", computeForkArgs(cmd, args[0]))
+		return runComputeRaw(cmd, "compute.fork_image", computeForkArgs(cmd, args[0]))
 	},
 }
 
-var computeSnapshotsPromoteCmd = &cobra.Command{
+var computeImagesPromoteCmd = &cobra.Command{
 	Use:   "promote <id>",
-	Short: "Promote a snapshot into a warm template",
+	Short: "Promote a raw image into a named warm image",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		opArgs := computeMutationArgs(args[0])
@@ -658,25 +705,34 @@ var computeSnapshotsPromoteCmd = &cobra.Command{
 			opArgs["tags"] = computeTags
 		}
 
-		return runComputeRaw(cmd, "compute.promote_snapshot", opArgs)
+		return runComputeRaw(cmd, "compute.promote_image", opArgs)
 	},
 }
 
-var computeSnapshotsLineageCmd = &cobra.Command{
+var computeImagesDeactivateCmd = &cobra.Command{
+	Use:   "deactivate <id>",
+	Short: "Retire a named image (accepts name or name@version)",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runComputeRaw(cmd, "compute.deactivate_image", computeMutationArgs(args[0]))
+	},
+}
+
+var computeImagesLineageCmd = &cobra.Command{
 	Use:   "lineage <id>",
-	Short: "Show the full lineage tree rooted at a snapshot",
+	Short: "Show the full lineage tree rooted at an image",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runComputeRaw(cmd, "compute.get_snapshot_lineage", computeIDArgs(args[0]))
+		return runComputeRaw(cmd, "compute.get_image_lineage", computeIDArgs(args[0]))
 	},
 }
 
-var computeSnapshotsChildrenCmd = &cobra.Command{
+var computeImagesChildrenCmd = &cobra.Command{
 	Use:   "children <id>",
-	Short: "List sandboxes restored from a snapshot",
+	Short: "List sandboxes created from an image",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runComputeRaw(cmd, "compute.get_snapshot_restored_by", computeIDArgs(args[0]))
+		return runComputeRaw(cmd, "compute.get_image_restored_by", computeIDArgs(args[0]))
 	},
 }
 
@@ -700,27 +756,27 @@ var computeForksGetCmd = &cobra.Command{
 	},
 }
 
-// Templates.
+// Bakes.
 
-var computeTemplatesListCmd = &cobra.Command{
+var computeBakesListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List available sandbox templates",
+	Short: "List scheduled image bakes and their status",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		return runComputeRaw(cmd, "compute.list_templates", computeListArgs())
+		return runComputeRaw(cmd, "compute.list_bakes", computeListArgs())
 	},
 }
 
-var computeTemplatesGetCmd = &cobra.Command{
-	Use:   "get <name> <version>",
-	Short: "Get one template by name and version",
-	Args:  cobra.ExactArgs(2),
+var computeBakesRunCmd = &cobra.Command{
+	Use:   "run <name>",
+	Short: "Trigger a bake outside its schedule (async)",
+	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		opArgs := computeArgs()
 		opArgs["name"] = args[0]
-		opArgs["version"] = args[1]
+		opArgs["idempotency_key"] = computeIdemOrGenerated()
 
-		return runComputeRaw(cmd, "compute.get_template", opArgs)
+		return runComputeRaw(cmd, "compute.run_bake", opArgs)
 	},
 }
 

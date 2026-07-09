@@ -5,16 +5,16 @@ compute_sandbox_lifecycle:
     (Firecracker microVMs). Mutations are asynchronous: they return an operation
     that you poll to completion.
   examples:
-    - name: List available templates
+    - name: List available images
       description: >-
-        Answer "what can I boot", "which sandbox images exist" — every template
-        a sandbox can be created from, with its versions
+        Answer "what can I boot", "which sandbox images exist" — named images
+        (templates) first, then raw snapshots
       query: |
         from ethpandaops import compute
 
-        templates = compute.list_templates(limit=50)
-        for t in templates.get("items", templates.get("data", [])):
-            print(f"{t.get('name')}  v{t.get('version')}  {t.get('description', '')}")
+        images = compute.list_images(limit=50)
+        for i in images.get("items", images.get("data", [])):
+            print(f"{i.get('id')}  kind={i.get('kind')}  flavor={i.get('flavor')}")
 
     - name: Create a sandbox and poll the operation
       description: >-
@@ -85,14 +85,15 @@ compute_sandbox_lifecycle:
         op = compute.delete_sandbox(sandbox_id)
         print("delete operation:", op.get("id"))
 
-compute_snapshots:
-  name: Snapshots and Forks
+compute_images:
+  name: Images and Forks
   description: >-
-    Capture a sandbox's state as a snapshot, boot fresh sandboxes from it, and
-    fan out many copies with fork. All are asynchronous operations.
+    Capture a sandbox's state as a raw image, boot fresh sandboxes from it,
+    promote it to a named image, and fan out many copies with fork. All are
+    asynchronous operations.
   examples:
     - name: Snapshot a sandbox
-      description: Capture the current state of a sandbox for later reuse
+      description: Capture the current state of a sandbox as a raw image for later reuse
       query: |
         from ethpandaops import compute
 
@@ -100,43 +101,55 @@ compute_snapshots:
         op = compute.snapshot_sandbox(sandbox_id, note="before upgrade")
         print("snapshot operation:", op.get("id"))
 
-    - name: Boot a sandbox from a snapshot
+    - name: Boot a sandbox from a raw image
       description: >-
-        Reconstitute a single sandbox from a previously captured snapshot;
+        Reconstitute a single sandbox from a previously captured raw image;
         returns an operation to poll for the new sandbox id
       query: |
         from ethpandaops import compute
 
-        snapshots = compute.list_snapshots(limit=1)
-        snapshot_id = snapshots.get("items", snapshots.get("data", []))[0]["id"]
+        images = compute.list_images(limit=10)
+        raw = [i for i in images.get("items", []) if i.get("kind") == "raw"]
 
-        op = compute.create_sandbox(snapshot_id=snapshot_id, ttl="1h")
+        op = compute.create_sandbox(snapshot_id=raw[0]["id"], ttl="1h")
         print("create operation:", op.get("id"))
 
-    - name: Fork a snapshot into many sandboxes
+    - name: Fork an image into many sandboxes
       description: >-
-        Fan out several sandboxes from one snapshot and watch the fork's
+        Fan out several sandboxes from one image and watch the fork's
         per-child progress
       query: |
         from ethpandaops import compute
 
-        snapshot_id = compute.list_snapshots(limit=1).get("items")[0]["id"]
+        image_id = compute.list_images(limit=1).get("items")[0]["id"]
 
-        accepted = compute.fork_snapshot(snapshot_id, count=3, ttl="1h")
+        accepted = compute.fork_image(image_id, count=3, ttl="1h")
         fork = compute.get_fork(accepted["fork_id"])
         print("fork state:", fork["state"], "running:", fork["running"])
 
-    - name: Trace snapshot lineage
+    - name: Promote a raw image to a named image
       description: >-
-        See which sandboxes were restored from a snapshot, and a sandbox's
+        Publish a raw image under a stable name@version so others can boot it
+        by name
+      query: |
+        from ethpandaops import compute
+
+        raw = [i for i in compute.list_images(limit=50).get("items", [])
+               if i.get("kind") == "raw"]
+        named = compute.promote_image(raw[0]["id"], name="devnet-base", version="v1")
+        print("promoted:", named.get("id"))
+
+    - name: Trace image lineage
+      description: >-
+        See which sandboxes were created from an image, and a sandbox's
         snapshot/restore ancestry
       query: |
         from ethpandaops import compute
 
-        snapshot_id = compute.list_snapshots(limit=1).get("items")[0]["id"]
+        image_id = compute.list_images(limit=1).get("items")[0]["id"]
 
-        restored = compute.get_snapshot_restored_by(snapshot_id)
-        print("restored sandboxes:", restored.get("items", restored.get("data", [])))
+        restored = compute.get_image_restored_by(image_id)
+        print("created sandboxes:", restored.get("items", restored.get("data", [])))
 
         sandbox_id = compute.list_sandboxes(limit=1).get("items")[0]["id"]
         print("lineage:", compute.get_sandbox_lineage(sandbox_id))

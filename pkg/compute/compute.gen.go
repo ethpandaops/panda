@@ -23,6 +23,24 @@ const (
 	BearerAuthScopes bearerAuthContextKey = "bearerAuth.Scopes"
 )
 
+// Defines values for BakeStatusLastResult.
+const (
+	BakeStatusLastResultFailed    BakeStatusLastResult = "failed"
+	BakeStatusLastResultSucceeded BakeStatusLastResult = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the BakeStatusLastResult enum.
+func (e BakeStatusLastResult) Valid() bool {
+	switch e {
+	case BakeStatusLastResultFailed:
+		return true
+	case BakeStatusLastResultSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreateSandboxRequestOnDelete.
 const (
 	CreateSandboxRequestOnDeleteArchive CreateSandboxRequestOnDelete = "archive"
@@ -287,6 +305,42 @@ func (e HookSummaryOnFailure) Valid() bool {
 	}
 }
 
+// Defines values for ImageFlavor.
+const (
+	ImageFlavorCold ImageFlavor = "cold"
+	ImageFlavorWarm ImageFlavor = "warm"
+)
+
+// Valid indicates whether the value is a known member of the ImageFlavor enum.
+func (e ImageFlavor) Valid() bool {
+	switch e {
+	case ImageFlavorCold:
+		return true
+	case ImageFlavorWarm:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ImageKind.
+const (
+	Named ImageKind = "named"
+	Raw   ImageKind = "raw"
+)
+
+// Valid indicates whether the value is a known member of the ImageKind enum.
+func (e ImageKind) Valid() bool {
+	switch e {
+	case Named:
+		return true
+	case Raw:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for LineageNodeEdge.
 const (
 	CreatedFrom   LineageNodeEdge = "created-from"
@@ -455,27 +509,42 @@ func (e SandboxState) Valid() bool {
 	}
 }
 
+// Defines values for ScheduledResponseStatus.
+const (
+	Scheduled ScheduledResponseStatus = "scheduled"
+)
+
+// Valid indicates whether the value is a known member of the ScheduledResponseStatus enum.
+func (e ScheduledResponseStatus) Valid() bool {
+	switch e {
+	case Scheduled:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SnapshotState.
 const (
-	SnapshotStateAvailable   SnapshotState = "available"
-	SnapshotStateCreating    SnapshotState = "creating"
-	SnapshotStateDeleted     SnapshotState = "deleted"
-	SnapshotStateFailed      SnapshotState = "failed"
-	SnapshotStateUnavailable SnapshotState = "unavailable"
+	Available   SnapshotState = "available"
+	Creating    SnapshotState = "creating"
+	Deleted     SnapshotState = "deleted"
+	Failed      SnapshotState = "failed"
+	Unavailable SnapshotState = "unavailable"
 )
 
 // Valid indicates whether the value is a known member of the SnapshotState enum.
 func (e SnapshotState) Valid() bool {
 	switch e {
-	case SnapshotStateAvailable:
+	case Available:
 		return true
-	case SnapshotStateCreating:
+	case Creating:
 		return true
-	case SnapshotStateDeleted:
+	case Deleted:
 		return true
-	case SnapshotStateFailed:
+	case Failed:
 		return true
-	case SnapshotStateUnavailable:
+	case Unavailable:
 		return true
 	default:
 		return false
@@ -535,16 +604,16 @@ func (e TemplateClockPolicy) Valid() bool {
 
 // Defines values for TemplateFlavor.
 const (
-	Cold TemplateFlavor = "cold"
-	Warm TemplateFlavor = "warm"
+	TemplateFlavorCold TemplateFlavor = "cold"
+	TemplateFlavorWarm TemplateFlavor = "warm"
 )
 
 // Valid indicates whether the value is a known member of the TemplateFlavor enum.
 func (e TemplateFlavor) Valid() bool {
 	switch e {
-	case Cold:
+	case TemplateFlavorCold:
 		return true
-	case Warm:
+	case TemplateFlavorWarm:
 		return true
 	default:
 		return false
@@ -665,14 +734,44 @@ type AuthSession struct {
 	User          *WebSessionIdentity `json:"user,omitempty"`
 }
 
+// BakeStatus defines model for BakeStatus.
+type BakeStatus struct {
+	ActiveCreatedAt *time.Time            `json:"active_created_at,omitempty"`
+	ActiveVersion   *string               `json:"active_version,omitempty"`
+	Description     *string               `json:"description,omitempty"`
+	Enabled         bool                  `json:"enabled"`
+	Interval        string                `json:"interval"`
+	LastAttemptAt   *time.Time            `json:"last_attempt_at,omitempty"`
+	LastError       *string               `json:"last_error,omitempty"`
+	LastResult      *BakeStatusLastResult `json:"last_result,omitempty"`
+	LastVersion     *string               `json:"last_version,omitempty"`
+	Name            string                `json:"name"`
+	NextDueAt       *time.Time            `json:"next_due_at,omitempty"`
+	Running         bool                  `json:"running"`
+	Seed            string                `json:"seed"`
+}
+
+// BakeStatusLastResult defines model for BakeStatus.LastResult.
+type BakeStatusLastResult string
+
+// BakeStatusList defines model for BakeStatusList.
+type BakeStatusList struct {
+	Items      []BakeStatus `json:"items"`
+	NextCursor *string      `json:"next_cursor,omitempty"`
+	Total      int          `json:"total"`
+}
+
 // CreateSandboxRequest defines model for CreateSandboxRequest.
 type CreateSandboxRequest struct {
 	// DiskGb Optional disk override in GiB. Cold creates require disk_gb to be greater than or equal to the cold template disk size. Warm restores require disk_gb to be at least the recorded warm snapshot disk size. This resizes the backing zvol only; extra space becomes available to the guest only after the guest resizes its filesystem.
 	DiskGb *int `json:"disk_gb,omitempty"`
 
 	// Env Optional write-only guest environment delivered to shells and execs.
-	Env   *map[string]string `json:"env,omitempty"`
-	Hooks *[]HookDeclaration `json:"hooks,omitempty"`
+	Env *map[string]string `json:"env,omitempty"`
+
+	// ExposedPorts Optional explicit port exposure list. Absent inherits template or snapshot defaults; present empty exposes nothing.
+	ExposedPorts *[]PortExposureRequest `json:"exposed_ports,omitempty"`
+	Hooks        *[]HookDeclaration     `json:"hooks,omitempty"`
 
 	// Labels Optional service metadata labels for the sandbox.
 	Labels *map[string]string `json:"labels,omitempty"`
@@ -744,6 +843,30 @@ type ExecSandboxResult struct {
 
 	// TimedOut True when the command hit the timeout and was killed.
 	TimedOut *bool `json:"timed_out,omitempty"`
+}
+
+// ExposePortRequest defines model for ExposePortRequest.
+type ExposePortRequest struct {
+	Managed  *bool   `json:"managed,omitempty"`
+	Name     *string `json:"name,omitempty"`
+	Port     int     `json:"port"`
+	Protocol *string `json:"protocol,omitempty"`
+	Service  *string `json:"service,omitempty"`
+}
+
+// ExposedPort defines model for ExposedPort.
+type ExposedPort struct {
+	// Managed Owned by an automated reconciler (portsync) rather than a user.
+	Managed *bool   `json:"managed,omitempty"`
+	Name    *string `json:"name,omitempty"`
+	Port    int     `json:"port"`
+
+	// Protocol Endpoint label within the service (e.g. rpc, ws, metrics).
+	Protocol *string `json:"protocol,omitempty"`
+
+	// Service Workload the exposure belongs to (e.g. Kurtosis service name); grouping key.
+	Service *string `json:"service,omitempty"`
+	Url     string  `json:"url"`
 }
 
 // Fork defines model for Fork.
@@ -919,6 +1042,59 @@ type HookTemplateRequest struct {
 	TimeoutSeconds *int               `json:"timeout_seconds,omitempty"`
 }
 
+// Image defines model for Image.
+type Image struct {
+	CreatedAt *string     `json:"createdAt,omitempty"`
+	Flavor    ImageFlavor `json:"flavor"`
+
+	// Id Snapshot ID for raw images, "name@version" for named ones.
+	Id   string    `json:"id"`
+	Kind ImageKind `json:"kind"`
+	Name *string   `json:"name,omitempty"`
+
+	// Promoted Raw image backs an active named image.
+	Promoted   *bool     `json:"promoted,omitempty"`
+	Snapshot   *Snapshot `json:"snapshot,omitempty"`
+	SnapshotId *string   `json:"snapshotId,omitempty"`
+	Template   *Template `json:"template,omitempty"`
+	Version    *string   `json:"version,omitempty"`
+}
+
+// ImageFlavor defines model for Image.Flavor.
+type ImageFlavor string
+
+// ImageKind defines model for Image.Kind.
+type ImageKind string
+
+// ImageList defines model for ImageList.
+type ImageList struct {
+	Items      []Image `json:"items"`
+	NextCursor *string `json:"next_cursor,omitempty"`
+	Total      int     `json:"total"`
+}
+
+// IngressAuthorizeRequest defines model for IngressAuthorizeRequest.
+type IngressAuthorizeRequest struct {
+	// GatewayPublicKey One OpenSSH public key generated by the gateway for this session.
+	GatewayPublicKey string `json:"gateway_public_key"`
+
+	// PortLabel Numeric port string or configured port name.
+	PortLabel string `json:"port_label"`
+	SandboxId string `json:"sandbox_id"`
+}
+
+// IngressAuthorizeResponse defines model for IngressAuthorizeResponse.
+type IngressAuthorizeResponse struct {
+	Capability         string    `json:"capability"`
+	ExpiresAt          time.Time `json:"expires_at"`
+	GuestCertificate   string    `json:"guest_certificate"`
+	IncarnationId      string    `json:"incarnation_id"`
+	Port               int       `json:"port"`
+	SandboxId          string    `json:"sandbox_id"`
+	SupervisorEndpoint string    `json:"supervisor_endpoint"`
+	SupervisorPort     int       `json:"supervisor_port"`
+}
+
 // LeaseResponse defines model for LeaseResponse.
 type LeaseResponse struct {
 	// ExpiresAt New expiry after the lease extension.
@@ -1005,17 +1181,18 @@ type LogsResponse struct {
 
 // Operation defines model for Operation.
 type Operation struct {
-	Actor          string         `json:"actor"`
-	DurationMs     *int64         `json:"durationMs,omitempty"`
-	Err            string         `json:"err"`
-	Id             string         `json:"id"`
-	IdempotencyKey string         `json:"idempotencyKey"`
-	StartedAt      time.Time      `json:"startedAt"`
-	State          OperationState `json:"state"`
-	Target         string         `json:"target"`
-	TargetId       *string        `json:"targetId,omitempty"`
-	Type           string         `json:"type"`
-	Warnings       []string       `json:"warnings"`
+	Actor          string             `json:"actor"`
+	DurationMs     *int64             `json:"durationMs,omitempty"`
+	Err            string             `json:"err"`
+	Id             string             `json:"id"`
+	IdempotencyKey string             `json:"idempotencyKey"`
+	Progress       *OperationProgress `json:"progress,omitempty"`
+	StartedAt      time.Time          `json:"startedAt"`
+	State          OperationState     `json:"state"`
+	Target         string             `json:"target"`
+	TargetId       *string            `json:"targetId,omitempty"`
+	Type           string             `json:"type"`
+	Warnings       []string           `json:"warnings"`
 }
 
 // OperationState defines model for Operation.State.
@@ -1026,6 +1203,42 @@ type OperationList struct {
 	Items      []Operation `json:"items"`
 	NextCursor *string     `json:"next_cursor,omitempty"`
 	Total      int         `json:"total"`
+}
+
+// OperationPhaseTiming defines model for OperationPhaseTiming.
+type OperationPhaseTiming struct {
+	DurationMs *int64     `json:"durationMs,omitempty"`
+	FinishedAt *time.Time `json:"finishedAt,omitempty"`
+	Name       string     `json:"name"`
+	StartedAt  time.Time  `json:"startedAt"`
+}
+
+// OperationProgress defines model for OperationProgress.
+type OperationProgress struct {
+	// Percent 0-100 completion estimate; absent when indeterminate.
+	Percent *float64 `json:"percent,omitempty"`
+
+	// Phase Name of the step currently executing; empty once terminal.
+	Phase  *string                `json:"phase,omitempty"`
+	Phases []OperationPhaseTiming `json:"phases"`
+
+	// Planned Ordered steps the operation expects to run.
+	Planned *[]string `json:"planned,omitempty"`
+
+	// Unit What unitsDone/unitsTotal count, e.g. bytes.
+	Unit       *string   `json:"unit,omitempty"`
+	UnitsDone  *int64    `json:"unitsDone,omitempty"`
+	UnitsTotal *int64    `json:"unitsTotal,omitempty"`
+	UpdatedAt  time.Time `json:"updatedAt"`
+}
+
+// PortExposureRequest defines model for PortExposureRequest.
+type PortExposureRequest struct {
+	Managed  *bool   `json:"managed,omitempty"`
+	Name     *string `json:"name,omitempty"`
+	Port     int     `json:"port"`
+	Protocol *string `json:"protocol,omitempty"`
+	Service  *string `json:"service,omitempty"`
 }
 
 // PrepareSandboxSSHRequest defines model for PrepareSandboxSSHRequest.
@@ -1103,6 +1316,7 @@ type Sandbox struct {
 	CreatedAt      time.Time         `json:"createdAt"`
 	Err            string            `json:"err"`
 	ExpiresAt      *time.Time        `json:"expiresAt,omitempty"`
+	ExposedPorts   *[]ExposedPort    `json:"exposedPorts,omitempty"`
 	Frozen         bool              `json:"frozen"`
 	Hooks          *[]HookSummary    `json:"hooks,omitempty"`
 	Id             string            `json:"id"`
@@ -1170,6 +1384,14 @@ type SandboxMetricsResponse struct {
 	Items []SandboxMetricSample `json:"items"`
 }
 
+// ScheduledResponse defines model for ScheduledResponse.
+type ScheduledResponse struct {
+	Status ScheduledResponseStatus `json:"status"`
+}
+
+// ScheduledResponseStatus defines model for ScheduledResponse.Status.
+type ScheduledResponseStatus string
+
 // Snapshot defines model for Snapshot.
 type Snapshot struct {
 	Clock       *string   `json:"clock,omitempty"`
@@ -1213,13 +1435,6 @@ type SnapshotBootSourceFlavor string
 
 // SnapshotBootSourceKind defines model for SnapshotBootSource.Kind.
 type SnapshotBootSourceKind string
-
-// SnapshotList defines model for SnapshotList.
-type SnapshotList struct {
-	Items      []Snapshot `json:"items"`
-	NextCursor *string    `json:"next_cursor,omitempty"`
-	Total      int        `json:"total"`
-}
 
 // SnapshotSandboxRequest defines model for SnapshotSandboxRequest.
 type SnapshotSandboxRequest struct {
@@ -1271,16 +1486,6 @@ type TemplateBootSourceKind string
 type TemplateBuild struct {
 	// Source Freeform provenance for the template build recipe or warm snapshot lineage.
 	Source string `json:"source"`
-
-	// Steps Ordered human-readable commands that produced the rootfs. Warm promoted templates return an empty list.
-	Steps []string `json:"steps"`
-}
-
-// TemplateList defines model for TemplateList.
-type TemplateList struct {
-	Items      []Template `json:"items"`
-	NextCursor *string    `json:"next_cursor,omitempty"`
-	Total      int        `json:"total"`
 }
 
 // WatchdogDeclaration defines model for WatchdogDeclaration.
@@ -1335,6 +1540,9 @@ type ForkID = string
 // IdempotencyKey defines model for IdempotencyKey.
 type IdempotencyKey = string
 
+// ImageID defines model for ImageID.
+type ImageID = string
+
 // Limit defines model for Limit.
 type Limit = int
 
@@ -1344,14 +1552,14 @@ type Offset = int
 // OperationID defines model for OperationID.
 type OperationID = string
 
+// Port defines model for Port.
+type Port = int
+
 // SSHPublicKeyID defines model for SSHPublicKeyID.
 type SSHPublicKeyID = string
 
 // SandboxID defines model for SandboxID.
 type SandboxID = string
-
-// SnapshotID defines model for SnapshotID.
-type SnapshotID = string
 
 // BadRequest defines model for BadRequest.
 type BadRequest = ErrorEnvelope
@@ -1380,6 +1588,20 @@ type UnprocessableEntity = ErrorEnvelope
 // bearerAuthContextKey is the context key for bearerAuth security scheme
 type bearerAuthContextKey string
 
+// ListBakesParams defines parameters for ListBakes.
+type ListBakesParams struct {
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor Integer offset cursor returned as next_cursor.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// Offset Integer offset alternative to cursor.
+	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+
+	// Filter Filter results by field, formatted as key<op>value where op is one of =, !=, ~= (contains), >, <, >=, <=. Keys are response field names and may be dotted to reach nested fields (e.g. error.reason). Comparison is numeric when both sides are numbers and case-insensitive otherwise. Repeatable; all filters must match. Applied before pagination.
+	Filter *Filter `form:"filter,omitempty" json:"filter,omitempty"`
+}
+
 // ListHookTemplatesParams defines parameters for ListHookTemplates.
 type ListHookTemplatesParams struct {
 	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
@@ -1392,6 +1614,32 @@ type ListHookTemplatesParams struct {
 
 	// Filter Filter results by field, formatted as key<op>value where op is one of =, !=, ~= (contains), >, <, >=, <=. Keys are response field names and may be dotted to reach nested fields (e.g. error.reason). Comparison is numeric when both sides are numbers and case-insensitive otherwise. Repeatable; all filters must match. Applied before pagination.
 	Filter *Filter `form:"filter,omitempty" json:"filter,omitempty"`
+}
+
+// ListImagesParams defines parameters for ListImages.
+type ListImagesParams struct {
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor Integer offset cursor returned as next_cursor.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// Offset Integer offset alternative to cursor.
+	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+
+	// Filter Filter results by field, formatted as key<op>value where op is one of =, !=, ~= (contains), >, <, >=, <=. Keys are response field names and may be dotted to reach nested fields (e.g. error.reason). Comparison is numeric when both sides are numbers and case-insensitive otherwise. Repeatable; all filters must match. Applied before pagination.
+	Filter *Filter `form:"filter,omitempty" json:"filter,omitempty"`
+}
+
+// DeleteImageParams defines parameters for DeleteImage.
+type DeleteImageParams struct {
+	// IdempotencyKey Required for mutating requests. Reusing a key with the same request returns the same accepted operation; reusing it with a different request returns 409.
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// ForkImageParams defines parameters for ForkImage.
+type ForkImageParams struct {
+	// IdempotencyKey Required for mutating requests. Reusing a key with the same request returns the same accepted operation; reusing it with a different request returns 409.
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
 // ListSSHPublicKeysParams defines parameters for ListSSHPublicKeys.
@@ -1545,51 +1793,20 @@ type StopSandboxParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
-// ListSnapshotsParams defines parameters for ListSnapshots.
-type ListSnapshotsParams struct {
-	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
-
-	// Cursor Integer offset cursor returned as next_cursor.
-	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
-
-	// Offset Integer offset alternative to cursor.
-	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
-
-	// Filter Filter results by field, formatted as key<op>value where op is one of =, !=, ~= (contains), >, <, >=, <=. Keys are response field names and may be dotted to reach nested fields (e.g. error.reason). Comparison is numeric when both sides are numbers and case-insensitive otherwise. Repeatable; all filters must match. Applied before pagination.
-	Filter *Filter `form:"filter,omitempty" json:"filter,omitempty"`
-}
-
-// DeleteSnapshotParams defines parameters for DeleteSnapshot.
-type DeleteSnapshotParams struct {
-	// IdempotencyKey Required for mutating requests. Reusing a key with the same request returns the same accepted operation; reusing it with a different request returns 409.
-	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
-}
-
-// ForkSnapshotParams defines parameters for ForkSnapshot.
-type ForkSnapshotParams struct {
-	// IdempotencyKey Required for mutating requests. Reusing a key with the same request returns the same accepted operation; reusing it with a different request returns 409.
-	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
-}
-
-// ListTemplatesParams defines parameters for ListTemplates.
-type ListTemplatesParams struct {
-	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
-
-	// Cursor Integer offset cursor returned as next_cursor.
-	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
-
-	// Offset Integer offset alternative to cursor.
-	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
-
-	// Filter Filter results by field, formatted as key<op>value where op is one of =, !=, ~= (contains), >, <, >=, <=. Keys are response field names and may be dotted to reach nested fields (e.g. error.reason). Comparison is numeric when both sides are numbers and case-insensitive otherwise. Repeatable; all filters must match. Applied before pagination.
-	Filter *Filter `form:"filter,omitempty" json:"filter,omitempty"`
-}
-
 // CreateHookTemplateJSONRequestBody defines body for CreateHookTemplate for application/json ContentType.
 type CreateHookTemplateJSONRequestBody = HookTemplateRequest
 
 // UpdateHookTemplateJSONRequestBody defines body for UpdateHookTemplate for application/json ContentType.
 type UpdateHookTemplateJSONRequestBody = HookTemplateRequest
+
+// ForkImageJSONRequestBody defines body for ForkImage for application/json ContentType.
+type ForkImageJSONRequestBody = ForkRequest
+
+// PromoteImageJSONRequestBody defines body for PromoteImage for application/json ContentType.
+type PromoteImageJSONRequestBody = PromoteSnapshotRequest
+
+// AuthorizeIngressJSONRequestBody defines body for AuthorizeIngress for application/json ContentType.
+type AuthorizeIngressJSONRequestBody = IngressAuthorizeRequest
 
 // AddSSHPublicKeyJSONRequestBody defines body for AddSSHPublicKey for application/json ContentType.
 type AddSSHPublicKeyJSONRequestBody = AddSSHPublicKeyRequest
@@ -1606,17 +1823,14 @@ type ForkSandboxJSONRequestBody = ForkRequest
 // LeaseSandboxJSONRequestBody defines body for LeaseSandbox for application/json ContentType.
 type LeaseSandboxJSONRequestBody = LeaseSandboxRequest
 
+// ExposePortJSONRequestBody defines body for ExposePort for application/json ContentType.
+type ExposePortJSONRequestBody = ExposePortRequest
+
 // SnapshotSandboxJSONRequestBody defines body for SnapshotSandbox for application/json ContentType.
 type SnapshotSandboxJSONRequestBody = SnapshotSandboxRequest
 
 // PrepareSandboxSSHJSONRequestBody defines body for PrepareSandboxSSH for application/json ContentType.
 type PrepareSandboxSSHJSONRequestBody = PrepareSandboxSSHRequest
-
-// ForkSnapshotJSONRequestBody defines body for ForkSnapshot for application/json ContentType.
-type ForkSnapshotJSONRequestBody = ForkRequest
-
-// PromoteSnapshotJSONRequestBody defines body for PromoteSnapshot for application/json ContentType.
-type PromoteSnapshotJSONRequestBody = PromoteSnapshotRequest
 
 // AuthorizeSSHJSONRequestBody defines body for AuthorizeSSH for application/json ContentType.
 type AuthorizeSSHJSONRequestBody = SSHAuthorizeRequest
@@ -1768,6 +1982,12 @@ type ClientInterface interface {
 	// AuthSession request
 	AuthSession(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListBakes request
+	ListBakes(ctx context.Context, params *ListBakesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RunBake request
+	RunBake(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListForks request
 	ListForks(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -1795,6 +2015,39 @@ type ClientInterface interface {
 	UpdateHookTemplateWithBody(ctx context.Context, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	UpdateHookTemplate(ctx context.Context, name string, body UpdateHookTemplateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListImages request
+	ListImages(ctx context.Context, params *ListImagesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteImage request
+	DeleteImage(ctx context.Context, id ImageID, params *DeleteImageParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetImage request
+	GetImage(ctx context.Context, id ImageID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeactivateImage request
+	DeactivateImage(ctx context.Context, id ImageID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ForkImageWithBody request with any body
+	ForkImageWithBody(ctx context.Context, id ImageID, params *ForkImageParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	ForkImage(ctx context.Context, id ImageID, params *ForkImageParams, body ForkImageJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetImageLineage request
+	GetImageLineage(ctx context.Context, id ImageID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PromoteImageWithBody request with any body
+	PromoteImageWithBody(ctx context.Context, id ImageID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PromoteImage(ctx context.Context, id ImageID, body PromoteImageJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetImageRestoredBy request
+	GetImageRestoredBy(ctx context.Context, id ImageID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AuthorizeIngressWithBody request with any body
+	AuthorizeIngressWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	AuthorizeIngress(ctx context.Context, body AuthorizeIngressJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListSSHPublicKeys request
 	ListSSHPublicKeys(ctx context.Context, params *ListSSHPublicKeysParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1864,6 +2117,9 @@ type ClientInterface interface {
 	// GetSandboxHooks request
 	GetSandboxHooks(ctx context.Context, id SandboxID, params *GetSandboxHooksParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetSandboxImages request
+	GetSandboxImages(ctx context.Context, id SandboxID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// LeaseSandboxWithBody request with any body
 	LeaseSandboxWithBody(ctx context.Context, id SandboxID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -1884,6 +2140,14 @@ type ClientInterface interface {
 	// PauseSandbox request
 	PauseSandbox(ctx context.Context, id SandboxID, params *PauseSandboxParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ExposePortWithBody request with any body
+	ExposePortWithBody(ctx context.Context, id SandboxID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	ExposePort(ctx context.Context, id SandboxID, body ExposePortJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UnexposePort request
+	UnexposePort(ctx context.Context, id SandboxID, port Port, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ResumeSandbox request
 	ResumeSandbox(ctx context.Context, id SandboxID, params *ResumeSandboxParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -1891,9 +2155,6 @@ type ClientInterface interface {
 	SnapshotSandboxWithBody(ctx context.Context, id SandboxID, params *SnapshotSandboxParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	SnapshotSandbox(ctx context.Context, id SandboxID, params *SnapshotSandboxParams, body SnapshotSandboxJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetSandboxSnapshots request
-	GetSandboxSnapshots(ctx context.Context, id SandboxID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PrepareSandboxSSHWithBody request with any body
 	PrepareSandboxSSHWithBody(ctx context.Context, id SandboxID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1909,44 +2170,10 @@ type ClientInterface interface {
 	// TunnelSandbox request
 	TunnelSandbox(ctx context.Context, id SandboxID, port int, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// ListSnapshots request
-	ListSnapshots(ctx context.Context, params *ListSnapshotsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// DeleteSnapshot request
-	DeleteSnapshot(ctx context.Context, id SnapshotID, params *DeleteSnapshotParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetSnapshot request
-	GetSnapshot(ctx context.Context, id SnapshotID, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// ForkSnapshotWithBody request with any body
-	ForkSnapshotWithBody(ctx context.Context, id SnapshotID, params *ForkSnapshotParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	ForkSnapshot(ctx context.Context, id SnapshotID, params *ForkSnapshotParams, body ForkSnapshotJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetSnapshotLineage request
-	GetSnapshotLineage(ctx context.Context, id SnapshotID, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PromoteSnapshotWithBody request with any body
-	PromoteSnapshotWithBody(ctx context.Context, id SnapshotID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	PromoteSnapshot(ctx context.Context, id SnapshotID, body PromoteSnapshotJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetSnapshotRestoredBy request
-	GetSnapshotRestoredBy(ctx context.Context, id SnapshotID, reqEditors ...RequestEditorFn) (*http.Response, error)
-
 	// AuthorizeSSHWithBody request with any body
 	AuthorizeSSHWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	AuthorizeSSH(ctx context.Context, body AuthorizeSSHJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// ListTemplates request
-	ListTemplates(ctx context.Context, params *ListTemplatesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// DeactivateTemplate request
-	DeactivateTemplate(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetTemplate request
-	GetTemplate(ctx context.Context, name string, version string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListUsers request
 	ListUsers(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1989,6 +2216,30 @@ func (c *Client) AuthCLIConfig(ctx context.Context, reqEditors ...RequestEditorF
 
 func (c *Client) AuthSession(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewAuthSessionRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListBakes(ctx context.Context, params *ListBakesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListBakesRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RunBake(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRunBakeRequest(c.Server, name)
 	if err != nil {
 		return nil, err
 	}
@@ -2109,6 +2360,150 @@ func (c *Client) UpdateHookTemplateWithBody(ctx context.Context, name string, co
 
 func (c *Client) UpdateHookTemplate(ctx context.Context, name string, body UpdateHookTemplateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateHookTemplateRequest(c.Server, name, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListImages(ctx context.Context, params *ListImagesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListImagesRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteImage(ctx context.Context, id ImageID, params *DeleteImageParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteImageRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetImage(ctx context.Context, id ImageID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetImageRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeactivateImage(ctx context.Context, id ImageID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeactivateImageRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ForkImageWithBody(ctx context.Context, id ImageID, params *ForkImageParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewForkImageRequestWithBody(c.Server, id, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ForkImage(ctx context.Context, id ImageID, params *ForkImageParams, body ForkImageJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewForkImageRequest(c.Server, id, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetImageLineage(ctx context.Context, id ImageID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetImageLineageRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PromoteImageWithBody(ctx context.Context, id ImageID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPromoteImageRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PromoteImage(ctx context.Context, id ImageID, body PromoteImageJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPromoteImageRequest(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetImageRestoredBy(ctx context.Context, id ImageID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetImageRestoredByRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) AuthorizeIngressWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAuthorizeIngressRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) AuthorizeIngress(ctx context.Context, body AuthorizeIngressJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAuthorizeIngressRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -2407,6 +2802,18 @@ func (c *Client) GetSandboxHooks(ctx context.Context, id SandboxID, params *GetS
 	return c.Client.Do(req)
 }
 
+func (c *Client) GetSandboxImages(ctx context.Context, id SandboxID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSandboxImagesRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) LeaseSandboxWithBody(ctx context.Context, id SandboxID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewLeaseSandboxRequestWithBody(c.Server, id, contentType, body)
 	if err != nil {
@@ -2491,6 +2898,42 @@ func (c *Client) PauseSandbox(ctx context.Context, id SandboxID, params *PauseSa
 	return c.Client.Do(req)
 }
 
+func (c *Client) ExposePortWithBody(ctx context.Context, id SandboxID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewExposePortRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ExposePort(ctx context.Context, id SandboxID, body ExposePortJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewExposePortRequest(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UnexposePort(ctx context.Context, id SandboxID, port Port, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUnexposePortRequest(c.Server, id, port)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) ResumeSandbox(ctx context.Context, id SandboxID, params *ResumeSandboxParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewResumeSandboxRequest(c.Server, id, params)
 	if err != nil {
@@ -2517,18 +2960,6 @@ func (c *Client) SnapshotSandboxWithBody(ctx context.Context, id SandboxID, para
 
 func (c *Client) SnapshotSandbox(ctx context.Context, id SandboxID, params *SnapshotSandboxParams, body SnapshotSandboxJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewSnapshotSandboxRequest(c.Server, id, params, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetSandboxSnapshots(ctx context.Context, id SandboxID, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetSandboxSnapshotsRequest(c.Server, id)
 	if err != nil {
 		return nil, err
 	}
@@ -2599,114 +3030,6 @@ func (c *Client) TunnelSandbox(ctx context.Context, id SandboxID, port int, reqE
 	return c.Client.Do(req)
 }
 
-func (c *Client) ListSnapshots(ctx context.Context, params *ListSnapshotsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListSnapshotsRequest(c.Server, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) DeleteSnapshot(ctx context.Context, id SnapshotID, params *DeleteSnapshotParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewDeleteSnapshotRequest(c.Server, id, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetSnapshot(ctx context.Context, id SnapshotID, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetSnapshotRequest(c.Server, id)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) ForkSnapshotWithBody(ctx context.Context, id SnapshotID, params *ForkSnapshotParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewForkSnapshotRequestWithBody(c.Server, id, params, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) ForkSnapshot(ctx context.Context, id SnapshotID, params *ForkSnapshotParams, body ForkSnapshotJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewForkSnapshotRequest(c.Server, id, params, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetSnapshotLineage(ctx context.Context, id SnapshotID, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetSnapshotLineageRequest(c.Server, id)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) PromoteSnapshotWithBody(ctx context.Context, id SnapshotID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPromoteSnapshotRequestWithBody(c.Server, id, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) PromoteSnapshot(ctx context.Context, id SnapshotID, body PromoteSnapshotJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPromoteSnapshotRequest(c.Server, id, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetSnapshotRestoredBy(ctx context.Context, id SnapshotID, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetSnapshotRestoredByRequest(c.Server, id)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
 func (c *Client) AuthorizeSSHWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewAuthorizeSSHRequestWithBody(c.Server, contentType, body)
 	if err != nil {
@@ -2721,42 +3044,6 @@ func (c *Client) AuthorizeSSHWithBody(ctx context.Context, contentType string, b
 
 func (c *Client) AuthorizeSSH(ctx context.Context, body AuthorizeSSHJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewAuthorizeSSHRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) ListTemplates(ctx context.Context, params *ListTemplatesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListTemplatesRequest(c.Server, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) DeactivateTemplate(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewDeactivateTemplateRequest(c.Server, name)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetTemplate(ctx context.Context, name string, version string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetTemplateRequest(c.Server, name, version)
 	if err != nil {
 		return nil, err
 	}
@@ -2901,6 +3188,130 @@ func NewAuthSessionRequest(server string) (*http.Request, error) {
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListBakesRequest generates requests for ListBakes
+func NewListBakesRequest(server string, params *ListBakesParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/bakes")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Offset != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "offset", *params.Offset, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Filter != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "filter", *params.Filter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRunBakeRequest generates requests for RunBake
+func NewRunBakeRequest(server string, name string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/bakes/%s/run", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -3232,6 +3643,426 @@ func NewUpdateHookTemplateRequestWithBody(server string, name string, contentTyp
 	}
 
 	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListImagesRequest generates requests for ListImages
+func NewListImagesRequest(server string, params *ListImagesParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/images")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Offset != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "offset", *params.Offset, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Filter != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "filter", *params.Filter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewDeleteImageRequest generates requests for DeleteImage
+func NewDeleteImageRequest(server string, id ImageID, params *DeleteImageParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/images/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+	}
+
+	return req, nil
+}
+
+// NewGetImageRequest generates requests for GetImage
+func NewGetImageRequest(server string, id ImageID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/images/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewDeactivateImageRequest generates requests for DeactivateImage
+func NewDeactivateImageRequest(server string, id ImageID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/images/%s/deactivate", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewForkImageRequest calls the generic ForkImage builder with application/json body
+func NewForkImageRequest(server string, id ImageID, params *ForkImageParams, body ForkImageJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewForkImageRequestWithBody(server, id, params, "application/json", bodyReader)
+}
+
+// NewForkImageRequestWithBody generates requests for ForkImage with any type of body
+func NewForkImageRequestWithBody(server string, id ImageID, params *ForkImageParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/images/%s/fork", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+	}
+
+	return req, nil
+}
+
+// NewGetImageLineageRequest generates requests for GetImageLineage
+func NewGetImageLineageRequest(server string, id ImageID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/images/%s/lineage", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPromoteImageRequest calls the generic PromoteImage builder with application/json body
+func NewPromoteImageRequest(server string, id ImageID, body PromoteImageJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPromoteImageRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewPromoteImageRequestWithBody generates requests for PromoteImage with any type of body
+func NewPromoteImageRequestWithBody(server string, id ImageID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/images/%s/promote", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetImageRestoredByRequest generates requests for GetImageRestoredBy
+func NewGetImageRestoredByRequest(server string, id ImageID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/images/%s/restored-by", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewAuthorizeIngressRequest calls the generic AuthorizeIngress builder with application/json body
+func NewAuthorizeIngressRequest(server string, body AuthorizeIngressJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewAuthorizeIngressRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewAuthorizeIngressRequestWithBody generates requests for AuthorizeIngress with any type of body
+func NewAuthorizeIngressRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/ingress/authorize")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
 	if err != nil {
 		return nil, err
 	}
@@ -4347,6 +5178,40 @@ func NewGetSandboxHooksRequest(server string, id SandboxID, params *GetSandboxHo
 	return req, nil
 }
 
+// NewGetSandboxImagesRequest generates requests for GetSandboxImages
+func NewGetSandboxImagesRequest(server string, id SandboxID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/sandboxes/%s/images", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewLeaseSandboxRequest calls the generic LeaseSandbox builder with application/json body
 func NewLeaseSandboxRequest(server string, id SandboxID, body LeaseSandboxJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -4667,6 +5532,94 @@ func NewPauseSandboxRequest(server string, id SandboxID, params *PauseSandboxPar
 	return req, nil
 }
 
+// NewExposePortRequest calls the generic ExposePort builder with application/json body
+func NewExposePortRequest(server string, id SandboxID, body ExposePortJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewExposePortRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewExposePortRequestWithBody generates requests for ExposePort with any type of body
+func NewExposePortRequestWithBody(server string, id SandboxID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/sandboxes/%s/ports", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewUnexposePortRequest generates requests for UnexposePort
+func NewUnexposePortRequest(server string, id SandboxID, port Port) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "port", port, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/sandboxes/%s/ports/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewResumeSandboxRequest generates requests for ResumeSandbox
 func NewResumeSandboxRequest(server string, id SandboxID, params *ResumeSandboxParams) (*http.Request, error) {
 	var err error
@@ -4769,40 +5722,6 @@ func NewSnapshotSandboxRequestWithBody(server string, id SandboxID, params *Snap
 
 		req.Header.Set("Idempotency-Key", headerParam0)
 
-	}
-
-	return req, nil
-}
-
-// NewGetSandboxSnapshotsRequest generates requests for GetSandboxSnapshots
-func NewGetSandboxSnapshotsRequest(server string, id SandboxID) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/v1/sandboxes/%s/snapshots", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
 	}
 
 	return req, nil
@@ -4990,352 +5909,6 @@ func NewTunnelSandboxRequest(server string, id SandboxID, port int) (*http.Reque
 	return req, nil
 }
 
-// NewListSnapshotsRequest generates requests for ListSnapshots
-func NewListSnapshotsRequest(server string, params *ListSnapshotsParams) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/v1/snapshots")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-		// queryValues collects non-styled parameters (passthrough, JSON)
-		// that are safe to round-trip through url.Values.Encode().
-		queryValues := queryURL.Query()
-		// rawQueryFragments collects pre-encoded query fragments from
-		// styled parameters, preserving literal commas as delimiters
-		// per the OpenAPI spec (e.g. "color=blue,black,brown").
-		var rawQueryFragments []string
-
-		if params.Limit != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.Cursor != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.Offset != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "offset", *params.Offset, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.Filter != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "filter", *params.Filter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if encoded := queryValues.Encode(); encoded != "" {
-			rawQueryFragments = append(rawQueryFragments, encoded)
-		}
-		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewDeleteSnapshotRequest generates requests for DeleteSnapshot
-func NewDeleteSnapshotRequest(server string, id SnapshotID, params *DeleteSnapshotParams) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/v1/snapshots/%s", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-
-		var headerParam0 string
-
-		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
-		if err != nil {
-			return nil, err
-		}
-
-		req.Header.Set("Idempotency-Key", headerParam0)
-
-	}
-
-	return req, nil
-}
-
-// NewGetSnapshotRequest generates requests for GetSnapshot
-func NewGetSnapshotRequest(server string, id SnapshotID) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/v1/snapshots/%s", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewForkSnapshotRequest calls the generic ForkSnapshot builder with application/json body
-func NewForkSnapshotRequest(server string, id SnapshotID, params *ForkSnapshotParams, body ForkSnapshotJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewForkSnapshotRequestWithBody(server, id, params, "application/json", bodyReader)
-}
-
-// NewForkSnapshotRequestWithBody generates requests for ForkSnapshot with any type of body
-func NewForkSnapshotRequestWithBody(server string, id SnapshotID, params *ForkSnapshotParams, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/v1/snapshots/%s/fork", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	if params != nil {
-
-		var headerParam0 string
-
-		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
-		if err != nil {
-			return nil, err
-		}
-
-		req.Header.Set("Idempotency-Key", headerParam0)
-
-	}
-
-	return req, nil
-}
-
-// NewGetSnapshotLineageRequest generates requests for GetSnapshotLineage
-func NewGetSnapshotLineageRequest(server string, id SnapshotID) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/v1/snapshots/%s/lineage", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewPromoteSnapshotRequest calls the generic PromoteSnapshot builder with application/json body
-func NewPromoteSnapshotRequest(server string, id SnapshotID, body PromoteSnapshotJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewPromoteSnapshotRequestWithBody(server, id, "application/json", bodyReader)
-}
-
-// NewPromoteSnapshotRequestWithBody generates requests for PromoteSnapshot with any type of body
-func NewPromoteSnapshotRequestWithBody(server string, id SnapshotID, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/v1/snapshots/%s/promote", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewGetSnapshotRestoredByRequest generates requests for GetSnapshotRestoredBy
-func NewGetSnapshotRestoredByRequest(server string, id SnapshotID) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/v1/snapshots/%s/restored-by", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
 // NewAuthorizeSSHRequest calls the generic AuthorizeSSH builder with application/json body
 func NewAuthorizeSSHRequest(server string, body AuthorizeSSHJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -5372,171 +5945,6 @@ func NewAuthorizeSSHRequestWithBody(server string, contentType string, body io.R
 	}
 
 	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewListTemplatesRequest generates requests for ListTemplates
-func NewListTemplatesRequest(server string, params *ListTemplatesParams) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/v1/templates")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-		// queryValues collects non-styled parameters (passthrough, JSON)
-		// that are safe to round-trip through url.Values.Encode().
-		queryValues := queryURL.Query()
-		// rawQueryFragments collects pre-encoded query fragments from
-		// styled parameters, preserving literal commas as delimiters
-		// per the OpenAPI spec (e.g. "color=blue,black,brown").
-		var rawQueryFragments []string
-
-		if params.Limit != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.Cursor != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.Offset != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "offset", *params.Offset, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.Filter != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "filter", *params.Filter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if encoded := queryValues.Encode(); encoded != "" {
-			rawQueryFragments = append(rawQueryFragments, encoded)
-		}
-		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewDeactivateTemplateRequest generates requests for DeactivateTemplate
-func NewDeactivateTemplateRequest(server string, name string) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/v1/templates/%s/deactivate", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewGetTemplateRequest generates requests for GetTemplate
-func NewGetTemplateRequest(server string, name string, version string) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "version", version, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/v1/templates/%s/%s", pathParam0, pathParam1)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
 
 	return req, nil
 }
@@ -5742,6 +6150,12 @@ type ClientWithResponsesInterface interface {
 	// AuthSessionWithResponse request
 	AuthSessionWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*AuthSessionResponse, error)
 
+	// ListBakesWithResponse request
+	ListBakesWithResponse(ctx context.Context, params *ListBakesParams, reqEditors ...RequestEditorFn) (*ListBakesResponse, error)
+
+	// RunBakeWithResponse request
+	RunBakeWithResponse(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*RunBakeResponse, error)
+
 	// ListForksWithResponse request
 	ListForksWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListForksResponse, error)
 
@@ -5769,6 +6183,39 @@ type ClientWithResponsesInterface interface {
 	UpdateHookTemplateWithBodyWithResponse(ctx context.Context, name string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateHookTemplateResponse, error)
 
 	UpdateHookTemplateWithResponse(ctx context.Context, name string, body UpdateHookTemplateJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateHookTemplateResponse, error)
+
+	// ListImagesWithResponse request
+	ListImagesWithResponse(ctx context.Context, params *ListImagesParams, reqEditors ...RequestEditorFn) (*ListImagesResponse, error)
+
+	// DeleteImageWithResponse request
+	DeleteImageWithResponse(ctx context.Context, id ImageID, params *DeleteImageParams, reqEditors ...RequestEditorFn) (*DeleteImageResponse, error)
+
+	// GetImageWithResponse request
+	GetImageWithResponse(ctx context.Context, id ImageID, reqEditors ...RequestEditorFn) (*GetImageResponse, error)
+
+	// DeactivateImageWithResponse request
+	DeactivateImageWithResponse(ctx context.Context, id ImageID, reqEditors ...RequestEditorFn) (*DeactivateImageResponse, error)
+
+	// ForkImageWithBodyWithResponse request with any body
+	ForkImageWithBodyWithResponse(ctx context.Context, id ImageID, params *ForkImageParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ForkImageResponse, error)
+
+	ForkImageWithResponse(ctx context.Context, id ImageID, params *ForkImageParams, body ForkImageJSONRequestBody, reqEditors ...RequestEditorFn) (*ForkImageResponse, error)
+
+	// GetImageLineageWithResponse request
+	GetImageLineageWithResponse(ctx context.Context, id ImageID, reqEditors ...RequestEditorFn) (*GetImageLineageResponse, error)
+
+	// PromoteImageWithBodyWithResponse request with any body
+	PromoteImageWithBodyWithResponse(ctx context.Context, id ImageID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PromoteImageResponse, error)
+
+	PromoteImageWithResponse(ctx context.Context, id ImageID, body PromoteImageJSONRequestBody, reqEditors ...RequestEditorFn) (*PromoteImageResponse, error)
+
+	// GetImageRestoredByWithResponse request
+	GetImageRestoredByWithResponse(ctx context.Context, id ImageID, reqEditors ...RequestEditorFn) (*GetImageRestoredByResponse, error)
+
+	// AuthorizeIngressWithBodyWithResponse request with any body
+	AuthorizeIngressWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AuthorizeIngressResponse, error)
+
+	AuthorizeIngressWithResponse(ctx context.Context, body AuthorizeIngressJSONRequestBody, reqEditors ...RequestEditorFn) (*AuthorizeIngressResponse, error)
 
 	// ListSSHPublicKeysWithResponse request
 	ListSSHPublicKeysWithResponse(ctx context.Context, params *ListSSHPublicKeysParams, reqEditors ...RequestEditorFn) (*ListSSHPublicKeysResponse, error)
@@ -5838,6 +6285,9 @@ type ClientWithResponsesInterface interface {
 	// GetSandboxHooksWithResponse request
 	GetSandboxHooksWithResponse(ctx context.Context, id SandboxID, params *GetSandboxHooksParams, reqEditors ...RequestEditorFn) (*GetSandboxHooksResponse, error)
 
+	// GetSandboxImagesWithResponse request
+	GetSandboxImagesWithResponse(ctx context.Context, id SandboxID, reqEditors ...RequestEditorFn) (*GetSandboxImagesResponse, error)
+
 	// LeaseSandboxWithBodyWithResponse request with any body
 	LeaseSandboxWithBodyWithResponse(ctx context.Context, id SandboxID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LeaseSandboxResponse, error)
 
@@ -5858,6 +6308,14 @@ type ClientWithResponsesInterface interface {
 	// PauseSandboxWithResponse request
 	PauseSandboxWithResponse(ctx context.Context, id SandboxID, params *PauseSandboxParams, reqEditors ...RequestEditorFn) (*PauseSandboxResponse, error)
 
+	// ExposePortWithBodyWithResponse request with any body
+	ExposePortWithBodyWithResponse(ctx context.Context, id SandboxID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ExposePortResponse, error)
+
+	ExposePortWithResponse(ctx context.Context, id SandboxID, body ExposePortJSONRequestBody, reqEditors ...RequestEditorFn) (*ExposePortResponse, error)
+
+	// UnexposePortWithResponse request
+	UnexposePortWithResponse(ctx context.Context, id SandboxID, port Port, reqEditors ...RequestEditorFn) (*UnexposePortResponse, error)
+
 	// ResumeSandboxWithResponse request
 	ResumeSandboxWithResponse(ctx context.Context, id SandboxID, params *ResumeSandboxParams, reqEditors ...RequestEditorFn) (*ResumeSandboxResponse, error)
 
@@ -5865,9 +6323,6 @@ type ClientWithResponsesInterface interface {
 	SnapshotSandboxWithBodyWithResponse(ctx context.Context, id SandboxID, params *SnapshotSandboxParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SnapshotSandboxResponse, error)
 
 	SnapshotSandboxWithResponse(ctx context.Context, id SandboxID, params *SnapshotSandboxParams, body SnapshotSandboxJSONRequestBody, reqEditors ...RequestEditorFn) (*SnapshotSandboxResponse, error)
-
-	// GetSandboxSnapshotsWithResponse request
-	GetSandboxSnapshotsWithResponse(ctx context.Context, id SandboxID, reqEditors ...RequestEditorFn) (*GetSandboxSnapshotsResponse, error)
 
 	// PrepareSandboxSSHWithBodyWithResponse request with any body
 	PrepareSandboxSSHWithBodyWithResponse(ctx context.Context, id SandboxID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PrepareSandboxSSHResponse, error)
@@ -5883,44 +6338,10 @@ type ClientWithResponsesInterface interface {
 	// TunnelSandboxWithResponse request
 	TunnelSandboxWithResponse(ctx context.Context, id SandboxID, port int, reqEditors ...RequestEditorFn) (*TunnelSandboxResponse, error)
 
-	// ListSnapshotsWithResponse request
-	ListSnapshotsWithResponse(ctx context.Context, params *ListSnapshotsParams, reqEditors ...RequestEditorFn) (*ListSnapshotsResponse, error)
-
-	// DeleteSnapshotWithResponse request
-	DeleteSnapshotWithResponse(ctx context.Context, id SnapshotID, params *DeleteSnapshotParams, reqEditors ...RequestEditorFn) (*DeleteSnapshotResponse, error)
-
-	// GetSnapshotWithResponse request
-	GetSnapshotWithResponse(ctx context.Context, id SnapshotID, reqEditors ...RequestEditorFn) (*GetSnapshotResponse, error)
-
-	// ForkSnapshotWithBodyWithResponse request with any body
-	ForkSnapshotWithBodyWithResponse(ctx context.Context, id SnapshotID, params *ForkSnapshotParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ForkSnapshotResponse, error)
-
-	ForkSnapshotWithResponse(ctx context.Context, id SnapshotID, params *ForkSnapshotParams, body ForkSnapshotJSONRequestBody, reqEditors ...RequestEditorFn) (*ForkSnapshotResponse, error)
-
-	// GetSnapshotLineageWithResponse request
-	GetSnapshotLineageWithResponse(ctx context.Context, id SnapshotID, reqEditors ...RequestEditorFn) (*GetSnapshotLineageResponse, error)
-
-	// PromoteSnapshotWithBodyWithResponse request with any body
-	PromoteSnapshotWithBodyWithResponse(ctx context.Context, id SnapshotID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PromoteSnapshotResponse, error)
-
-	PromoteSnapshotWithResponse(ctx context.Context, id SnapshotID, body PromoteSnapshotJSONRequestBody, reqEditors ...RequestEditorFn) (*PromoteSnapshotResponse, error)
-
-	// GetSnapshotRestoredByWithResponse request
-	GetSnapshotRestoredByWithResponse(ctx context.Context, id SnapshotID, reqEditors ...RequestEditorFn) (*GetSnapshotRestoredByResponse, error)
-
 	// AuthorizeSSHWithBodyWithResponse request with any body
 	AuthorizeSSHWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AuthorizeSSHResponse, error)
 
 	AuthorizeSSHWithResponse(ctx context.Context, body AuthorizeSSHJSONRequestBody, reqEditors ...RequestEditorFn) (*AuthorizeSSHResponse, error)
-
-	// ListTemplatesWithResponse request
-	ListTemplatesWithResponse(ctx context.Context, params *ListTemplatesParams, reqEditors ...RequestEditorFn) (*ListTemplatesResponse, error)
-
-	// DeactivateTemplateWithResponse request
-	DeactivateTemplateWithResponse(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*DeactivateTemplateResponse, error)
-
-	// GetTemplateWithResponse request
-	GetTemplateWithResponse(ctx context.Context, name string, version string, reqEditors ...RequestEditorFn) (*GetTemplateResponse, error)
 
 	// ListUsersWithResponse request
 	ListUsersWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListUsersResponse, error)
@@ -6023,6 +6444,70 @@ func (r AuthSessionResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r AuthSessionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListBakesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *BakeStatusList
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r ListBakesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListBakesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListBakesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RunBakeResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON202      *ScheduledResponse
+	JSON404      *NotFound
+	JSON409      *Conflict
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r RunBakeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RunBakeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RunBakeResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -6269,6 +6754,288 @@ func (r UpdateHookTemplateResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r UpdateHookTemplateResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListImagesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ImageList
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r ListImagesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListImagesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListImagesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteImageResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON202      *AcceptedResponse
+	JSON409      *Error
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteImageResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteImageResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteImageResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetImageResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *Image
+	JSON404      *NotFound
+	JSON500      *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetImageResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetImageResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetImageResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeactivateImageResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON404      *NotFound
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r DeactivateImageResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeactivateImageResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeactivateImageResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ForkImageResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON202      *ForkAccepted
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r ForkImageResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ForkImageResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ForkImageResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetImageLineageResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *LineageResponse
+	JSON404      *NotFound
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r GetImageLineageResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetImageLineageResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetImageLineageResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PromoteImageResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON201      *Image
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r PromoteImageResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PromoteImageResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PromoteImageResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetImageRestoredByResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON404      *NotFound
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r GetImageRestoredByResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetImageRestoredByResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetImageRestoredByResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type AuthorizeIngressResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *IngressAuthorizeResponse
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r AuthorizeIngressResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AuthorizeIngressResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r AuthorizeIngressResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -6899,6 +7666,37 @@ func (r GetSandboxHooksResponse) ContentType() string {
 	return ""
 }
 
+type GetSandboxImagesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON404      *NotFound
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSandboxImagesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSandboxImagesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetSandboxImagesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type LeaseSandboxResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -7089,6 +7887,67 @@ func (r PauseSandboxResponse) ContentType() string {
 	return ""
 }
 
+type ExposePortResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ExposedPort
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r ExposePortResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ExposePortResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ExposePortResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UnexposePortResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r UnexposePortResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UnexposePortResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UnexposePortResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ResumeSandboxResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -7145,37 +8004,6 @@ func (r SnapshotSandboxResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r SnapshotSandboxResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type GetSandboxSnapshotsResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON404      *NotFound
-	JSONDefault  *Error
-}
-
-// Status returns HTTPResponse.Status
-func (r GetSandboxSnapshotsResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetSandboxSnapshotsResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetSandboxSnapshotsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -7307,225 +8135,6 @@ func (r TunnelSandboxResponse) ContentType() string {
 	return ""
 }
 
-type ListSnapshotsResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *SnapshotList
-	JSONDefault  *Error
-}
-
-// Status returns HTTPResponse.Status
-func (r ListSnapshotsResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r ListSnapshotsResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r ListSnapshotsResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type DeleteSnapshotResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON202      *AcceptedResponse
-	JSONDefault  *Error
-}
-
-// Status returns HTTPResponse.Status
-func (r DeleteSnapshotResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r DeleteSnapshotResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r DeleteSnapshotResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type GetSnapshotResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *Snapshot
-	JSON404      *NotFound
-	JSON500      *InternalError
-}
-
-// Status returns HTTPResponse.Status
-func (r GetSnapshotResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetSnapshotResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetSnapshotResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type ForkSnapshotResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON202      *ForkAccepted
-	JSONDefault  *Error
-}
-
-// Status returns HTTPResponse.Status
-func (r ForkSnapshotResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r ForkSnapshotResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r ForkSnapshotResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type GetSnapshotLineageResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *LineageResponse
-	JSON404      *NotFound
-	JSONDefault  *Error
-}
-
-// Status returns HTTPResponse.Status
-func (r GetSnapshotLineageResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetSnapshotLineageResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetSnapshotLineageResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type PromoteSnapshotResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON201      *Template
-	JSONDefault  *Error
-}
-
-// Status returns HTTPResponse.Status
-func (r PromoteSnapshotResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r PromoteSnapshotResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r PromoteSnapshotResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type GetSnapshotRestoredByResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON404      *NotFound
-	JSONDefault  *Error
-}
-
-// Status returns HTTPResponse.Status
-func (r GetSnapshotRestoredByResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetSnapshotRestoredByResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetSnapshotRestoredByResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
 type AuthorizeSSHResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -7551,100 +8160,6 @@ func (r AuthorizeSSHResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r AuthorizeSSHResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type ListTemplatesResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *TemplateList
-	JSONDefault  *Error
-}
-
-// Status returns HTTPResponse.Status
-func (r ListTemplatesResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r ListTemplatesResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r ListTemplatesResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type DeactivateTemplateResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON404      *NotFound
-	JSONDefault  *Error
-}
-
-// Status returns HTTPResponse.Status
-func (r DeactivateTemplateResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r DeactivateTemplateResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r DeactivateTemplateResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type GetTemplateResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *Template
-	JSON404      *NotFound
-	JSON500      *InternalError
-}
-
-// Status returns HTTPResponse.Status
-func (r GetTemplateResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetTemplateResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetTemplateResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -7805,6 +8320,24 @@ func (c *ClientWithResponses) AuthSessionWithResponse(ctx context.Context, reqEd
 	return ParseAuthSessionResponse(rsp)
 }
 
+// ListBakesWithResponse request returning *ListBakesResponse
+func (c *ClientWithResponses) ListBakesWithResponse(ctx context.Context, params *ListBakesParams, reqEditors ...RequestEditorFn) (*ListBakesResponse, error) {
+	rsp, err := c.ListBakes(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListBakesResponse(rsp)
+}
+
+// RunBakeWithResponse request returning *RunBakeResponse
+func (c *ClientWithResponses) RunBakeWithResponse(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*RunBakeResponse, error) {
+	rsp, err := c.RunBake(ctx, name, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRunBakeResponse(rsp)
+}
+
 // ListForksWithResponse request returning *ListForksResponse
 func (c *ClientWithResponses) ListForksWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListForksResponse, error) {
 	rsp, err := c.ListForks(ctx, reqEditors...)
@@ -7891,6 +8424,111 @@ func (c *ClientWithResponses) UpdateHookTemplateWithResponse(ctx context.Context
 		return nil, err
 	}
 	return ParseUpdateHookTemplateResponse(rsp)
+}
+
+// ListImagesWithResponse request returning *ListImagesResponse
+func (c *ClientWithResponses) ListImagesWithResponse(ctx context.Context, params *ListImagesParams, reqEditors ...RequestEditorFn) (*ListImagesResponse, error) {
+	rsp, err := c.ListImages(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListImagesResponse(rsp)
+}
+
+// DeleteImageWithResponse request returning *DeleteImageResponse
+func (c *ClientWithResponses) DeleteImageWithResponse(ctx context.Context, id ImageID, params *DeleteImageParams, reqEditors ...RequestEditorFn) (*DeleteImageResponse, error) {
+	rsp, err := c.DeleteImage(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteImageResponse(rsp)
+}
+
+// GetImageWithResponse request returning *GetImageResponse
+func (c *ClientWithResponses) GetImageWithResponse(ctx context.Context, id ImageID, reqEditors ...RequestEditorFn) (*GetImageResponse, error) {
+	rsp, err := c.GetImage(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetImageResponse(rsp)
+}
+
+// DeactivateImageWithResponse request returning *DeactivateImageResponse
+func (c *ClientWithResponses) DeactivateImageWithResponse(ctx context.Context, id ImageID, reqEditors ...RequestEditorFn) (*DeactivateImageResponse, error) {
+	rsp, err := c.DeactivateImage(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeactivateImageResponse(rsp)
+}
+
+// ForkImageWithBodyWithResponse request with arbitrary body returning *ForkImageResponse
+func (c *ClientWithResponses) ForkImageWithBodyWithResponse(ctx context.Context, id ImageID, params *ForkImageParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ForkImageResponse, error) {
+	rsp, err := c.ForkImageWithBody(ctx, id, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseForkImageResponse(rsp)
+}
+
+func (c *ClientWithResponses) ForkImageWithResponse(ctx context.Context, id ImageID, params *ForkImageParams, body ForkImageJSONRequestBody, reqEditors ...RequestEditorFn) (*ForkImageResponse, error) {
+	rsp, err := c.ForkImage(ctx, id, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseForkImageResponse(rsp)
+}
+
+// GetImageLineageWithResponse request returning *GetImageLineageResponse
+func (c *ClientWithResponses) GetImageLineageWithResponse(ctx context.Context, id ImageID, reqEditors ...RequestEditorFn) (*GetImageLineageResponse, error) {
+	rsp, err := c.GetImageLineage(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetImageLineageResponse(rsp)
+}
+
+// PromoteImageWithBodyWithResponse request with arbitrary body returning *PromoteImageResponse
+func (c *ClientWithResponses) PromoteImageWithBodyWithResponse(ctx context.Context, id ImageID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PromoteImageResponse, error) {
+	rsp, err := c.PromoteImageWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePromoteImageResponse(rsp)
+}
+
+func (c *ClientWithResponses) PromoteImageWithResponse(ctx context.Context, id ImageID, body PromoteImageJSONRequestBody, reqEditors ...RequestEditorFn) (*PromoteImageResponse, error) {
+	rsp, err := c.PromoteImage(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePromoteImageResponse(rsp)
+}
+
+// GetImageRestoredByWithResponse request returning *GetImageRestoredByResponse
+func (c *ClientWithResponses) GetImageRestoredByWithResponse(ctx context.Context, id ImageID, reqEditors ...RequestEditorFn) (*GetImageRestoredByResponse, error) {
+	rsp, err := c.GetImageRestoredBy(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetImageRestoredByResponse(rsp)
+}
+
+// AuthorizeIngressWithBodyWithResponse request with arbitrary body returning *AuthorizeIngressResponse
+func (c *ClientWithResponses) AuthorizeIngressWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AuthorizeIngressResponse, error) {
+	rsp, err := c.AuthorizeIngressWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAuthorizeIngressResponse(rsp)
+}
+
+func (c *ClientWithResponses) AuthorizeIngressWithResponse(ctx context.Context, body AuthorizeIngressJSONRequestBody, reqEditors ...RequestEditorFn) (*AuthorizeIngressResponse, error) {
+	rsp, err := c.AuthorizeIngress(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAuthorizeIngressResponse(rsp)
 }
 
 // ListSSHPublicKeysWithResponse request returning *ListSSHPublicKeysResponse
@@ -8105,6 +8743,15 @@ func (c *ClientWithResponses) GetSandboxHooksWithResponse(ctx context.Context, i
 	return ParseGetSandboxHooksResponse(rsp)
 }
 
+// GetSandboxImagesWithResponse request returning *GetSandboxImagesResponse
+func (c *ClientWithResponses) GetSandboxImagesWithResponse(ctx context.Context, id SandboxID, reqEditors ...RequestEditorFn) (*GetSandboxImagesResponse, error) {
+	rsp, err := c.GetSandboxImages(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSandboxImagesResponse(rsp)
+}
+
 // LeaseSandboxWithBodyWithResponse request with arbitrary body returning *LeaseSandboxResponse
 func (c *ClientWithResponses) LeaseSandboxWithBodyWithResponse(ctx context.Context, id SandboxID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LeaseSandboxResponse, error) {
 	rsp, err := c.LeaseSandboxWithBody(ctx, id, contentType, body, reqEditors...)
@@ -8167,6 +8814,32 @@ func (c *ClientWithResponses) PauseSandboxWithResponse(ctx context.Context, id S
 	return ParsePauseSandboxResponse(rsp)
 }
 
+// ExposePortWithBodyWithResponse request with arbitrary body returning *ExposePortResponse
+func (c *ClientWithResponses) ExposePortWithBodyWithResponse(ctx context.Context, id SandboxID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ExposePortResponse, error) {
+	rsp, err := c.ExposePortWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseExposePortResponse(rsp)
+}
+
+func (c *ClientWithResponses) ExposePortWithResponse(ctx context.Context, id SandboxID, body ExposePortJSONRequestBody, reqEditors ...RequestEditorFn) (*ExposePortResponse, error) {
+	rsp, err := c.ExposePort(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseExposePortResponse(rsp)
+}
+
+// UnexposePortWithResponse request returning *UnexposePortResponse
+func (c *ClientWithResponses) UnexposePortWithResponse(ctx context.Context, id SandboxID, port Port, reqEditors ...RequestEditorFn) (*UnexposePortResponse, error) {
+	rsp, err := c.UnexposePort(ctx, id, port, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUnexposePortResponse(rsp)
+}
+
 // ResumeSandboxWithResponse request returning *ResumeSandboxResponse
 func (c *ClientWithResponses) ResumeSandboxWithResponse(ctx context.Context, id SandboxID, params *ResumeSandboxParams, reqEditors ...RequestEditorFn) (*ResumeSandboxResponse, error) {
 	rsp, err := c.ResumeSandbox(ctx, id, params, reqEditors...)
@@ -8191,15 +8864,6 @@ func (c *ClientWithResponses) SnapshotSandboxWithResponse(ctx context.Context, i
 		return nil, err
 	}
 	return ParseSnapshotSandboxResponse(rsp)
-}
-
-// GetSandboxSnapshotsWithResponse request returning *GetSandboxSnapshotsResponse
-func (c *ClientWithResponses) GetSandboxSnapshotsWithResponse(ctx context.Context, id SandboxID, reqEditors ...RequestEditorFn) (*GetSandboxSnapshotsResponse, error) {
-	rsp, err := c.GetSandboxSnapshots(ctx, id, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetSandboxSnapshotsResponse(rsp)
 }
 
 // PrepareSandboxSSHWithBodyWithResponse request with arbitrary body returning *PrepareSandboxSSHResponse
@@ -8246,85 +8910,6 @@ func (c *ClientWithResponses) TunnelSandboxWithResponse(ctx context.Context, id 
 	return ParseTunnelSandboxResponse(rsp)
 }
 
-// ListSnapshotsWithResponse request returning *ListSnapshotsResponse
-func (c *ClientWithResponses) ListSnapshotsWithResponse(ctx context.Context, params *ListSnapshotsParams, reqEditors ...RequestEditorFn) (*ListSnapshotsResponse, error) {
-	rsp, err := c.ListSnapshots(ctx, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseListSnapshotsResponse(rsp)
-}
-
-// DeleteSnapshotWithResponse request returning *DeleteSnapshotResponse
-func (c *ClientWithResponses) DeleteSnapshotWithResponse(ctx context.Context, id SnapshotID, params *DeleteSnapshotParams, reqEditors ...RequestEditorFn) (*DeleteSnapshotResponse, error) {
-	rsp, err := c.DeleteSnapshot(ctx, id, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseDeleteSnapshotResponse(rsp)
-}
-
-// GetSnapshotWithResponse request returning *GetSnapshotResponse
-func (c *ClientWithResponses) GetSnapshotWithResponse(ctx context.Context, id SnapshotID, reqEditors ...RequestEditorFn) (*GetSnapshotResponse, error) {
-	rsp, err := c.GetSnapshot(ctx, id, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetSnapshotResponse(rsp)
-}
-
-// ForkSnapshotWithBodyWithResponse request with arbitrary body returning *ForkSnapshotResponse
-func (c *ClientWithResponses) ForkSnapshotWithBodyWithResponse(ctx context.Context, id SnapshotID, params *ForkSnapshotParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ForkSnapshotResponse, error) {
-	rsp, err := c.ForkSnapshotWithBody(ctx, id, params, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseForkSnapshotResponse(rsp)
-}
-
-func (c *ClientWithResponses) ForkSnapshotWithResponse(ctx context.Context, id SnapshotID, params *ForkSnapshotParams, body ForkSnapshotJSONRequestBody, reqEditors ...RequestEditorFn) (*ForkSnapshotResponse, error) {
-	rsp, err := c.ForkSnapshot(ctx, id, params, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseForkSnapshotResponse(rsp)
-}
-
-// GetSnapshotLineageWithResponse request returning *GetSnapshotLineageResponse
-func (c *ClientWithResponses) GetSnapshotLineageWithResponse(ctx context.Context, id SnapshotID, reqEditors ...RequestEditorFn) (*GetSnapshotLineageResponse, error) {
-	rsp, err := c.GetSnapshotLineage(ctx, id, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetSnapshotLineageResponse(rsp)
-}
-
-// PromoteSnapshotWithBodyWithResponse request with arbitrary body returning *PromoteSnapshotResponse
-func (c *ClientWithResponses) PromoteSnapshotWithBodyWithResponse(ctx context.Context, id SnapshotID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PromoteSnapshotResponse, error) {
-	rsp, err := c.PromoteSnapshotWithBody(ctx, id, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePromoteSnapshotResponse(rsp)
-}
-
-func (c *ClientWithResponses) PromoteSnapshotWithResponse(ctx context.Context, id SnapshotID, body PromoteSnapshotJSONRequestBody, reqEditors ...RequestEditorFn) (*PromoteSnapshotResponse, error) {
-	rsp, err := c.PromoteSnapshot(ctx, id, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePromoteSnapshotResponse(rsp)
-}
-
-// GetSnapshotRestoredByWithResponse request returning *GetSnapshotRestoredByResponse
-func (c *ClientWithResponses) GetSnapshotRestoredByWithResponse(ctx context.Context, id SnapshotID, reqEditors ...RequestEditorFn) (*GetSnapshotRestoredByResponse, error) {
-	rsp, err := c.GetSnapshotRestoredBy(ctx, id, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetSnapshotRestoredByResponse(rsp)
-}
-
 // AuthorizeSSHWithBodyWithResponse request with arbitrary body returning *AuthorizeSSHResponse
 func (c *ClientWithResponses) AuthorizeSSHWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AuthorizeSSHResponse, error) {
 	rsp, err := c.AuthorizeSSHWithBody(ctx, contentType, body, reqEditors...)
@@ -8340,33 +8925,6 @@ func (c *ClientWithResponses) AuthorizeSSHWithResponse(ctx context.Context, body
 		return nil, err
 	}
 	return ParseAuthorizeSSHResponse(rsp)
-}
-
-// ListTemplatesWithResponse request returning *ListTemplatesResponse
-func (c *ClientWithResponses) ListTemplatesWithResponse(ctx context.Context, params *ListTemplatesParams, reqEditors ...RequestEditorFn) (*ListTemplatesResponse, error) {
-	rsp, err := c.ListTemplates(ctx, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseListTemplatesResponse(rsp)
-}
-
-// DeactivateTemplateWithResponse request returning *DeactivateTemplateResponse
-func (c *ClientWithResponses) DeactivateTemplateWithResponse(ctx context.Context, name string, reqEditors ...RequestEditorFn) (*DeactivateTemplateResponse, error) {
-	rsp, err := c.DeactivateTemplate(ctx, name, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseDeactivateTemplateResponse(rsp)
-}
-
-// GetTemplateWithResponse request returning *GetTemplateResponse
-func (c *ClientWithResponses) GetTemplateWithResponse(ctx context.Context, name string, version string, reqEditors ...RequestEditorFn) (*GetTemplateResponse, error) {
-	rsp, err := c.GetTemplate(ctx, name, version, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetTemplateResponse(rsp)
 }
 
 // ListUsersWithResponse request returning *ListUsersResponse
@@ -8492,6 +9050,86 @@ func ParseAuthSessionResponse(rsp *http.Response) (*AuthSessionResponse, error) 
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListBakesResponse parses an HTTP response from a ListBakesWithResponse call
+func ParseListBakesResponse(rsp *http.Response) (*ListBakesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListBakesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BakeStatusList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRunBakeResponse parses an HTTP response from a RunBakeWithResponse call
+func ParseRunBakeResponse(rsp *http.Response) (*RunBakeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RunBakeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest ScheduledResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error
@@ -8735,6 +9373,324 @@ func ParseUpdateHookTemplateResponse(rsp *http.Response) (*UpdateHookTemplateRes
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest HookTemplate
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListImagesResponse parses an HTTP response from a ListImagesWithResponse call
+func ParseListImagesResponse(rsp *http.Response) (*ListImagesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListImagesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ImageList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteImageResponse parses an HTTP response from a DeleteImageWithResponse call
+func ParseDeleteImageResponse(rsp *http.Response) (*DeleteImageResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteImageResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest AcceptedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetImageResponse parses an HTTP response from a GetImageWithResponse call
+func ParseGetImageResponse(rsp *http.Response) (*GetImageResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetImageResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Image
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeactivateImageResponse parses an HTTP response from a DeactivateImageWithResponse call
+func ParseDeactivateImageResponse(rsp *http.Response) (*DeactivateImageResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeactivateImageResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseForkImageResponse parses an HTTP response from a ForkImageWithResponse call
+func ParseForkImageResponse(rsp *http.Response) (*ForkImageResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ForkImageResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest ForkAccepted
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetImageLineageResponse parses an HTTP response from a GetImageLineageWithResponse call
+func ParseGetImageLineageResponse(rsp *http.Response) (*GetImageLineageResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetImageLineageResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest LineageResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePromoteImageResponse parses an HTTP response from a PromoteImageWithResponse call
+func ParsePromoteImageResponse(rsp *http.Response) (*PromoteImageResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PromoteImageResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest Image
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetImageRestoredByResponse parses an HTTP response from a GetImageRestoredByWithResponse call
+func ParseGetImageRestoredByResponse(rsp *http.Response) (*GetImageRestoredByResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetImageRestoredByResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseAuthorizeIngressResponse parses an HTTP response from a AuthorizeIngressWithResponse call
+func ParseAuthorizeIngressResponse(rsp *http.Response) (*AuthorizeIngressResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AuthorizeIngressResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IngressAuthorizeResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -9437,6 +10393,39 @@ func ParseGetSandboxHooksResponse(rsp *http.Response) (*GetSandboxHooksResponse,
 	return response, nil
 }
 
+// ParseGetSandboxImagesResponse parses an HTTP response from a GetSandboxImagesWithResponse call
+func ParseGetSandboxImagesResponse(rsp *http.Response) (*GetSandboxImagesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSandboxImagesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseLeaseSandboxResponse parses an HTTP response from a LeaseSandboxWithResponse call
 func ParseLeaseSandboxResponse(rsp *http.Response) (*LeaseSandboxResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -9663,6 +10652,65 @@ func ParsePauseSandboxResponse(rsp *http.Response) (*PauseSandboxResponse, error
 	return response, nil
 }
 
+// ParseExposePortResponse parses an HTTP response from a ExposePortWithResponse call
+func ParseExposePortResponse(rsp *http.Response) (*ExposePortResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ExposePortResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ExposedPort
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUnexposePortResponse parses an HTTP response from a UnexposePortWithResponse call
+func ParseUnexposePortResponse(rsp *http.Response) (*UnexposePortResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UnexposePortResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseResumeSandboxResponse parses an HTTP response from a ResumeSandboxWithResponse call
 func ParseResumeSandboxResponse(rsp *http.Response) (*ResumeSandboxResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -9716,39 +10764,6 @@ func ParseSnapshotSandboxResponse(rsp *http.Response) (*SnapshotSandboxResponse,
 			return nil, err
 		}
 		response.JSON202 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetSandboxSnapshotsResponse parses an HTTP response from a GetSandboxSnapshotsWithResponse call
-func ParseGetSandboxSnapshotsResponse(rsp *http.Response) (*GetSandboxSnapshotsResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetSandboxSnapshotsResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest NotFound
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error
@@ -9901,251 +10916,6 @@ func ParseTunnelSandboxResponse(rsp *http.Response) (*TunnelSandboxResponse, err
 	return response, nil
 }
 
-// ParseListSnapshotsResponse parses an HTTP response from a ListSnapshotsWithResponse call
-func ParseListSnapshotsResponse(rsp *http.Response) (*ListSnapshotsResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &ListSnapshotsResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SnapshotList
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseDeleteSnapshotResponse parses an HTTP response from a DeleteSnapshotWithResponse call
-func ParseDeleteSnapshotResponse(rsp *http.Response) (*DeleteSnapshotResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &DeleteSnapshotResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
-		var dest AcceptedResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON202 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetSnapshotResponse parses an HTTP response from a GetSnapshotWithResponse call
-func ParseGetSnapshotResponse(rsp *http.Response) (*GetSnapshotResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetSnapshotResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest Snapshot
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest NotFound
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON404 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
-		var dest InternalError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON500 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseForkSnapshotResponse parses an HTTP response from a ForkSnapshotWithResponse call
-func ParseForkSnapshotResponse(rsp *http.Response) (*ForkSnapshotResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &ForkSnapshotResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
-		var dest ForkAccepted
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON202 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetSnapshotLineageResponse parses an HTTP response from a GetSnapshotLineageWithResponse call
-func ParseGetSnapshotLineageResponse(rsp *http.Response) (*GetSnapshotLineageResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetSnapshotLineageResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest LineageResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest NotFound
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON404 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParsePromoteSnapshotResponse parses an HTTP response from a PromoteSnapshotWithResponse call
-func ParsePromoteSnapshotResponse(rsp *http.Response) (*PromoteSnapshotResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &PromoteSnapshotResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
-		var dest Template
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON201 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetSnapshotRestoredByResponse parses an HTTP response from a GetSnapshotRestoredByWithResponse call
-func ParseGetSnapshotRestoredByResponse(rsp *http.Response) (*GetSnapshotRestoredByResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetSnapshotRestoredByResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest NotFound
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON404 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
 // ParseAuthorizeSSHResponse parses an HTTP response from a AuthorizeSSHWithResponse call
 func ParseAuthorizeSSHResponse(rsp *http.Response) (*AuthorizeSSHResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -10173,112 +10943,6 @@ func ParseAuthorizeSSHResponse(rsp *http.Response) (*AuthorizeSSHResponse, error
 			return nil, err
 		}
 		response.JSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseListTemplatesResponse parses an HTTP response from a ListTemplatesWithResponse call
-func ParseListTemplatesResponse(rsp *http.Response) (*ListTemplatesResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &ListTemplatesResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest TemplateList
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseDeactivateTemplateResponse parses an HTTP response from a DeactivateTemplateWithResponse call
-func ParseDeactivateTemplateResponse(rsp *http.Response) (*DeactivateTemplateResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &DeactivateTemplateResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest NotFound
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON404 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetTemplateResponse parses an HTTP response from a GetTemplateWithResponse call
-func ParseGetTemplateResponse(rsp *http.Response) (*GetTemplateResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetTemplateResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest Template
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest NotFound
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON404 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
-		var dest InternalError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON500 = &dest
 
 	}
 
