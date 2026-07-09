@@ -27,12 +27,12 @@ metadata for a later watch or investigation to restore the exact state.
 ## Capability check
 
 Record the surface before mutating remote state: `panda version`,
-`panda compute --help`, `panda compute datasources`, `panda compute templates list`.
+`panda compute --help`, `panda compute datasources`, `panda compute images list`.
 If compute is unavailable, stop with a clear capability error — the caller decides
 whether a local run is an acceptable substitute. Unavailable includes auth failures:
-an advertised compute datasource with `templates list` returning 401/invalid-token
+an advertised compute datasource with `images list` returning 401/invalid-token
 means compute exists but is unusable until credentials are fixed — a successful
-template listing, not the datasource advertisement, is the go signal.
+image listing, not the datasource advertisement, is the go signal.
 
 ## Async operation rule
 
@@ -42,7 +42,7 @@ list/get. Record op ids, terminal states, and created ids as you go.
 
 ## Clock and boot flavor
 
-`templates list` reports a CLOCK per template: `frozen` or `realtime`.
+`images list` reports a CLOCK per named image (template): `frozen` or `realtime`.
 Snapshot/restore is only coherent on a **frozen-clock** template — its guest clock does
 not track wall-clock, so a devnet does not skip epochs across a stop/snapshot/restore
 gap and a restored VM resumes without drift. A `realtime` template keeps advancing

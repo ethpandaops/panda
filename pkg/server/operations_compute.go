@@ -137,9 +137,20 @@ func (s *service) handleComputeOperation(operationID string, w http.ResponseWrit
 		s.computeOpWithID(w, r, "id", s.computeLeaseSandbox)
 	case "compute.prepare_sandbox_ssh":
 		s.computeOpWithID(w, r, "id", s.computePrepareSandboxSSH)
-	case "compute.get_sandbox_snapshots":
+	case "compute.get_sandbox_images":
 		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, _ map[string]any) (*http.Response, error) {
-			return c.GetSandboxSnapshots(ctx, id)
+			return c.GetSandboxImages(ctx, id)
+		})
+	case "compute.expose_port":
+		s.computeOpWithID(w, r, "id", s.computeExposePort)
+	case "compute.unexpose_port":
+		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
+			port := optionalIntArg(args, "port", 0)
+			if port < 1 {
+				return nil, &computeArgError{err: fmt.Errorf("port is required and must be at least 1")}
+			}
+
+			return c.UnexposePort(ctx, id, port, computeIdemHeaderEditor(args))
 		})
 	case "compute.get_sandbox_operations":
 		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, _ map[string]any) (*http.Response, error) {
@@ -205,57 +216,63 @@ func (s *service) handleComputeOperation(operationID string, w http.ResponseWrit
 			return c.GetFork(ctx, id)
 		})
 
-	// Snapshots.
-	case "compute.list_snapshots":
+	// Images (raw snapshots and named images behind one surface).
+	case "compute.list_images":
 		s.computeOp(w, r, func(ctx context.Context, c *compute.Client, args map[string]any) (*http.Response, error) {
-			return c.ListSnapshots(ctx, &compute.ListSnapshotsParams{
+			return c.ListImages(ctx, &compute.ListImagesParams{
 				Limit:  computeLimit(args),
 				Cursor: computeCursor(args),
 				Offset: computeOffset(args),
 				Filter: computeFilter(args),
 			})
 		})
-	case "compute.get_snapshot":
+	case "compute.get_image":
 		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, _ map[string]any) (*http.Response, error) {
-			return c.GetSnapshot(ctx, id)
+			return c.GetImage(ctx, id)
 		})
-	case "compute.delete_snapshot":
+	case "compute.delete_image":
 		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
-			return c.DeleteSnapshot(ctx, id, &compute.DeleteSnapshotParams{IdempotencyKey: computeIdem(args)})
+			return c.DeleteImage(ctx, id, &compute.DeleteImageParams{IdempotencyKey: computeIdem(args)})
 		})
-	case "compute.fork_snapshot":
+	case "compute.fork_image":
 		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
 			body, err := computeForkRequest(args)
 			if err != nil {
 				return nil, err
 			}
 
-			return c.ForkSnapshot(ctx, id,
-				&compute.ForkSnapshotParams{IdempotencyKey: computeIdem(args)}, *body)
+			return c.ForkImage(ctx, id,
+				&compute.ForkImageParams{IdempotencyKey: computeIdem(args)}, *body)
 		})
-	case "compute.promote_snapshot":
-		s.computeOpWithID(w, r, "id", s.computePromoteSnapshot)
-	case "compute.get_snapshot_restored_by":
-		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, _ map[string]any) (*http.Response, error) {
-			return c.GetSnapshotRestoredBy(ctx, id)
+	case "compute.promote_image":
+		s.computeOpWithID(w, r, "id", s.computePromoteImage)
+	case "compute.deactivate_image":
+		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
+			return c.DeactivateImage(ctx, id, computeIdemHeaderEditor(args))
 		})
-	case "compute.get_snapshot_lineage":
+	case "compute.get_image_restored_by":
 		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, _ map[string]any) (*http.Response, error) {
-			return c.GetSnapshotLineage(ctx, id)
+			return c.GetImageRestoredBy(ctx, id)
+		})
+	case "compute.get_image_lineage":
+		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, _ map[string]any) (*http.Response, error) {
+			return c.GetImageLineage(ctx, id)
 		})
 
-	// Templates.
-	case "compute.list_templates":
+	// Bakes.
+	case "compute.list_bakes":
 		s.computeOp(w, r, func(ctx context.Context, c *compute.Client, args map[string]any) (*http.Response, error) {
-			return c.ListTemplates(ctx, &compute.ListTemplatesParams{
+			return c.ListBakes(ctx, &compute.ListBakesParams{
 				Limit:  computeLimit(args),
 				Cursor: computeCursor(args),
 				Offset: computeOffset(args),
 				Filter: computeFilter(args),
 			})
 		})
-	case "compute.get_template":
-		s.computeOp(w, r, s.computeGetTemplate)
+	case "compute.run_bake":
+		s.computeOpWithID(w, r, "name", func(ctx context.Context, c *compute.Client, name string, args map[string]any) (*http.Response, error) {
+			return c.RunBake(ctx, name, computeIdemHeaderEditor(args))
+		})
 
 	// Operations.
 	case "compute.list_operations":
@@ -442,6 +459,13 @@ func (s *service) computeCreateSandbox(ctx context.Context, c *compute.Client, a
 		}
 		body.Watchdog = &watchdog
 	}
+	if raw, ok := args["exposed_ports"]; ok {
+		var ports []compute.PortExposureRequest
+		if err := reencodeJSONArg(raw, &ports); err != nil {
+			return nil, &computeArgError{err: fmt.Errorf("exposed_ports: %w", err)}
+		}
+		body.ExposedPorts = &ports
+	}
 
 	if onDelete := optionalStringArg(args, "on_delete"); onDelete != "" {
 		disposition := compute.CreateSandboxRequestOnDelete(onDelete)
@@ -524,7 +548,7 @@ func (s *service) computePrepareSandboxSSH(ctx context.Context, c *compute.Clien
 	return c.PrepareSandboxSSH(ctx, id, compute.PrepareSandboxSSHJSONRequestBody{PublicKey: publicKey})
 }
 
-func (s *service) computePromoteSnapshot(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
+func (s *service) computePromoteImage(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
 	name, err := requiredStringArg(args, "name")
 	if err != nil {
 		return nil, &computeArgError{err: err}
@@ -535,13 +559,36 @@ func (s *service) computePromoteSnapshot(ctx context.Context, c *compute.Client,
 		return nil, &computeArgError{err: err}
 	}
 
-	return c.PromoteSnapshot(ctx, id,
-		compute.PromoteSnapshotJSONRequestBody{
+	return c.PromoteImage(ctx, id,
+		compute.PromoteImageJSONRequestBody{
 			Name:        name,
 			Version:     computeOptStr(args, "version"),
 			Replace:     replace,
 			Description: computeOptStr(args, "description"),
 			Tags:        computeOptStringSlice(args, "tags"),
+		},
+		computeIdemHeaderEditor(args),
+	)
+}
+
+func (s *service) computeExposePort(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
+	port := optionalIntArg(args, "port", 0)
+	if port < 1 {
+		return nil, &computeArgError{err: fmt.Errorf("port is required and must be at least 1")}
+	}
+
+	managed, err := optionalBoolArg(args, "managed")
+	if err != nil {
+		return nil, &computeArgError{err: err}
+	}
+
+	return c.ExposePort(ctx, id,
+		compute.ExposePortJSONRequestBody{
+			Port:     port,
+			Name:     computeOptStr(args, "name"),
+			Protocol: computeOptStr(args, "protocol"),
+			Service:  computeOptStr(args, "service"),
+			Managed:  managed,
 		},
 		computeIdemHeaderEditor(args),
 	)
@@ -557,20 +604,6 @@ func computeIdemHeaderEditor(args map[string]any) compute.RequestEditorFn {
 
 		return nil
 	}
-}
-
-func (s *service) computeGetTemplate(ctx context.Context, c *compute.Client, args map[string]any) (*http.Response, error) {
-	name, err := requiredStringArg(args, "name")
-	if err != nil {
-		return nil, &computeArgError{err: err}
-	}
-
-	version, err := requiredStringArg(args, "version")
-	if err != nil {
-		return nil, &computeArgError{err: err}
-	}
-
-	return c.GetTemplate(ctx, name, version)
 }
 
 func (s *service) computeAddSSHKey(ctx context.Context, c *compute.Client, args map[string]any) (*http.Response, error) {

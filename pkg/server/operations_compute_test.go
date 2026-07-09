@@ -71,13 +71,13 @@ func TestComputeForwardsIdempotencyKey(t *testing.T) {
 	assert.JSONEq(t, `{"template":"ubuntu/24.04","ttl":"1h"}`, string(transport.lastBody))
 }
 
-func TestComputePromoteSnapshotBuildsRequest(t *testing.T) {
+func TestComputePromoteImageBuildsRequest(t *testing.T) {
 	t.Parallel()
 
 	transport := &recordingTransport{status: http.StatusCreated, body: `{}`, contentType: "application/json"}
 	svc := newComputeService(t, transport, types.DatasourceInfo{Name: "production"})
 
-	rec := callComputeOp(t, svc, "compute.promote_snapshot", map[string]any{
+	rec := callComputeOp(t, svc, "compute.promote_image", map[string]any{
 		"id":              "snap-1",
 		"name":            "ubuntu-warm",
 		"version":         "v2",
@@ -91,7 +91,7 @@ func TestComputePromoteSnapshotBuildsRequest(t *testing.T) {
 	require.NotNil(t, transport.last)
 
 	assert.Equal(t, http.MethodPost, transport.last.Method)
-	assert.Equal(t, "/compute/v1/snapshots/snap-1/promote", transport.last.URL.Path)
+	assert.Equal(t, "/compute/v1/images/snap-1/promote", transport.last.URL.Path)
 	assert.Equal(t, "idem-promote", transport.last.Header.Get("Idempotency-Key"))
 	assert.JSONEq(t, `{
 		"name": "ubuntu-warm",
@@ -102,19 +102,56 @@ func TestComputePromoteSnapshotBuildsRequest(t *testing.T) {
 	}`, string(transport.lastBody))
 }
 
-func TestComputePromoteSnapshotRequiresName(t *testing.T) {
+func TestComputePromoteImageRequiresName(t *testing.T) {
 	t.Parallel()
 
 	transport := &recordingTransport{status: http.StatusCreated, body: `{}`, contentType: "application/json"}
 	svc := newComputeService(t, transport, types.DatasourceInfo{Name: "production"})
 
-	rec := callComputeOp(t, svc, "compute.promote_snapshot", map[string]any{
+	rec := callComputeOp(t, svc, "compute.promote_image", map[string]any{
 		"id": "snap-1",
 	})
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 	assert.Contains(t, rec.Body.String(), "name is required")
-	assert.Nil(t, transport.last, "no upstream request should be made without a template name")
+	assert.Nil(t, transport.last, "no upstream request should be made without a target name")
+}
+
+func TestComputeExposePortBuildsRequest(t *testing.T) {
+	t.Parallel()
+
+	transport := &recordingTransport{status: http.StatusCreated, body: `{}`, contentType: "application/json"}
+	svc := newComputeService(t, transport, types.DatasourceInfo{Name: "production"})
+
+	rec := callComputeOp(t, svc, "compute.expose_port", map[string]any{
+		"id":              "sb-1",
+		"port":            8080,
+		"name":            "api",
+		"idempotency_key": "idem-expose",
+	})
+
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	require.NotNil(t, transport.last)
+
+	assert.Equal(t, http.MethodPost, transport.last.Method)
+	assert.Equal(t, "/compute/v1/sandboxes/sb-1/ports", transport.last.URL.Path)
+	assert.Equal(t, "idem-expose", transport.last.Header.Get("Idempotency-Key"))
+	assert.JSONEq(t, `{"port": 8080, "name": "api"}`, string(transport.lastBody))
+}
+
+func TestComputeUnexposePortRequiresPort(t *testing.T) {
+	t.Parallel()
+
+	transport := &recordingTransport{status: http.StatusNoContent, contentType: "application/json"}
+	svc := newComputeService(t, transport, types.DatasourceInfo{Name: "production"})
+
+	rec := callComputeOp(t, svc, "compute.unexpose_port", map[string]any{
+		"id": "sb-1",
+	})
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "port is required")
+	assert.Nil(t, transport.last, "no upstream request should be made without a port")
 }
 
 // TestComputePreservesUpstreamStatus verifies a 2xx upstream status is passed

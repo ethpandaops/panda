@@ -13,6 +13,7 @@ tags:
   - name: snapshots
   - name: forks
   - name: templates
+  - name: bakes
   - name: hook-templates
   - name: operations
   - name: system
@@ -247,6 +248,39 @@ paths:
                 $ref: '#/components/schemas/AcceptedResponse'
         default:
           $ref: '#/components/responses/Error'
+  /v1/sandboxes/{id}/ports:
+    parameters:
+      - $ref: '#/components/parameters/SandboxID'
+    post:
+      tags: [sandboxes]
+      operationId: exposePort
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExposePortRequest'
+      responses:
+        '200':
+          description: Exposed port with public URL.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExposedPort'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/sandboxes/{id}/ports/{port}:
+    parameters:
+      - $ref: '#/components/parameters/SandboxID'
+      - $ref: '#/components/parameters/Port'
+    delete:
+      tags: [sandboxes]
+      operationId: unexposePort
+      responses:
+        '204':
+          description: Port removed or was not exposed.
+        default:
+          $ref: '#/components/responses/Error'
   /v1/sandboxes/{id}/fork:
     parameters:
       - $ref: '#/components/parameters/SandboxID'
@@ -474,10 +508,32 @@ paths:
                 $ref: '#/components/schemas/SSHAuthorizeResponse'
         default:
           $ref: '#/components/responses/Error'
-  /v1/snapshots:
+  /v1/ingress/authorize:
+    post:
+      tags: [ingress]
+      operationId: authorizeIngress
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngressAuthorizeRequest'
+      responses:
+        '200':
+          description: Live ingress access authorization for the gateway.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngressAuthorizeResponse'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/images:
     get:
-      tags: [snapshots]
-      operationId: listSnapshots
+      tags: [images]
+      operationId: listImages
+      description: >-
+        Unified view over bootable saved state: raw snapshots plus named
+        templates (warm promoted checkpoints and cold config-declared bases).
       parameters:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
@@ -485,55 +541,79 @@ paths:
         - $ref: '#/components/parameters/Filter'
       responses:
         '200':
-          description: Snapshots in stable ID order.
+          description: Named images in ID order, then raw images newest first.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SnapshotList'
+                $ref: '#/components/schemas/ImageList'
         default:
           $ref: '#/components/responses/Error'
-  /v1/snapshots/{id}:
+  /v1/images/{id}:
     parameters:
-      - $ref: '#/components/parameters/SnapshotID'
+      - $ref: '#/components/parameters/ImageID'
     get:
-      tags: [snapshots]
-      operationId: getSnapshot
+      tags: [images]
+      operationId: getImage
       responses:
         '200':
-          description: Snapshot.
+          description: Image.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Snapshot'
+                $ref: '#/components/schemas/Image'
         '404':
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
     delete:
-      tags: [snapshots]
-      operationId: deleteSnapshot
+      tags: [images]
+      operationId: deleteImage
+      description: Delete a raw image. Named images are deactivated instead (409).
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '202':
-          description: Snapshot deletion accepted. Poll the returned operation ID.
+          description: Image deletion accepted. Poll the returned operation ID.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AcceptedResponse'
+        '409':
+          $ref: '#/components/responses/Error'
         default:
           $ref: '#/components/responses/Error'
-  /v1/snapshots/{id}/fork:
+  /v1/images/{id}/promote:
     parameters:
-      - $ref: '#/components/parameters/SnapshotID'
+      - $ref: '#/components/parameters/ImageID'
     post:
-      tags: [snapshots]
-      operationId: forkSnapshot
+      tags: [images]
+      operationId: promoteImage
+      description: Promote a raw image to a named one. Named IDs are rejected (409).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PromoteSnapshotRequest'
+      responses:
+        '201':
+          description: The named image created by the promotion.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Image'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/images/{id}/fork:
+    parameters:
+      - $ref: '#/components/parameters/ImageID'
+    post:
+      tags: [images]
+      operationId: forkImage
       description: >-
-        Fan out `count` sandboxes from a published snapshot. To reconstitute a
-        single sandbox from a snapshot (the former "restore"), create a sandbox
-        with a snapshot source instead (POST /v1/sandboxes). Every child
-        requires a TTL.
+        Fan out `count` sandboxes from an image. Raw images fork directly;
+        named warm images fork their backing snapshot. Cold images have no
+        checkpoint to fork (400). Every child requires a TTL.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -549,6 +629,52 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ForkAccepted'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/images/{id}/deactivate:
+    parameters:
+      - $ref: '#/components/parameters/ImageID'
+    post:
+      tags: [images]
+      operationId: deactivateImage
+      description: Retire a named image. Accepts a name or name@version.
+      responses:
+        '204':
+          description: Named image deactivated.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/images/{id}/restored-by:
+    parameters:
+      - $ref: '#/components/parameters/ImageID'
+    get:
+      tags: [images]
+      operationId: getImageRestoredBy
+      description: Sandboxes created from the image's snapshot. Empty for cold images.
+      responses:
+        '200':
+          description: Sandboxes restored from the image.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+  /v1/images/{id}/lineage:
+    parameters:
+      - $ref: '#/components/parameters/ImageID'
+    get:
+      tags: [images]
+      operationId: getImageLineage
+      description: Derived provenance graph centered on the image's snapshot. Empty for cold images.
+      responses:
+        '200':
+          description: Derived provenance graph centered on the image.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LineageResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
         default:
           $ref: '#/components/responses/Error'
   /v1/forks:
@@ -585,31 +711,10 @@ paths:
           $ref: '#/components/responses/NotFound'
         default:
           $ref: '#/components/responses/Error'
-  /v1/snapshots/{id}/promote:
-    parameters:
-      - $ref: '#/components/parameters/SnapshotID'
-    post:
-      tags: [snapshots]
-      operationId: promoteSnapshot
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PromoteSnapshotRequest'
-      responses:
-        '201':
-          description: Snapshot promoted to a warm template.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Template'
-        default:
-          $ref: '#/components/responses/Error'
-  /v1/templates:
+  /v1/bakes:
     get:
-      tags: [templates]
-      operationId: listTemplates
+      tags: [bakes]
+      operationId: listBakes
       parameters:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
@@ -617,14 +722,14 @@ paths:
         - $ref: '#/components/parameters/Filter'
       responses:
         '200':
-          description: Templates in stable name/version order.
+          description: Configured bakes and their scheduling state.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TemplateList'
+                $ref: '#/components/schemas/BakeStatusList'
         default:
           $ref: '#/components/responses/Error'
-  /v1/templates/{name}/deactivate:
+  /v1/bakes/{name}/run:
     parameters:
       - name: name
         in: path
@@ -632,41 +737,21 @@ paths:
         schema:
           type: string
     post:
-      tags: [templates]
-      operationId: deactivateTemplate
+      tags: [bakes]
+      operationId: runBake
       responses:
-        '204':
-          description: Active warm template deactivated.
-        '404':
-          $ref: '#/components/responses/NotFound'
-        default:
-          $ref: '#/components/responses/Error'
-  /v1/templates/{name}/{version}:
-    parameters:
-      - name: name
-        in: path
-        required: true
-        schema:
-          type: string
-      - name: version
-        in: path
-        required: true
-        schema:
-          type: string
-    get:
-      tags: [templates]
-      operationId: getTemplate
-      responses:
-        '200':
-          description: Template.
+        '202':
+          description: Bake run scheduled.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Template'
+                $ref: '#/components/schemas/ScheduledResponse'
         '404':
           $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalError'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
   /v1/hook-templates:
     get:
       tags: [hook-templates]
@@ -972,45 +1057,15 @@ paths:
           $ref: '#/components/responses/NotFound'
         default:
           $ref: '#/components/responses/Error'
-  /v1/sandboxes/{id}/snapshots:
+  /v1/sandboxes/{id}/images:
     parameters:
       - $ref: '#/components/parameters/SandboxID'
     get:
       tags: [sandboxes]
-      operationId: getSandboxSnapshots
+      operationId: getSandboxImages
       responses:
         '200':
-          description: Snapshots taken from the sandbox.
-        '404':
-          $ref: '#/components/responses/NotFound'
-        default:
-          $ref: '#/components/responses/Error'
-  /v1/snapshots/{id}/restored-by:
-    parameters:
-      - $ref: '#/components/parameters/SnapshotID'
-    get:
-      tags: [snapshots]
-      operationId: getSnapshotRestoredBy
-      responses:
-        '200':
-          description: Sandboxes restored from the snapshot.
-        '404':
-          $ref: '#/components/responses/NotFound'
-        default:
-          $ref: '#/components/responses/Error'
-  /v1/snapshots/{id}/lineage:
-    parameters:
-      - $ref: '#/components/parameters/SnapshotID'
-    get:
-      tags: [snapshots]
-      operationId: getSnapshotLineage
-      responses:
-        '200':
-          description: Derived provenance graph centered on the snapshot.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LineageResponse'
+          description: Raw images captured from the sandbox.
         '404':
           $ref: '#/components/responses/NotFound'
         default:
@@ -1197,10 +1252,25 @@ components:
       required: true
       schema:
         type: string
+    Port:
+      name: port
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 65535
     SnapshotID:
       name: id
       in: path
       required: true
+      schema:
+        type: string
+    ImageID:
+      name: id
+      in: path
+      required: true
+      description: Snapshot ID for raw images, or "name@version" for named ones.
       schema:
         type: string
     OperationID:
@@ -1369,6 +1439,11 @@ components:
             $ref: '#/components/schemas/HookDeclaration'
         watchdog:
           $ref: '#/components/schemas/WatchdogDeclaration'
+        exposed_ports:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortExposureRequest'
+          description: Optional explicit port exposure list. Absent inherits template or snapshot defaults; present empty exposes nothing.
     CreateSandboxSource:
       oneOf:
         - $ref: '#/components/schemas/TemplateBootSource'
@@ -1722,6 +1797,95 @@ components:
         state:
           type: string
         createdAt:
+          type: string
+          format: date-time
+    PortExposureRequest:
+      type: object
+      required: [port]
+      additionalProperties: false
+      properties:
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        name:
+          type: string
+          pattern: '^[a-z][a-z0-9]{0,19}$'
+        managed:
+          type: boolean
+        service:
+          type: string
+        protocol:
+          type: string
+    ExposePortRequest:
+      type: object
+      required: [port]
+      additionalProperties: false
+      properties:
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        name:
+          type: string
+          pattern: '^[a-z][a-z0-9]{0,19}$'
+        managed:
+          type: boolean
+        service:
+          type: string
+        protocol:
+          type: string
+    ExposedPort:
+      type: object
+      required: [port, url]
+      properties:
+        port:
+          type: integer
+        name:
+          type: string
+        url:
+          type: string
+        managed:
+          type: boolean
+          description: Owned by an automated reconciler (portsync) rather than a user.
+        service:
+          type: string
+          description: Workload the exposure belongs to (e.g. Kurtosis service name); grouping key.
+        protocol:
+          type: string
+          description: Endpoint label within the service (e.g. rpc, ws, metrics).
+    IngressAuthorizeRequest:
+      type: object
+      required: [sandbox_id, port_label, gateway_public_key]
+      additionalProperties: false
+      properties:
+        sandbox_id:
+          type: string
+        port_label:
+          type: string
+          description: Numeric port string or configured port name.
+        gateway_public_key:
+          type: string
+          description: One OpenSSH public key generated by the gateway for this session.
+    IngressAuthorizeResponse:
+      type: object
+      required: [sandbox_id, incarnation_id, supervisor_endpoint, supervisor_port, capability, guest_certificate, port, expires_at]
+      properties:
+        sandbox_id:
+          type: string
+        incarnation_id:
+          type: string
+        supervisor_endpoint:
+          type: string
+        supervisor_port:
+          type: integer
+        capability:
+          type: string
+        guest_certificate:
+          type: string
+        port:
+          type: integer
+        expires_at:
           type: string
           format: date-time
     SSHAuthorizeRequest:
@@ -2109,6 +2273,10 @@ components:
             $ref: '#/components/schemas/HookSummary'
         watchdog:
           $ref: '#/components/schemas/WatchdogSummary'
+        exposedPorts:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExposedPort'
     Snapshot:
       type: object
       required: [id, sandbox, sandboxId, template, ver, size, sizeGiB, restores, createdAt, frozenAt, frozen, owner, tags, note, description, digest, state]
@@ -2201,6 +2369,59 @@ components:
           type: array
           items:
             type: string
+        progress:
+          $ref: '#/components/schemas/OperationProgress'
+          nullable: true
+    OperationProgress:
+      type: object
+      required: [phases, updatedAt]
+      properties:
+        phase:
+          type: string
+          description: Name of the step currently executing; empty once terminal.
+        planned:
+          type: array
+          items:
+            type: string
+          description: Ordered steps the operation expects to run.
+        percent:
+          type: number
+          format: double
+          nullable: true
+          description: 0-100 completion estimate; absent when indeterminate.
+        unitsDone:
+          type: integer
+          format: int64
+        unitsTotal:
+          type: integer
+          format: int64
+        unit:
+          type: string
+          description: What unitsDone/unitsTotal count, e.g. bytes.
+        phases:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationPhaseTiming'
+        updatedAt:
+          type: string
+          format: date-time
+    OperationPhaseTiming:
+      type: object
+      required: [name, startedAt]
+      properties:
+        name:
+          type: string
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+          nullable: true
+        durationMs:
+          type: integer
+          format: int64
+          nullable: true
     Template:
       type: object
       required: [name, ver, flavor, clock, clockPolicy, sizing, vcpu, memoryMb, diskGb, vcpuOptions, tags, rootfs, kernel, artifact, pinned, build]
@@ -2249,16 +2470,52 @@ components:
           type: string
     TemplateBuild:
       type: object
-      required: [source, steps]
+      required: [source]
       properties:
         source:
           type: string
           description: Freeform provenance for the template build recipe or warm snapshot lineage.
-        steps:
-          type: array
-          items:
-            type: string
-          description: Ordered human-readable commands that produced the rootfs. Warm promoted templates return an empty list.
+    BakeStatus:
+      type: object
+      required: [name, seed, interval, enabled, running]
+      properties:
+        name:
+          type: string
+        seed:
+          type: string
+        interval:
+          type: string
+        enabled:
+          type: boolean
+        description:
+          type: string
+        active_version:
+          type: string
+        active_created_at:
+          type: string
+          format: date-time
+        running:
+          type: boolean
+        last_attempt_at:
+          type: string
+          format: date-time
+        last_result:
+          type: string
+          enum: [succeeded, failed]
+        last_error:
+          type: string
+        last_version:
+          type: string
+        next_due_at:
+          type: string
+          format: date-time
+    ScheduledResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [scheduled]
     ErrorEnvelope:
       type: object
       required: [error]
@@ -2329,6 +2586,43 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/Snapshot'
+    Image:
+      type: object
+      required: [id, kind, flavor]
+      properties:
+        id:
+          type: string
+          description: Snapshot ID for raw images, "name@version" for named ones.
+        kind:
+          type: string
+          enum: [named, raw]
+        flavor:
+          type: string
+          enum: [warm, cold]
+        name:
+          type: string
+        version:
+          type: string
+        snapshotId:
+          type: string
+        promoted:
+          type: boolean
+          description: Raw image backs an active named image.
+        createdAt:
+          type: string
+        snapshot:
+          $ref: '#/components/schemas/Snapshot'
+        template:
+          $ref: '#/components/schemas/Template'
+    ImageList:
+      allOf:
+        - $ref: '#/components/schemas/ListEnvelope'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Image'
     TemplateList:
       allOf:
         - $ref: '#/components/schemas/ListEnvelope'
@@ -2338,6 +2632,15 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/Template'
+    BakeStatusList:
+      allOf:
+        - $ref: '#/components/schemas/ListEnvelope'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/BakeStatus'
     HookTemplateList:
       allOf:
         - $ref: '#/components/schemas/ListEnvelope'

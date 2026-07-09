@@ -17,7 +17,7 @@ type ComputeConfig struct {
 // ComputeHandler handles requests to compute API datasources. The datasource
 // is specified via the X-Datasource header. Unlike read-only datasources, all
 // HTTP methods are forwarded: the compute backend manages mutable resources
-// (sandboxes, snapshots) and authorizes each request itself.
+// (sandboxes, images) and authorizes each request itself.
 //
 // The proxy has already verified the caller's OIDC bearer token (and gated
 // access via allowed_orgs); the handler forwards that same token to the compute
