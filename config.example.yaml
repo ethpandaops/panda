@@ -11,7 +11,8 @@ server:
 
 # Sandbox configuration
 sandbox:
-  # Backend: docker (local dev) | gvisor (production)
+  # Backend: docker (local dev) | gvisor (production) | none (no container
+  # runtime; execute_python disabled, sandbox.image not required)
   backend: docker
   image: "ethpandaops-panda-sandbox:latest"
   timeout: 60  # seconds

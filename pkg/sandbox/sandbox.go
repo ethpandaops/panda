@@ -122,6 +122,9 @@ const (
 	BackendDocker BackendType = "docker"
 	// BackendGVisor uses Docker with gVisor runtime for enhanced isolation.
 	BackendGVisor BackendType = "gvisor"
+	// BackendNone disables execution entirely. The server runs without a
+	// container runtime and execute_python is unavailable.
+	BackendNone BackendType = "none"
 )
 
 // New creates a new sandbox service based on the configuration.
@@ -133,6 +136,8 @@ func New(cfg config.SandboxConfig, log logrus.FieldLogger) (Service, error) {
 		return NewDockerBackend(cfg, log)
 	case BackendGVisor:
 		return NewGVisorBackend(cfg, log)
+	case BackendNone:
+		return NewNoneBackend(log), nil
 	default:
 		return nil, fmt.Errorf("unsupported sandbox backend: %s", cfg.Backend)
 	}
@@ -142,4 +147,5 @@ func New(cfg config.SandboxConfig, log logrus.FieldLogger) (Service, error) {
 var (
 	_ Service = (*DockerBackend)(nil)
 	_ Service = (*GVisorBackend)(nil)
+	_ Service = (*NoneBackend)(nil)
 )

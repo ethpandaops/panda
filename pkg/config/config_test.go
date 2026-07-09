@@ -298,6 +298,41 @@ local_proxy:
 	}
 }
 
+func TestLoadAllowsNoneBackendWithoutImage(t *testing.T) {
+	t.Parallel()
+
+	path := writeConfig(t, `
+server:
+  base_url: "http://localhost:2480"
+sandbox:
+  backend: none
+proxy:
+  url: "http://hosted.example:18081"
+`)
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, "none", cfg.Sandbox.Backend)
+	assert.Empty(t, cfg.Sandbox.Image)
+}
+
+func TestLoadRequiresImageForDockerBackend(t *testing.T) {
+	t.Parallel()
+
+	path := writeConfig(t, `
+server:
+  base_url: "http://localhost:2480"
+sandbox:
+  backend: docker
+proxy:
+  url: "http://hosted.example:18081"
+`)
+
+	_, err := Load(path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "sandbox.image is required")
+}
+
 func writeConfig(t *testing.T, content string) string {
 	t.Helper()
 

@@ -218,7 +218,7 @@ storage:
   base_dir: "~/.panda/data/storage"
 
 sandbox:
-  backend: docker|gvisor
+  backend: docker|gvisor|none   # "none" disables execute_python (no runtime; image not required)
   image: "ethpandaops-panda-sandbox:latest"
   sessions:
     enabled: true
