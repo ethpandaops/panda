@@ -1,6 +1,8 @@
 package github
 
 import (
+	"fmt"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -113,6 +115,51 @@ func TestReleaseChecksumsAsset(t *testing.T) {
 		require.Error(t, err)
 		assert.Nil(t, asset)
 	})
+}
+
+func TestReleaseAssetsReady(t *testing.T) {
+	binary := fmt.Sprintf("panda_1.2.3_%s_%s.tar.gz", runtime.GOOS, runtime.GOARCH)
+
+	tests := []struct {
+		name   string
+		assets []Asset
+		want   bool
+	}{
+		{
+			name: "binary and checksums present",
+			assets: []Asset{
+				{Name: binary},
+				{Name: "checksums.txt"},
+			},
+			want: true,
+		},
+		{
+			name: "current-platform binary still uploading",
+			assets: []Asset{
+				{Name: "checksums.txt"},
+			},
+			want: false,
+		},
+		{
+			name: "checksums still uploading",
+			assets: []Asset{
+				{Name: binary},
+			},
+			want: false,
+		},
+		{
+			name:   "no assets uploaded yet",
+			assets: nil,
+			want:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			release := &Release{TagName: "v1.2.3", Assets: tt.assets}
+			assert.Equal(t, tt.want, release.AssetsReady())
+		})
+	}
 }
 
 func TestFirstPublished(t *testing.T) {
