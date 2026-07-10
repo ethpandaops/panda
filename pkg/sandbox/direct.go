@@ -342,9 +342,13 @@ func (b *DirectBackend) Execute(ctx context.Context, req ExecuteRequest) (*Execu
 
 	startTime := time.Now()
 
-	// Build the fully confined command: uid drop + mount/PID namespaces +
+	// Build the fully confined command: uid drop + mount/PID/net namespaces +
 	// Landlock, applied by the re-exec trampoline before it execs Python.
-	cmd := newHardenedSandboxCmd(execCtx, workDir, scriptPath, pythonBin, b.cfg.ExecUID, b.cfg.ExecGID, env)
+	cmd, cleanupCmd, err := newHardenedSandboxCmd(execCtx, workDir, scriptPath, pythonBin, b.cfg.ExecUID, b.cfg.ExecGID, env)
+	if err != nil {
+		return nil, fmt.Errorf("building sandbox command: %w", err)
+	}
+	defer cleanupCmd()
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

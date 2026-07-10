@@ -4,7 +4,9 @@ package sandbox
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"runtime"
@@ -47,14 +49,23 @@ const (
 	// in-namespace trampoline. It must not collide with any cobra subcommand.
 	directSandboxInitArg = "__direct-sandbox-init"
 
-	// Control variables carry the trampoline's parameters out-of-band from the
-	// Python target env. The trampoline strips them before exec'ing Python.
-	envCtlUID     = "__PANDA_SB_UID"
-	envCtlGID     = "__PANDA_SB_GID"
-	envCtlWorkdir = "__PANDA_SB_WORKDIR"
-	envCtlPython  = "__PANDA_SB_PYTHON"
-	envCtlScript  = "__PANDA_SB_SCRIPT"
+	// sandboxInitParamsFD is the inherited pipe (ExtraFiles[0]) the trampoline
+	// reads its parameters from. Passing them out-of-band on an fd — rather than
+	// via environment variables the untrusted target env sits next to — keeps a
+	// stray control var from ever being confused for a real one, and means the
+	// Python env is handed through verbatim with nothing to strip.
+	sandboxInitParamsFD = 3
 )
+
+// sandboxInitParams is the trampoline's input, serialized over sandboxInitParamsFD
+// by the parent. Paths ride JSON, so no separator can collide with their content.
+type sandboxInitParams struct {
+	UID     int    `json:"uid"`
+	GID     int    `json:"gid"`
+	WorkDir string `json:"workdir"`
+	Python  string `json:"python"`
+	Script  string `json:"script"`
+}
 
 // Landlock ABI-1 filesystem access rights and syscall constants. x/sys exports
 // the access-right bits but not the rule type / ruleset-attr helpers, so the
@@ -100,24 +111,45 @@ type pathRule struct {
 
 // newHardenedSandboxCmd builds the exec.Cmd that runs untrusted Python under the
 // full confinement stack. It targets /proc/self/exe (the trampoline) inside a
-// fresh mount + PID namespace; the trampoline finishes the setup and execs
-// Python. targetEnv is the environment Python receives (never os.Environ).
-func newHardenedSandboxCmd(ctx context.Context, workDir, scriptPath, pythonBin string, uid, gid int, targetEnv []string) *exec.Cmd {
+// fresh mount + PID + network namespace; the trampoline finishes the setup and
+// execs Python. targetEnv is the environment Python receives verbatim (never
+// os.Environ). The returned closer releases the params pipe and must be called
+// once the command has finished.
+func newHardenedSandboxCmd(ctx context.Context, workDir, scriptPath, pythonBin string, uid, gid int, targetEnv []string) (*exec.Cmd, func(), error) {
+	blob, err := json.Marshal(sandboxInitParams{
+		UID: uid, GID: gid, WorkDir: workDir, Python: pythonBin, Script: scriptPath,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("encoding sandbox init params: %w", err)
+	}
+
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating params pipe: %w", err)
+	}
+
+	// The blob is a few hundred bytes — well under the pipe buffer — so this write
+	// completes without a reader. Closing the write end delivers EOF to the
+	// trampoline once it has read the params.
+	if _, err := pw.Write(blob); err != nil {
+		_ = pr.Close()
+		_ = pw.Close()
+
+		return nil, nil, fmt.Errorf("writing sandbox init params: %w", err)
+	}
+
+	if err := pw.Close(); err != nil {
+		_ = pr.Close()
+
+		return nil, nil, fmt.Errorf("closing params pipe: %w", err)
+	}
+
 	// CommandContext wires the timeout: on ctx expiry the trampoline (and the
 	// Python it exec'd, its only descendant) is SIGKILLed.
 	cmd := exec.CommandContext(ctx, "/proc/self/exe", directSandboxInitArg)
 	cmd.Args[0] = "panda-sandbox-init"
-
-	env := make([]string, 0, len(targetEnv)+5)
-	env = append(env, targetEnv...)
-	env = append(env,
-		envCtlUID+"="+strconv.Itoa(uid),
-		envCtlGID+"="+strconv.Itoa(gid),
-		envCtlWorkdir+"="+workDir,
-		envCtlPython+"="+pythonBin,
-		envCtlScript+"="+scriptPath,
-	)
-	cmd.Env = env
+	cmd.Env = targetEnv
+	cmd.ExtraFiles = []*os.File{pr} // becomes fd sandboxInitParamsFD in the child
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		// New mount + PID + network namespaces (needs CAP_SYS_ADMIN, verified by
@@ -131,7 +163,7 @@ func newHardenedSandboxCmd(ctx context.Context, workDir, scriptPath, pythonBin s
 		Pdeathsig:  syscall.SIGKILL,
 	}
 
-	return cmd
+	return cmd, func() { _ = pr.Close() }, nil
 }
 
 // RunDirectSandboxInitIfRequested runs the in-namespace trampoline when this
@@ -166,22 +198,21 @@ func directSandboxInit() error {
 	// (We never unlock: execve replaces the image, destroying all other threads.)
 	runtime.LockOSThread()
 
-	uid, err := strconv.Atoi(os.Getenv(envCtlUID))
-	if err != nil || uid <= 0 {
-		return fmt.Errorf("invalid %s: %q", envCtlUID, os.Getenv(envCtlUID))
+	// Refuse to run outside a fresh PID namespace. The legitimate trampoline is
+	// launched with CLONE_NEWPID and is therefore pid 1 of a new namespace; a
+	// direct `panda-server __direct-sandbox-init` on the host is not. Without this
+	// guard such a manual invocation would remount /proc on the host below.
+	if os.Getpid() != 1 {
+		return fmt.Errorf("not pid 1 of a new namespace (pid=%d); refusing to run outside the sandbox launcher", os.Getpid())
 	}
 
-	gid, err := strconv.Atoi(os.Getenv(envCtlGID))
-	if err != nil || gid <= 0 {
-		return fmt.Errorf("invalid %s: %q", envCtlGID, os.Getenv(envCtlGID))
+	p, err := readSandboxInitParams()
+	if err != nil {
+		return err
 	}
 
-	workDir := os.Getenv(envCtlWorkdir)
-	pythonBin := os.Getenv(envCtlPython)
-	scriptPath := os.Getenv(envCtlScript)
-	if workDir == "" || pythonBin == "" || scriptPath == "" {
-		return fmt.Errorf("missing control vars (workdir=%q python=%q script=%q)", workDir, pythonBin, scriptPath)
-	}
+	uid, gid := p.UID, p.GID
+	workDir, pythonBin, scriptPath := p.WorkDir, p.Python, p.Script
 
 	// Isolate the mount namespace so our /proc remount cannot propagate to the
 	// host, then bind a fresh procfs to the new PID namespace so it reflects only
@@ -240,33 +271,49 @@ func directSandboxInit() error {
 		return fmt.Errorf("uid drop did not stick (uid=%d euid=%d want=%d)", os.Getuid(), os.Geteuid(), uid)
 	}
 
-	pythonEnv := strippedEnv()
+	// setresuid clears PR_SET_PDEATHSIG, so re-arm it after the drop: if
+	// panda-server dies, the kernel SIGKILLs this process (and the Python it is
+	// about to exec) instead of leaving an orphan running until the timeout.
+	if err := unix.Prctl(unix.PR_SET_PDEATHSIG, uintptr(unix.SIGKILL), 0, 0, 0); err != nil {
+		return fmt.Errorf("re-arm pdeathsig: %w", err)
+	}
 
-	if err := unix.Exec(pythonBin, []string{pythonBin, scriptPath}, pythonEnv); err != nil {
+	// Python receives exactly the env the server built (cmd.Env); the params
+	// arrived out-of-band on an fd, so there is nothing to strip.
+	if err := unix.Exec(pythonBin, []string{pythonBin, scriptPath}, os.Environ()); err != nil {
 		return fmt.Errorf("exec %s: %w", pythonBin, err)
 	}
 
 	return nil // unreachable
 }
 
-// strippedEnv returns the current environment without the control variables, so
-// Python sees exactly the env the server built for it.
-func strippedEnv() []string {
-	all := os.Environ()
-	out := make([]string, 0, len(all))
-	for _, kv := range all {
-		switch {
-		case strings.HasPrefix(kv, envCtlUID+"="),
-			strings.HasPrefix(kv, envCtlGID+"="),
-			strings.HasPrefix(kv, envCtlWorkdir+"="),
-			strings.HasPrefix(kv, envCtlPython+"="),
-			strings.HasPrefix(kv, envCtlScript+"="):
-			continue
-		}
-		out = append(out, kv)
+// readSandboxInitParams reads and validates the trampoline's parameters from the
+// inherited pipe, then closes it so Python does not inherit the fd.
+func readSandboxInitParams() (sandboxInitParams, error) {
+	var p sandboxInitParams
+
+	f := os.NewFile(uintptr(sandboxInitParamsFD), "sandbox-init-params")
+	if f == nil {
+		return p, fmt.Errorf("params fd %d not inherited", sandboxInitParamsFD)
 	}
 
-	return out
+	blob, err := io.ReadAll(f)
+	_ = f.Close()
+
+	if err != nil {
+		return p, fmt.Errorf("reading sandbox init params: %w", err)
+	}
+
+	if err := json.Unmarshal(blob, &p); err != nil {
+		return p, fmt.Errorf("decoding sandbox init params: %w", err)
+	}
+
+	if p.UID <= 0 || p.GID <= 0 || p.WorkDir == "" || p.Python == "" || p.Script == "" {
+		return p, fmt.Errorf("incomplete sandbox init params (uid=%d gid=%d workdir=%q python=%q script=%q)",
+			p.UID, p.GID, p.WorkDir, p.Python, p.Script)
+	}
+
+	return p, nil
 }
 
 // applyLandlock confines the process filesystem to the workspace (read/write)

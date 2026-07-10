@@ -18,9 +18,9 @@ import (
 // RunDirectSandboxInitIfRequested is a no-op off Linux (no trampoline exists).
 func RunDirectSandboxInitIfRequested() bool { return false }
 
-func newHardenedSandboxCmd(_ context.Context, _, _, _ string, _, _ int, _ []string) *exec.Cmd {
+func newHardenedSandboxCmd(_ context.Context, _, _, _ string, _, _ int, _ []string) (*exec.Cmd, func(), error) {
 	// Unreachable: preflightDirectHardening fails first. Guard anyway.
-	return &exec.Cmd{Path: "/nonexistent/direct-backend-requires-linux"}
+	return &exec.Cmd{Path: "/nonexistent/direct-backend-requires-linux"}, func() {}, nil
 }
 
 func preflightDirectHardening(_ config.SandboxConfig) error {

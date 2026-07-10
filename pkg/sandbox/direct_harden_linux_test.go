@@ -3,7 +3,11 @@
 package sandbox
 
 import (
+	"context"
+	"encoding/json"
+	"io"
 	"os"
+	"strings"
 	"testing"
 
 	"golang.org/x/sys/unix"
@@ -47,25 +51,44 @@ func TestPythonVenvRoot(t *testing.T) {
 	}
 }
 
-func TestStrippedEnvRemovesControlVars(t *testing.T) {
-	t.Setenv(envCtlUID, "65534")
-	t.Setenv(envCtlScript, "/work/script.py")
-	t.Setenv("KEEP_ME", "yes")
+// TestHardenedSandboxCmdPassesParamsOnFDNotEnv verifies the trampoline params
+// ride the inherited pipe (ExtraFiles[0]) and never the target env, so the
+// untrusted Python environment cannot shadow a control value.
+func TestHardenedSandboxCmdPassesParamsOnFD(t *testing.T) {
+	targetEnv := []string{"ETHPANDAOPS_API_TOKEN=secret", "HOME=/work"}
 
-	for _, kv := range strippedEnv() {
-		if len(kv) >= len(envCtlUID) && kv[:len(envCtlUID)] == envCtlUID {
-			t.Errorf("control var leaked into python env: %q", kv)
+	cmd, cleanup, err := newHardenedSandboxCmd(
+		context.Background(), "/work", "/work/script.py", "/usr/bin/python3", 65534, 65534, targetEnv,
+	)
+	if err != nil {
+		t.Fatalf("newHardenedSandboxCmd: %v", err)
+	}
+	defer cleanup()
+
+	if len(cmd.ExtraFiles) != 1 {
+		t.Fatalf("expected the params pipe as the sole ExtraFile, got %d", len(cmd.ExtraFiles))
+	}
+
+	// The child env is the target env verbatim — no __PANDA_SB_* control vars.
+	for _, kv := range cmd.Env {
+		if strings.HasPrefix(kv, "__PANDA_SB") {
+			t.Errorf("control var leaked into the target env: %q", kv)
 		}
 	}
 
-	var kept bool
-	for _, kv := range strippedEnv() {
-		if kv == "KEEP_ME=yes" {
-			kept = true
-		}
+	// The params blob is readable from the pipe and round-trips.
+	blob, err := io.ReadAll(cmd.ExtraFiles[0])
+	if err != nil {
+		t.Fatalf("reading params pipe: %v", err)
 	}
-	if !kept {
-		t.Error("strippedEnv dropped a non-control variable")
+
+	var p sandboxInitParams
+	if err := json.Unmarshal(blob, &p); err != nil {
+		t.Fatalf("decoding params: %v", err)
+	}
+
+	if p.UID != 65534 || p.GID != 65534 || p.WorkDir != "/work" || p.Script != "/work/script.py" {
+		t.Errorf("params round-trip mismatch: %+v", p)
 	}
 }
 
