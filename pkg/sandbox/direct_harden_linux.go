@@ -276,8 +276,17 @@ func strippedEnv() []string {
 // need /proc/self) which is safe: the PID namespace already hides other
 // processes and the server marks itself non-dumpable.
 func applyLandlock(workDir, pythonBin string) error {
+	handled, truncate, ioctlDev := landlockRights(landlockABIVersion())
+
+	// Device nodes keep IOCTL_DEV so terminal/termios probes (isatty and friends)
+	// still work where handled; other paths never grant it.
+	devRead := llReadFile | ioctlDev
+
 	rules := []pathRule{
-		{path: workDir, access: llAllABI1, require: true},
+		// The workspace is the one fully writable tree: grant everything handled
+		// (read/write/exec + reparent + truncate + device ioctl) so normal file
+		// operations there are unrestricted.
+		{path: workDir, access: handled, require: true},
 
 		// Interpreter + shared libraries + stdlib. pythonVenvRoot climbs to the
 		// venv/prefix root so the whole install is readable+executable.
@@ -292,10 +301,10 @@ func applyLandlock(workDir, pythonBin string) error {
 		// procfs (see doc comment) and the few device nodes Python opens.
 		{path: "/proc", access: llReadFile | llReadDir, require: false},
 		{path: "/sys/kernel/mm/transparent_hugepage", access: llReadFile | llReadDir, require: false},
-		{path: "/dev/null", access: llReadFile | llWriteFile, require: false},
-		{path: "/dev/zero", access: llReadFile, require: false},
-		{path: "/dev/random", access: llReadFile, require: false},
-		{path: "/dev/urandom", access: llReadFile, require: false},
+		{path: "/dev/null", access: llReadFile | llWriteFile | truncate | ioctlDev, require: false},
+		{path: "/dev/zero", access: devRead, require: false},
+		{path: "/dev/random", access: devRead, require: false},
+		{path: "/dev/urandom", access: devRead, require: false},
 
 		// TLS roots, name resolution, timezone, and passwd/group lookups. These
 		// are single world-readable files, not the secret-bearing config paths.
@@ -312,7 +321,7 @@ func applyLandlock(workDir, pythonBin string) error {
 		{path: "/etc/localtime", access: llReadFile, require: false},
 	}
 
-	attr := landlockRulesetAttr{handledAccessFS: llAllABI1}
+	attr := landlockRulesetAttr{handledAccessFS: handled}
 
 	rulesetFd, _, errno := unix.Syscall(
 		unix.SYS_LANDLOCK_CREATE_RULESET,
@@ -446,6 +455,32 @@ func preflightDirectHardening(cfg config.SandboxConfig) error {
 	}
 
 	return nil
+}
+
+// landlockRights returns the handled-access mask for a given Landlock ABI
+// version, plus the individually-tracked TRUNCATE and IOCTL_DEV bits (0 when the
+// ABI predates them). Rights the ABI does not support are omitted — including an
+// unsupported bit makes landlock_create_ruleset fail with EINVAL — and, crucially,
+// an unhandled right is UNRESTRICTED, so the mask must track the running kernel or
+// REFER/TRUNCATE/IOCTL_DEV silently go ungated on newer hosts.
+func landlockRights(abi int) (handled, truncate, ioctlDev uint64) {
+	handled = llAllABI1
+
+	if abi >= 2 {
+		handled |= unix.LANDLOCK_ACCESS_FS_REFER
+	}
+
+	if abi >= 3 {
+		truncate = unix.LANDLOCK_ACCESS_FS_TRUNCATE
+		handled |= truncate
+	}
+
+	if abi >= 5 {
+		ioctlDev = unix.LANDLOCK_ACCESS_FS_IOCTL_DEV
+		handled |= ioctlDev
+	}
+
+	return handled, truncate, ioctlDev
 }
 
 // landlockABIVersion returns the kernel's Landlock ABI version, or a value < 1

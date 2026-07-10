@@ -6,6 +6,8 @@ import (
 	"os"
 	"testing"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/ethpandaops/panda/pkg/config"
 )
 
@@ -76,5 +78,43 @@ func TestEffectiveCapsParses(t *testing.T) {
 func TestLandlockABIVersion(t *testing.T) {
 	if v := landlockABIVersion(); v < 1 {
 		t.Skipf("landlock unavailable on this kernel (abi=%d)", v)
+	}
+}
+
+// TestLandlockRightsHandlesEveryABIsSupportedRights guards against the confinement
+// gap where a right the ruleset does not handle is left unrestricted: each ABI
+// must fold in exactly the rights it introduced (REFER@2, TRUNCATE@3, IOCTL_DEV@5)
+// and no bit the kernel would reject.
+func TestLandlockRightsHandlesEveryABIsSupportedRights(t *testing.T) {
+	base := uint64(llAllABI1)
+	refer := uint64(unix.LANDLOCK_ACCESS_FS_REFER)
+	trunc := uint64(unix.LANDLOCK_ACCESS_FS_TRUNCATE)
+	ioctl := uint64(unix.LANDLOCK_ACCESS_FS_IOCTL_DEV)
+
+	cases := []struct {
+		abi          int
+		wantHandled  uint64
+		wantTruncate uint64
+		wantIoctlDev uint64
+	}{
+		{1, base, 0, 0},
+		{2, base | refer, 0, 0},
+		{3, base | refer | trunc, trunc, 0},
+		{4, base | refer | trunc, trunc, 0},
+		{5, base | refer | trunc | ioctl, trunc, ioctl},
+		{6, base | refer | trunc | ioctl, trunc, ioctl},
+	}
+
+	for _, c := range cases {
+		handled, truncate, ioctlDev := landlockRights(c.abi)
+		if handled != c.wantHandled {
+			t.Errorf("abi %d: handled = %#x, want %#x", c.abi, handled, c.wantHandled)
+		}
+		if truncate != c.wantTruncate {
+			t.Errorf("abi %d: truncate = %#x, want %#x", c.abi, truncate, c.wantTruncate)
+		}
+		if ioctlDev != c.wantIoctlDev {
+			t.Errorf("abi %d: ioctlDev = %#x, want %#x", c.abi, ioctlDev, c.wantIoctlDev)
+		}
 	}
 }
