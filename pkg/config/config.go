@@ -106,28 +106,18 @@ type SandboxConfig struct {
 	// against a known, dependency-complete environment rather than ambient PATH.
 	PythonPath string `yaml:"python_path,omitempty"`
 
-	// ExecUID/ExecGID are the unprivileged uid/gid the direct backend drops to
-	// when running untrusted Python. They MUST differ from the server's own uid,
-	// so the server's config, credentials, and /proc are unreadable by the
-	// executed code. Zero means unset; the direct backend fails closed at startup
-	// unless both are set to a non-zero id distinct from the server's uid.
+	// ExecUID/ExecGID are the unprivileged uid/gid the direct backend drops to for
+	// untrusted Python. Both MUST be non-zero and differ from the server uid, or
+	// the backend fails closed at startup.
 	ExecUID int `yaml:"exec_uid,omitempty"`
 	ExecGID int `yaml:"exec_gid,omitempty"`
 
-	// RuntimeSocket is the unix-domain socket the server serves its runtime API
-	// on for the direct backend. That backend runs untrusted Python in an empty
-	// network namespace with no route out, so the sandbox reaches the server over
-	// this socket instead of TCP — making network exfiltration impossible rather
-	// than merely disallowed. Only the direct backend uses it; docker/gvisor
-	// sandboxes use the TCP API over the sandbox network. Defaults to
-	// <TMPDIR>/panda-sandbox-runtime.sock; see RuntimeSocketPath.
+	// RuntimeSocket is the unix socket the server serves its runtime API on for the
+	// direct backend (whose netns has no route to TCP). Default: see RuntimeSocketPath.
 	RuntimeSocket string `yaml:"runtime_socket,omitempty"`
 
-	// WorkspaceDir is the parent directory the direct backend creates per-execution
-	// and per-session workspaces under. It is kept off shared /tmp and locked to
-	// the server + exec uid, so untrusted code's script and scratch files are
-	// unreadable to other users on the host. Defaults to
-	// <TMPDIR>/panda-sandbox-workspaces; see WorkspaceRoot.
+	// WorkspaceDir is the parent dir for direct-backend workspaces, kept off shared
+	// /tmp and locked to the server + exec uid. Default: see WorkspaceRoot.
 	WorkspaceDir string `yaml:"workspace_dir,omitempty"`
 
 	// Instance identifies this server's sandbox containers with a custom label.
@@ -622,21 +612,18 @@ const MaxSandboxTimeout = 7_776_000
 // sandbox.BackendNone, which config cannot reference without an import cycle.
 const SandboxBackendNone = "none"
 
-// SandboxBackendDirect runs Python as a confined subprocess of the server rather
-// than in a container. Kept in sync with sandbox.BackendDirect, which config
-// cannot reference without an import cycle.
+// SandboxBackendDirect runs Python as a confined subprocess of the server. Kept
+// in sync with sandbox.BackendDirect (config can't import it — cycle).
 const SandboxBackendDirect = "direct"
 
-// defaultRuntimeSocketName is the runtime API socket filename used when the
-// direct backend is active and sandbox.runtime_socket is not set.
-const defaultRuntimeSocketName = "panda-sandbox-runtime.sock"
+// Default filenames used when the direct backend is active and the respective
+// sandbox.runtime_socket / sandbox.workspace_dir are unset.
+const (
+	defaultRuntimeSocketName = "panda-sandbox-runtime.sock"
+	defaultWorkspaceDirName  = "panda-sandbox-workspaces"
+)
 
-// defaultWorkspaceDirName is the workspace root directory name used when the
-// direct backend is active and sandbox.workspace_dir is not set.
-const defaultWorkspaceDirName = "panda-sandbox-workspaces"
-
-// WorkspaceRoot returns the parent directory the direct backend places its
-// per-execution and per-session workspaces under. Falls back to
+// WorkspaceRoot returns the direct backend's workspace parent dir, defaulting to
 // <TMPDIR>/panda-sandbox-workspaces.
 func (c SandboxConfig) WorkspaceRoot() string {
 	if p := strings.TrimSpace(c.WorkspaceDir); p != "" {
@@ -646,10 +633,8 @@ func (c SandboxConfig) WorkspaceRoot() string {
 	return filepath.Join(os.TempDir(), defaultWorkspaceDirName)
 }
 
-// RuntimeSocketPath returns the unix-domain socket the server serves the runtime
-// API on, or "" when the socket is not in use. Only the direct backend uses it:
-// its Python runs in an empty network namespace and reaches the server here
-// rather than over TCP. Falls back to <TMPDIR>/panda-sandbox-runtime.sock.
+// RuntimeSocketPath returns the runtime-API unix socket, or "" for any backend
+// but direct. Defaults to <TMPDIR>/panda-sandbox-runtime.sock.
 func (c SandboxConfig) RuntimeSocketPath() string {
 	if c.Backend != SandboxBackendDirect {
 		return ""
@@ -670,10 +655,8 @@ func (c *Config) Validate() error {
 		return errors.New("sandbox.image is required for docker/gvisor backends")
 	}
 
-	// The direct backend executes untrusted Python in-process. It only provides
-	// isolation when it drops to a dedicated unprivileged uid/gid that owns none
-	// of the server's secrets, so require both and refuse to run as the server's
-	// own uid (fail closed — see pkg/sandbox/direct_harden_linux.go).
+	// The direct backend only isolates when it drops to a dedicated unprivileged
+	// uid/gid, so require both (fail closed — see pkg/sandbox/direct_harden_linux.go).
 	if c.Sandbox.Backend == SandboxBackendDirect {
 		if c.Sandbox.ExecUID <= 0 || c.Sandbox.ExecGID <= 0 {
 			return errors.New("sandbox.exec_uid and sandbox.exec_gid are required (non-zero) for the direct backend")

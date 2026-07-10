@@ -20,29 +20,8 @@ import (
 	"github.com/ethpandaops/panda/pkg/config"
 )
 
-// This file implements the OS-level confinement for the direct backend. The
-// executed Python is LLM-generated and untrusted, and the direct backend runs
-// it as a child of panda-server with no container between them. Withholding the
-// server env (see direct.go) closes only the inherited-environment channel; the
-// filesystem and /proc remain reachable at the server's uid. We close those with
-// four layers, all applied to the child before it execs Python:
-//
-//  1. uid/gid drop — run Python as a dedicated unprivileged id (ExecUID/ExecGID)
-//     that owns none of the server's secrets, so config.yaml and the on-disk
-//     OAuth/credential files (0600, owned by the server uid) become unreadable
-//     and /proc/<server-pid>/{environ,mem} fail ptrace_may_access.
-//  2. PID namespace — the child cannot even see the server process in /proc.
-//  3. mount namespace + fresh /proc — private mounts, and a procfs bound to the
-//     child's PID namespace so it reflects only the child.
-//  4. Landlock — the filesystem is restricted to the workspace plus the minimal
-//     read/exec set Python needs; config and credential paths are simply absent.
-//
-// Because Landlock and mount() cannot be expressed through exec.Cmd.SysProcAttr,
-// we re-exec panda-server itself as a tiny trampoline (directSandboxInitArg):
-// the trampoline runs inside the new namespaces while still privileged, sets up
-// mounts + Landlock, drops to the sandbox uid, then execs Python. This is the
-// runc-style "init" pattern. Any failure in the trampoline aborts before Python
-// runs, so a broken confinement fails closed (no execution) rather than open.
+// OS-level confinement for the direct backend's untrusted Python — uid drop +
+// PID/mount/net namespaces + Landlock via a runc-style trampoline, fail closed.
 
 const (
 	// directSandboxInitArg is the argv[1] that re-invokes panda-server as the
@@ -50,10 +29,7 @@ const (
 	directSandboxInitArg = "__direct-sandbox-init"
 
 	// sandboxInitParamsFD is the inherited pipe (ExtraFiles[0]) the trampoline
-	// reads its parameters from. Passing them out-of-band on an fd — rather than
-	// via environment variables the untrusted target env sits next to — keeps a
-	// stray control var from ever being confused for a real one, and means the
-	// Python env is handed through verbatim with nothing to strip.
+	// reads params from — off the env, so the untrusted env cannot shadow them.
 	sandboxInitParamsFD = 3
 )
 
@@ -67,9 +43,8 @@ type sandboxInitParams struct {
 	Script  string `json:"script"`
 }
 
-// Landlock ABI-1 filesystem access rights and syscall constants. x/sys exports
-// the access-right bits but not the rule type / ruleset-attr helpers, so the
-// syscalls are issued directly.
+// Landlock ABI-1 access rights and syscall constants. x/sys exports the right
+// bits but not the rule-type/ruleset-attr helpers, so those syscalls go direct.
 const (
 	landlockRulePathBeneath      = 1
 	landlockCreateRulesetVersion = 1 << 0
@@ -94,9 +69,8 @@ type landlockRulesetAttr struct {
 	handledAccessFS uint64
 }
 
-// landlockPathBeneathAttr mirrors struct landlock_path_beneath_attr. The kernel
-// reads the packed 12 bytes (u64 + s32); Go's trailing alignment padding is
-// past that and ignored.
+// landlockPathBeneathAttr mirrors struct landlock_path_beneath_attr; the kernel
+// reads the packed 12 bytes (u64 + s32), Go's trailing padding is ignored.
 type landlockPathBeneathAttr struct {
 	allowedAccess uint64
 	parentFd      int32
@@ -109,12 +83,8 @@ type pathRule struct {
 	require bool // fail closed if a required path is missing; skip optional ones
 }
 
-// newHardenedSandboxCmd builds the exec.Cmd that runs untrusted Python under the
-// full confinement stack. It targets /proc/self/exe (the trampoline) inside a
-// fresh mount + PID + network namespace; the trampoline finishes the setup and
-// execs Python. targetEnv is the environment Python receives verbatim (never
-// os.Environ). The returned closer releases the params pipe and must be called
-// once the command has finished.
+// newHardenedSandboxCmd re-execs the trampoline in fresh mount/PID/net namespaces
+// (targetEnv is Python's env verbatim); the closer releases the params pipe.
 func newHardenedSandboxCmd(ctx context.Context, workDir, scriptPath, pythonBin string, uid, gid int, targetEnv []string) (*exec.Cmd, func(), error) {
 	blob, err := json.Marshal(sandboxInitParams{
 		UID: uid, GID: gid, WorkDir: workDir, Python: pythonBin, Script: scriptPath,
@@ -128,9 +98,8 @@ func newHardenedSandboxCmd(ctx context.Context, workDir, scriptPath, pythonBin s
 		return nil, nil, fmt.Errorf("creating params pipe: %w", err)
 	}
 
-	// The blob is a few hundred bytes — well under the pipe buffer — so this write
-	// completes without a reader. Closing the write end delivers EOF to the
-	// trampoline once it has read the params.
+	// The blob is well under the pipe buffer, so this write completes without a
+	// reader; closing the write end delivers EOF to the trampoline.
 	if _, err := pw.Write(blob); err != nil {
 		_ = pr.Close()
 		_ = pw.Close()
@@ -152,13 +121,8 @@ func newHardenedSandboxCmd(ctx context.Context, workDir, scriptPath, pythonBin s
 	cmd.ExtraFiles = []*os.File{pr} // becomes fd sandboxInitParamsFD in the child
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{
-		// New mount + PID + network namespaces (needs CAP_SYS_ADMIN, verified by
-		// preflight). CLONE_NEWNET gives the child an empty network namespace with
-		// no route out, so untrusted Python cannot exfiltrate over the network; it
-		// reaches the server only through the unix socket, which crosses the
-		// namespace boundary because it is addressed by path, not IP. The uid drop
-		// happens inside the trampoline after setup, so the caps survive to that
-		// point; Credential is deliberately NOT set here.
+		// CLONE_NEWNET gives an empty netns with no route out (no exfiltration); the
+		// uid drop happens in the trampoline, so caps survive — Credential stays unset.
 		Cloneflags: syscall.CLONE_NEWNS | syscall.CLONE_NEWPID | syscall.CLONE_NEWNET,
 		Pdeathsig:  syscall.SIGKILL,
 	}
@@ -166,10 +130,8 @@ func newHardenedSandboxCmd(ctx context.Context, workDir, scriptPath, pythonBin s
 	return cmd, func() { _ = pr.Close() }, nil
 }
 
-// RunDirectSandboxInitIfRequested runs the in-namespace trampoline when this
-// process was re-exec'd as one, and never returns in that case. It is a no-op
-// (returns false) for a normal server invocation. Call it before any flag/config
-// parsing — the trampoline's argv is not a cobra command.
+// RunDirectSandboxInitIfRequested runs the trampoline (and never returns) when
+// re-exec'd as one, else is a no-op. Call before flag/config parsing.
 func RunDirectSandboxInitIfRequested() bool {
 	if len(os.Args) < 2 || os.Args[1] != directSandboxInitArg {
 		return false
@@ -187,21 +149,15 @@ func RunDirectSandboxInitIfRequested() bool {
 	return true
 }
 
-// directSandboxInit runs inside the new namespaces, still holding the caps
-// inherited (ambiently) from panda-server. It seals the environment and execs
-// Python. Every step is checked; any error propagates and fails closed.
+// directSandboxInit runs inside the new namespaces with the ambient caps, seals
+// the environment, and execs Python. Every step is checked and fails closed.
 func directSandboxInit() error {
-	// Pin to one OS thread for the whole sequence. The mount, Landlock,
-	// no_new_privs, and uid-drop syscalls are all per-thread, and execve carries
-	// the calling thread's credentials + restrictions. Without this the goroutine
-	// could migrate to a thread that never dropped and execve Python as root.
-	// (We never unlock: execve replaces the image, destroying all other threads.)
+	// Pin to one thread: mount/Landlock/no_new_privs/uid-drop are per-thread and
+	// execve carries this thread's creds, so migration must not undo the drop.
 	runtime.LockOSThread()
 
-	// Refuse to run outside a fresh PID namespace. The legitimate trampoline is
-	// launched with CLONE_NEWPID and is therefore pid 1 of a new namespace; a
-	// direct `panda-server __direct-sandbox-init` on the host is not. Without this
-	// guard such a manual invocation would remount /proc on the host below.
+	// Refuse to run outside a fresh PID namespace: the real trampoline is pid 1 of
+	// a new namespace, a manual host invocation is not (and would remount host /proc).
 	if os.Getpid() != 1 {
 		return fmt.Errorf("not pid 1 of a new namespace (pid=%d); refusing to run outside the sandbox launcher", os.Getpid())
 	}
@@ -214,9 +170,8 @@ func directSandboxInit() error {
 	uid, gid := p.UID, p.GID
 	workDir, pythonBin, scriptPath := p.WorkDir, p.Python, p.Script
 
-	// Isolate the mount namespace so our /proc remount cannot propagate to the
-	// host, then bind a fresh procfs to the new PID namespace so it reflects only
-	// this process — the server's /proc entries become invisible.
+	// Make mounts private (so the /proc remount can't reach the host), then bind a
+	// fresh procfs to the new PID namespace — the server's /proc entries vanish.
 	if err := unix.Mount("", "/", "", unix.MS_REC|unix.MS_PRIVATE, ""); err != nil {
 		return fmt.Errorf("making mounts private: %w", err)
 	}
@@ -229,18 +184,14 @@ func directSandboxInit() error {
 		return fmt.Errorf("chdir to workspace: %w", err)
 	}
 
-	// A fresh network namespace has only a down loopback device. Bring it up so
-	// intra-process localhost sockets that libraries expect still work; this adds
-	// no egress, since the namespace has no route off the host. Do it while still
-	// privileged (needs CAP_NET_ADMIN in the new netns), before the uid drop.
+	// A fresh netns has only a down loopback; raise it (needs CAP_NET_ADMIN, so
+	// before the uid drop) for localhost sockets — no egress, the netns has no route.
 	if err := bringLoopbackUp(); err != nil {
 		return fmt.Errorf("bringing loopback up: %w", err)
 	}
 
-	// Scratch dirs the sandbox creates (HOME/cache all point at the workspace)
-	// stay group/other-traversable so the server, which owns the workspace but
-	// runs as a different uid, can clean them up afterwards. The 0770 workspace
-	// still walls them off from other users on the host.
+	// Sandbox scratch dirs stay traversable so the server (workspace owner, other
+	// uid) can clean them up; the 0770 workspace still walls off other users.
 	unix.Umask(0o022)
 
 	// no_new_privs before Landlock (required for the restrict_self path) and
@@ -271,9 +222,8 @@ func directSandboxInit() error {
 		return fmt.Errorf("uid drop did not stick (uid=%d euid=%d want=%d)", os.Getuid(), os.Geteuid(), uid)
 	}
 
-	// setresuid clears PR_SET_PDEATHSIG, so re-arm it after the drop: if
-	// panda-server dies, the kernel SIGKILLs this process (and the Python it is
-	// about to exec) instead of leaving an orphan running until the timeout.
+	// setresuid clears PR_SET_PDEATHSIG; re-arm it so a dying server SIGKILLs this
+	// process (and the Python it execs) rather than leaving an orphan.
 	if err := unix.Prctl(unix.PR_SET_PDEATHSIG, uintptr(unix.SIGKILL), 0, 0, 0); err != nil {
 		return fmt.Errorf("re-arm pdeathsig: %w", err)
 	}
@@ -316,23 +266,16 @@ func readSandboxInitParams() (sandboxInitParams, error) {
 	return p, nil
 }
 
-// applyLandlock confines the process filesystem to the workspace (read/write)
-// plus the minimal read/exec paths a Python interpreter needs. Everything else —
-// the server config, the credential store, arbitrary /home and /app — is denied
-// because it is never granted. /proc is granted read (Python and the Go runtime
-// need /proc/self) which is safe: the PID namespace already hides other
-// processes and the server marks itself non-dumpable.
+// applyLandlock confines the filesystem to the workspace plus the minimal
+// read/exec paths Python needs; config and credential paths are denied by absence.
 func applyLandlock(workDir, pythonBin string) error {
 	handled, truncate, ioctlDev := landlockRights(landlockABIVersion())
 
-	// Device nodes keep IOCTL_DEV so terminal/termios probes (isatty and friends)
-	// still work where handled; other paths never grant it.
+	// Device nodes keep IOCTL_DEV so isatty/termios probes work; other paths don't.
 	devRead := llReadFile | ioctlDev
 
 	rules := []pathRule{
-		// The workspace is the one fully writable tree: grant everything handled
-		// (read/write/exec + reparent + truncate + device ioctl) so normal file
-		// operations there are unrestricted.
+		// The one fully writable tree: everything handled, so file ops are unrestricted.
 		{path: workDir, access: handled, require: true},
 
 		// Interpreter + shared libraries + stdlib. pythonVenvRoot climbs to the
@@ -426,9 +369,8 @@ func landlockAddPath(rulesetFd int, r pathRule) error {
 	return nil
 }
 
-// pythonVenvRoot returns the install root to grant read+exec for the given
-// interpreter: for .../bin/python it is the parent of bin; otherwise the
-// interpreter's own directory.
+// pythonVenvRoot returns the install root to grant read+exec: the parent of bin
+// for .../bin/python, else the interpreter's own directory.
 func pythonVenvRoot(pythonBin string) string {
 	dir := parentDir(pythonBin)
 	if base(dir) == "bin" {
@@ -456,9 +398,8 @@ func base(p string) string {
 	return p
 }
 
-// preflightDirectHardening verifies, at server startup, that every confinement
-// primitive the direct backend relies on is actually available, and fails closed
-// otherwise. It never weakens the backend to "best effort".
+// preflightDirectHardening verifies at startup that every confinement primitive
+// is available and fails closed otherwise — never "best effort".
 func preflightDirectHardening(cfg config.SandboxConfig) error {
 	self := os.Getuid()
 
@@ -470,10 +411,8 @@ func preflightDirectHardening(cfg config.SandboxConfig) error {
 		return fmt.Errorf("sandbox.exec_uid (%d) must differ from the server uid (%d); running Python as the server uid defeats the isolation", cfg.ExecUID, self)
 	}
 
-	// Namespaces + uid drop need CAP_SYS_ADMIN, CAP_SETUID, CAP_SETGID. Root has
-	// them implicitly; a non-root server must carry them (ambient caps, see the
-	// entrypoint). Verify the effective set so a misconfigured deployment fails
-	// at boot, not at first execution.
+	// A non-root server must carry the caps ambiently (root has them implicitly);
+	// verify the effective set so a misconfigured deployment fails at boot.
 	if self != 0 {
 		eff, err := effectiveCaps()
 		if err != nil {
@@ -504,12 +443,8 @@ func preflightDirectHardening(cfg config.SandboxConfig) error {
 	return nil
 }
 
-// landlockRights returns the handled-access mask for a given Landlock ABI
-// version, plus the individually-tracked TRUNCATE and IOCTL_DEV bits (0 when the
-// ABI predates them). Rights the ABI does not support are omitted — including an
-// unsupported bit makes landlock_create_ruleset fail with EINVAL — and, crucially,
-// an unhandled right is UNRESTRICTED, so the mask must track the running kernel or
-// REFER/TRUNCATE/IOCTL_DEV silently go ungated on newer hosts.
+// landlockRights returns the handled mask + TRUNCATE/IOCTL_DEV bits for an ABI.
+// An unhandled right is UNRESTRICTED, so the mask must track the kernel exactly.
 func landlockRights(abi int) (handled, truncate, ioctlDev uint64) {
 	handled = llAllABI1
 
@@ -558,16 +493,14 @@ func effectiveCaps() (uint64, error) {
 	return 0, fmt.Errorf("CapEff not found in /proc/self/status")
 }
 
-// setServerNonDumpable marks panda-server non-dumpable so its /proc/<pid>/
-// {environ,mem,maps} become root-owned and unreadable to same-uid processes —
-// defense in depth for the /proc channel independent of the host ptrace_scope.
+// setServerNonDumpable makes the server's /proc/<pid>/{environ,mem} root-owned
+// and unreadable to same-uid processes — defense in depth for the /proc channel.
 func setServerNonDumpable() error {
 	return unix.Prctl(unix.PR_SET_DUMPABLE, 0, 0, 0, 0)
 }
 
-// bringLoopbackUp raises the loopback interface inside the current (fresh)
-// network namespace via SIOCGIFFLAGS/SIOCSIFFLAGS. Creating the control socket
-// needs no interface, so it works in an otherwise empty namespace.
+// bringLoopbackUp raises lo in the current netns via SIOCGIFFLAGS/SIOCSIFFLAGS;
+// the control socket needs no interface, so it works in an empty namespace.
 func bringLoopbackUp() error {
 	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_DGRAM|unix.SOCK_CLOEXEC, 0)
 	if err != nil {

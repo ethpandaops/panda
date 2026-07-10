@@ -51,9 +51,8 @@ func TestPythonVenvRoot(t *testing.T) {
 	}
 }
 
-// TestHardenedSandboxCmdPassesParamsOnFDNotEnv verifies the trampoline params
-// ride the inherited pipe (ExtraFiles[0]) and never the target env, so the
-// untrusted Python environment cannot shadow a control value.
+// Params must ride the inherited pipe (ExtraFiles[0]), never the target env, so
+// the untrusted Python environment cannot shadow a control value.
 func TestHardenedSandboxCmdPassesParamsOnFD(t *testing.T) {
 	targetEnv := []string{"ETHPANDAOPS_API_TOKEN=secret", "HOME=/work"}
 
@@ -104,10 +103,8 @@ func TestLandlockABIVersion(t *testing.T) {
 	}
 }
 
-// TestLandlockRightsHandlesEveryABIsSupportedRights guards against the confinement
-// gap where a right the ruleset does not handle is left unrestricted: each ABI
-// must fold in exactly the rights it introduced (REFER@2, TRUNCATE@3, IOCTL_DEV@5)
-// and no bit the kernel would reject.
+// Each ABI must fold in exactly the rights it introduced (REFER@2, TRUNCATE@3,
+// IOCTL_DEV@5) — an unhandled right is unrestricted — and no bit the kernel rejects.
 func TestLandlockRightsHandlesEveryABIsSupportedRights(t *testing.T) {
 	base := uint64(llAllABI1)
 	refer := uint64(unix.LANDLOCK_ACCESS_FS_REFER)

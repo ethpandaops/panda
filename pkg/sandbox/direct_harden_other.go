@@ -11,9 +11,8 @@ import (
 	"github.com/ethpandaops/panda/pkg/config"
 )
 
-// The direct backend's confinement (uid drop, mount/PID namespaces, Landlock) is
-// Linux-only. On every other platform the backend fails closed: preflight
-// refuses to start it, so the trampoline and hardened command are never reached.
+// The direct backend's confinement is Linux-only; elsewhere it fails closed —
+// preflight refuses to start, so the trampoline is never reached.
 
 // RunDirectSandboxInitIfRequested is a no-op off Linux (no trampoline exists).
 func RunDirectSandboxInitIfRequested() bool { return false }

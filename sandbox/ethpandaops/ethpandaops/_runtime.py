@@ -32,9 +32,8 @@ def _check_api_config() -> None:
 def _get_client(write_timeout: float = 60.0) -> httpx.Client:
     _check_api_config()
 
-    # The direct backend runs this code in an empty network namespace with no
-    # route out, so the server is reachable only over a unix socket. httpx dials
-    # the socket by path; _API_URL is then just the HTTP authority.
+    # Direct backend: no network route, so reach the server over a unix socket
+    # (httpx dials it by path; _API_URL is then just the HTTP authority).
     transport = httpx.HTTPTransport(uds=_API_UDS) if _API_UDS else None
 
     return httpx.Client(

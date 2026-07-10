@@ -181,11 +181,8 @@ func (s *Service) BuildSandboxEnv() (map[string]string, error) {
 
 	apiURL := sandboxAPIURL(s.cfg)
 
-	// The direct backend runs Python in an empty network namespace, so it reaches
-	// the server over a unix socket rather than TCP. The URL then only supplies
-	// the HTTP authority: an explicit base_url/sandbox_url still wins, but the
-	// host.docker.internal default is a docker-ism that does not apply in-pod, so
-	// fall back to localhost instead of requiring a URL at all.
+	// Direct backend: reach the server over a unix socket, so the URL is only the
+	// HTTP authority — an explicit base_url wins, else localhost (no URL required).
 	if socket := s.cfg.Sandbox.RuntimeSocketPath(); socket != "" {
 		env[sandbox.EnvAPIUDS] = socket
 
@@ -204,9 +201,8 @@ func (s *Service) BuildSandboxEnv() (map[string]string, error) {
 	return env, nil
 }
 
-// explicitSandboxAPIURL returns the operator-configured sandbox API URL
-// (sandbox_url, then base_url), or "" when neither is set. Unlike sandboxAPIURL
-// it never substitutes the host.docker.internal default.
+// explicitSandboxAPIURL returns the configured sandbox_url or base_url, or "" —
+// unlike sandboxAPIURL it never substitutes the host.docker.internal default.
 func explicitSandboxAPIURL(cfg *config.Config) string {
 	if cfg == nil {
 		return ""

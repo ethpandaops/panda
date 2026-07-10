@@ -14,10 +14,8 @@ import (
 	"github.com/ethpandaops/panda/pkg/config"
 )
 
-// testExecGID returns a gid the workspace can be chgrp'd to in the current
-// environment: the runner's own gid unprivileged (chgrp to your own gid needs no
-// CAP_CHOWN), or the dedicated exec gid when running as root (privileged CI),
-// where gid 0 would be rejected as an invalid, unisolated exec gid.
+// testExecGID returns a chgrp-able gid: the runner's own gid unprivileged, or the
+// dedicated exec gid as root (gid 0 would be rejected as an invalid exec gid).
 func testExecGID() int {
 	if g := os.Getgid(); g > 0 {
 		return g
@@ -26,10 +24,8 @@ func testExecGID() int {
 	return directExecTestUID
 }
 
-// sessionEnabledCfg returns a SandboxConfig with sessions enabled so tests don't
-// have to repeat the boilerplate. ExecGID comes from testExecGID so the workspace
-// chgrp in prepareWorkspace succeeds in both unprivileged and privileged runs;
-// these tests exercise session lifecycle, not the confined exec path.
+// sessionEnabledCfg returns a sessions-enabled SandboxConfig; ExecGID from
+// testExecGID so prepareWorkspace's chgrp succeeds in both run modes.
 func sessionEnabledCfg() config.SandboxConfig {
 	ten := true
 	return config.SandboxConfig{
@@ -45,11 +41,8 @@ func sessionEnabledCfg() config.SandboxConfig {
 	}
 }
 
-// TestDirectBackendWithholdsProcessSecrets is the regression gate for the
-// credential leak: the direct backend must NOT pass the panda-server process
-// env (which holds PANDA_BOT_TOKEN) to untrusted, LLM-generated code. The data
-// plane is reached via req.Env, so a secret living only in the process env must
-// be invisible to the executed script, while req.Env stays visible.
+// Regression gate for the credential leak: a secret in the server process env
+// (PANDA_BOT_TOKEN) must be invisible to the code, while req.Env stays visible.
 func TestDirectBackendWithholdsProcessSecrets(t *testing.T) {
 	requireDirectExec(t)
 
@@ -700,9 +693,8 @@ print('SESSION_ID=' + os.environ.get('ETHPANDAOPS_SESSION_ID', 'ABSENT'))
 	}
 }
 
-// TestDirectBackendExecuteEnforcesSessionOwnership verifies a caller cannot
-// execute code in a session owned by someone else — the regression gate for
-// cross-owner workspace access on the direct backend.
+// Regression gate for cross-owner workspace access: a caller cannot execute in a
+// session owned by someone else.
 func TestDirectBackendExecuteEnforcesSessionOwnership(t *testing.T) {
 	requireDirectExec(t)
 
@@ -737,10 +729,8 @@ func TestDirectBackendExecuteEnforcesSessionOwnership(t *testing.T) {
 	}
 }
 
-// TestDirectBackendDestroyDuringExecuteNoPanic verifies that destroying a
-// session while an execution is in flight does not panic — the regression gate
-// for the nil-pointer deref when populating session info after the map entry is
-// gone. Run with -race.
+// Regression gate (run with -race): destroying a session mid-execution must not
+// panic on the nil-deref when populating session info after the map entry is gone.
 func TestDirectBackendDestroyDuringExecuteNoPanic(t *testing.T) {
 	requireDirectExec(t)
 
@@ -773,9 +763,8 @@ func TestDirectBackendDestroyDuringExecuteNoPanic(t *testing.T) {
 	}
 }
 
-// TestDirectBackendCleanupSkipsInFlightExecution verifies the executing guard:
-// idle-TTL cleanup must not reclaim a session that has an execution in flight,
-// even when it has exceeded its TTL.
+// Verifies the executing guard: idle-TTL cleanup must not reclaim a session that
+// has an execution in flight, even past its TTL.
 func TestDirectBackendCleanupSkipsInFlightExecution(t *testing.T) {
 	cfg := sessionEnabledCfg()
 	cfg.Sessions.TTL = 20 * time.Millisecond
@@ -860,11 +849,8 @@ func TestDirectBackendStopIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestDirectBackendTimeoutReturnsError is the regression gate for the SIGKILL
-// timeout bug: CommandContext kills the subprocess on expiry, which surfaces as
-// *exec.ExitError, so Execute must consult the context before trusting the exit
-// code. The old code matched *exec.ExitError first and returned a clean result
-// with ExitCode -1 and a nil error, hiding the timeout from the caller.
+// Regression gate for the SIGKILL timeout bug: a killed subprocess surfaces as
+// *exec.ExitError, so Execute must return a timeout error, not a clean exit -1.
 func TestDirectBackendTimeoutReturnsError(t *testing.T) {
 	requireDirectExec(t)
 

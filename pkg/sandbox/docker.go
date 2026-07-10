@@ -1028,9 +1028,8 @@ func (b *DockerBackend) forceRemoveContainer(ctx context.Context, containerID st
 	return nil
 }
 
-// dockerSessionStore adapts the docker backend's container queries and teardown
-// to the backend-agnostic SessionStore. A session's authoritative state is its
-// container's labels; Handle is the container ID.
+// dockerSessionStore adapts the docker backend to the SessionStore: authoritative
+// state is the container's labels, Handle is the container ID.
 type dockerSessionStore struct {
 	b *DockerBackend
 }

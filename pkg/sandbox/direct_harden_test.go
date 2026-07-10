@@ -8,24 +8,19 @@ import (
 	"github.com/ethpandaops/panda/pkg/config"
 )
 
-// directExecTestUID is the unprivileged id the tests drop the sandbox to. 65534
-// ("nobody" on Debian/Alpine) is distinct from any plausible test-runner uid, so
-// the exec-uid-differs-from-server-uid invariant holds in CI.
+// directExecTestUID is the id the tests drop the sandbox to — 65534 ("nobody"),
+// distinct from any test-runner uid so the exec-uid≠server-uid invariant holds.
 const directExecTestUID = 65534
 
-// TestMain intercepts the direct-backend re-exec. The hardened Execute path
-// re-execs /proc/self/exe — which, under `go test`, is this test binary — so the
-// trampoline must be handled here or execution could never complete. A normal
-// test run is a no-op and proceeds to the suite.
+// TestMain intercepts the direct-backend re-exec: the hardened Execute path
+// re-execs this test binary, so the trampoline must be handled here.
 func TestMain(m *testing.M) {
 	RunDirectSandboxInitIfRequested()
 	os.Exit(m.Run())
 }
 
-// requireDirectExec skips a test that actually runs Python when this environment
-// cannot provide the direct backend's confinement (no python3, no CAP_SYS_ADMIN/
-// SETUID/SETGID, no Landlock, or the runner is uid 65534 itself). Execution is
-// fail-closed, so there is nothing to exercise without the full stack.
+// requireDirectExec skips tests that run Python when the confinement stack is
+// unavailable (no python3/caps/Landlock, or runner is uid 65534) — it fails closed.
 func requireDirectExec(t *testing.T) {
 	t.Helper()
 

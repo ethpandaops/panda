@@ -37,9 +37,8 @@ and sandboxed Python execution.`,
 }
 
 func Execute() {
-	// When the direct sandbox backend re-execs panda-server as its in-namespace
-	// trampoline, this consumes that invocation and never returns. A normal
-	// server invocation is a no-op here and falls through to cobra.
+	// Consumes the direct backend's re-exec trampoline invocation (never returns);
+	// a normal server invocation is a no-op and falls through to cobra.
 	sandbox.RunDirectSandboxInitIfRequested()
 
 	if err := rootCmd.Execute(); err != nil {

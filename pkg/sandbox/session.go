@@ -13,10 +13,8 @@ import (
 	"github.com/ethpandaops/panda/pkg/config"
 )
 
-// Session is the backend-agnostic record of a persistent sandbox session.
-// Handle is the opaque backing resource that the store reaps and the backend
-// executes in: a container ID for the docker backend, a workspace directory for
-// the direct backend.
+// Session is the backend-agnostic record of a persistent sandbox session; Handle
+// is the backing resource (docker container ID or direct workspace directory).
 type Session struct {
 	ID        string
 	OwnerID   string // Optional owner ID for session binding.
@@ -26,19 +24,8 @@ type Session struct {
 	Env       map[string]string
 }
 
-// SessionStore is the backend-specific half of session management: where the
-// authoritative session records live and how a session's backing resource is
-// reaped. All lifecycle *policy* (TTL, max-duration, ownership, the executing
-// guard, limits, the cleanup loop) lives in SessionManager, which drives the
-// store.
-//
-// This is an interface rather than an in-memory map owned by the manager
-// because the backends have genuinely different sources of truth: the docker
-// store queries Docker container labels (so sessions survive a server restart
-// and are visible across instances), while the direct store owns an in-process
-// map of workspace directories. Stores must return value snapshots, not
-// pointers into their own state, so the manager can annotate the returned
-// Session (e.g. LastUsed) without racing the store.
+// SessionStore is the backend-specific half of session management (record
+// persistence + teardown); all policy lives in SessionManager. Returns snapshots.
 type SessionStore interface {
 	// Get returns the session with the given ID, or (nil, nil) when it does not
 	// exist. A non-nil error is a lookup failure, not a missing session.
@@ -49,10 +36,8 @@ type SessionStore interface {
 	Remove(ctx context.Context, session *Session) error
 }
 
-// SessionManager manages the lifecycle of persistent sandbox sessions. The
-// authoritative session set lives in the SessionStore; only lastUsed times and
-// in-flight execution counts are kept in memory for TTL tracking. On server
-// restart in-memory state is lost, so sessions get fresh TTL timers.
+// SessionManager owns session lifecycle policy; records live in the SessionStore,
+// only lastUsed + in-flight counts are in memory (lost on restart → fresh TTLs).
 type SessionManager struct {
 	cfg config.SessionConfig
 	log logrus.FieldLogger
@@ -275,9 +260,8 @@ func (m *SessionManager) TTLRemaining(sessionID string) time.Duration {
 	return max(0, remaining)
 }
 
-// expireSession triggers async cleanup of an expired session and returns an error.
-// Cleanup runs on a background context so it survives cancellation of the request
-// ctx that triggered the expiry.
+// expireSession triggers async cleanup of an expired session on a background
+// context (so it survives cancellation of the request ctx) and returns an error.
 func (m *SessionManager) expireSession(session *Session, reason string) error {
 	go func() {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -330,9 +314,8 @@ func (m *SessionManager) Enabled() bool {
 	return m.cfg.IsEnabled()
 }
 
-// CanCreateSession checks if a new session can be created.
-// If ownerID is provided, counts only sessions owned by that user.
-// Returns (canCreate, currentCount, maxAllowed).
+// CanCreateSession reports whether a new session can be created, counting only
+// ownerID's sessions when set. Returns (canCreate, currentCount, maxAllowed).
 func (m *SessionManager) CanCreateSession(ctx context.Context, ownerID string) (bool, int, int) {
 	if !m.cfg.IsEnabled() {
 		return false, 0, 0
@@ -396,11 +379,8 @@ func (m *SessionManager) cleanupLoop(ctx context.Context) {
 	}
 }
 
-// cleanupExpired destroys sessions that have exceeded TTL or max duration.
-// Lists all sessions from the store and checks expiry based on:
-// - MaxDuration: from the session's CreatedAt.
-// - TTL: from the in-memory lastUsed map (best-effort, fresh timer on restart).
-// Sessions with active executions are protected from TTL expiry.
+// cleanupExpired destroys sessions past MaxDuration (from CreatedAt) or TTL (from
+// the in-memory lastUsed map); sessions with active executions are TTL-protected.
 func (m *SessionManager) cleanupExpired(ctx context.Context) {
 	sessions, err := m.store.List(ctx)
 	if err != nil {

@@ -368,9 +368,8 @@ func (s *service) runHTTP(ctx context.Context) error {
 		errCh <- s.httpServer.ListenAndServe()
 	}()
 
-	// The direct backend's sandbox has no network route, so it reaches the same
-	// handler over a unix socket. Serving it here (fail-closed) means a broken
-	// socket aborts startup rather than leaving the sandbox unable to call back.
+	// The direct backend's sandbox has no network route, so serve the same handler
+	// over a unix socket (fail-closed: a broken socket aborts startup).
 	if s.runtimeSocketPath != "" {
 		if err := s.serveRuntimeSocket(handler); err != nil {
 			return fmt.Errorf("serving runtime socket: %w", err)

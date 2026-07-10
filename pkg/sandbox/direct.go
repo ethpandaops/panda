@@ -18,29 +18,21 @@ import (
 	"github.com/ethpandaops/panda/pkg/config"
 )
 
-// directEnvPassthrough lists the non-sensitive process env vars the executed
-// subprocess legitimately needs (locating python/subprocesses via PATH, text
-// encoding, TLS roots). Everything else from the panda-server environment —
-// notably PANDA_BOT_USERNAME / PANDA_BOT_TOKEN — is withheld: the executed code
-// is LLM-generated and untrusted, and it reaches the data plane through req.Env
-// (ETHPANDAOPS_API_URL + a scoped per-execution token), not the inherited env.
+// directEnvPassthrough lists the non-sensitive process env vars the subprocess
+// needs; everything else (notably PANDA_BOT_*) is withheld from untrusted code.
 var directEnvPassthrough = []string{
 	"PATH", "LANG", "LC_ALL", "LC_CTYPE", "TZ",
 	"SSL_CERT_FILE", "SSL_CERT_DIR",
 }
 
-// ensureWorkspaceRoot creates the dedicated workspace root off shared /tmp. 0711
-// lets the exec uid traverse to its own workspace by exact path without being
-// able to list siblings; each workspace under it is then locked to the server +
-// exec uid (prepareWorkspace). Idempotent, so create paths can call it without
-// depending on Start having run.
+// ensureWorkspaceRoot creates the dedicated workspace root off shared /tmp at
+// 0711 (exec uid can reach its own workspace by path, not list siblings). Idempotent.
 func (b *DirectBackend) ensureWorkspaceRoot() error {
 	if err := os.MkdirAll(b.workspaceRoot, 0o711); err != nil {
 		return fmt.Errorf("creating workspace root %s: %w", b.workspaceRoot, err)
 	}
 
-	// MkdirAll honors umask, so force the mode: a strict server umask must not
-	// leave the root untraversable for the exec uid.
+	// Force the mode: MkdirAll honors umask, which could leave the root untraversable.
 	if err := os.Chmod(b.workspaceRoot, 0o711); err != nil {
 		return fmt.Errorf("setting workspace root mode: %w", err)
 	}
@@ -48,14 +40,8 @@ func (b *DirectBackend) ensureWorkspaceRoot() error {
 	return nil
 }
 
-// prepareWorkspace locks a freshly created workspace to the server + exec uid,
-// with no access for any other user on the host. Its group is set to the exec
-// gid and its mode to setgid 0770: the exec uid (a member of that gid) reaches
-// the workspace through the group, while others get nothing. The setgid bit
-// makes files created inside inherit the exec gid, so the server can write the
-// script group-readable for the exec uid without a per-file chown. Setting the
-// group to a group the server is not a member of needs CAP_CHOWN, which the
-// hardening preflight verifies — so this replaces the old world-writable 0777.
+// prepareWorkspace locks a workspace to the server + exec uid: group = exec gid,
+// mode setgid 0770, no world access. Needs CAP_CHOWN; replaces the old 0777.
 func (b *DirectBackend) prepareWorkspace(dir string) error {
 	if err := os.Chown(dir, -1, b.cfg.ExecGID); err != nil {
 		return fmt.Errorf("setting workspace group to exec gid %d: %w", b.cfg.ExecGID, err)
@@ -68,11 +54,8 @@ func (b *DirectBackend) prepareWorkspace(dir string) error {
 	return nil
 }
 
-// directSessionStore is the in-process SessionStore for the direct backend:
-// sessions are workspace directories owned in a map, with the directory itself
-// as the Session.Handle. Get/List hand out copies so SessionManager can annotate
-// the returned Session without racing the map. All lifecycle policy lives in the
-// SessionManager that drives this store.
+// directSessionStore is the in-process SessionStore for the direct backend: a map
+// of workspace dirs. Get/List return copies so SessionManager can annotate safely.
 type directSessionStore struct {
 	mu       sync.RWMutex
 	sessions map[string]*Session
@@ -129,13 +112,8 @@ func (s *directSessionStore) Remove(_ context.Context, session *Session) error {
 	return os.RemoveAll(session.Handle)
 }
 
-// DirectBackend implements sandbox execution by running Python directly as a
-// subprocess on the host (no Docker containers). Intended for use inside a
-// Kubernetes pod where the pod boundary itself provides the isolation.
-//
-// Session lifecycle (TTL, max-duration, ownership, the executing guard, limits,
-// cleanup) is delegated to the shared SessionManager; this backend only owns the
-// workspace directories (via directSessionStore) and the subprocess execution.
+// DirectBackend runs Python as a host subprocess (no container), for pods where
+// the pod boundary is the isolation. Session lifecycle is delegated to SessionManager.
 type DirectBackend struct {
 	cfg config.SandboxConfig
 	log logrus.FieldLogger
@@ -168,9 +146,8 @@ func (b *DirectBackend) Name() string {
 func (b *DirectBackend) Start(ctx context.Context) error {
 	b.log.Info("Starting direct execution backend")
 
-	// Fail closed: the direct backend only isolates untrusted code when the full
-	// confinement stack (uid drop, namespaces, Landlock) is available. Verify it
-	// before accepting any execution rather than degrading to unconfined.
+	// Fail closed: verify the full confinement stack is available before accepting
+	// any execution, rather than degrading to unconfined.
 	if err := preflightDirectHardening(b.cfg); err != nil {
 		return fmt.Errorf("direct backend hardening preflight failed: %w", err)
 	}
@@ -227,9 +204,8 @@ func (b *DirectBackend) Stop(ctx context.Context) error {
 	return b.sessionManager.Stop(ctx)
 }
 
-// Execute runs Python code directly as a subprocess. When req.SessionID is set
-// and non-empty the subprocess runs in the session's persistent workspace, and
-// the result carries session info.
+// Execute runs Python as a subprocess; a non-empty req.SessionID runs it in that
+// session's persistent workspace and carries session info in the result.
 func (b *DirectBackend) Execute(ctx context.Context, req ExecuteRequest) (*ExecutionResult, error) {
 	executionID := req.ExecutionID
 	if executionID == "" {
@@ -287,9 +263,8 @@ func (b *DirectBackend) Execute(ctx context.Context, req ExecuteRequest) (*Execu
 		}()
 	}
 
-	// Write the script group-readable (not world): the workspace's setgid bit
-	// gives it the exec gid, so the sandbox uid reads it through the group while
-	// other users on the host cannot.
+	// Script is group-readable (not world); the setgid workspace gives it the exec
+	// gid, so the sandbox uid reads it through the group.
 	scriptPath := filepath.Join(workDir, "script.py")
 	if err := os.WriteFile(scriptPath, []byte(req.Code), 0o640); err != nil {
 		return nil, fmt.Errorf("writing script file: %w", err)
@@ -302,11 +277,8 @@ func (b *DirectBackend) Execute(ctx context.Context, req ExecuteRequest) (*Execu
 		return nil, fmt.Errorf("resolving python interpreter %q: %w", b.pythonBin(), err)
 	}
 
-	// Build the execution environment. Critically, do NOT inherit the
-	// panda-server process env (os.Environ) — it holds the bot credential
-	// (PANDA_BOT_*) and the executed code is untrusted. Mirror the docker
-	// backend's isolation: sandbox defaults + a short non-sensitive passthrough +
-	// the per-execution env panda built for the code (proxy URL + scoped token).
+	// Build the env from scratch — never inherit os.Environ (it holds PANDA_BOT_*).
+	// Defaults + a short passthrough + the per-execution env panda built for the code.
 	envMap := SandboxEnvDefaults()
 	for _, k := range directEnvPassthrough {
 		if v, ok := os.LookupEnv(k); ok {
@@ -321,9 +293,8 @@ func (b *DirectBackend) Execute(ctx context.Context, req ExecuteRequest) (*Execu
 		envMap[EnvSessionID] = session.ID
 	}
 
-	// Point every writable/home/cache path at the workspace so the Landlock
-	// policy only has to grant write access to the single workspace directory.
-	// These win over req.Env and SandboxEnvDefaults deliberately.
+	// Point HOME/cache paths at the workspace so Landlock only grants write there.
+	// These deliberately win over req.Env and SandboxEnvDefaults.
 	for k, v := range map[string]string{
 		"HOME": workDir, "TMPDIR": workDir, "TMP": workDir,
 		"MPLCONFIGDIR": workDir, "XDG_CACHE_HOME": workDir,
@@ -361,9 +332,8 @@ func (b *DirectBackend) Execute(ctx context.Context, req ExecuteRequest) (*Execu
 
 	exitCode := 0
 	if err != nil {
-		// CommandContext SIGKILLs on expiry, which surfaces as *exec.ExitError.
-		// The context must therefore be consulted before the exit code is
-		// trusted, or a killed execution reports itself as a clean run.
+		// CommandContext SIGKILLs on expiry, surfacing as *exec.ExitError; consult
+		// the context before the exit code, or a killed run looks clean.
 		switch {
 		case errors.Is(execCtx.Err(), context.DeadlineExceeded):
 			log.WithError(err).Warn("Execution timed out")

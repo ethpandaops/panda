@@ -15,20 +15,8 @@ import (
 	"github.com/ethpandaops/panda/pkg/config"
 )
 
-// These tests exercise the direct backend's confinement end to end: they only
-// run where the full stack is available (Landlock + CAP_SYS_ADMIN/SETUID/SETGID/
-// CHOWN + a distinct exec uid), and are skipped otherwise by requireDirectExec.
-// They are the runtime evidence that the isolation actually holds, not just that
-// the code compiles.
-//
-// To run them, build the test binary statically and execute it in a privileged
-// container (--init so the server process is not pid 1 and cannot collide with
-// the sandbox's own pid-1):
-//
-//	CGO_ENABLED=0 go test -c -o /tmp/direct.test ./pkg/sandbox
-//	docker run --rm --privileged --init \
-//	  -v /tmp/direct.test:/direct.test:ro python:3.12-slim \
-//	  /direct.test -test.v -test.run TestConfinement
+// End-to-end confinement checks; requireDirectExec skips them unless the full
+// stack is present. Run the test binary in a privileged --init container.
 
 func runConfined(t *testing.T, code string, env map[string]string) *ExecutionResult {
 	t.Helper()
@@ -99,8 +87,7 @@ print("PIDCOUNT", len(pids))
 }
 
 // Landlock + the uid drop must keep server-owned secrets outside the workspace
-// unreadable: a 0600 file the server owns, at a path not on the allowlist, is
-// denied.
+// unreadable: a 0600 server file not on the allowlist is denied.
 func TestConfinementCannotReadServerSecret(t *testing.T) {
 	dir := t.TempDir()
 	secret := filepath.Join(dir, "credentials")
