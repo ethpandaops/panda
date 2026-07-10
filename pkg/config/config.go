@@ -123,6 +123,13 @@ type SandboxConfig struct {
 	// <TMPDIR>/panda-sandbox-runtime.sock; see RuntimeSocketPath.
 	RuntimeSocket string `yaml:"runtime_socket,omitempty"`
 
+	// WorkspaceDir is the parent directory the direct backend creates per-execution
+	// and per-session workspaces under. It is kept off shared /tmp and locked to
+	// the server + exec uid, so untrusted code's script and scratch files are
+	// unreadable to other users on the host. Defaults to
+	// <TMPDIR>/panda-sandbox-workspaces; see WorkspaceRoot.
+	WorkspaceDir string `yaml:"workspace_dir,omitempty"`
+
 	// Instance identifies this server's sandbox containers with a custom label.
 	// Used to distinguish containers from different server instances (e.g., probe runner vs production).
 	// When set, containers are labeled with "io.ethpandaops-panda.instance=<value>".
@@ -623,6 +630,21 @@ const SandboxBackendDirect = "direct"
 // defaultRuntimeSocketName is the runtime API socket filename used when the
 // direct backend is active and sandbox.runtime_socket is not set.
 const defaultRuntimeSocketName = "panda-sandbox-runtime.sock"
+
+// defaultWorkspaceDirName is the workspace root directory name used when the
+// direct backend is active and sandbox.workspace_dir is not set.
+const defaultWorkspaceDirName = "panda-sandbox-workspaces"
+
+// WorkspaceRoot returns the parent directory the direct backend places its
+// per-execution and per-session workspaces under. Falls back to
+// <TMPDIR>/panda-sandbox-workspaces.
+func (c SandboxConfig) WorkspaceRoot() string {
+	if p := strings.TrimSpace(c.WorkspaceDir); p != "" {
+		return p
+	}
+
+	return filepath.Join(os.TempDir(), defaultWorkspaceDirName)
+}
 
 // RuntimeSocketPath returns the unix-domain socket the server serves the runtime
 // API on, or "" when the socket is not in use. Only the direct backend uses it:

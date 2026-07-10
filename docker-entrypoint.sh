@@ -103,17 +103,18 @@ fi
 # it explicitly too so the credential path beneath it resolves regardless.
 export HOME=/home/panda
 
-# The direct sandbox backend re-execs panda-server into fresh mount + PID
-# namespaces and drops it to a dedicated unprivileged uid, so the server process
-# must carry ambient CAP_SETUID/CAP_SETGID/CAP_SYS_ADMIN across this privilege
-# drop. gosu/su-exec cannot set ambient caps; setpriv can. The container must
-# start as root (this entrypoint provisions the venv, renumbers panda, chowns
-# volumes, then drops) with those caps in its permitted set — grant them via the
-# pod securityContext (do NOT set runAsNonRoot / runAsUser):
+# The direct sandbox backend re-execs panda-server into fresh mount + PID +
+# network namespaces and drops it to a dedicated unprivileged uid, so the server
+# process must carry ambient CAP_SETUID/CAP_SETGID/CAP_SYS_ADMIN (namespaces +
+# uid drop) and CAP_CHOWN (lock each workspace to the exec gid) across this
+# privilege drop. gosu/su-exec cannot set ambient caps; setpriv can. The
+# container must start as root (this entrypoint provisions the venv, renumbers
+# panda, chowns volumes, then drops) with those caps in its permitted set —
+# grant them via the pod securityContext (do NOT set runAsNonRoot / runAsUser):
 #
 #   securityContext:
 #     capabilities:
-#       add: ["SETUID", "SETGID", "SYS_ADMIN"]
+#       add: ["SETUID", "SETGID", "SYS_ADMIN", "CHOWN"]
 #
 # If they are absent, setpriv fails here and the container fails closed rather
 # than launching an unconfined direct backend.
@@ -124,8 +125,8 @@ if [ "${PANDA_SANDBOX_BACKEND:-}" = "direct" ]; then
     fi
 
     exec setpriv --reuid=panda --regid="$(id -g panda)" --init-groups \
-        --inh-caps=+setuid,+setgid,+sys_admin \
-        --ambient-caps=+setuid,+setgid,+sys_admin \
+        --inh-caps=+setuid,+setgid,+sys_admin,+chown \
+        --ambient-caps=+setuid,+setgid,+sys_admin,+chown \
         "$@"
 fi
 

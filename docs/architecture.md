@@ -103,15 +103,20 @@ what the server chooses to pass in.
      simply absent. Note Landlock ABI 1 does **not** gate `connect(2)`, so the
      network namespace — not Landlock — is what contains egress and IPC.
 
+  Each workspace lives under a dedicated root off shared `/tmp` and is locked to
+  the server + exec uid (group `exec_gid`, mode `0770`, no world access), so the
+  untrusted script and its scratch files are unreadable to other users on the
+  host; the script itself is written group-readable (`0640`), never world.
+
   It additionally marks the server process non-dumpable (defense in depth for
   the `/proc` channel) and **fails closed**: if any layer is unavailable (no
   Landlock, missing capabilities, `exec_uid` unset or equal to the server uid)
   the backend refuses to start. The uid drop + namespaces require the server to
-  hold ambient `CAP_SETUID` / `CAP_SETGID` / `CAP_SYS_ADMIN`; grant these via the
-  pod `securityContext` (see `docker-entrypoint.sh` and
-  `config.direct.example.yaml`). In hosted-proxy mode the pod still holds the
-  service token used to authenticate to the proxy, so this isolation is what
-  keeps that token away from executed code.
+  hold ambient `CAP_SETUID` / `CAP_SETGID` / `CAP_SYS_ADMIN`, plus `CAP_CHOWN` to
+  lock each workspace to the exec gid; grant these via the pod `securityContext`
+  (see `docker-entrypoint.sh` and `config.direct.example.yaml`). In hosted-proxy
+  mode the pod still holds the service token used to authenticate to the proxy,
+  so this isolation is what keeps that token away from executed code.
 
 ## Deployment Modes
 

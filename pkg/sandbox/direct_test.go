@@ -15,13 +15,15 @@ import (
 )
 
 // sessionEnabledCfg returns a SandboxConfig with sessions enabled so tests
-// don't have to repeat the boilerplate.
+// don't have to repeat the boilerplate. ExecGID is the runner's own gid so the
+// workspace chgrp in prepareWorkspace succeeds without CAP_CHOWN; these tests
+// exercise session lifecycle, not the confined exec path.
 func sessionEnabledCfg() config.SandboxConfig {
 	ten := true
 	return config.SandboxConfig{
 		Timeout: 30,
 		ExecUID: directExecTestUID,
-		ExecGID: directExecTestUID,
+		ExecGID: os.Getgid(),
 		Sessions: config.SessionConfig{
 			Enabled:     &ten,
 			TTL:         10 * time.Minute,

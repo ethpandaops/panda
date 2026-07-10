@@ -29,15 +29,40 @@ var directEnvPassthrough = []string{
 	"SSL_CERT_FILE", "SSL_CERT_DIR",
 }
 
-// makeWorkspaceExecAccessible opens a freshly created workspace to the sandbox
-// exec uid, which differs from the server uid (that difference is what keeps the
-// server's secrets unreadable). The pod is single-tenant and Landlock confines
-// each execution to its own workspace, so directory-level world access here is
-// bounded by Landlock, not by the mode bits.
-func makeWorkspaceExecAccessible(dir string) error {
-	//nolint:gosec // Intentional: cross-uid workspace; Landlock is the boundary.
-	if err := os.Chmod(dir, 0o777); err != nil {
-		return fmt.Errorf("opening workspace to sandbox uid: %w", err)
+// ensureWorkspaceRoot creates the dedicated workspace root off shared /tmp. 0711
+// lets the exec uid traverse to its own workspace by exact path without being
+// able to list siblings; each workspace under it is then locked to the server +
+// exec uid (prepareWorkspace). Idempotent, so create paths can call it without
+// depending on Start having run.
+func (b *DirectBackend) ensureWorkspaceRoot() error {
+	if err := os.MkdirAll(b.workspaceRoot, 0o711); err != nil {
+		return fmt.Errorf("creating workspace root %s: %w", b.workspaceRoot, err)
+	}
+
+	// MkdirAll honors umask, so force the mode: a strict server umask must not
+	// leave the root untraversable for the exec uid.
+	if err := os.Chmod(b.workspaceRoot, 0o711); err != nil {
+		return fmt.Errorf("setting workspace root mode: %w", err)
+	}
+
+	return nil
+}
+
+// prepareWorkspace locks a freshly created workspace to the server + exec uid,
+// with no access for any other user on the host. Its group is set to the exec
+// gid and its mode to setgid 0770: the exec uid (a member of that gid) reaches
+// the workspace through the group, while others get nothing. The setgid bit
+// makes files created inside inherit the exec gid, so the server can write the
+// script group-readable for the exec uid without a per-file chown. Setting the
+// group to a group the server is not a member of needs CAP_CHOWN, which the
+// hardening preflight verifies — so this replaces the old world-writable 0777.
+func (b *DirectBackend) prepareWorkspace(dir string) error {
+	if err := os.Chown(dir, -1, b.cfg.ExecGID); err != nil {
+		return fmt.Errorf("setting workspace group to exec gid %d: %w", b.cfg.ExecGID, err)
+	}
+
+	if err := os.Chmod(dir, os.ModeSetgid|0o770); err != nil {
+		return fmt.Errorf("restricting workspace mode: %w", err)
 	}
 
 	return nil
@@ -115,6 +140,7 @@ type DirectBackend struct {
 	cfg config.SandboxConfig
 	log logrus.FieldLogger
 
+	workspaceRoot  string
 	store          *directSessionStore
 	sessionManager *SessionManager
 }
@@ -126,6 +152,7 @@ func NewDirectBackend(cfg config.SandboxConfig, log logrus.FieldLogger) (*Direct
 	return &DirectBackend{
 		cfg:            cfg,
 		log:            log.WithField("component", "sandbox.direct"),
+		workspaceRoot:  cfg.WorkspaceRoot(),
 		store:          store,
 		sessionManager: NewSessionManager(cfg.Sessions, log, store),
 	}, nil
@@ -152,6 +179,10 @@ func (b *DirectBackend) Start(ctx context.Context) error {
 	// defense in depth for the /proc channel.
 	if err := setServerNonDumpable(); err != nil {
 		return fmt.Errorf("marking server non-dumpable: %w", err)
+	}
+
+	if err := b.ensureWorkspaceRoot(); err != nil {
+		return err
 	}
 
 	// Verify the Python interpreter is available. A configured python_path must
@@ -233,12 +264,16 @@ func (b *DirectBackend) Execute(ctx context.Context, req ExecuteRequest) (*Execu
 		b.sessionManager.markExecuting(s.ID)
 		defer b.sessionManager.unmarkExecuting(s.ID)
 	} else {
-		tmpDir, err := os.MkdirTemp("", fmt.Sprintf("panda-exec-%s-", executionID))
+		if err := b.ensureWorkspaceRoot(); err != nil {
+			return nil, err
+		}
+
+		tmpDir, err := os.MkdirTemp(b.workspaceRoot, fmt.Sprintf("panda-exec-%s-", executionID))
 		if err != nil {
 			return nil, fmt.Errorf("creating temp directory: %w", err)
 		}
 
-		if err := makeWorkspaceExecAccessible(tmpDir); err != nil {
+		if err := b.prepareWorkspace(tmpDir); err != nil {
 			_ = os.RemoveAll(tmpDir)
 			return nil, err
 		}
@@ -252,9 +287,11 @@ func (b *DirectBackend) Execute(ctx context.Context, req ExecuteRequest) (*Execu
 		}()
 	}
 
-	// Write the script to a temp file.
+	// Write the script group-readable (not world): the workspace's setgid bit
+	// gives it the exec gid, so the sandbox uid reads it through the group while
+	// other users on the host cannot.
 	scriptPath := filepath.Join(workDir, "script.py")
-	if err := os.WriteFile(scriptPath, []byte(req.Code), 0o644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(req.Code), 0o640); err != nil {
 		return nil, fmt.Errorf("writing script file: %w", err)
 	}
 
@@ -425,12 +462,16 @@ func (b *DirectBackend) CreateSession(ctx context.Context, ownerID string, _ map
 
 	sessionID := b.sessionManager.GenerateSessionID()
 
-	workDir, err := os.MkdirTemp("", fmt.Sprintf("panda-session-%s-", sessionID))
+	if err := b.ensureWorkspaceRoot(); err != nil {
+		return "", err
+	}
+
+	workDir, err := os.MkdirTemp(b.workspaceRoot, fmt.Sprintf("panda-session-%s-", sessionID))
 	if err != nil {
 		return "", fmt.Errorf("creating session workspace: %w", err)
 	}
 
-	if err := makeWorkspaceExecAccessible(workDir); err != nil {
+	if err := b.prepareWorkspace(workDir); err != nil {
 		_ = os.RemoveAll(workDir)
 		return "", err
 	}

@@ -206,6 +206,12 @@ func directSandboxInit() error {
 		return fmt.Errorf("bringing loopback up: %w", err)
 	}
 
+	// Scratch dirs the sandbox creates (HOME/cache all point at the workspace)
+	// stay group/other-traversable so the server, which owns the workspace but
+	// runs as a different uid, can clean them up afterwards. The 0770 workspace
+	// still walls them off from other users on the host.
+	unix.Umask(0o022)
+
 	// no_new_privs before Landlock (required for the restrict_self path) and
 	// before the uid drop, so no suid binary the sandbox execs can regain privs.
 	if err := unix.Prctl(unix.PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0); err != nil {
@@ -425,6 +431,9 @@ func preflightDirectHardening(cfg config.SandboxConfig) error {
 			{unix.CAP_SYS_ADMIN, "CAP_SYS_ADMIN"},
 			{unix.CAP_SETUID, "CAP_SETUID"},
 			{unix.CAP_SETGID, "CAP_SETGID"},
+			// CAP_CHOWN: lock each workspace to the exec gid (a group the server is
+			// not a member of) so it is not world-accessible. See prepareWorkspace.
+			{unix.CAP_CHOWN, "CAP_CHOWN"},
 		} {
 			if eff&(1<<c.bit) == 0 {
 				return fmt.Errorf("direct backend requires %s (server runs as uid %d without it); grant it via the pod securityContext and ambient caps", c.name, self)

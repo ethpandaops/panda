@@ -21,9 +21,10 @@
 # Landlock — so the server's config and credential files stay unreadable AND the
 # code has no network route out (it cannot exfiltrate secrets or query results).
 # The sandbox reaches the server over a unix socket instead of TCP. That requires
-# the server to hold ambient CAP_SETUID/CAP_SETGID/CAP_SYS_ADMIN; grant them via
-# the pod securityContext (see docker-entrypoint.sh). If any layer is
-# unavailable the backend fails closed at startup rather than running unconfined.
+# the server to hold ambient CAP_SETUID/CAP_SETGID/CAP_SYS_ADMIN (namespaces + uid
+# drop) and CAP_CHOWN (lock each workspace to the exec gid); grant them via the
+# pod securityContext (see docker-entrypoint.sh). If any layer is unavailable the
+# backend fails closed at startup rather than running unconfined.
 
 sandbox:
   backend: ${PANDA_SANDBOX_BACKEND:-docker}
@@ -41,4 +42,8 @@ sandbox:
   # API. Defaults to <TMPDIR>/panda-sandbox-runtime.sock; put it on a writable
   # path both the server uid and exec_uid can reach.
   runtime_socket: ${PANDA_SANDBOX_RUNTIME_SOCKET:-}
+  # Parent dir for per-execution and per-session workspaces, kept off shared
+  # /tmp and locked to the server + exec uid (0770, group exec_gid). Defaults to
+  # <TMPDIR>/panda-sandbox-workspaces.
+  workspace_dir: ${PANDA_SANDBOX_WORKSPACE_DIR:-}
   timeout: 60

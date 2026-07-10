@@ -367,6 +367,16 @@ func TestRuntimeSocketPathOnlyForDirectBackend(t *testing.T) {
 	assert.Equal(t, "/run/panda/api.sock", custom.RuntimeSocketPath())
 }
 
+func TestWorkspaceRootDefaultAndOverride(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, filepath.Join(os.TempDir(), defaultWorkspaceDirName),
+		SandboxConfig{Backend: SandboxBackendDirect}.WorkspaceRoot())
+
+	custom := SandboxConfig{Backend: SandboxBackendDirect, WorkspaceDir: "/var/lib/panda/ws"}
+	assert.Equal(t, "/var/lib/panda/ws", custom.WorkspaceRoot())
+}
+
 func TestDirectBackendRequiresExecIDs(t *testing.T) {
 	t.Parallel()
 
