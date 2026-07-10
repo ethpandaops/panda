@@ -106,6 +106,14 @@ type SandboxConfig struct {
 	// against a known, dependency-complete environment rather than ambient PATH.
 	PythonPath string `yaml:"python_path,omitempty"`
 
+	// ExecUID/ExecGID are the unprivileged uid/gid the direct backend drops to
+	// when running untrusted Python. They MUST differ from the server's own uid,
+	// so the server's config, credentials, and /proc are unreadable by the
+	// executed code. Zero means unset; the direct backend fails closed at startup
+	// unless both are set to a non-zero id distinct from the server's uid.
+	ExecUID int `yaml:"exec_uid,omitempty"`
+	ExecGID int `yaml:"exec_gid,omitempty"`
+
 	// Instance identifies this server's sandbox containers with a custom label.
 	// Used to distinguish containers from different server instances (e.g., probe runner vs production).
 	// When set, containers are labeled with "io.ethpandaops-panda.instance=<value>".
@@ -609,6 +617,16 @@ func (c *Config) Validate() error {
 	// runtime, and "direct" runs code as a subprocess of the server.
 	if c.Sandbox.Backend != SandboxBackendNone && c.Sandbox.Backend != SandboxBackendDirect && c.Sandbox.Image == "" {
 		return errors.New("sandbox.image is required for docker/gvisor backends")
+	}
+
+	// The direct backend executes untrusted Python in-process. It only provides
+	// isolation when it drops to a dedicated unprivileged uid/gid that owns none
+	// of the server's secrets, so require both and refuse to run as the server's
+	// own uid (fail closed — see pkg/sandbox/direct_harden_linux.go).
+	if c.Sandbox.Backend == SandboxBackendDirect {
+		if c.Sandbox.ExecUID <= 0 || c.Sandbox.ExecGID <= 0 {
+			return errors.New("sandbox.exec_uid and sandbox.exec_gid are required (non-zero) for the direct backend")
+		}
 	}
 
 	// Validate sandbox timeout is within bounds.

@@ -20,6 +20,8 @@ func sessionEnabledCfg() config.SandboxConfig {
 	ten := true
 	return config.SandboxConfig{
 		Timeout: 30,
+		ExecUID: directExecTestUID,
+		ExecGID: directExecTestUID,
 		Sessions: config.SessionConfig{
 			Enabled:     &ten,
 			TTL:         10 * time.Minute,
@@ -35,13 +37,11 @@ func sessionEnabledCfg() config.SandboxConfig {
 // plane is reached via req.Env, so a secret living only in the process env must
 // be invisible to the executed script, while req.Env stays visible.
 func TestDirectBackendWithholdsProcessSecrets(t *testing.T) {
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not available")
-	}
+	requireDirectExec(t)
 
 	t.Setenv("PANDA_BOT_TOKEN", "super-secret-bot-token")
 
-	b, err := NewDirectBackend(config.SandboxConfig{Timeout: 30}, logrus.New())
+	b, err := NewDirectBackend(config.SandboxConfig{Timeout: 30, ExecUID: directExecTestUID, ExecGID: directExecTestUID}, logrus.New())
 	if err != nil {
 		t.Fatalf("NewDirectBackend: %v", err)
 	}
@@ -69,9 +69,7 @@ func TestDirectBackendWithholdsProcessSecrets(t *testing.T) {
 
 // TestDirectBackendSessionCreateListDestroy verifies the full session lifecycle.
 func TestDirectBackendSessionCreateListDestroy(t *testing.T) {
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not available")
-	}
+	requireDirectExec(t)
 
 	b, err := NewDirectBackend(sessionEnabledCfg(), logrus.New())
 	if err != nil {
@@ -139,9 +137,7 @@ func TestDirectBackendSessionCreateListDestroy(t *testing.T) {
 // TestDirectBackendSessionExecute verifies that code runs inside the session
 // workspace and files persist across calls.
 func TestDirectBackendSessionExecute(t *testing.T) {
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not available")
-	}
+	requireDirectExec(t)
 
 	b, err := NewDirectBackend(sessionEnabledCfg(), logrus.New())
 	if err != nil {
@@ -216,9 +212,7 @@ func TestDirectBackendSessionExecute(t *testing.T) {
 
 // TestDirectBackendSessionLimits verifies MaxSessions enforcement.
 func TestDirectBackendSessionLimits(t *testing.T) {
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not available")
-	}
+	requireDirectExec(t)
 
 	cfg := sessionEnabledCfg()
 	cfg.Sessions.MaxSessions = 2
@@ -315,9 +309,7 @@ func TestDirectBackendSessionDisabled(t *testing.T) {
 // TestDirectBackendSessionEnvInjection verifies the session's environment
 // variable is set when executing in a session.
 func TestDirectBackendSessionEnvInjection(t *testing.T) {
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not available")
-	}
+	requireDirectExec(t)
 
 	b, err := NewDirectBackend(sessionEnabledCfg(), logrus.New())
 	if err != nil {
@@ -390,9 +382,7 @@ func TestDirectBackendTTLExpiry(t *testing.T) {
 // TestDirectBackendWorkspaceDirPersistsAcrossExecutions verifies that files
 // written by one execution are visible to the next in the same session.
 func TestDirectBackendWorkspaceDirPersistsAcrossExecutions(t *testing.T) {
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not available")
-	}
+	requireDirectExec(t)
 
 	b, err := NewDirectBackend(sessionEnabledCfg(), logrus.New())
 	if err != nil {
@@ -441,11 +431,9 @@ func TestDirectBackendWorkspaceDirPersistsAcrossExecutions(t *testing.T) {
 // TestDirectBackendNonSessionTempDirIsCleanedUp verifies that non-session
 // executions clean up their temp directories.
 func TestDirectBackendNonSessionTempDirIsCleanedUp(t *testing.T) {
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not available")
-	}
+	requireDirectExec(t)
 
-	b, err := NewDirectBackend(config.SandboxConfig{Timeout: 30}, logrus.New())
+	b, err := NewDirectBackend(config.SandboxConfig{Timeout: 30, ExecUID: directExecTestUID, ExecGID: directExecTestUID}, logrus.New())
 	if err != nil {
 		t.Fatalf("NewDirectBackend: %v", err)
 	}
@@ -470,9 +458,7 @@ func TestDirectBackendNonSessionTempDirIsCleanedUp(t *testing.T) {
 // TestDirectBackendSessionTTLRefreshedOnExecute verifies that executing in a
 // session refreshes the TTL.
 func TestDirectBackendSessionTTLRefreshedOnExecute(t *testing.T) {
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not available")
-	}
+	requireDirectExec(t)
 
 	cfg := sessionEnabledCfg()
 	cfg.Sessions.TTL = 100 * time.Millisecond
@@ -539,9 +525,7 @@ func TestDirectBackendCanCreateSessionNoLimit(t *testing.T) {
 // TestDirectBackendMaxDurationExpiry verifies that sessions exceeding
 // MaxDuration are expired even when they are still active.
 func TestDirectBackendMaxDurationExpiry(t *testing.T) {
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not available")
-	}
+	requireDirectExec(t)
 
 	cfg := sessionEnabledCfg()
 	cfg.Sessions.TTL = 10 * time.Minute
@@ -596,9 +580,7 @@ func TestDirectBackendStopCleansUpSessions(t *testing.T) {
 // TestDirectBackendExecuteMissingSessionError verifies a clear error when
 // referencing a non-existent session.
 func TestDirectBackendExecuteMissingSessionError(t *testing.T) {
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not available")
-	}
+	requireDirectExec(t)
 
 	b, err := NewDirectBackend(sessionEnabledCfg(), logrus.New())
 	if err != nil {
@@ -676,9 +658,7 @@ func TestDirectBackendManuallySetPendingSessionsNoExecDirect(t *testing.T) {
 // TestDirectBackendEnvDefaultsHasEnvSessionID verifies that a session
 // execution sets the ETHPANDAOPS_SESSION_ID env var for storage scoping.
 func TestDirectBackendEnvDefaultsHasEnvSessionID(t *testing.T) {
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not available")
-	}
+	requireDirectExec(t)
 
 	b, err := NewDirectBackend(sessionEnabledCfg(), logrus.New())
 	if err != nil {
@@ -710,9 +690,7 @@ print('SESSION_ID=' + os.environ.get('ETHPANDAOPS_SESSION_ID', 'ABSENT'))
 // execute code in a session owned by someone else — the regression gate for
 // cross-owner workspace access on the direct backend.
 func TestDirectBackendExecuteEnforcesSessionOwnership(t *testing.T) {
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not available")
-	}
+	requireDirectExec(t)
 
 	b, err := NewDirectBackend(sessionEnabledCfg(), logrus.New())
 	if err != nil {
@@ -750,9 +728,7 @@ func TestDirectBackendExecuteEnforcesSessionOwnership(t *testing.T) {
 // for the nil-pointer deref when populating session info after the map entry is
 // gone. Run with -race.
 func TestDirectBackendDestroyDuringExecuteNoPanic(t *testing.T) {
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not available")
-	}
+	requireDirectExec(t)
 
 	b, err := NewDirectBackend(sessionEnabledCfg(), logrus.New())
 	if err != nil {
@@ -825,12 +801,14 @@ func TestDirectBackendCleanupSkipsInFlightExecution(t *testing.T) {
 // TestDirectBackendConfiguredPythonPath verifies the python_path config pins the
 // interpreter and that Start fails fast when it is missing.
 func TestDirectBackendConfiguredPythonPath(t *testing.T) {
+	requireDirectExec(t)
+
 	python3, err := exec.LookPath("python3")
 	if err != nil {
 		t.Skip("python3 not available")
 	}
 
-	cfg := config.SandboxConfig{Timeout: 30, PythonPath: python3}
+	cfg := config.SandboxConfig{Timeout: 30, PythonPath: python3, ExecUID: directExecTestUID, ExecGID: directExecTestUID}
 	b, err := NewDirectBackend(cfg, logrus.New())
 	if err != nil {
 		t.Fatalf("NewDirectBackend: %v", err)
@@ -844,7 +822,7 @@ func TestDirectBackendConfiguredPythonPath(t *testing.T) {
 	_ = b.Stop(context.Background())
 
 	// A bogus path must fail fast at Start, not fall back to PATH.
-	bad, err := NewDirectBackend(config.SandboxConfig{Timeout: 30, PythonPath: "/nonexistent/python"}, logrus.New())
+	bad, err := NewDirectBackend(config.SandboxConfig{Timeout: 30, PythonPath: "/nonexistent/python", ExecUID: directExecTestUID, ExecGID: directExecTestUID}, logrus.New())
 	if err != nil {
 		t.Fatalf("NewDirectBackend: %v", err)
 	}

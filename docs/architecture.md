@@ -67,6 +67,43 @@ The Python runtime inside the sandbox is server-facing only:
 - never receives datasource credentials
 - never receives proxy auth tokens
 
+Executed code is LLM-generated and untrusted, so these guarantees must hold
+against code actively trying to read the server's secrets — not just against
+what the server chooses to pass in.
+
+#### Sandbox backends
+
+- `docker` / `gvisor`: code runs in a container. A separate mount + PID
+  namespace and a non-`root` uid keep the server's config, credentials, and
+  process environment out of reach by construction.
+- `direct`: code runs in-process as a subprocess of `server`, for pods where a
+  container-per-execution is undesirable. Because there is no container, the
+  server env withholding alone is **not** sufficient — an untrusted script could
+  otherwise read the on-disk config/credential files (`config.yaml`,
+  `~/.config/panda/credentials/*`) and the server's `/proc/<pid>/environ`/`mem`
+  at the shared uid. The direct backend closes those channels with four layers,
+  applied by a re-exec trampoline before the script runs:
+  1. **uid/gid drop** to a dedicated unprivileged id (`sandbox.exec_uid` /
+     `exec_gid`, distinct from the server uid) — the `0600` credential files and
+     the server's `/proc` become unreadable.
+  2. **PID namespace** — the server process is not even visible in the sandbox's
+     `/proc`.
+  3. **mount namespace + fresh `/proc`** — private mounts bound to that PID
+     namespace.
+  4. **Landlock** — the filesystem is restricted to the execution's workspace
+     plus the minimal read/exec paths Python needs; secret-bearing paths are
+     simply absent.
+
+  It additionally marks the server process non-dumpable (defense in depth for
+  the `/proc` channel) and **fails closed**: if any layer is unavailable (no
+  Landlock, missing capabilities, `exec_uid` unset or equal to the server uid)
+  the backend refuses to start. The uid drop + namespaces require the server to
+  hold ambient `CAP_SETUID` / `CAP_SETGID` / `CAP_SYS_ADMIN`; grant these via the
+  pod `securityContext` (see `docker-entrypoint.sh` and
+  `config.direct.example.yaml`). In hosted-proxy mode the pod still holds the
+  service token used to authenticate to the proxy, so this isolation is what
+  keeps that token away from executed code.
+
 ## Deployment Modes
 
 Only two deployment modes are supported.

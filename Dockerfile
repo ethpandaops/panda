@@ -61,9 +61,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 librsvg2-bin fonts-dejavu-core fonts-noto-color-emoji && \
     rm -rf /var/lib/apt/lists/*
 
-# Create non-root user
+# Create non-root user. panda-sandbox (uid/gid 1002) is the dedicated,
+# owns-nothing identity the direct backend drops untrusted Python to; keeping it
+# distinct from panda is what makes the server's config and credential files
+# unreadable to executed code (see pkg/sandbox/direct_harden_linux.go and
+# sandbox.exec_uid/exec_gid).
 RUN useradd -m -s /bin/bash panda && \
-    usermod -aG docker panda 2>/dev/null || true
+    usermod -aG docker panda 2>/dev/null || true; \
+    groupadd -g 1002 panda-sandbox && \
+    useradd -u 1002 -g 1002 -M -s /usr/sbin/nologin panda-sandbox
 
 WORKDIR /app
 
@@ -87,9 +93,12 @@ RUN mkdir -p /config /shared /output /data/storage /data/cache && \
     chown -R panda:panda /app /config /shared /output /data/storage /data/cache
 
 # Entrypoint runs as root to fix volume ownership, then drops to panda.
+# gosu drops privileges for docker/gvisor; setpriv (util-linux) does the same
+# for the direct backend but can also raise the ambient CAP_SETUID/SETGID/
+# SYS_ADMIN the re-exec trampoline needs.
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh && \
-    apt-get update && apt-get install -y --no-install-recommends gosu && \
+    apt-get update && apt-get install -y --no-install-recommends gosu util-linux && \
     rm -rf /var/lib/apt/lists/*
 
 # Expose ports

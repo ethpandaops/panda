@@ -5,6 +5,8 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+
+	"github.com/ethpandaops/panda/pkg/sandbox"
 )
 
 var (
@@ -35,6 +37,11 @@ and sandboxed Python execution.`,
 }
 
 func Execute() {
+	// When the direct sandbox backend re-execs panda-server as its in-namespace
+	// trampoline, this consumes that invocation and never returns. A normal
+	// server invocation is a no-op here and falls through to cobra.
+	sandbox.RunDirectSandboxInitIfRequested()
+
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}

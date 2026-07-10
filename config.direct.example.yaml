@@ -14,6 +14,14 @@
 # First direct boot installs the dependency set from PyPI (~30-60s); mount a
 # volume at /opt/panda-venv to persist it across pod restarts. Configure
 # proxies/storage as your deployment needs — only the sandbox block is shown.
+#
+# SECURITY: the direct backend runs untrusted, LLM-generated Python in-process.
+# It isolates that code by dropping it to a dedicated unprivileged uid, sealing
+# it in fresh mount + PID namespaces, and confining its filesystem with Landlock
+# — so the server's config and credential files stay unreadable. That requires
+# the server to hold ambient CAP_SETUID/CAP_SETGID/CAP_SYS_ADMIN; grant them via
+# the pod securityContext (see docker-entrypoint.sh). If any layer is
+# unavailable the backend fails closed at startup rather than running unconfined.
 
 sandbox:
   backend: ${PANDA_SANDBOX_BACKEND:-docker}
@@ -21,4 +29,9 @@ sandbox:
   # (exported by the entrypoint). The direct backend fails fast at startup if
   # this interpreter is missing rather than falling back to PATH.
   python_path: ${PANDA_SANDBOX_PYTHON_PATH:-}
+  # Unprivileged uid/gid the direct backend drops untrusted Python to. MUST be
+  # non-zero and differ from the server's own uid (running as the server uid
+  # would defeat the isolation). Matches the baked `panda-sandbox` user.
+  exec_uid: ${PANDA_SANDBOX_EXEC_UID:-1002}
+  exec_gid: ${PANDA_SANDBOX_EXEC_GID:-1002}
   timeout: 60

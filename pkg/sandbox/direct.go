@@ -29,6 +29,20 @@ var directEnvPassthrough = []string{
 	"SSL_CERT_FILE", "SSL_CERT_DIR",
 }
 
+// makeWorkspaceExecAccessible opens a freshly created workspace to the sandbox
+// exec uid, which differs from the server uid (that difference is what keeps the
+// server's secrets unreadable). The pod is single-tenant and Landlock confines
+// each execution to its own workspace, so directory-level world access here is
+// bounded by Landlock, not by the mode bits.
+func makeWorkspaceExecAccessible(dir string) error {
+	//nolint:gosec // Intentional: cross-uid workspace; Landlock is the boundary.
+	if err := os.Chmod(dir, 0o777); err != nil {
+		return fmt.Errorf("opening workspace to sandbox uid: %w", err)
+	}
+
+	return nil
+}
+
 // directSessionStore is the in-process SessionStore for the direct backend:
 // sessions are workspace directories owned in a map, with the directory itself
 // as the Session.Handle. Get/List hand out copies so SessionManager can annotate
@@ -127,6 +141,19 @@ func (b *DirectBackend) Name() string {
 func (b *DirectBackend) Start(ctx context.Context) error {
 	b.log.Info("Starting direct execution backend")
 
+	// Fail closed: the direct backend only isolates untrusted code when the full
+	// confinement stack (uid drop, namespaces, Landlock) is available. Verify it
+	// before accepting any execution rather than degrading to unconfined.
+	if err := preflightDirectHardening(b.cfg); err != nil {
+		return fmt.Errorf("direct backend hardening preflight failed: %w", err)
+	}
+
+	// Hide the server's own /proc/<pid>/{environ,mem} from same-uid readers as
+	// defense in depth for the /proc channel.
+	if err := setServerNonDumpable(); err != nil {
+		return fmt.Errorf("marking server non-dumpable: %w", err)
+	}
+
 	// Verify the Python interpreter is available. A configured python_path must
 	// exist — fail fast rather than silently falling back to an ambient python
 	// that may lack the sandbox's dependency-complete environment.
@@ -211,6 +238,11 @@ func (b *DirectBackend) Execute(ctx context.Context, req ExecuteRequest) (*Execu
 			return nil, fmt.Errorf("creating temp directory: %w", err)
 		}
 
+		if err := makeWorkspaceExecAccessible(tmpDir); err != nil {
+			_ = os.RemoveAll(tmpDir)
+			return nil, err
+		}
+
 		workDir = tmpDir
 
 		defer func() {
@@ -226,7 +258,12 @@ func (b *DirectBackend) Execute(ctx context.Context, req ExecuteRequest) (*Execu
 		return nil, fmt.Errorf("writing script file: %w", err)
 	}
 
-	pythonBin := b.pythonBin()
+	// Resolve to an absolute interpreter path: the trampoline execve()s it and
+	// execve does not consult PATH.
+	pythonBin, err := exec.LookPath(b.pythonBin())
+	if err != nil {
+		return nil, fmt.Errorf("resolving python interpreter %q: %w", b.pythonBin(), err)
+	}
 
 	// Build the execution environment. Critically, do NOT inherit the
 	// panda-server process env (os.Environ) — it holds the bot credential
@@ -247,6 +284,16 @@ func (b *DirectBackend) Execute(ctx context.Context, req ExecuteRequest) (*Execu
 		envMap[EnvSessionID] = session.ID
 	}
 
+	// Point every writable/home/cache path at the workspace so the Landlock
+	// policy only has to grant write access to the single workspace directory.
+	// These win over req.Env and SandboxEnvDefaults deliberately.
+	for k, v := range map[string]string{
+		"HOME": workDir, "TMPDIR": workDir, "TMP": workDir,
+		"MPLCONFIGDIR": workDir, "XDG_CACHE_HOME": workDir,
+	} {
+		envMap[k] = v
+	}
+
 	env := make([]string, 0, len(envMap))
 	for k, v := range envMap {
 		env = append(env, fmt.Sprintf("%s=%s", k, v))
@@ -258,17 +305,16 @@ func (b *DirectBackend) Execute(ctx context.Context, req ExecuteRequest) (*Execu
 
 	startTime := time.Now()
 
-	// Build the command.
-	cmd := exec.CommandContext(execCtx, pythonBin, scriptPath)
-	cmd.Dir = workDir
-	cmd.Env = env
+	// Build the fully confined command: uid drop + mount/PID namespaces +
+	// Landlock, applied by the re-exec trampoline before it execs Python.
+	cmd := newHardenedSandboxCmd(execCtx, workDir, scriptPath, pythonBin, b.cfg.ExecUID, b.cfg.ExecGID, env)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	// Run the command.
-	err := cmd.Run()
+	err = cmd.Run()
 
 	duration := time.Since(startTime).Seconds()
 
@@ -370,6 +416,11 @@ func (b *DirectBackend) CreateSession(ctx context.Context, ownerID string, _ map
 	workDir, err := os.MkdirTemp("", fmt.Sprintf("panda-session-%s-", sessionID))
 	if err != nil {
 		return "", fmt.Errorf("creating session workspace: %w", err)
+	}
+
+	if err := makeWorkspaceExecAccessible(workDir); err != nil {
+		_ = os.RemoveAll(workDir)
+		return "", err
 	}
 
 	b.store.add(&Session{
