@@ -14,16 +14,28 @@ import (
 	"github.com/ethpandaops/panda/pkg/config"
 )
 
-// sessionEnabledCfg returns a SandboxConfig with sessions enabled so tests
-// don't have to repeat the boilerplate. ExecGID is the runner's own gid so the
-// workspace chgrp in prepareWorkspace succeeds without CAP_CHOWN; these tests
-// exercise session lifecycle, not the confined exec path.
+// testExecGID returns a gid the workspace can be chgrp'd to in the current
+// environment: the runner's own gid unprivileged (chgrp to your own gid needs no
+// CAP_CHOWN), or the dedicated exec gid when running as root (privileged CI),
+// where gid 0 would be rejected as an invalid, unisolated exec gid.
+func testExecGID() int {
+	if g := os.Getgid(); g > 0 {
+		return g
+	}
+
+	return directExecTestUID
+}
+
+// sessionEnabledCfg returns a SandboxConfig with sessions enabled so tests don't
+// have to repeat the boilerplate. ExecGID comes from testExecGID so the workspace
+// chgrp in prepareWorkspace succeeds in both unprivileged and privileged runs;
+// these tests exercise session lifecycle, not the confined exec path.
 func sessionEnabledCfg() config.SandboxConfig {
 	ten := true
 	return config.SandboxConfig{
 		Timeout: 30,
 		ExecUID: directExecTestUID,
-		ExecGID: os.Getgid(),
+		ExecGID: testExecGID(),
 		Sessions: config.SessionConfig{
 			Enabled:     &ten,
 			TTL:         10 * time.Minute,
