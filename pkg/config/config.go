@@ -587,9 +587,15 @@ func pandaDataDir(subdir string) string {
 // MaxSandboxTimeout is the maximum allowed sandbox timeout in seconds (~3 months).
 const MaxSandboxTimeout = 7_776_000
 
+// SandboxBackendNone disables the sandbox: the server runs without a container
+// runtime and execute_python is unavailable. Kept in sync with
+// sandbox.BackendNone, which config cannot reference without an import cycle.
+const SandboxBackendNone = "none"
+
 // Validate validates the configuration.
 func (c *Config) Validate() error {
-	if c.Sandbox.Image == "" {
+	// The "none" backend has no container runtime, so it needs no sandbox image.
+	if c.Sandbox.Backend != SandboxBackendNone && c.Sandbox.Image == "" {
 		return errors.New("sandbox.image is required")
 	}
 
