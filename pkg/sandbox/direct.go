@@ -3,12 +3,12 @@ package sandbox
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -320,14 +320,26 @@ func (b *DirectBackend) Execute(ctx context.Context, req ExecuteRequest) (*Execu
 
 	exitCode := 0
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			exitCode = exitErr.ExitCode()
-		} else if strings.Contains(err.Error(), "signal: killed") || execCtx.Err() != nil {
-			log.WithError(err).Warn("Execution timed out or cancelled")
-			return nil, fmt.Errorf("execution timed out after %v: %w", timeout, execCtx.Err())
-		} else {
+		// CommandContext SIGKILLs on expiry, which surfaces as *exec.ExitError.
+		// The context must therefore be consulted before the exit code is
+		// trusted, or a killed execution reports itself as a clean run.
+		switch {
+		case errors.Is(execCtx.Err(), context.DeadlineExceeded):
+			log.WithError(err).Warn("Execution timed out")
+
+			return nil, fmt.Errorf("execution timed out after %v", timeout)
+		case execCtx.Err() != nil:
+			log.WithError(err).Warn("Execution cancelled")
+
+			return nil, fmt.Errorf("execution cancelled: %w", execCtx.Err())
+		}
+
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) {
 			return nil, fmt.Errorf("execution failed: %w", err)
 		}
+
+		exitCode = exitErr.ExitCode()
 	}
 
 	log.WithFields(logrus.Fields{

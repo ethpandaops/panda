@@ -845,3 +845,32 @@ func TestDirectBackendStopIsIdempotent(t *testing.T) {
 		t.Fatalf("second Stop: %v", err)
 	}
 }
+
+// TestDirectBackendTimeoutReturnsError is the regression gate for the SIGKILL
+// timeout bug: CommandContext kills the subprocess on expiry, which surfaces as
+// *exec.ExitError, so Execute must consult the context before trusting the exit
+// code. The old code matched *exec.ExitError first and returned a clean result
+// with ExitCode -1 and a nil error, hiding the timeout from the caller.
+func TestDirectBackendTimeoutReturnsError(t *testing.T) {
+	requireDirectExec(t)
+
+	b, err := NewDirectBackend(config.SandboxConfig{Timeout: 1, ExecUID: directExecTestUID, ExecGID: directExecTestUID}, logrus.New())
+	if err != nil {
+		t.Fatalf("NewDirectBackend: %v", err)
+	}
+	if err := b.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() { _ = b.Stop(context.Background()) })
+
+	res, err := b.Execute(context.Background(), ExecuteRequest{
+		Code:    "import time\ntime.sleep(30)\n",
+		Timeout: time.Second,
+	})
+	if err == nil {
+		t.Fatalf("expected a timeout error, got result %+v", res)
+	}
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("expected a timeout error, got: %v", err)
+	}
+}
