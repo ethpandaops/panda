@@ -81,8 +81,10 @@ what the server chooses to pass in.
   server env withholding alone is **not** sufficient — an untrusted script could
   otherwise read the on-disk config/credential files (`config.yaml`,
   `~/.config/panda/credentials/*`) and the server's `/proc/<pid>/environ`/`mem`
-  at the shared uid. The direct backend closes those channels with four layers,
-  applied by a re-exec trampoline before the script runs:
+  at the shared uid, or exfiltrate the runtime token and any query results over
+  the network. The direct backend closes both the read channels and the write
+  channel with five layers, applied by a re-exec trampoline before the script
+  runs:
   1. **uid/gid drop** to a dedicated unprivileged id (`sandbox.exec_uid` /
      `exec_gid`, distinct from the server uid) — the `0600` credential files and
      the server's `/proc` become unreadable.
@@ -90,9 +92,16 @@ what the server chooses to pass in.
      `/proc`.
   3. **mount namespace + fresh `/proc`** — private mounts bound to that PID
      namespace.
-  4. **Landlock** — the filesystem is restricted to the execution's workspace
+  4. **network namespace** — an empty netns (loopback only) with no route off
+     the host, so the script cannot exfiltrate secrets or query results, phone
+     home, or reach internal services. It calls back into `server` over a unix
+     socket (`sandbox.runtime_socket`), which crosses the namespace boundary
+     because it is addressed by filesystem path, not IP, and is still gated by
+     the per-execution runtime token.
+  5. **Landlock** — the filesystem is restricted to the execution's workspace
      plus the minimal read/exec paths Python needs; secret-bearing paths are
-     simply absent.
+     simply absent. Note Landlock ABI 1 does **not** gate `connect(2)`, so the
+     network namespace — not Landlock — is what contains egress and IPC.
 
   It additionally marks the server process non-dumpable (defense in depth for
   the `/proc` channel) and **fails closed**: if any layer is unavailable (no

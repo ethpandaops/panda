@@ -19,6 +19,12 @@ const (
 	EnvAPIToken = "ETHPANDAOPS_API_TOKEN"
 	// EnvAPIURL carries the server API URL the sandbox calls back into.
 	EnvAPIURL = "ETHPANDAOPS_API_URL"
+	// EnvAPIUDS carries the unix-domain socket path the sandbox calls the server
+	// on. The direct backend runs Python in an empty network namespace with no
+	// route out, so it reaches the server over this socket instead of TCP. When
+	// set, EnvAPIURL is only the HTTP authority (http://localhost). Unset for the
+	// docker/gvisor backends, which use the TCP API over the sandbox network.
+	EnvAPIUDS = "ETHPANDAOPS_API_UDS"
 	// EnvExecutionID identifies the execution for storage tagging and correlation.
 	EnvExecutionID = "ETHPANDAOPS_EXECUTION_ID"
 	// EnvSessionID identifies the session so storage groups a multi-turn

@@ -120,10 +120,14 @@ func newHardenedSandboxCmd(ctx context.Context, workDir, scriptPath, pythonBin s
 	cmd.Env = env
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{
-		// New mount + PID namespaces (needs CAP_SYS_ADMIN, verified by preflight).
-		// The uid drop happens inside the trampoline after mounting, so the caps
-		// survive to that point; Credential is deliberately NOT set here.
-		Cloneflags: syscall.CLONE_NEWNS | syscall.CLONE_NEWPID,
+		// New mount + PID + network namespaces (needs CAP_SYS_ADMIN, verified by
+		// preflight). CLONE_NEWNET gives the child an empty network namespace with
+		// no route out, so untrusted Python cannot exfiltrate over the network; it
+		// reaches the server only through the unix socket, which crosses the
+		// namespace boundary because it is addressed by path, not IP. The uid drop
+		// happens inside the trampoline after setup, so the caps survive to that
+		// point; Credential is deliberately NOT set here.
+		Cloneflags: syscall.CLONE_NEWNS | syscall.CLONE_NEWPID | syscall.CLONE_NEWNET,
 		Pdeathsig:  syscall.SIGKILL,
 	}
 
@@ -192,6 +196,14 @@ func directSandboxInit() error {
 
 	if err := unix.Chdir(workDir); err != nil {
 		return fmt.Errorf("chdir to workspace: %w", err)
+	}
+
+	// A fresh network namespace has only a down loopback device. Bring it up so
+	// intra-process localhost sockets that libraries expect still work; this adds
+	// no egress, since the namespace has no route off the host. Do it while still
+	// privileged (needs CAP_NET_ADMIN in the new netns), before the uid drop.
+	if err := bringLoopbackUp(); err != nil {
+		return fmt.Errorf("bringing loopback up: %w", err)
 	}
 
 	// no_new_privs before Landlock (required for the restrict_self path) and
@@ -460,4 +472,32 @@ func effectiveCaps() (uint64, error) {
 // defense in depth for the /proc channel independent of the host ptrace_scope.
 func setServerNonDumpable() error {
 	return unix.Prctl(unix.PR_SET_DUMPABLE, 0, 0, 0, 0)
+}
+
+// bringLoopbackUp raises the loopback interface inside the current (fresh)
+// network namespace via SIOCGIFFLAGS/SIOCSIFFLAGS. Creating the control socket
+// needs no interface, so it works in an otherwise empty namespace.
+func bringLoopbackUp() error {
+	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_DGRAM|unix.SOCK_CLOEXEC, 0)
+	if err != nil {
+		return fmt.Errorf("open control socket: %w", err)
+	}
+	defer func() { _ = unix.Close(fd) }()
+
+	ifr, err := unix.NewIfreq("lo")
+	if err != nil {
+		return fmt.Errorf("ifreq for lo: %w", err)
+	}
+
+	if err := unix.IoctlIfreq(fd, unix.SIOCGIFFLAGS, ifr); err != nil {
+		return fmt.Errorf("get lo flags: %w", err)
+	}
+
+	ifr.SetUint16(ifr.Uint16() | unix.IFF_UP | unix.IFF_RUNNING)
+
+	if err := unix.IoctlIfreq(fd, unix.SIOCSIFFLAGS, ifr); err != nil {
+		return fmt.Errorf("set lo up: %w", err)
+	}
+
+	return nil
 }

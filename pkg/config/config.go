@@ -114,6 +114,15 @@ type SandboxConfig struct {
 	ExecUID int `yaml:"exec_uid,omitempty"`
 	ExecGID int `yaml:"exec_gid,omitempty"`
 
+	// RuntimeSocket is the unix-domain socket the server serves its runtime API
+	// on for the direct backend. That backend runs untrusted Python in an empty
+	// network namespace with no route out, so the sandbox reaches the server over
+	// this socket instead of TCP — making network exfiltration impossible rather
+	// than merely disallowed. Only the direct backend uses it; docker/gvisor
+	// sandboxes use the TCP API over the sandbox network. Defaults to
+	// <TMPDIR>/panda-sandbox-runtime.sock; see RuntimeSocketPath.
+	RuntimeSocket string `yaml:"runtime_socket,omitempty"`
+
 	// Instance identifies this server's sandbox containers with a custom label.
 	// Used to distinguish containers from different server instances (e.g., probe runner vs production).
 	// When set, containers are labeled with "io.ethpandaops-panda.instance=<value>".
@@ -610,6 +619,26 @@ const SandboxBackendNone = "none"
 // than in a container. Kept in sync with sandbox.BackendDirect, which config
 // cannot reference without an import cycle.
 const SandboxBackendDirect = "direct"
+
+// defaultRuntimeSocketName is the runtime API socket filename used when the
+// direct backend is active and sandbox.runtime_socket is not set.
+const defaultRuntimeSocketName = "panda-sandbox-runtime.sock"
+
+// RuntimeSocketPath returns the unix-domain socket the server serves the runtime
+// API on, or "" when the socket is not in use. Only the direct backend uses it:
+// its Python runs in an empty network namespace and reaches the server here
+// rather than over TCP. Falls back to <TMPDIR>/panda-sandbox-runtime.sock.
+func (c SandboxConfig) RuntimeSocketPath() string {
+	if c.Backend != SandboxBackendDirect {
+		return ""
+	}
+
+	if p := strings.TrimSpace(c.RuntimeSocket); p != "" {
+		return p
+	}
+
+	return filepath.Join(os.TempDir(), defaultRuntimeSocketName)
+}
 
 // Validate validates the configuration.
 func (c *Config) Validate() error {

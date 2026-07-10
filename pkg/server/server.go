@@ -66,6 +66,8 @@ type service struct {
 	sseServer            *mcpserver.SSEServer
 	streamableHTTPServer *mcpserver.StreamableHTTPServer
 	httpServer           *http.Server
+	runtimeSocketPath    string
+	runtimeSocketServer  *http.Server
 	mu                   sync.Mutex
 	done                 chan struct{}
 	running              bool
@@ -91,11 +93,13 @@ func NewService(
 	proxyAuthMetadata *serverapi.ProxyAuthMetadataResponse,
 	credentials *credentialController,
 	runtimeTokens *tokenstore.Store,
+	runtimeSocketPath string,
 	cleanup func(context.Context) error,
 ) Service {
 	s := &service{
 		log:                 log.WithField("component", "server"),
 		cfg:                 cfg,
+		runtimeSocketPath:   runtimeSocketPath,
 		toolRegistry:        toolRegistry,
 		resourceRegistry:    resourceRegistry,
 		searchService:       searchSvc,
@@ -363,6 +367,17 @@ func (s *service) runHTTP(ctx context.Context) error {
 	go func() {
 		errCh <- s.httpServer.ListenAndServe()
 	}()
+
+	// The direct backend's sandbox has no network route, so it reaches the same
+	// handler over a unix socket. Serving it here (fail-closed) means a broken
+	// socket aborts startup rather than leaving the sandbox unable to call back.
+	if s.runtimeSocketPath != "" {
+		if err := s.serveRuntimeSocket(handler); err != nil {
+			return fmt.Errorf("serving runtime socket: %w", err)
+		}
+
+		defer s.stopRuntimeSocket()
+	}
 
 	observability.ActiveConnections.Inc()
 	defer observability.ActiveConnections.Dec()

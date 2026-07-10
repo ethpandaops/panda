@@ -352,6 +352,58 @@ proxy:
 	assert.Contains(t, err.Error(), "sandbox.image is required")
 }
 
+func TestRuntimeSocketPathOnlyForDirectBackend(t *testing.T) {
+	t.Parallel()
+
+	for _, backend := range []string{"docker", "gvisor", "none", ""} {
+		assert.Empty(t, SandboxConfig{Backend: backend}.RuntimeSocketPath(),
+			"backend %q must not use a runtime socket", backend)
+	}
+
+	got := SandboxConfig{Backend: SandboxBackendDirect}.RuntimeSocketPath()
+	assert.Equal(t, filepath.Join(os.TempDir(), defaultRuntimeSocketName), got)
+
+	custom := SandboxConfig{Backend: SandboxBackendDirect, RuntimeSocket: "/run/panda/api.sock"}
+	assert.Equal(t, "/run/panda/api.sock", custom.RuntimeSocketPath())
+}
+
+func TestDirectBackendRequiresExecIDs(t *testing.T) {
+	t.Parallel()
+
+	path := writeConfig(t, `
+server:
+  base_url: "http://localhost:2480"
+sandbox:
+  backend: direct
+proxy:
+  url: "http://hosted.example:18081"
+`)
+
+	_, err := Load(path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exec_uid")
+}
+
+func TestDirectBackendAllowedWithExecIDsAndNoImage(t *testing.T) {
+	t.Parallel()
+
+	path := writeConfig(t, `
+server:
+  base_url: "http://localhost:2480"
+sandbox:
+  backend: direct
+  exec_uid: 65534
+  exec_gid: 65534
+proxy:
+  url: "http://hosted.example:18081"
+`)
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, "direct", cfg.Sandbox.Backend)
+	assert.Empty(t, cfg.Sandbox.Image)
+}
+
 func writeConfig(t *testing.T, content string) string {
 	t.Helper()
 

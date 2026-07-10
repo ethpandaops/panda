@@ -120,6 +120,64 @@ func TestExecuteCarriesAttributionForRuntimeCallbacks(t *testing.T) {
 	require.Empty(t, svc.Attribution(executionID), "attribution must be cleared after execution")
 }
 
+func TestBuildSandboxEnvInjectsUDSForDirectBackend(t *testing.T) {
+	log := logrus.New()
+	tokens := tokenstore.New(time.Minute)
+	defer tokens.Stop()
+
+	svc := New(log, &fakeSandbox{}, &config.Config{
+		Server: config.ServerConfig{BaseURL: "http://localhost:2480"},
+		Sandbox: config.SandboxConfig{
+			Backend:       config.SandboxBackendDirect,
+			ExecUID:       65534,
+			ExecGID:       65534,
+			RuntimeSocket: "/run/panda/api.sock",
+		},
+	}, module.NewRegistry(log), tokens)
+
+	env, err := svc.BuildSandboxEnv()
+	require.NoError(t, err)
+	require.Equal(t, "/run/panda/api.sock", env[sandbox.EnvAPIUDS])
+	require.Equal(t, "http://localhost:2480", env[sandbox.EnvAPIURL])
+}
+
+func TestBuildSandboxEnvDirectBackendDefaultsURLWithoutBaseURL(t *testing.T) {
+	log := logrus.New()
+	tokens := tokenstore.New(time.Minute)
+	defer tokens.Stop()
+
+	// In-pod direct deployments need no external base_url: the socket carries the
+	// callback and the URL is only the HTTP authority.
+	svc := New(log, &fakeSandbox{}, &config.Config{
+		Sandbox: config.SandboxConfig{
+			Backend:       config.SandboxBackendDirect,
+			ExecUID:       65534,
+			ExecGID:       65534,
+			RuntimeSocket: "/run/panda/api.sock",
+		},
+	}, module.NewRegistry(log), tokens)
+
+	env, err := svc.BuildSandboxEnv()
+	require.NoError(t, err)
+	require.Equal(t, "/run/panda/api.sock", env[sandbox.EnvAPIUDS])
+	require.Equal(t, "http://localhost", env[sandbox.EnvAPIURL])
+}
+
+func TestBuildSandboxEnvNoUDSForDockerBackend(t *testing.T) {
+	log := logrus.New()
+	tokens := tokenstore.New(time.Minute)
+	defer tokens.Stop()
+
+	svc := New(log, &fakeSandbox{}, &config.Config{
+		Server:  config.ServerConfig{BaseURL: "http://localhost:2480"},
+		Sandbox: config.SandboxConfig{Backend: "docker"},
+	}, module.NewRegistry(log), tokens)
+
+	env, err := svc.BuildSandboxEnv()
+	require.NoError(t, err)
+	require.Empty(t, env[sandbox.EnvAPIUDS], "docker backend must not use a unix socket")
+}
+
 func TestExecuteWithoutAttributionStoresNothing(t *testing.T) {
 	log := logrus.New()
 	tokens := tokenstore.New(time.Minute)

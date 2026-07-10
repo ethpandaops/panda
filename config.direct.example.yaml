@@ -17,8 +17,10 @@
 #
 # SECURITY: the direct backend runs untrusted, LLM-generated Python in-process.
 # It isolates that code by dropping it to a dedicated unprivileged uid, sealing
-# it in fresh mount + PID namespaces, and confining its filesystem with Landlock
-# — so the server's config and credential files stay unreadable. That requires
+# it in fresh mount + PID + network namespaces, and confining its filesystem with
+# Landlock — so the server's config and credential files stay unreadable AND the
+# code has no network route out (it cannot exfiltrate secrets or query results).
+# The sandbox reaches the server over a unix socket instead of TCP. That requires
 # the server to hold ambient CAP_SETUID/CAP_SETGID/CAP_SYS_ADMIN; grant them via
 # the pod securityContext (see docker-entrypoint.sh). If any layer is
 # unavailable the backend fails closed at startup rather than running unconfined.
@@ -34,4 +36,9 @@ sandbox:
   # would defeat the isolation). Matches the baked `panda-sandbox` user.
   exec_uid: ${PANDA_SANDBOX_EXEC_UID:-1002}
   exec_gid: ${PANDA_SANDBOX_EXEC_GID:-1002}
+  # Unix socket the server serves its runtime API on for the sandbox to call
+  # back through — the sandbox has no network route, so this replaces the TCP
+  # API. Defaults to <TMPDIR>/panda-sandbox-runtime.sock; put it on a writable
+  # path both the server uid and exec_uid can reach.
+  runtime_socket: ${PANDA_SANDBOX_RUNTIME_SOCKET:-}
   timeout: 60
