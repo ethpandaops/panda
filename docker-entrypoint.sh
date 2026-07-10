@@ -1,6 +1,32 @@
 #!/bin/sh
 set -e
 
+# --- Direct sandbox backend: provision the Python venv on first boot ----------
+# The direct backend executes untrusted Python in-process. Its dependency set is
+# deliberately NOT baked into the image (that keeps the default docker/gvisor
+# image lean); it installs here, once, from the hash-locked lockfile. Idempotent:
+# skipped when the venv already exists (a container restart, or a /opt/panda-venv
+# volume persisted across pod restarts). Other backends never run this.
+#
+# uv installs from PyPI, but --require-hashes pins every artifact to the lock, so
+# a compromised index cannot substitute a package. A failure here aborts startup
+# (set -e) rather than launching a half-provisioned server.
+PANDA_VENV="${PANDA_SANDBOX_PYTHON_VENV:-/opt/panda-venv}"
+if [ "${PANDA_SANDBOX_BACKEND:-}" = "direct" ]; then
+    if [ ! -x "$PANDA_VENV/bin/python" ]; then
+        echo "docker-entrypoint: provisioning direct-backend venv at $PANDA_VENV (first boot, hash-locked)..." >&2
+        uv venv "$PANDA_VENV" --python python3
+        uv pip install --python "$PANDA_VENV/bin/python" --no-cache \
+            --require-hashes --only-binary=:all: -r /opt/panda-sandbox/requirements.txt
+        uv pip install --python "$PANDA_VENV/bin/python" --no-cache --no-deps \
+            /opt/panda-sandbox/ethpandaops-pkg
+        echo "docker-entrypoint: direct-backend venv ready" >&2
+    fi
+    # Exported so a config with python_path: ${PANDA_SANDBOX_PYTHON_PATH} resolves.
+    export PANDA_SANDBOX_PYTHON_PATH="${PANDA_SANDBOX_PYTHON_PATH:-$PANDA_VENV/bin/python}"
+fi
+# ------------------------------------------------------------------------------
+
 # Run the server as whoever owns the mounted credentials directory, so it can
 # read and refresh the 0600 OAuth credential files the host wrote there.
 #

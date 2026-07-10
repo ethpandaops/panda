@@ -1,0 +1,24 @@
+# Example server config for the direct sandbox backend, where the data plane
+# executes Python in-process (no Docker). See docs/architecture.md.
+#
+# The published image is a single, lean image for all backends. To run direct,
+# set ONE env var — PANDA_SANDBOX_BACKEND=direct:
+#
+#   - the entrypoint installs the hash-locked venv at /opt/panda-venv on first
+#     boot (docker/gvisor skip this) and exports PANDA_SANDBOX_PYTHON_PATH;
+#   - the ${...} substitution below then resolves backend + python_path from it.
+#
+#   docker run -e PANDA_SANDBOX_BACKEND=direct \
+#     -v $PWD/config.direct.example.yaml:/app/config.yaml panda:latest
+#
+# First direct boot installs the dependency set from PyPI (~30-60s); mount a
+# volume at /opt/panda-venv to persist it across pod restarts. Configure
+# proxies/storage as your deployment needs — only the sandbox block is shown.
+
+sandbox:
+  backend: ${PANDA_SANDBOX_BACKEND:-docker}
+  # Resolves to /opt/panda-venv/bin/python when PANDA_SANDBOX_BACKEND=direct
+  # (exported by the entrypoint). The direct backend fails fast at startup if
+  # this interpreter is missing rather than falling back to PATH.
+  python_path: ${PANDA_SANDBOX_PYTHON_PATH:-}
+  timeout: 60
