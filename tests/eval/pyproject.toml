@@ -4,24 +4,24 @@ version = "0.1.0"
 description = "LLM evaluation harness for ethpandaops-panda server"
 requires-python = ">=3.11"
 dependencies = [
-    "claude-agent-sdk>=0.1.0",
-    "pytest>=8.0.0",
+    "claude-agent-sdk>=0.2.110",
+    "pytest>=9.1.1",
     "pytest-asyncio>=0.24.0",
     "pydantic>=2.0.0",
-    "pydantic-settings>=2.0.0",
+    "pydantic-settings>=2.14.2",
     "PyYAML>=6.0.0",
     "ruamel.yaml>=0.18.0", # comment-preserving round-trip for `scripts.hydrate`
     "httpx>=0.27.0",
-    "rich>=13.0.0",
-    "openai>=1.0.0", # For OpenRouter evaluator support
-    "langfuse>=2.0.0", # LLM observability and trace viewing
+    "rich>=15.0.0",
+    "openai>=2.44.0", # For OpenRouter evaluator support
+    "langfuse>=4.12.0", # LLM observability and trace viewing
     "opencode-ai",
-    "matplotlib>=3.10.9",
+    "matplotlib>=3.11.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "ruff>=0.4.0",
+    "ruff>=0.15.20",
     "mypy>=1.10.0",
 ]
 
@@ -64,6 +64,6 @@ dev = [
     "pytest-xdist>=3.8.0",
 ]
 studio = [
-    "fastapi>=0.115",
-    "uvicorn[standard]>=0.30",
+    "fastapi>=0.138.1",
+    "uvicorn[standard]>=0.49.0",
 ]
