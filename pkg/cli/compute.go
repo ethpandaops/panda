@@ -49,6 +49,8 @@ var (
 	computeLogTail      int
 	computePaused       bool
 	computeForkCount    int
+	computeForkRNG      string
+	computeForkClock    string
 	computeForkMinReady int
 	computeForkDeadline string
 	computeForkFlavor   string
@@ -84,8 +86,8 @@ Examples:
   panda compute sandboxes snapshot <id> --note "before upgrade"
   panda compute sandboxes lease <id> --extend 30m
   panda compute sandboxes create --snapshot <snapshot_id> --ttl 2h
-  panda compute sandboxes fork <id> --count 5 --ttl 1h
-  panda compute images fork <image_id> --count 5 --ttl 1h
+  panda compute sandboxes fork <id> --count 5 --ttl 1h --identity-rng reseed --identity-clock correct
+  panda compute images fork <image_id> --count 5 --ttl 1h --identity-rng reseed --identity-clock correct
   panda compute forks get <fork_id>
   panda compute operations get <id>
   panda compute sandboxes delete <id>`,
@@ -139,6 +141,12 @@ func init() {
 	for _, cmd := range []*cobra.Command{computeSandboxesForkCmd, computeImagesForkCmd} {
 		cmd.Flags().IntVar(&computeForkCount, "count", 0, "Number of sandboxes to create (required)")
 		_ = cmd.MarkFlagRequired("count")
+		cmd.Flags().StringVar(&computeForkRNG, "identity-rng", "",
+			"Child RNG policy: reseed (required; inherit reserved for a future firecracker build)")
+		_ = cmd.MarkFlagRequired("identity-rng")
+		cmd.Flags().StringVar(&computeForkClock, "identity-clock", "",
+			"Child clock policy: correct (step to real time at resume) or inherit (snapshot policy) (required)")
+		_ = cmd.MarkFlagRequired("identity-clock")
 		cmd.Flags().StringVar(&computeTTL, "ttl", "",
 			"Lease duration applied to every child (Go duration; omit for the server default)")
 		cmd.Flags().IntVar(&computeForkMinReady, "min-ready", 0,
@@ -924,6 +932,8 @@ func computeMutationArgs(id string) map[string]any {
 func computeForkArgs(cmd *cobra.Command, id string) map[string]any {
 	args := computeMutationArgs(id)
 	args["count"] = computeForkCount
+	args["identity_rng"] = computeForkRNG
+	args["identity_clock"] = computeForkClock
 	setIfNotEmpty(args, "ttl", computeTTL)
 	setIfNotEmpty(args, "deadline", computeForkDeadline)
 	setIfNotEmpty(args, "flavor", computeForkFlavor)

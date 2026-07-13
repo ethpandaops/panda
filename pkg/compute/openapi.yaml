@@ -1494,12 +1494,14 @@ components:
     ForkRequest:
       type: object
       additionalProperties: false
-      required: [count]
+      required: [count, identity]
       properties:
         count:
           type: integer
           minimum: 1
           description: Number of sandboxes to create. The only multiplier in the API.
+        identity:
+          $ref: '#/components/schemas/ForkIdentity'
         ttl:
           type: string
           description: >-
@@ -1534,6 +1536,26 @@ components:
             fork time (a paused source yields paused children), snapshot-source
             children run. Set true/false to override. paused true with the cold
             flavor is rejected because cold children fresh-boot.
+    ForkIdentity:
+      type: object
+      additionalProperties: false
+      required: [rng, clock]
+      properties:
+        rng:
+          type: string
+          enum: [reseed, inherit]
+          description: >-
+            Child RNG policy. reseed relies on the VM Generation ID clone
+            event. inherit is reserved for a future Firecracker flag and is
+            rejected by the current server because regeneration is currently
+            unconditional on snapshot restore.
+        clock:
+          type: string
+          enum: [correct, inherit]
+          description: >-
+            correct applies realtime clock correction while the child is
+            paused during snapshot load, regardless of the snapshot manifest;
+            inherit leaves the manifest or template clock policy in control.
     ForkAccepted:
       type: object
       additionalProperties: false

@@ -173,6 +173,42 @@ func (e ErrorBodyCode) Valid() bool {
 	}
 }
 
+// Defines values for ForkIdentityClock.
+const (
+	ForkIdentityClockCorrect ForkIdentityClock = "correct"
+	ForkIdentityClockInherit ForkIdentityClock = "inherit"
+)
+
+// Valid indicates whether the value is a known member of the ForkIdentityClock enum.
+func (e ForkIdentityClock) Valid() bool {
+	switch e {
+	case ForkIdentityClockCorrect:
+		return true
+	case ForkIdentityClockInherit:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ForkIdentityRng.
+const (
+	ForkIdentityRngInherit ForkIdentityRng = "inherit"
+	ForkIdentityRngReseed  ForkIdentityRng = "reseed"
+)
+
+// Valid indicates whether the value is a known member of the ForkIdentityRng enum.
+func (e ForkIdentityRng) Valid() bool {
+	switch e {
+	case ForkIdentityRngInherit:
+		return true
+	case ForkIdentityRngReseed:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ForkRequestFlavor.
 const (
 	ForkRequestFlavorCold ForkRequestFlavor = "cold"
@@ -901,6 +937,21 @@ type ForkChild struct {
 	State     string `json:"state"`
 }
 
+// ForkIdentity defines model for ForkIdentity.
+type ForkIdentity struct {
+	// Clock correct applies realtime clock correction while the child is paused during snapshot load, regardless of the snapshot manifest; inherit leaves the manifest or template clock policy in control.
+	Clock ForkIdentityClock `json:"clock"`
+
+	// Rng Child RNG policy. reseed relies on the VM Generation ID clone event. inherit is reserved for a future Firecracker flag and is rejected by the current server because regeneration is currently unconditional on snapshot restore.
+	Rng ForkIdentityRng `json:"rng"`
+}
+
+// ForkIdentityClock correct applies realtime clock correction while the child is paused during snapshot load, regardless of the snapshot manifest; inherit leaves the manifest or template clock policy in control.
+type ForkIdentityClock string
+
+// ForkIdentityRng Child RNG policy. reseed relies on the VM Generation ID clone event. inherit is reserved for a future Firecracker flag and is rejected by the current server because regeneration is currently unconditional on snapshot restore.
+type ForkIdentityRng string
+
 // ForkRequest defines model for ForkRequest.
 type ForkRequest struct {
 	// Count Number of sandboxes to create. The only multiplier in the API.
@@ -910,7 +961,8 @@ type ForkRequest struct {
 	Deadline *string `json:"deadline,omitempty"`
 
 	// Flavor How each child boots from the source snapshot. "warm" (default) resumes the captured memory image; "cold" boots a fresh kernel on the snapshot's disk.
-	Flavor *ForkRequestFlavor `json:"flavor,omitempty"`
+	Flavor   *ForkRequestFlavor `json:"flavor,omitempty"`
+	Identity ForkIdentity       `json:"identity"`
 
 	// MinReady Floor of ready children below which the fork reports failure (min_ready_not_met). Running children are never destroyed to meet it. Must not exceed count.
 	MinReady *int `json:"min_ready,omitempty"`
