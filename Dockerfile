@@ -94,8 +94,8 @@ RUN mkdir -p /config /shared /output /data/storage /data/cache && \
 
 # Entrypoint runs as root to fix volume ownership, then drops to panda.
 # gosu drops privileges for docker/gvisor; setpriv (util-linux) does the same
-# for the direct backend but can also raise the ambient CAP_SETUID/SETGID/
-# SYS_ADMIN the re-exec trampoline needs.
+# for the direct backend but can also raise the ambient caps the re-exec
+# trampoline needs (see docker-entrypoint.sh for the set).
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh && \
     apt-get update && apt-get install -y --no-install-recommends gosu util-linux && \

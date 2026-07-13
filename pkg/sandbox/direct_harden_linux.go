@@ -426,6 +426,9 @@ func preflightDirectHardening(cfg config.SandboxConfig) error {
 			{unix.CAP_SYS_ADMIN, "CAP_SYS_ADMIN"},
 			{unix.CAP_SETUID, "CAP_SETUID"},
 			{unix.CAP_SETGID, "CAP_SETGID"},
+			// CAP_NET_ADMIN: bringLoopbackUp's SIOCSIFFLAGS checks the userns owning
+			// the netns — the init userns, as the trampoline clones no user namespace.
+			{unix.CAP_NET_ADMIN, "CAP_NET_ADMIN"},
 			// CAP_CHOWN: lock each workspace to the exec gid (a group the server is
 			// not a member of) so it is not world-accessible. See prepareWorkspace.
 			{unix.CAP_CHOWN, "CAP_CHOWN"},

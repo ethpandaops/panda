@@ -106,18 +106,24 @@ export HOME=/home/panda
 # The direct sandbox backend re-execs panda-server into fresh mount + PID +
 # network namespaces and drops it to a dedicated unprivileged uid, so the server
 # process must carry ambient CAP_SETUID/CAP_SETGID/CAP_SYS_ADMIN (namespaces +
-# uid drop) and CAP_CHOWN (lock each workspace to the exec gid) across this
-# privilege drop. gosu/su-exec cannot set ambient caps; setpriv can. The
-# container must start as root (this entrypoint provisions the venv, renumbers
-# panda, chowns volumes, then drops) with those caps in its permitted set —
-# grant them via the pod securityContext (do NOT set runAsNonRoot / runAsUser):
+# uid drop), CAP_NET_ADMIN (raise loopback inside the sandbox netns), and
+# CAP_CHOWN (lock each workspace to the exec gid) across this privilege drop.
+# gosu/su-exec cannot set ambient caps; setpriv can. The container must start as
+# root (this entrypoint provisions the venv, renumbers panda, chowns volumes,
+# then drops) with those caps in its permitted set — grant them via the pod
+# securityContext (do NOT set runAsNonRoot / runAsUser). On AppArmor-enforcing
+# hosts the default container profiles (docker-default, cri-containerd.apparmor.d)
+# deny mount(2) inside the new namespaces even with CAP_SYS_ADMIN, so the profile
+# must be Unconfined (docker: --security-opt apparmor=unconfined):
 #
 #   securityContext:
+#     appArmorProfile:
+#       type: Unconfined
 #     capabilities:
-#       add: ["SETUID", "SETGID", "SYS_ADMIN", "CHOWN"]
+#       add: ["SETUID", "SETGID", "SYS_ADMIN", "NET_ADMIN", "CHOWN"]
 #
-# If they are absent, setpriv fails here and the container fails closed rather
-# than launching an unconfined direct backend.
+# If the caps are absent, setpriv fails here and the container fails closed
+# rather than launching an unconfined direct backend.
 if [ "${PANDA_SANDBOX_BACKEND:-}" = "direct" ]; then
     if ! command -v setpriv >/dev/null 2>&1; then
         echo "docker-entrypoint: setpriv is required for the direct sandbox backend" >&2
@@ -125,8 +131,8 @@ if [ "${PANDA_SANDBOX_BACKEND:-}" = "direct" ]; then
     fi
 
     exec setpriv --reuid=panda --regid="$(id -g panda)" --init-groups \
-        --inh-caps=+setuid,+setgid,+sys_admin,+chown \
-        --ambient-caps=+setuid,+setgid,+sys_admin,+chown \
+        --inh-caps=+setuid,+setgid,+sys_admin,+net_admin,+chown \
+        --ambient-caps=+setuid,+setgid,+sys_admin,+net_admin,+chown \
         "$@"
 fi
 

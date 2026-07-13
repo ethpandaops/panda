@@ -22,9 +22,11 @@
 # code has no network route out (it cannot exfiltrate secrets or query results).
 # The sandbox reaches the server over a unix socket instead of TCP. That requires
 # the server to hold ambient CAP_SETUID/CAP_SETGID/CAP_SYS_ADMIN (namespaces + uid
-# drop) and CAP_CHOWN (lock each workspace to the exec gid); grant them via the
-# pod securityContext (see docker-entrypoint.sh). If any layer is unavailable the
-# backend fails closed at startup rather than running unconfined.
+# drop), CAP_NET_ADMIN (loopback in the sandbox netns), and CAP_CHOWN (lock each
+# workspace to the exec gid), plus an Unconfined AppArmor profile on hosts that
+# enforce one; grant these via the pod securityContext (see docker-entrypoint.sh).
+# If any layer is unavailable the backend fails closed at startup rather than
+# running unconfined.
 
 sandbox:
   backend: ${PANDA_SANDBOX_BACKEND:-docker}
