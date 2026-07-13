@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -41,13 +42,13 @@ func (b *DirectBackend) ensureWorkspaceRoot() error {
 }
 
 // prepareWorkspace locks a workspace to the server + exec uid: group = exec gid,
-// mode setgid 0770, no world access. Needs CAP_CHOWN; replaces the old 0777.
+// mode 0770, no world access. Needs CAP_CHOWN; replaces the old 0777.
 func (b *DirectBackend) prepareWorkspace(dir string) error {
 	if err := os.Chown(dir, -1, b.cfg.ExecGID); err != nil {
 		return fmt.Errorf("setting workspace group to exec gid %d: %w", b.cfg.ExecGID, err)
 	}
 
-	if err := os.Chmod(dir, os.ModeSetgid|0o770); err != nil {
+	if err := os.Chmod(dir, 0o770); err != nil {
 		return fmt.Errorf("restricting workspace mode: %w", err)
 	}
 
@@ -263,11 +264,20 @@ func (b *DirectBackend) Execute(ctx context.Context, req ExecuteRequest) (*Execu
 		}()
 	}
 
-	// Script is group-readable (not world); the setgid workspace gives it the exec
-	// gid, so the sandbox uid reads it through the group.
-	scriptPath := filepath.Join(workDir, "script.py")
+	// The name is per-execution: concurrent runs in a shared session workspace
+	// must not clobber each other. 0640: the sandbox reads via group, world can't.
+	scriptPath := filepath.Join(workDir, "script-"+executionID+".py")
 	if err := os.WriteFile(scriptPath, []byte(req.Code), 0o640); err != nil {
 		return nil, fmt.Errorf("writing script file: %w", err)
+	}
+
+	// Session workspaces outlive the run; don't let scripts accumulate there.
+	defer func() { _ = os.Remove(scriptPath) }()
+
+	// chgrp to the exec gid explicitly; a setgid workspace can't do it — non-root
+	// chmod outside the group silently strips S_ISGID without CAP_FSETID.
+	if err := os.Chown(scriptPath, -1, b.cfg.ExecGID); err != nil {
+		return nil, fmt.Errorf("setting script group to exec gid %d: %w", b.cfg.ExecGID, err)
 	}
 
 	// Resolve to an absolute interpreter path: the trampoline execve()s it and
@@ -478,7 +488,7 @@ func (b *DirectBackend) CanCreateSession(ctx context.Context, ownerID string) (b
 }
 
 // listWorkspaceFiles returns the files in the workspace directory for session
-// reporting, excluding the script.py file created for each execution.
+// reporting, excluding the per-execution script-<uuid>.py files.
 func (b *DirectBackend) listWorkspaceFiles(workDir string) []SessionFile {
 	entries, err := os.ReadDir(workDir)
 	if err != nil {
@@ -487,7 +497,7 @@ func (b *DirectBackend) listWorkspaceFiles(workDir string) []SessionFile {
 
 	var files []SessionFile
 	for _, e := range entries {
-		if e.IsDir() || e.Name() == "script.py" {
+		if e.IsDir() || isExecScript(e.Name()) {
 			continue
 		}
 
@@ -508,4 +518,20 @@ func (b *DirectBackend) listWorkspaceFiles(workDir string) []SessionFile {
 	})
 
 	return files
+}
+
+// isExecScript matches the per-execution script-<uuid>.py exactly, so a listing
+// taken while another execution is in flight skips its script but no user files.
+func isExecScript(name string) bool {
+	id, found := strings.CutPrefix(name, "script-")
+	if !found {
+		return false
+	}
+
+	id, found = strings.CutSuffix(id, ".py")
+	if !found {
+		return false
+	}
+
+	return uuid.Validate(id) == nil
 }

@@ -2,13 +2,17 @@ package sandbox
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 
 	"github.com/ethpandaops/panda/pkg/config"
@@ -846,6 +850,102 @@ func TestDirectBackendStopIsIdempotent(t *testing.T) {
 	}
 	if err := b.Stop(context.Background()); err != nil {
 		t.Fatalf("second Stop: %v", err)
+	}
+}
+
+// listWorkspaceFiles hides only per-execution scripts (script-<uuid>.py); user
+// files that merely resemble them stay visible.
+func TestDirectBackendListWorkspaceFilesExcludesExecScripts(t *testing.T) {
+	b, err := NewDirectBackend(sessionEnabledCfg(), logrus.New())
+	if err != nil {
+		t.Fatalf("NewDirectBackend: %v", err)
+	}
+
+	dir := t.TempDir()
+	for _, name := range []string{
+		"data.txt",
+		"script.py",
+		"script-notauuid.py",
+		"script-" + uuid.New().String() + ".py",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o640); err != nil {
+			t.Fatalf("writing %s: %v", name, err)
+		}
+	}
+
+	var names []string
+	for _, f := range b.listWorkspaceFiles(dir) {
+		names = append(names, f.Name)
+	}
+
+	want := []string{"data.txt", "script-notauuid.py", "script.py"}
+	if !slices.Equal(names, want) {
+		t.Fatalf("listWorkspaceFiles = %v, want %v", names, want)
+	}
+}
+
+// Regression gate for the fixed-filename race: concurrent executions in one
+// session each run their own code, and no script lingers in the workspace after.
+func TestDirectBackendConcurrentSessionExecutions(t *testing.T) {
+	requireDirectExec(t)
+
+	b, err := NewDirectBackend(sessionEnabledCfg(), logrus.New())
+	if err != nil {
+		t.Fatalf("NewDirectBackend: %v", err)
+	}
+
+	id, err := b.CreateSession(context.Background(), "user1", nil)
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	const n = 4
+
+	results := make([]*ExecutionResult, n)
+	errs := make([]error, n)
+
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results[i], errs[i] = b.Execute(context.Background(), ExecuteRequest{
+				Code:      fmt.Sprintf("import time; time.sleep(0.2); print('RUN %d')", i),
+				SessionID: id,
+			})
+		}()
+	}
+	wg.Wait()
+
+	for i := range n {
+		if errs[i] != nil {
+			t.Fatalf("Execute %d: %v", i, errs[i])
+		}
+		if want := fmt.Sprintf("RUN %d", i); !strings.Contains(results[i].Stdout, want) {
+			t.Errorf("execution %d ran the wrong code: stdout=%q", i, results[i].Stdout)
+		}
+		for _, f := range results[i].SessionFiles {
+			if strings.HasPrefix(f.Name, "script") {
+				t.Errorf("execution %d listed a script file: %q", i, f.Name)
+			}
+		}
+	}
+
+	// Every script is removed once its run finishes.
+	s, err := b.store.Get(context.Background(), id)
+	if err != nil || s == nil {
+		t.Fatalf("store.Get: %v (session=%v)", err, s)
+	}
+
+	entries, err := os.ReadDir(s.Handle)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "script") {
+			t.Errorf("script left behind in session workspace: %q", e.Name())
+		}
 	}
 }
 
