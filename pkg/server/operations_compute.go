@@ -489,8 +489,15 @@ func computeForkRequest(args map[string]any) (*compute.ForkRequest, error) {
 		return nil, &computeArgError{err: fmt.Errorf("count is required and must be at least 1")}
 	}
 
+	rng := compute.ForkIdentityRng(optionalStringArg(args, "identity_rng"))
+	clock := compute.ForkIdentityClock(optionalStringArg(args, "identity_clock"))
+	if !rng.Valid() || !clock.Valid() {
+		return nil, &computeArgError{err: fmt.Errorf("identity_rng (reseed) and identity_clock (correct|inherit) are required")}
+	}
+
 	body := &compute.ForkRequest{
 		Count:    count,
+		Identity: compute.ForkIdentity{Rng: rng, Clock: clock},
 		Ttl:      computeOptStr(args, "ttl"),
 		Deadline: computeOptStr(args, "deadline"),
 		MinReady: computeOptInt(args, "min_ready"),
