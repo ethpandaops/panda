@@ -71,6 +71,10 @@ func (r *ReleaseChecker) LatestRelease(ctx context.Context) (*Release, error) {
 		return nil, err
 	}
 
+	if !release.AssetsReady() {
+		return nil, release.assetsPendingError()
+	}
+
 	return &release, nil
 }
 
@@ -89,11 +93,16 @@ func (r *ReleaseChecker) LatestReleaseIncludingPrereleases(ctx context.Context) 
 		return nil, err
 	}
 
-	if release := firstPublished(releases); release != nil {
-		return release, nil
+	release := firstPublished(releases)
+	if release == nil {
+		return nil, fmt.Errorf("no published releases found for %s/%s", r.owner, r.repo)
 	}
 
-	return nil, fmt.Errorf("no published releases found for %s/%s", r.owner, r.repo)
+	if !release.AssetsReady() {
+		return nil, release.assetsPendingError()
+	}
+
+	return release, nil
 }
 
 // FindAsset returns the binary asset for the given OS, architecture, and
@@ -121,6 +130,21 @@ func (r *Release) FindCurrentPlatformAsset() (*Asset, error) {
 	return r.FindAsset(runtime.GOOS, runtime.GOARCH, RepoName)
 }
 
+// AssetsReady reports whether the current-platform CLI archive and
+// checksums.txt are both present. goreleaser publishes the release before
+// uploading assets, so a just-published release may briefly lack them.
+func (r *Release) AssetsReady() bool {
+	if _, err := r.FindCurrentPlatformAsset(); err != nil {
+		return false
+	}
+
+	if _, err := r.ChecksumsAsset(); err != nil {
+		return false
+	}
+
+	return true
+}
+
 // ChecksumsAsset returns the checksums.txt asset from the release.
 func (r *Release) ChecksumsAsset() (*Asset, error) {
 	for i := range r.Assets {
@@ -130,6 +154,16 @@ func (r *Release) ChecksumsAsset() (*Asset, error) {
 	}
 
 	return nil, fmt.Errorf("no checksums.txt asset found in release %s", r.TagName)
+}
+
+// assetsPendingError describes a release that is published but whose
+// current-platform assets have not finished uploading yet.
+func (r *Release) assetsPendingError() error {
+	return fmt.Errorf(
+		"release %s is published but its %s/%s assets are not available yet "+
+			"(they may still be uploading); try again shortly",
+		r.TagName, runtime.GOOS, runtime.GOARCH,
+	)
 }
 
 // getJSON performs an authenticated GitHub API GET and decodes the JSON
