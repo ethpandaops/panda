@@ -10,6 +10,14 @@ import (
 	"github.com/ethpandaops/panda/pkg/config"
 )
 
+// emptyStore is a SessionStore with no sessions, for manager tests that don't
+// exercise the store.
+type emptyStore struct{}
+
+func (emptyStore) Get(context.Context, string) (*Session, error) { return nil, nil }
+func (emptyStore) List(context.Context) ([]*Session, error)      { return nil, nil }
+func (emptyStore) Remove(context.Context, *Session) error        { return nil }
+
 func TestSessionManagerStopIsIdempotent(t *testing.T) {
 	enabled := true
 	cfg := config.SessionConfig{
@@ -17,13 +25,7 @@ func TestSessionManagerStopIsIdempotent(t *testing.T) {
 		MaxSessions: 1,
 	}
 
-	m := NewSessionManager(
-		cfg,
-		logrus.New(),
-		func(context.Context, string) (*SessionContainer, error) { return nil, nil },
-		func(context.Context) ([]*SessionContainer, error) { return nil, nil },
-		func(context.Context, string) error { return nil },
-	)
+	m := NewSessionManager(cfg, logrus.New(), emptyStore{})
 
 	ctx := context.Background()
 	require.NoError(t, m.Start(ctx))
@@ -36,13 +38,7 @@ func TestSessionManagerStopIsIdempotent(t *testing.T) {
 }
 
 func TestSessionManagerRemoveSessionThenUnmarkDoesNotRecreateState(t *testing.T) {
-	m := NewSessionManager(
-		config.SessionConfig{MaxSessions: 1},
-		logrus.New(),
-		func(context.Context, string) (*SessionContainer, error) { return nil, nil },
-		func(context.Context) ([]*SessionContainer, error) { return nil, nil },
-		func(context.Context, string) error { return nil },
-	)
+	m := NewSessionManager(config.SessionConfig{MaxSessions: 1}, logrus.New(), emptyStore{})
 
 	const sessionID = "session-1"
 

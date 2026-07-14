@@ -180,6 +180,18 @@ func (s *Service) BuildSandboxEnv() (map[string]string, error) {
 	}
 
 	apiURL := sandboxAPIURL(s.cfg)
+
+	// Direct backend: reach the server over a unix socket, so the URL is only the
+	// HTTP authority — an explicit base_url wins, else localhost (no URL required).
+	if socket := s.cfg.Sandbox.RuntimeSocketPath(); socket != "" {
+		env[sandbox.EnvAPIUDS] = socket
+
+		apiURL = explicitSandboxAPIURL(s.cfg)
+		if apiURL == "" {
+			apiURL = "http://localhost"
+		}
+	}
+
 	if apiURL == "" {
 		return nil, fmt.Errorf("server.sandbox_url or server.base_url is required for sandbox API access")
 	}
@@ -187,6 +199,24 @@ func (s *Service) BuildSandboxEnv() (map[string]string, error) {
 	env[sandbox.EnvAPIURL] = apiURL
 
 	return env, nil
+}
+
+// explicitSandboxAPIURL returns the configured sandbox_url or base_url, or "" —
+// unlike sandboxAPIURL it never substitutes the host.docker.internal default.
+func explicitSandboxAPIURL(cfg *config.Config) string {
+	if cfg == nil {
+		return ""
+	}
+
+	if v := strings.TrimSpace(cfg.Server.SandboxURL); v != "" {
+		return strings.TrimRight(v, "/")
+	}
+
+	if v := strings.TrimSpace(cfg.Server.BaseURL); v != "" {
+		return strings.TrimRight(v, "/")
+	}
+
+	return ""
 }
 
 func sandboxAPIURL(cfg *config.Config) string {

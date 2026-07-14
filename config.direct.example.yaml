@@ -1,0 +1,51 @@
+# Example server config for the direct sandbox backend, where the data plane
+# executes Python in-process (no Docker). See docs/architecture.md.
+#
+# The published image is a single, lean image for all backends. To run direct,
+# set ONE env var — PANDA_SANDBOX_BACKEND=direct:
+#
+#   - the entrypoint installs the hash-locked venv at /opt/panda-venv on first
+#     boot (docker/gvisor skip this) and exports PANDA_SANDBOX_PYTHON_PATH;
+#   - the ${...} substitution below then resolves backend + python_path from it.
+#
+#   docker run -e PANDA_SANDBOX_BACKEND=direct \
+#     -v $PWD/config.direct.example.yaml:/app/config.yaml panda:latest
+#
+# First direct boot installs the dependency set from PyPI (~30-60s); mount a
+# volume at /opt/panda-venv to persist it across pod restarts. Configure
+# proxies/storage as your deployment needs — only the sandbox block is shown.
+#
+# SECURITY: the direct backend runs untrusted, LLM-generated Python in-process.
+# It isolates that code by dropping it to a dedicated unprivileged uid, sealing
+# it in fresh mount + PID + network namespaces, and confining its filesystem with
+# Landlock — so the server's config and credential files stay unreadable AND the
+# code has no network route out (it cannot exfiltrate secrets or query results).
+# The sandbox reaches the server over a unix socket instead of TCP. That requires
+# the server to hold ambient CAP_SETUID/CAP_SETGID/CAP_SYS_ADMIN (namespaces + uid
+# drop), CAP_NET_ADMIN (loopback in the sandbox netns), and CAP_CHOWN (lock each
+# workspace to the exec gid), plus an Unconfined AppArmor profile on hosts that
+# enforce one; grant these via the pod securityContext (see docker-entrypoint.sh).
+# If any layer is unavailable the backend fails closed at startup rather than
+# running unconfined.
+
+sandbox:
+  backend: ${PANDA_SANDBOX_BACKEND:-docker}
+  # Resolves to /opt/panda-venv/bin/python when PANDA_SANDBOX_BACKEND=direct
+  # (exported by the entrypoint). The direct backend fails fast at startup if
+  # this interpreter is missing rather than falling back to PATH.
+  python_path: ${PANDA_SANDBOX_PYTHON_PATH:-}
+  # Unprivileged uid/gid the direct backend drops untrusted Python to. MUST be
+  # non-zero and differ from the server's own uid (running as the server uid
+  # would defeat the isolation). Matches the baked `panda-sandbox` user.
+  exec_uid: ${PANDA_SANDBOX_EXEC_UID:-1002}
+  exec_gid: ${PANDA_SANDBOX_EXEC_GID:-1002}
+  # Unix socket the server serves its runtime API on for the sandbox to call
+  # back through — the sandbox has no network route, so this replaces the TCP
+  # API. Defaults to <TMPDIR>/panda-sandbox-runtime.sock; put it on a writable
+  # path both the server uid and exec_uid can reach.
+  runtime_socket: ${PANDA_SANDBOX_RUNTIME_SOCKET:-}
+  # Parent dir for per-execution and per-session workspaces, kept off shared
+  # /tmp and locked to the server + exec uid (0770, group exec_gid). Defaults to
+  # <TMPDIR>/panda-sandbox-workspaces.
+  workspace_dir: ${PANDA_SANDBOX_WORKSPACE_DIR:-}
+  timeout: 60

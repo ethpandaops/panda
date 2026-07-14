@@ -19,6 +19,9 @@ const (
 	EnvAPIToken = "ETHPANDAOPS_API_TOKEN"
 	// EnvAPIURL carries the server API URL the sandbox calls back into.
 	EnvAPIURL = "ETHPANDAOPS_API_URL"
+	// EnvAPIUDS carries the unix socket the sandbox calls the server on (direct
+	// backend, whose netns has no TCP route); unset for docker/gvisor.
+	EnvAPIUDS = "ETHPANDAOPS_API_UDS"
 	// EnvExecutionID identifies the execution for storage tagging and correlation.
 	EnvExecutionID = "ETHPANDAOPS_EXECUTION_ID"
 	// EnvSessionID identifies the session so storage groups a multi-turn
@@ -125,6 +128,9 @@ const (
 	// BackendNone disables execution entirely. The server runs without a
 	// container runtime and execute_python is unavailable.
 	BackendNone BackendType = "none"
+	// BackendDirect runs Python code directly as a subprocess on the host —
+	// for use inside a Kubernetes pod where the pod boundary is the isolation.
+	BackendDirect BackendType = "direct"
 )
 
 // New creates a new sandbox service based on the configuration.
@@ -138,6 +144,8 @@ func New(cfg config.SandboxConfig, log logrus.FieldLogger) (Service, error) {
 		return NewGVisorBackend(cfg, log)
 	case BackendNone:
 		return NewNoneBackend(log), nil
+	case BackendDirect:
+		return NewDirectBackend(cfg, log)
 	default:
 		return nil, fmt.Errorf("unsupported sandbox backend: %s", cfg.Backend)
 	}
@@ -148,4 +156,5 @@ var (
 	_ Service = (*DockerBackend)(nil)
 	_ Service = (*GVisorBackend)(nil)
 	_ Service = (*NoneBackend)(nil)
+	_ Service = (*DirectBackend)(nil)
 )

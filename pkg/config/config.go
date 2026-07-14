@@ -100,6 +100,26 @@ type SandboxConfig struct {
 	Network        string  `yaml:"network"`
 	HostSharedPath string  `yaml:"host_shared_path,omitempty"`
 
+	// PythonPath pins the Python interpreter the direct backend invokes for
+	// untrusted sandbox code. Empty falls back to python3/python on PATH. Point
+	// this at the baked sandbox venv (e.g. /usr/local/bin/python3) so code runs
+	// against a known, dependency-complete environment rather than ambient PATH.
+	PythonPath string `yaml:"python_path,omitempty"`
+
+	// ExecUID/ExecGID are the unprivileged uid/gid the direct backend drops to for
+	// untrusted Python. Both MUST be non-zero and differ from the server uid, or
+	// the backend fails closed at startup.
+	ExecUID int `yaml:"exec_uid,omitempty"`
+	ExecGID int `yaml:"exec_gid,omitempty"`
+
+	// RuntimeSocket is the unix socket the server serves its runtime API on for the
+	// direct backend (whose netns has no route to TCP). Default: see RuntimeSocketPath.
+	RuntimeSocket string `yaml:"runtime_socket,omitempty"`
+
+	// WorkspaceDir is the parent dir for direct-backend workspaces, kept off shared
+	// /tmp and locked to the server + exec uid. Default: see WorkspaceRoot.
+	WorkspaceDir string `yaml:"workspace_dir,omitempty"`
+
 	// Instance identifies this server's sandbox containers with a custom label.
 	// Used to distinguish containers from different server instances (e.g., probe runner vs production).
 	// When set, containers are labeled with "io.ethpandaops-panda.instance=<value>".
@@ -592,11 +612,55 @@ const MaxSandboxTimeout = 7_776_000
 // sandbox.BackendNone, which config cannot reference without an import cycle.
 const SandboxBackendNone = "none"
 
+// SandboxBackendDirect runs Python as a confined subprocess of the server. Kept
+// in sync with sandbox.BackendDirect (config can't import it — cycle).
+const SandboxBackendDirect = "direct"
+
+// Default filenames used when the direct backend is active and the respective
+// sandbox.runtime_socket / sandbox.workspace_dir are unset.
+const (
+	defaultRuntimeSocketName = "panda-sandbox-runtime.sock"
+	defaultWorkspaceDirName  = "panda-sandbox-workspaces"
+)
+
+// WorkspaceRoot returns the direct backend's workspace parent dir, defaulting to
+// <TMPDIR>/panda-sandbox-workspaces.
+func (c SandboxConfig) WorkspaceRoot() string {
+	if p := strings.TrimSpace(c.WorkspaceDir); p != "" {
+		return p
+	}
+
+	return filepath.Join(os.TempDir(), defaultWorkspaceDirName)
+}
+
+// RuntimeSocketPath returns the runtime-API unix socket, or "" for any backend
+// but direct. Defaults to <TMPDIR>/panda-sandbox-runtime.sock.
+func (c SandboxConfig) RuntimeSocketPath() string {
+	if c.Backend != SandboxBackendDirect {
+		return ""
+	}
+
+	if p := strings.TrimSpace(c.RuntimeSocket); p != "" {
+		return p
+	}
+
+	return filepath.Join(os.TempDir(), defaultRuntimeSocketName)
+}
+
 // Validate validates the configuration.
 func (c *Config) Validate() error {
-	// The "none" backend has no container runtime, so it needs no sandbox image.
-	if c.Sandbox.Backend != SandboxBackendNone && c.Sandbox.Image == "" {
-		return errors.New("sandbox.image is required")
+	// Only docker and gvisor pull a sandbox image: "none" has no container
+	// runtime, and "direct" runs code as a subprocess of the server.
+	if c.Sandbox.Backend != SandboxBackendNone && c.Sandbox.Backend != SandboxBackendDirect && c.Sandbox.Image == "" {
+		return errors.New("sandbox.image is required for docker/gvisor backends")
+	}
+
+	// The direct backend only isolates when it drops to a dedicated unprivileged
+	// uid/gid, so require both (fail closed — see pkg/sandbox/direct_harden_linux.go).
+	if c.Sandbox.Backend == SandboxBackendDirect {
+		if c.Sandbox.ExecUID <= 0 || c.Sandbox.ExecGID <= 0 {
+			return errors.New("sandbox.exec_uid and sandbox.exec_gid are required (non-zero) for the direct backend")
+		}
 	}
 
 	// Validate sandbox timeout is within bounds.

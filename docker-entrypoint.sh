@@ -1,6 +1,32 @@
 #!/bin/sh
 set -e
 
+# --- Direct sandbox backend: provision the Python venv on first boot ----------
+# The direct backend executes untrusted Python in-process. Its dependency set is
+# deliberately NOT baked into the image (that keeps the default docker/gvisor
+# image lean); it installs here, once, from the hash-locked lockfile. Idempotent:
+# skipped when the venv already exists (a container restart, or a /opt/panda-venv
+# volume persisted across pod restarts). Other backends never run this.
+#
+# uv installs from PyPI, but --require-hashes pins every artifact to the lock, so
+# a compromised index cannot substitute a package. A failure here aborts startup
+# (set -e) rather than launching a half-provisioned server.
+PANDA_VENV="${PANDA_SANDBOX_PYTHON_VENV:-/opt/panda-venv}"
+if [ "${PANDA_SANDBOX_BACKEND:-}" = "direct" ]; then
+    if [ ! -x "$PANDA_VENV/bin/python" ]; then
+        echo "docker-entrypoint: provisioning direct-backend venv at $PANDA_VENV (first boot, hash-locked)..." >&2
+        uv venv "$PANDA_VENV" --python python3
+        uv pip install --python "$PANDA_VENV/bin/python" --no-cache \
+            --require-hashes --only-binary=:all: -r /opt/panda-sandbox/requirements.txt
+        uv pip install --python "$PANDA_VENV/bin/python" --no-cache --no-deps \
+            /opt/panda-sandbox/ethpandaops-pkg
+        echo "docker-entrypoint: direct-backend venv ready" >&2
+    fi
+    # Exported so a config with python_path: ${PANDA_SANDBOX_PYTHON_PATH} resolves.
+    export PANDA_SANDBOX_PYTHON_PATH="${PANDA_SANDBOX_PYTHON_PATH:-$PANDA_VENV/bin/python}"
+fi
+# ------------------------------------------------------------------------------
+
 # Run the server as whoever owns the mounted credentials directory, so it can
 # read and refresh the 0600 OAuth credential files the host wrote there.
 #
@@ -75,8 +101,42 @@ fi
 
 # Drop to the panda user. su-exec/gosu set HOME from the passwd entry, but set
 # it explicitly too so the credential path beneath it resolves regardless.
-# Support both su-exec (Alpine) and gosu (Debian).
 export HOME=/home/panda
+
+# The direct sandbox backend re-execs panda-server into fresh mount + PID +
+# network namespaces and drops it to a dedicated unprivileged uid, so the server
+# process must carry ambient CAP_SETUID/CAP_SETGID/CAP_SYS_ADMIN (namespaces +
+# uid drop), CAP_NET_ADMIN (raise loopback inside the sandbox netns), and
+# CAP_CHOWN (lock each workspace to the exec gid) across this privilege drop.
+# gosu/su-exec cannot set ambient caps; setpriv can. The container must start as
+# root (this entrypoint provisions the venv, renumbers panda, chowns volumes,
+# then drops) with those caps in its permitted set — grant them via the pod
+# securityContext (do NOT set runAsNonRoot / runAsUser). On AppArmor-enforcing
+# hosts the default container profiles (docker-default, cri-containerd.apparmor.d)
+# deny mount(2) inside the new namespaces even with CAP_SYS_ADMIN, so the profile
+# must be Unconfined (docker: --security-opt apparmor=unconfined):
+#
+#   securityContext:
+#     appArmorProfile:
+#       type: Unconfined
+#     capabilities:
+#       add: ["SETUID", "SETGID", "SYS_ADMIN", "NET_ADMIN", "CHOWN"]
+#
+# If the caps are absent, setpriv fails here and the container fails closed
+# rather than launching an unconfined direct backend.
+if [ "${PANDA_SANDBOX_BACKEND:-}" = "direct" ]; then
+    if ! command -v setpriv >/dev/null 2>&1; then
+        echo "docker-entrypoint: setpriv is required for the direct sandbox backend" >&2
+        exit 1
+    fi
+
+    exec setpriv --reuid=panda --regid="$(id -g panda)" --init-groups \
+        --inh-caps=+setuid,+setgid,+sys_admin,+net_admin,+chown \
+        --ambient-caps=+setuid,+setgid,+sys_admin,+net_admin,+chown \
+        "$@"
+fi
+
+# Other backends: drop with su-exec (Alpine) / gosu (Debian), no elevated caps.
 if command -v su-exec >/dev/null 2>&1; then
     exec su-exec panda "$@"
 elif command -v gosu >/dev/null 2>&1; then

@@ -200,6 +200,7 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 		proxyAuthMeta,
 		credentials,
 		runtimeTokens,
+		b.cfg.Sandbox.RuntimeSocketPath(),
 		cleanup,
 	), nil
 }

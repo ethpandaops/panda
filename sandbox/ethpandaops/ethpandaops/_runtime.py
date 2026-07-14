@@ -13,6 +13,7 @@ import pandas as pd
 
 _API_URL = os.environ.get("ETHPANDAOPS_API_URL", "")
 _API_TOKEN = os.environ.get("ETHPANDAOPS_API_TOKEN", "")
+_API_UDS = os.environ.get("ETHPANDAOPS_API_UDS", "")
 _SESSION_ID = os.environ.get("ETHPANDAOPS_SESSION_ID", "")
 
 
@@ -30,10 +31,16 @@ def _check_api_config() -> None:
 
 def _get_client(write_timeout: float = 60.0) -> httpx.Client:
     _check_api_config()
+
+    # Direct backend: no network route, so reach the server over a unix socket
+    # (httpx dials it by path; _API_URL is then just the HTTP authority).
+    transport = httpx.HTTPTransport(uds=_API_UDS) if _API_UDS else None
+
     return httpx.Client(
         base_url=_API_URL,
         headers={"Authorization": f"Bearer {_API_TOKEN}"},
         timeout=httpx.Timeout(connect=5.0, read=300.0, write=write_timeout, pool=5.0),
+        transport=transport,
     )
 
 
