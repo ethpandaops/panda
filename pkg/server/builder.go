@@ -181,7 +181,7 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 	// uses the exact same issuer/client/resource — and therefore the exact same
 	// on-disk credential file — as the proxy client's token source.
 	proxyAuthMeta := buildProxyAuthMetadata(b.cfg)
-	credentials := newCredentialController(b.log, proxyAuthMeta)
+	credentials := newCredentialController(b.log, proxyAuthMeta, b.cfg.Proxy.URL)
 
 	// Create and return the server service.
 	return NewService(

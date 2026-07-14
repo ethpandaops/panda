@@ -2,8 +2,10 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -11,12 +13,17 @@ import (
 
 	authclient "github.com/ethpandaops/panda/pkg/auth/client"
 	authstore "github.com/ethpandaops/panda/pkg/auth/store"
+	"github.com/ethpandaops/panda/pkg/proxy"
 	"github.com/ethpandaops/panda/pkg/serverapi"
 )
 
 // minLoginPollWindow bounds how long the server keeps polling for device
 // approval when the provider does not advertise an expiry.
 const minLoginPollWindow = 5 * time.Minute
+
+// proxyScopeDiscoveryTimeout bounds the /auth/metadata fetch performed at login
+// so an unreachable proxy fails the login promptly instead of stalling it.
+const proxyScopeDiscoveryTimeout = 5 * time.Second
 
 // credentialTarget is the resolved proxy auth configuration the controller
 // operates against. It mirrors the values the proxy client uses to build its
@@ -44,6 +51,13 @@ type credentialController struct {
 	newClient func(credentialTarget) authclient.Client
 	newStore  func(credentialTarget, authclient.Client) authstore.Store
 
+	// discoverScopes resolves the proxy's advertised login scope set at login
+	// time (from /auth/metadata) so the proxy — not a possibly-stale local
+	// config — decides which scopes the token carries. It is injected for tests;
+	// in production it is always set. A nil hook (tests only) requests the
+	// configured target scopes verbatim.
+	discoverScopes func(ctx context.Context) ([]string, error)
+
 	mu      sync.Mutex
 	pending *pendingLogin
 }
@@ -58,7 +72,7 @@ type pendingLogin struct {
 // newCredentialController builds a controller for the resolved proxy auth
 // metadata. It returns nil when no interactive auth is configured (e.g. the
 // client_credentials service-account grant, which has no human login flow).
-func newCredentialController(log logrus.FieldLogger, meta *serverapi.ProxyAuthMetadataResponse) *credentialController {
+func newCredentialController(log logrus.FieldLogger, meta *serverapi.ProxyAuthMetadataResponse, proxyURL string) *credentialController {
 	if meta == nil || !meta.Enabled {
 		return nil
 	}
@@ -71,7 +85,7 @@ func newCredentialController(log logrus.FieldLogger, meta *serverapi.ProxyAuthMe
 		enabled:   meta.Enabled,
 	}
 
-	return &credentialController{
+	c := &credentialController{
 		log:    log.WithField("component", "credential-controller"),
 		target: target,
 		newClient: func(t credentialTarget) authclient.Client {
@@ -91,6 +105,17 @@ func newCredentialController(log logrus.FieldLogger, meta *serverapi.ProxyAuthMe
 			})
 		},
 	}
+
+	// The proxy owns which scopes its features require and advertises them at
+	// /auth/metadata (the same endpoint `panda init` reads). Resolve them at
+	// login so a config written before a feature existed still requests the
+	// scope it now needs, without a re-init — and without ever consulting the
+	// local scopes field.
+	c.discoverScopes = func(ctx context.Context) ([]string, error) {
+		return fetchProxyLoginScopes(ctx, proxyURL)
+	}
+
+	return c
 }
 
 // Status reports the current credential state without exposing any token.
@@ -130,7 +155,24 @@ func (c *credentialController) Status() serverapi.AuthStatusResponse {
 // that persists the tokens on approval. It returns the user-facing verification
 // details; the device code stays server-side.
 func (c *credentialController) BeginLogin(ctx context.Context) (serverapi.AuthLoginResponse, error) {
-	client := c.newClient(c.target)
+	// The proxy is authoritative for login scopes: it advertises the exact set
+	// its features require at /auth/metadata. Request those and never the
+	// configured scopes, so a stale config cannot mint a token silently missing
+	// a scope (e.g. "workflows") that only surfaces later as an opaque 401. If
+	// the proxy cannot be reached we fail loudly rather than guess. Only the
+	// scopes come from discovery; issuer/client/resource stay as configured so
+	// the credential file keys identically.
+	target := c.target
+	if c.discoverScopes != nil {
+		scopes, err := c.discoverScopes(ctx)
+		if err != nil {
+			return serverapi.AuthLoginResponse{}, fmt.Errorf("resolving login scopes from proxy: %w", err)
+		}
+
+		target.scopes = scopes
+	}
+
+	client := c.newClient(target)
 
 	device, err := client.BeginDeviceLogin(ctx)
 	if err != nil {
@@ -200,6 +242,46 @@ func (c *credentialController) Stop() {
 	}
 
 	c.pending = nil
+}
+
+// fetchProxyLoginScopes reads the proxy's advertised login scope set from its
+// public /auth/metadata discovery endpoint. A successful fetch returns the
+// advertised scopes; an empty slice is a valid result meaning the proxy needs
+// no extra scopes (the auth client then applies its own defaults). Any
+// transport, status, or decode failure returns an error so the caller fails the
+// login loudly instead of guessing a scope set.
+func fetchProxyLoginScopes(ctx context.Context, proxyURL string) ([]string, error) {
+	base := strings.TrimSpace(proxyURL)
+	if base == "" {
+		return nil, fmt.Errorf("proxy URL is not configured")
+	}
+
+	reqCtx, cancel := context.WithTimeout(ctx, proxyScopeDiscoveryTimeout)
+	defer cancel()
+
+	metadataURL := strings.TrimRight(base, "/") + "/auth/metadata"
+
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, metadataURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("building metadata request: %w", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetching %s: %w", metadataURL, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("fetching %s: unexpected status %s", metadataURL, resp.Status)
+	}
+
+	var meta proxy.AuthMetadataResponse
+	if err := json.NewDecoder(resp.Body).Decode(&meta); err != nil {
+		return nil, fmt.Errorf("decoding %s: %w", metadataURL, err)
+	}
+
+	return meta.Scopes, nil
 }
 
 // runLogin polls for device approval and persists the resulting tokens. The
