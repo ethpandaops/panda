@@ -33,8 +33,12 @@ network_target: { kind: local, enclave: "devnet-1" }
 
 ## Start or attach
 
-- **Start fresh:** `kurtosis run --args-file <config> <package_ref>`; capture the
-  enclave name and genesis time, and confirm it is producing blocks.
+- **Start fresh:** `kurtosis run --args-file <config> <package_ref>`, adding
+  `--privileged` when the config's `launch_requirements` demands it or a privileged
+  service like disruptoor is included (trigger list:
+  `runbooks://kurtosis_devnet_config`) — without it the run dies mid-Starlark AFTER
+  creating the enclave, leaving a stale enclave to remove before the retry. Capture
+  the enclave name and genesis time, and confirm it is producing blocks.
 - **Attach:** the caller MUST name the enclave; picking one from the list is guessing —
   if ambiguous, stop and ask. Discover with `kurtosis enclave ls`, then
   `kurtosis enclave inspect <enclave>` — its output includes the full service table
