@@ -46,7 +46,12 @@ handed directly to `kurtosis run --args-file`. Emit the file, not a prose plan.
    follow-up watch compares nodes), Buildoor (when ePBS is in scope),
    Spamoor/tx-fuzz/blobber (only when throughput/blobs must be exercised). Client-flag
    caveat: Besu `--miner-extra-data` expects hex bytes; Geth `--miner.extradata`
-   accepts a plain string.
+   accepts a plain string. Disruptoor (and any service needing privileged containers,
+   host bind mounts, or host PID namespace) additionally requires the LAUNCH to opt in
+   with `kurtosis run --privileged` (this runbook owns that trigger list) — record it
+   in the output's `launch_requirements` so the launcher
+   (`runbooks://kurtosis_devnet` or `runbooks://panda_compute_kurtosis_lifecycle`)
+   sees it.
 6. **Validate:** `--dry-run` proves the args parse and render — record it as exactly
    that, and read the rendered plan for Starlark errors rather than trusting the exit
    code alone. A dry-run still creates an (empty) enclave; remove it so the real
@@ -109,6 +114,7 @@ config_synthesis:
   package_ref: "github.com/ethpandaops/ethereum-package"
   topology: { cl: [lighthouse, teku], el: [geth, besu], validators: 128, tooling: [dora, buildoor] }
   deviations: ["gloas epoch 256 -> 3 (accelerated smoke, caller steering)"]
+  launch_requirements: []    # flags the launch MUST pass, e.g. ["--privileged"] with disruptoor
   source_disagreements: []
   dry_run: { attempted: true, command: "kurtosis run --dry-run ...", passed: true }
   citations: ["node inventory (node_inventory_url) for client pairs + images", "panda devnets forks peerdas-devnet-6 -o json"]

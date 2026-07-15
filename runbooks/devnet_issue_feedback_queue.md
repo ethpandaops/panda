@@ -7,6 +7,7 @@ triggers:
   - turn open questions into follow-up tasks
   - investigation blocked what work remains
   - queue the unresolved gaps as bounded tasks
+  - merge follow-up queues between drain rounds
 ---
 
 Owns the FEEDBACK-TASK shape: the handoff from "what is missing" to "the next bounded
@@ -96,6 +97,27 @@ publishing, or capture a missing broken-state snapshot for a reproducible seriou
 issue. Medium: variant analysis across versions/topology, an extra watch window for
 calibration, config fidelity after partial reproduction. Low: report polish, extra
 citations, observability improvements after review already survives.
+
+## Merging queues across rounds
+
+An orchestrator draining follow-ups round by round hands back several queues at once —
+the previous round's queue plus one queue per executed task. Merge them into ONE
+next-round queue:
+
+- Drop each executed task; its replacement is whatever its own follow-up queue says,
+  not a copy of the original.
+- Two tasks that close the same named gap are one task: keep the higher-priority task
+  whole (tiebreak: the tighter stop condition), then fold in only the other task's
+  non-conflicting `inputs` keys — on a key conflict the surviving task's value wins,
+  so its success/stop conditions always match its handles.
+- An issue investigated this round re-enters only through the fingerprinting runbook
+  (`runbooks://devnet_issue_fingerprint_dedupe`): a duplicate gets
+  occurrence-attachment — plus a `watch` only for a missing variant dimension (see
+  Fingerprint decision above) — never a fresh investigate task, or the drain never
+  converges.
+- Re-check `blocked_by` against this round's results and clear blockers that resolved.
+- Re-judge `terminal` on the MERGED queue by the rules below; per-queue terminal flags
+  from individual investigations do not carry over.
 
 ## Terminal
 
