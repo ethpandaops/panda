@@ -14,9 +14,10 @@ server:
   # Address to listen on
   listen_addr: ":18081"
 
-  # HTTP timeouts
+  # HTTP timeouts. Keep write_timeout above the 5m compute exec ceiling so a
+  # near-max guest command cannot race the server deadline.
   read_timeout: 30s
-  write_timeout: 5m
+  write_timeout: 6m
   idle_timeout: 60s
 
 auth:

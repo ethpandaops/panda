@@ -482,8 +482,10 @@ func (c *ServerConfig) ApplyDefaults() {
 		c.Server.ReadTimeout = 30 * time.Second
 	}
 
+	// Above the 5m compute exec ceiling, so a near-max guest command cannot
+	// race the server deadline.
 	if c.Server.WriteTimeout == 0 {
-		c.Server.WriteTimeout = 5 * time.Minute
+		c.Server.WriteTimeout = 6 * time.Minute
 	}
 
 	if c.Server.IdleTimeout == 0 {
