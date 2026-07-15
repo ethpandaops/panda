@@ -53,6 +53,7 @@ func (s *service) proxyPassthroughGet(
 		requestPath,
 		nil,
 		http.Header{handlers.DatasourceHeader: []string{datasource}},
+		proxyReplayable,
 	)
 	if err != nil {
 		writeAPIError(w, status, err.Error())

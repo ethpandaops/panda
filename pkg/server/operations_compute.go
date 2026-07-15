@@ -57,6 +57,13 @@ func (d *computeProxyDoer) Do(req *http.Request) (*http.Response, error) {
 
 	headers.Set(handlers.DatasourceHeader, d.datasource)
 
+	// Compute mutations (exec above all) must never run twice, so only
+	// read-only methods keep the proxy's invalidate-and-retry on auth rejection.
+	replayable := proxyNoReplay
+	if req.Method == http.MethodGet || req.Method == http.MethodHead {
+		replayable = proxyReplayable
+	}
+
 	respBody, status, respHeaders, err := d.svc.proxyDatasourceRequest(
 		req.Context(),
 		"compute",
@@ -65,6 +72,7 @@ func (d *computeProxyDoer) Do(req *http.Request) (*http.Response, error) {
 		requestPath,
 		body,
 		headers,
+		replayable,
 	)
 	if err != nil {
 		return nil, err
