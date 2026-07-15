@@ -230,20 +230,37 @@ func decodeAPIError(status int, data []byte) error {
 // apiErrorMessage extracts a human-readable message from an error response body.
 // It tries the common JSON error fields in order — panda's `error`, then RFC
 // 7807 problem+json `detail` and `title` — before falling back to the raw body.
-// The raw-body fallback covers non-JSON responses (e.g. an unknown route's
-// `text/plain` "404 page not found"), so decoding never panics or loses the
-// message.
+// Structured `code` and `request_id` fields are appended when present so the
+// failure is actionable and traceable. The raw-body fallback covers non-JSON
+// responses (e.g. an unknown route's `text/plain` "404 page not found"), so
+// decoding never panics or loses the message.
 func apiErrorMessage(data []byte) string {
 	var payload map[string]any
 	if err := json.Unmarshal(data, &payload); err == nil {
 		for _, key := range []string{"error", "detail", "title"} {
 			if msg, ok := payload[key].(string); ok && msg != "" {
-				return msg
+				return msg + apiErrorContext(payload)
 			}
 		}
 	}
 
 	return strings.TrimSpace(string(data))
+}
+
+func apiErrorContext(payload map[string]any) string {
+	parts := make([]string, 0, 2)
+
+	for _, key := range []string{"code", "request_id"} {
+		if value, ok := payload[key].(string); ok && value != "" {
+			parts = append(parts, key+"="+value)
+		}
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+
+	return " (" + strings.Join(parts, ", ") + ")"
 }
 
 func serverErrorHint(status int, message string) string {
@@ -298,6 +315,8 @@ func serverErrorHint(status int, message string) string {
 	switch status {
 	case http.StatusNotFound:
 		return "the requested module, operation, datasource, or resource is not available on this server; check 'panda datasources' and 'panda resources'"
+	case http.StatusInternalServerError:
+		return "the backend hit an internal error; for compute operations check the sandbox with 'panda compute sandboxes get <id>' — the guest may be unreachable"
 	case http.StatusBadGateway:
 		return "an upstream datasource or node returned a gateway error; the target may be temporarily unreachable — retry, or confirm it is still advertised with 'panda datasources'"
 	case http.StatusServiceUnavailable:

@@ -693,6 +693,14 @@ func (s *service) writeComputeResult(w http.ResponseWriter, resp *http.Response,
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		// Forward JSON error objects verbatim so structured fields (code,
+		// request_id) survive to the CLI instead of being nested in a wrapper.
+		if trimmed := bytes.TrimSpace(body); jsonObjectBody(trimmed) {
+			writePassthroughResponse(w, resp.StatusCode, "application/json", trimmed)
+
+			return
+		}
+
 		writeAPIError(w, resp.StatusCode, strings.TrimSpace(string(body)))
 
 		return
@@ -706,6 +714,17 @@ func (s *service) writeComputeResult(w http.ResponseWriter, resp *http.Response,
 	// Preserve the upstream 2xx status so callers can tell apart created (201),
 	// accepted (202), and no-content (204) results.
 	writePassthroughResponse(w, resp.StatusCode, contentType, body)
+}
+
+// jsonObjectBody reports whether body is a JSON object that can be forwarded
+// to the caller verbatim.
+func jsonObjectBody(body []byte) bool {
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return false
+	}
+
+	return payload != nil
 }
 
 func (s *service) computeDatasources() ([]types.DatasourceInfo, error) {
