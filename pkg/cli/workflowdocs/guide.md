@@ -171,7 +171,7 @@ mismatch, cancel and report rather than letting it run on the wrong agent.
 panda workflow run tasks  <wf> <run> --json         # task keys (for steering / narrow logs)
 panda workflow run follow <wf> <run>                # background-friendly: deltas → stderr, one summary JSON → stdout
 panda workflow run watch  <wf> <run> --json         # foreground: full snapshot stream
-panda workflow run logs   <wf> <run> -f --json      # worker logs (optional)
+panda workflow run logs   <wf> <run> -f --json      # raw in-task detail, including caught errors (see below)
 ```
 All three exit at terminal `run.status` (`completed|failed|cancelled`) with the
 status exit code (0 completed, 1 failed/cancelled). `run watch` emits a full
@@ -194,6 +194,21 @@ run to the background, tell the user they can steer any running task mid-flight
 (step 10) — redirect it without cancelling and without disturbing the follow. **Wait quietly:**
 check at terminal and report once — but still look at failures rather than
 assuming success. Do not disappear mid-run in any mode.
+
+**Answering "what's happening" mid-run — inspect the worker log, don't just
+re-read task states.** `run follow` renders run/task-status deltas; `run watch`
+renders full `/state` snapshots, including operation and resource updates. But
+neither includes raw worker-log events. An error a task handles internally need
+not become a task or operation failure, so it can be absent from both views
+while `run tasks` still shows the task plainly `running`. So when the user asks
+what's happening, wants progress detail, or the run's purpose is to surface
+breakage, do **not** answer from `run tasks` state alone. Read the current
+history with `panda workflow run logs <wf> <run> --json`; add
+`--spec-node <specNodeKey>` to scope it to the in-flight task. For continuous
+monitoring, use `run logs <wf> <run> -f --json` and report what the worker is
+actually doing, including caught-and-retried errors. Treat `run logs` as
+required for status-on-demand and any breakage-hunting run; for the latter,
+prefer a worker-log tail over a bare background `run follow` from the start.
 
 ### 10. Steer a running task (optional)
 Redirect a task mid-flight without cancelling it:
@@ -319,6 +334,11 @@ Do not claim completion until:
   (`completed|failed|cancelled`) from their `/state` snapshots (`follow` also
   reconnects on a dropped stream); `run logs -f` polls `/state` on the side for
   the same; session streams end on turn/operation-terminal events. All built in.
+- **Caught in-task failures can be absent from state streams.** `run follow`
+  renders run/task-status deltas and `run watch` renders full `/state`
+  snapshots, but neither includes raw worker-log events. For status-on-demand,
+  inspect `run logs`; for a breakage-hunting run, tail `run logs -f` from the
+  start (`--spec-node <specNodeKey>` scopes either form) — see step 9.
 - **Inputs are optional.** the engine defaults declared inputs — only pass `--inputs`
   to override.
 - **`session send` always makes progress.** It defaults to `mode:"queue"`, which
