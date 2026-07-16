@@ -60,10 +60,11 @@ already watched, the observation lanes from `runbooks://devnet_watch` seed the
 candidate table directly.
 
 Then collect issue candidates over the window using the examples index; do not
-hardcode Dora/Forky/ClickHouse queries from memory. On raw-only devnets (no refined
-database, CBT coverage 404s — `runbooks://clickhouse_querying`), treat CBT example
-hits as query-shape guidance and translate them to the network's raw tables at their
-actual placement. One translation trap: **participation** — a raw attestation-event
+hardcode Dora/Forky/ClickHouse queries from memory. On raw-only devnets — no refined
+`<network>` database on `clickhouse-refined`; test that directly, since the CBT
+coverage API can 404 even when refined tables exist and are populated
+(`runbooks://clickhouse_querying`) — treat CBT example hits as query-shape guidance
+and translate them to the network's raw tables at their actual placement. One translation trap: **participation** — a raw attestation-event
 aggregate measures observation coverage, not attestation correctness, so it is NOT the
 66.7% finality-participation figure the severity rubric compares against. Read epoch
 participation from Dora (`panda dora epoch <network> <epoch>` → `data.globalparticipationrate`)

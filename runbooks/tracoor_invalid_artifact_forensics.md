@@ -41,7 +41,14 @@ evidence:
 
 Python is a shape to adapt — substitute network and window.
 
-1. **Count before listing.** Establish the scale of EVERY artifact kind in the
+1. **Confirm the network is registered.** Not every network has a Tracoor instance —
+   list them first (`tracoor.list_networks()`). An unregistered network fails every
+   call with `HTTP 404: unknown network`; one 404 answers for the whole network, so
+   do not re-probe per artifact kind. Record the invalid-artifact lane as
+   UNAVAILABLE — not as zero rejections — and fall back to client validation errors
+   in the network's logs (`runbooks://debug_ethereum_network`).
+
+2. **Count before listing.** Establish the scale of EVERY artifact kind in the
    window first — zero in one kind says nothing about the others:
 
    ```python
@@ -56,18 +63,18 @@ Python is a shape to adapt — substitute network and window.
    (missed production, network partition) — return to
    `runbooks://debug_ethereum_network`'s branch table.
 
-2. **List each artifact kind in the window** — beacon bad blocks, bad blobs (by
+3. **List each artifact kind in the window** — beacon bad blocks, bad blobs (by
    `block_root` + `index`), execution bad blocks. Record per artifact: slot or block
    number, root/hash, the rejecting node, and the rejecting implementation
    (`beacon_implementation` / `execution_implementation`).
 
-3. **Map rejections to clients.** Group by implementation: one client family
+4. **Map rejections to clients.** Group by implementation: one client family
    rejecting what others accept points at that family's validation path (or everyone
    else's) — the minority can be the only correct one
    (`runbooks://evidence_discipline`). Execution bad blocks carry
    `block_extra_data`, which often identifies the builder that produced them.
 
-4. **Anchor first_bad.** Sort beacon artifacts by slot/time and execution bad blocks
+5. **Anchor first_bad.** Sort beacon artifacts by slot/time and execution bad blocks
    by `block_number`/`fetched_at` (they expose no consensus slot); the earliest
    rejected artifact that explains later symptoms is the `first_bad` candidate —
    later rejections are often descendants of the same fault. Cross-check the slot
@@ -75,7 +82,7 @@ Python is a shape to adapt — substitute network and window.
    (`runbooks://ethereum_protocol_model`): a rejection streak starting exactly at an
    activation epoch is a fork-rules divergence, not random corruption.
 
-5. **Hand off.** Feed the inventory into the issue record as evidence; escalate a
+6. **Hand off.** Feed the inventory into the issue record as evidence; escalate a
    client-specific rejection to `runbooks://ethereum_spec_source_drilldown` with the
    exact artifact root and the rejecting client's identity. Tracoor rows expose
    `node`/`node_version` (and `execution_implementation`), not a container image —
@@ -95,6 +102,7 @@ Python is a shape to adapt — substitute network and window.
 
 Before returning:
 - Counts were taken before listing, and the window is stated on every claim.
+- An unregistered network was reported as lane-unavailable, not as zero rejections.
 - Each artifact carries its rejecting node AND implementation.
 - The first_bad candidate is the earliest explaining artifact, checked against fork
   boundaries.

@@ -109,11 +109,19 @@ Using the wrong view silently drops the very rows the question is about.
   concluding data is missing, and explain an unprocessed position (dependency bounds,
   gaps) with `cbt.debug_coverage(network, id, position)`. A 404 from the coverage
   calls means coverage is unavailable — the network may be unregistered with CBT, or
-  listed by `cbt networks` yet not serving a coverage API (common for raw-only
-  devnets). Either way, record coverage as unavailable, not empty, and verify with a
+  listed by `cbt networks` yet not serving a coverage API. The 404 says nothing about
+  whether refined tables exist: devnets with populated refined databases 404 too, so
+  test raw-only-ness by the refined `<network>` database's absence, never by the 404.
+  Either way, record coverage as unavailable, not empty, and verify with a
   bounded raw-table probe instead. One 404 answers for the whole network — every cbt
   call (coverage, bounds, models, transformations) 404s the same way, so check once
   and do not re-probe per table.
+- **Prove the lane is live before reading absence.** Any ingestion lane can stop
+  flowing for a network — an observer leaves, an ingest is never enabled, a
+  transformation stalls — while sibling tables keep flowing. An empty window is
+  evidence only after the table's latest row (a bounded `max` of its time column)
+  shows the lane was alive through that window; otherwise report a coverage gap,
+  not chain quiet (blind-spot matrix: `runbooks://reconcile_chain_sources`).
 - **Orphans and reorgs:** deduplicated canonical views hide them. For stale parents,
   reorgs, or orphan rate, use a table that keeps orphaned rows — `fct_block` retains
   them with `status = 'orphaned'` — not a canonical-only view.
