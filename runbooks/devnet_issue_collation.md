@@ -69,26 +69,33 @@ collation:
 6. **Separate co-present distractors.** A chronic error that predates and outlives a
    bounded outage goes in `co_present`, with its timing, not into the root narrative.
 
-## Fork-aware judgment
+## Fork-aware judgment — triage gate
 
 Apply `runbooks://ethereum_protocol_model` — record the block `version` and whether a
 symptom starts exactly at a fork/BPO boundary or only after a later safe/finalized-head
-change. The load-bearing cases:
+change. This triage is a **gate, not advice**: an issue MUST NOT be framed as a client
+bug — neither in its `summary` nor by choosing a `classification.category` to imply
+one (`category` names the failure mode, never a suspected owner —
+`runbooks://devnet_issue_contract`) — until the row below that matches its symptom has
+been completed and the cheaper protocol-level explanation ruled out. Most "client bug"
+collations are participation or builder-path effects seen from one node.
 
-- **Gloas/ePBS:** distinguish missed beacon blocks from canonical blocks with missing
-  payloads; confirm a missing payload via next-slot PTC `payload_attestations`; map
-  `builder_index` (and the self-build sentinel) through builder evidence — slot states,
-  PTC, and `builder_index` semantics owned by `runbooks://ethereum_protocol_model`. If head and
-  finality advance while builder/VC services repeatedly fail to
-  produce/reveal/register/bid, emit `builder-path-degraded` alongside — not instead
-  of — the healthy-chain verdict. Anchor final/safe-block-unavailable errors only
-  after checking finality progression; they are often downstream of a stall.
-- **Finality stalls:** run the stall triage in `runbooks://ethereum_protocol_model`
-  (service status → offline stake fraction → completed-epoch participation) before any
-  client-bug framing; >1/3 offline stake classifies as lifecycle/participation with
-  consensus as the affected layer.
-- **Fulu/PeerDAS:** include sidecar/data-column availability in payload and DA issues;
-  check whether DA warnings precede reveal or validation failures.
+| Symptom | Required triage BEFORE classing it | Thresholds (owner) |
+| --- | --- | --- |
+| **Finality stall** | service status → offline-stake fraction → completed-epoch participation, cheapest first | >1/3 offline stake stalls finality on its own → class **lifecycle/participation**, consensus as affected layer, not a client bug (`runbooks://ethereum_protocol_model`) |
+| **Missed slots on Gloas/ePBS** | distinguish a missed beacon block from a canonical block with a **missing payload**; confirm absence via the next slot's PTC `payload_attestations` (slot S's verdict rides in block S+1) before framing as missed-proposals | PTC is the authoritative payload-presence verdict (`runbooks://ethereum_protocol_model`) |
+| **Absent payloads on one `builder_index`** (incl. the self-build sentinel) | map `builder_index` through builder evidence before blaming a client | one `builder_index` concentrating absent payloads is a builder reveal/registration problem until proven otherwise; a few missing payloads do NOT by themselves explain a finality stall (`runbooks://ethereum_protocol_model`) |
+| **Fulu/PeerDAS DA warnings** | include sidecar/data-column availability; check whether DA warnings precede reveal or validation failures | on ePBS, PTC `blob_data_available` is the DA verdict (`runbooks://ethereum_protocol_model`) |
+
+If head and finality advance while builder/VC services repeatedly fail to
+produce/reveal/register/bid, emit `builder-path-degraded` alongside — not instead
+of — the healthy-chain verdict. Anchor final/safe-block-unavailable errors only
+after checking finality progression; they are usually downstream of a stall.
+
+A `converged` or coverage flag arriving with upstream scan/watch output is an input
+**signal, not a verdict**: never promote it into a single settled root cause in an
+issue or the summary. Final blame is assigned downstream by
+`runbooks://devnet_issue_root_cause`, not here.
 
 ## Verification
 
@@ -111,4 +118,6 @@ Before returning:
 - Empty blocks, missing blobs, and absent builder activity were judged against
   configured demand.
 - Every issue carries a handle or a `snapshot` feedback task.
+- No client-bug or converged-root-cause framing was emitted before its fork-triage
+  row (finality / ePBS payload / builder / DA) was completed.
 - Evidence stays factual; no final root cause is assigned.

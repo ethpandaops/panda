@@ -45,7 +45,12 @@ the slot model has changed.
   the running network's builder evidence rather than either source alone.
 - self-build: `builder_index = 18446744073709551615`. A missing payload on self-build
   points to the proposer/local-EL path, not an external builder.
-- bid: `signed_execution_payload_bid` — a commitment/value, not the payload.
+- bid: `signed_execution_payload_bid` — a commitment (`block_hash` + value), not the
+  payload, and it never carries an execution block NUMBER. Consequence for analytics:
+  CL-derived fields like `execution_payload_block_number` read 0 for every post-Gloas
+  slot — a schema artifact, not a missing payload; block numbers exist only on the EL
+  side (`eth_blockNumber`, or `eth_getBlockByHash` on a revealed payload's
+  `block_hash`).
 - reveal / envelope: builder publication of the signed execution payload envelope.
 - PTC (Payload Timeliness Committee): the authoritative verdict on payload presence.
 - `payload_attestations`: carried in the NEXT block (slot S's verdict is in block S+1);
