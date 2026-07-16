@@ -37,11 +37,11 @@ with `clickhouse-client`, `curl`, or credentials from the environment.
   ```
 
   `EXPLAIN <query>` runs the same way. Look up a table's columns rather than guessing:
-  `panda schema <datasource> <database> <table>` for a `default`-database (mainnet/testnet) table,
-  but it cannot address a hyphenated devnet database (the name fails identifier
-  validation and the listing shows zero tables) — for those, describe the table with a
-  query instead: ``panda clickhouse query clickhouse-raw "DESCRIBE TABLE `<network>`.<table>"``
-  (and ``SHOW TABLES FROM `<network>``` to list them).
+  `panda schema <datasource> <database> <table>` — hyphenated devnet databases work as
+  positional arguments, and unlike a bare `DESCRIBE TABLE` it also prints the
+  partition and order keys you must filter on. List a database's tables with
+  `panda schema <datasource> <database>` (or ``SHOW TABLES FROM `<network>``` as a
+  query).
 
 - **Python sandbox (`execute_python`)** — use the `ethpandaops` library:
 
@@ -50,8 +50,9 @@ with `clickhouse-client`, `curl`, or credentials from the environment.
   df = clickhouse.query("<datasource>", "<sql>")
   ```
 
-Both take the same `<datasource>` — the datasource that holds the dataset's placement
-(list them with `panda datasets`). Addressing by cluster:
+Both take the same `<datasource>` — a CLUSTER name such as `clickhouse-raw` or
+`clickhouse-refined`, never a dataset name (`xatu-cbt` and `xatu-raw` are datasets;
+`panda datasets` maps each one to the datasource that holds it). Addressing by cluster:
 
 - **Refined (`clickhouse-refined`)** — always the `<network>.` table prefix.
 - **Raw (`clickhouse-raw`)** — mainnet and testnets live in the
@@ -110,7 +111,9 @@ Using the wrong view silently drops the very rows the question is about.
   calls means coverage is unavailable — the network may be unregistered with CBT, or
   listed by `cbt networks` yet not serving a coverage API (common for raw-only
   devnets). Either way, record coverage as unavailable, not empty, and verify with a
-  bounded raw-table probe instead.
+  bounded raw-table probe instead. One 404 answers for the whole network — every cbt
+  call (coverage, bounds, models, transformations) 404s the same way, so check once
+  and do not re-probe per table.
 - **Orphans and reorgs:** deduplicated canonical views hide them. For stale parents,
   reorgs, or orphan rate, use a table that keeps orphaned rows — `fct_block` retains
   them with `status = 'orphaned'` — not a canonical-only view.
@@ -141,9 +144,17 @@ To query a time window:
    in-query subquery bridge is rejected (`distributed_product_mode = 'deny'`). If
    the range query fails with a `force_primary_key` error, append
    `SETTINGS force_primary_key=0`: `block_number` is the partition key, so the
-   pruning you need still happens. An empty
-   bridge result (0/0 aggregates) is not a range — treat it as no data for the window
-   and check placement/coverage rather than querying `BETWEEN 0 AND 0`.
+   pruning you need still happens. A 0/0 bridge result is not a range — never query
+   `BETWEEN 0 AND 0` — but distinguish why it is 0/0: zero ROWS is no data for the
+   window (check placement/coverage), while rows present with every
+   `execution_payload_block_number` = 0 on a Gloas/ePBS network is the fork's schema
+   artifact — post-Gloas beacon blocks commit to a payload by `block_hash` only, so
+   CL-derived tables never learn the block number
+   (`runbooks://ethereum_protocol_model`). That window HAS data: filter consumers by
+   slot or `slot_start_date_time` instead, resolve a truly required block bound from
+   the EL side (`eth_getBlockByHash` on a payload envelope's `block_hash`, or
+   `eth_blockNumber`), and first check the block-number-partitioned target table is
+   populated at all for the network (devnets often don't ingest execution traces).
 
 Resolve the range from `fct_block_head` only — a `SELECT max(block_number)` subquery on
 the partitioned table itself is the full scan you are avoiding, and `updated_date_time`
