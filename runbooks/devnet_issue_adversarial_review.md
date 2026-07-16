@@ -29,24 +29,26 @@ archaeology for a config/lifecycle/load issue? (8) Will named source/runtime bla
 a reachability trace before final reporting? (9) Are citations planned for every
 concrete artifact?
 
-Output — reasoning first:
+Output — reasoning first, same verdict scale as the evidence review:
 
 ```yaml
 plan_review:
   summary: >
     The plan tests the finality stall via client-bug hypotheses before checking VC
-    availability; reorder. h3 has no rejecting observable. Reproduction via full
-    relaunch when snap-9 exists is wasteful.
-  approved: false
-  required_changes:
-    - { change: "test validator-availability hypothesis first", reason: "cheapest, stall triage rule", blocks_execution: true }
-  approved_hypotheses: ["h1", "h2 (revised)"]
-  drilldown_requests: []
-  trace_required: true
+    availability; h3 has no rejecting observable. Reproduction via full relaunch
+    when snap-9 exists is wasteful.
+  verdict: weakened              # survives|weakened|refuted — refuted needs a decisive, checkable break
+  strongest_counterargument: "h1-h5 all test why the block was rejected; none tests why the node failed to recover for 1200+ slots"
+  missing_evidence:              # same shape as runbooks://devnet_issue_reachability_trace
+    - { query: "VC/service availability timeline across the stall window", would_support: "availability gap explains the stall", would_reject: "all VCs up throughout" }
 ```
 
-If the plan is weak, revise it into an approvable one — stop at criticism only when the
-inputs lack the minimum issue, evidence, and reproduction target to proceed.
+A weakened or refuted verdict must make `strongest_counterargument` concrete enough
+that a reviser can act on it — the investigation revises the plan against the review
+before executing it; the review itself criticizes, it does not rewrite. Judge the
+plan's substance, not its process framing: a plan noting it awaits review has not
+refuted itself. Stop at criticism only when the inputs lack the minimum issue,
+evidence, and reproduction target to proceed.
 
 ## Evidence review
 
