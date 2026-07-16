@@ -80,6 +80,28 @@ rejection that creates nothing, so a failed attempt is free — treat it as "thi
 deployment cannot cold-boot" and say so, rather than silently substituting a warm
 restore.
 
+## Restore capacity and contention
+
+- **A warm restore makes every guest page resident.** A restored 64 GiB sandbox
+  occupies a real 64 GiB of host memory regardless of what the guest is doing, so
+  host-side usage metrics (`metrics.memUsedGiB`, `kubectl top`) read ~100% on every
+  restored sandbox — that is residency, not pressure. But node capacity is genuinely
+  consumed: only the supervisor's small fixed allowance sits above guest size, and
+  restores have been OOMKilled (`exit code 137`) when it ran out.
+- **A freshly captured snapshot is not immediately restorable.** Restore waits on
+  retained snapshot zvol capacity / archive upload; a create that fails or sits in
+  `placement deferred: … waiting for retained snapshot zvol capacity or archive
+  upload` will not clear within a poll loop's horizon — fail fast and fall back
+  (live target, existing sandbox) instead of burning the timeout.
+- **Fan-out siblings must not stampede.** Before `sandboxes create --snapshot`, run
+  `sandboxes list -o json` and reuse a running sandbox whose lineage
+  (`sourceSnapshot`, name) covers your restore point; at most one restore per
+  snapshot per run.
+- **Shared-sandbox etiquette.** When reusing a sandbox another task created: never
+  stop, snapshot, or delete it; record the dependency in your output; treat its
+  `expiresAt` TTL as a hard deadline for any watch recipe. The Teardown
+  delete-the-source rule below applies only to sandboxes you created yourself.
+
 ## Sizing
 
 Template defaults are small — `ethereum-devnet` and `kurtosis-warm` provision
