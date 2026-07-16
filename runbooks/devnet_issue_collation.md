@@ -73,11 +73,12 @@ collation:
 
 Apply `runbooks://ethereum_protocol_model` — record the block `version` and whether a
 symptom starts exactly at a fork/BPO boundary or only after a later safe/finalized-head
-change. This triage is a **gate, not advice**: an issue MUST NOT carry a client-bug
-`classification.category` — nor a single-root-cause framing in its `summary` — until
-the row below that matches its symptom has been completed and the cheaper
-protocol-level explanation ruled out. Most "client bug" collations are participation
-or builder-path effects seen from one node.
+change. This triage is a **gate, not advice**: an issue MUST NOT be framed as a client
+bug — neither in its `summary` nor by choosing a `classification.category` to imply
+one (`category` names the failure mode, never a suspected owner —
+`runbooks://devnet_issue_contract`) — until the row below that matches its symptom has
+been completed and the cheaper protocol-level explanation ruled out. Most "client bug"
+collations are participation or builder-path effects seen from one node.
 
 | Symptom | Required triage BEFORE classing it | Thresholds (owner) |
 | --- | --- | --- |

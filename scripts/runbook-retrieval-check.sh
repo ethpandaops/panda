@@ -82,6 +82,8 @@ MATRIX=(
   "how should findings be cited in a report|evidence_discipline"
   "one node stuck offline or out of sync|debug_ethereum_network"
   "is a service up according to metrics|prometheus_devnet_health"
+  "execution_payload_block_number is 0 for every slot|ethereum_protocol_model"
+  "fct_block_head min max execution_payload_block_number returns 0 0|clickhouse_querying|top2"
 )
 
 # Out-of-scope probes: nothing in the registry covers these. Informational
