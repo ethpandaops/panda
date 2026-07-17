@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"strings"
 
 	"github.com/ethpandaops/panda/pkg/cartographoor"
 	"github.com/ethpandaops/panda/pkg/module"
@@ -32,10 +33,18 @@ func New() *Module {
 	return &Module{}
 }
 
-// NetworkBaseURL returns the CBT instance base URL for a network, derived from
-// the standard ethpandaops.io naming convention. Cartographoor discovery does
-// not expose a CBT service URL, so the per-network host is derived here.
+// NetworkBaseURL returns the CBT instance base URL for a network. Cartographoor
+// discovery does not expose a CBT service URL, so the per-network host is
+// derived here. Named networks follow the cbt.<network>.ethpandaops.io
+// convention. Devnets have no such record — their wildcard DNS points at the
+// devnet fleet's own ingress, not the cluster hosting CBT — so their instances
+// are addressed by the analytics ingress host the mca-devnets ApplicationSet
+// provisions per devnet.
 func NetworkBaseURL(network string) string {
+	if strings.Contains(network, "-devnet-") {
+		return fmt.Sprintf("https://%s-xatu-cbt.analytics.production.platform.ethpandaops.io", network)
+	}
+
 	return fmt.Sprintf("https://cbt.%s.ethpandaops.io", network)
 }
 
@@ -55,7 +64,7 @@ func (m *Module) Validate() error {
 
 // SandboxEnv returns environment variables for the sandbox.
 // Returns ETHPANDAOPS_CBT_NETWORKS with network->URL mapping derived from
-// cartographoor active networks using the convention https://cbt.{network}.ethpandaops.io.
+// cartographoor active networks via NetworkBaseURL.
 func (m *Module) SandboxEnv() (map[string]string, error) {
 	if m.cartographoorClient == nil {
 		return nil, nil
