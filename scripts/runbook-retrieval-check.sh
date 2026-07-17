@@ -34,6 +34,10 @@ MATRIX=(
   "can this component cause the failure|devnet_issue_reachability_trace"
   "engine_getBlobs returning empty|blob_propagation_vs_getblobs"
   "generate a devnet consensus bug report|devnet_bug_report"
+  "is this root cause tunable or a bug to fix|devnet_issue_experiment_triage"
+  "turn a devnet issue into an experiment campaign|devnet_issue_experiment_triage"
+  "write an experiment goal from an investigation report|devnet_issue_experiment_triage|top2"
+  "which client repo owns this fix|devnet_issue_experiment_triage|top2"
   # intent phrases (mirror runbook names/owns-lines)
   "public devnet context intake|public_devnet_context"
   "hosted devnet context|public_devnet_context"
@@ -81,6 +85,7 @@ MATRIX=(
   "two datasources disagree which one to trust|reconcile_chain_sources"
   "how should findings be cited in a report|evidence_discipline"
   "one node stuck offline or out of sync|debug_ethereum_network"
+  "should we tune this or fix the bug|devnet_issue_experiment_triage|top2"
   "is a service up according to metrics|prometheus_devnet_health"
   "execution_payload_block_number is 0 for every slot|ethereum_protocol_model"
   "fct_block_head min max execution_payload_block_number returns 0 0|clickhouse_querying|top2"

@@ -32,7 +32,7 @@ feedback:
   terminal_reason: ""
   tasks:
     - id: "fq-1"
-      kind: investigate        # watch|investigate|config|snapshot|source-trace|reachability-trace|manual-review|publish|no-op
+      kind: investigate        # watch|investigate|config|snapshot|source-trace|reachability-trace|experiment-triage|manual-review|publish|no-op
       reason: "evidence review requires the missing direct edge before publish"
       priority: high           # high|medium|low
       inputs: { snapshot_id: "snap-9", slot: 385, service: "buildoor" }
@@ -50,7 +50,8 @@ task closes ONE named gap and has both a success and a stop condition.
 → `runbooks://devnet_issue_root_cause`, `watch` → `runbooks://devnet_watch`, `config`
 → `runbooks://kurtosis_devnet_config`, `source-trace` →
 `runbooks://ethereum_spec_source_drilldown`, `reachability-trace` →
-`runbooks://devnet_issue_reachability_trace`.
+`runbooks://devnet_issue_reachability_trace`, `experiment-triage` →
+`runbooks://devnet_issue_experiment_triage`.
 
 ## Mapping rules
 
@@ -80,14 +81,40 @@ a client/protocol bug.
 citations are strong (queue the missing trace/source work first otherwise); spec
 issue → `source-trace` with the EIP/spec target, then `publish` once the spec
 comparison is resolved; config fix → `config`; tooling fix → `config` or
-`manual-review`; rerun with more evidence → `watch` or `investigate` scoped to the
-missing evidence; no issue reproduced → `no-op`, or `snapshot` if a broken-state start
-would change the outcome.
+`manual-review`; experiment triage → one `experiment-triage` task handing the report
+and issue record to `runbooks://devnet_issue_experiment_triage` (`inputs` carries
+their handles; success condition: a disposition exists) — on its return, a
+launch-ready bundle goes to the caller (launching is not a queue task) and a
+refusal's `next_step` maps back through these rules like any required next
+query; rerun with more evidence → `watch` or
+`investigate` scoped to the missing evidence; no issue reproduced → `no-op`, or
+`snapshot` if a broken-state start would change the outcome.
 
-**Fingerprint decision:** `duplicate` → occurrence-attachment via
-`publish`/`manual-review` only (plus `watch` only for a missing variant dimension);
-`variant` → the smallest task that distinguishes it; `insufficient-context` → queue
-the missing context first (setup, `first_bad`, components, citations).
+**Fingerprint decision:**
+
+- **`new`, emitted by this collation round** → NO task: the emitted issues are
+  themselves the handoff — the orchestrator feeds each one to the investigator
+  directly (`runbooks://devnet_issue_collation`), and a queue task here would
+  dispatch the same issue twice.
+- **`new`, with no other route to an investigator** (a manually reported issue
+  fingerprinted outside a collation round, or a SECOND issue surfaced during an
+  investigation of a different issue) → one `investigate` task; the issue record
+  (`runbooks://devnet_issue_contract`) is the handoff and `inputs` still carries only
+  its handles, so name the issue in `reason`.
+- **`new`, for the issue a finishing root-cause report investigated** → NO task: that
+  report IS the completed investigation of the new issue — never queue a fresh
+  `investigate` for it (see Merging: the drain never converges otherwise). Key this
+  case by issue identity, not by where the fingerprint ran: a different new issue
+  surfaced mid-investigation is the case above and gets its one `investigate` task.
+- **`duplicate`** → occurrence-attachment via `publish`/`manual-review` only (plus
+  `watch` only for a missing variant dimension).
+- **`variant`** → the smallest task that distinguishes it — with the same two
+  carve-outs as `new`: a variant issue emitted by this collation round is itself the
+  handoff (NO task — the orchestrator dispatches it directly), and when the finishing
+  report itself already distinguished the variant dimension, that work is done —
+  record the variant fingerprint with no fresh task.
+- **`insufficient-context`** → queue the missing context first (setup, `first_bad`,
+  components, citations).
 
 ## Priority
 
@@ -101,7 +128,9 @@ citations, observability improvements after review already survives.
 ## Merging queues across rounds
 
 An orchestrator draining follow-ups round by round hands back several queues at once —
-the previous round's queue plus one queue per executed task. Merge them into ONE
+the previous round's queue, one queue per executed task, AND the embedded queue from
+each directly dispatched investigation (collation-emitted issues travel outside the
+task list, but their reports' feedback still merges here). Merge them into ONE
 next-round queue:
 
 - Drop each executed task; its replacement is whatever its own follow-up queue says,
@@ -113,8 +142,10 @@ next-round queue:
 - An issue investigated this round re-enters only through the fingerprinting runbook
   (`runbooks://devnet_issue_fingerprint_dedupe`): a duplicate gets
   occurrence-attachment — plus a `watch` only for a missing variant dimension (see
-  Fingerprint decision above) — never a fresh investigate task, or the drain never
-  converges.
+  Fingerprint decision above) — and a variant gets at most ONE bounded distinguishing
+  task per named dimension (re-randomized peer/proposer/builder timing from a
+  re-executed restore is noise, not a new dimension). Neither ever gets a fresh
+  investigate task, or the drain never converges.
 - Re-check `blocked_by` against this round's results and clear blockers that resolved.
 - Re-judge `terminal` on the MERGED queue by the rules below; per-queue terminal flags
   from individual investigations do not carry over.

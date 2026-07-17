@@ -21,6 +21,12 @@ to `runbooks://devnet_issue_root_cause`; the embedded issue record to
 `runbooks://devnet_issue_contract` — this runbook owns the scan queries, the severity
 rubric, the bug-object schema, and the hand-offs.
 
+Scope: an INTERACTIVE operator workflow — it prompts the user between phases and ends
+in a rendered HTML board. A worker inside an orchestrated pipeline whose declared
+outputs are structured records (the investigation stages of
+`runbooks://devnet_issue_contract`) must not follow it: emit the pipeline's declared
+outputs instead.
+
 ## Inputs
 
 - **`network_target`** — required. For a public devnet resolve it with
@@ -96,7 +102,10 @@ table: `id | class | severity | window | affected | count | one-line`.
 
 Then **prompt the user**: present the summary and baseline, and ask which bugs to
 investigate (default: everything `major` and above). Do not start investigations until
-the user confirms — investigation is the expensive step.
+the user confirms — investigation is the expensive step. With no interactive user to
+prompt (an unattended run whose declared deliverable is the board itself), apply the
+stated default — everything `major` and above — and record in the report header that
+the default was applied unprompted.
 
 ### Severity Rubric
 

@@ -18,7 +18,10 @@ fingerprint (`runbooks://devnet_issue_fingerprint_dedupe`), spec/source escalati
 (`runbooks://ethereum_spec_source_drilldown`), reachability
 (`runbooks://devnet_issue_reachability_trace`), critique
 (`runbooks://devnet_issue_adversarial_review`), follow-ups
-(`runbooks://devnet_issue_feedback_queue`).
+(`runbooks://devnet_issue_feedback_queue`). Downstream of the report — reached via
+`next_action`, not by the investigator — experiment triage decides whether the
+demonstrated cause is a tunable metric regime
+(`runbooks://devnet_issue_experiment_triage`).
 
 ## Inputs
 Required: one issue (title, evidence, suspected category/layer). Split multi-symptom
@@ -40,17 +43,62 @@ in the summary and bind `confidence` to the deeper claim.
 2. **Fingerprint before expensive work.** A `duplicate` with a matched prior issue and
    no new variant dimension is a valid early exit: return the fingerprint block,
    occurrence evidence, and a `publish`/`manual-review` feedback task.
-3. **Reproduce or restore before blaming.** Prefer a snapshot restore
-   (`runbooks://panda_compute_kurtosis_lifecycle`); otherwise pick the cheapest faithful
-   target kind (`runbooks://debug_ethereum_network`) and label the mode explicitly:
-   `reproduced | partial | not-reproduced | local-live | public-live |
-   historical-only` (naming the historical evidence). Given several snapshots of the
-   same network, choose the restore point by what the investigation needs: the
-   broken-state (latest) snapshot to inspect the failure as it stands, or the latest
-   snapshot strictly BEFORE the issue's `first_bad` to re-run the window and watch the
-   failure develop under targeted observation. A pre-`first_bad` restore re-executes
-   rather than replays — peer, proposer, and builder timing re-randomize — so a failure
-   that does not recur is a determinism finding to record, not a dead end.
+3. **Reproduce or restore before blaming.** Work through these in order:
+   - **Disqualifier 1 — tooling surface.** An issue classified `layer: tooling` whose
+     failing component runs OUTSIDE the devnet's own enclave/network — the ClickHouse /
+     CBT (ClickHouse Build Tool) datasources, the datasource side of the ingestion
+     pipeline, external test-runners — is investigated on the live tooling surface
+     directly (query the failing datasource or pipeline itself, e.g.
+     `runbooks://clickhouse_querying`). Label the mode `tooling-live` while the
+     surface still shows the failure; a recovered tooling outage investigated from its
+     traces is `historical-only`. Components that run INSIDE the enclave (the
+     logs-collector, spamoor/assertoor, builders) are devnet components — they take
+     the normal restore/launch path below even when the issue is `layer: tooling`.
+     When the failing component is not yet identified (in-enclave collector vs
+     datasource-side ingestion both explain "data missing"), probe the tooling
+     surface first — it is the cheap check — and commit to a path only on what the
+     probe shows. When both disqualifiers apply, this one wins: the failing surface,
+     not the network, is the target.
+   - **Disqualifier 2 — live handle.** When a live network handle still exhibits the
+     symptom AND the evidence needed to explain `first_bad` (rule 1) is still
+     reachable on it, target it directly
+     rather than reproducing. Label the mode by the handle's kind — `public-live` for
+     a public network, `local-live` for a local or compute enclave — never
+     `reproduced`, which is reserved for a symptom re-exhibited on a fresh target.
+     When the needed evidence has aged out of the live target (rotated logs, pruned
+     state), this disqualifier does not apply: fall through to a restore — a
+     pre-`first_bad` restore is how the aged-out onset is recovered.
+   - **Otherwise reproduce.** Prefer a snapshot restore
+     (`runbooks://panda_compute_kurtosis_lifecycle`); otherwise pick the cheapest
+     faithful target kind (`runbooks://debug_ethereum_network`). Label the mode
+     explicitly: `reproduced | partial | not-reproduced | local-live | public-live |
+     tooling-live | historical-only` (naming the historical evidence).
+   - **Fidelity check before claiming reproduction.** Applies only when labeling
+     `status` `reproduced` or `partial` on a fresh target; the live, tooling, and
+     historical modes skip it. Record the target's consensus genesis time against
+     the source network's — from the lifecycle output's `launch.genesis_time` for
+     compute sources, or `runbooks://public_devnet_context` for public networks
+     (also compare chain id when the source is public; the lifecycle output carries
+     no chain id) — and put the comparison in `reproduction.recipe`, citing where
+     each value came from. A MISMATCH on a supposed same-lineage restore means the
+     wrong snapshot or network: stop and re-resolve the handle before any claim.
+     When no source value exists, record the check as unverifiable rather than
+     guessing — an unverifiable check caps `status` at `partial`.
+   - **Mirrors.** Any relaunch (its genesis necessarily differs from the source's)
+     and any snapshot restore are local MIRRORS of the source, not the source
+     itself: record the mirror provenance in `reproduction.recipe`, keep `status`
+     outcome-based (`reproduced` only when the mirror itself re-exhibited the
+     symptom), and never claim reproduction on evidence the target did not produce.
+   - **Restore-point choice.** Given several snapshots of the same network, choose by
+     what the investigation needs: the broken-state (latest) snapshot to inspect the
+     failure as it stands, or the latest snapshot strictly BEFORE the issue's
+     `first_bad` to re-run the window and watch the failure develop under targeted
+     observation. The epoch-0 base snapshot is not a start-of-epoch capture — check
+     its recorded `captured_at` before treating it as pre-`first_bad` for an issue
+     that begins inside epoch 0 (`runbooks://panda_compute_kurtosis_lifecycle`). A
+     pre-`first_bad` restore re-executes rather than replays — peer, proposer, and
+     builder timing re-randomize — so a failure that does not recur is a determinism
+     finding to record, not a dead end.
 4. **Hypotheses are bounded.** 3–5 concrete hypotheses, each with an angle, a test, a
    supporting observable, AND a rejecting observable.
 5. **Judge twice.** Adversarial plan review before compute-heavy work; adversarial
@@ -70,7 +118,9 @@ in the summary and bind `confidence` to the deeper claim.
 1. **Canonicalize** the input into the issue record shape and fill the fingerprint
    block. Preserve upstream snapshot handles and evidence verbatim; add fields without
    rewriting facts.
-2. **Choose the reproduction path** (first viable): restore a snapshot, picking the
+2. **Choose the reproduction path** — after applying rule 3's disqualifiers in order
+   (live tooling surface first, then a still-symptomatic live handle with reachable
+   evidence) — first viable: restore a snapshot, picking the
    restore point per rule 3 (`runbooks://panda_compute_kurtosis_lifecycle`); reuse an existing enclave
    (`runbooks://kurtosis_devnet`); relaunch the provided config and drive it to the
    window; synthesize a faithful config (`runbooks://public_devnet_context` +
@@ -112,20 +162,21 @@ report:
     restart loop at epoch 11; reproduced on restore; participation recovered when the
     VCs were held up. Buildoor reveal errors are chronic and unrelated (co-present).
   root_cause: { statement: "teku VC restart loop removed >1/3 stake", family: "lifecycle/participation", confidence: high }   # >1/3 stall threshold: runbooks://ethereum_protocol_model
-  reproduction: { status: reproduced, recipe: ["restore snap-9", "observe epochs 11-14"] }   # status: reproduced|partial|not-reproduced|local-live|public-live|historical-only
+  reproduction: { status: reproduced, recipe: ["restore snap-9", "observe epochs 11-14"] }   # status: reproduced|partial|not-reproduced|local-live|public-live|tooling-live|historical-only
   timeline:                      # objects, board-renderer-ready; kind: restart|block|timing|log|note
     - { ts: "2026-07-01T10:41:55Z", kind: restart, text: "vc-2 first restart", log: "<verbatim log line>" }
     - { ts: "2026-07-01T10:48:00Z", kind: timing, text: "checkpoints freeze at epoch 12" }
   hypotheses: { supported: ["h1"], rejected: ["h2 consensus bug — participation math explains loss"], partial: [] }
   trace_verdict: reachable       # reachable|partially-reachable|not-reachable|insufficient-evidence
   review_verdict: survives       # survives|weakened|refuted
-  feedback:                      # shape owned by runbooks://devnet_issue_feedback_queue
+  feedback:                      # shape owned by runbooks://devnet_issue_feedback_queue; always emit it embedded here — an orchestrator may ADDITIONALLY lift it out as a sibling output
     { priority_summary: "no follow-ups — cause demonstrated and reviewed",
       terminal: true, terminal_reason: "cause demonstrated; config fix filed", tasks: [] }
   citations:                     # evidence items (runbooks://devnet_issue_contract), not bare strings
     - { source: kurtosis, ref: "kurtosis service logs devnet-1 vc-2-teku -n 3000", at: "epoch 11", detail: "restart loop from 10:41:55Z" }
     - { source: dora, ref: "GET /api/v1/epoch/12", at: "epoch 12", detail: "participation 41.2% on completed epoch 12" }
-  next_action: "config fix"   # file client bug | spec issue | config fix | tooling fix | rerun with more evidence | no issue reproduced
+  next_action: "config fix"   # file client bug | spec issue | config fix | tooling fix | experiment triage | rerun with more evidence | no issue reproduced
+                              # experiment triage: the demonstrated cause looks like a tunable metric regime — the feedback queue emits an experiment-triage task handing the report + record to runbooks://devnet_issue_experiment_triage
 ```
 
 ## Self-Check
