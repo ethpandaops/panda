@@ -60,7 +60,10 @@ leave root-causing to downstream stages.
   proposer preference, builder build/reveal/register/bid; whether errors start at a
   fork boundary or only after a finality/safe-head change.
 - **Network-wide:** head + finality progression, cross-node agreement, service
-  stops/restarts, missed slots/reorgs/splits, participation on completed epochs
+  stops/restarts (when Prometheus is deployed, `up == 0`, scrape gaps, and restart
+  counter resets are the first signals to check — a gap alone is not proof of
+  downtime: `runbooks://prometheus_devnet_health`), missed
+  slots/reorgs/splits, participation on completed epochs
   (`runbooks://ethereum_protocol_model`), block fullness relative to configured load
   (`runbooks://evidence_discipline` — judge against setup); on ePBS, payload presence;
   on PeerDAS, sidecar/column availability.
@@ -99,9 +102,16 @@ watch:
     network_target: { kind: compute, sandbox_id: "sbx-4", enclave: "devnet-1" }
                           # local: { kind: local, enclave: "devnet-1" }
                           # public: { kind: public, network_id: "peerdas-devnet-6" }
-    final_snapshot_id: "" # compute targets only — local and public
-                          # targets keep the key with ""; capture exactly one after
-                          # end_epoch (runbooks://panda_compute_kurtosis_lifecycle)
+    final_snapshot_id: "snap-9"
+                          # owned compute target — the watch run is itself the
+                          # standing request: take exactly one final capture after
+                          # end_epoch, no further approval needed, and copy its id
+                          # here (runbooks://panda_compute_kurtosis_lifecycle). A
+                          # sandbox provisioned for this watch (including a restore
+                          # made on its behalf) counts as owned. Keep "" on local
+                          # and public targets, and on a shared sandbox another live
+                          # task is using — etiquette: never snapshot it; record the
+                          # owner dependency instead
 ```
 
 ## Self-Check

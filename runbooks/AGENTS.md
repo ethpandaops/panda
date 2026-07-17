@@ -126,6 +126,24 @@ Spell discovery so any reader can follow it:
 - Literal `panda …` commands belong only where the CLI *is* the procedure
   (`panda compute`, `panda devnets`): those are operations, not addressing.
 
+## Orchestrator-neutral contracts
+
+External orchestration layers wrap these runbooks in typed pipelines (fan-out,
+drain loops, gated stages). Keep the dependency one-way:
+
+- Address an abstract orchestrator — "an orchestrator", "a worker", "a task",
+  "the caller" — never a specific orchestration system, its template names, or
+  its field vocabulary. Runbooks must not know who wraps them.
+- When a rule branches on orchestration topology — is there a direct dispatch
+  route? does this task own the sandbox? — name the deciding fact abstractly so
+  the wrapping layer can supply it. A rule that silently assumes one topology
+  ("collation-emitted issues are already dispatched") misfires in a wrapper
+  with a different one.
+- Contract changes ripple outward: wrappers mirror enum values, output fields,
+  and handoff rules, and restate load-bearing rules in their own instructions.
+  Treat any enum/field/handoff change as a cross-repo change — the wrappers
+  need a sweep after it.
+
 ## Naming
 
 - Filename `snake_case.md`; the stem is the stable `runbooks://` ref.

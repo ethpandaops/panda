@@ -95,12 +95,23 @@ restore.
   (live target, existing sandbox) instead of burning the timeout.
 - **Fan-out siblings must not stampede.** Before `sandboxes create --snapshot`, run
   `sandboxes list -o json` and reuse a running sandbox whose lineage
-  (`sourceSnapshot`, name) covers your restore point; at most one restore per
-  snapshot per run.
-- **Shared-sandbox etiquette.** When reusing a sandbox another task created: never
-  stop, snapshot, or delete it; record the dependency in your output; treat its
-  `expiresAt` TTL as a hard deadline for any watch recipe. The Teardown
-  delete-the-source rule below applies only to sandboxes you created yourself.
+  (`sourceSnapshot`, name) covers your restore point — but ONLY when it is still AT
+  that point: a sandbox that has run past the target epoch, or hosted another
+  task's hypothesis tests, is not your restore point — create fresh (a lineage
+  match does not attest state purity). "At most one restore per snapshot per run"
+  scopes to concurrent fan-out siblings sharing the same restore need, not across
+  drain rounds.
+- **Shared-sandbox etiquette.** Ownership follows the TASK, not the process that ran
+  the create: a sandbox provisioned on a task's behalf — e.g. an orchestrator or
+  lifecycle step restoring a snapshot so a watch task can run on it — belongs to that
+  task, and that task's worker may snapshot it. A shared sandbox is one another live
+  task created for its own purposes and is still using. A sandbox whose owning task
+  has FINISHED is not up for grabs either: treat it as shared (never stop, snapshot,
+  or delete) unless the orchestrator or caller explicitly hands it to your task.
+  When reusing a shared
+  sandbox: never stop, snapshot, or delete it; record the dependency in your output;
+  treat its `expiresAt` TTL as a hard deadline for any watch recipe. The Teardown
+  delete-the-source rule below applies only to sandboxes your task owns.
 
 ## Sizing
 
@@ -161,7 +172,16 @@ after boot: `sandboxes exec <id> -- sh -c 'nproc; free -m; df -h /'`.
   blocks-produced. Discover services via `runbooks://kurtosis_devnet`.
 - **Epoch-aligned snapshots:** snapshot for epoch N at the START of epoch N. Compute
   `target_time = genesis_time + N * slots_per_epoch * seconds_per_slot` before launch,
-  and use the SANDBOX clock (restored VMs may drift from wall-clock). Snapshot from the
+  and use the SANDBOX clock (restored VMs may drift from wall-clock). Epoch 0 is the
+  carve-out: its record is the base snapshot, captured early in epoch 0 once the
+  network is producing blocks — genesis itself has no captured state worth keeping,
+  and the capture must still land before the first epoch boundary. Record the actual
+  capture time on the epoch-0 entry (`captured_at`): it is a MID-epoch capture, so it
+  is not a pre-`first_bad` restore point for an issue that begins earlier in epoch 0
+  (`runbooks://devnet_issue_root_cause` reads `captured_at` for exactly this). If no
+  blocks appear before the boundary, capture once at the boundary and note it in
+  `warnings` — the broken pre-block state is itself the evidence, and that one
+  capture doubles as the epoch-1 snapshot when epoch 1 is also a target. Snapshot from the
   orchestrator side only: `panda compute sandboxes snapshot <id> --note "…"` → poll →
   resolve id. Preserve target-epoch order.
 - **Restore:** `panda compute sandboxes create --snapshot <snapshot_id> --ttl <ttl>`
@@ -173,8 +193,14 @@ after boot: `sandboxes exec <id> -- sh -c 'nproc; free -m; df -h /'`.
   preserved, so epoch target times still compute from it on the sandbox clock. Then
   establish enclave, current epoch/slot, slot timing, service inventory, and setup
   summary.
-- **Final snapshot (watch runs):** exactly one after the end epoch is reached; poll and
-  resolve before any downstream judgment.
+- **Final snapshot (on request):** when the caller asks for a final capture at the end
+  of an observation window — a watch run on a sandbox it owns is a standing request
+  (`runbooks://devnet_watch`) — take exactly one after the end epoch is reached; poll
+  and resolve before any downstream judgment. Shared-sandbox etiquette still wins: a
+  worker never snapshots a sandbox another live task is using — but a sandbox
+  provisioned on this task's behalf is this task's own (see Shared-sandbox
+  etiquette). On a genuinely shared sandbox, return the empty id and record the owner
+  dependency instead.
 
 ## Safety
 
@@ -190,12 +216,15 @@ re-provision without asking.
 lifecycle:
   summary: >
     Provisioned sbx-4 from template kurtosis-xl (ttl 4h), launched peerdas smoke
-    enclave devnet-1 (genesis 10:02:11Z), captured snapshots at epochs 3 and 5,
-    final snapshot snap-9 after end epoch 14.
+    enclave devnet-1 (genesis 10:02:11Z), captured the epoch-0 base snapshot and
+    snapshots at epochs 3 and 5, caller-requested final snapshot snap-9 after end
+    epoch 14.
   network_target: { kind: compute, sandbox_id: "sbx-4", enclave: "devnet-1" }
   sandbox: { id: "sbx-4", template: "kurtosis-xl", ttl: "4h", sizing: { vcpu: 8, memory_mb: 16384, disk_gb: 40 } }  # as created — restores need vcpu >= and memory == this (see Sizing)
   launch: { package_ref: "github.com/ethpandaops/ethereum-package", args_file: "./local.yaml", genesis_time: "2026-07-01T10:02:11Z", blocks_produced: true }
-  snapshots: [ { epoch: 3, snapshot_id: "snap-7", operation_id: "op-31" }, { epoch: 5, snapshot_id: "snap-8", operation_id: "op-38" } ]
+  snapshots: [ { epoch: 0, snapshot_id: "snap-5", operation_id: "op-28", captured_at: "2026-07-01T10:04:30Z" },  # captured_at required on the epoch-0 base entry — it is a mid-epoch capture
+               { epoch: 3, snapshot_id: "snap-7", operation_id: "op-31" }, { epoch: 5, snapshot_id: "snap-8", operation_id: "op-38" } ]
+  final_snapshot: { snapshot_id: "snap-9", operation_id: "op-45" }  # only when requested; "" ids otherwise — watch copies snapshot_id into handles.final_snapshot_id
   restore: { attempted: false, source_snapshot_id: "", new_sandbox_id: "" }
   warnings: []
   citations: ["panda compute operations get op-31"]

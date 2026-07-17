@@ -27,6 +27,11 @@ A `network_target` is how you reach the network under study:
   snapshot/restore (`runbooks://panda_compute_kurtosis_lifecycle`).
 - `kind: public` — a live public (ethpandaops-hosted) devnet: resolved network id +
   published endpoints (`runbooks://public_devnet_context`).
+- `kind: tooling` — not a network: the live tooling surface a `tooling-live`
+  investigation targets (`runbooks://devnet_issue_root_cause`); carries the failing
+  datasource or pipeline name in `surface`, plus the observing network's id in
+  `network_id` when one exists. Only the access-resolution step applies to this
+  kind — the fork model and symptom branches do not.
 
 Downstream steps consume a target and reason identically for every kind; providers are
 swappable. Steps that want a capability one kind lacks (e.g. restore on a local enclave)
@@ -38,6 +43,7 @@ degrade gracefully — to live observation or historical evidence — instead of
 | Endpoints | Kurtosis port names (`runbooks://kurtosis_devnet`) | published endpoints (beacon RPC, Dora, Forky, Ethnode) |
 | Logs | `local-kurtosis` OTel, or `kurtosis service logs` | the public-devnet otel-logs datasource (commonly `external.otel_logs` on `clickhouse-raw`), filtered by `ResourceAttributes['network']` |
 | Chain view | direct beacon / EL RPC | Dora / Forky / Ethnode + direct RPC |
+| Metrics | enclave Prometheus when deployed as tooling — endpoint via Kurtosis port discovery (`runbooks://kurtosis_devnet`), queried directly; signal rules transfer from `runbooks://prometheus_devnet_health` (its procedure assumes the shared datasource, not a raw endpoint) | shared devnets Prometheus datasource scoped by `network="<devnet>"` (`runbooks://prometheus_devnet_health`) |
 
 ## Inputs
 Required: a `network_target`, and the reported symptom (or "is it healthy?").
@@ -73,7 +79,8 @@ and the next distinguishing query — every concrete claim cited
 | Payload/block validation or engine errors | EL / engine API | CL engine-API logs + matching EL logs, block/payload detail (matrix below); rejected-artifact inventory: `runbooks://tracoor_invalid_artifact_forensics` |
 | Builder bid/envelope gossip rejections (ePBS) | builder path | CL bid-admission logs + builder/buildoor logs for the same slot; the CL is often the rejector, not the fault (matrix below) |
 | Missing blobs / data-column warnings | DA / PeerDAS | sidecars, PTC `blob_data_available`, data-column logs (`runbooks://ethereum_protocol_model`) |
-| One node stuck/offline | node drilldown | direct sync/peers + node logs; distinguish down vs not-shipping-logs |
+| One node stuck/offline | node drilldown | direct sync/peers + node logs; distinguish down vs not-shipping-logs — `up == 0`, scrape gaps, and restart counter resets are the first signals to check, then verify the service directly (`runbooks://prometheus_devnet_health`) |
+| Same block, different state root / gasUsed / receipts across ELs, or an evm-fuzz case | EVM execution divergence | opcode-level trace comparison across ELs: `runbooks://debug_evm_execution_divergence`; a bare state-root divergence with agreeing per-tx traces is non-EVM state transition (withdrawals, requests, blob-gas accounting) — take the engine-API branch above first |
 | One client type failing across nodes | client-specific bug | grouped logs by client + image/version, fork/spec context |
 
 On a split, treat "offline-looking" nodes as possible minority-fork members — indexers
