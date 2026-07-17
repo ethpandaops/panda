@@ -850,7 +850,18 @@ func (s *service) proxyRequestWithService(
 			req.Header.Set(attribution.Header, v)
 		}
 
-		if token := proxySvc.RegisterToken(); token != "" && token != proxy.NoAuthToken {
+		// An empty token means auth is configured but no credential is usable
+		// (expired, revoked, or never logged in). Forwarding unauthenticated
+		// would only surface the proxy's opaque 401; fail fast with the action
+		// the user can take instead.
+		switch token := proxySvc.RegisterToken(); token {
+		case proxy.NoAuthToken:
+		case "":
+			return nil, http.StatusUnauthorized, nil, fmt.Errorf(
+				"%w: credentials are missing or expired — run 'panda auth login'",
+				proxy.ErrAuthenticationRequired,
+			)
+		default:
 			req.Header.Set("Authorization", "Bearer "+token)
 		}
 
