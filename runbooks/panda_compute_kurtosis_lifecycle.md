@@ -95,13 +95,20 @@ restore.
   (live target, existing sandbox) instead of burning the timeout.
 - **Fan-out siblings must not stampede.** Before `sandboxes create --snapshot`, run
   `sandboxes list -o json` and reuse a running sandbox whose lineage
-  (`sourceSnapshot`, name) covers your restore point; at most one restore per
-  snapshot per run.
+  (`sourceSnapshot`, name) covers your restore point — but ONLY when it is still AT
+  that point: a sandbox that has run past the target epoch, or hosted another
+  task's hypothesis tests, is not your restore point — create fresh (a lineage
+  match does not attest state purity). "At most one restore per snapshot per run"
+  scopes to concurrent fan-out siblings sharing the same restore need, not across
+  drain rounds.
 - **Shared-sandbox etiquette.** Ownership follows the TASK, not the process that ran
   the create: a sandbox provisioned on a task's behalf — e.g. an orchestrator or
   lifecycle step restoring a snapshot so a watch task can run on it — belongs to that
   task, and that task's worker may snapshot it. A shared sandbox is one another live
-  task created for its own purposes and is still using. When reusing a shared
+  task created for its own purposes and is still using. A sandbox whose owning task
+  has FINISHED is not up for grabs either: treat it as shared (never stop, snapshot,
+  or delete) unless the orchestrator or caller explicitly hands it to your task.
+  When reusing a shared
   sandbox: never stop, snapshot, or delete it; record the dependency in your output;
   treat its `expiresAt` TTL as a hard deadline for any watch recipe. The Teardown
   delete-the-source rule below applies only to sandboxes your task owns.

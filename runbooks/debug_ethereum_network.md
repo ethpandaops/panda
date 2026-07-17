@@ -27,6 +27,11 @@ A `network_target` is how you reach the network under study:
   snapshot/restore (`runbooks://panda_compute_kurtosis_lifecycle`).
 - `kind: public` — a live public (ethpandaops-hosted) devnet: resolved network id +
   published endpoints (`runbooks://public_devnet_context`).
+- `kind: tooling` — not a network: the live tooling surface a `tooling-live`
+  investigation targets (`runbooks://devnet_issue_root_cause`); carries the failing
+  datasource or pipeline name in `surface`, plus the observing network's id in
+  `network_id` when one exists. Only the access-resolution step applies to this
+  kind — the fork model and symptom branches do not.
 
 Downstream steps consume a target and reason identically for every kind; providers are
 swappable. Steps that want a capability one kind lacks (e.g. restore on a local enclave)

@@ -82,8 +82,11 @@ citations are strong (queue the missing trace/source work first otherwise); spec
 issue → `source-trace` with the EIP/spec target, then `publish` once the spec
 comparison is resolved; config fix → `config`; tooling fix → `config` or
 `manual-review`; experiment triage → one `experiment-triage` task handing the report
-and issue record to `runbooks://devnet_issue_experiment_triage` (`inputs` carries
-their handles; success condition: a disposition exists) — on its return, a
+and issue record to `runbooks://devnet_issue_experiment_triage` — `inputs` carries
+the issue's handles and fingerprint key; the report and record themselves travel
+BESIDE the queue as the investigation's sibling outputs, and the orchestrator pairs
+them to the task by that fingerprint key (success condition: a disposition
+exists) — on its return, a
 launch-ready bundle goes to the caller (launching is not a queue task) and a
 refusal's `next_step` maps back through these rules like any required next
 query; rerun with more evidence → `watch` or

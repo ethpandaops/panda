@@ -50,7 +50,9 @@ in the summary and bind `confidence` to the deeper claim.
      pipeline, external test-runners — is investigated on the live tooling surface
      directly (query the failing datasource or pipeline itself, e.g.
      `runbooks://clickhouse_querying`). Label the mode `tooling-live` while the
-     surface still shows the failure; a recovered tooling outage investigated from its
+     surface still shows the failure — its network_target is `kind: tooling`,
+     naming the surface (`runbooks://debug_ethereum_network`); a recovered tooling
+     outage investigated from its
      traces is `historical-only`. Components that run INSIDE the enclave (the
      logs-collector, spamoor/assertoor, builders) are devnet components — they take
      the normal restore/launch path below even when the issue is `layer: tooling`.
@@ -62,7 +64,11 @@ in the summary and bind `confidence` to the deeper claim.
    - **Disqualifier 2 — live handle.** When a live network handle still exhibits the
      symptom AND the evidence needed to explain `first_bad` (rule 1) is still
      reachable on it, target it directly
-     rather than reproducing. Label the mode by the handle's kind — `public-live` for
+     rather than reproducing. On a handle other investigations also target
+     (fan-out siblings), live targeting is READ-ONLY: observation and queries only —
+     any perturbing hypothesis test (holding services up, re-inducing, config
+     changes) needs a private restore instead, or the siblings cite each other's
+     interventions as network behavior. Label the mode by the handle's kind — `public-live` for
      a public network, `local-live` for a local or compute enclave — never
      `reproduced`, which is reserved for a symptom re-exhibited on a fresh target.
      When the needed evidence has aged out of the live target (rotated logs, pruned
@@ -89,13 +95,19 @@ in the summary and bind `confidence` to the deeper claim.
      itself: record the mirror provenance in `reproduction.recipe`, keep `status`
      outcome-based (`reproduced` only when the mirror itself re-exhibited the
      symptom), and never claim reproduction on evidence the target did not produce.
+     A lineage/genesis match does not attest state purity: a reused sandbox that ran
+     past the restore point or hosted a prior task's tests is not a faithful mirror —
+     note prior interventions in the recipe and prefer a fresh restore
+     (`runbooks://panda_compute_kurtosis_lifecycle`: reuse conditions).
    - **Restore-point choice.** Given several snapshots of the same network, choose by
      what the investigation needs: the broken-state (latest) snapshot to inspect the
      failure as it stands, or the latest snapshot strictly BEFORE the issue's
      `first_bad` to re-run the window and watch the failure develop under targeted
      observation. The epoch-0 base snapshot is not a start-of-epoch capture — check
      its recorded `captured_at` before treating it as pre-`first_bad` for an issue
-     that begins inside epoch 0 (`runbooks://panda_compute_kurtosis_lifecycle`). A
+     that begins inside epoch 0 (`runbooks://panda_compute_kurtosis_lifecycle`); an
+     epoch-0 entry with no `captured_at` is assumed mid-epoch — never license to
+     treat it as start-of-epoch. A
      pre-`first_bad` restore re-executes rather than replays — peer, proposer, and
      builder timing re-randomize — so a failure that does not recur is a determinism
      finding to record, not a dead end.
