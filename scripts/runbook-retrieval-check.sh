@@ -85,7 +85,7 @@ MATRIX=(
   "inspect client source code for this error|ethereum_spec_source_drilldown"
   "is the blamed client really the trigger or a victim|devnet_issue_reachability_trace"
   "two datasources disagree which one to trust|reconcile_chain_sources"
-  "vote_participation zero for every epoch|devnet_observability_apis|top2"
+  "vote_participation zero for every epoch|devnet_observability_apis"
   "scan devnet history over http without clickhouse|devnet_observability_apis"
   "how should findings be cited in a report|evidence_discipline"
   "one node stuck offline or out of sync|debug_ethereum_network"
