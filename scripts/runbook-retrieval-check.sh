@@ -63,6 +63,8 @@ MATRIX=(
   "panda compute devnet lifecycle|panda_compute_kurtosis_lifecycle"
   "devnet node metrics prometheus peer count|prometheus_devnet_health"
   "dora and the beacon node disagree|reconcile_chain_sources"
+  "query the devnet observability apis over a past window|devnet_observability_apis"
+  "dora api filter param ignored same page|devnet_observability_apis"
   "same bytecode different gas across clients|debug_evm_execution_divergence"
   "invalid beacon block which client rejected it|tracoor_invalid_artifact_forensics"
   # confusable pairs (the near-miss neighbor must not win)
@@ -83,6 +85,8 @@ MATRIX=(
   "inspect client source code for this error|ethereum_spec_source_drilldown"
   "is the blamed client really the trigger or a victim|devnet_issue_reachability_trace"
   "two datasources disagree which one to trust|reconcile_chain_sources"
+  "vote_participation zero for every epoch|devnet_observability_apis"
+  "scan devnet history over http without clickhouse|devnet_observability_apis"
   "how should findings be cited in a report|evidence_discipline"
   "one node stuck offline or out of sync|debug_ethereum_network"
   "should we tune this or fix the bug|devnet_issue_experiment_triage|top2"
