@@ -21,9 +21,9 @@ import (
 // approval when the provider does not advertise an expiry.
 const minLoginPollWindow = 5 * time.Minute
 
-// proxyScopeDiscoveryTimeout bounds the /auth/metadata fetch performed at login
+// proxyAuthDiscoveryTimeout bounds the /auth/metadata fetch performed at login
 // so an unreachable proxy fails the login promptly instead of stalling it.
-const proxyScopeDiscoveryTimeout = 5 * time.Second
+const proxyAuthDiscoveryTimeout = 5 * time.Second
 
 // credentialTarget is the resolved proxy auth configuration the controller
 // operates against. It mirrors the values the proxy client uses to build its
@@ -51,12 +51,12 @@ type credentialController struct {
 	newClient func(credentialTarget) authclient.Client
 	newStore  func(credentialTarget, authclient.Client) authstore.Store
 
-	// discoverScopes resolves the proxy's advertised login scope set at login
-	// time (from /auth/metadata) so the proxy — not a possibly-stale local
-	// config — decides which scopes the token carries. It is injected for tests;
-	// in production it is always set. A nil hook (tests only) requests the
-	// configured target scopes verbatim.
-	discoverScopes func(ctx context.Context) ([]string, error)
+	// discoverLoginAuth resolves the proxy's advertised login contract (issuer
+	// plus scope set, from /auth/metadata) at login time so the proxy — not a
+	// possibly-stale local config — decides which scopes the token carries. It
+	// is injected for tests; in production it is always set. A nil hook (tests
+	// only) requests the configured target scopes verbatim.
+	discoverLoginAuth func(ctx context.Context) (proxy.AuthMetadataResponse, error)
 
 	mu      sync.Mutex
 	pending *pendingLogin
@@ -111,8 +111,8 @@ func newCredentialController(log logrus.FieldLogger, meta *serverapi.ProxyAuthMe
 	// login so a config written before a feature existed still requests the
 	// scope it now needs, without a re-init — and without ever consulting the
 	// local scopes field.
-	c.discoverScopes = func(ctx context.Context) ([]string, error) {
-		return fetchProxyLoginScopes(ctx, proxyURL)
+	c.discoverLoginAuth = func(ctx context.Context) (proxy.AuthMetadataResponse, error) {
+		return fetchProxyLoginAuth(ctx, proxyURL)
 	}
 
 	return c
@@ -162,14 +162,28 @@ func (c *credentialController) BeginLogin(ctx context.Context) (serverapi.AuthLo
 	// the proxy cannot be reached we fail loudly rather than guess. Only the
 	// scopes come from discovery; issuer/client/resource stay as configured so
 	// the credential file keys identically.
+	//
+	// Issuer and scopes are one contract: a scope name is only meaningful to
+	// the issuer that advertised it (e.g. "workflows" exists on Authentik but
+	// Dex rejects it as invalid_scope). When the configured issuer is not the
+	// advertised one — a config from before an issuer migration — starting the
+	// flow would mint a device code doomed to die in the browser, so refuse
+	// up front with the migration path instead.
 	target := c.target
-	if c.discoverScopes != nil {
-		scopes, err := c.discoverScopes(ctx)
+	if c.discoverLoginAuth != nil {
+		adv, err := c.discoverLoginAuth(ctx)
 		if err != nil {
 			return serverapi.AuthLoginResponse{}, fmt.Errorf("resolving login scopes from proxy: %w", err)
 		}
 
-		target.scopes = scopes
+		if adv.IssuerURL != "" && !sameIssuer(adv.IssuerURL, target.issuerURL) {
+			return serverapi.AuthLoginResponse{}, fmt.Errorf(
+				"the proxy advertises issuer %s but this server is configured for %s; "+
+					"re-run `panda init` to adopt the advertised issuer, restart panda-server, then retry login",
+				adv.IssuerURL, target.issuerURL)
+		}
+
+		target.scopes = adv.Scopes
 	}
 
 	client := c.newClient(target)
@@ -244,44 +258,53 @@ func (c *credentialController) Stop() {
 	c.pending = nil
 }
 
-// fetchProxyLoginScopes reads the proxy's advertised login scope set from its
-// public /auth/metadata discovery endpoint. A successful fetch returns the
-// advertised scopes; an empty slice is a valid result meaning the proxy needs
-// no extra scopes (the auth client then applies its own defaults). Any
-// transport, status, or decode failure returns an error so the caller fails the
-// login loudly instead of guessing a scope set.
-func fetchProxyLoginScopes(ctx context.Context, proxyURL string) ([]string, error) {
+// sameIssuer compares issuer URLs up to a trailing slash. Authentik's issuer
+// requires the trailing slash while other layers (status output, hand-edited
+// configs) may carry it trimmed; that difference must not read as a different
+// issuer.
+func sameIssuer(a, b string) bool {
+	return strings.TrimRight(a, "/") == strings.TrimRight(b, "/")
+}
+
+// fetchProxyLoginAuth reads the proxy's advertised login contract (issuer and
+// scope set) from its public /auth/metadata discovery endpoint. An empty scope
+// list is a valid result meaning the proxy needs no extra scopes (the auth
+// client then applies its own defaults); an empty issuer means an older proxy
+// that does not advertise one. Any transport, status, or decode failure
+// returns an error so the caller fails the login loudly instead of guessing.
+func fetchProxyLoginAuth(ctx context.Context, proxyURL string) (proxy.AuthMetadataResponse, error) {
+	var meta proxy.AuthMetadataResponse
+
 	base := strings.TrimSpace(proxyURL)
 	if base == "" {
-		return nil, fmt.Errorf("proxy URL is not configured")
+		return meta, fmt.Errorf("proxy URL is not configured")
 	}
 
-	reqCtx, cancel := context.WithTimeout(ctx, proxyScopeDiscoveryTimeout)
+	reqCtx, cancel := context.WithTimeout(ctx, proxyAuthDiscoveryTimeout)
 	defer cancel()
 
 	metadataURL := strings.TrimRight(base, "/") + "/auth/metadata"
 
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, metadataURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("building metadata request: %w", err)
+		return meta, fmt.Errorf("building metadata request: %w", err)
 	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("fetching %s: %w", metadataURL, err)
+		return meta, fmt.Errorf("fetching %s: %w", metadataURL, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("fetching %s: unexpected status %s", metadataURL, resp.Status)
+		return meta, fmt.Errorf("fetching %s: unexpected status %s", metadataURL, resp.Status)
 	}
 
-	var meta proxy.AuthMetadataResponse
 	if err := json.NewDecoder(resp.Body).Decode(&meta); err != nil {
-		return nil, fmt.Errorf("decoding %s: %w", metadataURL, err)
+		return meta, fmt.Errorf("decoding %s: %w", metadataURL, err)
 	}
 
-	return meta.Scopes, nil
+	return meta, nil
 }
 
 // runLogin polls for device approval and persists the resulting tokens. The

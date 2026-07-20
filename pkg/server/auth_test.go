@@ -389,8 +389,11 @@ func TestBeginLoginScopeSelection(t *testing.T) {
 				issuerURL: "https://issuer.example", clientID: "panda", resource: "https://r",
 				enabled: true, scopes: []string{"stale-config-scope"},
 			},
-			discoverScopes: func(context.Context) ([]string, error) {
-				return []string{"openid", "workflows"}, nil
+			discoverLoginAuth: func(context.Context) (proxy.AuthMetadataResponse, error) {
+				return proxy.AuthMetadataResponse{
+					IssuerURL: "https://issuer.example",
+					Scopes:    []string{"openid", "workflows"},
+				}, nil
 			},
 			newClient: func(tg credentialTarget) authclient.Client {
 				gotScopes = tg.scopes
@@ -421,8 +424,8 @@ func TestBeginLoginScopeSelection(t *testing.T) {
 				issuerURL: "https://issuer.example", clientID: "panda",
 				enabled: true, scopes: []string{"stale-config-scope"},
 			},
-			discoverScopes: func(context.Context) ([]string, error) {
-				return nil, errors.New("proxy unreachable")
+			discoverLoginAuth: func(context.Context) (proxy.AuthMetadataResponse, error) {
+				return proxy.AuthMetadataResponse{}, errors.New("proxy unreachable")
 			},
 			newClient: func(credentialTarget) authclient.Client {
 				clientBuilt = true
@@ -442,16 +445,98 @@ func TestBeginLoginScopeSelection(t *testing.T) {
 	})
 }
 
-// TestFetchProxyLoginScopes verifies scope discovery reads /auth/metadata,
-// returns the advertised scopes (empty is a valid answer), and errors on any
-// unreachable or non-200 proxy so the caller can fail the login loudly.
-func TestFetchProxyLoginScopes(t *testing.T) {
+// TestBeginLoginIssuerGate verifies login refuses to start a device flow when
+// the proxy advertises a different issuer than the configured one — the
+// advertised scope set is only meaningful there, and the flow would die in the
+// browser with the issuer's invalid_scope error. A trailing-slash difference or
+// an older proxy that advertises no issuer must not trip the gate.
+func TestBeginLoginIssuerGate(t *testing.T) {
+	t.Parallel()
+
+	newCtrl := func(t *testing.T, adv proxy.AuthMetadataResponse, clientBuilt *bool) *credentialController {
+		t.Helper()
+
+		return &credentialController{
+			log: logrus.New(),
+			target: credentialTarget{
+				issuerURL: "https://dex.example", clientID: "panda", enabled: true,
+			},
+			discoverLoginAuth: func(context.Context) (proxy.AuthMetadataResponse, error) {
+				return adv, nil
+			},
+			newClient: func(credentialTarget) authclient.Client {
+				*clientBuilt = true
+
+				return &fakeAuthClient{
+					beginResp: &authclient.DeviceAuth{DeviceCode: "d", UserCode: "U", ExpiresIn: 600},
+					pollResp:  &authclient.Tokens{AccessToken: "at", ExpiresAt: time.Now().Add(time.Hour)},
+				}
+			},
+			newStore: func(_ credentialTarget, c authclient.Client) authstore.Store {
+				return authstore.New(logrus.New(), authstore.Config{
+					Path: filepath.Join(t.TempDir(), "c.json"), AuthClient: c,
+				})
+			},
+		}
+	}
+
+	t.Run("advertised issuer mismatch refuses the login", func(t *testing.T) {
+		t.Parallel()
+
+		clientBuilt := false
+		ctrl := newCtrl(t, proxy.AuthMetadataResponse{
+			IssuerURL: "https://authentik.example/application/o/panda-proxy/",
+			Scopes:    []string{"openid", "workflows"},
+		}, &clientBuilt)
+
+		_, err := ctrl.BeginLogin(context.Background())
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "https://authentik.example/application/o/panda-proxy/")
+		require.Contains(t, err.Error(), "https://dex.example")
+		require.Contains(t, err.Error(), "panda init")
+		require.False(t, clientBuilt, "login must not mint a device code at a mismatched issuer")
+		require.Equal(t, serverapi.AuthLoginNone, ctrl.LoginState().State)
+	})
+
+	t.Run("trailing slash is not a different issuer", func(t *testing.T) {
+		t.Parallel()
+
+		clientBuilt := false
+		ctrl := newCtrl(t, proxy.AuthMetadataResponse{
+			IssuerURL: "https://dex.example/",
+			Scopes:    []string{"openid"},
+		}, &clientBuilt)
+
+		_, err := ctrl.BeginLogin(context.Background())
+		require.NoError(t, err)
+		require.True(t, clientBuilt)
+	})
+
+	t.Run("proxy without advertised issuer skips the gate", func(t *testing.T) {
+		t.Parallel()
+
+		clientBuilt := false
+		ctrl := newCtrl(t, proxy.AuthMetadataResponse{
+			Scopes: []string{"openid"},
+		}, &clientBuilt)
+
+		_, err := ctrl.BeginLogin(context.Background())
+		require.NoError(t, err)
+		require.True(t, clientBuilt)
+	})
+}
+
+// TestFetchProxyLoginAuth verifies login-auth discovery reads /auth/metadata,
+// returns the advertised issuer and scopes (empty scopes are a valid answer),
+// and errors on any unreachable or non-200 proxy so the caller can fail the
+// login loudly.
+func TestFetchProxyLoginAuth(t *testing.T) {
 	t.Parallel()
 
 	t.Run("empty url errors", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := fetchProxyLoginScopes(context.Background(), "")
+		_, err := fetchProxyLoginAuth(context.Background(), "")
 		require.Error(t, err)
 	})
 
@@ -462,25 +547,28 @@ func TestFetchProxyLoginScopes(t *testing.T) {
 		url := srv.URL
 		srv.Close()
 
-		_, err := fetchProxyLoginScopes(context.Background(), url)
+		_, err := fetchProxyLoginAuth(context.Background(), url)
 		require.Error(t, err)
 	})
 
 	tests := []struct {
 		name       string
 		handler    http.HandlerFunc
+		wantIssuer string
 		wantScopes []string
 		wantErr    bool
 	}{
 		{
-			name: "advertised scopes returned",
+			name: "advertised issuer and scopes returned",
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				require.Equal(t, "/auth/metadata", r.URL.Path)
 				_ = json.NewEncoder(w).Encode(proxy.AuthMetadataResponse{
-					Enabled: true,
-					Scopes:  []string{"openid", "email", "groups", "offline_access", "workflows"},
+					Enabled:   true,
+					IssuerURL: "https://issuer.example/",
+					Scopes:    []string{"openid", "email", "groups", "offline_access", "workflows"},
 				})
 			},
+			wantIssuer: "https://issuer.example/",
 			wantScopes: []string{"openid", "email", "groups", "offline_access", "workflows"},
 		},
 		{
@@ -506,7 +594,7 @@ func TestFetchProxyLoginScopes(t *testing.T) {
 			srv := httptest.NewServer(tt.handler)
 			defer srv.Close()
 
-			scopes, err := fetchProxyLoginScopes(context.Background(), srv.URL)
+			meta, err := fetchProxyLoginAuth(context.Background(), srv.URL)
 			if tt.wantErr {
 				require.Error(t, err)
 
@@ -514,7 +602,8 @@ func TestFetchProxyLoginScopes(t *testing.T) {
 			}
 
 			require.NoError(t, err)
-			require.Equal(t, tt.wantScopes, scopes)
+			require.Equal(t, tt.wantIssuer, meta.IssuerURL)
+			require.Equal(t, tt.wantScopes, meta.Scopes)
 		})
 	}
 }
