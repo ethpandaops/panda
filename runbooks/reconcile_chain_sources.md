@@ -45,7 +45,8 @@ reconciliation:
 | Source | Authoritative for | Blind spots |
 | --- | --- | --- |
 | Direct beacon / EL RPC (one node) | that node's own live view: head, finality checkpoints, sync, peers | one node ≠ the network; no history; a minority-fork node reports its fork confidently |
-| Dora / explorer | canonical-chain history: slot status, epoch summaries, duties, participation | reflects the canonical fork only — minority-fork nodes look "offline"; indexing lags the head |
+| Dora / explorer | canonical-chain history: slot status, epoch summaries, duties, participation | reflects the canonical fork only — minority-fork nodes look "offline"; indexing lags the head; epoch-level aggregates can be zeroed or partial while slot data is fine (`runbooks://devnet_observability_apis`) |
+| Forkmon / status monitors | which nodes report head progress and versions to the monitor | a node dark in the monitor (no version, "unhealthy") is "not reporting", not "down" — verify via RPC or metrics (`runbooks://devnet_observability_apis`) |
 | ClickHouse raw (xatu events) | how many / how often / how late / from whom: gossip timing, per-peer and per-observer counts | observer coverage limits; events ≠ canonical truth (`runbooks://clickhouse_querying`) |
 | ClickHouse refined `_head` | live/unfinalized state for real-time monitoring | may reorg, and forks can leave multiple roots for one slot — not finalized truth, not one-value-per-slot; CBT coverage gaps read as missing data (`runbooks://clickhouse_querying`) |
 | ClickHouse refined finalized (e.g. `fct_block`) | finalized chain-state history, no reorgs | coverage can lag finality by days — check transformation coverage before reading absence; deduplicated canonical views drop orphans, though `fct_block` keeps them with `status = 'orphaned'` (`runbooks://clickhouse_querying`) |
@@ -72,6 +73,7 @@ reconciliation:
 | --- | --- | --- |
 | Explorer shows node offline, its RPC responds | minority fork (indexers track the canonical fork only) or indexing lag | compare head root + finalized checkpoint from that node's RPC against a canonical-fork node |
 | Participation differs between sources | one side read the in-progress head epoch — judge completed epochs only; a "finalized" epoch showing <66.7% participation means distrust that source (both rules: `runbooks://ethereum_protocol_model`) | re-read both for the last completed epoch; verify against checkpoints |
+| Explorer epoch aggregates zeroed (participation, validators, deposit amounts all 0) while the chain finalizes | indexer aggregation artifact — epoch rollups broken or lagging while slot-level data is fine (`runbooks://devnet_observability_apis`) | read slot-level detail or the beacon API for one epoch in the window |
 | Slot present in raw events, absent in refined | block was orphaned/reorged out — canonical views drop it; or the CBT pipeline has not processed that range yet (`runbooks://clickhouse_querying`) | query the raw table for the block root; check transformation coverage |
 | Logs silent, metrics healthy (or inverse) | log-shipping or scrape gap, not service state (gap semantics: `runbooks://prometheus_devnet_health`) | hit the service API directly; with no direct RPC, compare an API-derived exporter probe against a different-kind chain-progress source |
 | Network-resource genesisTime differs from live genesis_time | `MIN_GENESIS_TIME` vs live consensus genesis (`+ GENESIS_DELAY`) — field semantics, owner: `runbooks://public_devnet_context` | derive genesis from a slot's timestamp minus `slot × SECONDS_PER_SLOT` |

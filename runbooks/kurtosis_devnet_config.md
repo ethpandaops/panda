@@ -52,11 +52,18 @@ handed directly to `kurtosis run --args-file`. Emit the file, not a prose plan.
    in the output's `launch_requirements` so the launcher
    (`runbooks://kurtosis_devnet` or `runbooks://panda_compute_kurtosis_lifecycle`)
    sees it.
-6. **Validate:** `--dry-run` proves the args parse and render — record it as exactly
-   that, and read the rendered plan for Starlark errors rather than trusting the exit
-   code alone. A dry-run still creates an (empty) enclave; remove it so the real
-   launch can reuse the name. Live health, fork activation, and builder behavior are
-   verified after boot via `runbooks://kurtosis_devnet`.
+6. **Validate (best-effort):** `--dry-run` proves the args parse and render — record
+   it as exactly that, and read the rendered plan for Starlark errors rather than
+   trusting the exit code alone. A dry-run still creates an (empty) enclave; remove it
+   so the real launch can reuse the name. The dry-run is optional: it needs kurtosis
+   plus a working container runtime, and many synthesis environments have neither.
+   `dry_run.attempted` means the command actually executed — environment can't run it
+   (no kurtosis, no docker, daemon won't start) is `attempted: false` with the reason
+   noted, NOT `attempted: true, passed: false`; reserve `passed: false` for an
+   args-file the package actually rejected (then fix and re-validate). When skipping,
+   still self-check the YAML statically: well-formed, every key confirmed against the
+   package schema or a shipped example. Live health, fork activation, and builder
+   behavior are verified after boot via `runbooks://kurtosis_devnet`.
 
 ### Accelerated Gloas/ePBS smoke
 
@@ -117,6 +124,8 @@ config_synthesis:
   launch_requirements: []    # flags the launch MUST pass, e.g. ["--privileged"] with disruptoor
   source_disagreements: []
   dry_run: { attempted: true, command: "kurtosis run --dry-run ...", passed: true }
+  # kurtosis/docker unavailable => { attempted: false, command: "<what would have run>" }
+  # attempted: true + passed: false is ONLY for an args-file the package rejected
   citations: ["node inventory (node_inventory_url) for client pairs + images", "panda devnets forks peerdas-devnet-6 -o json"]
 ```
 
@@ -126,4 +135,5 @@ Before returning:
 - The output includes a runnable args-file path or artifact reference.
 - Every YAML key was checked against the package schema or an example.
 - Deployed facts and steering deviations are separated; disagreements preserved.
-- Dry-run status is explicit, including unavailable/failed states.
+- Dry-run status is explicit: `attempted: true` only when the command actually ran;
+  environment-unavailable is `attempted: false` with the reason noted.

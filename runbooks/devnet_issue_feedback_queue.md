@@ -35,7 +35,7 @@ feedback:
       kind: investigate        # watch|investigate|config|snapshot|source-trace|reachability-trace|experiment-triage|manual-review|publish|no-op
       reason: "evidence review requires the missing direct edge before publish"
       priority: high           # high|medium|low
-      inputs: { snapshot_id: "snap-9", slot: 385, service: "buildoor" }
+      inputs: { snapshot_id: "snap-9", slot: "385", service: "buildoor" }
       success_condition: "reveal response for payload id at slot 385 captured"
       stop_condition: "one restore + one bounded log/API pull"
       runbook_refs: ["runbooks://devnet_issue_root_cause"]
@@ -44,7 +44,7 @@ feedback:
 
 `kind` comes from the enum above — reproduction-oriented work maps to `investigate`
 (bounded runtime verification), `config` (config-fidelity gap), or `snapshot` (missing
-broken-state starting point). `inputs` carries handles and query params only. Every
+broken-state starting point). `inputs` carries handles and query params only, every value stringified. Every
 task closes ONE named gap and has both a success and a stop condition.
 `runbook_refs` names the workflow the task hands to, by kind: `investigate`/`snapshot`
 → `runbooks://devnet_issue_root_cause`, `watch` → `runbooks://devnet_watch`, `config`

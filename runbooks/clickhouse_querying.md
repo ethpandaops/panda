@@ -41,7 +41,9 @@ with `clickhouse-client`, `curl`, or credentials from the environment.
   positional arguments, and unlike a bare `DESCRIBE TABLE` it also prints the
   partition and order keys you must filter on. List a database's tables with
   `panda schema <datasource> <database>` (or ``SHOW TABLES FROM `<network>``` as a
-  query).
+  query). One statement per call — the server rejects multi-statement SQL
+  (`Multi-statements are not allowed`); run several calls instead of chaining
+  statements with `;`.
 
 - **Python sandbox (`execute_python`)** — use the `ethpandaops` library:
 
@@ -55,16 +57,20 @@ Both take the same `<datasource>` — a CLUSTER name such as `clickhouse-raw` or
 `panda datasets` maps each one to the datasource that holds it). Addressing by cluster:
 
 - **Refined (`clickhouse-refined`)** — always the `<network>.` table prefix.
+  Refined `fct_*`/`int_*` tables have NO `meta_network_name` column — the
+  network is the database. Filter on the table's own partition key alone (a
+  bare `slot_start_date_time` bound for slot-keyed tables; some tables key
+  differently, e.g. `epoch_start_date_time` — the schema lookup prints which).
 - **Raw (`clickhouse-raw`)** — mainnet and testnets live in the
   `default` database; each public devnet has its own database named after the
   network, e.g. ``FROM `glamsterdam-devnet-6`.beacon_api_eth_v1_events_block``.
   Local Kurtosis enclaves are on neither cluster — their data is the
-  `local-kurtosis` datasource (`runbooks://kurtosis_devnet`). In both
+  `local-kurtosis` datasource (`runbooks://kurtosis_devnet`). In both RAW
   layouts keep `meta_network_name = '<network>'` plus a `slot_start_date_time`
-  bound in the WHERE — the primary key leads with them, and the cluster rejects
-  queries that use neither (`force_primary_key`). An empty result from the wrong
-  database looks like missing data — `SHOW DATABASES` settles where the network
-  lives.
+  bound in the WHERE — the raw primary key leads with them. On either cluster
+  the server rejects queries that skip the partition key (`force_primary_key`).
+  An empty result from the wrong database looks like missing data —
+  `SHOW DATABASES` settles where the network lives.
 
 ## Core procedure
 
@@ -76,11 +82,16 @@ Both take the same `<datasource>` — a CLUSTER name such as `clickhouse-raw` or
 3. **Filter on the partition key.** Use native date columns (`slot_start_date_time`,
    `wallclock_slot_start_date_time`) bare — wrapping them in functions like
    `toDate(...)` defeats the partition index. Address the network's database and keep
-   the `meta_network_name` filter per "Running a query" above.
+   each cluster's filters per "Addressing by cluster" above (raw:
+   `meta_network_name` + time bound; refined: time bound only).
 4. **Bound the result.** Add `ORDER BY … LIMIT N`; cap high-cardinality `GROUP BY`
    (e.g. grouping by validator index).
 5. **Order JOINs** with the smaller table on the RIGHT — ClickHouse loads the right
-   side into memory.
+   side into memory. Cross-table `IN`/`JOIN` subqueries are rejected outright
+   (`double-distributed IN/JOIN subqueries is denied`,
+   `distributed_product_mode = 'deny'`): use `GLOBAL IN` / `GLOBAL JOIN`, or run
+   the inner query first and pass its result as literals — and keep the partition
+   bound on both the outer and inner table either way.
 6. **Prefer numeric keys** over string comparisons in `WHERE`.
 7. **Use `FINAL`** on refined `fct_*` tables.
 8. **Look it up, don't guess.** For an unknown schema or a common pattern, search
