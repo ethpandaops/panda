@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/ethpandaops/panda/pkg/compute"
 	"github.com/ethpandaops/panda/pkg/operations"
@@ -17,330 +19,293 @@ import (
 	"github.com/ethpandaops/panda/pkg/types"
 )
 
-// computeBaseURL is a placeholder base URL for the generated compute client.
-// The host is never dialed: computeProxyDoer rewrites every request through
-// the credential proxy, so only the request path and query are used.
-const computeBaseURL = "http://compute.invalid"
+const (
+	// computeSpecTTL bounds how long a fetched interface document is reused
+	// before it is refreshed from the service.
+	computeSpecTTL = 5 * time.Minute
+	// computeSpecRetryBackoff floors refetches triggered by unknown-operation
+	// lookups so bad operation names cannot hammer the upstream.
+	computeSpecRetryBackoff = 30 * time.Second
+	// computeSpecFetchTimeout bounds a single interface-document fetch.
+	computeSpecFetchTimeout = 15 * time.Second
+)
 
-// computeProxyDoer routes generated compute-client requests through the
-// credential proxy instead of dialing the backend directly. This reuses the
-// proxy's auth, user-subject forwarding, and attribution for every endpoint.
-type computeProxyDoer struct {
-	svc        *service
-	datasource string
+// computeSpecEntry is one cached, parsed interface document.
+type computeSpecEntry struct {
+	index     *compute.Index
+	fetchedAt time.Time
 }
 
-// Do forwards the request through the proxy's /compute mount and returns the
-// upstream response. The proxy strips the /compute prefix before forwarding to
-// the backend, so the backend sees the original /v1/... path.
-func (d *computeProxyDoer) Do(req *http.Request) (*http.Response, error) {
+// computeArgAdapters keeps legacy flat argument shapes working by rewriting
+// them into the wire shape before generic dispatch.
+var computeArgAdapters = map[string]func(map[string]any) error{
+	"create_sandbox": adaptComputeCreateSandbox,
+	"fork_sandbox":   adaptComputeFork,
+	"fork_image":     adaptComputeFork,
+}
+
+// handleComputeOperation dispatches compute.* operations. Aside from the
+// locally served list_datasources and list_api_operations, every operation is
+// resolved against the service's own interface document at runtime, so new
+// upstream operations work without a panda change.
+func (s *service) handleComputeOperation(operationID string, w http.ResponseWriter, r *http.Request) bool {
+	name, ok := strings.CutPrefix(operationID, "compute.")
+	if !ok {
+		return false
+	}
+
+	if name == "list_datasources" {
+		s.handleComputeListDatasources(w)
+
+		return true
+	}
+
+	s.handleComputeAPIOperation(name, w, r)
+
+	return true
+}
+
+func (s *service) handleComputeAPIOperation(name string, w http.ResponseWriter, r *http.Request) {
+	req, err := decodeOperationRequest(r)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+
+		return
+	}
+
+	datasource, status, err := s.computeDatasource(req.Args)
+	if err != nil {
+		writeAPIError(w, status, err.Error())
+
+		return
+	}
+
+	index, err := s.computeIndex(r.Context(), datasource, false)
+	if err != nil {
+		writeAPIError(w, http.StatusBadGateway, err.Error())
+
+		return
+	}
+
+	if name == "list_api_operations" {
+		s.writeComputeAPIOperations(w, index)
+
+		return
+	}
+
+	op, ok := index.Lookup(name)
+	if !ok {
+		// The operation may have shipped upstream after the cached fetch.
+		if refreshed, refreshErr := s.computeIndex(r.Context(), datasource, true); refreshErr == nil {
+			index = refreshed
+			op, ok = index.Lookup(name)
+		}
+	}
+
+	if !ok {
+		writeAPIError(w, http.StatusNotFound, fmt.Sprintf(
+			"unknown compute operation %q. Available: %s", name, strings.Join(index.Names(), ", ")))
+
+		return
+	}
+
+	args := maps.Clone(req.Args)
+
+	if adapter := computeArgAdapters[op.Name]; adapter != nil {
+		if err := adapter(args); err != nil {
+			writeAPIError(w, http.StatusBadRequest, err.Error())
+
+			return
+		}
+	}
+
+	proxied, err := op.BuildRequest(args)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+
+		return
+	}
+
+	headers := proxied.Header
+	headers.Set(handlers.DatasourceHeader, datasource)
+
 	var body io.Reader
-	if req.Body != nil {
-		defer func() { _ = req.Body.Close() }()
 
-		body = req.Body
+	if proxied.Body != nil {
+		headers.Set("Content-Type", "application/json")
+
+		body = bytes.NewReader(proxied.Body)
 	}
 
-	requestPath := "/compute" + req.URL.Path
-	if req.URL.RawQuery != "" {
-		requestPath += "?" + req.URL.RawQuery
+	// The proxy strips the /compute mount before forwarding, so the backend
+	// sees the original /v1/... path.
+	respBody, respStatus, respHeaders, err := s.proxyDatasourceRequest(
+		r.Context(), "compute", datasource, proxied.Method, "/compute"+proxied.Path, body, headers)
+
+	s.writeComputeResult(w, respBody, respStatus, respHeaders, err)
+}
+
+// computeIndex returns the cached operation index for a datasource, fetching
+// the interface document through the proxy when the cache is cold or stale.
+// A failed refresh serves the stale index rather than failing the operation.
+// With forceRefresh, the TTL is bypassed but refetches are still rate-limited
+// by computeSpecRetryBackoff.
+func (s *service) computeIndex(ctx context.Context, datasource string, forceRefresh bool) (*compute.Index, error) {
+	// The lock is held across the fetch so concurrent cold starts fetch once.
+	s.computeSpecMu.Lock()
+	defer s.computeSpecMu.Unlock()
+
+	entry, cached := s.computeSpecs[datasource]
+
+	maxAge := computeSpecTTL
+	if forceRefresh {
+		maxAge = computeSpecRetryBackoff
 	}
 
-	// Forward every header the generated client set (Content-Type,
-	// Idempotency-Key, Accept, ...). The proxy strips caller credentials and
-	// injects the service token downstream, so passing them through is safe and
-	// avoids dropping headers the backend requires.
-	headers := req.Header.Clone()
-	if headers == nil {
-		headers = http.Header{}
+	if cached && time.Since(entry.fetchedAt) < maxAge {
+		return entry.index, nil
 	}
 
-	headers.Set(handlers.DatasourceHeader, d.datasource)
+	index, err := s.fetchComputeIndex(ctx, datasource)
+	if err != nil {
+		if cached {
+			s.log.WithError(err).WithField("datasource", datasource).
+				Warn("Compute interface refresh failed; serving cached interface")
 
-	respBody, status, respHeaders, err := d.svc.proxyDatasourceRequest(
-		req.Context(),
-		"compute",
-		d.datasource,
-		req.Method,
-		requestPath,
-		body,
-		headers,
+			return entry.index, nil
+		}
+
+		return nil, err
+	}
+
+	if s.computeSpecs == nil {
+		s.computeSpecs = make(map[string]computeSpecEntry)
+	}
+
+	s.computeSpecs[datasource] = computeSpecEntry{index: index, fetchedAt: time.Now()}
+
+	return index, nil
+}
+
+func (s *service) fetchComputeIndex(ctx context.Context, datasource string) (*compute.Index, error) {
+	ctx, cancel := context.WithTimeout(ctx, computeSpecFetchTimeout)
+	defer cancel()
+
+	body, status, _, err := s.proxyDatasourceRequest(
+		ctx, "compute", datasource, http.MethodGet, "/compute"+compute.SpecPath, nil,
+		http.Header{handlers.DatasourceHeader: []string{datasource}},
 	)
+	if err != nil {
+		return nil, fmt.Errorf("fetching compute interface: %w", err)
+	}
+
+	if status < 200 || status >= 300 {
+		return nil, fmt.Errorf("fetching compute interface: upstream returned status %d", status)
+	}
+
+	index, err := compute.ParseSpec(body)
 	if err != nil {
 		return nil, err
 	}
 
-	if respHeaders == nil {
-		respHeaders = http.Header{}
-	}
-
-	return &http.Response{
-		StatusCode: status,
-		Status:     http.StatusText(status),
-		Header:     respHeaders,
-		Body:       io.NopCloser(bytes.NewReader(respBody)),
-		Request:    req,
-	}, nil
+	return index, nil
 }
 
-// computeOpFunc performs a single typed compute client call and returns the
-// raw HTTP response for passthrough.
-type computeOpFunc func(ctx context.Context, c *compute.Client, args map[string]any) (*http.Response, error)
+// writeComputeAPIOperations serves the discovered operation catalog. Only
+// structural fields are exposed; the interface document's free text never
+// reaches callers.
+func (s *service) writeComputeAPIOperations(w http.ResponseWriter, index *compute.Index) {
+	ops := index.Operations()
 
-// computeOpIDFunc is computeOpFunc with a required path id resolved up-front.
-type computeOpIDFunc func(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error)
+	items := make([]map[string]any, 0, len(ops))
 
-func (s *service) handleComputeOperation(operationID string, w http.ResponseWriter, r *http.Request) bool {
-	switch operationID {
-	case "compute.list_datasources":
-		s.handleComputeListDatasources(w)
+	for _, op := range ops {
+		item := map[string]any{
+			"operation": op.Name,
+			"method":    op.Method,
+			"path":      op.Path,
+		}
 
-	// Sandboxes.
-	case "compute.list_sandboxes":
-		s.computeOp(w, r, func(ctx context.Context, c *compute.Client, args map[string]any) (*http.Response, error) {
-			return c.ListSandboxes(ctx, &compute.ListSandboxesParams{
-				Limit:  computeLimit(args),
-				Cursor: computeCursor(args),
-				Offset: computeOffset(args),
-				Filter: computeFilter(args),
-			})
-		})
-	case "compute.get_sandbox":
-		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, _ map[string]any) (*http.Response, error) {
-			return c.GetSandbox(ctx, id)
-		})
-	case "compute.create_sandbox":
-		s.computeOp(w, r, s.computeCreateSandbox)
-	case "compute.delete_sandbox":
-		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
-			return c.DeleteSandbox(ctx, id, &compute.DeleteSandboxParams{IdempotencyKey: computeIdem(args)})
-		})
-	case "compute.stop_sandbox":
-		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
-			return c.StopSandbox(ctx, id, &compute.StopSandboxParams{IdempotencyKey: computeIdem(args)})
-		})
-	case "compute.start_sandbox":
-		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
-			return c.StartSandbox(ctx, id, &compute.StartSandboxParams{IdempotencyKey: computeIdem(args)})
-		})
-	case "compute.snapshot_sandbox":
-		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
-			return c.SnapshotSandbox(ctx, id,
-				&compute.SnapshotSandboxParams{IdempotencyKey: computeIdem(args)},
-				compute.SnapshotSandboxJSONRequestBody{
-					Note: computeOptStr(args, "note"),
-					Ttl:  computeOptStr(args, "ttl"),
-				},
-			)
-		})
-	case "compute.lease_sandbox":
-		s.computeOpWithID(w, r, "id", s.computeLeaseSandbox)
-	case "compute.prepare_sandbox_ssh":
-		s.computeOpWithID(w, r, "id", s.computePrepareSandboxSSH)
-	case "compute.get_sandbox_images":
-		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, _ map[string]any) (*http.Response, error) {
-			return c.GetSandboxImages(ctx, id)
-		})
-	case "compute.expose_port":
-		s.computeOpWithID(w, r, "id", s.computeExposePort)
-	case "compute.unexpose_port":
-		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
-			port := optionalIntArg(args, "port", 0)
-			if port < 1 {
-				return nil, &computeArgError{err: fmt.Errorf("port is required and must be at least 1")}
+		if len(op.PathParams) > 0 {
+			item["path_args"] = op.PathParams
+		}
+
+		if len(op.QueryParams) > 0 {
+			item["query_args"] = op.QueryParams
+		}
+
+		if op.HasBody {
+			item["body"] = true
+
+			if len(op.RequiredBody) > 0 {
+				item["required"] = op.RequiredBody
 			}
+		}
 
-			return c.UnexposePort(ctx, id, port, computeIdemHeaderEditor(args))
-		})
-	case "compute.get_sandbox_operations":
-		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, _ map[string]any) (*http.Response, error) {
-			return c.GetSandboxOperations(ctx, id)
-		})
-	case "compute.get_sandbox_logs":
-		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
-			params := &compute.GetSandboxLogsParams{}
-			if v := optionalIntArg(args, "tail_bytes", 0); v > 0 {
-				tail := int64(v)
-				params.TailBytes = &tail
-			}
-			if v := optionalStringArg(args, "source"); v != "" {
-				source := compute.GetSandboxLogsParamsSource(v)
-				params.Source = &source
-			}
-			return c.GetSandboxLogs(ctx, id, params)
-		})
-	case "compute.get_sandbox_lineage":
-		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, _ map[string]any) (*http.Response, error) {
-			return c.GetSandboxLineage(ctx, id)
-		})
-	case "compute.exec_sandbox":
-		s.computeOpWithID(w, r, "id", s.computeExecSandbox)
-	case "compute.get_sandbox_metrics":
-		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, _ map[string]any) (*http.Response, error) {
-			return c.GetSandboxMetrics(ctx, id, nil)
-		})
-	case "compute.pause_sandbox":
-		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
-			return c.PauseSandbox(ctx, id, &compute.PauseSandboxParams{IdempotencyKey: computeIdem(args)})
-		})
-	case "compute.resume_sandbox":
-		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
-			return c.ResumeSandbox(ctx, id, &compute.ResumeSandboxParams{IdempotencyKey: computeIdem(args)})
-		})
-	case "compute.get_sandbox_hooks":
-		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, _ map[string]any) (*http.Response, error) {
-			return c.GetSandboxHooks(ctx, id, nil)
-		})
-	case "compute.get_sandbox_hook_runs":
-		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, _ map[string]any) (*http.Response, error) {
-			return c.GetSandboxHookRuns(ctx, id, nil)
-		})
-	case "compute.fork_sandbox":
-		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
-			body, err := computeForkRequest(args)
-			if err != nil {
-				return nil, err
-			}
-
-			return c.ForkSandbox(ctx, id,
-				&compute.ForkSandboxParams{IdempotencyKey: computeIdem(args)}, *body)
-		})
-
-	// Forks.
-	case "compute.list_forks":
-		s.computeOp(w, r, func(ctx context.Context, c *compute.Client, _ map[string]any) (*http.Response, error) {
-			return c.ListForks(ctx)
-		})
-	case "compute.get_fork":
-		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, _ map[string]any) (*http.Response, error) {
-			return c.GetFork(ctx, id)
-		})
-
-	// Images (raw snapshots and named images behind one surface).
-	case "compute.list_images":
-		s.computeOp(w, r, func(ctx context.Context, c *compute.Client, args map[string]any) (*http.Response, error) {
-			return c.ListImages(ctx, &compute.ListImagesParams{
-				Limit:  computeLimit(args),
-				Cursor: computeCursor(args),
-				Offset: computeOffset(args),
-				Filter: computeFilter(args),
-			})
-		})
-	case "compute.get_image":
-		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, _ map[string]any) (*http.Response, error) {
-			return c.GetImage(ctx, id)
-		})
-	case "compute.delete_image":
-		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
-			return c.DeleteImage(ctx, id, &compute.DeleteImageParams{IdempotencyKey: computeIdem(args)})
-		})
-	case "compute.fork_image":
-		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
-			body, err := computeForkRequest(args)
-			if err != nil {
-				return nil, err
-			}
-
-			return c.ForkImage(ctx, id,
-				&compute.ForkImageParams{IdempotencyKey: computeIdem(args)}, *body)
-		})
-	case "compute.promote_image":
-		s.computeOpWithID(w, r, "id", s.computePromoteImage)
-	case "compute.deactivate_image":
-		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
-			return c.DeactivateImage(ctx, id, computeIdemHeaderEditor(args))
-		})
-	case "compute.get_image_restored_by":
-		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, _ map[string]any) (*http.Response, error) {
-			return c.GetImageRestoredBy(ctx, id)
-		})
-	case "compute.get_image_lineage":
-		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, _ map[string]any) (*http.Response, error) {
-			return c.GetImageLineage(ctx, id)
-		})
-
-	// Bakes.
-	case "compute.list_bakes":
-		s.computeOp(w, r, func(ctx context.Context, c *compute.Client, args map[string]any) (*http.Response, error) {
-			return c.ListBakes(ctx, &compute.ListBakesParams{
-				Limit:  computeLimit(args),
-				Cursor: computeCursor(args),
-				Offset: computeOffset(args),
-				Filter: computeFilter(args),
-			})
-		})
-	case "compute.run_bake":
-		s.computeOpWithID(w, r, "name", func(ctx context.Context, c *compute.Client, name string, args map[string]any) (*http.Response, error) {
-			return c.RunBake(ctx, name, computeIdemHeaderEditor(args))
-		})
-
-	// Operations.
-	case "compute.list_operations":
-		s.computeOp(w, r, func(ctx context.Context, c *compute.Client, args map[string]any) (*http.Response, error) {
-			return c.ListOperations(ctx, &compute.ListOperationsParams{
-				Limit:  computeLimit(args),
-				Cursor: computeCursor(args),
-				Offset: computeOffset(args),
-				Filter: computeFilter(args),
-			})
-		})
-	case "compute.get_operation":
-		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, _ map[string]any) (*http.Response, error) {
-			return c.GetOperation(ctx, id)
-		})
-
-	// SSH keys (caller's own).
-	case "compute.list_ssh_keys":
-		s.computeOp(w, r, func(ctx context.Context, c *compute.Client, args map[string]any) (*http.Response, error) {
-			return c.ListSSHPublicKeys(ctx, &compute.ListSSHPublicKeysParams{
-				Limit:  computeLimit(args),
-				Cursor: computeCursor(args),
-				Offset: computeOffset(args),
-				Filter: computeFilter(args),
-			})
-		})
-	case "compute.add_ssh_key":
-		s.computeOp(w, r, s.computeAddSSHKey)
-	case "compute.delete_ssh_key":
-		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, _ map[string]any) (*http.Response, error) {
-			return c.DeleteSSHPublicKey(ctx, id)
-		})
-
-	// Directory and audit (read-only).
-	case "compute.list_users":
-		s.computeOp(w, r, func(ctx context.Context, c *compute.Client, _ map[string]any) (*http.Response, error) {
-			return c.ListUsers(ctx)
-		})
-	case "compute.get_user":
-		s.computeOpWithID(w, r, "handle", func(ctx context.Context, c *compute.Client, handle string, _ map[string]any) (*http.Response, error) {
-			return c.GetUser(ctx, handle)
-		})
-	case "compute.list_nodes":
-		s.computeOp(w, r, func(ctx context.Context, c *compute.Client, _ map[string]any) (*http.Response, error) {
-			return c.ListNodes(ctx)
-		})
-	case "compute.get_node":
-		s.computeOpWithID(w, r, "id", func(ctx context.Context, c *compute.Client, id string, _ map[string]any) (*http.Response, error) {
-			return c.GetNode(ctx, id)
-		})
-	case "compute.list_audit":
-		s.computeOp(w, r, func(ctx context.Context, c *compute.Client, _ map[string]any) (*http.Response, error) {
-			return c.ListAudit(ctx)
-		})
-	case "compute.meta":
-		s.computeOp(w, r, func(ctx context.Context, c *compute.Client, _ map[string]any) (*http.Response, error) {
-			return c.Meta(ctx)
-		})
-	case "compute.auth_session":
-		s.computeOp(w, r, func(ctx context.Context, c *compute.Client, _ map[string]any) (*http.Response, error) {
-			return c.AuthSession(ctx)
-		})
-
-	default:
-		return false
+		items = append(items, item)
 	}
 
-	return true
+	payload, err := json.Marshal(map[string]any{"items": items})
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, fmt.Sprintf("encoding operations: %v", err))
+
+		return
+	}
+
+	writePassthroughResponse(w, http.StatusOK, "application/json", payload)
+}
+
+// adaptComputeCreateSandbox keeps the legacy flat create arguments working:
+// snapshot_id and flavor become the snapshot boot source the API expects.
+func adaptComputeCreateSandbox(args map[string]any) error {
+	if _, ok := args["source"]; ok {
+		return nil
+	}
+
+	template := optionalStringArg(args, "template")
+	snapshotID := optionalStringArg(args, "snapshot_id")
+
+	if (template == "") == (snapshotID == "") {
+		return fmt.Errorf("exactly one of template or snapshot_id is required")
+	}
+
+	if template != "" {
+		delete(args, "flavor")
+
+		return nil
+	}
+
+	source := map[string]any{"kind": "snapshot", "snapshot_id": snapshotID}
+	if flavor := optionalStringArg(args, "flavor"); flavor != "" {
+		source["flavor"] = flavor
+	}
+
+	delete(args, "snapshot_id")
+	delete(args, "flavor")
+	args["source"] = source
+
+	return nil
+}
+
+// adaptComputeFork nests the legacy flat identity arguments into the identity
+// object the API expects.
+func adaptComputeFork(args map[string]any) error {
+	if _, ok := args["identity"]; ok {
+		return nil
+	}
+
+	rng := optionalStringArg(args, "identity_rng")
+	clock := optionalStringArg(args, "identity_clock")
+
+	if rng == "" || clock == "" {
+		return fmt.Errorf("identity_rng and identity_clock are required")
+	}
+
+	delete(args, "identity_rng")
+	delete(args, "identity_clock")
+	args["identity"] = map[string]any{"rng": rng, "clock": clock}
+
+	return nil
 }
 
 func (s *service) handleComputeListDatasources(w http.ResponseWriter) {
@@ -371,295 +336,13 @@ func (s *service) handleComputeListDatasources(w http.ResponseWriter) {
 	})
 }
 
-// computeOp resolves the datasource, builds a proxy-backed client, runs fn, and
-// forwards the upstream response.
-func (s *service) computeOp(w http.ResponseWriter, r *http.Request, fn computeOpFunc) {
-	client, args, ok := s.computeClientFor(w, r)
-	if !ok {
-		return
-	}
-
-	resp, err := fn(r.Context(), client, args)
-	s.writeComputeResult(w, resp, err)
-}
-
-// computeOpWithID is computeOp with a required string argument (a path id)
-// extracted before the call.
-func (s *service) computeOpWithID(w http.ResponseWriter, r *http.Request, idArg string, fn computeOpIDFunc) {
-	client, args, ok := s.computeClientFor(w, r)
-	if !ok {
-		return
-	}
-
-	id, err := requiredStringArg(args, idArg)
-	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, err.Error())
-
-		return
-	}
-
-	resp, err := fn(r.Context(), client, id, args)
-	s.writeComputeResult(w, resp, err)
-}
-
-func (s *service) computeCreateSandbox(ctx context.Context, c *compute.Client, args map[string]any) (*http.Response, error) {
-	template := optionalStringArg(args, "template")
-	snapshotID := optionalStringArg(args, "snapshot_id")
-	if (template == "") == (snapshotID == "") {
-		return nil, &computeArgError{err: fmt.Errorf("exactly one of template or snapshot_id is required")}
-	}
-
-	body := compute.CreateSandboxJSONRequestBody{
-		Ttl:      computeOptStr(args, "ttl"),
-		Name:     computeOptStr(args, "name"),
-		Vcpu:     computeOptInt(args, "vcpu"),
-		MemoryMb: computeOptInt(args, "memory_mb"),
-		DiskGb:   computeOptInt(args, "disk_gb"),
-	}
-	if template != "" {
-		body.Template = &template
-	} else {
-		source := compute.SnapshotBootSource{
-			Kind:       compute.SnapshotBootSourceKind("snapshot"),
-			SnapshotId: snapshotID,
-		}
-		if v := optionalStringArg(args, "flavor"); v != "" {
-			flavor := compute.SnapshotBootSourceFlavor(v)
-			source.Flavor = &flavor
-		}
-		var union compute.CreateSandboxSource
-		if err := union.FromSnapshotBootSource(source); err != nil {
-			return nil, &computeArgError{err: err}
-		}
-		body.Source = &union
-	}
-
-	env, err := computeOptStringMap(args, "env")
-	if err != nil {
-		return nil, &computeArgError{err: err}
-	}
-	body.Env = env
-	labels, err := computeOptStringMap(args, "labels")
-	if err != nil {
-		return nil, &computeArgError{err: err}
-	}
-	body.Labels = labels
-
-	if raw, ok := args["hooks"]; ok {
-		var hooks []compute.HookDeclaration
-		if err := reencodeJSONArg(raw, &hooks); err != nil {
-			return nil, &computeArgError{err: fmt.Errorf("hooks: %w", err)}
-		}
-		body.Hooks = &hooks
-	}
-	if raw, ok := args["watchdog"]; ok {
-		var watchdog compute.WatchdogDeclaration
-		if err := reencodeJSONArg(raw, &watchdog); err != nil {
-			return nil, &computeArgError{err: fmt.Errorf("watchdog: %w", err)}
-		}
-		body.Watchdog = &watchdog
-	}
-	if raw, ok := args["exposed_ports"]; ok {
-		var ports []compute.PortExposureRequest
-		if err := reencodeJSONArg(raw, &ports); err != nil {
-			return nil, &computeArgError{err: fmt.Errorf("exposed_ports: %w", err)}
-		}
-		body.ExposedPorts = &ports
-	}
-
-	if onDelete := optionalStringArg(args, "on_delete"); onDelete != "" {
-		disposition := compute.CreateSandboxRequestOnDelete(onDelete)
-		body.OnDelete = &disposition
-	}
-
-	paused, err := optionalBoolArg(args, "paused")
-	if err != nil {
-		return nil, &computeArgError{err: err}
-	}
-	body.Paused = paused
-
-	return c.CreateSandbox(ctx, &compute.CreateSandboxParams{IdempotencyKey: computeIdem(args)}, body)
-}
-
-// computeForkRequest builds the fork body shared by the sandbox- and
-// snapshot-sourced fork operations.
-func computeForkRequest(args map[string]any) (*compute.ForkRequest, error) {
-	count := optionalIntArg(args, "count", 0)
-	if count < 1 {
-		return nil, &computeArgError{err: fmt.Errorf("count is required and must be at least 1")}
-	}
-
-	rng := compute.ForkIdentityRng(optionalStringArg(args, "identity_rng"))
-	clock := compute.ForkIdentityClock(optionalStringArg(args, "identity_clock"))
-	if !rng.Valid() || !clock.Valid() {
-		return nil, &computeArgError{err: fmt.Errorf("identity_rng (reseed) and identity_clock (correct|inherit) are required")}
-	}
-
-	body := &compute.ForkRequest{
-		Count:    count,
-		Identity: compute.ForkIdentity{Rng: rng, Clock: clock},
-		Ttl:      computeOptStr(args, "ttl"),
-		Deadline: computeOptStr(args, "deadline"),
-		MinReady: computeOptInt(args, "min_ready"),
-	}
-
-	if v := optionalStringArg(args, "flavor"); v != "" {
-		flavor := compute.ForkRequestFlavor(v)
-		body.Flavor = &flavor
-	}
-
-	paused, err := optionalBoolArg(args, "paused")
-	if err != nil {
-		return nil, &computeArgError{err: err}
-	}
-	body.Paused = paused
-
-	return body, nil
-}
-
-func (s *service) computeExecSandbox(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
-	rawCommand, ok := args["command"].([]any)
-	if !ok || len(rawCommand) == 0 {
-		return nil, &computeArgError{err: fmt.Errorf("command is required and must be a non-empty argument vector")}
-	}
-	command := make([]string, 0, len(rawCommand))
-	for _, item := range rawCommand {
-		arg, ok := item.(string)
-		if !ok {
-			return nil, &computeArgError{err: fmt.Errorf("command entries must be strings")}
-		}
-		command = append(command, arg)
-	}
-
-	return c.ExecSandbox(ctx, id, compute.ExecSandboxJSONRequestBody{
-		Command: command,
-		Timeout: computeOptStr(args, "timeout"),
-	})
-}
-
-func (s *service) computeLeaseSandbox(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
-	extend, err := requiredStringArg(args, "extend")
-	if err != nil {
-		return nil, &computeArgError{err: err}
-	}
-
-	return c.LeaseSandbox(ctx, id, compute.LeaseSandboxJSONRequestBody{Extend: extend})
-}
-
-func (s *service) computePrepareSandboxSSH(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
-	publicKey, err := requiredStringArg(args, "public_key")
-	if err != nil {
-		return nil, &computeArgError{err: err}
-	}
-
-	return c.PrepareSandboxSSH(ctx, id, compute.PrepareSandboxSSHJSONRequestBody{PublicKey: publicKey})
-}
-
-func (s *service) computePromoteImage(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
-	name, err := requiredStringArg(args, "name")
-	if err != nil {
-		return nil, &computeArgError{err: err}
-	}
-
-	replace, err := optionalBoolArg(args, "replace")
-	if err != nil {
-		return nil, &computeArgError{err: err}
-	}
-
-	return c.PromoteImage(ctx, id,
-		compute.PromoteImageJSONRequestBody{
-			Name:        name,
-			Version:     computeOptStr(args, "version"),
-			Replace:     replace,
-			Description: computeOptStr(args, "description"),
-			Tags:        computeOptStringSlice(args, "tags"),
-		},
-		computeIdemHeaderEditor(args),
-	)
-}
-
-func (s *service) computeExposePort(ctx context.Context, c *compute.Client, id string, args map[string]any) (*http.Response, error) {
-	port := optionalIntArg(args, "port", 0)
-	if port < 1 {
-		return nil, &computeArgError{err: fmt.Errorf("port is required and must be at least 1")}
-	}
-
-	managed, err := optionalBoolArg(args, "managed")
-	if err != nil {
-		return nil, &computeArgError{err: err}
-	}
-
-	return c.ExposePort(ctx, id,
-		compute.ExposePortJSONRequestBody{
-			Port:     port,
-			Name:     computeOptStr(args, "name"),
-			Protocol: computeOptStr(args, "protocol"),
-			Service:  computeOptStr(args, "service"),
-			Managed:  managed,
-		},
-		computeIdemHeaderEditor(args),
-	)
-}
-
-// computeIdemHeaderEditor forwards the caller's idempotency key on operations
-// whose generated client no longer models the header as a parameter.
-func computeIdemHeaderEditor(args map[string]any) compute.RequestEditorFn {
-	return func(_ context.Context, req *http.Request) error {
-		if key := optionalStringArg(args, "idempotency_key"); key != "" {
-			req.Header.Set("Idempotency-Key", key)
-		}
-
-		return nil
-	}
-}
-
-func (s *service) computeAddSSHKey(ctx context.Context, c *compute.Client, args map[string]any) (*http.Response, error) {
-	publicKey, err := requiredStringArg(args, "public_key")
-	if err != nil {
-		return nil, &computeArgError{err: err}
-	}
-
-	return c.AddSSHPublicKey(ctx, compute.AddSSHPublicKeyJSONRequestBody{
-		PublicKey: publicKey,
-		Name:      computeOptStr(args, "name"),
-	})
-}
-
-// computeClientFor decodes the operation request, resolves the compute
-// datasource, and builds a proxy-backed typed client. It writes the
-// appropriate error and returns ok=false on failure.
-func (s *service) computeClientFor(w http.ResponseWriter, r *http.Request) (*compute.Client, map[string]any, bool) {
-	req, err := decodeOperationRequest(r)
-	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, err.Error())
-
-		return nil, nil, false
-	}
-
-	datasource, status, err := s.computeDatasource(req.Args)
-	if err != nil {
-		writeAPIError(w, status, err.Error())
-
-		return nil, nil, false
-	}
-
-	client, err := compute.NewClient(computeBaseURL, compute.WithHTTPClient(&computeProxyDoer{svc: s, datasource: datasource}))
-	if err != nil {
-		writeAPIError(w, http.StatusInternalServerError, fmt.Sprintf("building compute client: %v", err))
-
-		return nil, nil, false
-	}
-
-	return client, req.Args, true
-}
-
 // writeComputeResult forwards an upstream compute response to the caller,
-// translating transport, argument, and non-2xx errors into API errors.
-func (s *service) writeComputeResult(w http.ResponseWriter, resp *http.Response, err error) {
+// translating transport errors and non-2xx statuses into API errors.
+func (s *service) writeComputeResult(w http.ResponseWriter, body []byte, status int, headers http.Header, err error) {
 	if err != nil {
-		var argErr *computeArgError
+		var argErr *compute.ArgError
 		if errors.As(err, &argErr) {
-			writeAPIError(w, http.StatusBadRequest, argErr.err.Error())
+			writeAPIError(w, http.StatusBadRequest, argErr.Error())
 
 			return
 		}
@@ -669,35 +352,24 @@ func (s *service) writeComputeResult(w http.ResponseWriter, resp *http.Response,
 		return
 	}
 
-	if resp == nil {
-		writeAPIError(w, http.StatusBadGateway, "compute returned no response")
+	if status < 200 || status >= 300 {
+		writeAPIError(w, status, strings.TrimSpace(string(body)))
 
 		return
 	}
 
-	defer func() { _ = resp.Body.Close() }()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		writeAPIError(w, http.StatusBadGateway, fmt.Sprintf("reading compute response: %v", err))
-
-		return
+	contentType := ""
+	if headers != nil {
+		contentType = headers.Get("Content-Type")
 	}
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		writeAPIError(w, resp.StatusCode, strings.TrimSpace(string(body)))
-
-		return
-	}
-
-	contentType := resp.Header.Get("Content-Type")
 	if contentType == "" {
 		contentType = "application/json"
 	}
 
 	// Preserve the upstream 2xx status so callers can tell apart created (201),
 	// accepted (202), and no-content (204) results.
-	writePassthroughResponse(w, resp.StatusCode, contentType, body)
+	writePassthroughResponse(w, status, contentType, body)
 }
 
 func (s *service) computeDatasources() ([]types.DatasourceInfo, error) {
@@ -741,140 +413,4 @@ func (s *service) computeDatasource(args map[string]any) (string, int, error) {
 	default:
 		return "", http.StatusBadRequest, fmt.Errorf("datasource is required when multiple compute datasources exist. Available: %v", names)
 	}
-}
-
-// computeArgError marks an argument-validation failure so the operation layer
-// can return 400 rather than 502.
-type computeArgError struct {
-	err error
-}
-
-func (e *computeArgError) Error() string { return e.err.Error() }
-
-func computeLimit(args map[string]any) *compute.Limit {
-	if v := optionalIntArg(args, "limit", 0); v > 0 {
-		return &v
-	}
-
-	return nil
-}
-
-func computeOffset(args map[string]any) *compute.Offset {
-	if v := optionalIntArg(args, "offset", 0); v > 0 {
-		return &v
-	}
-
-	return nil
-}
-
-func computeCursor(args map[string]any) *compute.Cursor {
-	if v := optionalStringArg(args, "cursor"); v != "" {
-		return &v
-	}
-
-	return nil
-}
-
-// computeFilter coerces the repeated filter argument into the generated client's
-// query parameter. The compute backend applies the filters before pagination.
-func computeFilter(args map[string]any) *compute.Filter {
-	raw := optionalSliceArg(args, "filter")
-	if len(raw) == 0 {
-		return nil
-	}
-
-	filters := make(compute.Filter, 0, len(raw))
-
-	for _, item := range raw {
-		if value, ok := item.(string); ok && value != "" {
-			filters = append(filters, value)
-		}
-	}
-
-	if len(filters) == 0 {
-		return nil
-	}
-
-	return &filters
-}
-
-func computeIdem(args map[string]any) compute.IdempotencyKey {
-	return optionalStringArg(args, "idempotency_key")
-}
-
-func computeOptStr(args map[string]any, key string) *string {
-	if v := optionalStringArg(args, key); v != "" {
-		return &v
-	}
-
-	return nil
-}
-
-func computeOptStringSlice(args map[string]any, key string) *[]string {
-	var raw []any
-
-	switch values := args[key].(type) {
-	case []any:
-		raw = values
-	case []string:
-		raw = make([]any, 0, len(values))
-		for _, value := range values {
-			raw = append(raw, value)
-		}
-	default:
-		return nil
-	}
-
-	items := make([]string, 0, len(raw))
-	for _, item := range raw {
-		if value, ok := item.(string); ok && value != "" {
-			items = append(items, value)
-		}
-	}
-
-	if len(items) == 0 {
-		return nil
-	}
-
-	return &items
-}
-
-func computeOptInt(args map[string]any, key string) *int {
-	if v := optionalIntArg(args, key, 0); v > 0 {
-		return &v
-	}
-
-	return nil
-}
-
-func computeOptStringMap(args map[string]any, key string) (*map[string]string, error) {
-	raw, ok := args[key]
-	if !ok || raw == nil {
-		return nil, nil
-	}
-	entries, ok := raw.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("%s must be an object of string values", key)
-	}
-	out := make(map[string]string, len(entries))
-	for k, v := range entries {
-		value, ok := v.(string)
-		if !ok {
-			return nil, fmt.Errorf("%s.%s must be a string", key, k)
-		}
-		out[k] = value
-	}
-
-	return &out, nil
-}
-
-// reencodeJSONArg round-trips a decoded JSON arg into a typed struct so op
-// payloads reuse the generated API models without bespoke field mapping.
-func reencodeJSONArg(raw any, target any) error {
-	encoded, err := json.Marshal(raw)
-	if err != nil {
-		return err
-	}
-
-	return json.Unmarshal(encoded, target)
 }

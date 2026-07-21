@@ -196,6 +196,8 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 				"get_node":               {Signature: "get_node(node_id, datasource=None) -> dict", Description: "Get one compute node by id"},
 				"list_audit":             {Signature: "list_audit(datasource=None) -> dict", Description: "List audit-log entries"},
 				"meta":                   {Signature: "meta(datasource=None) -> dict", Description: "Get service metadata (version, limits, capabilities)"},
+				"list_api_operations":    {Signature: "list_api_operations(datasource=None) -> dict", Description: "List the operations the compute service currently advertises, with their path/query/body arguments"},
+				"call":                   {Signature: "call(operation, datasource=None, **kwargs) -> dict", Description: "Call any compute API operation by name; the interface is discovered from the running service, so operations added upstream work without a panda upgrade"},
 			},
 		},
 	}

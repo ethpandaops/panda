@@ -1,5 +1,0 @@
-package: compute
-generate:
-  models: true
-  client: true
-output: compute.gen.go
