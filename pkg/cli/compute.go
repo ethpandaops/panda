@@ -57,6 +57,8 @@ var (
 	computeForkPaused   bool
 	computePortProtocol string
 	computePortService  string
+	computeCallArgs     []string
+	computeCallJSON     string
 )
 
 var computeCmd = &cobra.Command{
@@ -223,11 +225,19 @@ func init() {
 	computeUsersCmd.AddCommand(computeUsersListCmd, computeUsersGetCmd)
 	computeNodesCmd.AddCommand(computeNodesListCmd, computeNodesGetCmd)
 
+	computeCallCmd.Flags().StringArrayVar(&computeCallArgs, "arg", nil,
+		"Operation argument as key=value; values parse as JSON when possible; repeatable")
+	computeCallCmd.Flags().StringVar(&computeCallJSON, "json", "",
+		"Operation arguments as one JSON object")
+	computeCallCmd.Flags().StringVar(&computeIdempotency, "idempotency-key", "",
+		"Idempotency key to make a mutation safely retryable (generated per invocation otherwise)")
+
 	computeCmd.AddCommand(
 		computeDatasourcesCmd,
 		computeMetaCmd,
 		computeAuditCmd,
 		computeSessionCmd,
+		computeCallCmd,
 		computeSandboxesCmd,
 		computeImagesCmd,
 		computeForksCmd,
@@ -364,6 +374,76 @@ var computeAuditCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		return runComputeRaw(cmd, "compute.list_audit", computeArgs())
 	},
+}
+
+var computeCallCmd = &cobra.Command{
+	Use:   "call [operation]",
+	Short: "Call any compute API operation by name",
+	Long: `Call any operation the compute service advertises, including ones this CLI
+has no dedicated command for. The interface is discovered from the running
+service, so new operations work without upgrading panda.
+
+Run without arguments to list the available operations with their arguments.
+Pass arguments with --arg key=value; values parse as JSON when possible
+(numbers, booleans, arrays, objects) and as plain strings otherwise, and
+--json supplies a full argument object in one flag. Path and query arguments
+are taken by name; everything else becomes a request-body field.
+
+Mutations require an idempotency key; one is generated per invocation unless
+--idempotency-key is set.
+
+Examples:
+  panda compute call
+  panda compute call list_sandboxes --arg limit=5
+  panda compute call get_sandbox --arg id=sb-123
+  panda compute call snapshot_sandbox --arg id=sb-123 --arg note='before upgrade'
+  panda compute call expose_port --json '{"id":"sb-123","port":8080}'`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return runComputeRaw(cmd, "compute.list_api_operations", computeArgs())
+		}
+
+		opArgs := computeArgs()
+
+		if computeCallJSON != "" {
+			var decoded map[string]any
+			if err := json.Unmarshal([]byte(computeCallJSON), &decoded); err != nil {
+				return fmt.Errorf("--json: %w", err)
+			}
+
+			for key, value := range decoded {
+				opArgs[key] = value
+			}
+		}
+
+		for _, entry := range computeCallArgs {
+			key, raw, found := strings.Cut(entry, "=")
+			if !found || key == "" {
+				return fmt.Errorf("--arg %q is not key=value", entry)
+			}
+
+			opArgs[key] = parseComputeCallValue(raw)
+		}
+
+		if _, ok := opArgs["idempotency_key"]; !ok {
+			opArgs["idempotency_key"] = computeIdemOrGenerated()
+		}
+
+		return runComputeRaw(cmd, "compute."+args[0], opArgs)
+	},
+}
+
+// parseComputeCallValue decodes an --arg value as JSON when possible so
+// numbers, booleans, arrays, and objects keep their types, falling back to
+// the raw string.
+func parseComputeCallValue(raw string) any {
+	var value any
+	if err := json.Unmarshal([]byte(raw), &value); err != nil {
+		return raw
+	}
+
+	return value
 }
 
 var computeSessionCmd = &cobra.Command{

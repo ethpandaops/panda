@@ -74,6 +74,9 @@ type service struct {
 
 	blockArchiveCacheOnce         sync.Once
 	blockArchiveNetworksCacheInst *blockArchiveNetworksCache
+
+	computeSpecMu sync.Mutex
+	computeSpecs  map[string]computeSpecEntry
 }
 
 // NewService creates a new MCP server service.

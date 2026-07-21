@@ -671,3 +671,25 @@ def delete_ssh_key(key_id: str, datasource: str | None = None) -> Any:
     """Delete one of the caller's SSH public keys."""
     _require_compute_available()
     return _runtime.invoke_json("compute.delete_ssh_key", _args(datasource, id=key_id))
+
+
+def list_api_operations(datasource: str | None = None) -> Any:
+    """List the operations the compute service currently advertises.
+
+    Each entry has the operation name plus its path/query arguments and
+    whether it takes a request body with any required fields.
+    """
+    _require_compute_available()
+    return _runtime.invoke_json("compute.list_api_operations", _args(datasource))
+
+
+def call(operation: str, datasource: str | None = None, **kwargs: Any) -> Any:
+    """Call any compute API operation by name.
+
+    The interface is discovered from the running service, so operations added
+    upstream work without a panda upgrade; see :func:`list_api_operations`
+    for the catalog. Path and query arguments are taken by name and everything
+    else becomes a request-body field. Mutations need an ``idempotency_key``.
+    """
+    _require_compute_available()
+    return _runtime.invoke_json("compute." + operation, _args(datasource, **kwargs))
