@@ -18,7 +18,10 @@ confidence scale. Reference whenever a finding names a concrete artifact.
   slot, epoch, validator, root, tx, builder, log pattern) MUST carry a citation — a
   command, query, endpoint, or file+commit that re-derives it. Claim only what you can
   re-derive. Discover the command surface with `--help` rather than hardcoding flags
-  from memory.
+  from memory. Make each citation self-contained: inline the full command so it re-runs
+  exactly as written — never "same query as above" or a back-reference to a sibling
+  citation; a placeholder like `{dora}` is fine only when that same citation also says
+  how to resolve it.
 - **Verbatim output.** Paste raw tool output in fenced blocks; keep values, names,
   counts, roots, and log lines exactly as emitted. If a response can't be pasted as-is,
   say so.

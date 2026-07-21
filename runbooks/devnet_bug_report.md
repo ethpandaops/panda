@@ -18,8 +18,9 @@ investigation per confirmed bug, and emit one bug object per bug into
 `/workspace/bugs.json`. Consumes a `network_target`; rendering and publication of the
 HTML board belong to `runbooks://devnet_bug_board_html`. Per-bug investigation belongs
 to `runbooks://devnet_issue_root_cause`; the embedded issue record to
-`runbooks://devnet_issue_contract` — this runbook owns the scan queries, the severity
-rubric, the bug-object schema, and the hand-offs.
+`runbooks://devnet_issue_contract` — this runbook owns the scan queries, the board
+severity thresholds (over the `critical|major|minor` scale owned by
+`runbooks://devnet_issue_contract`), the bug-object schema, and the hand-offs.
 
 Scope: an INTERACTIVE operator workflow — it prompts the user between phases and ends
 in a rendered HTML board. A worker inside an orchestrated pipeline whose declared
@@ -109,8 +110,10 @@ the default was applied unprompted.
 
 ### Severity Rubric
 
-Severity ranks the board; it is not evidence confidence (that lives on the issue
-record). The thresholds restate the finality math owned by
+Severity ranks the board; it is impact, not evidence confidence (that lives on the issue
+record). The `critical|major|minor` scale is owned by `runbooks://devnet_issue_contract`
+(it is the embedded issue's `classification.severity`); the thresholds below map this
+network's consensus signals onto that scale and restate the finality math owned by
 `runbooks://ethereum_protocol_model`.
 
 | Severity | Signal |
@@ -161,11 +164,11 @@ bug:
       out on all four geth ELs while both lighthouse-geth and teku-geth pairs are
       affected, implicating the EL side. Reproduced against the frozen window.
     title: "geth proposers miss every slot after the Gloas boundary"
-    classification: { category: missed-proposals, layer: execution, spread: single-client }
+    classification: { category: missed-proposals, layer: execution, spread: single-client, severity: major }
     evidence:
       - { source: clickhouse-raw, ref: "SELECT slot, status, proposer FROM ... WHERE slot BETWEEN 4711 AND 4740", at: "slot 4711", detail: "status=Missing on all 30 geth-proposed slots" }
     confidence: high                 # scale: runbooks://evidence_discipline
-  severity: major                    # critical|major|minor — rubric above
+  severity: major                    # top-level copy of issue.classification.severity — the renderer ranks/filters on THIS field, so keep the two in sync (re-judged severity must be written to both); scale runbooks://devnet_issue_contract, board thresholds in the rubric above
   board:                             # presentation fields this runbook owns — *_text is plain text, escaped by the renderer
     subtitle: "engine_getPayload timeouts on geth after Gloas activation"
     upvotes: 0                       # baked-in snapshot count; humans/agents seed it

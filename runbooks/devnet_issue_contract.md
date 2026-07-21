@@ -1,6 +1,6 @@
 ---
 name: Use the Devnet Issue Contract
-description: The shared shapes every devnet investigation stage exchanges — the issue record (summary, title, classification, first_bad, affected, evidence, co_present, fingerprint, handles, confidence), the evidence item (source, ref, at, detail), and the handles + setup_summary that make an issue reproducible. Use when emitting or consuming an issue between watch, collation, fingerprint, root-cause, trace, review, or feedback stages.
+description: The shared shapes every devnet investigation stage exchanges — the issue record (summary, title, classification incl. severity, first_bad, affected, evidence, co_present, fingerprint, handles, confidence), the evidence item (source, ref, at, detail), and the handles + setup_summary that make an issue reproducible. Severity ranks impact and is a different axis from confidence (evidence strength). Use when emitting or consuming an issue between watch, collation, fingerprint, root-cause, trace, review, or feedback stages.
 tags: [devnet, issue, contract, schema, pipeline, evidence]
 triggers:
   - what fields does a devnet issue have
@@ -8,12 +8,14 @@ triggers:
   - evidence item shape citation format
   - where do first_bad affected handles fingerprint go in an issue
   - schema for reporting a missed slot or orphaned block as an issue
+  - severity vs confidence on an issue record
 ---
 
-Owns the ISSUE record and EVIDENCE item shapes exchanged by the investigation pipeline.
-Stages reference this file instead of re-declaring fields; identity fields
-(`fingerprint`) are produced by `runbooks://devnet_issue_fingerprint_dedupe`, and
-`confidence` uses the scale in `runbooks://evidence_discipline`.
+Owns the ISSUE record and EVIDENCE item shapes exchanged by the investigation pipeline,
+including the `classification.severity` impact scale. Stages reference this file instead
+of re-declaring fields; identity fields (`fingerprint`) are produced by
+`runbooks://devnet_issue_fingerprint_dedupe`, and `confidence` — evidence strength, a
+different axis from severity — uses the scale in `runbooks://evidence_discipline`.
 
 ## Issue record
 
@@ -34,6 +36,7 @@ issue:
     category: finality-stall     # failure MODE, not suspected owner — enum under Field rules
     layer: consensus             # consensus|execution|network|tooling|cross-layer
     spread: subset               # single-client|subset|all-clients|network-wide|unknown
+    severity: major              # impact rank critical|major|minor — NOT confidence; criteria under Field rules
   first_bad:
     kind: epoch                  # slot|block|epoch|log|rpc|test|service-state
     value: "12"
@@ -74,7 +77,23 @@ Field rules:
   `invalid-block`, `payload-absent`, `builder-path-degraded`, `execution-mismatch`,
   `client-crash`, `missed-proposals`, `lifecycle-stuck`, `performance`, `tooling`,
   `unknown`); `spread` is extent, not blame.
-- `first_bad` anchors the issue at the earliest artifact that explains later symptoms.
+- `classification.severity` ranks IMPACT — a different axis from `confidence` (evidence
+  strength) and from blame: `critical` — a network-wide liveness/safety failure,
+  sustained/unrecovering finality loss, or data loss, the network not usably progressing
+  for its purpose; `major` — a real defect degrading one client or a subset, or chain
+  quality — including bounded or recovering finality lag — while the chain still
+  progresses; `minor` — isolated, self-healing, or within-expected behavior with no
+  chain-level impact. A within-expected observation is `minor`, not omitted. Severity may
+  be re-judged as investigation sharpens impact (e.g. `runbooks://devnet_issue_root_cause`).
+  Consumers that rank a board apply their own duration/degree thresholds (e.g. epochs
+  stalled) over this scale (`runbooks://devnet_bug_report`).
+- `first_bad` anchors the issue at the earliest artifact that explains later symptoms;
+  `value`/`at` MUST be a concrete coordinate (a slot, block, epoch, or log timestamp),
+  never prose — downstream stages restore to just before it
+  (`runbooks://devnet_issue_root_cause`) and cap confidence on a prose-only `first_bad`
+  (`runbooks://devnet_issue_reachability_trace`). For a gradual or monotonic onset, set
+  `value`/`at` to the best onset coordinate (e.g. the first threshold-crossing epoch)
+  and put the gradient itself in `summary` and an evidence `detail`.
 - `affected` identifies components by role + client + image — a node name alone is
   evidence, not identity. When a dimension cannot be resolved without guessing
   (public devnets often expose no validator→node mapping), keep what is known and
@@ -100,4 +119,7 @@ Every concrete claim, in any stage output, is one of these:
   detail: "restart loop: 6 'Shutting down' lines in 90s"    # verbatim values preserved
 ```
 
-`ref` is executable — a reader can re-run it (`runbooks://evidence_discipline`).
+`ref` is executable and self-contained — a reader can re-run it exactly as written,
+never "same query as above" (`runbooks://evidence_discipline`). A placeholder like
+`{dora}` is allowed only when the same `ref` also says how to resolve it, as in the
+issue example above.

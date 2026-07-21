@@ -40,9 +40,9 @@ collation:
         Checkpoints froze at epoch 12 while head advanced; teku VCs vc-2/vc-3
         restart-looping from epoch 11 — offline stake explains the participation loss.
       title: "Finality stalls at epoch 12 while head advances"
-      # TRUNCATED example: emit the FULL issue record — also classification,
-      # first_bad, affected, evidence, co_present, confidence — copied from the
-      # example in runbooks://devnet_issue_contract
+      # TRUNCATED example: emit the FULL issue record — also classification (incl.
+      # severity), first_bad, affected, evidence, co_present, confidence — copied from
+      # the example in runbooks://devnet_issue_contract
       fingerprint: { decision: new }   # identity via runbooks://devnet_issue_fingerprint_dedupe
       handles:                         # watch handles mapped in: final_snapshot_id -> snapshot_id,
                                        # network_target flattened (sandbox_id/enclave copied, network_id -> network),
@@ -68,6 +68,12 @@ collation:
    later symptoms; post-split/post-stall errors are usually consequences.
 6. **Separate co-present distractors.** A chronic error that predates and outlives a
    bounded outage goes in `co_present`, with its timing, not into the root narrative.
+7. **Rank impact.** Set each issue's `classification.severity` on the `critical|major|minor`
+   scale (`runbooks://devnet_issue_contract`) by judging impact here. A `severity`
+   arriving on an upstream finding is an input signal — re-judge it onto the scale, do
+   not copy it verbatim (same discipline as the `converged`-signal rule below). A
+   within-expected issue you still emit (e.g. a benign builder-path note) is `minor`,
+   not dropped.
 
 ## Fork-aware judgment — triage gate
 
@@ -113,7 +119,9 @@ it in the top-level `feedback` list instead of hiding it in prose.
 ## Self-Check
 
 Before returning:
-- Every issue follows `runbooks://devnet_issue_contract`, fingerprint included.
+- Every issue follows `runbooks://devnet_issue_contract`, fingerprint included, and
+  carries a `classification.severity` re-judged from impact (within-expected issues are
+  `minor`, not dropped).
 - Shared symptoms are grouped by first artifact and component roles, not service suffix.
 - Empty blocks, missing blobs, and absent builder activity were judged against
   configured demand.
