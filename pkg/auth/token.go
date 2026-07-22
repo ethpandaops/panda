@@ -5,12 +5,17 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
+
+// errRefreshTokenAlreadyConsumed is returned by rotateRefreshToken when the
+// presented refresh token has already been rotated by a concurrent request.
+var errRefreshTokenAlreadyConsumed = errors.New("refresh token already consumed")
 
 func (s *authorizationServer) issueAccessToken(
 	issuerURL, resource, githubLogin string, githubID int64, orgs []string,
@@ -77,10 +82,13 @@ func (s *authorizationServer) issueRefreshToken(
 	return refreshToken, nil
 }
 
+// rotateRefreshToken atomically consumes currentRefreshToken and replaces it
+// with a newly issued one. The presence check and the delete-then-insert
+// happen under a single lock, so a currentRefreshToken already consumed by a
+// concurrent request (returning errRefreshTokenAlreadyConsumed here) can never
+// be rotated twice into two independently live token families.
 func (s *authorizationServer) rotateRefreshToken(
-	currentRefreshToken string,
-	session *refreshSession,
-	githubLogin string,
+	currentRefreshToken, clientID, resource, githubLogin string,
 	githubID int64,
 	githubToken string,
 	orgs []string,
@@ -91,10 +99,16 @@ func (s *authorizationServer) rotateRefreshToken(
 	}
 
 	s.refreshSessionsMu.Lock()
+	defer s.refreshSessionsMu.Unlock()
+
+	if _, stillPresent := s.refreshSessions[currentRefreshToken]; !stillPresent {
+		return "", errRefreshTokenAlreadyConsumed
+	}
+
 	delete(s.refreshSessions, currentRefreshToken)
 	s.refreshSessions[newRefreshToken] = &refreshSession{
-		ClientID:          session.ClientID,
-		Resource:          session.Resource,
+		ClientID:          clientID,
+		Resource:          resource,
 		GitHubLogin:       githubLogin,
 		GitHubID:          githubID,
 		GitHubAccessToken: githubToken,
@@ -102,7 +116,6 @@ func (s *authorizationServer) rotateRefreshToken(
 		CreatedAt:         time.Now(),
 		ExpiresAt:         time.Now().Add(s.refreshTokenTTL),
 	}
-	s.refreshSessionsMu.Unlock()
 
 	return newRefreshToken, nil
 }
