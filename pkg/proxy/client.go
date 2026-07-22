@@ -596,9 +596,7 @@ func (c *proxyClient) discoverOnce(ctx context.Context) error {
 	c.datasources = &datasources
 	c.mu.Unlock()
 
-	if c.cfg.OnDiscover != nil {
-		c.cfg.OnDiscover()
-	}
+	c.runOnDiscover()
 
 	c.log.WithFields(logrus.Fields{
 		"clickhouse": len(datasources.ClickHouseInfo),
@@ -607,6 +605,24 @@ func (c *proxyClient) discoverOnce(ctx context.Context) error {
 	}).Debug("Discovered datasources from proxy")
 
 	return nil
+}
+
+// runOnDiscover invokes the configured OnDiscover hook, recovering from any
+// panic so a bad discovery response or a bug in module activation cannot take
+// down the whole process. This runs on the background discovery goroutine,
+// which has no other supervisor.
+func (c *proxyClient) runOnDiscover() {
+	if c.cfg.OnDiscover == nil {
+		return
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			c.log.WithField("panic", r).Error("Recovered from panic in OnDiscover hook")
+		}
+	}()
+
+	c.cfg.OnDiscover()
 }
 
 // EnsureAuthenticated checks if the user has valid credentials.
