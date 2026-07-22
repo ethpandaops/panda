@@ -296,7 +296,7 @@ func (s *service) handleAPIExecute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ownerID := authOwnerID(r)
+	ownerID := s.authOwnerID(r)
 	result, err := s.execService.Execute(r.Context(), execsvc.ExecuteRequest{
 		Code:      req.Code,
 		Timeout:   req.Timeout,
@@ -337,7 +337,7 @@ func (s *service) handleAPIListSessions(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	sessions, maxSessions, err := s.execService.ListSessions(r.Context(), authOwnerID(r))
+	sessions, maxSessions, err := s.execService.ListSessions(r.Context(), s.authOwnerID(r))
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
@@ -372,7 +372,7 @@ func (s *service) handleAPICreateSession(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	ownerID := authOwnerID(r)
+	ownerID := s.authOwnerID(r)
 	sessionID, err := s.execService.CreateSession(r.Context(), ownerID)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, err.Error())
@@ -404,7 +404,7 @@ func (s *service) handleAPIDestroySession(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := s.execService.DestroySession(r.Context(), sessionID, authOwnerID(r)); err != nil {
+	if err := s.execService.DestroySession(r.Context(), sessionID, s.authOwnerID(r)); err != nil {
 		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -940,14 +940,20 @@ func runtimeStorageScope(r *http.Request, executionID string) storage.Scope {
 	}
 }
 
-func authOwnerID(r *http.Request) string {
+func (s *service) authOwnerID(r *http.Request) string {
 	if user := auth.GetAuthUser(r.Context()); user != nil {
 		return fmt.Sprintf("%d", user.GitHubID)
 	}
 
-	// Fall back to caller attribution so sessions are owner-scoped even when
-	// the server runs unauthenticated (e.g. local mode, the eval harness).
-	// Empty when no attribution is present, preserving prior behavior.
+	// Caller attribution is untrusted and audit-only (pkg/attribution): any
+	// caller that can reach this server can set it to any value, including
+	// someone else's. Only use it as a session-ownership key when the
+	// operator has explicitly opted in; otherwise an unauthenticated request
+	// gets no ownership scoping at all.
+	if !s.cfg.AttributionSessionScoping {
+		return ""
+	}
+
 	return attribution.FromContext(r.Context())
 }
 

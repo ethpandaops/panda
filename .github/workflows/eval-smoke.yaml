@@ -203,6 +203,10 @@ jobs:
             port: 2480
             base_url: "http://127.0.0.1:2480"
             sandbox_url: "http://127.0.0.1:2480"
+            # This server runs unauthenticated; concurrent eval workers each tear down
+            # only their own sandbox sessions between tests, scoped by the
+            # X-Panda-On-Behalf-Of header the agent sets per worker.
+            attribution_session_scoping: true
 
           sandbox:
             backend: docker
