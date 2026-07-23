@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -94,8 +95,12 @@ type server struct {
 	dynamicClickHouseNames  map[string]struct{}
 	staticAutodiscoverWarns map[string]struct{}
 
-	mu        sync.RWMutex
-	started   bool
+	mu sync.RWMutex
+	// started is read by readiness checks (the /ready handler and Ready())
+	// without taking mu, so a caller waiting for those to observe a shutdown
+	// can never be blocked behind a writer holding mu across the slow parts
+	// of Stop.
+	started   atomic.Bool
 	serveDone chan struct{}
 }
 
@@ -311,11 +316,7 @@ func (s *server) registerRoutes() {
 
 	// Ready check endpoint (no auth required).
 	s.mux.HandleFunc("/ready", func(w http.ResponseWriter, _ *http.Request) {
-		s.mu.RLock()
-		ready := s.started
-		s.mu.RUnlock()
-
-		if ready {
+		if s.started.Load() {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("ready"))
 		} else {
@@ -866,7 +867,7 @@ func (s *server) Start(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.started {
+	if s.started.Load() {
 		return fmt.Errorf("proxy already started")
 	}
 
@@ -905,19 +906,26 @@ func (s *server) Start(ctx context.Context) error {
 	}()
 
 	s.startAutodiscoveryLocked(ctx)
-	s.started = true
+	s.started.Store(true)
 
 	return nil
 }
 
-// Stop stops the proxy server.
+// Stop stops the proxy server. The write lock is held only for the bounded
+// teardown steps below, never across httpSrv.Shutdown: Shutdown blocks until
+// in-flight requests finish, and /ready (read via the started flag, not the
+// lock) must stay answerable while that drain is in progress, or a request
+// parked mid-drain would hold the lock's only reader slot forever while
+// Shutdown waits on that same request to finish.
 func (s *server) Stop(ctx context.Context) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if !s.started {
+	// Idempotent and lock-free: only the caller that flips this actually tears
+	// anything down, and readiness reports not-ready immediately rather than
+	// after the teardown below completes.
+	if !s.started.CompareAndSwap(true, false) {
 		return nil
 	}
+
+	s.mu.Lock()
 
 	s.stopAutodiscoveryLocked()
 
@@ -952,21 +960,26 @@ func (s *server) Stop(ctx context.Context) error {
 		}
 	}
 
-	// Shutdown HTTP server.
-	if s.httpSrv != nil {
-		if err := s.httpSrv.Shutdown(ctx); err != nil {
+	httpSrv := s.httpSrv
+	serveDone := s.serveDone
+
+	s.mu.Unlock()
+
+	// Shutdown HTTP server. Released above so in-flight readers (like /ready)
+	// can complete and go idle instead of queuing behind this call forever.
+	if httpSrv != nil {
+		if err := httpSrv.Shutdown(ctx); err != nil {
 			return fmt.Errorf("shutting down proxy server: %w", err)
 		}
 	}
-	if s.serveDone != nil {
+	if serveDone != nil {
 		select {
-		case <-s.serveDone:
+		case <-serveDone:
 		case <-ctx.Done():
 			return fmt.Errorf("waiting for proxy server shutdown: %w", ctx.Err())
 		}
 	}
 
-	s.started = false
 	s.log.Info("Proxy server stopped")
 
 	return nil
@@ -987,10 +1000,7 @@ func (s *server) RegisterToken() string {
 // Ready reports whether the embedded proxy server has finished starting. It
 // satisfies the proxy.Service readiness contract for in-process proxies.
 func (s *server) Ready() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	return s.started
+	return s.started.Load()
 }
 
 // Invalidate is a no-op: the embedded proxy issues no bearer tokens.
