@@ -1,9 +1,11 @@
 """Thin buildoor wrappers over server operations.
 
 Drives devnet buildoor builder instances: per-slot action plans, jq payload/
-bid/envelope transforms, and slot outcome history. Reads are open; mutations
-need an authenticatoor bearer token for the target devnet, passed explicitly.
-Plans freeze ~1 slot ahead — target slots at least 2 ahead of current.
+bid/envelope transforms, and slot outcome history. Reads are open. Mutations
+are credentialed by the panda proxy when it advertises buildoor; an explicit
+authenticatoor bearer token instead goes direct and keeps per-user attribution
+in buildoor's audit log. Plans freeze ~1 slot ahead — target slots at least 2
+ahead of current.
 """
 
 from __future__ import annotations
@@ -96,31 +98,30 @@ def test_transform(
 
 
 def update_action_plan(
-    network: str, instance: str, updates: list[dict[str, Any]], token: str
+    network: str, instance: str, updates: list[dict[str, Any]], token: str | None = None
 ) -> dict[str, Any]:
     """Apply raw PlanUpdate mutations atomically. Buildoor owns the schema:
     each update targets slots and/or from_slot..to_slot with category members
     and fine-grained set paths (e.g. {"set": {"bid.bid_value_gwei": 5000}}).
-    token is an authenticatoor bearer token for the devnet. Returns the
-    authoritative {status, slots, plans}."""
-    _require_buildoor_available()
-    if not token:
-        raise ValueError(
-            "A bearer token is required for plan mutations "
-            "(https://auth.<network>.ethpandaops.io/auth/token)."
-        )
 
-    payload = _runtime.invoke_json(
-        "buildoor.update_action_plan",
-        {"network": network, "instance": instance, "updates": updates, "auth_token": token},
-    )
+    Credentials: without a token the mutation routes through a panda proxy
+    that advertises buildoor (the proxy mints the devnet credential). Passing
+    a personal authenticatoor bearer token goes direct instead and keeps
+    per-user attribution in buildoor's audit log. Returns the authoritative
+    {status, slots, plans}."""
+    _require_buildoor_available()
+    args: dict[str, Any] = {"network": network, "instance": instance, "updates": updates}
+    if token:
+        args["auth_token"] = token
+
+    payload = _runtime.invoke_json("buildoor.update_action_plan", args)
     return payload if isinstance(payload, dict) else {}
 
 
 def set_transforms(
     network: str,
     instance: str,
-    token: str,
+    token: str | None = None,
     slots: list[int] | None = None,
     from_slot: int | None = None,
     to_slot: int | None = None,

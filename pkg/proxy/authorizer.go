@@ -84,6 +84,13 @@ func NewAuthorizer(log logrus.FieldLogger, cfg ServerConfig) *Authorizer {
 		}}
 	}
 
+	// Buildoor is gated at the type level, like workflow.
+	if cfg.Buildoor != nil && len(cfg.Buildoor.AllowedOrgs) > 0 {
+		a.rules[ruleKey("buildoor", "")] = []datasourceVariantRule{{
+			allowedOrgs: append([]string(nil), cfg.Buildoor.AllowedOrgs...),
+		}}
+	}
+
 	return a
 }
 
@@ -130,10 +137,14 @@ func (a *Authorizer) FilterDatasources(ctx context.Context, resp DatasourcesResp
 	filtered.BenchmarkoorInfo = a.filterDatasourceList(userOrgs, hasUser, "benchmarkoor", resp.BenchmarkoorInfo)
 	filtered.ComputeInfo = a.filterDatasourceList(userOrgs, hasUser, "compute", resp.ComputeInfo)
 
-	// The workflow advert is type-level: hide it entirely from callers who
-	// lack the required org membership.
+	// The workflow and buildoor adverts are type-level: hide them entirely
+	// from callers who lack the required org membership.
 	if resp.Workflow != nil && a.orgsMatch(userOrgs, hasUser, ruleKey("workflow", "")) {
 		filtered.Workflow = resp.Workflow
+	}
+
+	if resp.Buildoor != nil && a.orgsMatch(userOrgs, hasUser, ruleKey("buildoor", "")) {
+		filtered.Buildoor = resp.Buildoor
 	}
 
 	return filtered
@@ -177,9 +188,9 @@ func (a *Authorizer) routeName(ctx context.Context, dsType, dsName string) (stri
 		return "", false
 	}
 
-	// Workflow is gated at the type level too (no X-Datasource name).
-	if dsType == "workflow" {
-		if a.orgsMatch(userOrgs, hasUser, ruleKey("workflow", "")) {
+	// Workflow and buildoor are gated at the type level too (no X-Datasource name).
+	if dsType == "workflow" || dsType == "buildoor" {
+		if a.orgsMatch(userOrgs, hasUser, ruleKey(dsType, "")) {
 			return "", true
 		}
 

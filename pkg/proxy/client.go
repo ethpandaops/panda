@@ -142,6 +142,7 @@ var (
 	_ Client               = (*proxyClient)(nil)
 	_ Service              = (*proxyClient)(nil)
 	_ WorkflowInfoProvider = (*proxyClient)(nil)
+	_ BuildoorInfoProvider = (*proxyClient)(nil)
 )
 
 // NewClient creates a new proxy client.
@@ -517,6 +518,15 @@ func (c *proxyClient) WorkflowInfo() (enabled bool, webURL string) {
 	}
 
 	return c.datasources.Workflow.Enabled, c.datasources.Workflow.WebURL
+}
+
+// BuildoorAvailable reports whether the proxy advertises credentialed devnet
+// buildoor API access, read from the cached datasource discovery.
+func (c *proxyClient) BuildoorAvailable() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return c.datasources.Buildoor != nil && c.datasources.Buildoor.Enabled
 }
 
 // Discover fetches datasource information from the proxy's /datasources endpoint.

@@ -102,8 +102,8 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 				"get_action_plan":    {Signature: "get_action_plan(network, instance, min_slot, max_slot) -> dict", Description: "Per-slot action plans in the inclusive range"},
 				"get_slot_results":   {Signature: "get_slot_results(network, instance, min_slot, max_slot) -> dict", Description: "Attempt-level outcome history (build, bids, reveals, inclusion, applied plan)"},
 				"test_transform":     {Signature: "test_transform(network, instance, target, expression, sample_slot=None) -> dict", Description: "Evaluate a jq expression against a sample payload/bid/envelope without touching any plan"},
-				"update_action_plan": {Signature: "update_action_plan(network, instance, updates, token) -> dict", Description: "Apply raw PlanUpdate mutations; token is an authenticatoor bearer token"},
-				"set_transforms":     {Signature: "set_transforms(network, instance, token, slots=None, from_slot=None, to_slot=None, payload=None, bid=None, envelope=None) -> dict", Description: "Set jq transforms on future slots (>=2 ahead; '' clears one expression)"},
+				"update_action_plan": {Signature: "update_action_plan(network, instance, updates, token=None) -> dict", Description: "Apply raw PlanUpdate mutations; credentialed by the proxy, or direct with an authenticatoor bearer token"},
+				"set_transforms":     {Signature: "set_transforms(network, instance, token=None, slots=None, from_slot=None, to_slot=None, payload=None, bid=None, envelope=None) -> dict", Description: "Set jq transforms on future slots (>=2 ahead; '' clears one expression)"},
 			},
 		},
 	}

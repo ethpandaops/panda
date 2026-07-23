@@ -18,7 +18,6 @@ buildoor_action_plans:
     - name: Validate and apply a payload transform
       description: Test a jq expression (e.g. gas limit hot-patch), then set it on future slots
       query: |
-        import os
         from ethpandaops import buildoor
 
         network, instance = "glamsterdam-devnet-7", "lighthouse-geth-1"
@@ -28,13 +27,12 @@ buildoor_action_plans:
         assert not result.get("error"), result
         print(f"validated against {result['input_source']}")
 
-        # Mutations need an authenticatoor bearer token for this devnet.
-        token = os.environ["PANDA_BUILDOOR_TOKEN"]
-
+        # The panda proxy credentials the mutation when it advertises buildoor;
+        # pass token=... with a personal authenticatoor bearer to go direct.
         # Plans freeze ~1 slot ahead: target slots at least 2 ahead of current.
         current = buildoor.get_overview(network, instance)["current_slot"]
         applied = buildoor.set_transforms(
-            network, instance, token,
+            network, instance,
             slots=[current + 2, current + 3],
             payload=".gas_limit = 300000000",
         )

@@ -29,8 +29,11 @@ Slot arguments accept absolute numbers or offsets relative to the instance's
 current slot (+N ahead, +-N behind). Plans freeze ~1 slot ahead — target
 slots at least 2 ahead.
 
-Mutations need a bearer token from the devnet's authenticatoor
-(https://auth.<network>.ethpandaops.io/auth/token), via --token or ` + buildoorTokenEnv + `.
+Mutations are credentialed by the panda proxy when it advertises buildoor
+(the hosted proxy mints devnet tokens itself — no flags needed). Passing a
+personal authenticatoor bearer token instead (--token or ` + buildoorTokenEnv + `,
+minted at https://auth.<network>.ethpandaops.io/auth/token) goes direct and
+keeps per-user attribution in buildoor's audit log.
 
 Examples:
   panda buildoor networks
@@ -444,25 +447,25 @@ func buildoorCurrentSlot(cmd *cobra.Command, network, instance string) (int64, e
 }
 
 // buildoorApplyUpdates runs the mutation and prints the authoritative result.
+// Without an explicit token the server routes the mutation through a proxy
+// that advertises buildoor (the proxy mints the devnet credential); a token
+// forces the direct path and keeps per-user attribution in buildoor's audit.
 func buildoorApplyUpdates(cmd *cobra.Command, network, instance string, updates []any) error {
 	token, _ := cmd.Flags().GetString("token")
 	if token == "" {
 		token = strings.TrimSpace(os.Getenv(buildoorTokenEnv))
 	}
 
-	if token == "" {
-		return fmt.Errorf(
-			"a bearer token is required: pass --token or set %s (get one from the devnet's authenticatoor, e.g. https://auth.%s.ethpandaops.io/auth/token)",
-			buildoorTokenEnv, network,
-		)
+	args := map[string]any{
+		"network":  network,
+		"instance": instance,
+		"updates":  updates,
+	}
+	if token != "" {
+		args["auth_token"] = token
 	}
 
-	response, err := runServerOperationRaw(cmd, "buildoor.update_action_plan", map[string]any{
-		"network":    network,
-		"instance":   instance,
-		"updates":    updates,
-		"auth_token": token,
-	})
+	response, err := runServerOperationRaw(cmd, "buildoor.update_action_plan", args)
 	if err != nil {
 		return err
 	}

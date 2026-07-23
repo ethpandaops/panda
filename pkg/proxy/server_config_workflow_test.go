@@ -204,7 +204,7 @@ func TestWorkflowOnlyProxySatisfiesDatasourceRequirement(t *testing.T) {
 
 	err := empty.Validate()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "or the workflow engine must be configured")
+	assert.Contains(t, err.Error(), "the workflow engine, or buildoor must be configured")
 }
 
 func TestWorkflowConfigResolvedHelpers(t *testing.T) {

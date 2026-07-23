@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ethpandaops/panda/pkg/operations"
+	"github.com/ethpandaops/panda/pkg/proxy"
 )
 
 // buildoorRequestTimeout bounds every upstream buildoor call.
@@ -117,13 +118,13 @@ func (s *service) handleBuildoorInstanceGet(
 		return
 	}
 
-	instanceURL, status, err := s.buildoorInstanceURL(r.Context(), req.Args)
+	instance, status, err := s.resolveBuildoorInstance(r.Context(), req.Args)
 	if err != nil {
 		writeAPIError(w, status, err.Error())
 		return
 	}
 
-	s.buildoorPassthrough(r.Context(), w, http.MethodGet, instanceURL, path, params, nil, "")
+	s.buildoorPassthrough(r.Context(), w, http.MethodGet, instance.URL, path, params, nil, "")
 }
 
 // handleBuildoorSlotRangeGet proxies a GET that takes the action-plan API's
@@ -135,7 +136,7 @@ func (s *service) handleBuildoorSlotRangeGet(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	instanceURL, status, err := s.buildoorInstanceURL(r.Context(), req.Args)
+	instance, status, err := s.resolveBuildoorInstance(r.Context(), req.Args)
 	if err != nil {
 		writeAPIError(w, status, err.Error())
 		return
@@ -153,15 +154,21 @@ func (s *service) handleBuildoorSlotRangeGet(w http.ResponseWriter, r *http.Requ
 		params.Set(key, fmt.Sprintf("%d", value))
 	}
 
-	s.buildoorPassthrough(r.Context(), w, http.MethodGet, instanceURL, path, params, nil, "")
+	s.buildoorPassthrough(r.Context(), w, http.MethodGet, instance.URL, path, params, nil, "")
 }
 
 // handleBuildoorUpdateActionPlan forwards a bulk action-plan mutation to an
 // instance. The updates array is passed through verbatim — buildoor owns the
 // PlanUpdate schema and validates it (bad jq / unknown fields → 400, frozen
-// or past slots → 409). The caller-supplied bearer token is attached as-is;
-// buildoor verifies it against the devnet's authenticatoor and audit-logs the
-// token subject as the actor.
+// or past slots → 409).
+//
+// Credentials, in precedence order: an explicit caller token (auth_token arg)
+// goes direct to the instance and keeps per-user attribution in buildoor's
+// audit log; otherwise the mutation routes through a proxy that advertises
+// buildoor — the proxy is the credential boundary and mints the devnet
+// authenticatoor JWT itself (the acting human stays attributed via the proxy's
+// audit log). With neither, the direct call reaches buildoor unauthenticated
+// and its 401 comes back with the remedy.
 func (s *service) handleBuildoorUpdateActionPlan(w http.ResponseWriter, r *http.Request) {
 	req, err := decodeOperationRequest(r)
 	if err != nil {
@@ -169,7 +176,7 @@ func (s *service) handleBuildoorUpdateActionPlan(w http.ResponseWriter, r *http.
 		return
 	}
 
-	instanceURL, status, err := s.buildoorInstanceURL(r.Context(), req.Args)
+	instance, status, err := s.resolveBuildoorInstance(r.Context(), req.Args)
 	if err != nil {
 		writeAPIError(w, status, err.Error())
 		return
@@ -189,9 +196,58 @@ func (s *service) handleBuildoorUpdateActionPlan(w http.ResponseWriter, r *http.
 
 	token := optionalStringArg(req.Args, "auth_token")
 
+	if token == "" {
+		if route, ok := s.buildoorRoute(); ok {
+			network := optionalStringArg(req.Args, "network")
+			path := fmt.Sprintf("/buildoor/%s/%s/api/buildoor/action-plan",
+				url.PathEscape(network), url.PathEscape(instance.Name))
+
+			data, proxyStatus, responseHeaders, err := s.proxyRequestWithService(
+				r.Context(), route, http.MethodPost, path,
+				bytes.NewReader(body), http.Header{"Content-Type": []string{"application/json"}},
+			)
+			if err != nil {
+				writeAPIError(w, http.StatusBadGateway, fmt.Sprintf("proxy request failed: %v", err))
+				return
+			}
+
+			if proxyStatus < 200 || proxyStatus >= 300 {
+				writeAPIError(w, proxyStatus, buildoorErrorMessage(proxyStatus, data))
+				return
+			}
+
+			writePassthroughResponse(w, http.StatusOK, responseHeaders.Get("Content-Type"), data)
+
+			return
+		}
+	}
+
 	s.buildoorPassthrough(
-		r.Context(), w, http.MethodPost, instanceURL, "/api/buildoor/action-plan", nil, body, token,
+		r.Context(), w, http.MethodPost, instance.URL, "/api/buildoor/action-plan", nil, body, token,
 	)
+}
+
+// buildoorRoute resolves the proxy route that advertises credentialed buildoor
+// access, mirroring workflowRoute.
+func (s *service) buildoorRoute() (proxy.Service, bool) {
+	if s.proxyService == nil {
+		return nil, false
+	}
+
+	if router, ok := s.proxyService.(proxy.Router); ok {
+		client, found := router.BuildoorRoute()
+		if !found {
+			return nil, false
+		}
+
+		return client, true
+	}
+
+	if provider, ok := s.proxyService.(proxy.BuildoorInfoProvider); ok && provider.BuildoorAvailable() {
+		return s.proxyService, true
+	}
+
+	return nil, false
 }
 
 // handleBuildoorTestTransform evaluates a jq expression against a sample
@@ -204,7 +260,7 @@ func (s *service) handleBuildoorTestTransform(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	instanceURL, status, err := s.buildoorInstanceURL(r.Context(), req.Args)
+	instance, status, err := s.resolveBuildoorInstance(r.Context(), req.Args)
 	if err != nil {
 		writeAPIError(w, status, err.Error())
 		return
@@ -234,7 +290,7 @@ func (s *service) handleBuildoorTestTransform(w http.ResponseWriter, r *http.Req
 	}
 
 	s.buildoorPassthrough(
-		r.Context(), w, http.MethodPost, instanceURL, "/api/buildoor/action-plan/test-transform", nil, body, "",
+		r.Context(), w, http.MethodPost, instance.URL, "/api/buildoor/action-plan/test-transform", nil, body, "",
 	)
 }
 
@@ -339,30 +395,33 @@ func (s *service) buildoorInstances(ctx context.Context, args map[string]any) ([
 	return instances, http.StatusOK, nil
 }
 
-// buildoorInstanceURL resolves the "instance" arg (short name, full label, or
-// URL) against the network's instance list.
-func (s *service) buildoorInstanceURL(ctx context.Context, args map[string]any) (string, int, error) {
+// resolveBuildoorInstance resolves the "instance" arg (short name, full label,
+// or URL) against the network's instance list.
+func (s *service) resolveBuildoorInstance(
+	ctx context.Context, args map[string]any,
+) (buildoorInstance, int, error) {
 	instance, err := requiredStringArg(args, "instance")
 	if err != nil {
-		return "", http.StatusBadRequest, err
+		return buildoorInstance{}, http.StatusBadRequest, err
 	}
 
 	instances, status, err := s.buildoorInstances(ctx, args)
 	if err != nil {
-		return "", status, err
+		return buildoorInstance{}, status, err
 	}
 
 	names := make([]string, 0, len(instances))
 
 	for _, candidate := range instances {
 		if instance == candidate.Name || strings.TrimRight(instance, "/") == candidate.URL {
-			return candidate.URL, http.StatusOK, nil
+			return candidate, http.StatusOK, nil
 		}
 
 		names = append(names, candidate.Name)
 	}
 
-	return "", http.StatusNotFound, fmt.Errorf("unknown buildoor instance %q. Available: %v", instance, names)
+	return buildoorInstance{}, http.StatusNotFound,
+		fmt.Errorf("unknown buildoor instance %q. Available: %v", instance, names)
 }
 
 // buildoorInstanceName derives the short instance identifier from an overview
@@ -477,7 +536,9 @@ func buildoorErrorMessage(status int, body []byte) string {
 
 	switch status {
 	case http.StatusUnauthorized:
-		return message + " (buildoor requires a bearer token from the devnet's authenticatoor; pass --token)"
+		return message + " (buildoor mutations need either a proxy that advertises buildoor" +
+			" — hosted panda-proxy with the buildoor credential configured —" +
+			" or a personal authenticatoor bearer token via --token)"
 	case http.StatusConflict:
 		return message + " (the slot is past or its plan is frozen — plans freeze ~1 slot ahead, target slots ≥2 ahead)"
 	default:

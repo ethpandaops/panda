@@ -151,9 +151,10 @@ CLI commands and groups include:
 - `build` (GitHub Actions Docker image builder)
 - `buildoor` — per-slot action plans on devnet buildoor instances (jq payload/bid/envelope
   transforms, plan/results inspection); server-side ops resolve instances via the
-  network's buildoor overview service, mutations pass the caller's authenticatoor
-  bearer token through; the same operations back the sandbox Python module
-  (`from ethpandaops import buildoor`)
+  network's buildoor overview service. Reads are open and go direct; mutations route
+  through a proxy advertising buildoor (the proxy holds a CF Access service token and
+  mints per-devnet authenticatoor JWTs), or direct with an explicit caller token.
+  The same operations back the sandbox Python module (`from ethpandaops import buildoor`)
 - `cbt`
 - `clickhouse`
 - `config`

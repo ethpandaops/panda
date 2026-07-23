@@ -220,6 +220,22 @@ loki:
 #   allowed_orgs:
 #     - ethpandaops:Core
 
+# Devnet buildoor API access (optional). Relays /buildoor/{network}/{instance}/api/*
+# to api-buildoor-{instance}.srv.{network}.<domain_suffix>. The proxy is the
+# credential boundary: it mints per-devnet authenticatoor JWTs by calling
+# auth.{network}.<domain_suffix>/auth/token with the CF Access service token
+# below (the token must be included in the devnet auth applications' Access
+# policy; the minted JWT's subject is the service token's common name, which
+# appears in buildoor's audit log — the acting human stays attributed in this
+# proxy's own audit log). static_token bypasses minting for local setups.
+# buildoor:
+#   cf_access_client_id: "${BUILDOOR_CF_ACCESS_CLIENT_ID}"
+#   cf_access_client_secret: "${BUILDOOR_CF_ACCESS_CLIENT_SECRET}"
+#   # static_token: ""                # fixed bearer instead of CF minting
+#   # domain_suffix: "ethpandaops.io" # devnet DNS zone
+#   allowed_orgs:
+#     - ethpandaops:Core
+
 # Ethereum node API access (beacon and execution nodes)
 # Single credential pair for all bn-*.srv.*.ethpandaops.io and rpc-*.srv.*.ethpandaops.io endpoints
 # ethnode:
