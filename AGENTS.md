@@ -148,6 +148,10 @@ CLI commands and groups include:
 - `benchmarkoor`
 - `block-archive`
 - `build` (GitHub Actions Docker image builder)
+- `buildoor` — per-slot action plans on devnet buildoor instances (jq payload/bid/envelope
+  transforms, plan/results inspection); server-side ops resolve instances via the
+  network's buildoor overview service, mutations pass the caller's authenticatoor
+  bearer token through (not a module, no MCP tool or resources)
 - `cbt`
 - `clickhouse`
 - `config`
