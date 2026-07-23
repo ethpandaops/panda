@@ -1,0 +1,59 @@
+buildoor_action_plans:
+  name: Buildoor Action Plans
+  description: Discover devnet builder instances, hot-patch payloads with jq transforms, verify slot outcomes
+  examples:
+    - name: Discover buildoor instances
+      description: List networks with buildoor deployments and each network's builder instances
+      query: |
+        from ethpandaops import buildoor
+
+        networks = buildoor.list_networks()
+        print(f"Networks with buildoor: {[n['name'] for n in networks]}")
+
+        instances = buildoor.list_instances(networks[0]["name"])
+        for inst in instances:
+            overview = buildoor.get_overview(networks[0]["name"], inst["name"])
+            print(f"{inst['name']}: current_slot={overview.get('current_slot')}")
+
+    - name: Validate and apply a payload transform
+      description: Test a jq expression (e.g. gas limit hot-patch), then set it on future slots
+      query: |
+        import os
+        from ethpandaops import buildoor
+
+        network, instance = "glamsterdam-devnet-7", "lighthouse-geth-1"
+
+        # Dry-run the expression through buildoor's production jq path first.
+        result = buildoor.test_transform(network, instance, "payload", ".gas_limit = 300000000")
+        assert not result.get("error"), result
+        print(f"validated against {result['input_source']}")
+
+        # Mutations need an authenticatoor bearer token for this devnet.
+        token = os.environ["PANDA_BUILDOOR_TOKEN"]
+
+        # Plans freeze ~1 slot ahead: target slots at least 2 ahead of current.
+        current = buildoor.get_overview(network, instance)["current_slot"]
+        applied = buildoor.set_transforms(
+            network, instance, token,
+            slots=[current + 2, current + 3],
+            payload=".gas_limit = 300000000",
+        )
+        print(f"planned slots: {applied['slots']}")
+
+    - name: Verify what a planned slot did
+      description: Read the attempt-level outcome (build, bids, reveals, inclusion) and the frozen plan a slot ran with
+      query: |
+        from ethpandaops import buildoor
+
+        network, instance = "glamsterdam-devnet-7", "lighthouse-geth-1"
+        slot = 65000  # a slot that already executed
+
+        results = buildoor.get_slot_results(network, instance, slot, slot)
+        for record in results["results"]:
+            build = record.get("build") or {}
+            print(f"slot {record['slot']}: build={build.get('status')}")
+            # For a payload transform like .gas_limit = N, confirm it landed:
+            print(f"  built gas_limit: {build.get('gas_limit')}")
+            print(f"  bids: {len(record.get('bids', []))}, "
+                  f"reveals: {len(record.get('reveal_attempts', []))}, "
+                  f"included: {record.get('inclusion') is not None}")

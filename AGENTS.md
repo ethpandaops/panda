@@ -97,7 +97,7 @@ uv run python -m scripts.repl
 
 ### Module System
 
-Twelve compiled-in modules are registered in `pkg/app/app.go`:
+Thirteen compiled-in modules are registered in `pkg/app/app.go`:
 - `clickhouse`
 - `prometheus`
 - `loki`
@@ -106,6 +106,7 @@ Twelve compiled-in modules are registered in `pkg/app/app.go`:
 - `ethnode`
 - `cbt`
 - `benchmarkoor`
+- `buildoor` (devnet builder instances: per-slot action plans, jq transforms, slot outcomes)
 - `tracoor`
 - `block_archive`
 - `datasets` (dataset knowledge packs, lives in `datasets/` at the repo root)
@@ -151,7 +152,8 @@ CLI commands and groups include:
 - `buildoor` — per-slot action plans on devnet buildoor instances (jq payload/bid/envelope
   transforms, plan/results inspection); server-side ops resolve instances via the
   network's buildoor overview service, mutations pass the caller's authenticatoor
-  bearer token through (not a module, no MCP tool or resources)
+  bearer token through; the same operations back the sandbox Python module
+  (`from ethpandaops import buildoor`)
 - `cbt`
 - `clickhouse`
 - `config`
@@ -268,6 +270,7 @@ modules/
   ethnode/         # Ethnode module
   cbt/             # CBT module
   benchmarkoor/    # Benchmarkoor module
+  buildoor/        # Buildoor module (per-slot action plans on devnet builders)
   tracoor/         # Tracoor module
   block_archive/   # Block archive module
 runbooks/          # Embedded markdown runbooks

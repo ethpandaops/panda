@@ -35,6 +35,11 @@ Plans **freeze** when execution for their slot can begin, roughly 1 slot ahead;
 edits to past or frozen slots fail with 409. **Target slots at least 2 ahead**
 (`--slots +2` or later).
 
+The same operations serve every surface: the CLI commands shown below, and
+sandbox Python via `from ethpandaops import buildoor` (`list_instances`,
+`test_transform`, `set_transforms`, `get_slot_results` — see the buildoor
+examples index for filled scripts).
+
 ## Procedure
 
 1. **Discover.** `panda buildoor networks` lists devnets with a buildoor
