@@ -106,6 +106,21 @@ func TestServerErrorHintUsesExistingResourcesCommand(t *testing.T) {
 	assert.NotContains(t, hint, "panda resources list")
 }
 
+func TestServerErrorHintClassifiesJSONRPCErrors(t *testing.T) {
+	// Method-not-found is a permanent capability gap of the client; the hint
+	// must steer away from the gateway-status "retry" framing, whatever the
+	// HTTP status an old or new server wrapped it in.
+	for _, status := range []int{http.StatusBadRequest, http.StatusBadGateway} {
+		hint := serverErrorHint(status, "JSON-RPC error -32601: the method debug_chainConfig does not exist/is not available")
+		assert.Contains(t, hint, "capability gap")
+		assert.NotContains(t, hint, "temporarily unreachable")
+	}
+
+	hint := serverErrorHint(http.StatusBadRequest, "JSON-RPC error -32000: execution reverted (data: 0x08c379a0)")
+	assert.Contains(t, hint, "rejected it")
+	assert.Contains(t, hint, "(data: ...)")
+}
+
 func TestServerErrorHintClassifiesClickHouseErrors(t *testing.T) {
 	tests := []struct {
 		name    string
