@@ -235,6 +235,12 @@ loki:
 #   # domain_suffix: "ethpandaops.io" # devnet DNS zone
 #   allowed_orgs:
 #     - ethpandaops:Core
+#   # required_audience additionally requires the caller's OIDC token to carry
+#   # this audience. Authentik cross-grants it per group (mirror of the wagie
+#   # `workflows` pattern), so access stays centrally managed at the IdP even
+#   # if allowed_orgs drifts. Callers must request the matching scope at login
+#   # (proxies[].auth.scopes in their panda config).
+#   # required_audience: "buildoor"
 
 # Ethereum node API access (beacon and execution nodes)
 # Single credential pair for all bn-*.srv.*.ethpandaops.io and rpc-*.srv.*.ethpandaops.io endpoints

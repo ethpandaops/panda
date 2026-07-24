@@ -153,6 +153,12 @@ type BuildoorProxyConfig struct {
 	// (e.g. "ethpandaops:Core"). Empty leaves it open to all authenticated
 	// callers.
 	AllowedOrgs []string `yaml:"allowed_orgs,omitempty"`
+	// RequiredAudience additionally requires the caller's verified OIDC token
+	// to carry this audience (e.g. "buildoor"). The IdP cross-grants it per
+	// group (mirroring the workflow engine's audience pattern), so access is
+	// controlled centrally at the IdP even if allowed_orgs drifts. Only
+	// meaningful in oidc auth mode; ignored when the proxy runs unauthenticated.
+	RequiredAudience string `yaml:"required_audience,omitempty"`
 }
 
 // Workflow auth modes select how the proxy credentials the upstream workflow
