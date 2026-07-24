@@ -17,7 +17,15 @@ import (
 )
 
 const (
-	remoteEmbedTimeout = 2 * time.Minute
+	// remoteEmbedTimeout bounds batch embed calls. It deliberately outlasts
+	// the proxy's 2-minute upstream timeout so a wedged upstream surfaces as
+	// the proxy's specific error instead of a generic client timeout here.
+	remoteEmbedTimeout = 130 * time.Second
+	// queryEmbedTimeout bounds single-item embeds — the interactive search
+	// path. One short text normally embeds in well under a second; inheriting
+	// the batch timeout meant a hung upstream blocked every search for two
+	// minutes (observed 2026-07-08).
+	queryEmbedTimeout = 15 * time.Second
 	// maxBatchSize limits how many items are sent in a single embedding request.
 	// The proxy accepts up to 500 items and sub-batches to the upstream API internally.
 	maxBatchSize = 500
@@ -114,9 +122,12 @@ func NewRemote(
 	protocol Protocol,
 ) *RemoteEmbedder {
 	return &RemoteEmbedder{
-		log:          log.WithField("component", "remote-embedder"),
-		proxyURL:     proxyURL,
-		httpClient:   &http.Client{Timeout: remoteEmbedTimeout},
+		log:      log.WithField("component", "remote-embedder"),
+		proxyURL: proxyURL,
+		// Per-call deadlines are set via request contexts in doWithAuthRetry;
+		// the client stays unbounded so a query deadline is never silently
+		// stretched to the batch one.
+		httpClient:   &http.Client{},
 		tokenFn:      tokenFn,
 		invalidateFn: invalidateFn,
 		localCache:   localCache,
@@ -475,14 +486,19 @@ func (e *RemoteEmbedder) embedDirect(
 }
 
 // doWithAuthRetry POSTs jsonBody to the proxy path with the current auth token,
-// retrying once after invalidating the token on a 401/403.
-func (e *RemoteEmbedder) doWithAuthRetry(path string, jsonBody []byte) (*http.Response, error) {
-	send := func() (*http.Response, error) {
+// retrying once after invalidating the token on a 401/403. It reads the whole
+// response body so the per-call deadline covers the body too and the context
+// can be released before returning.
+func (e *RemoteEmbedder) doWithAuthRetry(path string, jsonBody []byte, timeout time.Duration) (int, []byte, error) {
+	send := func() (int, []byte, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+
 		req, err := http.NewRequestWithContext(
-			context.Background(), http.MethodPost, e.proxyURL+path, bytes.NewReader(jsonBody),
+			ctx, http.MethodPost, e.proxyURL+path, bytes.NewReader(jsonBody),
 		)
 		if err != nil {
-			return nil, err
+			return 0, nil, err
 		}
 
 		req.Header.Set("Content-Type", "application/json")
@@ -493,22 +509,32 @@ func (e *RemoteEmbedder) doWithAuthRetry(path string, jsonBody []byte) (*http.Re
 			}
 		}
 
-		return e.httpClient.Do(req)
+		resp, err := e.httpClient.Do(req)
+		if err != nil {
+			return 0, nil, err
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return 0, nil, err
+		}
+
+		return resp.StatusCode, body, nil
 	}
 
-	resp, err := send()
+	status, body, err := send()
 	if err != nil {
-		return nil, err
+		return 0, nil, err
 	}
 
-	if (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) && e.invalidateFn != nil {
-		_ = resp.Body.Close()
+	if (status == http.StatusUnauthorized || status == http.StatusForbidden) && e.invalidateFn != nil {
 		e.invalidateFn()
 
 		return send()
 	}
 
-	return resp, nil
+	return status, body, nil
 }
 
 // verifyEmbeddingSpace fails fast when the proxy's advertised embedding space
@@ -555,20 +581,17 @@ func (e *RemoteEmbedder) checkCached(hashes []string, task string) ([]embedResul
 		return nil, fmt.Errorf("marshaling check request: %w", err)
 	}
 
-	resp, err := e.doWithAuthRetry(e.checkPath(), reqBody)
+	status, body, err := e.doWithAuthRetry(e.checkPath(), reqBody, remoteEmbedTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("calling embed check: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-
-		return nil, fmt.Errorf("embed check returned status %d: %s", resp.StatusCode, string(body))
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("embed check returned status %d: %s", status, string(body))
 	}
 
 	var checkResp embedCheckResponse
-	if err := json.NewDecoder(resp.Body).Decode(&checkResp); err != nil {
+	if err := json.Unmarshal(body, &checkResp); err != nil {
 		return nil, fmt.Errorf("decoding check response: %w", err)
 	}
 
@@ -590,20 +613,24 @@ func (e *RemoteEmbedder) callEmbed(items []embedItem, task string) (*embedRespon
 		return nil, fmt.Errorf("marshaling embed request: %w", err)
 	}
 
-	resp, err := e.doWithAuthRetry(e.embedPath(), reqBody)
+	// A single item is the interactive-search shape: one short text embeds in
+	// well under a second, so it must not inherit the batch deadline.
+	timeout := remoteEmbedTimeout
+	if len(items) == 1 {
+		timeout = queryEmbedTimeout
+	}
+
+	status, body, err := e.doWithAuthRetry(e.embedPath(), reqBody, timeout)
 	if err != nil {
 		return nil, fmt.Errorf("calling proxy embed: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-
-		return nil, fmt.Errorf("proxy embed returned status %d: %s", resp.StatusCode, string(body))
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("proxy embed returned status %d: %s", status, string(body))
 	}
 
 	var embedResp embedResponse
-	if err := json.NewDecoder(resp.Body).Decode(&embedResp); err != nil {
+	if err := json.Unmarshal(body, &embedResp); err != nil {
 		return nil, fmt.Errorf("decoding embed response: %w", err)
 	}
 
