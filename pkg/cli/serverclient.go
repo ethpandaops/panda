@@ -295,6 +295,25 @@ func serverErrorHint(status int, message string) string {
 		return "the first Prometheus argument must be a live datasource name; list them with 'panda prometheus list-datasources' or 'panda datasources --type prometheus'"
 	}
 
+	if strings.Contains(normalized, "embedding query") || strings.Contains(normalized, "calling proxy embed") {
+		return "semantic search could not reach its embedding upstream; the query is fine — retry shortly, and if it persists check proxy connectivity with 'panda auth status'"
+	}
+
+	if strings.Contains(normalized, "index not ready") {
+		return "the semantic search index is still warming after server start; the query is fine — retry in a few seconds"
+	}
+
+	// A JSON-RPC error rode back on a healthy node connection: the node
+	// processed and rejected the request, so the gateway-status hint below
+	// ("retry") would misread a deterministic failure as transient.
+	if strings.Contains(message, "JSON-RPC error -32601") {
+		return "the node answered but does not expose this RPC method; that is a capability gap of this client, not an outage — try another instance or client instead of retrying"
+	}
+
+	if strings.Contains(message, "JSON-RPC error ") {
+		return "the node processed the request and rejected it; adjust the method, params, or request scope rather than retrying unchanged — any (data: ...) payload carries the node's reason (e.g. a revert)"
+	}
+
 	switch status {
 	case http.StatusNotFound:
 		return "the requested module, operation, datasource, or resource is not available on this server; check 'panda datasources' and 'panda resources'"
