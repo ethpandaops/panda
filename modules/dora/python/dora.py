@@ -34,6 +34,19 @@ def get_network_overview(network: str) -> dict[str, Any]:
     return _runtime.invoke_data("dora.get_network_overview", {"network": network})
 
 
+def get_clients(network: str) -> list[dict[str, Any]]:
+    """List client nodes connected to the network's Dora explorer.
+
+    Each entry's client_name is the per-node instance label (e.g.
+    'lighthouse-geth-1') accepted by ethnode calls; status distinguishes
+    online from offline nodes.
+    """
+    _require_dora_available()
+    data = _runtime.invoke_data("dora.get_clients", {"network": network})
+    clients = data.get("clients", [])
+    return clients if isinstance(clients, list) else []
+
+
 def get_validator(network: str, index_or_pubkey: str) -> dict[str, Any]:
     _require_dora_available()
     payload = _runtime.invoke_json(
