@@ -56,13 +56,16 @@ and running multi-step agent workflows), not Ethereum data queries.`
 var updateResult = make(chan *string, 1)
 
 // skipUpdateCheckCommands lists commands that should not trigger
-// update checks or display update notifications.
+// update checks or display update notifications. query-raw is a machine
+// surface whose consumers routinely merge stderr into JSON pipelines, so
+// even advisory chatter breaks them.
 var skipUpdateCheckCommands = map[string]bool{
 	"upgrade":    true,
 	"version":    true,
 	"completion": true,
 	"init":       true,
 	"help":       true,
+	"query-raw":  true,
 }
 
 var rootCmd = &cobra.Command{
@@ -101,6 +104,9 @@ var rootCmd = &cobra.Command{
 		return nil
 	},
 	SilenceUsage: true,
+	// Errors are printed by Execute below, which knows which failures were
+	// already fully reported on stdout (e.g. query-raw's JSON error body).
+	SilenceErrors: true,
 }
 
 // Execute runs the root command and translates its error into a process
@@ -111,13 +117,19 @@ func Execute() {
 		return
 	}
 
+	var exitErr *exitCodeError
+	isExitErr := errors.As(err, &exitErr)
+
+	if !isExitErr || !exitErr.reported {
+		fmt.Fprintln(os.Stderr, rootCmd.ErrPrefix(), err.Error())
+	}
+
 	if hint := unknownCommandHint(err); hint != "" {
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintln(os.Stderr, hint)
 	}
 
-	var exitErr *exitCodeError
-	if errors.As(err, &exitErr) {
+	if isExitErr {
 		os.Exit(exitErr.code)
 	}
 
@@ -130,7 +142,29 @@ func executeWithSignals() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	attachUsageToArgErrors(rootCmd)
+
 	return rootCmd.ExecuteContext(ctx)
+}
+
+// attachUsageToArgErrors wraps every command's positional-arg validator so a
+// count/shape error carries the command's usage line. SilenceUsage hides the
+// usage block on runtime errors, which is right for HTTP failures but leaves
+// "accepts 1 arg(s), received 0" with no path to the correct invocation.
+func attachUsageToArgErrors(cmd *cobra.Command) {
+	if validate := cmd.Args; validate != nil {
+		cmd.Args = func(c *cobra.Command, args []string) error {
+			if err := validate(c, args); err != nil {
+				return fmt.Errorf("%w\n\nUsage: %s", err, c.UseLine())
+			}
+
+			return nil
+		}
+	}
+
+	for _, sub := range cmd.Commands() {
+		attachUsageToArgErrors(sub)
+	}
 }
 
 func unknownCommandHint(err error) string {
@@ -143,6 +177,16 @@ func unknownCommandHint(err error) string {
 
 func init() {
 	rootCmd.SetVersionTemplate("panda version {{.Version}}\n")
+
+	// SilenceUsage suppresses the usage block everywhere, so a flag typo
+	// would otherwise surface as a bare "unknown flag" with no correction
+	// path. Attach the one-line usage to the error itself.
+	rootCmd.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
+		return fmt.Errorf(
+			"%w\n\nUsage: %s\nRun '%s --help' for available flags",
+			err, cmd.UseLine(), cmd.CommandPath(),
+		)
+	})
 
 	rootCmd.AddGroup(
 		&cobra.Group{ID: groupWorkflow, Title: "Workflow:"},
