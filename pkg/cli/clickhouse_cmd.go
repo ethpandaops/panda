@@ -86,13 +86,27 @@ var clickhouseQueryRawCmd = &cobra.Command{
 	Short: "Execute a SQL query and return raw rows (always JSON)",
 	Long: `Execute a SQL query and return raw rows as JSON.
 
+Failures are also JSON on stdout ({"error": ...}, exit code 1), so piping into
+a JSON parser surfaces the real error instead of a parse failure.
+
 Keep result sets bounded: aggregate in SQL or add a LIMIT when inspecting rows.
 For cross-source analysis, run separate bounded queries and combine them with
 'panda execute' or another client-side step instead of dumping unbounded rows
 through shell JSON.`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runClickHouseOperation(cmd, "clickhouse.query_raw", args[0], args[1], true)
+		err := runClickHouseOperation(cmd, "clickhouse.query_raw", args[0], args[1], true)
+		if err == nil {
+			return nil
+		}
+
+		if printErr := printJSON(map[string]any{"error": err.Error()}); printErr != nil {
+			return printErr
+		}
+
+		// The stdout JSON is the whole failure report; a stderr "Error:"
+		// line would corrupt 2>&1 JSON pipelines.
+		return &exitCodeError{code: 1, reported: true}
 	},
 }
 

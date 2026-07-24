@@ -20,9 +20,11 @@ var (
 )
 
 // exitCodeError carries a sandbox exit code so the process can mirror it as its
-// own exit status instead of collapsing every failure to 1.
+// own exit status instead of collapsing every failure to 1. reported marks
+// failures already written to stdout in full, so Execute skips the stderr line.
 type exitCodeError struct {
-	code int
+	code     int
+	reported bool
 }
 
 func (e *exitCodeError) Error() string {
@@ -61,7 +63,7 @@ Examples:
 
 func init() {
 	rootCmd.AddCommand(executeCmd)
-	executeCmd.Flags().StringVar(&executeCode, "code", "", "Python code to execute")
+	executeCmd.Flags().StringVarP(&executeCode, "code", "c", "", "Python code to execute")
 	executeCmd.Flags().StringVar(&executeFile, "file", "", "Path to Python file to execute")
 	executeCmd.Flags().IntVar(&executeTimeout, "timeout", 0, "Execution timeout in seconds (default: from config)")
 	executeCmd.Flags().StringVar(&executeSession, "session", "", "Session ID to reuse")
