@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -133,10 +134,14 @@ func executeWithSignals() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	attachUsageToArgErrors(rootCmd)
+	// Once: wrapping is not idempotent, and every command is registered by
+	// now (subcommand init() order is not guaranteed relative to this file's).
+	attachUsageOnce.Do(func() { attachUsageToArgErrors(rootCmd) })
 
 	return rootCmd.ExecuteContext(ctx)
 }
+
+var attachUsageOnce sync.Once
 
 // attachUsageToArgErrors wraps every command's positional-arg validator so a
 // count/shape error carries the command's usage line. SilenceUsage hides the

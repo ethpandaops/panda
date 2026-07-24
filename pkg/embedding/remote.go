@@ -17,14 +17,16 @@ import (
 )
 
 const (
-	// remoteEmbedTimeout bounds batch embed calls. It deliberately outlasts
-	// the proxy's 2-minute upstream timeout so a wedged upstream surfaces as
-	// the proxy's specific error instead of a generic client timeout here.
+	// remoteEmbedTimeout bounds index-build embed calls. It outlasts the
+	// proxy's 2-minute per-sub-batch upstream timeout, so for a request the
+	// proxy serves in one upstream call its specific error surfaces here
+	// rather than a generic client timeout.
 	remoteEmbedTimeout = 130 * time.Second
-	// queryEmbedTimeout bounds single-item embeds — the interactive search
-	// path. One short text normally embeds in well under a second; inheriting
-	// the batch timeout meant a hung upstream blocked every search for two
-	// minutes (observed 2026-07-08).
+	// queryEmbedTimeout bounds the interactive search query embed. One short
+	// query embeds in well under a second; inheriting the build timeout meant
+	// a hung upstream blocked every search for two minutes (observed
+	// 2026-07-08). Build paths keep the longer budget — item count is not the
+	// signal, since a warm rebuild legitimately embeds a single document.
 	queryEmbedTimeout = 15 * time.Second
 	// maxBatchSize limits how many items are sent in a single embedding request.
 	// The proxy accepts up to 500 items and sub-batches to the upstream API internally.
@@ -154,7 +156,7 @@ func (e *RemoteEmbedder) OnProgress(fn func(completed, total int)) {
 // Embed returns the L2-normalized QUERY embedding vector for a single
 // search-query string.
 func (e *RemoteEmbedder) Embed(text string) ([]float32, error) {
-	vectors, err := e.embedAll([]string{text}, e.queryTask())
+	vectors, err := e.embedAll([]string{text}, e.queryTask(), queryEmbedTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -168,13 +170,13 @@ func (e *RemoteEmbedder) Embed(text string) ([]float32, error) {
 
 // EmbedBatch returns L2-normalized DOCUMENT embedding vectors for multiple texts.
 func (e *RemoteEmbedder) EmbedBatch(texts []string) ([][]float32, error) {
-	return e.embedAll(texts, e.documentTask())
+	return e.embedAll(texts, e.documentTask(), remoteEmbedTimeout)
 }
 
 // EmbedQueryBatch returns L2-normalized QUERY embedding vectors for multiple
 // query-shaped texts. v1/v2 are symmetric, so this is equivalent to EmbedBatch.
 func (e *RemoteEmbedder) EmbedQueryBatch(texts []string) ([][]float32, error) {
-	return e.embedAll(texts, e.queryTask())
+	return e.embedAll(texts, e.queryTask(), remoteEmbedTimeout)
 }
 
 func (e *RemoteEmbedder) queryTask() string {
@@ -197,7 +199,7 @@ func (e *RemoteEmbedder) documentTask() string {
 // vectors are checked there first. Remaining misses are split into sub-batches
 // of maxBatchSize and sent to the proxy (which has its own Redis cache +
 // upstream API).
-func (e *RemoteEmbedder) embedAll(texts []string, task string) ([][]float32, error) {
+func (e *RemoteEmbedder) embedAll(texts []string, task string, timeout time.Duration) ([][]float32, error) {
 	if len(texts) == 0 {
 		return nil, nil
 	}
@@ -226,7 +228,7 @@ func (e *RemoteEmbedder) embedAll(texts []string, task string) ([][]float32, err
 			}
 		}
 
-		vecs, err := e.embedDirect(texts, hashes, hashToIndices, task)
+		vecs, err := e.embedDirect(texts, hashes, hashToIndices, task, timeout)
 		if err != nil {
 			return nil, err
 		}
@@ -352,7 +354,7 @@ func (e *RemoteEmbedder) embedAll(texts []string, task string) ([][]float32, err
 				"misses": len(missItems),
 			}).Info("Proxy cache stats")
 
-			resp, err := e.callEmbed(missItems, task)
+			resp, err := e.callEmbed(missItems, task, timeout)
 			if err != nil {
 				return nil, fmt.Errorf("embedding batch %d/%d: %w", batchNum, totalBatches, err)
 			}
@@ -458,13 +460,14 @@ func (e *RemoteEmbedder) embedDirect(
 	hashes []string,
 	hashToIndices map[string][]int,
 	task string,
+	timeout time.Duration,
 ) ([][]float32, error) {
 	items := make([]embedItem, len(texts))
 	for i, text := range texts {
 		items[i] = embedItem{Hash: hashes[i], Text: text}
 	}
 
-	resp, err := e.callEmbed(items, task)
+	resp, err := e.callEmbed(items, task, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -602,7 +605,7 @@ func (e *RemoteEmbedder) checkCached(hashes []string, task string) ([]embedResul
 	return checkResp.Cached, nil
 }
 
-func (e *RemoteEmbedder) callEmbed(items []embedItem, task string) (*embedResponse, error) {
+func (e *RemoteEmbedder) callEmbed(items []embedItem, task string, timeout time.Duration) (*embedResponse, error) {
 	req := embedRequest{Items: items}
 	if e.protocol == ProtocolV3 {
 		req.Task = task
@@ -611,13 +614,6 @@ func (e *RemoteEmbedder) callEmbed(items []embedItem, task string) (*embedRespon
 	reqBody, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling embed request: %w", err)
-	}
-
-	// A single item is the interactive-search shape: one short text embeds in
-	// well under a second, so it must not inherit the batch deadline.
-	timeout := remoteEmbedTimeout
-	if len(items) == 1 {
-		timeout = queryEmbedTimeout
 	}
 
 	status, body, err := e.doWithAuthRetry(e.embedPath(), reqBody, timeout)

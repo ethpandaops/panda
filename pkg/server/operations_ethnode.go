@@ -18,6 +18,10 @@ import (
 
 var ethnodeSegmentPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$`)
 
+// maxRPCErrorDataBytes caps the JSON-RPC error `data` payload echoed into an
+// error message. It is generous enough for revert reasons and short structs.
+const maxRPCErrorDataBytes = 512
+
 func (s *service) handleEthNodeOperation(operationID string, w http.ResponseWriter, r *http.Request) bool {
 	switch operationID {
 	case "ethnode.list_datasources":
@@ -627,8 +631,14 @@ func (s *service) ethNodeExecutionRPCRaw(
 	// field often carries the answer itself (e.g. a revert reason).
 	if rpcResp.Error != nil {
 		message := fmt.Sprintf("JSON-RPC error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
-		if len(rpcResp.Error.Data) > 0 && !bytes.Equal(rpcResp.Error.Data, []byte("null")) {
-			message += fmt.Sprintf(" (data: %s)", rpcResp.Error.Data)
+		if data := rpcResp.Error.Data; len(data) > 0 && !bytes.Equal(data, []byte("null")) {
+			// Bounded: some clients return whole traces here, and an error
+			// message is not a data channel.
+			if len(data) > maxRPCErrorDataBytes {
+				data = append(data[:maxRPCErrorDataBytes:maxRPCErrorDataBytes], []byte("… (truncated)")...)
+			}
+
+			message += fmt.Sprintf(" (data: %s)", data)
 		}
 
 		return nil, "", http.StatusBadRequest, fmt.Errorf("%s", message)
