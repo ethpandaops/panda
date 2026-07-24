@@ -174,6 +174,18 @@ func (s *service) handleAPIDatasources(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, serverapi.DatasourcesResponse{Datasources: all})
 }
 
+// searchErrorStatus classifies a search-service failure. An unreachable
+// embedding upstream or a still-warming index is a retryable service
+// condition, not a caller error — 400 would pin the failure on the query.
+func searchErrorStatus(err error) int {
+	message := err.Error()
+	if strings.Contains(message, "embedding query") || strings.Contains(message, "index not ready") {
+		return http.StatusServiceUnavailable
+	}
+
+	return http.StatusBadRequest
+}
+
 func (s *service) handleAPISearchExamples(w http.ResponseWriter, r *http.Request) {
 	if s.searchService == nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "search service is unavailable")
@@ -194,7 +206,7 @@ func (s *service) handleAPISearchExamples(w http.ResponseWriter, r *http.Request
 
 	resp, err := s.searchService.SearchExamples(query, r.URL.Query().Get("category"), r.URL.Query().Get("dataset"), limit)
 	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, err.Error())
+		writeAPIError(w, searchErrorStatus(err), err.Error())
 		return
 	}
 
@@ -221,7 +233,7 @@ func (s *service) handleAPISearchRunbooks(w http.ResponseWriter, r *http.Request
 
 	resp, err := s.searchService.SearchRunbooks(query, r.URL.Query().Get("tag"), limit)
 	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, err.Error())
+		writeAPIError(w, searchErrorStatus(err), err.Error())
 		return
 	}
 
@@ -250,7 +262,7 @@ func (s *service) handleAPISearchEIPs(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := s.searchService.SearchEIPs(query, q.Get("status"), q.Get("category"), q.Get("type"), limit)
 	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, err.Error())
+		writeAPIError(w, searchErrorStatus(err), err.Error())
 		return
 	}
 
@@ -277,7 +289,7 @@ func (s *service) handleAPISearchSpecs(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := s.searchService.SearchSpecs(query, r.URL.Query().Get("fork"), limit)
 	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, err.Error())
+		writeAPIError(w, searchErrorStatus(err), err.Error())
 		return
 	}
 
