@@ -101,9 +101,6 @@ var rootCmd = &cobra.Command{
 		return nil
 	},
 	SilenceUsage: true,
-	// Errors are printed by Execute below, which knows which failures were
-	// already fully reported on stdout (e.g. query-raw's JSON error body).
-	SilenceErrors: true,
 }
 
 // Execute runs the root command and translates its error into a process
@@ -114,19 +111,13 @@ func Execute() {
 		return
 	}
 
-	var exitErr *exitCodeError
-	isExitErr := errors.As(err, &exitErr)
-
-	if !isExitErr || !exitErr.reported {
-		fmt.Fprintln(os.Stderr, rootCmd.ErrPrefix(), err.Error())
-	}
-
 	if hint := unknownCommandHint(err); hint != "" {
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintln(os.Stderr, hint)
 	}
 
-	if isExitErr {
+	var exitErr *exitCodeError
+	if errors.As(err, &exitErr) {
 		os.Exit(exitErr.code)
 	}
 

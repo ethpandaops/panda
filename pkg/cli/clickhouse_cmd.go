@@ -104,9 +104,13 @@ through shell JSON.`,
 			return printErr
 		}
 
-		// The stdout JSON is the whole failure report; a stderr "Error:"
-		// line would corrupt 2>&1 JSON pipelines.
-		return &exitCodeError{code: 1, reported: true}
+		// The stdout JSON above is the whole failure report; suppress cobra's
+		// stderr "Error:" duplicate, which would corrupt 2>&1 JSON pipelines.
+		// Set here — not on the command — so flag/arg errors, which return
+		// before RunE, stay loud.
+		cmd.SilenceErrors = true
+
+		return &exitCodeError{code: 1}
 	},
 }
 
