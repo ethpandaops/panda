@@ -20,11 +20,9 @@ var (
 )
 
 // exitCodeError carries a sandbox exit code so the process can mirror it as its
-// own exit status instead of collapsing every failure to 1. reported marks
-// failures already written to stdout in full, so Execute skips the stderr line.
+// own exit status instead of collapsing every failure to 1.
 type exitCodeError struct {
-	code     int
-	reported bool
+	code int
 }
 
 func (e *exitCodeError) Error() string {
