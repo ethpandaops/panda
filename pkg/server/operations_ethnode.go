@@ -612,16 +612,26 @@ func (s *service) ethNodeExecutionRPCRaw(
 
 	var rpcResp struct {
 		Error *struct {
-			Code    int    `json:"code"`
-			Message string `json:"message"`
+			Code    int             `json:"code"`
+			Message string          `json:"message"`
+			Data    json.RawMessage `json:"data,omitempty"`
 		} `json:"error"`
 	}
 	if err := json.Unmarshal(data, &rpcResp); err != nil {
 		return nil, "", http.StatusBadGateway, fmt.Errorf("invalid JSON-RPC response: %w", err)
 	}
 
+	// A JSON-RPC error object means the node processed and rejected the
+	// request (unsupported method, bad params, node-side limits, reverts) —
+	// not a gateway failure. 502 would misread it as transient and its data
+	// field often carries the answer itself (e.g. a revert reason).
 	if rpcResp.Error != nil {
-		return nil, "", http.StatusBadGateway, fmt.Errorf("JSON-RPC error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
+		message := fmt.Sprintf("JSON-RPC error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
+		if len(rpcResp.Error.Data) > 0 && !bytes.Equal(rpcResp.Error.Data, []byte("null")) {
+			message += fmt.Sprintf(" (data: %s)", rpcResp.Error.Data)
+		}
+
+		return nil, "", http.StatusBadRequest, fmt.Errorf("%s", message)
 	}
 
 	contentType := responseHeaders.Get("Content-Type")

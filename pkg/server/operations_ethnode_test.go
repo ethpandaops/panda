@@ -71,6 +71,34 @@ func TestEthNodeCuratedBeaconPathEscapesStateIdentifier(t *testing.T) {
 	assert.Empty(t, transport.last.URL.RawQuery)
 }
 
+func TestEthNodeExecutionRPCErrorIsNotAGatewayFailure(t *testing.T) {
+	t.Parallel()
+
+	transport := &recordingTransport{
+		body:        `{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"the method debug_chainConfig does not exist/is not available","data":"0x08c379a0"}}`,
+		contentType: "application/json",
+	}
+	svc := newEthNodeOperationService(true)
+	svc.proxyService.(*ethNodeOperationProxy).url = "https://proxy.example"
+	svc.httpClient = &http.Client{Transport: transport}
+
+	rec := httptest.NewRecorder()
+	handled := svc.handleEthNodeOperation("ethnode.execution_rpc", rec, newEthNodeOpRequestWithArgs(t, map[string]any{
+		"network":  "testnet",
+		"instance": "node-a",
+		"method":   "debug_chainConfig",
+		"params":   []any{},
+	}))
+
+	require.True(t, handled)
+	// The node answered and rejected the request; 502 would misread the
+	// deterministic failure as a transient gateway error.
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "JSON-RPC error -32601")
+	assert.Contains(t, rec.Body.String(), "does not exist/is not available")
+	assert.Contains(t, rec.Body.String(), "0x08c379a0")
+}
+
 func newEthNodeOperationService(ethnodeAvailable bool) *service {
 	log := logrus.New()
 	log.SetOutput(io.Discard)
