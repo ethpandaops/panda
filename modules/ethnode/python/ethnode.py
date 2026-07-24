@@ -48,9 +48,18 @@ def list_instances(network: str) -> list[dict[str, Any]]:
     _require_ethnode_available()
     from ethpandaops import dora as _dora
 
+    try:
+        clients = _dora.get_clients(network)
+    except Exception as err:
+        raise ValueError(
+            f"cannot enumerate instances for {network!r}: this reads the "
+            f"network's Dora explorer, which is unavailable ({err}). "
+            f'Use instance="lb" for the load-balanced endpoint.'
+        ) from err
+
     instances = [
         {"name": c.get("client_name", ""), "status": c.get("status", "")}
-        for c in _dora.get_clients(network)
+        for c in clients
         if c.get("client_name")
     ]
     return sorted(instances, key=lambda entry: entry["name"])
