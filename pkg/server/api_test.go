@@ -40,3 +40,26 @@ func TestSearchErrorStatusClassifiesServiceConditions(t *testing.T) {
 		})
 	}
 }
+
+func TestSearchErrorStatusCoversInactiveIndexes(t *testing.T) {
+	t.Parallel()
+
+	// searchsvc reports a never-activated index differently from a warming
+	// one; both are service conditions the caller cannot fix by rewording.
+	for _, message := range []string{
+		"example search index not available",
+		"runbook search index not available",
+		"EIP search index not available",
+		"consensus specs search index not available",
+	} {
+		assert.Equal(t, http.StatusServiceUnavailable, searchErrorStatus(errors.New(message)), message)
+	}
+
+	// Filter-value rejections remain the caller's to fix.
+	for _, message := range []string{
+		`unknown category: "bogus". Available categories: a, b`,
+		`unknown tag: "bogus". Available tags: a, b`,
+	} {
+		assert.Equal(t, http.StatusBadRequest, searchErrorStatus(errors.New(message)), message)
+	}
+}

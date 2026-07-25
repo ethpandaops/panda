@@ -95,22 +95,7 @@ For cross-source analysis, run separate bounded queries and combine them with
 through shell JSON.`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		err := runClickHouseOperation(cmd, "clickhouse.query_raw", args[0], args[1], true)
-		if err == nil {
-			return nil
-		}
-
-		if printErr := printJSON(map[string]any{"error": err.Error()}); printErr != nil {
-			return printErr
-		}
-
-		// The stdout JSON above is the whole failure report; suppress cobra's
-		// stderr "Error:" duplicate, which would corrupt 2>&1 JSON pipelines.
-		// Set here — not on the command — so flag/arg errors, which return
-		// before RunE, stay loud.
-		cmd.SilenceErrors = true
-
-		return &exitCodeError{code: 1}
+		return runClickHouseOperation(cmd, "clickhouse.query_raw", args[0], args[1], true)
 	},
 }
 
