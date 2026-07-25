@@ -88,7 +88,17 @@ func runExecute(cmd *cobra.Command, _ []string) error {
 	}
 
 	if isJSON() {
-		return printJSON(result)
+		if err := printJSON(result); err != nil {
+			return err
+		}
+
+		// Mirror the text path's exit status: a failed execution must be
+		// detectable from the process, not only by parsing exit_code.
+		if result.ExitCode != 0 {
+			return &exitCodeError{code: result.ExitCode}
+		}
+
+		return nil
 	}
 
 	// Print stdout to stdout, stderr to stderr.

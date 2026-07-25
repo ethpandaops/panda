@@ -299,8 +299,8 @@ func serverErrorHint(status int, message string) string {
 		return "semantic search could not reach its embedding upstream; the query is fine — retry shortly, and if it persists check proxy connectivity with 'panda auth status'"
 	}
 
-	if strings.Contains(normalized, "index not ready") {
-		return "the semantic search index is still warming after server start; the query is fine — retry in a few seconds"
+	if strings.Contains(normalized, "index not ready") || strings.Contains(normalized, "search index not available") {
+		return "the semantic search index is not serving yet (still warming after server start, or never activated because the proxy advertises no embedding model); the query is fine — retry, then check 'panda datasources'"
 	}
 
 	// A JSON-RPC error rode back on a healthy node connection: the node

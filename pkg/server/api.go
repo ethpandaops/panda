@@ -175,12 +175,20 @@ func (s *service) handleAPIDatasources(w http.ResponseWriter, r *http.Request) {
 }
 
 // searchErrorStatus classifies a search-service failure. An unreachable
-// embedding upstream or a still-warming index is a retryable service
-// condition, not a caller error — 400 would pin the failure on the query.
+// embedding upstream, a still-warming index, or an index that never activated
+// is a retryable service condition, not a caller error — 400 would pin the
+// failure on the query. Filter-value rejections ("unknown category/tag/...")
+// stay 400, since only the caller can fix those.
 func searchErrorStatus(err error) int {
 	message := err.Error()
-	if strings.Contains(message, "embedding query") || strings.Contains(message, "index not ready") {
-		return http.StatusServiceUnavailable
+	for _, serviceCondition := range []string{
+		"embedding query",            // embedding upstream unreachable
+		"index not ready",            // index still building after start
+		"search index not available", // search runtime never activated
+	} {
+		if strings.Contains(message, serviceCondition) {
+			return http.StatusServiceUnavailable
+		}
 	}
 
 	return http.StatusBadRequest

@@ -57,17 +57,27 @@ and running multi-step agent workflows), not Ethereum data queries.`
 var updateResult = make(chan *string, 1)
 
 // skipUpdateCheckCommands lists commands that should not trigger
-// update checks or display update notifications. query-raw is a machine
-// surface whose consumers routinely merge stderr into JSON pipelines, so
-// even advisory chatter breaks them.
+// update checks or display update notifications.
 var skipUpdateCheckCommands = map[string]bool{
 	"upgrade":    true,
 	"version":    true,
 	"completion": true,
 	"init":       true,
 	"help":       true,
-	"query-raw":  true,
 }
+
+// alwaysJSONCommands emit JSON regardless of --output, so they are machine
+// surfaces even without the flag.
+var alwaysJSONCommands = map[string]bool{
+	"query-raw": true,
+}
+
+// machineOutput reports whether this run's stdout is a JSON document destined
+// for a parser. In that mode the CLI owns error rendering: stdout carries
+// exactly one JSON document, stderr stays empty, and the exit code conveys
+// failure — consumers routinely merge stderr into the pipe, where an
+// "Error:" line or an update notice would corrupt the parse.
+var machineOutput bool
 
 var rootCmd = &cobra.Command{
 	Use:     "panda",
@@ -89,6 +99,14 @@ var rootCmd = &cobra.Command{
 			outputFormat = "json"
 		}
 
+		machineOutput = isJSON() || alwaysJSONCommands[cmd.Name()]
+		if machineOutput {
+			// Execute renders the error as JSON on stdout instead. Reached
+			// via cmd, not rootCmd, which cannot be named inside its own
+			// initializer.
+			cmd.Root().SilenceErrors = true
+		}
+
 		if shouldCheckForUpdate(cmd) {
 			go backgroundUpdateCheck()
 		}
@@ -96,7 +114,7 @@ var rootCmd = &cobra.Command{
 		return nil
 	},
 	PersistentPostRunE: func(cmd *cobra.Command, _ []string) error {
-		if !shouldCheckForUpdate(cmd) {
+		if machineOutput || !shouldCheckForUpdate(cmd) {
 			return nil
 		}
 
@@ -115,13 +133,23 @@ func Execute() {
 		return
 	}
 
+	var exitErr *exitCodeError
+	isExitCode := errors.As(err, &exitErr)
+
+	// In machine mode cobra's stderr line is suppressed, so render the failure
+	// here. An exitCodeError means the command already wrote its own JSON
+	// payload and is only reporting the outcome — a second document would
+	// break the parse it is meant to protect, so the exit code speaks alone.
+	if machineOutput && !isExitCode {
+		_ = printJSON(map[string]any{"error": err.Error()})
+	}
+
 	if hint := unknownCommandHint(err); hint != "" {
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintln(os.Stderr, hint)
 	}
 
-	var exitErr *exitCodeError
-	if errors.As(err, &exitErr) {
+	if isExitCode {
 		os.Exit(exitErr.code)
 	}
 
