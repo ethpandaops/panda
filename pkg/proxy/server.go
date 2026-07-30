@@ -202,12 +202,13 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 
 	if ethNodeConfig != nil {
 		s.ethNodeHandler = handlers.NewEthNodeHandler(log, *ethNodeConfig)
-		// The agent faucet is served on the same credential-gated ethpandaops.io
-		// domain as the nodes, so it reuses the ethnode basic-auth credential.
-		s.faucetHandler = handlers.NewFaucetHandler(log, handlers.FaucetConfig{
-			Username: ethNodeConfig.Username,
-			Password: ethNodeConfig.Password,
-		})
+	}
+
+	// The faucet ingress credential: the dedicated faucet block when set, else
+	// the ethnode credential (the faucet is served on the same credential-gated
+	// ethpandaops.io domain as the nodes).
+	if faucetConfig := cfg.ToFaucetHandlerConfig(); faucetConfig != nil {
+		s.faucetHandler = handlers.NewFaucetHandler(log, *faucetConfig)
 	}
 
 	if benchConfigs := cfg.ToBenchmarkoorHandlerConfigs(); len(benchConfigs) > 0 {

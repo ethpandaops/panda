@@ -228,6 +228,14 @@ loki:
 #   allowed_orgs:
 #     - ethpandaops
 
+# Dedicated basic-auth credential for the agent faucet ingress
+# (faucet-agents.*.ethpandaops.io). Optional: when omitted, the ethnode
+# credential above is used. Set it to keep faucet access rotatable
+# independently of node access.
+# faucet:
+#   username: "${ETHPANDAOPS_FAUCET_USERNAME}"
+#   password: "${ETHPANDAOPS_FAUCET_PASSWORD}"
+
 # Embedding API v1 (optional — enables legacy symmetric remote embedding).
 # embedding:
 #   api_key: "${OPENROUTER_API_KEY}"

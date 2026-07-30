@@ -39,6 +39,13 @@ type ServerConfig struct {
 	// EthNode holds Ethereum node API access configuration.
 	EthNode *EthNodeInstanceConfig `yaml:"ethnode,omitempty"`
 
+	// Faucet holds the dedicated basic-auth credential for the per-network
+	// agent faucet ingress. Optional: when omitted the ethnode credential is
+	// used, keeping the faucet in the same access ring as the nodes. Set it to
+	// give the faucet its own credential so proxy access can be rotated or
+	// revoked independently of node access.
+	Faucet *FaucetInstanceConfig `yaml:"faucet,omitempty"`
+
 	// Benchmarkoor holds benchmarkoor API instance configurations.
 	Benchmarkoor []BenchmarkoorInstanceConfig `yaml:"benchmarkoor,omitempty"`
 
@@ -377,6 +384,29 @@ type EthNodeInstanceConfig struct {
 	BaseDatasourceConfig `yaml:",inline"`
 	Username             string `yaml:"username"`
 	Password             string `yaml:"password"`
+}
+
+// FaucetInstanceConfig holds the basic-auth credential for the per-network
+// agent faucet ingress. Not a datasource — it is never advertised via
+// discovery; only the /faucet passthrough uses it.
+type FaucetInstanceConfig struct {
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+}
+
+// ToFaucetHandlerConfig returns the credential the faucet passthrough attaches
+// upstream: the dedicated faucet block when set, else the ethnode credential.
+// Nil disables the /faucet route.
+func (c *ServerConfig) ToFaucetHandlerConfig() *handlers.FaucetConfig {
+	if c.Faucet != nil && c.Faucet.Username != "" {
+		return &handlers.FaucetConfig{Username: c.Faucet.Username, Password: c.Faucet.Password}
+	}
+
+	if c.EthNode != nil && c.EthNode.Username != "" {
+		return &handlers.FaucetConfig{Username: c.EthNode.Username, Password: c.EthNode.Password}
+	}
+
+	return nil
 }
 
 // BenchmarkoorInstanceConfig holds benchmarkoor API instance configuration.
