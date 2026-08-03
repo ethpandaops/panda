@@ -9,7 +9,7 @@
 # =============================================================================
 # Stage 1: Go builder
 # =============================================================================
-FROM golang:1.26-bookworm@sha256:5d2b868674b57c9e48cdd39e891acce4196b6926ca6d11e9c270a8f85106203d AS builder
+FROM golang:1.26-bookworm@sha256:1ecb7edf62a0408027bd5729dfd6b1b8766e578e8df93995b225dfd0944eb651 AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git ca-certificates && \
@@ -50,7 +50,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # =============================================================================
 # Stage 2: Runtime (single image, all backends)
 # =============================================================================
-FROM debian:bookworm-slim@sha256:0104b334637a5f19aa9c983a91b54c89887c0984081f2068983107a6f6c21eeb
+FROM debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818
 
 # Runtime deps. docker.io/netcat for the docker backend + healthcheck; python3 +
 # librsvg + fonts are the lean provisioning floor for the *direct* backend (the
