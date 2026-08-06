@@ -117,9 +117,9 @@ evm_system_contracts:
         ])
 
         w = evm.wallet()
-        print("Fund this address first:", evm.faucet(network, w["address"]))
-        # after funding:
-        # txhash = evm.tx(network, instance, w["private_key"], to=None, data=selfdestruct_code)
+        # faucet() mines + claims and returns the tx hash once the funds land
+        print("Funded via faucet, tx:", evm.faucet(network, w["address"]))
+        txhash = evm.tx(network, instance, w["private_key"], to=None, data=selfdestruct_code)
 
 evm_deploy_and_fuzz:
   name: Deploy and Fuzz
@@ -135,9 +135,9 @@ evm_deploy_and_fuzz:
 
         w = evm.wallet()
         print("Address:", w["address"])
-        print("Fund at:", evm.faucet(network, w["address"]))
+        print("Funded via faucet, tx:", evm.faucet(network, w["address"]))
 
-        # After funding, deploy bytecode that LOGs a result (visible in receipt)
+        # Funds have landed; deploy bytecode that LOGs a result (visible in receipt)
         bytecode = evm.assemble([
             "PUSH1", 0x42,   # value to log
             "PUSH1", 0x00,   # memory offset

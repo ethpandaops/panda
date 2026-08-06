@@ -6,10 +6,10 @@ Compose with ethnode.execution_rpc for anything not covered here.
 
 from __future__ import annotations
 
-import json
 import os
 from typing import Any
 
+from ethpandaops import _runtime
 from ethpandaops.ethnode import execution_rpc as _rpc
 
 # ---------------------------------------------------------------------------
@@ -54,9 +54,6 @@ _OPS.update({f"LOG{i}": 0xA0 + i for i in range(5)})
 _OPS_BY_BYTE: dict[int, str] = {}
 for _name, _byte in _OPS.items():
     _OPS_BY_BYTE.setdefault(_byte, _name)  # first name wins (e.g. KECCAK256 over SHA3)
-
-_FAUCETS: dict[str, str] = json.loads(os.environ.get("ETHPANDAOPS_EVM_FAUCET_NETWORKS", "{}"))
-
 
 def _require_available() -> None:
     if not os.environ.get("ETHPANDAOPS_EVM_AVAILABLE", "").strip():
@@ -366,16 +363,18 @@ def wallet(private_key: str | None = None) -> dict[str, str]:
 # ---------------------------------------------------------------------------
 
 def faucet(network: str, address: str) -> str:
-    """Return the PoW faucet URL for the network pre-filled with the given address.
+    """Mine the network's PoW faucet and claim test ETH to address.
 
-    Open this URL in a browser, complete the PoW challenge, and the address
-    receives test ETH. Source: https://github.com/pk910/PoWFaucet
+    Runs the full agent proof-of-work flow server-side — no browser, WebSocket,
+    or captcha — and returns the claim transaction hash once it confirms.
+    Requires panda auth (run 'panda auth login'). Source:
+    https://github.com/pk910/PoWFaucet
     """
-    url = _FAUCETS.get(network)
-    if not url:
-        available = list(_FAUCETS.keys())
-        raise ValueError(
-            f"No faucet known for network {network!r}. Available: {available or 'none'}"
-        )
-    sep = "&" if "?" in url else "?"
-    return f"{url}{sep}address={address}"
+    _require_available()
+    result = _runtime.invoke_json(
+        "evm.faucet",
+        {"network": network, "address": address},
+    )
+    if not isinstance(result, dict) or not result.get("claim_hash"):
+        raise ValueError(f"faucet claim did not return a tx hash: {result!r}")
+    return result["claim_hash"]

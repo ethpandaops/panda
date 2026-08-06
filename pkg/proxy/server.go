@@ -77,6 +77,7 @@ type server struct {
 	prometheusHandler   *handlers.PrometheusHandler
 	lokiHandler         *handlers.LokiHandler
 	ethNodeHandler      *handlers.EthNodeHandler
+	faucetHandler       *handlers.FaucetHandler
 	benchmarkoorHandler *handlers.BenchmarkoorHandler
 	computeHandler      *handlers.ComputeHandler
 	workflowHandler     *handlers.WorkflowHandler
@@ -201,6 +202,13 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 
 	if ethNodeConfig != nil {
 		s.ethNodeHandler = handlers.NewEthNodeHandler(log, *ethNodeConfig)
+	}
+
+	// The faucet ingress credential: the dedicated faucet block when set, else
+	// the ethnode credential (the faucet is served on the same credential-gated
+	// ethpandaops.io domain as the nodes).
+	if faucetConfig := cfg.ToFaucetHandlerConfig(); faucetConfig != nil {
+		s.faucetHandler = handlers.NewFaucetHandler(log, *faucetConfig)
 	}
 
 	if benchConfigs := cfg.ToBenchmarkoorHandlerConfigs(); len(benchConfigs) > 0 {
@@ -368,6 +376,12 @@ func (s *server) registerRoutes() {
 	if s.ethNodeHandler != nil {
 		s.handleSubtreeRoute("/beacon", s.metricsMiddleware(chain(s.ethNodeHandler)))
 		s.handleSubtreeRoute("/execution", s.metricsMiddleware(chain(s.ethNodeHandler)))
+	}
+
+	if s.faucetHandler != nil {
+		// chain (auth) runs first and sets the AuthUser the limiter keys on.
+		faucetLimiter := newFaucetSessionRateLimiter(faucetSessionLimit, faucetSessionWindow)
+		s.handleSubtreeRoute("/faucet", s.metricsMiddleware(chain(faucetLimiter.middleware(s.faucetHandler))))
 	}
 
 	if s.benchmarkoorHandler != nil {
