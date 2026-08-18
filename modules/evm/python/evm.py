@@ -371,7 +371,7 @@ def faucet(network: str, address: str) -> str:
     https://github.com/pk910/PoWFaucet
     """
     _require_available()
-    result = _runtime.invoke_json(
+    result = _runtime.invoke_data(
         "evm.faucet",
         {"network": network, "address": address},
     )
