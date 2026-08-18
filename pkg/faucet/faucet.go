@@ -27,18 +27,23 @@ import (
 // client user-agents with 403, so we always send an explicit one.
 const userAgent = "panda-faucet/1"
 
-// pollInterval and pollAttempts bound the wait for on-chain claim confirmation.
+// pollInterval and pollAttempts bound the wait for the faucet to report the
+// claim submitted. This is the faucet's own claimStatus, not chain state.
 const (
 	pollInterval = 3 * time.Second
 	pollAttempts = 40
 )
 
-// Result is the outcome of a successful claim.
+// Result is the outcome of a successful claim. Confirmed and BlockNumber are
+// filled in by the caller once the claim transaction has an on-chain receipt;
+// the faucet flow itself only learns that the faucet broadcast it.
 type Result struct {
-	Session   string `json:"session"`
-	Target    string `json:"target"`
-	ClaimHash string `json:"claim_hash"`
-	AmountWei string `json:"amount_wei"`
+	Session     string `json:"session"`
+	Target      string `json:"target"`
+	ClaimHash   string `json:"claim_hash"`
+	AmountWei   string `json:"amount_wei"`
+	Confirmed   bool   `json:"confirmed"`
+	BlockNumber uint64 `json:"block_number,omitempty"`
 }
 
 // Transport issues one faucet HTTP request and returns the response body and
@@ -66,8 +71,12 @@ func New(baseURL string, httpClient *http.Client) *Client {
 
 // Claim runs the full agent flow for address: start a session, mine PoW shares
 // until the balance covers the minimum drop, close the session, submit the
-// claim, and poll until the claim transaction confirms. It returns the claim
-// transaction hash.
+// claim, and poll until the faucet reports the claim transaction submitted. It
+// returns the claim transaction hash.
+//
+// The faucet flips claimStatus to "confirmed" once it has broadcast the
+// transaction, which can precede inclusion — so Result.Confirmed is left false
+// here. Callers with chain access should wait for the receipt themselves.
 func (c *Client) Claim(ctx context.Context, address string) (*Result, error) {
 	session, err := c.startSession(ctx, address)
 	if err != nil {

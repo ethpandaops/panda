@@ -112,7 +112,7 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 				},
 				"faucet": {
 					Signature:   "faucet(network, address) -> str",
-					Description: "Mine the network's PoW faucet and claim test ETH to address; returns the claim tx hash. Runs the full agent PoW flow server-side (no browser, WebSocket, or captcha). Requires panda auth.",
+					Description: "Mine the network's PoW faucet and claim test ETH to address; returns the claim tx hash once the transaction is on-chain, so the balance is readable as soon as it returns. Runs the full agent PoW flow server-side (no browser, WebSocket, or captcha). Requires panda auth.",
 				},
 			},
 		},

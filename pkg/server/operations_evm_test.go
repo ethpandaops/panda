@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	authclient "github.com/ethpandaops/panda/pkg/auth/client"
+	"github.com/ethpandaops/panda/pkg/faucet"
 )
 
 // authedService returns a network-operation service whose credential controller
@@ -65,5 +66,57 @@ func TestFaucetAuthenticatedResolution(t *testing.T) {
 		args := map[string]any{"network": "fusaka-devnet-3"}
 		require.True(t, svc.handleEVMOperation("evm.faucet", rec, newNetworkOpRequest(t, args)))
 		require.Equal(t, http.StatusBadRequest, rec.Code)
+	})
+}
+
+// The faucet reports a claim confirmed once it has broadcast the transaction,
+// which can precede inclusion — evm.faucet therefore waits for the receipt and
+// reports the block. These cover how that receipt is interpreted.
+func TestApplyFaucetReceipt(t *testing.T) {
+	const hash = "0xf6a59c5d523cd13bcf66ead42c3eacb6a346130d4a119787393fd6a1cd0817d4"
+
+	t.Run("mined receipt confirms and records the block", func(t *testing.T) {
+		result := &faucet.Result{ClaimHash: hash}
+
+		require.NoError(t, applyFaucetReceipt(result, map[string]any{
+			"status":      "0x1",
+			"blockNumber": "0x36ddf",
+		}))
+		require.True(t, result.Confirmed)
+		require.Equal(t, uint64(224735), result.BlockNumber)
+	})
+
+	t.Run("pre-Byzantium receipt without status still confirms", func(t *testing.T) {
+		result := &faucet.Result{ClaimHash: hash}
+
+		require.NoError(t, applyFaucetReceipt(result, map[string]any{"blockNumber": "0x1"}))
+		require.True(t, result.Confirmed)
+		require.Equal(t, uint64(1), result.BlockNumber)
+	})
+
+	t.Run("reverted receipt is an error", func(t *testing.T) {
+		result := &faucet.Result{ClaimHash: hash}
+
+		err := applyFaucetReceipt(result, map[string]any{"status": "0x0", "blockNumber": "0x36ddf"})
+		require.ErrorContains(t, err, "reverted on-chain")
+		require.False(t, result.Confirmed)
+	})
+
+	t.Run("receipt without a block number is an error", func(t *testing.T) {
+		result := &faucet.Result{ClaimHash: hash}
+
+		require.ErrorContains(t, applyFaucetReceipt(result, map[string]any{"status": "0x1"}),
+			"no block number")
+		require.False(t, result.Confirmed)
+	})
+
+	t.Run("unparseable block number is an error", func(t *testing.T) {
+		result := &faucet.Result{ClaimHash: hash}
+
+		require.ErrorContains(t, applyFaucetReceipt(result, map[string]any{
+			"status":      "0x1",
+			"blockNumber": "0xzz",
+		}), "unparseable block number")
+		require.False(t, result.Confirmed)
 	})
 }

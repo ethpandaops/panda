@@ -7,6 +7,7 @@ Compose with ethnode.execution_rpc for anything not covered here.
 from __future__ import annotations
 
 import os
+import sys
 from typing import Any
 
 from ethpandaops import _runtime
@@ -366,7 +367,9 @@ def faucet(network: str, address: str) -> str:
     """Mine the network's PoW faucet and claim test ETH to address.
 
     Runs the full agent proof-of-work flow server-side — no browser, WebSocket,
-    or captcha — and returns the claim transaction hash once it confirms.
+    or captcha — and waits for the claim transaction to land on-chain, so the
+    balance is readable as soon as this returns. If the transaction had not been
+    included yet, a warning is printed and the hash is still returned.
     Requires panda auth (run 'panda auth login'). Source:
     https://github.com/pk910/PoWFaucet
     """
@@ -377,4 +380,13 @@ def faucet(network: str, address: str) -> str:
     )
     if not isinstance(result, dict) or not result.get("claim_hash"):
         raise ValueError(f"faucet claim did not return a tx hash: {result!r}")
-    return result["claim_hash"]
+
+    claim_hash = result["claim_hash"]
+    if not result.get("confirmed"):
+        print(
+            f"warning: faucet claim {claim_hash} was submitted but is not on-chain yet; "
+            f"the balance of {address} may lag — poll it before spending",
+            file=sys.stderr,
+        )
+
+    return claim_hash
