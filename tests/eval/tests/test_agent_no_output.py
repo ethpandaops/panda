@@ -57,6 +57,8 @@ def test_turn_with_any_signal_is_accepted(final_text, tool_calls, tokens):
         ({"message": "boom"}, "boom"),
         ({"detail": "nested"}, "nested"),
         ({"code": 502}, '{"code": 502}'),
+        # The shape CI actually returned when deepseek-v4-flash became opt-in.
+        ({"data": {"message": "requires explicit opt in"}}, "requires explicit opt in"),
         ("plain", "plain"),
     ],
 )

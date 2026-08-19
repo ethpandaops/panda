@@ -97,10 +97,15 @@ def _free_port() -> int:
 def _error_text(error: Any) -> str:
     """Render opencode's error payload (shape varies by provider) for a message."""
     if isinstance(error, dict):
-        for key in ("message", "detail", "error"):
-            value = error.get(key)
-            if isinstance(value, str) and value:
-                return value
+        # The human-readable text sits at the top level or one level down under
+        # "data", depending on which provider rejected the request.
+        for scope in (error, error.get("data")):
+            if not isinstance(scope, dict):
+                continue
+            for key in ("message", "detail", "error"):
+                value = scope.get(key)
+                if isinstance(value, str) and value:
+                    return value
         return json.dumps(error)[:300]
     return str(error)[:300]
 
