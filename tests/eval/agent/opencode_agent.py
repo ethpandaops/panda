@@ -94,6 +94,42 @@ def _free_port() -> int:
 # A single `opencode serve` is shared across all OpenCodeAgent instances with the
 # same config (keyed by the rendered opencode.json), so a pytest run with a
 # function-scoped agent fixture pays the server cold-start once, not per test.
+def _error_text(error: Any) -> str:
+    """Render opencode's error payload (shape varies by provider) for a message."""
+    if isinstance(error, dict):
+        for key in ("message", "detail", "error"):
+            value = error.get(key)
+            if isinstance(value, str) and value:
+                return value
+        return json.dumps(error)[:300]
+    return str(error)[:300]
+
+
+def _raise_if_no_output(
+    *,
+    provider_error: Any,
+    final_text: str,
+    tool_calls: list[ToolCallRecord],
+    tokens: int,
+    model: str,
+) -> None:
+    """Fail a turn that never reached the model, instead of scoring it as an answer.
+
+    A turn with no text, no tool call and no tokens means the model was never
+    invoked — a bad model id, an expired key, a provider outage. Left unreported
+    that grades as a wrong answer, so a broken harness looks like a quality
+    regression and the provider's retry path never fires.
+    """
+    if provider_error is not None:
+        raise RuntimeError(f"opencode provider error for {model}: {_error_text(provider_error)}")
+
+    if not final_text and not tool_calls and not tokens:
+        raise RuntimeError(
+            f"opencode produced no output for {model}: no text, no tool calls and no "
+            "tokens, so the model was never invoked (check the model id and API key)"
+        )
+
+
 _SHARED_SERVERS: dict[str, subprocess.Popen[bytes]] = {}
 _SHARED_URLS: dict[str, str] = {}
 _SHARED_CONTAINERS: dict[str, str] = {}  # server key -> docker container name (sandbox mode)
@@ -491,11 +527,18 @@ class OpenCodeAgent:
             input_tokens = 0
             output_tokens = 0
 
+            provider_error: Any = None
+
             for item in after:
                 d = self._as_dict(item)
                 info = d.get("info", {}) or {}
                 if info.get("id") in seen:
                     continue
+                # opencode reports a provider/model failure on the message itself.
+                # Without this the turn is indistinguishable from a legitimately
+                # empty answer, and a provider outage grades as a wrong answer.
+                if info.get("error") and provider_error is None:
+                    provider_error = info["error"]
                 if info.get("role") != "assistant":
                     continue
                 cost += float(info.get("cost") or 0.0)
@@ -520,6 +563,14 @@ class OpenCodeAgent:
                             print(f"  [Tool] {rec.name}({json.dumps(rec.input)[:120]})")
                     elif ty == "text" and p.get("text"):
                         final_text = p["text"]
+
+            _raise_if_no_output(
+                provider_error=provider_error,
+                final_text=final_text,
+                tool_calls=tool_calls,
+                tokens=input_tokens + output_tokens,
+                model=f"{self.provider_id}/{self.model_id}",
+            )
 
             result.session_id = sid
             result.output = final_text
