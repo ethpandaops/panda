@@ -80,7 +80,7 @@ func (m *Module) Examples() map[string]types.ExampleCategory {
 func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 	return map[string]types.ModuleDoc{
 		"evm": {
-			Description: "EVM execution, tracing, transaction submission, and bytecode assembly against devnet nodes",
+			Description: "EVM execution, tracing, transaction submission, and bytecode assembly against devnet nodes. Also funds addresses with test ETH from the network's faucet, so a throwaway wallet can pay for its own transactions.",
 			Functions: map[string]types.FunctionDoc{
 				"call": {
 					Signature:   "call(network, instance, data, to=None, from_=None, value=0, gas=None, block='latest') -> str",
