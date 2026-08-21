@@ -33,6 +33,18 @@ DEFAULT_EVALUATOR_MODEL = "qwen3.7-plus"
 # The zen gateway is OpenAI-compatible; promptfoo grades through its generic
 # openai:chat driver pointed at this base URL.
 OPENCODE_ZEN_BASE_URL = "https://opencode.ai/zen/go/v1"
+# A LiteLLM proxy is OpenAI-compatible the same way, so both the subject and the
+# judge can ride one when the zen gateway drops a model (or to bench a model zen
+# does not carry). LITELLM_PROXY_URL is the proxy root, without /v1.
+LITELLM_PREFIX = "litellm/"
+LITELLM_URL_ENVAR = "LITELLM_PROXY_URL"
+LITELLM_KEY_ENVAR = "LITELLM_PROXY_API_KEY"
+
+
+def litellm_base_url() -> str:
+    """The proxy's OpenAI-compatible base URL, or "" when it is not configured."""
+    root = os.environ.get(LITELLM_URL_ENVAR, "").rstrip("/")
+    return f"{root}/v1" if root else ""
 
 
 def _opencode_key_envar() -> str:
@@ -49,9 +61,24 @@ def grader_for(model: str) -> dict:
       API directly, authenticating from ``~/.codex/auth.json`` (the same Codex/ChatGPT
       subscription the subject uses) — so it needs NO OpenAI API key and NO OpenRouter detour.
       The ``codex/`` prefix is stripped and the remainder is passed as the model id.
+    - a ``litellm/<model>`` prefix grades through the LiteLLM proxy named by
+      ``LITELLM_PROXY_URL``, authenticating with ``LITELLM_PROXY_API_KEY``.
     - any other model name (e.g. ``qwen3.7-plus``) grades through the opencode-go zen gateway
       via promptfoo's generic ``openai:chat`` driver + the opencode-go API key.
     """
+    if model.startswith(LITELLM_PREFIX):
+        spec = model[len(LITELLM_PREFIX) :]
+        base = litellm_base_url()
+        if not base:
+            raise ValueError(
+                f"{model} needs {LITELLM_URL_ENVAR} (the proxy root, e.g. "
+                "https://ai.example.com) exported."
+            )
+        return {
+            "id": f"openai:chat:{spec}",
+            "label": f"judge:litellm/{spec}",
+            "config": {"apiBaseUrl": base, "apiKeyEnvar": LITELLM_KEY_ENVAR},
+        }
     if model.startswith("codex/"):
         spec = model[len("codex/") :]
         return {

@@ -39,9 +39,14 @@ uv run python -m scripts.repl
 
 Required environment:
 - `OPENCODE_GO_API_KEY` — the agent subject (opencode-go provider).
+- `LITELLM_PROXY_URL` + `LITELLM_PROXY_API_KEY` — only for `litellm/<model>` subjects or
+  judges, which ride an OpenAI-compatible LiteLLM proxy instead of the zen gateway. Useful
+  when zen drops a model: `--subject litellm/minimax-m2.7:cli --judge-model litellm/…`.
 - The promptfoo grader (`--judge-model`):
   - a bare model name (default `qwen3.7-plus`) grades through the opencode-go zen gateway —
     `OPENCODE_GO_API_KEY` covers it.
+  - a `litellm/<model>` prefix grades through the LiteLLM proxy at `LITELLM_PROXY_URL`,
+    authenticating with `LITELLM_PROXY_API_KEY`.
   - a `codex/<model>` prefix (e.g. `codex/gpt-5.4`) grades through the Codex Responses API
     directly, authenticating from `~/.codex/auth.json` (the same Codex/ChatGPT subscription
     the subject can use), so no OpenAI API key is needed. Run `codex login` first to populate

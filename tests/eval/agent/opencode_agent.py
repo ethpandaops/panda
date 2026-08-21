@@ -232,6 +232,27 @@ class OpenCodeAgent:
             # XDG_CONFIG_HOME below, opencode runs from this config alone.
             "permission": {"*": "allow"},
         }
+        if self.provider_id == "litellm":
+            # opencode has no built-in entry for a private proxy, so declare it:
+            # the openai-compatible driver plus the one model under test. Without
+            # the models map opencode cannot resolve "litellm/<model>".
+            root = os.environ.get("LITELLM_PROXY_URL", "").rstrip("/")
+            if not root:
+                raise ValueError(
+                    "LITELLM_PROXY_URL (the proxy root, e.g. https://ai.example.com) "
+                    "must be set for the litellm provider."
+                )
+            cfg["provider"] = {
+                "litellm": {
+                    "npm": "@ai-sdk/openai-compatible",
+                    "name": "LiteLLM proxy",
+                    "options": {
+                        "baseURL": f"{root}/v1",
+                        "apiKey": os.environ.get("LITELLM_PROXY_API_KEY", ""),
+                    },
+                    "models": {self.model_id: {"name": self.model_id}},
+                }
+            }
         if self.route == "mcp":
             mcp_url = self.settings.mcp_url.rstrip("/") + "/mcp"
             cfg["mcp"] = {
@@ -255,6 +276,11 @@ class OpenCodeAgent:
             if proc is not None and proc.poll() is None:
                 return
             self._client = None  # shared server died; respawn below
+
+        if self.provider_id == "litellm" and not os.environ.get("LITELLM_PROXY_API_KEY"):
+            raise ValueError(
+                "LITELLM_PROXY_API_KEY must be set (and exported) for the litellm provider."
+            )
 
         if (
             self.provider_id in ("opencode-go", "opencode")
