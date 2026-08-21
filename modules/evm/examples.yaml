@@ -5,9 +5,11 @@ evm_opcode_trial:
     - name: Trace a new opcode across clients
       description: Execute raw bytecode against multiple clients and compare opcode-level traces to detect divergence
       query: |
-        from ethpandaops import evm
+        from ethpandaops import evm, networks
 
-        network = "glamsterdam-devnet-6"
+        # devnets come and go; ask cartographoor for one that is up right now
+        network = next(n["id"] for n in networks.list()
+                       if n["devnet_group"] == "glamsterdam" and n["status"] == "active")
         instances = ["geth-1", "reth-1", "nethermind-1", "besu-1"]
 
         # PUSH0 PUSH0 ADD — tests EIP-3855 + arithmetic
@@ -24,9 +26,11 @@ evm_opcode_trial:
     - name: Detect gas cost divergence
       description: Run the same bytecode on all clients and flag any that report different total gas
       query: |
-        from ethpandaops import evm
+        from ethpandaops import evm, networks
 
-        network = "glamsterdam-devnet-6"
+        # devnets come and go; ask cartographoor for one that is up right now
+        network = next(n["id"] for n in networks.list()
+                       if n["devnet_group"] == "glamsterdam" and n["status"] == "active")
         instances = ["geth-1", "reth-1", "nethermind-1"]
 
         bytecode = evm.assemble(["PUSH1", 0x00, "MLOAD", "POP", "STOP"])
@@ -48,9 +52,11 @@ evm_fuzz_triage:
     - name: Triage a diverging fuzz transaction
       description: Given a tx hash from spamoor evm-fuzz, trace it against each client to locate the diverging opcode
       query: |
-        from ethpandaops import evm, ethnode
+        from ethpandaops import evm, ethnode, networks
 
-        network = "glamsterdam-devnet-6"
+        # devnets come and go; ask cartographoor for one that is up right now
+        network = next(n["id"] for n in networks.list()
+                       if n["devnet_group"] == "glamsterdam" and n["status"] == "active")
         instances = ["geth-1", "reth-1"]
         txhash = "0xabc123..."  # from spamoor divergence report
 
@@ -69,9 +75,11 @@ evm_fuzz_triage:
     - name: Re-run fuzz bytecode from a tx input
       description: Fetch the init code from a deployment tx and re-trace it locally for inspection
       query: |
-        from ethpandaops import evm, ethnode
+        from ethpandaops import evm, ethnode, networks
 
-        network = "glamsterdam-devnet-6"
+        # devnets come and go; ask cartographoor for one that is up right now
+        network = next(n["id"] for n in networks.list()
+                       if n["devnet_group"] == "glamsterdam" and n["status"] == "active")
         instance = "geth-1"
         txhash = "0xabc123..."
 
@@ -89,9 +97,11 @@ evm_system_contracts:
     - name: Call the SHA256 precompile
       description: Send input to the SHA256 precompile (0x02) and verify the result
       query: |
-        from ethpandaops import evm
+        from ethpandaops import evm, networks
 
-        network = "glamsterdam-devnet-6"
+        # devnets come and go; ask cartographoor for one that is up right now
+        network = next(n["id"] for n in networks.list()
+                       if n["devnet_group"] == "glamsterdam" and n["status"] == "active")
         instance = "geth-1"
 
         # SHA256 precompile at 0x02
@@ -105,9 +115,11 @@ evm_system_contracts:
     - name: Test selfdestruct edge case
       description: Deploy a contract that selfdestructs and verify state across clients
       query: |
-        from ethpandaops import evm
+        from ethpandaops import evm, networks
 
-        network = "glamsterdam-devnet-6"
+        # devnets come and go; ask cartographoor for one that is up right now
+        network = next(n["id"] for n in networks.list()
+                       if n["devnet_group"] == "glamsterdam" and n["status"] == "active")
         instance = "geth-1"
 
         # init code: PUSH20 <addr> SELFDESTRUCT — sends balance to caller
@@ -128,9 +140,11 @@ evm_deploy_and_fuzz:
     - name: Deploy raw bytecode and check receipt
       description: Build a wallet, fund it via the faucet, deploy a contract, and read the receipt
       query: |
-        from ethpandaops import evm, ethnode
+        from ethpandaops import evm, ethnode, networks
 
-        network = "glamsterdam-devnet-6"
+        # devnets come and go; ask cartographoor for one that is up right now
+        network = next(n["id"] for n in networks.list()
+                       if n["devnet_group"] == "glamsterdam" and n["status"] == "active")
         instance = "geth-1"
 
         w = evm.wallet()
