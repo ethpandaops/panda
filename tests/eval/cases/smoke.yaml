@@ -151,3 +151,34 @@
       - Export the last 10 mainnet blocks to a CSV, upload it so I can share it, and
         afterwards upload a backup copy in the same session and report where they sit
         on the server.
+
+  - id: evm_faucet_fund_throwaway_address                    # 💬 how do I get test ETH for an address
+    description: name the sandbox call that funds an address from a devnet's
+      agent faucet
+    network: glamsterdam-devnet-8
+    tags: [smoke, evm, docs]
+    input: "I need test ETH on glamsterdam-devnet-8 for a fresh throwaway address.
+      What's the panda way to do that? Just tell me the call, don't claim anything
+      yet."
+    assert:
+      - type: llm-rubric
+        value: >
+          Points at the sandbox EVM library: evm.faucet(network, address) from the
+          ethpandaops package (an `from ethpandaops import evm` style import), passing
+          the network id and the target address, and gets the throwaway address from
+          evm.wallet() rather than inventing one. Mentioning that the claim is mined
+          server-side and returns a transaction hash is a plus. Sending the user to a
+          faucet website, a browser flow, a WebSocket, or any API panda does not have
+          fails, as does answering with no concrete call.
+
+    variations:
+      - How do I get test ETH onto a brand-new address on glamsterdam-devnet-8 using
+        panda? Just the call please, don't run it.
+      - Which panda API funds a throwaway wallet with test ETH on
+        glamsterdam-devnet-8? Don't claim yet, I just want the snippet.
+      - I want to fund a fresh address with test ETH on glamsterdam-devnet-8 - what
+        does that look like in panda? Show me the call without executing it.
+      - What's the right way to hand a new throwaway address some test ETH on
+        glamsterdam-devnet-8 with panda? No need to actually claim.
+      - Tell me the panda call for funding a fresh address with test ETH on
+        glamsterdam-devnet-8, without running it.
