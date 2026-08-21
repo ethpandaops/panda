@@ -137,6 +137,20 @@ evm_deploy_and_fuzz:
   name: Deploy and Fuzz
   description: Generate bytecode variants, deploy to devnet, observe on-chain behavior
   examples:
+    - name: Fund a throwaway wallet with test ETH
+      description: Claim devnet ETH from the faucet onto a fresh keypair so it can pay for its own transactions
+      query: |
+        from ethpandaops import evm, networks
+
+        # devnets come and go; ask cartographoor for one that is up right now
+        network = next(n["id"] for n in networks.list()
+                       if n["devnet_group"] == "glamsterdam" and n["status"] == "active")
+
+        w = evm.wallet()
+        # mines the faucet's PoW server-side and returns once the claim is on-chain
+        tx = evm.faucet(network, w["address"])
+        print(f"funded {w['address']} on {network}: {tx}")
+
     - name: Deploy raw bytecode and check receipt
       description: Build a wallet, fund it via the faucet, deploy a contract, and read the receipt
       query: |

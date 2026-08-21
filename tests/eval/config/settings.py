@@ -14,25 +14,43 @@ CODEX_JUDGE_REASONING_EFFORT = "low"
 
 # Default values - single source of truth. Everything else references these; don't
 # re-hardcode the strings at call sites.
-DEFAULT_AGENT_MODEL = "opencode-go/deepseek-v4-flash"
+# The subjects rode opencode-go/deepseek-v4-flash until 2026-08, when it went opt-in
+# provider-side and started answering with nothing at all; they ride the LiteLLM proxy
+# (LITELLM_PROXY_URL / LITELLM_PROXY_API_KEY) now.
+DEFAULT_AGENT_MODEL = "litellm/starflinger-anthropic"
 DEFAULT_AGENT_ROUTE = "cli"
 # A subject spec is "<provider>/<model>:<route>".
 DEFAULT_SUBJECT = f"{DEFAULT_AGENT_MODEL}:{DEFAULT_AGENT_ROUTE}"
-# The loop optimizes across TWO agent models by default, so a harness improvement has to
-# help BOTH (it can't overfit to one) — and two subjects double the confidence gate's cells.
-# Both ride the opencode-go provider, so one API key covers them (CI included).
-DEFAULT_SUBJECTS = [DEFAULT_SUBJECT, f"opencode-go/mimo-v2.5:{DEFAULT_AGENT_ROUTE}"]
+# The loop optimizes across every subject listed here, so a harness improvement has to help
+# all of them (it can't overfit to one). Only one for now: the proxy's other chat model is
+# not wanted as a subject, and starflinger-openai currently answers "No fallback model
+# group found". Add a second non-Claude model here when one is available — with a single
+# subject a harness change can pass by suiting one vendor.
+DEFAULT_SUBJECTS = [DEFAULT_SUBJECT]
 # Judge quality matters more than judge cost (~$0.003/grade): a flaky judge contaminates
 # the harden gates, so the judge must be a reliable rubric-follower AND family-distinct
 # from the subjects (a judge scoring its own family is a self-preference risk — that rules
-# out deepseek-* and mimo-* here). qwen3.7-plus rides the same opencode-go gateway as the
-# subjects, so one API key covers the whole eval; benched clean over 60 smoke grades,
+# out the subjects' own families here). qwen3.7-plus rides opencode-go rather than the
+# subjects' proxy, which keeps judge and subject on separate gateways as well as separate
+# families — and it is the half of the eval that never broke; benched clean over 60 smoke grades,
 # where minimax-m3 and deepseek-v4-pro both emitted malformed rubric JSON (false
 # negatives) through this same path.
 DEFAULT_EVALUATOR_MODEL = "qwen3.7-plus"
 # The zen gateway is OpenAI-compatible; promptfoo grades through its generic
 # openai:chat driver pointed at this base URL.
 OPENCODE_ZEN_BASE_URL = "https://opencode.ai/zen/go/v1"
+# A LiteLLM proxy is OpenAI-compatible the same way, so both the subject and the
+# judge can ride one when the zen gateway drops a model (or to bench a model zen
+# does not carry). LITELLM_PROXY_URL is the proxy root, without /v1.
+LITELLM_PREFIX = "litellm/"
+LITELLM_URL_ENVAR = "LITELLM_PROXY_URL"
+LITELLM_KEY_ENVAR = "LITELLM_PROXY_API_KEY"
+
+
+def litellm_base_url() -> str:
+    """The proxy's OpenAI-compatible base URL, or "" when it is not configured."""
+    root = os.environ.get(LITELLM_URL_ENVAR, "").rstrip("/")
+    return f"{root}/v1" if root else ""
 
 
 def _opencode_key_envar() -> str:
@@ -49,9 +67,24 @@ def grader_for(model: str) -> dict:
       API directly, authenticating from ``~/.codex/auth.json`` (the same Codex/ChatGPT
       subscription the subject uses) — so it needs NO OpenAI API key and NO OpenRouter detour.
       The ``codex/`` prefix is stripped and the remainder is passed as the model id.
+    - a ``litellm/<model>`` prefix grades through the LiteLLM proxy named by
+      ``LITELLM_PROXY_URL``, authenticating with ``LITELLM_PROXY_API_KEY``.
     - any other model name (e.g. ``qwen3.7-plus``) grades through the opencode-go zen gateway
       via promptfoo's generic ``openai:chat`` driver + the opencode-go API key.
     """
+    if model.startswith(LITELLM_PREFIX):
+        spec = model[len(LITELLM_PREFIX) :]
+        base = litellm_base_url()
+        if not base:
+            raise ValueError(
+                f"{model} needs {LITELLM_URL_ENVAR} (the proxy root, e.g. "
+                "https://ai.example.com) exported."
+            )
+        return {
+            "id": f"openai:chat:{spec}",
+            "label": f"judge:litellm/{spec}",
+            "config": {"apiBaseUrl": base, "apiKeyEnvar": LITELLM_KEY_ENVAR},
+        }
     if model.startswith("codex/"):
         spec = model[len("codex/") :]
         return {
@@ -88,7 +121,7 @@ class EvalSettings(BaseSettings):
     model: str = Field(
         default=DEFAULT_AGENT_MODEL,
         description="Model under test as an opencode '<provider>/<model>' "
-        "(e.g. opencode-go/deepseek-v4-flash).",
+        "(e.g. litellm/starflinger-anthropic).",
     )
     opencode_route: str = Field(
         default="mcp",

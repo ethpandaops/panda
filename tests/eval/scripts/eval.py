@@ -2,7 +2,7 @@
 
     uv run python -m scripts.eval --tags smoke
     uv run python -m scripts.eval                      # every case in cases/*.yaml
-    uv run python -m scripts.eval --tags mev,blobs --subject opencode-go/deepseek-v4-flash:cli
+    uv run python -m scripts.eval --tags mev,blobs --subject litellm/starflinger-anthropic:cli
 
 Runs each case (single- or multi-turn) against the agent subject(s) via promptfoo, grades
 with the case's ``assert:`` blocks, prints a table, and writes JUnit XML (``--junit``) so CI
@@ -92,7 +92,7 @@ def _parse_args() -> argparse.Namespace:
         default="",
         help="explicit promptfoo grading provider string (overrides --judge-model)",
     )
-    ap.add_argument("--concurrency", type=int, default=16, help="max agent runs in flight")
+    ap.add_argument("--concurrency", type=int, default=16, help="max agent runs in flight (1 = sequential)")
     ap.add_argument(
         "--subject-timeout",
         type=float,
