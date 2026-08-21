@@ -14,21 +14,24 @@ CODEX_JUDGE_REASONING_EFFORT = "low"
 
 # Default values - single source of truth. Everything else references these; don't
 # re-hardcode the strings at call sites.
-# NOTE: deepseek-v4-flash went opt-in provider-side in 2026-08 and now returns nothing
-# through zen; CI runs litellm/starflinger-anthropic instead (see eval-smoke.yaml).
-DEFAULT_AGENT_MODEL = "opencode-go/deepseek-v4-flash"
+# The subjects rode opencode-go/deepseek-v4-flash until 2026-08, when it went opt-in
+# provider-side and started answering with nothing at all; they ride the LiteLLM proxy
+# (LITELLM_PROXY_URL / LITELLM_PROXY_API_KEY) now.
+DEFAULT_AGENT_MODEL = "litellm/starflinger-anthropic"
 DEFAULT_AGENT_ROUTE = "cli"
 # A subject spec is "<provider>/<model>:<route>".
 DEFAULT_SUBJECT = f"{DEFAULT_AGENT_MODEL}:{DEFAULT_AGENT_ROUTE}"
 # The loop optimizes across TWO agent models by default, so a harness improvement has to
 # help BOTH (it can't overfit to one) — and two subjects double the confidence gate's cells.
-# Both ride the opencode-go provider, so one API key covers them (CI included).
-DEFAULT_SUBJECTS = [DEFAULT_SUBJECT, f"opencode-go/mimo-v2.5:{DEFAULT_AGENT_ROUTE}"]
+# Both ride the LiteLLM proxy, so one API key covers them (CI included), and they stay
+# two distinct families so a harness change cannot pass by suiting one vendor.
+DEFAULT_SUBJECTS = [DEFAULT_SUBJECT, f"litellm/minimax-m2.7:{DEFAULT_AGENT_ROUTE}"]
 # Judge quality matters more than judge cost (~$0.003/grade): a flaky judge contaminates
 # the harden gates, so the judge must be a reliable rubric-follower AND family-distinct
 # from the subjects (a judge scoring its own family is a self-preference risk — that rules
-# out deepseek-* and mimo-* here). qwen3.7-plus rides the same opencode-go gateway as the
-# subjects, so one API key covers the whole eval; benched clean over 60 smoke grades,
+# out the subjects' own families here). qwen3.7-plus rides opencode-go rather than the
+# subjects' proxy, which keeps judge and subject on separate gateways as well as separate
+# families — and it is the half of the eval that never broke; benched clean over 60 smoke grades,
 # where minimax-m3 and deepseek-v4-pro both emitted malformed rubric JSON (false
 # negatives) through this same path.
 DEFAULT_EVALUATOR_MODEL = "qwen3.7-plus"
@@ -117,7 +120,7 @@ class EvalSettings(BaseSettings):
     model: str = Field(
         default=DEFAULT_AGENT_MODEL,
         description="Model under test as an opencode '<provider>/<model>' "
-        "(e.g. opencode-go/deepseek-v4-flash).",
+        "(e.g. litellm/starflinger-anthropic).",
     )
     opencode_route: str = Field(
         default="mcp",

@@ -25,7 +25,7 @@ uv sync                  # Python deps
 # single-pass eval: tags select cases (no flags = every case in cases/*.yaml)
 uv run python -m scripts.eval --tags smoke
 uv run python -m scripts.eval                      # the whole suite
-uv run python -m scripts.eval --tags mev,blobs --subject opencode-go/deepseek-v4-flash:cli
+uv run python -m scripts.eval --tags mev,blobs --subject litellm/starflinger-anthropic:cli
 
 # build + run a local scratch server from the current source, then eval against it
 uv run python -m scripts.eval --tags smoke --scratch

@@ -220,8 +220,13 @@ jobs:
         working-directory: tests/eval
         env:
           OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
-          # promptfoo grades each case's llm-rubric asserts via the judge model, served
-          # by the same opencode-go gateway the subjects ride (one key for the whole eval).
+          # The subjects ride the LiteLLM proxy: zen's deepseek-v4-flash went opt-in
+          # provider-side and returns nothing.
+          LITELLM_PROXY_URL: ${{ vars.LITELLM_PROXY_URL }}
+          LITELLM_PROXY_API_KEY: ${{ secrets.LITELLM_PROXY_API_KEY }}
+          # promptfoo grades each case's llm-rubric asserts via the judge model, which
+          # stays on the opencode-go gateway — a separate gateway and family from the
+          # subjects, and the half of the eval that never broke.
           MCP_EVAL_REASONING_EFFORT: high
           MCP_EVAL_OPENCODE_TIMEOUT: "180"
           MCP_EVAL_RUN_LABEL: full-eval
@@ -231,8 +236,8 @@ jobs:
           MCP_EVAL_LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
         run: |
           # --subject + --judge-model default to the harness defaults (config/settings.py);
-          # only override --subject when the dispatch input is set. --concurrency 6: the
-          # local default (16) starves a 4-vCPU runner. --save-dir reports/run puts the
+          # only override --subject when the dispatch input is set. --concurrency 1 runs
+          # the agent sessions one at a time. --save-dir reports/run puts the
           # per-run trace files inside the uploaded artifact, so failing runs are
           # diagnosable from CI without Langfuse access.
           ARGS=(--repeat "${{ inputs.repeat || '1' }}")
