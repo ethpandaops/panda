@@ -220,7 +220,7 @@ jobs:
           # the per-run trace files inside the uploaded artifact, so failing runs are
           # diagnosable from CI without Langfuse access.
           uv run python -m scripts.eval \
-            --concurrency 6 \
+            --concurrency 1 \
             --max-variations 1 -k 3 \
             --subject opencode-go/deepseek-v4-flash:cli \
             --subject-timeout 900 \

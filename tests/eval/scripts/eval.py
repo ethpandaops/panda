@@ -92,7 +92,7 @@ def _parse_args() -> argparse.Namespace:
         default="",
         help="explicit promptfoo grading provider string (overrides --judge-model)",
     )
-    ap.add_argument("--concurrency", type=int, default=16, help="max agent runs in flight")
+    ap.add_argument("--concurrency", type=int, default=16, help="max agent runs in flight (1 = sequential)")
     ap.add_argument(
         "--subject-timeout",
         type=float,

@@ -240,7 +240,7 @@ jobs:
           [ -n "${{ inputs.tags }}" ] && ARGS+=(--tags "${{ inputs.tags }}")
           [ -n "${{ inputs.subject }}" ] && ARGS+=(--subject "${{ inputs.subject }}")
           uv run python -m scripts.eval "${ARGS[@]}" \
-            --concurrency 6 \
+            --concurrency 1 \
             --subject-timeout 900 \
             --save-dir reports/run \
             --junit reports/junit.xml --json reports/eval.json \
