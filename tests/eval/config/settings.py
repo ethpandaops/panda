@@ -14,6 +14,8 @@ CODEX_JUDGE_REASONING_EFFORT = "low"
 
 # Default values - single source of truth. Everything else references these; don't
 # re-hardcode the strings at call sites.
+# NOTE: deepseek-v4-flash went opt-in provider-side in 2026-08 and now returns nothing
+# through zen; CI runs litellm/starflinger-anthropic instead (see eval-smoke.yaml).
 DEFAULT_AGENT_MODEL = "opencode-go/deepseek-v4-flash"
 DEFAULT_AGENT_ROUTE = "cli"
 # A subject spec is "<provider>/<model>:<route>".
