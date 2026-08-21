@@ -283,13 +283,17 @@ jobs:
           # belong to the harden loop, not per-commit CI. --concurrency 1: the agent
           # sessions run one at a time, so the gateway sees a single request in
           # flight and the 4-vCPU runner is not fighting itself for the sandbox.
-          # --subject-timeout 600: the 300s
+          # --min-pass 0.7: this job proves the pipeline works end to end, so it goes red
+          # when the harness breaks — no tokens, provider errors, crashes — not when a
+          # rubric-graded agent flubs one of nine questions at k=1. Grading quality is
+          # the harden loop's job. --subject-timeout 600: the 300s
           # default times out healthy-but-slow runs on this runner; slow is measured
           # (and bounded by the job timeout), not crashed. --save-dir reports/run puts
           # the per-run trace files inside the uploaded artifact, so a failing agent's
           # actual commands are diagnosable from CI without Langfuse access.
           uv run python -m scripts.eval \
             --tags smoke --no-variations --concurrency 1 \
+            --min-pass 0.7 \
             --subject litellm/starflinger-anthropic:cli \
             --subject-timeout 600 \
             --save-dir reports/run \

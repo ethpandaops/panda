@@ -21,11 +21,12 @@ DEFAULT_AGENT_MODEL = "litellm/starflinger-anthropic"
 DEFAULT_AGENT_ROUTE = "cli"
 # A subject spec is "<provider>/<model>:<route>".
 DEFAULT_SUBJECT = f"{DEFAULT_AGENT_MODEL}:{DEFAULT_AGENT_ROUTE}"
-# The loop optimizes across TWO agent models by default, so a harness improvement has to
-# help BOTH (it can't overfit to one) — and two subjects double the confidence gate's cells.
-# Both ride the LiteLLM proxy, so one API key covers them (CI included), and they stay
-# two distinct families so a harness change cannot pass by suiting one vendor.
-DEFAULT_SUBJECTS = [DEFAULT_SUBJECT, f"litellm/minimax-m2.7:{DEFAULT_AGENT_ROUTE}"]
+# The loop optimizes across every subject listed here, so a harness improvement has to help
+# all of them (it can't overfit to one). Only one for now: the proxy's other chat model is
+# not wanted as a subject, and starflinger-openai currently answers "No fallback model
+# group found". Add a second non-Claude model here when one is available — with a single
+# subject a harness change can pass by suiting one vendor.
+DEFAULT_SUBJECTS = [DEFAULT_SUBJECT]
 # Judge quality matters more than judge cost (~$0.003/grade): a flaky judge contaminates
 # the harden gates, so the judge must be a reliable rubric-follower AND family-distinct
 # from the subjects (a judge scoring its own family is a self-preference risk — that rules

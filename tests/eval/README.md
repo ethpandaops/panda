@@ -41,7 +41,7 @@ Required environment:
 - `OPENCODE_GO_API_KEY` — the agent subject (opencode-go provider).
 - `LITELLM_PROXY_URL` + `LITELLM_PROXY_API_KEY` — only for `litellm/<model>` subjects or
   judges, which ride an OpenAI-compatible LiteLLM proxy instead of the zen gateway. Useful
-  when zen drops a model: `--subject litellm/minimax-m2.7:cli --judge-model litellm/…`.
+  when zen drops a model: `--subject litellm/starflinger-anthropic:cli`.
 - The promptfoo grader (`--judge-model`):
   - a bare model name (default `qwen3.7-plus`) grades through the opencode-go zen gateway —
     `OPENCODE_GO_API_KEY` covers it.

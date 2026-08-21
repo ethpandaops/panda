@@ -19,9 +19,9 @@ def _agent(monkeypatch, model: str, **env) -> OpenCodeAgent:
 
 def test_judge_grades_through_the_proxy(monkeypatch):
     monkeypatch.setenv("LITELLM_PROXY_URL", "https://ai.example.com/")
-    spec = grader_for("litellm/minimax-m2.7")
+    spec = grader_for("litellm/starflinger-anthropic")
 
-    assert spec["id"] == "openai:chat:minimax-m2.7"
+    assert spec["id"] == "openai:chat:starflinger-anthropic"
     # trailing slash trimmed, /v1 appended exactly once
     assert spec["config"]["apiBaseUrl"] == "https://ai.example.com/v1"
     assert spec["config"]["apiKeyEnvar"] == "LITELLM_PROXY_API_KEY"
@@ -30,7 +30,7 @@ def test_judge_grades_through_the_proxy(monkeypatch):
 def test_judge_without_a_url_says_which_var(monkeypatch):
     monkeypatch.delenv("LITELLM_PROXY_URL", raising=False)
     with pytest.raises(ValueError, match="LITELLM_PROXY_URL"):
-        grader_for("litellm/minimax-m2.7")
+        grader_for("litellm/starflinger-anthropic")
 
 
 @pytest.mark.parametrize("model", ["qwen3.7-plus", "codex/gpt-5.4"])
@@ -43,23 +43,23 @@ def test_other_transports_are_untouched(monkeypatch, model):
 def test_subject_declares_the_provider(monkeypatch):
     agent = _agent(
         monkeypatch,
-        "litellm/minimax-m2.7",
+        "litellm/starflinger-anthropic",
         LITELLM_PROXY_URL="https://ai.example.com",
         LITELLM_PROXY_API_KEY="k",
     )
     cfg = agent._opencode_config()
 
-    assert cfg["model"] == "litellm/minimax-m2.7"
+    assert cfg["model"] == "litellm/starflinger-anthropic"
     provider = cfg["provider"]["litellm"]
     assert provider["npm"] == "@ai-sdk/openai-compatible"
     assert provider["options"]["baseURL"] == "https://ai.example.com/v1"
     assert provider["options"]["apiKey"] == "k"
     # opencode cannot resolve litellm/<model> unless the model is declared
-    assert "minimax-m2.7" in provider["models"]
+    assert "starflinger-anthropic" in provider["models"]
 
 
 def test_subject_without_a_url_says_which_var(monkeypatch):
-    agent = _agent(monkeypatch, "litellm/minimax-m2.7", LITELLM_PROXY_API_KEY="k")
+    agent = _agent(monkeypatch, "litellm/starflinger-anthropic", LITELLM_PROXY_API_KEY="k")
     monkeypatch.delenv("LITELLM_PROXY_URL", raising=False)
     with pytest.raises(ValueError, match="LITELLM_PROXY_URL"):
         agent._opencode_config()
