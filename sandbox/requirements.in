@@ -1,5 +1,5 @@
 # Core data analysis
-pandas>=2.2.0
+pandas>=3.0.5
 numpy>=2.0.0
 scipy>=1.14.0
 fastparquet>=2026.3.0  # Parquet read/write engine (~9MB vs pyarrow's ~140MB)
@@ -8,22 +8,22 @@ fastparquet>=2026.3.0  # Parquet read/write engine (~9MB vs pyarrow's ~140MB)
 # matplotlib/seaborn render static PNGs headless with no system deps; plotly is
 # kept for interactive HTML output. Static plotly export (kaleido) is omitted
 # because it needs a full Chrome install.
-matplotlib>=3.9.0
+matplotlib>=3.11.1
 seaborn>=0.13.0  # statistical charts on top of matplotlib
-plotly>=5.24.0
+plotly>=6.9.0
 
 # ClickHouse client
-clickhouse-connect>=0.8.0
+clickhouse-connect>=1.6.0
 
 # HTTP client for Prometheus/Loki
 httpx>=0.28.0
 
 # S3 client (block archive)
-boto3>=1.35.0
+boto3>=1.43.67
 
 # Utilities
 python-dateutil>=2.9.0
-pytz>=2024.2
+pytz>=2026.3.post1
 rich>=13.9.0  # For better terminal output
 tabulate>=0.9.0  # For table formatting
 
