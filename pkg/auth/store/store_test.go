@@ -331,6 +331,91 @@ func TestInvalidateForcesRefreshThenClears(t *testing.T) {
 	}
 }
 
+func TestGetAccessTokenStopsRefreshingAfterInvalidGrant(t *testing.T) {
+	t.Parallel()
+
+	client := &stubAuthClient{refreshErr: errors.New(
+		`token endpoint returned status 400: {"error": "invalid_grant"}`,
+	)}
+	store := New(logrus.New(), Config{
+		Path:          filepath.Join(t.TempDir(), "creds.json"),
+		AuthClient:    client,
+		RefreshBuffer: 5 * time.Minute,
+	}).(*store)
+	store.tokens = &authclient.Tokens{
+		AccessToken:  "expired",
+		RefreshToken: "burned-token",
+		ExpiresAt:    time.Now().Add(-time.Minute),
+	}
+
+	if _, err := store.GetAccessToken(); !errors.Is(err, ErrReauthRequired) {
+		t.Fatalf("expected ErrReauthRequired, got %v", err)
+	}
+
+	if client.refreshCalls != 1 {
+		t.Fatalf("expected 1 refresh attempt, got %d", client.refreshCalls)
+	}
+
+	// Retrying with the same rejected token must not hit the provider again.
+	if _, err := store.GetAccessToken(); !errors.Is(err, ErrReauthRequired) {
+		t.Fatalf("expected ErrReauthRequired on retry, got %v", err)
+	}
+
+	if client.refreshCalls != 1 {
+		t.Fatalf("expected no further refresh attempts, got %d", client.refreshCalls)
+	}
+}
+
+func TestGetAccessTokenRecoversWhenNewCredentialWritten(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "creds.json")
+
+	client := &stubAuthClient{refreshErr: errors.New(
+		`token endpoint returned status 400: {"error": "invalid_grant"}`,
+	)}
+	store := New(logrus.New(), Config{
+		Path:          path,
+		AuthClient:    client,
+		RefreshBuffer: 5 * time.Minute,
+	}).(*store)
+	store.tokens = &authclient.Tokens{
+		AccessToken:  "expired",
+		RefreshToken: "burned-token",
+		ExpiresAt:    time.Now().Add(-time.Minute),
+	}
+
+	if _, err := store.GetAccessToken(); !errors.Is(err, ErrReauthRequired) {
+		t.Fatalf("expected ErrReauthRequired, got %v", err)
+	}
+
+	// Another process (e.g. the host CLI running `panda auth login`) writes a
+	// fresh credential to the shared file.
+	other := New(logrus.New(), Config{Path: path})
+	if err := other.Save(&authclient.Tokens{
+		AccessToken:  "expired-too",
+		RefreshToken: "fresh-token",
+		ExpiresAt:    time.Now().Add(-time.Minute),
+	}); err != nil {
+		t.Fatalf("saving replacement credential: %v", err)
+	}
+
+	client.refreshErr = nil
+
+	token, err := store.GetAccessToken()
+	if err != nil {
+		t.Fatalf("GetAccessToken after new credential: %v", err)
+	}
+
+	if token != "refreshed-token" {
+		t.Fatalf("expected refreshed token, got %q", token)
+	}
+
+	if client.refreshCalls != 2 {
+		t.Fatalf("expected refresh to resume with the new token, got %d calls", client.refreshCalls)
+	}
+}
+
 type stubAuthClient struct {
 	refreshCalls int
 	refreshErr   error
