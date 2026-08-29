@@ -81,6 +81,7 @@ type server struct {
 	benchmarkoorHandler *handlers.BenchmarkoorHandler
 	computeHandler      *handlers.ComputeHandler
 	workflowHandler     *handlers.WorkflowHandler
+	buildoorHandler     *handlers.BuildoorHandler
 	uploadsHandler      *handlers.UploadsHandler
 	uploadsLimiter      *RateLimiter
 	embeddingService    *EmbeddingService
@@ -230,6 +231,15 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 		}
 
 		s.workflowHandler = workflowHandler
+	}
+
+	if cfg.Buildoor != nil {
+		s.buildoorHandler = handlers.NewBuildoorHandler(log, handlers.BuildoorConfig{
+			CFAccessClientID:     cfg.Buildoor.CFAccessClientID,
+			CFAccessClientSecret: cfg.Buildoor.CFAccessClientSecret,
+			StaticToken:          cfg.Buildoor.StaticToken,
+			DomainSuffix:         cfg.Buildoor.DomainSuffix,
+		})
 	}
 
 	if uploadsCfg := cfg.ToUploadsHandlerConfig(); uploadsCfg != nil {
@@ -396,6 +406,10 @@ func (s *server) registerRoutes() {
 		s.handleSubtreeRoute("/workflow", s.metricsMiddleware(chain(s.workflowHandler)))
 	}
 
+	if s.buildoorHandler != nil {
+		s.handleSubtreeRoute("/buildoor", s.metricsMiddleware(chain(s.buildoorHandler)))
+	}
+
 	if s.githubHandler != nil {
 		s.handleSubtreeRoute("/github", s.metricsMiddleware(chain(s.githubHandler)))
 	}
@@ -468,6 +482,16 @@ type DatasourcesResponse struct {
 	// Workflow advertises the workflow engine as a capability. Nil when the
 	// proxy does not expose one (or the caller is not authorized for it).
 	Workflow *WorkflowAdvert `json:"workflow,omitempty"`
+
+	// Buildoor advertises credentialed devnet buildoor API access. Nil when
+	// the proxy does not expose it (or the caller is not authorized for it).
+	Buildoor *BuildoorAdvert `json:"buildoor,omitempty"`
+}
+
+// BuildoorAdvert advertises the buildoor capability in discovery. It carries
+// only availability — never the CF Access credentials or minted tokens.
+type BuildoorAdvert struct {
+	Enabled bool `json:"enabled"`
 }
 
 // WorkflowAdvert advertises the workflow engine capability in discovery. It
@@ -493,6 +517,7 @@ type datasourcesResponseWire struct {
 	EmbeddingAvailable bool                   `json:"embedding_available,omitempty"`
 	EmbeddingModel     string                 `json:"embedding_model,omitempty"`
 	Workflow           *WorkflowAdvert        `json:"workflow,omitempty"`
+	Buildoor           *BuildoorAdvert        `json:"buildoor,omitempty"`
 }
 
 // MarshalJSON emits both the detailed *Info lists and the derived name-only
@@ -511,6 +536,7 @@ func (d DatasourcesResponse) MarshalJSON() ([]byte, error) {
 		EmbeddingAvailable: d.EmbeddingAvailable,
 		EmbeddingModel:     d.EmbeddingModel,
 		Workflow:           d.Workflow,
+		Buildoor:           d.Buildoor,
 	})
 }
 
@@ -531,6 +557,7 @@ func (d *DatasourcesResponse) UnmarshalJSON(data []byte) error {
 	d.EmbeddingAvailable = wire.EmbeddingAvailable
 	d.EmbeddingModel = wire.EmbeddingModel
 	d.Workflow = wire.Workflow
+	d.Buildoor = wire.Buildoor
 
 	return nil
 }
@@ -574,6 +601,7 @@ func (s *server) handleDatasources(w http.ResponseWriter, r *http.Request) {
 		EmbeddingAvailable: s.EmbeddingAvailable(),
 		EmbeddingModel:     s.EmbeddingModel(),
 		Workflow:           s.workflowAdvert(),
+		Buildoor:           s.buildoorAdvert(),
 	}
 
 	if s.authorizer != nil {
@@ -1265,6 +1293,14 @@ func (s *server) workflowAdvert() *WorkflowAdvert {
 
 // WorkflowInfo reports whether this proxy advertises a workflow engine and the
 // web URL for building human links to it, resolved from config.
+func (s *server) buildoorAdvert() *BuildoorAdvert {
+	if s.cfg.Buildoor == nil {
+		return nil
+	}
+
+	return &BuildoorAdvert{Enabled: true}
+}
+
 func (s *server) WorkflowInfo() (enabled bool, webURL string) {
 	if s.cfg.Workflow == nil {
 		return false, ""

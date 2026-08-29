@@ -71,6 +71,10 @@ type ServerConfig struct {
 	// GitHub holds optional GitHub API configuration for triggering workflows.
 	GitHub *GitHubAPIConfig `yaml:"github,omitempty"`
 
+	// Buildoor holds optional devnet buildoor API access configuration. Nil
+	// disables the /buildoor route.
+	Buildoor *BuildoorProxyConfig `yaml:"buildoor,omitempty"`
+
 	// Workflow holds optional workflow-engine passthrough configuration. Nil
 	// disables the /workflow route entirely.
 	Workflow *WorkflowConfig `yaml:"workflow,omitempty"`
@@ -136,6 +140,32 @@ func normalizeKeyPrefix(p string) string {
 type GitHubAPIConfig struct {
 	// Token is a GitHub personal access token or app token with actions:write permission.
 	Token string `yaml:"token"`
+}
+
+// BuildoorProxyConfig holds devnet buildoor API access configuration. The
+// credentials live HERE, at the proxy layer, never on the panda server: a CF
+// Access service token lets the proxy mint per-devnet authenticatoor JWTs
+// (auth.<network>.<domain_suffix> runs behind Cloudflare Access with
+// allowServiceTokens), which it injects as the bearer on instance API calls.
+type BuildoorProxyConfig struct {
+	// CFAccessClientID/Secret is the Cloudflare Access service token included
+	// in the devnet auth applications' Access policy. ${ENV}-substitutable.
+	CFAccessClientID     string `yaml:"cf_access_client_id,omitempty"`
+	CFAccessClientSecret string `yaml:"cf_access_client_secret,omitempty"`
+	// StaticToken bypasses minting with a fixed bearer (local/ad-hoc setups).
+	StaticToken string `yaml:"static_token,omitempty"`
+	// DomainSuffix is the devnet DNS zone. Default: "ethpandaops.io".
+	DomainSuffix string `yaml:"domain_suffix,omitempty"`
+	// AllowedOrgs restricts /buildoor access to members of these orgs/groups
+	// (e.g. "ethpandaops:Core"). Empty leaves it open to all authenticated
+	// callers.
+	AllowedOrgs []string `yaml:"allowed_orgs,omitempty"`
+	// RequiredAudience additionally requires the caller's verified OIDC token
+	// to carry this audience (e.g. "buildoor"). The IdP cross-grants it per
+	// group (mirroring the workflow engine's audience pattern), so access is
+	// controlled centrally at the IdP even if allowed_orgs drifts. Only
+	// meaningful in oidc auth mode; ignored when the proxy runs unauthenticated.
+	RequiredAudience string `yaml:"required_audience,omitempty"`
 }
 
 // Workflow auth modes select how the proxy credentials the upstream workflow
@@ -685,8 +715,8 @@ func (c *ServerConfig) Validate() error {
 
 	// Validate the proxy serves something: at least one datasource, or the
 	// workflow engine (a proxy dedicated to engine passthrough is valid).
-	if len(c.ClickHouse) == 0 && len(c.Prometheus) == 0 && len(c.Loki) == 0 && c.EthNode == nil && len(c.Benchmarkoor) == 0 && len(c.Compute) == 0 && c.Workflow == nil {
-		return fmt.Errorf("at least one datasource (clickhouse, prometheus, loki, ethnode, benchmarkoor, or compute) or the workflow engine must be configured")
+	if len(c.ClickHouse) == 0 && len(c.Prometheus) == 0 && len(c.Loki) == 0 && c.EthNode == nil && len(c.Benchmarkoor) == 0 && len(c.Compute) == 0 && c.Workflow == nil && c.Buildoor == nil {
+		return fmt.Errorf("at least one datasource (clickhouse, prometheus, loki, ethnode, benchmarkoor, or compute), the workflow engine, or buildoor must be configured")
 	}
 
 	// Validate ClickHouse configs.
@@ -819,6 +849,32 @@ func (c *ServerConfig) Validate() error {
 
 	if err := c.validateWorkflow(); err != nil {
 		return err
+	}
+
+	if err := c.validateBuildoor(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateBuildoor validates the optional buildoor block: it must carry either
+// the CF Access service token pair or a static token, never a half pair.
+func (c *ServerConfig) validateBuildoor() error {
+	if c.Buildoor == nil {
+		return nil
+	}
+
+	hasID := strings.TrimSpace(c.Buildoor.CFAccessClientID) != ""
+	hasSecret := strings.TrimSpace(c.Buildoor.CFAccessClientSecret) != ""
+	hasStatic := strings.TrimSpace(c.Buildoor.StaticToken) != ""
+
+	if hasID != hasSecret {
+		return errors.New("buildoor.cf_access_client_id and cf_access_client_secret must be provided together")
+	}
+
+	if !hasID && !hasStatic {
+		return errors.New("buildoor requires cf_access_client_id/cf_access_client_secret or static_token")
 	}
 
 	return nil
