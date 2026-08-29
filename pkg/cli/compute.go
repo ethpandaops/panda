@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -559,8 +560,38 @@ var computeSandboxesExecCmd = &cobra.Command{
 		opArgs["command"] = command
 		setIfNotEmpty(opArgs, "timeout", computeExecTimeout)
 
-		return runComputeRaw(cmd, "compute.exec_sandbox", opArgs)
+		budget := computeExecDeadline(computeExecTimeout)
+
+		ctx, cancel := context.WithTimeout(commandContext(cmd), budget)
+		defer cancel()
+
+		err := runComputeRawContext(ctx, "compute.exec_sandbox", opArgs)
+		if err != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return fmt.Errorf(
+				"no response after %s — the guest command may still be running; check the sandbox with 'panda compute sandboxes get %s'",
+				budget, args[0],
+			)
+		}
+
+		return err
 	},
+}
+
+// computeExecDeadline is the CLI wall-clock budget for one exec call: the
+// guest timeout (or the 30s server default) plus transport headroom. Invalid
+// --timeout values keep the default budget; the server still rejects them.
+func computeExecDeadline(timeout string) time.Duration {
+	const (
+		defaultGuestTimeout = 30 * time.Second
+		transportHeadroom   = time.Minute
+	)
+
+	guest := defaultGuestTimeout
+	if parsed, err := time.ParseDuration(timeout); err == nil && parsed > 0 {
+		guest = parsed
+	}
+
+	return guest + transportHeadroom
 }
 
 var computeSandboxesMetricsCmd = &cobra.Command{
@@ -969,7 +1000,11 @@ func computeIdemOrGenerated() string {
 // single object) and raw JSON when --output json is set. List results honour
 // --filter, which the server applies before pagination.
 func runComputeRaw(cmd *cobra.Command, operationID string, args map[string]any) error {
-	response, err := runServerOperationRaw(cmd, operationID, args)
+	return runComputeRawContext(commandContext(cmd), operationID, args)
+}
+
+func runComputeRawContext(ctx context.Context, operationID string, args map[string]any) error {
+	response, err := serverOperationRaw(ctx, operationID, args)
 	if err != nil {
 		return err
 	}

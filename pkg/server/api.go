@@ -760,6 +760,13 @@ func (s *service) handleAPIBuildStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, proxyResp)
 }
 
+// Replay policy for proxied requests: a replayable request may be re-sent once
+// after an auth rejection; a non-replayable one must never run twice upstream.
+const (
+	proxyReplayable = true
+	proxyNoReplay   = false
+)
+
 func (s *service) proxyRequest(
 	ctx context.Context,
 	method string,
@@ -772,7 +779,7 @@ func (s *service) proxyRequest(
 		return nil, http.StatusServiceUnavailable, nil, err
 	}
 
-	return s.proxyRequestWithService(ctx, proxySvc, method, requestPath, body, headers)
+	return s.proxyRequestWithService(ctx, proxySvc, method, requestPath, body, headers, proxyReplayable)
 }
 
 func (s *service) proxyDatasourceRequest(
@@ -783,13 +790,14 @@ func (s *service) proxyDatasourceRequest(
 	requestPath string,
 	body io.Reader,
 	headers http.Header,
+	replayable bool,
 ) ([]byte, int, http.Header, error) {
 	proxySvc, status, err := s.proxyServiceForDatasource(datasourceType, datasourceName)
 	if err != nil {
 		return nil, status, nil, err
 	}
 
-	return s.proxyRequestWithService(ctx, proxySvc, method, requestPath, body, headers)
+	return s.proxyRequestWithService(ctx, proxySvc, method, requestPath, body, headers, replayable)
 }
 
 func (s *service) proxyRequestWithService(
@@ -799,6 +807,7 @@ func (s *service) proxyRequestWithService(
 	requestPath string,
 	body io.Reader,
 	headers http.Header,
+	replayable bool,
 ) ([]byte, int, http.Header, error) {
 	if s.proxyService == nil {
 		return nil, http.StatusServiceUnavailable, nil, fmt.Errorf("proxy service is unavailable")
@@ -874,11 +883,17 @@ func (s *service) proxyRequestWithService(
 	}
 
 	// One invalidate-and-retry on auth rejection covers a token revoked
-	// server-side before the local refresh buffer kicks in.
+	// server-side before the local refresh buffer kicks in. Non-replayable
+	// requests still refresh the token but must not run twice upstream.
 	if status == http.StatusUnauthorized || status == http.StatusForbidden {
 		proxySvc.Invalidate()
 
-		return send()
+		if replayable {
+			return send()
+		}
+
+		return nil, status, header, fmt.Errorf(
+			"authentication expired mid-request; token refreshed — retry the command")
 	}
 
 	return data, status, header, nil

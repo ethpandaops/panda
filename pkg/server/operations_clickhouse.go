@@ -108,6 +108,7 @@ func (s *service) handleClickHouseQuery(w http.ResponseWriter, r *http.Request) 
 			handlers.DatasourceHeader: []string{datasource},
 			"Content-Type":            []string{"text/plain"},
 		},
+		proxyReplayable,
 	)
 	if err != nil {
 		writeAPIError(w, status, err.Error())
