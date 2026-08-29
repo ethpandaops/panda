@@ -111,36 +111,45 @@ func (r *registry) ListTemplates() []mcp.ResourceTemplate {
 // Read reads a resource by URI for the given client surface and returns
 // its content and mime type.
 func (r *registry) Read(ctx context.Context, uri string, surf surface.Dialect) (string, string, error) {
+	r.log.WithField("uri", uri).Debug("Reading resource")
+
+	// Resolve the handler under the read lock, then release it before running
+	// the handler. Handlers may call back into the registry (for example the
+	// getting-started guide lists other resources), so holding the lock across
+	// the call can deadlock a concurrent writer.
+	handler, mimeType, kind := r.resolve(uri)
+	if handler == nil {
+		return "", "", fmt.Errorf("unknown resource URI: %s", uri)
+	}
+
+	content, err := handler(ctx, uri, surf)
+	if err != nil {
+		return "", "", fmt.Errorf("reading %s resource %s: %w", kind, uri, err)
+	}
+
+	return content, mimeType, nil
+}
+
+// resolve returns the handler and mime type for a URI, matching static
+// resources before templates. It returns a nil handler when nothing matches.
+// The registry lock is held only for the lookup, never while the handler runs.
+func (r *registry) resolve(uri string) (ReadHandler, string, string) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	r.log.WithField("uri", uri).Debug("Reading resource")
-
-	// Check static resources first
 	for _, s := range r.static {
 		if s.Resource.URI == uri {
-			content, err := s.Handler(ctx, uri, surf)
-			if err != nil {
-				return "", "", fmt.Errorf("reading static resource %s: %w", uri, err)
-			}
-
-			return content, s.Resource.MIMEType, nil
+			return s.Handler, s.Resource.MIMEType, "static"
 		}
 	}
 
-	// Check template resources
 	for _, t := range r.templates {
 		if t.Pattern.MatchString(uri) {
-			content, err := t.Handler(ctx, uri, surf)
-			if err != nil {
-				return "", "", fmt.Errorf("reading template resource %s: %w", uri, err)
-			}
-
-			return content, t.Template.MIMEType, nil
+			return t.Handler, t.Template.MIMEType, "template"
 		}
 	}
 
-	return "", "", fmt.Errorf("unknown resource URI: %s", uri)
+	return nil, "", ""
 }
 
 // Compile-time check that registry implements Registry.
