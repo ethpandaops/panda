@@ -76,6 +76,81 @@ func TestDiscoverFiresOnDiscoverHook(t *testing.T) {
 	}
 }
 
+// TestStopWaitsForInFlightBackgroundRefresh verifies Stop blocks until a
+// background discovery tick already running its OnDiscover hook has finished,
+// and that no further tick fires once Stop has returned. Before the fix, Stop
+// only signaled the background goroutine to exit and returned immediately,
+// so a caller could believe discovery had fully stopped while a tick was
+// still in flight.
+func TestStopWaitsForInFlightBackgroundRefresh(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(DatasourcesResponse{})
+	}))
+	t.Cleanup(srv.Close)
+
+	log := logrus.New()
+	log.SetOutput(io.Discard)
+
+	var hookCalls atomic.Int32
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+
+	client := NewClient(log, ClientConfig{
+		URL:               srv.URL,
+		DiscoveryInterval: 10 * time.Millisecond,
+		OnDiscover: func() {
+			n := hookCalls.Add(1)
+			// Block the second call only (the first background tick), so the
+			// initial Start-time Discover above completes normally.
+			if n == 2 {
+				entered <- struct{}{}
+				<-release
+			}
+		},
+	}).(*proxyClient)
+
+	if err := client.Start(context.Background()); err != nil {
+		t.Fatalf("Start error = %v", err)
+	}
+
+	<-entered // a background tick's OnDiscover is now blocked inside the hook
+
+	stopDone := make(chan error, 1)
+	go func() {
+		stopDone <- client.Stop(context.Background())
+	}()
+
+	select {
+	case <-stopDone:
+		t.Fatal("Stop returned while a background tick's OnDiscover was still in flight")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(release)
+
+	select {
+	case err := <-stopDone:
+		if err != nil {
+			t.Fatalf("Stop error = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Stop did not return after the in-flight OnDiscover finished")
+	}
+
+	callsAtStop := hookCalls.Load()
+
+	// If the background loop were still ticking, this would be long enough to
+	// see another call.
+	time.Sleep(50 * time.Millisecond)
+
+	if got := hookCalls.Load(); got != callsAtStop {
+		t.Fatalf("hookCalls changed after Stop returned: %d -> %d; background refresh should be fully stopped", callsAtStop, got)
+	}
+}
+
 // TestDiscoverNilOnDiscoverIsSafe verifies a nil OnDiscover hook does not
 // panic the discovery goroutine.
 func TestDiscoverNilOnDiscoverIsSafe(t *testing.T) {
