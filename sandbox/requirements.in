@@ -13,13 +13,13 @@ seaborn>=0.13.0  # statistical charts on top of matplotlib
 plotly>=6.9.0
 
 # ClickHouse client
-clickhouse-connect>=1.6.0
+clickhouse-connect>=1.7.1
 
 # HTTP client for Prometheus/Loki
 httpx>=0.28.0
 
 # S3 client (block archive)
-boto3>=1.43.67
+boto3>=1.43.72
 
 # Utilities
 python-dateutil>=2.9.0
