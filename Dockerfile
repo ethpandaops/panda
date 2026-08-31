@@ -50,7 +50,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # =============================================================================
 # Stage 2: Runtime (single image, all backends)
 # =============================================================================
-FROM debian:bookworm-slim@sha256:0104b334637a5f19aa9c983a91b54c89887c0984081f2068983107a6f6c21eeb
+FROM debian:bookworm-slim@sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241
 
 # Runtime deps. docker.io/netcat for the docker backend + healthcheck; python3 +
 # librsvg + fonts are the lean provisioning floor for the *direct* backend (the
