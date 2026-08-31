@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -65,6 +66,19 @@ var skipUpdateCheckCommands = map[string]bool{
 	"help":       true,
 }
 
+// alwaysJSONCommands emit JSON regardless of --output, so they are machine
+// surfaces even without the flag.
+var alwaysJSONCommands = map[string]bool{
+	"query-raw": true,
+}
+
+// machineOutput reports whether this run's stdout is a JSON document destined
+// for a parser. In that mode the CLI owns error rendering: stdout carries
+// exactly one JSON document, stderr stays empty, and the exit code conveys
+// failure — consumers routinely merge stderr into the pipe, where an
+// "Error:" line or an update notice would corrupt the parse.
+var machineOutput bool
+
 var rootCmd = &cobra.Command{
 	Use:     "panda",
 	Short:   "Ethereum network analytics CLI",
@@ -85,6 +99,14 @@ var rootCmd = &cobra.Command{
 			outputFormat = "json"
 		}
 
+		machineOutput = isJSON() || alwaysJSONCommands[cmd.Name()]
+		if machineOutput {
+			// Execute renders the error as JSON on stdout instead. Reached
+			// via cmd, not rootCmd, which cannot be named inside its own
+			// initializer.
+			cmd.Root().SilenceErrors = true
+		}
+
 		if shouldCheckForUpdate(cmd) {
 			go backgroundUpdateCheck()
 		}
@@ -92,7 +114,7 @@ var rootCmd = &cobra.Command{
 		return nil
 	},
 	PersistentPostRunE: func(cmd *cobra.Command, _ []string) error {
-		if !shouldCheckForUpdate(cmd) {
+		if machineOutput || !shouldCheckForUpdate(cmd) {
 			return nil
 		}
 
@@ -111,13 +133,23 @@ func Execute() {
 		return
 	}
 
+	var exitErr *exitCodeError
+	isExitCode := errors.As(err, &exitErr)
+
+	// In machine mode cobra's stderr line is suppressed, so render the failure
+	// here. An exitCodeError means the command already wrote its own JSON
+	// payload and is only reporting the outcome — a second document would
+	// break the parse it is meant to protect, so the exit code speaks alone.
+	if machineOutput && !isExitCode {
+		_ = printJSON(map[string]any{"error": err.Error()})
+	}
+
 	if hint := unknownCommandHint(err); hint != "" {
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintln(os.Stderr, hint)
 	}
 
-	var exitErr *exitCodeError
-	if errors.As(err, &exitErr) {
+	if isExitCode {
 		os.Exit(exitErr.code)
 	}
 
@@ -130,7 +162,33 @@ func executeWithSignals() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// Once: wrapping is not idempotent, and every command is registered by
+	// now (subcommand init() order is not guaranteed relative to this file's).
+	attachUsageOnce.Do(func() { attachUsageToArgErrors(rootCmd) })
+
 	return rootCmd.ExecuteContext(ctx)
+}
+
+var attachUsageOnce sync.Once
+
+// attachUsageToArgErrors wraps every command's positional-arg validator so a
+// count/shape error carries the command's usage line. SilenceUsage hides the
+// usage block on runtime errors, which is right for HTTP failures but leaves
+// "accepts 1 arg(s), received 0" with no path to the correct invocation.
+func attachUsageToArgErrors(cmd *cobra.Command) {
+	if validate := cmd.Args; validate != nil {
+		cmd.Args = func(c *cobra.Command, args []string) error {
+			if err := validate(c, args); err != nil {
+				return fmt.Errorf("%w\n\nUsage: %s", err, c.UseLine())
+			}
+
+			return nil
+		}
+	}
+
+	for _, sub := range cmd.Commands() {
+		attachUsageToArgErrors(sub)
+	}
 }
 
 func unknownCommandHint(err error) string {
@@ -143,6 +201,16 @@ func unknownCommandHint(err error) string {
 
 func init() {
 	rootCmd.SetVersionTemplate("panda version {{.Version}}\n")
+
+	// SilenceUsage suppresses the usage block everywhere, so a flag typo
+	// would otherwise surface as a bare "unknown flag" with no correction
+	// path. Attach the one-line usage to the error itself.
+	rootCmd.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
+		return fmt.Errorf(
+			"%w\n\nUsage: %s\nRun '%s --help' for available flags",
+			err, cmd.UseLine(), cmd.CommandPath(),
+		)
+	})
 
 	rootCmd.AddGroup(
 		&cobra.Group{ID: groupWorkflow, Title: "Workflow:"},
