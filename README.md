@@ -117,8 +117,8 @@ panda execute --code 'print("hello")'      # Run Python in the sandbox
 {
   "mcpServers": {
     "ethpandaops-panda": {
-      "type": "http",
-      "url": "http://localhost:2480/mcp"
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://localhost:2480/mcp", "--allow-http"]
     }
   }
 }
