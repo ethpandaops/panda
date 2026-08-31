@@ -134,6 +134,7 @@ jobs:
           # Keep in sync with the uv pinned in sandbox/Dockerfile.
           version: "0.11.17"
           enable-cache: true
+          prune-cache: true
 
       - name: Install eval deps
         working-directory: tests/eval
