@@ -2393,7 +2393,6 @@ components:
             type: string
         progress:
           $ref: '#/components/schemas/OperationProgress'
-          nullable: true
     OperationProgress:
       type: object
       required: [phases, updatedAt]
