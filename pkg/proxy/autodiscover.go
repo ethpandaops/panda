@@ -107,6 +107,17 @@ func (s *server) reconcileClickHouseAutodiscover(ctx context.Context, entry Clic
 		return
 	}
 
+	// A failed probe means we could not determine availability, not that the
+	// datasource is gone. Leave the current state untouched so a transient
+	// error (timeout, network blip, 5xx) does not tear down a healthy
+	// datasource. Removal only happens when a probe succeeds and reports the
+	// database absent.
+	if err != nil {
+		logger.WithError(err).Debug("ClickHouse autodiscovery probe failed; leaving current state unchanged")
+
+		return
+	}
+
 	if available && !*present {
 		if !s.addAutodiscoveredClickHouseCluster(target.cluster) {
 			return
@@ -122,12 +133,6 @@ func (s *server) reconcileClickHouseAutodiscover(ctx context.Context, entry Clic
 		s.removeAutodiscoveredClickHouseCluster(entry.Name)
 		*present = false
 		logger.Info("ClickHouse autodiscovery datasource became unavailable")
-
-		return
-	}
-
-	if err != nil {
-		logger.WithError(err).Debug("ClickHouse autodiscovery probe failed")
 
 		return
 	}
