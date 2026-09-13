@@ -338,6 +338,19 @@ func (b *DockerBackend) executeWithNewSession(ctx context.Context, req ExecuteRe
 		timeout = time.Duration(b.cfg.Timeout) * time.Second
 	}
 
+	// Reserve a slot for the new session before creating it, closing the gap
+	// where a burst of concurrent new-session executions could all pass a
+	// point-in-time cap check before any of their containers exist.
+	canCreate, release, count, maxAllowed := b.sessionManager.ReserveSession(ctx, req.OwnerID)
+	defer release()
+
+	if !canCreate {
+		return nil, fmt.Errorf(
+			"maximum sessions limit reached (%d/%d). Use manage_session with operation 'list' to see sessions, then 'destroy' to free up a slot",
+			count, maxAllowed,
+		)
+	}
+
 	// Generate session ID upfront so it can be stored in container labels.
 	sessionID := b.sessionManager.GenerateSessionID()
 
@@ -1177,8 +1190,12 @@ func (b *DockerBackend) CreateSession(ctx context.Context, ownerID string, env m
 		return "", fmt.Errorf("sessions are disabled")
 	}
 
-	// Check if we can create a new session.
-	canCreate, count, maxAllowed := b.sessionManager.CanCreateSession(ctx, ownerID)
+	// Reserve a slot for the new session. Held until this function returns, so
+	// a concurrent caller cannot also pass the cap check before this container
+	// exists.
+	canCreate, release, count, maxAllowed := b.sessionManager.ReserveSession(ctx, ownerID)
+	defer release()
+
 	if !canCreate {
 		return "", fmt.Errorf(
 			"maximum sessions limit reached (%d/%d). Use manage_session with operation 'list' to see sessions, then 'destroy' to free up a slot",
