@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -362,15 +363,39 @@ func (s *authorizationServer) handleRefreshTokenGrant(w http.ResponseWriter, r *
 		return
 	}
 
+	// Copy every field we need out of the session while the lock is held, and
+	// never touch the *refreshSession pointer again afterward. A concurrent
+	// request presenting the same token can rotate or delete it at any point
+	// once we release the lock, so any later read through the pointer would
+	// race that request's writes to the same object.
 	s.refreshSessionsMu.RLock()
 	session, ok := s.refreshSessions[refreshToken]
+	var (
+		sessionClientID   string
+		sessionResource   string
+		sessionGitHubID   int64
+		sessionGitHub     string
+		sessionGitHubUser string
+		sessionOrgs       []string
+		sessionExpiresAt  time.Time
+	)
+	if ok {
+		sessionClientID = session.ClientID
+		sessionResource = session.Resource
+		sessionGitHubID = session.GitHubID
+		sessionGitHub = session.GitHubAccessToken
+		sessionGitHubUser = session.GitHubLogin
+		sessionOrgs = append([]string(nil), session.Orgs...)
+		sessionExpiresAt = session.ExpiresAt
+	}
 	s.refreshSessionsMu.RUnlock()
+
 	if !ok {
 		s.writeError(w, http.StatusBadRequest, "invalid_grant", "invalid refresh token")
 		return
 	}
 
-	if time.Now().After(session.ExpiresAt) {
+	if time.Now().After(sessionExpiresAt) {
 		s.refreshSessionsMu.Lock()
 		delete(s.refreshSessions, refreshToken)
 		s.refreshSessionsMu.Unlock()
@@ -378,30 +403,30 @@ func (s *authorizationServer) handleRefreshTokenGrant(w http.ResponseWriter, r *
 		return
 	}
 
-	if session.ClientID != clientID {
+	if sessionClientID != clientID {
 		s.writeError(w, http.StatusBadRequest, "invalid_grant", "parameter mismatch")
 		return
 	}
 
-	if resource != "" && session.Resource != resource {
+	if resource != "" && sessionResource != resource {
 		s.writeError(w, http.StatusBadRequest, "invalid_grant", "parameter mismatch")
 		return
 	}
 
-	githubToken := session.GitHubAccessToken
-	githubLogin := session.GitHubLogin
-	githubID := session.GitHubID
-	orgs := append([]string(nil), session.Orgs...)
+	githubToken := sessionGitHub
+	githubLogin := sessionGitHubUser
+	githubID := sessionGitHubID
+	orgs := sessionOrgs
 
 	if len(s.allowedOrgs) > 0 {
-		githubUser, err := s.github.GetUser(r.Context(), session.GitHubAccessToken)
+		githubUser, err := s.github.GetUser(r.Context(), sessionGitHub)
 		if err != nil {
-			s.log.WithError(err).WithField("login", session.GitHubLogin).Warn("Failed to verify GitHub org membership during refresh")
+			s.log.WithError(err).WithField("login", sessionGitHubUser).Warn("Failed to verify GitHub org membership during refresh")
 			s.writeError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "could not verify organization membership")
 			return
 		}
 
-		if githubUser.ID != session.GitHubID {
+		if githubUser.ID != sessionGitHubID {
 			s.refreshSessionsMu.Lock()
 			delete(s.refreshSessions, refreshToken)
 			s.refreshSessionsMu.Unlock()
@@ -419,24 +444,22 @@ func (s *authorizationServer) handleRefreshTokenGrant(w http.ResponseWriter, r *
 
 		githubLogin = githubUser.Login
 		orgs = append([]string(nil), githubUser.Organizations...)
-
-		s.refreshSessionsMu.Lock()
-		if current := s.refreshSessions[refreshToken]; current != nil {
-			current.GitHubLogin = githubUser.Login
-			current.Orgs = append([]string(nil), githubUser.Organizations...)
-		}
-		s.refreshSessionsMu.Unlock()
 	}
 
-	accessToken, err := s.issueAccessToken(s.issuerURL, session.Resource, githubLogin, githubID, orgs)
+	accessToken, err := s.issueAccessToken(s.issuerURL, sessionResource, githubLogin, githubID, orgs)
 	if err != nil {
 		s.log.WithError(err).Error("Failed to sign refreshed token")
 		s.writeError(w, http.StatusInternalServerError, "server_error", "failed to create token")
 		return
 	}
 
-	newRefreshToken, err := s.rotateRefreshToken(refreshToken, session, githubLogin, githubID, githubToken, orgs)
+	newRefreshToken, err := s.rotateRefreshToken(refreshToken, sessionClientID, sessionResource, githubLogin, githubID, githubToken, orgs)
 	if err != nil {
+		if errors.Is(err, errRefreshTokenAlreadyConsumed) {
+			s.writeError(w, http.StatusBadRequest, "invalid_grant", "refresh token already used")
+			return
+		}
+
 		s.log.WithError(err).Error("Failed to rotate refresh session")
 		s.writeError(w, http.StatusInternalServerError, "server_error", "failed to rotate refresh token")
 		return
