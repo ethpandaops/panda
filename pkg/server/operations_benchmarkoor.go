@@ -185,6 +185,7 @@ func (s *service) handleBenchmarkoorGetRun(w http.ResponseWriter, r *http.Reques
 		benchmarkoorAPIPrefix+"/index/query/runs?"+params.Encode(),
 		nil,
 		http.Header{handlers.DatasourceHeader: []string{datasource}},
+		proxyReplayable,
 	)
 	if err != nil {
 		writeAPIError(w, status, err.Error())

@@ -101,6 +101,7 @@ func TestDatasourceProxyRequestRoutesByTypeAndName(t *testing.T) {
 		"/loki/loki/api/v1/query?query=up",
 		nil,
 		http.Header{handlers.DatasourceHeader: []string{"logs"}},
+		proxyReplayable,
 	)
 	if err != nil {
 		t.Fatalf("proxyDatasourceRequest error = %v", err)
@@ -329,6 +330,7 @@ func TestProxyRequestForwardsAttribution(t *testing.T) {
 		"/clickhouse/",
 		strings.NewReader("SELECT 1"),
 		http.Header{handlers.DatasourceHeader: []string{"xatu"}},
+		proxyReplayable,
 	)
 	if err != nil {
 		t.Fatalf("proxyDatasourceRequest error = %v", err)

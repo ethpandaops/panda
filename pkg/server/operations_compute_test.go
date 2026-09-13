@@ -212,6 +212,37 @@ func TestComputeListForwardsFilters(t *testing.T) {
 	assert.Equal(t, []string{"status=running", "vcpu>=4"}, transport.last.URL.Query()["filter"])
 }
 
+// TestComputeForwardsStructuredUpstreamError verifies a JSON error object from
+// the backend is forwarded verbatim, keeping structured fields like code and
+// request_id visible to the CLI instead of nesting them in a wrapper.
+func TestComputeForwardsStructuredUpstreamError(t *testing.T) {
+	t.Parallel()
+
+	upstream := `{"error":"guest unreachable","code":"guest_unreachable","request_id":"req-123"}`
+	transport := &recordingTransport{status: http.StatusInternalServerError, body: upstream, contentType: "application/json"}
+	svc := newComputeService(t, transport, types.DatasourceInfo{Name: "production"})
+
+	rec := callComputeOp(t, svc, "compute.get_sandbox", map[string]any{"id": "sb-1"})
+
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+	assert.JSONEq(t, upstream, rec.Body.String())
+}
+
+// TestComputeWrapsNonJSONUpstreamError verifies non-JSON error bodies still get
+// the standard {"error": ...} wrapper.
+func TestComputeWrapsNonJSONUpstreamError(t *testing.T) {
+	t.Parallel()
+
+	transport := &recordingTransport{status: http.StatusBadGateway, body: "upstream exploded", contentType: "text/plain"}
+	svc := newComputeService(t, transport, types.DatasourceInfo{Name: "production"})
+
+	rec := callComputeOp(t, svc, "compute.get_sandbox", map[string]any{"id": "sb-1"})
+
+	assert.Equal(t, http.StatusBadGateway, rec.Code)
+	assert.JSONEq(t, `{"error":"upstream exploded"}`, rec.Body.String())
+}
+
 // TestComputeRequiresDatasourceWhenAmbiguous verifies an explicit datasource is
 // required when more than one compute datasource is advertised.
 func TestComputeRequiresDatasourceWhenAmbiguous(t *testing.T) {
