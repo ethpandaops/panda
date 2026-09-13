@@ -105,7 +105,18 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 
 	if isJSON() {
-		return printJSON(result)
+		if err := printJSON(result); err != nil {
+			return err
+		}
+
+		// Mirror the text path's exit status: a failed or cancelled build must
+		// be detectable from the process, not only by reading the payload.
+		switch result.Conclusion {
+		case "failure", "cancelled":
+			return &exitCodeError{code: 1}
+		}
+
+		return nil
 	}
 
 	switch result.Conclusion {

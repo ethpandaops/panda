@@ -86,6 +86,9 @@ var clickhouseQueryRawCmd = &cobra.Command{
 	Short: "Execute a SQL query and return raw rows (always JSON)",
 	Long: `Execute a SQL query and return raw rows as JSON.
 
+Failures are also JSON on stdout ({"error": ...}, exit code 1), so piping into
+a JSON parser surfaces the real error instead of a parse failure.
+
 Keep result sets bounded: aggregate in SQL or add a LIMIT when inspecting rows.
 For cross-source analysis, run separate bounded queries and combine them with
 'panda execute' or another client-side step instead of dumping unbounded rows

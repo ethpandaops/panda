@@ -144,6 +144,62 @@ func TestDoraDataPassthroughEscapesIdentifier(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), `"slot":"escaped"`)
 }
 
+func TestDoraClientsReturnsBareClientList(t *testing.T) {
+	t.Parallel()
+
+	doraServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/clients/consensus":
+			_, _ = w.Write([]byte(`{"clients":[
+				{"client_name":"lighthouse-geth-1","client_type":"lighthouse","status":"online","head_slot":3210},
+				{"client_name":"nimbus-besu-1","client_type":"nimbus","status":"offline","head_slot":0}
+			],"count":2}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(doraServer.Close)
+
+	svc := newDoraOperationService(doraServer.Client(), doraServer.URL)
+	rec := httptest.NewRecorder()
+
+	handled := svc.handleDoraOperation("dora.get_clients", rec, newDoraOpRequest(t, "testnet"))
+	require.True(t, handled)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var response operations.Response
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
+
+	data, ok := response.Data.(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, float64(2), data["count"])
+
+	clients, ok := data["clients"].([]any)
+	require.True(t, ok)
+	require.Len(t, clients, 2)
+
+	first, ok := clients[0].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "lighthouse-geth-1", first["client_name"])
+	assert.Equal(t, "online", first["status"])
+}
+
+func TestDoraClientsRejectsNonJSONBody(t *testing.T) {
+	t.Parallel()
+
+	doraServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`<html>rate limited</html>`))
+	}))
+	t.Cleanup(doraServer.Close)
+
+	svc := newDoraOperationService(doraServer.Client(), doraServer.URL)
+	rec := httptest.NewRecorder()
+
+	handled := svc.handleDoraOperation("dora.get_clients", rec, newDoraOpRequest(t, "testnet"))
+	require.True(t, handled)
+	assert.Equal(t, http.StatusBadGateway, rec.Code)
+}
+
 func newDoraOperationService(httpClient *http.Client, doraURL string) *service {
 	log := logrus.New()
 	log.SetOutput(io.Discard)
