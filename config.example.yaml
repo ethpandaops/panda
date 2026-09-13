@@ -8,6 +8,10 @@ server:
   base_url: "http://localhost:2480"  # ep clients should point at this URL
   sandbox_url: "http://ethpandaops-panda-server:2480"  # URL sandbox containers use to call the local server
   # uploads: false  # opt out of `panda upload` (upload/publish API + /u/ preview pages)
+  # attribution_session_scoping: true  # scope unauthenticated sandbox sessions by the
+  #   caller-supplied X-Panda-On-Behalf-Of header. That header is untrusted and
+  #   spoofable by any caller that can reach this server, so leave this off unless
+  #   the deployment already accepts that tradeoff (e.g. an automated test harness).
 
 # Sandbox configuration
 sandbox:

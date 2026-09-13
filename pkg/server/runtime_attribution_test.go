@@ -94,14 +94,31 @@ func TestRuntimeCallbacksInheritExecutionAttribution(t *testing.T) {
 		"runtime callbacks must inherit the spawning execution's attribution")
 }
 
-func TestAuthOwnerIDAttributionFallback(t *testing.T) {
-	// No auth user: fall back to the caller attribution so sessions are owner-scoped
-	// even on an unauthenticated server (local mode, the eval harness).
+func TestAuthOwnerIDIgnoresAttributionByDefault(t *testing.T) {
+	// Attribution is untrusted and audit-only. By default, an unauthenticated
+	// request with no auth user gets no ownership scoping at all, even if a
+	// caller-supplied attribution value is present, since any other caller
+	// could set the same value.
+	svc := &service{}
+
+	withAttr := httptest.NewRequest(http.MethodGet, "/api/v1/sessions", nil)
+	withAttr = withAttr.WithContext(attribution.WithValue(withAttr.Context(), "alice"))
+	require.Equal(t, "", svc.authOwnerID(withAttr))
+
+	bare := httptest.NewRequest(http.MethodGet, "/api/v1/sessions", nil)
+	require.Equal(t, "", svc.authOwnerID(bare))
+}
+
+func TestAuthOwnerIDUsesAttributionWhenExplicitlyEnabled(t *testing.T) {
+	// An operator that explicitly opts into attribution-based session scoping
+	// (e.g. an automated eval harness isolating its own worker sessions) gets
+	// the caller attribution value as the owner id.
+	svc := &service{cfg: config.ServerConfig{AttributionSessionScoping: true}}
+
 	withAttr := httptest.NewRequest(http.MethodGet, "/api/v1/sessions", nil)
 	withAttr = withAttr.WithContext(attribution.WithValue(withAttr.Context(), "eval-worker-abc123"))
-	require.Equal(t, "eval-worker-abc123", authOwnerID(withAttr))
+	require.Equal(t, "eval-worker-abc123", svc.authOwnerID(withAttr))
 
-	// Neither auth user nor attribution: empty owner, preserving prior behavior.
 	bare := httptest.NewRequest(http.MethodGet, "/api/v1/sessions", nil)
-	require.Equal(t, "", authOwnerID(bare))
+	require.Equal(t, "", svc.authOwnerID(bare))
 }

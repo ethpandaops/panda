@@ -79,6 +79,17 @@ type ServerConfig struct {
 	// Nothing leaves the machine without an explicit publish either way.
 	Uploads *bool `yaml:"uploads,omitempty"`
 
+	// AttributionSessionScoping opts into using the caller-supplied
+	// X-Panda-On-Behalf-Of attribution value as a sandbox session ownership
+	// key when the server has no authenticated user for a request. That value
+	// is untrusted and audit-only by design (see pkg/attribution): any caller
+	// that can reach the server can set it to any value, including someone
+	// else's. Leave this off (the default) unless the deployment already
+	// accepts that tradeoff, such as an automated eval harness isolating its
+	// own worker sessions. Off, unauthenticated requests get no ownership
+	// scoping at all.
+	AttributionSessionScoping bool `yaml:"attribution_session_scoping,omitempty"`
+
 	// Deprecated: Transport is accepted for backwards compatibility but ignored.
 	// The server always runs HTTP with both SSE and streamable-http transports.
 	Transport string `yaml:"transport,omitempty"`
