@@ -153,11 +153,16 @@ func (b *Builder) Build(ctx context.Context) (Service, error) {
 	cleanup := func(stopCtx context.Context) error {
 		var errs []error
 
-		if err := searchRuntime.Close(); err != nil {
+		// Stop the app (and with it, every proxy client's background discovery
+		// goroutine) before closing the search runtime. application.Stop joins
+		// those goroutines rather than merely signaling them, so once it
+		// returns no discovery tick can still be in flight to call OnDiscover
+		// while searchRuntime.Close is waiting for its own goroutines to drain.
+		if err := application.Stop(stopCtx); err != nil {
 			errs = append(errs, err)
 		}
 
-		if err := application.Stop(stopCtx); err != nil {
+		if err := searchRuntime.Close(); err != nil {
 			errs = append(errs, err)
 		}
 

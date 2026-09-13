@@ -119,6 +119,12 @@ type proxyClient struct {
 	stopCh      chan struct{}
 	stopped     bool
 
+	// refreshWG tracks the background refresh goroutine so Stop can join it
+	// instead of merely signaling it, guaranteeing no discovery tick is still
+	// in flight (and so cannot still invoke OnDiscover) by the time Stop
+	// returns.
+	refreshWG sync.WaitGroup
+
 	// discovered reports whether at least one datasource discovery has
 	// succeeded. It gates server readiness: until the first successful
 	// discovery the server has no datasources to serve.
@@ -200,23 +206,32 @@ func (c *proxyClient) Start(ctx context.Context) error {
 
 	// Start background refresh if configured.
 	if c.cfg.DiscoveryInterval > 0 {
+		c.refreshWG.Add(1)
+
 		go c.backgroundRefresh()
 	}
 
 	return nil
 }
 
-// Stop stops the client.
+// Stop stops the client and waits for the background refresh goroutine to
+// fully exit before returning, so no discovery tick already in flight can
+// still invoke OnDiscover after a caller believes the client has stopped.
 func (c *proxyClient) Stop(_ context.Context) error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	if c.stopped {
+		c.mu.Unlock()
+
 		return nil
 	}
 
 	c.stopped = true
 	close(c.stopCh)
+	c.mu.Unlock()
+
+	// Released above: backgroundRefresh calls Discover, which takes this same
+	// lock, so waiting on it while still holding the lock would deadlock.
+	c.refreshWG.Wait()
 
 	c.log.Info("Proxy client stopped")
 
@@ -628,6 +643,8 @@ func (c *proxyClient) EnsureAuthenticated(ctx context.Context) error {
 
 // backgroundRefresh periodically refreshes datasource information.
 func (c *proxyClient) backgroundRefresh() {
+	defer c.refreshWG.Done()
+
 	ticker := time.NewTicker(c.cfg.DiscoveryInterval)
 	defer ticker.Stop()
 

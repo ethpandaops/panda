@@ -55,6 +55,14 @@ type Runtime struct {
 
 	stop chan struct{}
 	wg   sync.WaitGroup
+
+	// closeMu pairs a decision to wg.Add (in OnDiscover) with the decision to
+	// start closing (in Close) so the two can never race: OnDiscover checks
+	// closed and adds to wg under the same lock Close takes to set closed
+	// before it calls wg.Wait. That ordering rules out wg.Add ever landing
+	// concurrently with wg.Wait, which the WaitGroup docs call misuse.
+	closeMu sync.Mutex
+	closed  bool
 }
 
 // exampleRefreshInterval is how often the example search index is rebuilt to
@@ -201,7 +209,16 @@ func (r *Runtime) OnDiscover() {
 		return
 	}
 
+	r.closeMu.Lock()
+	if r.closed {
+		r.closeMu.Unlock()
+		r.activating.Store(false)
+
+		return
+	}
+
 	r.wg.Add(1)
+	r.closeMu.Unlock()
 
 	go func() {
 		defer r.wg.Done()
@@ -255,11 +272,17 @@ func (r *Runtime) fetchExternalRegistries(ctx context.Context, specsCfg config.C
 	wg.Wait()
 }
 
-// Close stops the background refresher and releases the shared embedder.
+// Close stops the background refresher and releases the shared embedder. Once
+// Close has started, OnDiscover becomes a permanent no-op (see closeMu), so no
+// caller still invoking it from a discovery goroutine that hasn't noticed
+// shutdown yet can add to wg after this point.
 func (r *Runtime) Close() error {
 	if r == nil {
 		return nil
 	}
+
+	r.closeMu.Lock()
+	r.closed = true
 
 	if r.stop != nil {
 		select {
@@ -268,6 +291,7 @@ func (r *Runtime) Close() error {
 			close(r.stop)
 		}
 	}
+	r.closeMu.Unlock()
 
 	r.wg.Wait()
 
