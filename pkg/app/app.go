@@ -23,6 +23,7 @@ import (
 	datasetsmodule "github.com/ethpandaops/panda/datasets"
 	benchmarkoormodule "github.com/ethpandaops/panda/modules/benchmarkoor"
 	blockarchivemodule "github.com/ethpandaops/panda/modules/block_archive"
+	buildoormodule "github.com/ethpandaops/panda/modules/buildoor"
 	cbtmodule "github.com/ethpandaops/panda/modules/cbt"
 	chartkitmodule "github.com/ethpandaops/panda/modules/chartkit"
 	clickhousemodule "github.com/ethpandaops/panda/modules/clickhouse"
@@ -220,6 +221,7 @@ func (a *App) registerModules() *module.Registry {
 
 	reg.Add(benchmarkoormodule.New())
 	reg.Add(blockarchivemodule.New())
+	reg.Add(buildoormodule.New())
 	reg.Add(cbtmodule.New())
 	reg.Add(chartkitmodule.New())
 	reg.Add(clickhousemodule.New())

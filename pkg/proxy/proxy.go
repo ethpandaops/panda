@@ -88,6 +88,14 @@ type WorkflowInfoProvider interface {
 	WorkflowInfo() (enabled bool, webURL string)
 }
 
+// BuildoorInfoProvider reports whether the proxy advertises credentialed
+// devnet buildoor API access. Like WorkflowInfoProvider it is a capability
+// interface resolved with a type assertion.
+type BuildoorInfoProvider interface {
+	// BuildoorAvailable returns whether the /buildoor route is advertised.
+	BuildoorAvailable() bool
+}
+
 // ethNodeDatasourceInfo returns the ethnode datasource identity when available,
 // or nil. Ethnode is a single type-level datasource, not a discoverable list.
 func ethNodeDatasourceInfo(available bool) []types.DatasourceInfo {

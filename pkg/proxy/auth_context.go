@@ -7,6 +7,11 @@ type AuthUser struct {
 	Subject  string
 	Username string
 	Groups   []string
+	// Audiences is the verified token's aud claim. Audience-gated routes
+	// (e.g. buildoor's required_audience) check membership here; the IdP
+	// cross-grants extra audiences per group, so presence proves a
+	// server-side policy decision, not a client-side request.
+	Audiences []string
 }
 
 type authUserContextKey string

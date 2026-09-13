@@ -290,6 +290,8 @@ func extractDatasourceType(path string) string {
 		return "compute"
 	case "workflow":
 		return "workflow"
+	case "buildoor":
+		return "buildoor"
 	case "github":
 		return "github"
 	case "uploads":

@@ -39,6 +39,7 @@ def __getattr__(name):
     if name in (
         "benchmarkoor",
         "block_archive",
+        "buildoor",
         "cbt",
         "clickhouse",
         "compute",

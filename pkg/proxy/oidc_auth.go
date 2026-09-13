@@ -188,9 +188,10 @@ func (a *oidcAuthenticator) Middleware() func(http.Handler) http.Handler {
 			username := firstNonEmpty(claims.PreferredUsername, claims.Email, claims.Name, subject)
 
 			ctx := withAuthUser(r.Context(), &AuthUser{
-				Subject:  subject,
-				Username: username,
-				Groups:   groups,
+				Subject:   subject,
+				Username:  username,
+				Groups:    groups,
+				Audiences: append([]string(nil), token.Audience...),
 			})
 
 			next.ServeHTTP(w, r.WithContext(ctx))

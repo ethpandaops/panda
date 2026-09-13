@@ -34,6 +34,10 @@ type Router interface {
 	// and forwarded traffic never disagree. It is NOT necessarily Primary(): a
 	// secondary route may carry the engine when the primary does not.
 	WorkflowRoute() (Client, bool)
+
+	// BuildoorRoute returns the proxy client for the first route, in priority
+	// order, that advertises credentialed buildoor access.
+	BuildoorRoute() (Client, bool)
 }
 
 // DatasourceOwner identifies the proxy that owns a datasource.
@@ -351,6 +355,18 @@ func (r *routerClient) WorkflowInfo() (enabled bool, webURL string) {
 func (r *routerClient) WorkflowRoute() (Client, bool) {
 	if route, _, ok := r.selectWorkflowRoute(); ok {
 		return route, true
+	}
+
+	return nil, false
+}
+
+// BuildoorRoute returns the proxy client for the first route, in priority
+// order, that advertises credentialed buildoor access.
+func (r *routerClient) BuildoorRoute() (Client, bool) {
+	for i := range r.routes {
+		if provider, ok := r.routes[i].client.(BuildoorInfoProvider); ok && provider.BuildoorAvailable() {
+			return r.routes[i].client, true
+		}
 	}
 
 	return nil, false

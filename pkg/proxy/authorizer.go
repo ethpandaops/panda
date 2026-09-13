@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/sirupsen/logrus"
 
@@ -16,6 +17,12 @@ import (
 type Authorizer struct {
 	log   logrus.FieldLogger
 	rules map[string][]datasourceVariantRule // "type:name" -> variants; "type" for type-level rules (ethnode)
+
+	// buildoorRequiredAudience, when set, additionally requires the verified
+	// token's aud claim to carry this audience for /buildoor access. The IdP
+	// cross-grants it per group, so it is a second, centrally-managed gate on
+	// top of allowed_orgs.
+	buildoorRequiredAudience string
 }
 
 type datasourceVariantRule struct {
@@ -84,6 +91,17 @@ func NewAuthorizer(log logrus.FieldLogger, cfg ServerConfig) *Authorizer {
 		}}
 	}
 
+	// Buildoor is gated at the type level, like workflow.
+	if cfg.Buildoor != nil && len(cfg.Buildoor.AllowedOrgs) > 0 {
+		a.rules[ruleKey("buildoor", "")] = []datasourceVariantRule{{
+			allowedOrgs: append([]string(nil), cfg.Buildoor.AllowedOrgs...),
+		}}
+	}
+
+	if cfg.Buildoor != nil {
+		a.buildoorRequiredAudience = strings.TrimSpace(cfg.Buildoor.RequiredAudience)
+	}
+
 	return a
 }
 
@@ -130,10 +148,15 @@ func (a *Authorizer) FilterDatasources(ctx context.Context, resp DatasourcesResp
 	filtered.BenchmarkoorInfo = a.filterDatasourceList(userOrgs, hasUser, "benchmarkoor", resp.BenchmarkoorInfo)
 	filtered.ComputeInfo = a.filterDatasourceList(userOrgs, hasUser, "compute", resp.ComputeInfo)
 
-	// The workflow advert is type-level: hide it entirely from callers who
-	// lack the required org membership.
+	// The workflow and buildoor adverts are type-level: hide them entirely
+	// from callers who lack the required org membership.
 	if resp.Workflow != nil && a.orgsMatch(userOrgs, hasUser, ruleKey("workflow", "")) {
 		filtered.Workflow = resp.Workflow
+	}
+
+	if resp.Buildoor != nil && a.orgsMatch(userOrgs, hasUser, ruleKey("buildoor", "")) &&
+		a.buildoorAudienceOK(ctx) {
+		filtered.Buildoor = resp.Buildoor
 	}
 
 	return filtered
@@ -177,13 +200,17 @@ func (a *Authorizer) routeName(ctx context.Context, dsType, dsName string) (stri
 		return "", false
 	}
 
-	// Workflow is gated at the type level too (no X-Datasource name).
-	if dsType == "workflow" {
-		if a.orgsMatch(userOrgs, hasUser, ruleKey("workflow", "")) {
-			return "", true
+	// Workflow and buildoor are gated at the type level too (no X-Datasource name).
+	if dsType == "workflow" || dsType == "buildoor" {
+		if !a.orgsMatch(userOrgs, hasUser, ruleKey(dsType, "")) {
+			return "", false
 		}
 
-		return "", false
+		if dsType == "buildoor" && !a.buildoorAudienceOK(ctx) {
+			return "", false
+		}
+
+		return "", true
 	}
 
 	// For datasources endpoint, skip middleware check (filtered in handler).
@@ -255,6 +282,35 @@ func allowedOrgsMatch(userOrgs, allowedOrgs []string) bool {
 //   - OAuth mode: auth.AuthUser.Orgs
 //   - OIDC mode: proxy.AuthUser.Groups
 //   - None mode: returns false (no restriction)
+//
+// buildoorAudienceOK enforces the buildoor required_audience against the
+// verified token's aud claim. Without a required audience it always passes.
+// Without an authenticated user (auth mode none) it passes too, consistent
+// with the org gates' local-trust behavior. OAuth-mode users carry no OIDC
+// audiences and are therefore denied when a required audience is set — the
+// cross-grant only exists at the OIDC IdP.
+func (a *Authorizer) buildoorAudienceOK(ctx context.Context) bool {
+	if a.buildoorRequiredAudience == "" {
+		return true
+	}
+
+	if user := GetAuthUser(ctx); user != nil {
+		for _, aud := range user.Audiences {
+			if aud == a.buildoorRequiredAudience {
+				return true
+			}
+		}
+
+		return false
+	}
+
+	if user := auth.GetAuthUser(ctx); user != nil {
+		return false
+	}
+
+	return true
+}
+
 func getUserOrgs(ctx context.Context) ([]string, bool) {
 	// Check proxy.AuthUser (OIDC mode).
 	if user := GetAuthUser(ctx); user != nil {
