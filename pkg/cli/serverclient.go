@@ -296,6 +296,8 @@ func serverErrorHint(status int, message string) string {
 	}
 
 	switch status {
+	case http.StatusUnauthorized:
+		return "the panda proxy rejected or is missing your credential; run 'panda auth login' to re-authenticate, then retry"
 	case http.StatusNotFound:
 		return "the requested module, operation, datasource, or resource is not available on this server; check 'panda datasources' and 'panda resources'"
 	case http.StatusBadGateway:

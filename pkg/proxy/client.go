@@ -380,8 +380,16 @@ func (c *proxyClient) ClickHouseQuery(ctx context.Context, datasource, sql strin
 			req.Header.Set(attribution.Header, v)
 		}
 
-		if token := c.RegisterToken(); token != "" && token != NoAuthToken {
-			req.Header.Set("Authorization", "Bearer "+token)
+		// Fail fast when auth is configured but no token is available: an
+		// unauthenticated request would only surface the proxy's opaque 401
+		// instead of the actionable credential error.
+		tok, err := c.accessToken(ctx)
+		if err != nil {
+			return 0, nil, err
+		}
+
+		if tok != "" {
+			req.Header.Set("Authorization", "Bearer "+tok)
 		}
 
 		resp, err := c.queryHTTPClient.Do(req)
