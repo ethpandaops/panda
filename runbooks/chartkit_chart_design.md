@@ -13,7 +13,11 @@ triggers:
 
 Owns the design-quality layer of chartkit charts — form choice, color jobs, and the
 anti-pattern check. Use it when about to write any `ck.*` call or before saving a
-chart PNG. The mechanics (which library, saving, sharing, sessions) are owned by
+chart PNG. chartkit output is a static PNG image; embedding it in an interactive
+HTML report is fine, but the report's own interaction layer (filters, sortable
+tables, theme toggle) and any inline SVG charts it draws by hand are outside this
+runbook's scope (see `runbooks://devnet_bug_board_html` for that report's visual
+language). The mechanics (which library, saving, sharing, sessions) are owned by
 `runbooks://sandbox_output_conventions`; the API contract (two titles, `scope=`,
 `source=`, units on axes, no relative time, no duplicated facts) is owned by
 chartkit itself — call `ck.guide()` in the sandbox and follow it; this runbook adds

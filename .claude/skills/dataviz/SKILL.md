@@ -21,28 +21,38 @@ brand, read that file's structure and substitute its values - touch nothing else
 > The single most important habit: **the color part is computable, so compute it.**
 > Never eyeball whether a palette is colorblind-safe - run `scripts/validate_palette.js`.
 
-## In this repository: the medium is chartkit (static PNG)
+## In this repository: two chart media
 
-Inside ethpandaops/panda, the primary charting medium is **chartkit**, the sandbox
-Python library that renders publication-quality **static PNGs via librsvg** (see
-`sandbox/ethpandaops/ethpandaops/chartkit/GUIDE.md`, also reachable in-sandbox via
-`ck.guide()`, and `panda docs chartkit`). This changes how the generic procedure maps:
+ethpandaops/panda has two distinct chart media — apply the method to the one you're
+producing:
+
+**1. chartkit PNG charts.** The sandbox Python library renders publication-quality
+**static PNGs via librsvg** (`sandbox/ethpandaops/ethpandaops/chartkit/GUIDE.md`,
+reachable in-sandbox via `ck.guide()`, plus `panda docs chartkit`). The library owns
+marks, axes, ticks, and layout, so the generic procedure collapses to:
 
 | Generic step | In chartkit |
 |---|---|
 | 1. Pick the form | Pick the `ck.*` function: distribution → `histogram`/`box` · over time → `line`/`area` · compare categories → `bar` · 2-D density → `heatmap` · correlation → `scatter` · spans → `waterfall` · headline → `stats=[...]` · escape hatch → `custom()` |
 | 2–3. Assign & validate color | **Don't hand-pick colors.** The theme presets (default, `warm`, `dim`) own the palette. Only run the validator when defining a *new* multi-series categorical palette — and prefer secondary encoding (direct labels, which chartkit supplies) over color-alone identity |
 | 4. Mark specs | Enforced by the library — pass raw data, never coordinates |
-| 5. Hover layer | **N/A** — output is a static PNG; invest in `title` (the finding), `chart_title`, `subtitle`, `stats`, `notes` instead |
+| 5. Hover layer | **N/A for the image** — a chartkit chart is a static PNG; invest in `title` (the finding), `chart_title`, `subtitle`, `stats`, `notes` instead |
 | 6. Dark mode | `theme="dim"` preset — never an automatic flip |
 | 7. Render and look | `.save(path)`, then open the PNG and eyeball it |
 
 chartkit-owned facts (two titles, `scope=`/`source=` provenance, units on axes,
 no relative time, no data duplication) are owned by the chartkit GUIDE — follow
 `ck.guide()`; chartkit-specific design guidance (form choice, color jobs,
-anti-patterns) is owned by `runbooks/chartkit_chart_design.md`. This skill adds the
-generic design method for non-chartkit media (HTML dashboards for the repo, eval
-visualizations) and anything reached via chartkit's `custom()` escape hatch.
+anti-patterns) is owned by `runbooks/chartkit_chart_design.md`.
+
+**2. Hand-built interactive HTML reports.** Self-contained HTML pages with inline
+SVG charts, filter chips, sortable tables, stat-tile/KPI rows, and light/dark theme
+toggles — `runbooks/devnet_bug_board_html.md` is a full worked instance. Here the
+generic method below applies **in full**: the form heuristic, the color formula with
+the validator, mark specs for the inline SVG marks, the interaction layer
+(crosshair/tooltip, filters, hit targets), and dark mode as its own selected palette.
+chartkit PNGs embedded in a report stay static — interactivity lives in the report
+shell (filters, tables, theme toggle), never inside the chart images.
 
 Validated with `scripts/validate_palette.js`: chartkit's network palette
 (`#2f6db0 #8e44ad #cf6a1a #1f9b7a`, order as coded) FAILS CVD separation for the
