@@ -4,6 +4,13 @@ An HTML chart is interactive by default - the hover layer is part of the deliver
 not an upgrade. Omitting it is the exception (a bare stat tile), never the default.
 Design it with the same care as the static render.
 
+**The one further exemption:** a *published snapshot figure* whose every value is
+direct-labeled and whose shapes carry no hidden detail (no aggregation, no sampling,
+no series beyond the labels) may skip the hover layer — there is nothing a tooltip
+could reveal. This is the regime of narrative-report figures (annotated diagrams,
+fully-labeled comparison panels); a data chart with axes, bins, or many points is
+never in it.
+
 ## Tooltips & hover
 
 Tooltips **enhance, they never gate**: every value a tooltip shows is also reachable

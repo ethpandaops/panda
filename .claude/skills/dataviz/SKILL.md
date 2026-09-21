@@ -47,15 +47,19 @@ anti-patterns) is owned by `runbooks/chartkit_chart_design.md`.
 
 **2. Hand-built interactive HTML reports.** Self-contained HTML pages with inline
 SVG charts, filter chips, sortable tables, stat-tile/KPI rows, and light/dark theme
-toggles. Two worked instances live in this repo: `tests/eval/scripts/report_template.html`
+toggles. Three worked instances live in this repo: `tests/eval/scripts/report_template.html`
 (the eval qualification report — trend/scatter/swarm/matrix renderers, shared
-tooltip, dark tokens kept in sync with light; iterate on it with this skill), and
-`runbooks/devnet_bug_board_html.md` (the devnet bug board, sandbox-rendered). Here
-the generic method below applies **in full**: the form heuristic, the color formula
-with the validator, mark specs for the inline SVG marks, the interaction layer
-(crosshair/tooltip, filters, hit targets), and dark mode as its own selected palette.
-chartkit PNGs embedded in a report stay static — interactivity lives in the report
-shell (filters, tables, theme toggle), never inside the chart images.
+tooltip, dark tokens kept in sync with light; iterate on it with this skill),
+`runbooks/devnet_bug_board_html.md` (the devnet bug board, sandbox-rendered), and
+narrative investigation teardowns (editorial headline, annotated diagram-SVGs and
+fully direct-labeled comparison panels, published via storage — e.g. the
+glamsterdam-devnet-8 teardown; those figures sit in interaction.md's
+published-snapshot exemption). Here the generic method below applies **in full**: the
+form heuristic, the color formula with the validator, mark specs for the inline SVG
+marks, the interaction layer (crosshair/tooltip, filters, hit targets), and dark mode
+as its own selected palette. chartkit PNGs embedded in a report stay static —
+interactivity lives in the report shell (filters, tables, theme toggle), never inside
+the chart images.
 
 Validated with `scripts/validate_palette.js`: chartkit's network palette
 (`#2f6db0 #8e44ad #cf6a1a #1f9b7a`, order as coded) FAILS CVD separation for the
