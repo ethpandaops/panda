@@ -30,15 +30,20 @@ DEFAULT_SUBJECTS = [DEFAULT_SUBJECT]
 # Judge quality matters more than judge cost (~$0.003/grade): a flaky judge contaminates
 # the harden gates, so the judge must be a reliable rubric-follower AND family-distinct
 # from the subjects (a judge scoring its own family is a self-preference risk — that rules
-# out the subjects' own families here). qwen3.7-plus rides opencode-go rather than the
-# subjects' proxy, which keeps judge and subject on separate gateways as well as separate
-# families — and it is the half of the eval that never broke; benched clean over 60 smoke grades,
-# where minimax-m3 and deepseek-v4-pro both emitted malformed rubric JSON (false
-# negatives) through this same path.
-DEFAULT_EVALUATOR_MODEL = "qwen3.7-plus"
+# out the subjects' own families here). deepseek-v4.1-flash rides the plain opencode zen
+# gateway rather than the subjects' proxy, which keeps judge and subject on separate
+# gateways as well as separate families. History: qwen3.7-plus on the opencode-GO gateway
+# (zen/go/v1) was benched clean over 60 smoke grades, but that endpoint began rejecting
+# every promptfoo-grade request with 400 MissingSessionID (it now demands an
+# x-opencode-session header the openai:chat driver does not send), so the judge moved to
+# the plain zen gateway (zen/v1 — same key, no session requirement). minimax-m3 and
+# deepseek-v4-pro both emitted malformed rubric JSON (false negatives) on the go path;
+# deepseek-v4.1-flash is unbenched — watch grades for malformed-rubric false negatives.
+DEFAULT_EVALUATOR_MODEL = "deepseek-v4.1-flash"
 # The zen gateway is OpenAI-compatible; promptfoo grades through its generic
-# openai:chat driver pointed at this base URL.
-OPENCODE_ZEN_BASE_URL = "https://opencode.ai/zen/go/v1"
+# openai:chat driver pointed at this base URL. The GO variant (zen/go/v1) requires an
+# x-opencode-session header promptfoo cannot send — do not point the grader back at it.
+OPENCODE_ZEN_BASE_URL = "https://opencode.ai/zen/v1"
 # A LiteLLM proxy is OpenAI-compatible the same way, so both the subject and the
 # judge can ride one when the zen gateway drops a model (or to bench a model zen
 # does not carry). LITELLM_PROXY_URL is the proxy root, without /v1.
@@ -69,8 +74,10 @@ def grader_for(model: str) -> dict:
       The ``codex/`` prefix is stripped and the remainder is passed as the model id.
     - a ``litellm/<model>`` prefix grades through the LiteLLM proxy named by
       ``LITELLM_PROXY_URL``, authenticating with ``LITELLM_PROXY_API_KEY``.
-    - any other model name (e.g. ``qwen3.7-plus``) grades through the opencode-go zen gateway
-      via promptfoo's generic ``openai:chat`` driver + the opencode-go API key.
+    - any other model name (e.g. ``deepseek-v4.1-flash``) grades through the opencode zen
+      gateway (plain ``zen/v1`` — the GO variant needs an ``x-opencode-session`` header
+      the driver cannot send) via promptfoo's generic ``openai:chat`` driver + the
+      opencode API key.
     """
     if model.startswith(LITELLM_PREFIX):
         spec = model[len(LITELLM_PREFIX) :]

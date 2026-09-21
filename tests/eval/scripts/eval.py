@@ -83,7 +83,7 @@ def _parse_args() -> argparse.Namespace:
     ap.add_argument(
         "--judge-model",
         default=DEFAULT_EVALUATOR_MODEL,
-        help="grader model. A bare name (e.g. qwen3.7-plus) grades via the opencode-go "
+        help="grader model. A bare name (e.g. deepseek-v4.1-flash) grades via the opencode "
         "gateway; a codex/<model> prefix (e.g. codex/gpt-5.4) grades through the Codex "
         "Responses API directly using ~/.codex/auth.json — no OpenAI API key needed.",
     )

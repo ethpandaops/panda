@@ -3,11 +3,12 @@
 from config.settings import CODEX_JUDGE_REASONING_EFFORT, grader_for
 
 
-def test_bare_model_uses_opencode_go_gateway():
-    g = grader_for("qwen3.7-plus")
-    assert g["id"] == "openai:chat:qwen3.7-plus"
-    assert g["config"]["apiBaseUrl"].endswith("/zen/go/v1")
-    # opencode-go path is keyed off an API key, not a file provider.
+def test_bare_model_uses_opencode_zen_gateway():
+    g = grader_for("deepseek-v4.1-flash")
+    assert g["id"] == "openai:chat:deepseek-v4.1-flash"
+    # plain zen v1: the GO variant (zen/go/v1) 400s without an x-opencode-session header
+    assert g["config"]["apiBaseUrl"].endswith("/zen/v1")
+    # zen path is keyed off an API key, not a file provider.
     assert "apiKeyEnvar" in g["config"]
 
 
