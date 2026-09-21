@@ -43,8 +43,9 @@ Required environment:
   judges, which ride an OpenAI-compatible LiteLLM proxy instead of the zen gateway. Useful
   when zen drops a model: `--subject litellm/starflinger-anthropic:cli`.
 - The promptfoo grader (`--judge-model`):
-  - a bare model name (default `qwen3.7-plus`) grades through the opencode-go zen gateway —
-    `OPENCODE_GO_API_KEY` covers it.
+  - a bare model name (default `deepseek-v4.1-flash`) grades through the opencode zen
+    gateway (plain `zen/v1`) — `OPENCODE_GO_API_KEY` covers it. (The GO variant
+    `zen/go/v1` requires an `x-opencode-session` header promptfoo cannot send.)
   - a `litellm/<model>` prefix grades through the LiteLLM proxy at `LITELLM_PROXY_URL`,
     authenticating with `LITELLM_PROXY_API_KEY`.
   - a `codex/<model>` prefix (e.g. `codex/gpt-5.4`) grades through the Codex Responses API

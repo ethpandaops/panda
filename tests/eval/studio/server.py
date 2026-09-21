@@ -71,6 +71,7 @@ KNOWN_MODELS = [
     "opencode-go/deepseek-v4-flash",
     "opencode-go/mimo-v2.5",
     "opencode-go/qwen3.7-plus",
+    "opencode-go/deepseek-v4.1-flash",
     "opencode-go/deepseek-v4-pro",
     "opencode-go/minimax-m3",
 ]
@@ -309,9 +310,10 @@ async def live_poll(client: Any, sid: str, q: dict[str, Any], run: dict[str, Any
 
 
 # The judge rides the same opencode zen gateway (OpenAI-compatible) and key as the
-# agent subjects — qwen3.7-plus per the eval harness's #195 benching; no OpenRouter.
-JUDGE_MODEL = os.environ.get("STUDIO_JUDGE_MODEL", "qwen3.7-plus")
-OPENCODE_ZEN_BASE_URL = "https://opencode.ai/zen/go/v1"
+# agent subjects — deepseek-v4.1-flash on plain zen/v1 (the GO variant 400s without an
+# x-opencode-session header promptfoo cannot send); no OpenRouter.
+JUDGE_MODEL = os.environ.get("STUDIO_JUDGE_MODEL", "deepseek-v4.1-flash")
+OPENCODE_ZEN_BASE_URL = "https://opencode.ai/zen/v1"
 
 
 def _judge_key() -> str:
