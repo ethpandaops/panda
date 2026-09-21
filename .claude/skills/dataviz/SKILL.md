@@ -47,9 +47,12 @@ anti-patterns) is owned by `runbooks/chartkit_chart_design.md`.
 
 **2. Hand-built interactive HTML reports.** Self-contained HTML pages with inline
 SVG charts, filter chips, sortable tables, stat-tile/KPI rows, and light/dark theme
-toggles — `runbooks/devnet_bug_board_html.md` is a full worked instance. Here the
-generic method below applies **in full**: the form heuristic, the color formula with
-the validator, mark specs for the inline SVG marks, the interaction layer
+toggles. Two worked instances live in this repo: `tests/eval/scripts/report_template.html`
+(the eval qualification report — trend/scatter/swarm/matrix renderers, shared
+tooltip, dark tokens kept in sync with light; iterate on it with this skill), and
+`runbooks/devnet_bug_board_html.md` (the devnet bug board, sandbox-rendered). Here
+the generic method below applies **in full**: the form heuristic, the color formula
+with the validator, mark specs for the inline SVG marks, the interaction layer
 (crosshair/tooltip, filters, hit targets), and dark mode as its own selected palette.
 chartkit PNGs embedded in a report stay static — interactivity lives in the report
 shell (filters, tables, theme toggle), never inside the chart images.
