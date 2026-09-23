@@ -74,6 +74,9 @@ type service struct {
 
 	blockArchiveCacheOnce         sync.Once
 	blockArchiveNetworksCacheInst *blockArchiveNetworksCache
+
+	rolloorOnce sync.Once
+	rolloorDir  *rolloorDirectory
 }
 
 // NewService creates a new MCP server service.
