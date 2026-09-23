@@ -1,0 +1,2028 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Panda · Release qualification</title>
+<style>
+  /* ── tokens ──────────────────────────────────────────────────────────── */
+  :root {
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    --bg: #f0eee5;
+    --panel: #f7f5ec;
+    --panel2: #edeadf;
+    --line: #d6d1c2;
+    --line2: #e3dfd2;
+    --ink: #211f1a;
+    --mut: #6f6a5d;
+    --faint: #8b8473;
+    --accent: #bf5a3c;
+    --ok: #3f7350;
+    --ok-dim: rgba(63, 115, 80, .11);
+    --bad: #a03b2c;
+    --bad-dim: rgba(160, 59, 44, .10);
+    --amber: #a87b2d;
+    --amber-dim: rgba(168, 123, 45, .13);
+    --blue: #44618c;
+    --sel: #211f1a;
+    --shadow: 0 24px 64px rgba(62, 52, 30, .22);
+    color-scheme: light;
+  }
+
+  /* dark theme — keep token-for-token in sync with the light block above */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+    --bg: #1c1a16;
+    --panel: #232019;
+    --panel2: #2b2820;
+    --line: #3d3930;
+    --line2: #2f2c24;
+    --ink: #e9e4d6;
+    --mut: #a59e8c;
+    --faint: #847d6a;
+    --accent: #e08e6d;
+    --ok: #79b58c;
+    --ok-dim: rgba(121, 181, 140, .13);
+    --bad: #e06b58;
+    --bad-dim: rgba(224, 107, 88, .12);
+    --amber: #d3a85c;
+    --amber-dim: rgba(211, 168, 92, .14);
+    --blue: #8aa9cf;
+    --sel: #e9e4d6;
+    --shadow: 0 24px 64px rgba(0, 0, 0, .55);
+    color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1c1a16;
+    --panel: #232019;
+    --panel2: #2b2820;
+    --line: #3d3930;
+    --line2: #2f2c24;
+    --ink: #e9e4d6;
+    --mut: #a59e8c;
+    --faint: #847d6a;
+    --accent: #e08e6d;
+    --ok: #79b58c;
+    --ok-dim: rgba(121, 181, 140, .13);
+    --bad: #e06b58;
+    --bad-dim: rgba(224, 107, 88, .12);
+    --amber: #d3a85c;
+    --amber-dim: rgba(211, 168, 92, .14);
+    --blue: #8aa9cf;
+    --sel: #e9e4d6;
+    --shadow: 0 24px 64px rgba(0, 0, 0, .55);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 14px/1.55 var(--sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, .mono { font-family: var(--mono); }
+  button { font: inherit; color: inherit; }
+
+  main { max-width: 1180px; margin: 0 auto; padding: 0 28px 48px; }
+  section { margin-top: 48px; animation: rise .5s ease both; }
+  section:nth-of-type(2) { animation-delay: .05s; }
+  section:nth-of-type(3) { animation-delay: .10s; }
+  section:nth-of-type(4) { animation-delay: .15s; }
+  section:nth-of-type(5) { animation-delay: .20s; }
+  section:nth-of-type(6) { animation-delay: .25s; }
+  section:nth-of-type(7) { animation-delay: .30s; }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+  h2 {
+    margin: 0 0 2px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+    font: 600 19px/1.3 var(--sans);
+    letter-spacing: -.01em;
+    color: var(--ink);
+  }
+  h2 .no {
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+    margin-right: 14px;
+  }
+  .sub { margin: 4px 0 18px; font: 13.5px/1.55 var(--sans); color: var(--mut); max-width: 70ch; }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line2);
+    border-radius: 4px;
+  }
+  .note { margin: 10px 2px 0; font: 12.5px/1.65 var(--sans); color: var(--mut); max-width: 90ch; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ── topbar ──────────────────────────────────────────────────────────── */
+  #topbar {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    border-bottom: 1px solid var(--line);
+    background: color-mix(in srgb, var(--bg) 90%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+  #topbar .bar {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 13px 28px;
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  #topbar .brand {
+    font: 600 11px/1 var(--sans);
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  #topbar .brand .dim { color: var(--mut); font-weight: 400; }
+  #nav { margin-left: auto; display: flex; gap: 22px; font: 500 11px/1 var(--sans); letter-spacing: .14em; text-transform: uppercase; }
+  #nav a { color: var(--mut); }
+  #nav a:hover { color: var(--accent); text-decoration: none; }
+  #theme-toggle {
+    background: none;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 5px 12px;
+    font: 600 10px/1 var(--sans);
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--mut);
+    cursor: pointer;
+  }
+  #theme-toggle:hover { color: var(--accent); border-color: var(--accent); }
+
+  /* ── run switcher (fetch-mode viewer only) ───────────────────────────── */
+  #run-switcher { display: flex; align-items: center; gap: 6px; }
+  #run-switcher select {
+    max-width: 280px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 4px 6px;
+    font: 600 11px/1.2 var(--mono);
+    color: var(--ink);
+  }
+  #run-switcher button {
+    background: none;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 4px 8px;
+    font: 600 11px/1.2 var(--mono);
+    color: var(--mut);
+    cursor: pointer;
+  }
+  #run-switcher button:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+  #run-switcher button:disabled { opacity: .35; cursor: default; }
+
+  /* ── document head ───────────────────────────────────────────────────── */
+  #doc-head { margin-top: 44px; }
+  .eyebrow {
+    margin: 0 0 14px;
+    font: 600 11px/1 var(--sans);
+    letter-spacing: .24em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .tag-line { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  h1#tag {
+    margin: 0;
+    font: 600 38px/1.1 var(--sans);
+    letter-spacing: -.02em;
+  }
+  .badge {
+    font: 600 10px/1 var(--sans);
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    padding: 5px 11px;
+    border-radius: 999px;
+    border: 1px solid;
+  }
+  .badge.pre { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 55%, transparent); background: var(--amber-dim); }
+  #meta {
+    margin-top: 12px;
+    font: 13.5px/1.7 var(--sans);
+    color: var(--mut);
+    overflow-wrap: anywhere;
+  }
+  #meta b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* ── headline figures ────────────────────────────────────────────────── */
+  #headline { margin-top: 30px; }
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    border-block: 1px solid var(--line);
+  }
+  .card { padding: 20px 22px 18px; border-left: 1px solid var(--line2); }
+  .card:nth-child(4n + 1) { border-left: 0; padding-left: 2px; }
+  .card:nth-child(n + 5) { border-top: 1px solid var(--line2); }
+  @media (max-width: 760px) {
+    .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card:nth-child(4n + 1) { border-left: 1px solid var(--line2); padding-left: 22px; }
+    .card:nth-child(2n + 1) { border-left: 0; padding-left: 2px; }
+    .card:nth-child(n + 3) { border-top: 1px solid var(--line2); }
+  }
+  .card .k {
+    font: 600 10.5px/1.3 var(--sans);
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--mut);
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .card .v {
+    margin-top: 10px;
+    font: 600 29px/1.05 var(--sans);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.015em;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .card .s { margin-top: 7px; font-size: 12px; color: var(--mut); }
+  .delta {
+    font: 600 11.5px/1 var(--sans);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .delta.good { color: var(--ok); }
+  .delta.badd { color: var(--bad); }
+  .delta.flat { color: var(--faint); }
+
+  /* ── charts ──────────────────────────────────────────────────────────── */
+  .chart-wrap { padding: 18px 14px 10px; position: relative; }
+  svg { display: block; max-width: 100%; height: auto; }
+  svg text { font-family: var(--sans); font-size: 11.5px; fill: var(--mut); }
+  .axis line, .grid line { stroke: var(--line2); }
+  .axis-strong line { stroke: var(--line); }
+  .line-pass { stroke: var(--ok); fill: none; stroke-width: 2; }
+  .line-tok { stroke: var(--amber); fill: none; stroke-width: 2; }
+  .pt-pass { fill: var(--ok); }
+  .pt-tok { fill: var(--amber); }
+  .pt-val { font: 600 11px var(--sans); }
+  .pt-hollow { fill: var(--panel); stroke: var(--amber); stroke-width: 1.6; }
+  .pt-ring { fill: none; stroke-width: 1.4; }
+  .guide { stroke: var(--mut); stroke-dasharray: 3 3; opacity: 0; }
+  .hover-zone { fill: transparent; cursor: crosshair; }
+  .legend { display: flex; gap: 20px; padding: 4px 16px 12px; font: 12.5px/1.4 var(--sans); color: var(--mut); flex-wrap: wrap; }
+  .legend .sw { display: inline-block; width: 14px; height: 3px; vertical-align: middle; margin-right: 7px; border-radius: 1px; }
+  .legend .sw.dotc { width: 9px; height: 9px; border-radius: 50%; }
+
+  .dot-run { cursor: pointer; stroke: transparent; stroke-width: 1.4; }
+  .dot-run.ok { fill: var(--ok); fill-opacity: .78; }
+  .dot-run.bad { fill: var(--bad); fill-opacity: .85; }
+  .dot-run:hover { stroke: var(--ink); }
+  .dot-run.selected { stroke: var(--sel); stroke-width: 2.2; }
+  .pct-rule { stroke: var(--mut); stroke-dasharray: 2 4; opacity: .7; }
+
+  /* run history chart grid */
+  .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .chart-grid .wide { grid-column: 1 / -1; }
+  @media (max-width: 920px) { .chart-grid { grid-template-columns: 1fr; } }
+  .chart-head { display: flex; align-items: center; gap: 9px; padding: 14px 18px 0; font: 600 12.5px/1.3 var(--sans); color: var(--ink); flex-wrap: wrap; }
+  .chart-head .sw { width: 14px; height: 4px; border-radius: 1px; flex: none; }
+  .chart-controls { margin-left: auto; display: flex; gap: 8px; }
+  .seg.mini button { padding: 5px 9px; font-size: 10px; }
+
+  /* run-details expander (doc head) */
+  #run-details { margin-top: 16px; max-width: 620px; }
+  #run-details summary { cursor: pointer; padding: 9px 14px; font: 600 10.5px/1 var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--mut); user-select: none; }
+  #run-details summary:hover { color: var(--accent); }
+  #run-details .kv { padding: 2px 14px 12px; margin: 0; }
+
+  .commit-msg {
+    font: 12px/1.5 var(--sans);
+    color: var(--mut);
+    max-width: 340px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-top: 2px;
+  }
+
+  /* matrix history cells */
+  td.mxh, th.mxh-lbl { text-align: center; }
+  td.mxh { font: 700 11.5px/1.6 var(--mono); white-space: nowrap; }
+  td.mxh.ok { color: var(--ok); background: var(--ok-dim); }
+  td.mxh.bad { color: var(--bad); background: var(--bad-dim); }
+  td.mxh.mid { color: var(--amber); background: var(--amber-dim); }
+  td.mxh.none { color: var(--faint); }
+
+  /* categories */
+  .cat-row { cursor: pointer; }
+  .cat-track { fill: var(--panel2); }
+  .cat-fill { fill-opacity: .82; }
+  .cat-fill.hi { fill: var(--ok); }
+  .cat-fill.mid { fill: var(--amber); }
+  .cat-fill.lo { fill: var(--bad); }
+  .cat-row text.lbl { fill: var(--ink); }
+  .cat-row:hover text.lbl { fill: var(--accent); }
+  .cat-row.active .cat-track { stroke: var(--sel); stroke-width: 1.2; }
+  .cat-row.active text.lbl { fill: var(--accent); }
+
+  /* ── tables ──────────────────────────────────────────────────────────── */
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line2); vertical-align: top; }
+  th {
+    font: 600 10.5px/1.5 var(--sans);
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--mut);
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  td.r, th.r { text-align: right; }
+  td.r { font-variant-numeric: tabular-nums; }
+  tr.current td { background: var(--ok-dim); }
+  .tbl-scroll { overflow-x: auto; }
+
+  th.sortable { cursor: pointer; user-select: none; }
+  th.sortable:hover { color: var(--ink); }
+  th.sortable::after { content: "·"; margin-left: 5px; color: var(--faint); }
+  th.sortable.asc::after { content: "▲"; color: var(--ink); font-size: 8px; }
+  th.sortable.desc::after { content: "▼"; color: var(--ink); font-size: 8px; }
+
+  .qid { font-family: var(--mono); font-size: 12.5px; color: var(--ink); }
+  button.qid { background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+  button.qid:hover { color: var(--accent); }
+  td.qcell { max-width: 320px; }
+  td.qcell .qid { font-size: 11.5px; color: var(--mut); }
+  .qtext {
+    display: block;
+    margin-top: 2px;
+    font: 13px/1.4 var(--sans);
+    color: var(--ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .canon {
+    font: 700 12px/1 var(--mono);
+    color: var(--amber);
+    cursor: help;
+    margin-left: 3px;
+  }
+
+  /* matrix run cells */
+  .mx-cells { display: flex; gap: 4px; flex-wrap: wrap; }
+  .mx-cell {
+    width: 26px; height: 21px;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    font: 700 11px/19px var(--mono);
+    text-align: center;
+    cursor: pointer;
+    padding: 0;
+  }
+  .mx-cell.ok { background: var(--ok-dim); color: var(--ok); border-color: color-mix(in srgb, var(--ok) 30%, transparent); }
+  .mx-cell.bad { background: var(--bad-dim); color: var(--bad); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
+  .mx-cell:hover { border-color: var(--ink); }
+  .mx-cell.selected { border-color: var(--sel); box-shadow: 0 0 0 1px var(--sel); }
+  .verdict { font: 12px/1.4 var(--sans); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .verdict.up { color: var(--ok); }
+  .verdict.down { color: var(--bad); font-weight: 700; }
+  .verdict.flat, .verdict.na { color: var(--faint); }
+  .verdict.new { color: var(--blue); }
+
+  /* ── explorer ────────────────────────────────────────────────────────── */
+  #filters { padding: 14px 14px 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border-bottom: 1px solid var(--line2); }
+  #filters input[type=search], #filters select {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    color: var(--ink);
+    font: 13px var(--sans);
+    padding: 7px 10px;
+  }
+  #filters input[type=search] { flex: 1 1 220px; min-width: 170px; }
+  #filters input[type=search]:focus, #filters select:focus { outline: 1px solid var(--accent); outline-offset: 0; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+  .seg button {
+    background: var(--bg);
+    border: 0;
+    border-right: 1px solid var(--line);
+    padding: 7px 13px;
+    font: 600 11px/1 var(--sans);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--mut);
+    cursor: pointer;
+  }
+  .seg button:last-child { border-right: 0; }
+  .seg button.on { background: var(--ink); color: var(--bg); }
+  #chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 14px; border-bottom: 1px solid var(--line2); }
+  .chip {
+    background: none;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 4px 12px;
+    font: 12px var(--sans);
+    color: var(--mut);
+    cursor: pointer;
+  }
+  .chip:hover { color: var(--ink); border-color: var(--mut); }
+  .chip.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .chip .n { opacity: .55; margin-left: 5px; font-variant-numeric: tabular-nums; }
+  #reset-filters {
+    background: none;
+    border: 1px dashed var(--line);
+    border-radius: 3px;
+    padding: 7px 11px;
+    font: 600 10.5px/1 var(--sans);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--mut);
+    cursor: pointer;
+  }
+  #reset-filters:hover { color: var(--bad); border-color: var(--bad); }
+  #agg {
+    padding: 10px 14px;
+    font: 13px/1.5 var(--sans);
+    font-variant-numeric: tabular-nums;
+    color: var(--mut);
+    border-bottom: 1px solid var(--line2);
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+  #agg b { color: var(--ink); font-weight: 600; }
+  #run-table tbody tr { cursor: pointer; }
+  #run-table tbody tr:hover td { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+  #run-table tbody tr.selected td { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  #run-table tbody tr.flash td { animation: flash 1.6s ease; }
+  @keyframes flash { 0%, 35% { background: color-mix(in srgb, var(--accent) 24%, transparent); } 100% { background: transparent; } }
+  .pill {
+    display: inline-block;
+    font: 700 10.5px/1 var(--sans);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    padding: 4px 8px;
+    border-radius: 3px;
+  }
+  .pill.ok { color: var(--ok); background: var(--ok-dim); }
+  .pill.bad { color: var(--bad); background: var(--bad-dim); }
+  .pill.crash { color: var(--bg); background: var(--bad); }
+  td.reason-cell { max-width: 340px; color: var(--mut); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tagset { display: flex; gap: 4px; flex-wrap: wrap; }
+  .tagset span { font: 10.5px var(--sans); color: var(--mut); border: 1px solid var(--line2); border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+  td.subj { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 11px; color: var(--mut); }
+
+  /* ── drawer ──────────────────────────────────────────────────────────── */
+  #drawer {
+    position: fixed;
+    top: 0; right: 0;
+    height: 100dvh;
+    width: min(480px, 94vw);
+    background: var(--panel);
+    border-left: 1px solid var(--line);
+    box-shadow: var(--shadow);
+    z-index: 60;
+    transform: translateX(103%);
+    transition: transform .22s ease;
+    display: flex;
+    flex-direction: column;
+  }
+  #drawer.open { transform: none; }
+  #drawer header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--line);
+  }
+  #drawer header .qid { font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
+  #drawer-close {
+    margin-left: auto;
+    background: none;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    width: 28px; height: 28px;
+    line-height: 1;
+    cursor: pointer;
+    color: var(--mut);
+    flex: none;
+  }
+  #drawer-close:hover { color: var(--bad); border-color: var(--bad); }
+  #drawer-body { overflow-y: auto; padding: 16px 20px 28px; }
+  .kv { display: grid; grid-template-columns: 100px 1fr; gap: 6px 14px; font-size: 13.5px; margin: 16px 0; }
+  .kv dt { font: 600 10.5px/1.8 var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--mut); margin: 0; }
+  .kv dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .reason {
+    background: var(--bg);
+    border: 1px solid var(--line2);
+    border-left: 2px solid var(--line);
+    border-radius: 3px;
+    padding: 12px 14px;
+    font: 13px/1.65 var(--sans);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    margin: 6px 0 14px;
+  }
+  .reason.bad { border-left-color: var(--bad); }
+  .reason.ok { border-left-color: var(--ok); }
+  .qblock {
+    background: var(--bg);
+    border: 1px solid var(--line2);
+    border-radius: 3px;
+    padding: 12px 14px;
+    font: 13.5px/1.6 var(--sans);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    margin: 6px 0 2px;
+  }
+  .canon-note { font: 11.5px/1.5 var(--sans); color: var(--amber); margin: 5px 2px 0; }
+  .answer {
+    background: var(--bg);
+    border: 1px solid var(--line2);
+    border-radius: 3px;
+    padding: 12px 14px;
+    font: 11.5px/1.6 var(--mono);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-height: 300px;
+    overflow-y: auto;
+    margin: 6px 0 2px;
+  }
+  .answer.empty { color: var(--faint); font: 12.5px/1.6 var(--sans); }
+  .drawer-label { font: 600 10.5px/1 var(--sans); letter-spacing: .16em; text-transform: uppercase; color: var(--mut); margin: 18px 0 6px; }
+  .toolcalls { margin: 12px 0 0; border: 1px solid var(--line2); border-radius: 3px; background: var(--panel2); }
+  .toolcalls summary { cursor: pointer; padding: 8px 11px; font: 600 11px/1 var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--mut); user-select: none; }
+  .toolcalls summary:hover { color: var(--accent); }
+  .toolcalls .tc { display: flex; gap: 9px; padding: 4px 11px; font: 12px/1.6 var(--mono); border-top: 1px solid var(--line2); white-space: nowrap; overflow: hidden; }
+  .toolcalls .tc-name { color: var(--ink); font-weight: 700; flex: none; }
+  .toolcalls .tc-args { color: var(--mut); overflow: hidden; text-overflow: ellipsis; }
+  .toolcalls .tc.is-err .tc-name { color: var(--bad); }
+  .sibs { display: flex; gap: 5px; flex-wrap: wrap; }
+  .trace-btn {
+    display: inline-block;
+    font: 600 11px/1 var(--sans);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    border-radius: 3px;
+    padding: 8px 14px;
+    margin-top: 6px;
+  }
+  .trace-btn:hover { background: var(--accent); color: var(--bg); text-decoration: none; }
+
+  /* ── tooltip ─────────────────────────────────────────────────────────── */
+  #tip {
+    --ink: #f3f0e6;
+    --mut: #c8c2b1;
+    --faint: #a59f8d;
+    --ok: #8fc9a0;
+    --bad: #e2917f;
+    position: absolute;
+    z-index: 80;
+    pointer-events: none;
+    background: #262320;
+    border: 1px solid #3d3930;
+    border-radius: 4px;
+    box-shadow: var(--shadow);
+    padding: 9px 12px;
+    font: 12.5px/1.65 var(--sans);
+    max-width: 360px;
+    color: var(--mut);
+  }
+  #tip b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  #tip .ok { color: var(--ok); }
+  #tip .bad { color: var(--bad); }
+
+  footer {
+    max-width: 1124px;
+    margin: 48px auto 0;
+    padding: 18px 0 48px;
+    border-top: 1px solid var(--line);
+    font: 12.5px/1.75 var(--sans);
+    color: var(--mut);
+  }
+  footer b { color: var(--ink); }
+  footer code { font: 11.5px var(--mono); font-style: normal; }
+  .err { max-width: 700px; margin: 80px auto; font: 13px var(--mono); color: var(--bad); padding: 0 28px; }
+
+  /* ── mobile ──────────────────────────────────────────────────────────── */
+  @media (max-width: 640px) {
+    main { padding: 0 14px 40px; }
+    section { margin-top: 36px; }
+    h2 { font: 600 17px/1.3 var(--sans); }
+
+    /* topbar: brand + toggle on row 1, nav wraps onto its own row */
+    #topbar .bar { padding: 11px 14px; gap: 8px 12px; }
+    #theme-toggle { order: 2; margin-left: auto; }
+    #nav { order: 3; flex-basis: 100%; margin-left: 0; gap: 12px 16px; flex-wrap: wrap; }
+
+    /* document head + headline figures */
+    #doc-head { margin-top: 30px; }
+    h1#tag { font-size: 28px; }
+    #run-details { max-width: none; }
+    .card { padding: 16px 16px 14px; }
+    .card .v { font-size: 23px; }
+
+    /* charts */
+    .chart-wrap { padding: 16px 8px 8px; }
+    .chart-head { padding: 12px 14px 0; }
+    .legend { gap: 10px 16px; padding: 4px 8px 12px; }
+
+    /* explorer filters: stack to full width */
+    #filters { gap: 8px; padding: 12px; }
+    #filters input[type=search] { flex: 1 1 100%; min-width: 0; }
+    #filters select { flex: 1 1 100%; max-width: 100%; }
+    #f-status { flex: 1 1 100%; }
+    #f-status button { flex: 1; text-align: center; }
+    #chips, #agg { padding: 10px 12px; }
+    #agg { gap: 6px 16px; }
+
+    /* run detail drawer: full width */
+    #drawer { width: 100vw; }
+
+    /* ── run + matrix tables → stacked cards ── */
+    #run-table thead, #mx-table thead { display: none; }
+    #matrix .panel.tbl-scroll { border: 0; background: none; }
+    #mx-table td.mxh { display: none; }
+    #run-table tbody tr, #mx-table tbody tr {
+      display: block;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      margin-bottom: 10px;
+      overflow: hidden;
+    }
+    #run-table tbody tr { background: var(--bg); }
+    #mx-table tbody tr { background: var(--panel); }
+    #run-table tbody tr.selected, #mx-table tbody tr.selected { border-color: var(--accent); }
+    #run-table td, #mx-table td {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 6px 14px;
+      border: 0;
+      padding: 6px 14px;
+      text-align: right;
+      overflow-wrap: anywhere;
+    }
+    #run-table td::before, #mx-table td::before {
+      content: attr(data-label);
+      font: 600 10px/1.6 var(--sans);
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--mut);
+      text-align: left;
+      flex: none;
+    }
+    /* empty value cells (no tools / no trace) drop out */
+    #run-table td:empty { display: none; }
+    /* title cells span the card width with no label */
+    #run-table td.qcell, #mx-table td.mxq {
+      display: block;
+      max-width: none;
+      text-align: left;
+      padding: 10px 14px 8px;
+      border-bottom: 1px solid var(--line2);
+    }
+    td.subj { max-width: none; }
+    .qtext { white-space: normal; }
+    /* grader reason: full-width block that wraps */
+    #run-table td.reason-cell {
+      display: block;
+      max-width: none;
+      text-align: left;
+      white-space: normal;
+    }
+    #run-table td.reason-cell::before { display: block; margin-bottom: 3px; }
+    /* matrix run cells: label above, larger tap targets below */
+    #mx-table td[data-label="this run"] { display: block; text-align: left; }
+    #mx-table td[data-label="this run"]::before { display: block; margin-bottom: 6px; }
+    .mx-cells { justify-content: flex-start; }
+    .mx-cell { width: 30px; height: 26px; line-height: 24px; }
+  }
+</style>
+<script>try { const t = localStorage.getItem("panda-eval-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}</script>
+</head>
+<body>
+<script>/*__PANDA_EVAL_DATA__*/</script>
+
+<header id="topbar">
+  <div class="bar">
+    <span class="brand">🐼 Panda <span class="dim" id="brand-context">· Release qualification</span></span>
+    <span id="run-switcher" hidden></span>
+    <nav id="nav">
+      <a href="#trend" id="nav-history">Releases</a>
+      <a href="#tokens">Tokens</a>
+      <a href="#categories">Categories</a>
+      <a href="#matrix">Questions</a>
+      <a href="#explorer">Runs</a>
+    </nav>
+    <button id="theme-toggle" title="color scheme">auto</button>
+  </div>
+</header>
+
+<main>
+  <section id="doc-head" style="margin-top:44px">
+    <p class="eyebrow" id="eyebrow">Release qualification report</p>
+    <div class="tag-line">
+      <h1 id="tag"></h1>
+      <span id="prerelease-badge" class="badge pre" hidden>Pre-release</span>
+    </div>
+    <div id="meta"></div>
+    <details id="run-details" class="panel">
+      <summary>run details</summary>
+      <dl class="kv" id="run-details-kv"></dl>
+    </details>
+  </section>
+
+  <section id="headline" style="margin-top:30px">
+    <div class="cards" id="cards"></div>
+  </section>
+
+  <section id="trend">
+    <h2><span class="no">1.</span><span id="trend-title">Release history</span></h2>
+    <p class="sub" id="trend-sub">Pass rate and token cost across every qualified release, oldest to newest. Hover any point for its full detail.</p>
+    <div class="chart-grid">
+      <div class="panel chart-card">
+        <div class="chart-head"><span class="sw" style="background:var(--ok)"></span>Pass rate</div>
+        <div class="chart-wrap"><div id="pass-chart"></div></div>
+      </div>
+      <div class="panel chart-card">
+        <div class="chart-head"><span class="sw" style="background:var(--amber)"></span><span id="tok-title">Tokens per correct run</span>
+          <span class="chart-controls">
+            <span class="seg mini agg-seg" title="token aggregation (shared with the scatter)">
+              <button data-v="p50">p50</button>
+              <button data-v="p90">p90</button>
+              <button data-v="p95">p95</button>
+              <button data-v="solve">per solve</button>
+            </span>
+          </span>
+        </div>
+        <div class="chart-wrap"><div id="tok-chart"></div></div>
+      </div>
+      <div class="panel chart-card wide">
+        <div class="chart-head"><span class="sw" style="background:var(--blue)"></span>Cost vs correctness
+          <span class="chart-controls">
+            <span class="seg mini agg-seg" title="token aggregation (shared with the timeline)">
+              <button data-v="p50">p50</button>
+              <button data-v="p90">p90</button>
+              <button data-v="p95">p95</button>
+              <button data-v="solve">per solve</button>
+            </span>
+            <span class="seg mini" id="sc-scale" title="token-axis scale">
+              <button data-v="lin">linear</button>
+              <button data-v="log">log</button>
+            </span>
+          </span>
+        </div>
+        <div class="chart-wrap"><div id="scatter-chart"></div></div>
+        <div class="legend" id="scatter-legend"></div>
+      </div>
+    </div>
+    <div class="panel tbl-scroll" style="margin-top:14px"><table id="rel-table"></table></div>
+    <p class="note" id="trend-note"></p>
+  </section>
+
+  <section id="tokens">
+    <h2><span class="no">2.</span>Token distribution</h2>
+    <p class="sub">Every run in this qualification, placed by total tokens spent. Click a point to inspect the run.</p>
+    <div class="panel">
+      <div class="chart-wrap"><div id="swarm-chart"></div></div>
+      <div class="legend" id="swarm-legend"></div>
+    </div>
+  </section>
+
+  <section id="categories">
+    <h2><span class="no">3.</span>Category performance</h2>
+    <p class="sub">Token cost per case tag — box/dots are the cost of correct runs (quartiles when there are enough), color is the pass rate. Click a row to filter the run explorer.</p>
+    <div class="panel"><div class="chart-wrap"><div id="cat-chart"></div></div></div>
+  </section>
+
+  <section id="matrix">
+    <h2><span class="no">4.</span>Questions across runs</h2>
+    <p class="sub">Each question across the comparison history, oldest to newest — the final column is this run's cells; click one for the full grader verdict.</p>
+    <div class="panel tbl-scroll"><table id="mx-table"></table></div>
+  </section>
+
+  <section id="explorer">
+    <h2><span class="no">5.</span>Run explorer</h2>
+    <p class="sub">Filtering is analysis — the aggregate line follows the filter.</p>
+    <div class="panel">
+      <div id="filters">
+        <input id="f-search" type="search" placeholder="search questions, answers, grader reasons, subjects…" autocomplete="off">
+        <select id="f-question"></select>
+        <span class="seg" id="f-status">
+          <button data-v="all" class="on">all</button>
+          <button data-v="pass">pass</button>
+          <button data-v="fail">fail</button>
+        </span>
+        <button id="reset-filters" hidden>× reset</button>
+      </div>
+      <div id="chips"></div>
+      <div id="agg"></div>
+      <div class="tbl-scroll"><table id="run-table"></table></div>
+    </div>
+  </section>
+</main>
+
+<aside id="drawer" aria-label="run detail">
+  <header>
+    <span class="qid" id="drawer-title"></span>
+    <button id="drawer-close" title="close (esc)">×</button>
+  </header>
+  <div id="drawer-body"></div>
+</aside>
+
+<div id="tip" hidden></div>
+
+<footer id="foot"></footer>
+
+<script>
+"use strict";
+(async () => {
+  /* Two ways onto this page: a payload baked in at build time (release reports,
+     CI artifacts — fully offline), or fetch mode (the gh-pages CI viewer): one
+     shared copy of this page plus a manifest of runs, each commit a small JSON
+     fetched on demand — walking commits never re-ships the UI. */
+  async function fetchMode() {
+    /* Pages serves this shell; the DATA comes straight off the gh-pages branch
+       via raw.githubusercontent — fresh seconds after a publish, no Pages deploy
+       in the path. Same-origin fallback covers local serving; ?src= overrides. */
+    const dataBase = (() => {
+      const override = new URLSearchParams(location.search).get("src");
+      if (override) return new URL(override.endsWith("/") ? override : override + "/", location.href);
+      const m = location.hostname.match(/^([a-z0-9-]+)\.github\.io$/i);
+      const repo = location.pathname.split("/").filter(Boolean)[0];
+      if (m && repo) {
+        return new URL(`https://raw.githubusercontent.com/${m[1]}/${repo}/gh-pages/eval/ci/`);
+      }
+      return new URL(".", location.href);
+    })();
+    const get = async (name) => {
+      const res = await fetch(new URL(name, dataBase), { cache: "no-store" });
+      if (!res.ok) throw new Error(`${name}: HTTP ${res.status}`);
+      return res.json();
+    };
+    /* the manifest is the one mutable file — bust CDN caches for it; payloads
+       are sha-addressed and can cache forever */
+    const manifest = await get("manifest.json?cb=" + Date.now());
+    const all = (manifest.runs || []).filter(r => r.id && r.created_at);
+    if (!all.length) throw new Error("manifest has no runs");
+    const want = new URLSearchParams(location.search).get("run");
+    /* bare page: the newest qualified release is the canonical state of the
+       world; fall back to master, then anything */
+    const sel = all.find(r => r.id === want) ||
+      all.find(r => r.branch === "releases") ||
+      all.find(r => r.branch === "master") || all[0];
+    buildSwitcher(all, sel);
+    return get(`runs/${sel.id}.json`);
+  }
+
+  function buildSwitcher(all, sel) {
+    const host = document.getElementById("run-switcher");
+    const go = id => {
+      const sp = new URLSearchParams(location.search);
+      sp.set("run", id);
+      location.search = "?" + sp.toString();
+    };
+    const rank = b => b === "releases" ? 0 : b === "master" ? 1 : 2;
+    const branches = [...new Set(all.map(r => r.branch))]
+      .sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : 1));
+    /* newest first within the selected branch */
+    const sibs = all.filter(r => r.branch === sel.branch)
+      .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+    const at = sibs.findIndex(r => r.id === sel.id);
+
+    const opt = (v, label, on) =>
+      `<option value="${v.replace(/"/g, "&quot;")}"${on ? " selected" : ""}>${label}</option>`;
+    host.innerHTML =
+      `<select id="sw-branch" title="branch">${branches.map(b =>
+        opt(b, b, b === sel.branch)).join("")}</select>` +
+      `<select id="sw-commit" title="commit">${sibs.map(r =>
+        opt(r.id, `${r.branch === "releases" ? (r.tag || r.id.split("/")[1]) : (r.sha || "").slice(0, 7)} · ${(r.created_at || "").slice(5, 10)} · ${Math.round((r.pass_rate || 0) * 100)}%`, r.id === sel.id)).join("")}</select>` +
+      `<button id="sw-prev" title="older commit"${at >= sibs.length - 1 ? " disabled" : ""}>‹</button>` +
+      `<button id="sw-next" title="newer commit"${at <= 0 ? " disabled" : ""}>›</button>`;
+    host.hidden = false;
+    host.querySelector("#sw-branch").addEventListener("change", ev => {
+      const newest = all.filter(r => r.branch === ev.target.value)
+        .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0];
+      if (newest) go(newest.id);
+    });
+    host.querySelector("#sw-commit").addEventListener("change", ev => go(ev.target.value));
+    host.querySelector("#sw-prev").addEventListener("click", () => sibs[at + 1] && go(sibs[at + 1].id));
+    host.querySelector("#sw-next").addEventListener("click", () => sibs[at - 1] && go(sibs[at - 1].id));
+  }
+
+  let RAW = window.__PANDA_EVAL_DATA__;
+  if (!RAW) {
+    try {
+      RAW = await fetchMode();
+    } catch (err) {
+      document.body.innerHTML = `<div class="err">no payload injected and fetch mode failed (${err.message}) — ` +
+        "built pages come from scripts/release_report.py; the fetch-mode viewer needs manifest.json + runs/ alongside this file</div>";
+      return;
+    }
+  }
+  if (!RAW || !RAW.record) {
+    document.body.innerHTML = '<div class="err">no payload injected — this template must be built by scripts/release_report.py</div>';
+    return;
+  }
+
+  /* ── data ─────────────────────────────────────────────────────────────── */
+  const record = RAW.record;
+  const runs = RAW.runs.map((r, i) => ({
+    ...r,
+    _i: i,
+    tags: (r.tags && r.tags.length) ? r.tags : ["untagged"],
+  }));
+  const history = [...(RAW.history || [])].sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
+  const prev = history.length ? history[history.length - 1] : null;
+  const releases = [...history, record];
+
+  /* previous release's per-question token references (median, mean for older
+     schemas) — the anchor for every efficiency number on this page */
+  const prevRefs = new Map();
+  if (prev) for (const [qid, q] of Object.entries(prev.questions || {})) {
+    const ref = q.median_tokens_correct || q.mean_tokens_correct || 0;
+    if (ref > 0) prevRefs.set(qid, ref);
+  }
+  /* harden-loop score vs prev ref: wrong = 0, correct = (ref/(ref+tokens))²;
+     null when the previous release has no reference for this question */
+  const runEff = r => {
+    const ref = prevRefs.get(r.id);
+    if (ref == null) return null;
+    return (r.correct && (r.tokens || 0) > 0) ? (ref / (ref + r.tokens)) ** 2 : 0;
+  };
+  const EFF_EXPLAIN = "harden-loop score vs previous release's per-question cost: " +
+    "wrong = 0, correct = (ref/(ref+tokens))²; 0.25 × pass-rate = parity";
+
+  const byQ = new Map();
+  for (const r of runs) {
+    if (!byQ.has(r.id)) byQ.set(r.id, []);
+    byQ.get(r.id).push(r);
+  }
+  const passFrac = (rs) => rs.reduce((n, r) => n + (r.correct ? 1 : 0), 0) / rs.length;
+  const questionIds = [...byQ.keys()].sort((a, b) =>
+    passFrac(byQ.get(a)) - passFrac(byQ.get(b)) || (a < b ? -1 : 1));
+
+  const cats = (() => {
+    const m = new Map();
+    for (const r of runs) for (const t of r.tags) {
+      if (!m.has(t)) m.set(t, { tag: t, qids: new Set(), runs: 0, correct: 0, toks: [] });
+      const c = m.get(t);
+      c.runs++; c.qids.add(r.id);
+      if (r.correct) { c.correct++; if (r.tokens > 0) c.toks.push(r.tokens); }
+    }
+    return [...m.values()]
+      .map(c => ({ ...c, rate: c.correct / c.runs, medTok: median(c.toks) }))
+      .sort((a, b) => a.rate - b.rate || (a.tag < b.tag ? -1 : 1));
+  })();
+
+  /* ── helpers ──────────────────────────────────────────────────────────── */
+  function median(xs) {
+    if (!xs.length) return 0;
+    const o = [...xs].sort((a, b) => a - b), m = o.length >> 1;
+    return o.length % 2 ? o[m] : (o[m - 1] + o[m]) / 2;
+  }
+  function pctl(xs, q) {
+    if (!xs.length) return 0;
+    const o = [...xs].sort((a, b) => a - b);
+    if (o.length === 1) return o[0];
+    const pos = (o.length - 1) * q, lo = Math.floor(pos), hi = Math.min(lo + 1, o.length - 1);
+    return o[lo] + (o[hi] - o[lo]) * (pos - lo);
+  }
+  const nf = new Intl.NumberFormat("en-US");
+  const fInt = n => nf.format(Math.round(n));
+  const fTok = n => n >= 9999.5 ? (n / 1000).toFixed(1).replace(/\.0$/, "") + "k" : fInt(n);
+  const fPct = x => (x * 100).toFixed(x * 100 % 1 ? 1 : 0) + "%";
+  const fDate = s => (s || "").slice(0, 10);
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const $ = (sel, el) => (el || document).querySelector(sel);
+
+  function el(tag, attrs, html) {
+    const e = document.createElement(tag);
+    if (attrs) for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    if (html != null) e.innerHTML = html;
+    return e;
+  }
+  const SVGNS = "http://www.w3.org/2000/svg";
+  function sv(tag, attrs) {
+    const e = document.createElementNS(SVGNS, tag);
+    if (attrs) for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    return e;
+  }
+  function svText(x, y, str, attrs) {
+    const t = sv("text", { x, y, "font-size": 10, ...(attrs || {}) });
+    t.textContent = str;
+    return t;
+  }
+
+  /* shared tooltip */
+  const tip = $("#tip");
+  function showTip(html, cx, cy) {
+    tip.innerHTML = html;
+    tip.hidden = false;
+    const r = tip.getBoundingClientRect();
+    let x = cx + window.scrollX + 14, y = cy + window.scrollY + 14;
+    if (cx + 14 + r.width > window.innerWidth - 8) x = cx + window.scrollX - r.width - 12;
+    if (cy + 14 + r.height > window.innerHeight - 8) y = cy + window.scrollY - r.height - 12;
+    tip.style.left = x + "px";
+    tip.style.top = y + "px";
+  }
+  const hideTip = () => { tip.hidden = true; };
+
+  const tokenLabel = (e) => {
+    const p = e.token_percentiles;
+    return (p && p.p50) ? { v: p.p50, isP50: true } : { v: e.mean_tokens_correct || 0, isP50: false };
+  };
+  const runStatus = r => r.crashed ? "crash" : (r.correct ? "pass" : "fail");
+  const shortSubject = s => String(s || "").split("/").pop();
+  const CANON_TIP = "exact per-run phrasing unavailable for this record; canonical wording shown";
+  const canonMark = r => r.question_canonical ? `<span class="canon" title="${CANON_TIP}">°</span>` : "";
+
+  /* ── topbar + doc head ────────────────────────────────────────────────── */
+  const CI = record.kind === "ci";
+  const UNIT = CI ? "run" : "release";
+  document.title = CI ? `Panda CI eval — ${record.tag}` : `Panda release qualification — ${record.tag}`;
+  if (CI) {
+    $("#brand-context").textContent = "· CI eval";
+    $("#eyebrow").textContent = "CI smoke report";
+    $("#nav-history").textContent = "History";
+    $("#trend-title").textContent = "Run history";
+    $("#trend-sub").textContent = "Pass rate and token cost across this branch's measured commits, " +
+      "with the master baseline and the most recent release as reference points. Hover any point for its full detail.";
+  }
+  $("#tag").textContent = record.tag;
+  $("#prerelease-badge").hidden = !record.prerelease;
+
+  /* one quiet line; everything deeper lives in the run-details expander */
+  const commitHtml = record.repo && record.commit
+    ? `<a href="https://github.com/${esc(record.repo)}/commit/${esc(record.commit)}"><b>${esc(record.commit.slice(0, 9))}</b></a>`
+    : `<b>${esc((record.commit || "").slice(0, 9) || "—")}</b>`;
+  $("#meta").innerHTML = [
+    CI && record.branch ? `branch <b>${esc(record.branch)}</b>` : "",
+    `commit ${commitHtml}`,
+    esc((record.created_at || "").replace("T", " ").slice(0, 16)) + " UTC",
+    `subject <b>${esc((record.subjects || []).map(shortSubject).join(", "))}</b>`,
+  ].filter(Boolean).join(" · ");
+
+  (() => {
+    const tp = record.token_percentiles || {};
+    const links = [
+      CI && record.pr && record.repo
+        ? `<a href="https://github.com/${esc(record.repo)}/pull/${esc(record.pr)}">PR #${esc(record.pr)}</a>` : "",
+      CI && record.run_url ? `<a href="${esc(record.run_url)}">CI run ↗</a>` : "",
+    ].filter(Boolean).join(" · ");
+    const rows = [
+      ["cases", esc(record.cases || "—")],
+      ["subjects", esc((record.subjects || []).join(", "))],
+      ["coverage", `${byQ.size} questions · ${runs.length} runs`],
+      ["compared to", prev ? esc(prev.tag) : (CI ? "first recorded run" : "first qualified release")],
+      CI && record.event ? ["trigger", esc(record.event)] : null,
+      links ? ["links", links] : null,
+      ["mean score", record.mean_score != null ? record.mean_score.toFixed(3) : "—"],
+      ["tokens", `p50 ${fTok(tp.p50 || 0)} · p90 ${fTok(tp.p90 || 0)} · max ${fTok(tp.max || 0)} per correct run`],
+      ["scoring", "score = correctness-gated token efficiency: a correct run at reference cost ≈ 0.25, leaner runs score higher, wrong runs score 0. " + EFF_EXPLAIN],
+    ].filter(Boolean);
+    $("#run-details-kv").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+  })();
+
+  /* ── headline cards: four numbers, one row ────────────────────────────── */
+  function deltaChip(cur, prv, { fmt, goodWhen = "up", neutral = false } = {}) {
+    if (prv == null || !isFinite(prv)) return "";
+    const d = cur - prv;
+    if (Math.abs(d) < 1e-9) return `<span class="delta flat">=</span>`;
+    const arrow = d > 0 ? "▲" : "▼";
+    const cls = neutral ? "flat" : ((d > 0) === (goodWhen === "up") ? "good" : "badd");
+    return `<span class="delta ${cls}" title="vs ${esc(prev ? prev.tag : "")}">${arrow} ${fmt(Math.abs(d))}</span>`;
+  }
+  function card(k, v, sub, chip, title) {
+    return `<div class="card"${title ? ` title="${esc(title)}"` : ""}><div class="k"><span>${k}</span></div>` +
+      `<div class="v">${v}${chip || ""}</div><div class="s">${sub}</div></div>`;
+  }
+  (() => {
+    const nOk = runs.filter(r => r.correct).length;
+    const tp = record.token_percentiles || {};
+    const ptp = prev && prev.token_percentiles;
+    const fmtPP = d => (d * 100).toFixed(1) + "pp";
+    const fmtRel = base => d => Math.round(d / base * 100) + "%";
+    const eff = record.efficiency_vs;
+    const parity = 0.25 * record.pass_rate;
+    const effCard = eff
+      ? card("efficiency",
+          `<span style="color:${eff.score >= parity ? "var(--ok)" : "var(--bad)"}">${eff.score.toFixed(3)}</span>`,
+          `vs ${esc(eff.ref_tag)} · ${parity.toFixed(3)} = same per-question cost`,
+          "", EFF_EXPLAIN)
+      : card("efficiency", `<span style="color:var(--faint)">—</span>`, "no reference to compare against", "", EFF_EXPLAIN);
+    const tps = record.tokens_per_solve ||
+      (nOk ? runs.reduce((a, r) => a + (r.tokens || 0), 0) / nOk : 0);
+    const ptps = prev && prev.tokens_per_solve;
+    $("#cards").innerHTML = [
+      card("pass rate", fPct(record.pass_rate), `${nOk}/${runs.length} runs correct`,
+        deltaChip(record.pass_rate, prev && prev.pass_rate, { fmt: fmtPP })),
+      effCard,
+      card("tokens p50", fTok(tp.p50 || 0), "per correct run",
+        ptp && ptp.p50 ? deltaChip(tp.p50, ptp.p50, { fmt: fmtRel(ptp.p50), goodWhen: "down" }) : ""),
+      card("tokens / solve", fTok(tps), "all spend ÷ correct answers",
+        ptps ? deltaChip(tps, ptps, { fmt: fmtRel(ptps), goodWhen: "down" }) : ""),
+    ].join("");
+  })();
+
+  /* ── run history: two timelines + cost-vs-correctness scatter ─────────── */
+  /* Short name for an entry on the x-axis and scatter: the current commit gets
+     its sha, prior commits on the same branch count back ("-1", "-2", …),
+     other-branch CI baselines show their branch, releases keep their tag. */
+  const entryLabel = i => {
+    const e = releases[i];
+    if (i === releases.length - 1) return CI ? ((e.commit || "").slice(0, 7) || e.tag) : e.tag;
+    if (e.kind === "ci") {
+      if (e.branch === record.branch) {
+        return "-" + releases.slice(i + 1).filter(o => o.kind === "ci" && o.branch === record.branch).length;
+      }
+      return e.branch || "ci";
+    }
+    return e.tag;
+  };
+  /* ── view state: every tweak lives in the URL so views are linkable ───── */
+  const VIEW_DEFAULTS = { agg: "p95", scale: "log" };
+  const view = (() => {
+    const sp = new URLSearchParams(location.search);
+    return {
+      agg: ["p50", "p90", "p95", "solve"].includes(sp.get("agg")) ? sp.get("agg") : VIEW_DEFAULTS.agg,
+      scale: ["lin", "log"].includes(sp.get("scale")) ? sp.get("scale") : VIEW_DEFAULTS.scale,
+    };
+  })();
+  function syncURL(updates) {
+    const sp = new URLSearchParams(location.search);
+    for (const [k, v, dflt] of updates) {
+      if (v == null || v === "" || v === dflt) sp.delete(k);
+      else sp.set(k, v);
+    }
+    const qs = sp.toString();
+    /* `history` is shadowed by the payload's comparison records — go via window */
+    window.history.replaceState(null, "", location.pathname + (qs ? "?" + qs : "") + location.hash);
+  }
+
+  /* token aggregation shared by the timeline and the scatter; older records
+     predate p95 and fall back (p90, then mean), marked approximate */
+  const AGG_LABEL = { p50: "p50", p90: "p90", p95: "p95", solve: "per solve" };
+  const aggOf = e => {
+    if (view.agg === "solve") {
+      return e.tokens_per_solve
+        ? { v: e.tokens_per_solve, approx: false }
+        : { v: e.mean_tokens_correct || 0, approx: true };
+    }
+    const pcts = e.token_percentiles || {};
+    if (pcts[view.agg]) return { v: pcts[view.agg], approx: false };
+    if (view.agg === "p95" && pcts.p90) return { v: pcts.p90, approx: true };
+    return { v: e.mean_tokens_correct || 0, approx: true };
+  };
+  const parityOf = e => 0.25 * e.pass_rate;
+
+  function trendTip(i, ev) {
+    const e = releases[i], t = aggOf(e);
+    const nOk = Math.round(e.pass_rate * e.runs);
+    showTip(
+      `<b>${esc(e.tag)}</b>${i === releases.length - 1 ? " · current" : ""}${e.prerelease ? " · pre" : ""}<br>` +
+      `${fDate(e.created_at)} · ${e.runs} runs · ${esc(e.cases || "")}<br>` +
+      `pass <b class="ok">${fPct(e.pass_rate)}</b> (${nOk}/${e.runs}) · score <b>${e.mean_score != null ? e.mean_score.toFixed(3) : "—"}</b><br>` +
+      `tokens ${t.approx ? "≈" : ""}${AGG_LABEL[view.agg]} <b>${fTok(t.v)}</b>` +
+      (e.efficiency_vs
+        ? `<br>eff vs ${esc(e.efficiency_vs.ref_tag)} <b class="${e.efficiency_vs.score >= parityOf(e) ? "ok" : "bad"}">${e.efficiency_vs.score.toFixed(3)}</b>`
+        : ""),
+      ev.clientX, ev.clientY);
+  }
+
+  function lineChart(host, { val, fmt, yMax, yTicks, lineCls, ptCls, hollow }) {
+    host.innerHTML = "";
+    const W = Math.max(240, Math.round(host.getBoundingClientRect().width));
+    const ml = 52, mr = 22, top = 24, bot = 174, H = 212;
+    const svg = sv("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}` });
+    const n = releases.length;
+    const x = i => n === 1 ? (ml + (W - ml - mr) / 2) : ml + (W - ml - mr) * i / (n - 1);
+    const y = v => bot - (bot - top) * (v / yMax);
+    const clampX = (px, half) => Math.max(ml + half + 4, Math.min(px, W - mr - half + 18));
+
+    for (const [v, lbl] of yTicks) {
+      const g = sv("g", { class: "grid" });
+      g.appendChild(sv("line", { x1: ml, x2: W - mr, y1: y(v), y2: y(v) }));
+      svg.appendChild(g);
+      svg.appendChild(svText(ml - 9, y(v) + 4, lbl, { "text-anchor": "end" }));
+    }
+
+    if (n > 1) {
+      let d = "", pen = false;
+      releases.forEach((e, i) => {
+        const v = val(i);
+        if (v == null) { pen = false; return; }
+        d += `${pen ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`;
+        pen = true;
+      });
+      if (d) svg.appendChild(sv("path", { d, class: lineCls }));
+    }
+
+    const step = Math.max(1, Math.ceil(n / Math.max(2, Math.floor((W - ml - mr) / 64) + 1)));
+    releases.forEach((e, i) => {
+      const v = val(i);
+      if (v == null) return;
+      const cur = i === n - 1;
+      svg.appendChild(sv("circle", {
+        cx: x(i), cy: y(v), r: 3.6,
+        class: hollow && hollow(i) ? "pt-hollow" : ptCls,
+      }));
+      if (cur) svg.appendChild(sv("circle", { cx: x(i), cy: y(v), r: 6.8, class: "pt-ring", stroke: "currentColor", opacity: .55 }));
+      if (n <= 14) {
+        const dy = y(v) > top + 22 ? -11 : 22;
+        svg.appendChild(svText(clampX(x(i), 18), y(v) + dy, fmt(v), { "text-anchor": "middle", class: "pt-val", fill: "var(--mut)" }));
+      }
+      if ((n - 1 - i) % step === 0) {
+        const t = svText(clampX(x(i), 26), H - 8, entryLabel(i), { "text-anchor": "middle", "font-family": "var(--mono)" });
+        if (cur) { t.setAttribute("font-weight", "700"); t.setAttribute("fill", "var(--ink)"); }
+        svg.appendChild(t);
+      }
+    });
+
+    const guide = sv("line", { y1: top, y2: bot, class: "guide" });
+    svg.appendChild(guide);
+    const zone = sv("rect", { x: ml - 10, y: top, width: W - ml - mr + 20, height: bot - top, class: "hover-zone" });
+    zone.addEventListener("mousemove", ev => {
+      const bx = svg.getBoundingClientRect();
+      let best = 0, bd = Infinity;
+      for (let i = 0; i < n; i++) { const d = Math.abs(ev.clientX - bx.left - x(i)); if (d < bd) { bd = d; best = i; } }
+      guide.setAttribute("x1", x(best)); guide.setAttribute("x2", x(best));
+      guide.style.opacity = 1;
+      trendTip(best, ev);
+    });
+    zone.addEventListener("mouseleave", () => { guide.style.opacity = 0; hideTip(); });
+    svg.appendChild(zone);
+    host.appendChild(svg);
+  }
+
+  function renderTimelines() {
+    lineChart($("#pass-chart"), {
+      val: i => releases[i].pass_rate,
+      fmt: fPct, yMax: 1,
+      yTicks: [[0, "0%"], [.5, "50%"], [1, "100%"]],
+      lineCls: "line-pass", ptCls: "pt-pass",
+    });
+    const agg = releases.map(aggOf);
+    const tokMax = Math.max(1, ...agg.map(t => t.v));
+    $("#tok-title").textContent = view.agg === "solve"
+      ? "Tokens per solve" : `Tokens per correct run (${view.agg})`;
+    lineChart($("#tok-chart"), {
+      val: i => agg[i].v > 0 ? agg[i].v : null,
+      fmt: fTok, yMax: tokMax * 1.15,
+      yTicks: [[0, "0"], [tokMax, fTok(tokMax)]],
+      lineCls: "line-tok", ptCls: "pt-tok",
+      hollow: i => agg[i].approx,
+    });
+  }
+
+  /* scatter: X = pass rate, Y = tokens spent (up = costlier) */
+  const KIND = e => e.kind === "ci"
+    ? (e.branch === record.branch ? "branch" : "baseline")
+    : "release";
+
+  /* 1-2-5 tick series covering [lo, hi] — consistent ticks on linear AND log */
+  function niceTicks(lo, hi) {
+    const out = [];
+    let mag = 10 ** Math.floor(Math.log10(Math.max(1, lo)));
+    for (; mag <= hi; mag *= 10) {
+      for (const m of [1, 2, 5]) {
+        const v = m * mag;
+        if (v >= lo && v <= hi) out.push(v);
+      }
+    }
+    return out;
+  }
+
+  function renderScatter() {
+    const host = $("#scatter-chart");
+    host.innerHTML = "";
+    const pts = releases.map((e, i) => ({ e, i, ...aggOf(e) })).filter(pt => pt.v > 0);
+    if (!pts.length) {
+      host.innerHTML = '<p class="note" style="padding:4px 4px 12px">no token data to place</p>';
+      return;
+    }
+    /* pass rate is discrete (n-of-5 smoke runs), so it gets lanes, and the
+       continuous axis goes to cost: an all-pass history reads as one clean
+       cost ladder; failures open lower lanes and regressions drop down */
+    const laneKeys = [...new Set(pts.map(pt => Math.round(pt.e.pass_rate * 1000)))]
+      .sort((a, b) => b - a);
+    const laneH = laneKeys.length === 1 ? 96 : 64;
+    const W = Math.max(280, Math.round(host.getBoundingClientRect().width));
+    const ml = 64, mr = 56, top = 18;
+    const bot = top + laneKeys.length * laneH;
+    const H = bot + 44;
+    const svg = sv("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}` });
+    const laneMid = k => top + laneKeys.indexOf(k) * laneH + laneH / 2;
+
+    /* x = tokens */
+    const vals = pts.map(pt => pt.v);
+    const vMax = Math.max(...vals), vMin = Math.min(...vals);
+    let xOf, domLo, domHi;
+    if (view.scale === "log") {
+      domLo = vMin / 1.3; domHi = vMax * 1.3;
+      const l0 = Math.log10(domLo), l1 = Math.log10(domHi);
+      xOf = v => ml + (W - ml - mr) * (Math.log10(v) - l0) / (l1 - l0);
+    } else {
+      domLo = 0; domHi = vMax * 1.12;
+      xOf = v => ml + (W - ml - mr) * (v / domHi);
+    }
+    let ticks = niceTicks(Math.max(1, domLo), domHi);
+    if (ticks.length < 3 || ticks.length > 7) {
+      const span = domHi - domLo;
+      const rawStep = span / 5;
+      const mag = 10 ** Math.floor(Math.log10(rawStep));
+      const step = [1, 2, 5, 10].map(m => m * mag).find(v => v >= rawStep) || 10 * mag;
+      ticks = [];
+      for (let v = Math.ceil(domLo / step) * step; v <= domHi; v += step) ticks.push(v);
+    }
+    for (const v of ticks) {
+      const px = xOf(v);
+      if (px < ml - 1 || px > W - mr + 1) continue;
+      const g = sv("g", { class: "grid" });
+      g.appendChild(sv("line", { x1: px, x2: px, y1: top, y2: bot }));
+      svg.appendChild(g);
+      svg.appendChild(svText(px, bot + 18, fTok(v), { "text-anchor": "middle" }));
+    }
+    svg.appendChild(svText(W - mr, bot + 34, "tokens →", { "text-anchor": "end", "font-size": 11 }));
+
+    /* lanes: separators + pass-rate labels */
+    laneKeys.forEach((k, li) => {
+      if (li > 0) {
+        svg.appendChild(sv("line", {
+          x1: ml, x2: W - mr, y1: top + li * laneH, y2: top + li * laneH,
+          stroke: "var(--line2)",
+        }));
+      }
+      const ok = k === 1000;
+      svg.appendChild(svText(ml - 10, laneMid(k) + 4, (k / 10).toFixed(0) + "%", {
+        "text-anchor": "end", "font-weight": 600,
+        fill: ok ? "var(--ok)" : (k >= 500 ? "var(--amber)" : "var(--bad)"),
+      }));
+    });
+
+    const mark = (pt, px, py) => {
+      const kind = KIND(pt.e);
+      const cur = pt.i === releases.length - 1;
+      const color = cur ? "var(--accent)" : kind === "release" ? "var(--blue)" : kind === "baseline" ? "var(--mut)" : "var(--ok)";
+      const common = { fill: pt.approx ? "var(--panel)" : color, stroke: color, "stroke-width": 1.8, "data-i": pt.i, cursor: "pointer" };
+      if (kind === "release") return sv("rect", { x: px - 4.5, y: py - 4.5, width: 9, height: 9, ...common });
+      if (kind === "baseline") return sv("rect", { x: px - 5, y: py - 5, width: 10, height: 10, transform: `rotate(45 ${px} ${py})`, ...common });
+      return sv("circle", { cx: px, cy: py, r: 5, ...common });
+    };
+
+    /* within a lane, dots spread by cost; labels go above/below alternating
+       when neighbours crowd, anchors (current/release/baseline) win slots */
+    const placedLbl = [];
+    /* beeswarm-lite: dots sharing a lane displace vertically when they would
+       overlap, so dense cost clusters stay individually clickable */
+    const placedDot = [];
+    const dotY = (px, base) => {
+      for (const off of [0, -12, 12, -24, 24]) {
+        const py = base + off;
+        if (!placedDot.some(d => Math.abs(d.x - px) < 11 && Math.abs(d.y - py) < 11)) return py;
+      }
+      return base;
+    };
+    pts.forEach(pt => {
+      const px = xOf(pt.v);
+      const py = dotY(px, laneMid(Math.round(pt.e.pass_rate * 1000)));
+      placedDot.push({ x: px, y: py });
+      const cur = pt.i === releases.length - 1;
+      if (cur) svg.appendChild(sv("circle", { cx: px, cy: py, r: 9, class: "pt-ring", stroke: "var(--accent)", opacity: .6 }));
+      const m = mark(pt, px, py);
+      m.addEventListener("mousemove", ev => trendTip(pt.i, ev));
+      m.addEventListener("mouseleave", hideTip);
+      svg.appendChild(m);
+      const anchor = cur || KIND(pt.e) !== "branch";
+      /* candidate label slots around the dot, nearest first */
+      const slots = [py - 15, py + 23, py - 27, py + 35, py - 39, py + 47];
+      const fits = ly => !placedLbl.some(b => Math.abs(b.y - ly) < 12 && Math.abs(b.x - px) < 64)
+        && !placedDot.some(d => Math.abs(d.y - ly + 4) < 10 && Math.abs(d.x - px) < 28);
+      let ly = slots.find(fits);
+      if (ly == null) {
+        if (!anchor) return;
+        const i = placedLbl.findIndex(b => Math.abs(b.y - slots[0]) < 12 && Math.abs(b.x - px) < 64 && !b.anchor);
+        if (i >= 0) { placedLbl[i].el.remove(); placedLbl.splice(i, 1); ly = slots[0]; }
+        else return;
+      }
+      const el2 = svText(px, ly, entryLabel(pt.i), {
+        "text-anchor": "middle",
+        "font-family": "var(--mono)",
+        ...(cur ? { "font-weight": 700, fill: "var(--ink)" } : {}),
+      });
+      placedLbl.push({ x: px, y: ly, anchor, el: el2 });
+      svg.appendChild(el2);
+    });
+    host.appendChild(svg);
+
+    const anyApprox = pts.some(pt => pt.approx);
+    $("#scatter-legend").innerHTML =
+      `<span><span class="sw dotc" style="background:var(--ok)"></span>this branch (-1, -2 = commits back)</span>` +
+      (pts.some(pt => KIND(pt.e) === "baseline" && pt.i !== releases.length - 1) ? `<span><span class="sw dotc" style="background:var(--mut);border-radius:1px"></span>baseline branch</span>` : "") +
+      (pts.some(pt => KIND(pt.e) === "release") ? `<span><span class="sw dotc" style="background:var(--blue);border-radius:1px"></span>release</span>` : "") +
+      `<span><span class="sw dotc" style="border:1.5px solid var(--accent)"></span>ring = current</span>` +
+      (anyApprox ? `<span><span class="sw dotc" style="border:1.5px solid var(--ok)"></span>hollow = approximate (record predates ${AGG_LABEL[view.agg]})</span>` : "");
+  }
+
+  /* control wiring: both agg segments mirror each other; everything syncs to the URL */
+  function syncControls() {
+    document.querySelectorAll(".agg-seg button").forEach(b =>
+      b.classList.toggle("on", b.dataset.v === view.agg));
+    document.querySelectorAll("#sc-scale button").forEach(b =>
+      b.classList.toggle("on", b.dataset.v === view.scale));
+  }
+  document.querySelectorAll(".agg-seg button").forEach(b =>
+    b.addEventListener("click", () => {
+      view.agg = b.dataset.v;
+      syncURL([["agg", view.agg, VIEW_DEFAULTS.agg]]);
+      syncControls();
+      renderTimelines();
+      renderScatter();
+    }));
+  document.querySelectorAll("#sc-scale button").forEach(b =>
+    b.addEventListener("click", () => {
+      view.scale = b.dataset.v;
+      syncURL([["scale", view.scale, VIEW_DEFAULTS.scale]]);
+      syncControls();
+      renderScatter();
+    }));
+  syncControls();
+
+  function renderTrend() {
+    renderTimelines();
+    renderScatter();
+    $("#trend-note").textContent = (prev
+      ? "Small headline moves are noise — per-question flips (section 4) are the signal."
+      : (CI
+        ? "First recorded run for this branch — no master baseline, release record, or prior commits to compare against yet."
+        : "First qualified release — no prior eval-qualification.json records to compare against."))
+      + " Mean score and efficiency live in the table; hover any point for full detail.";
+  }
+
+  /* releases table */
+  (() => {
+    const repoOf = e => e.repo || record.repo || "";
+    const rows = [...releases].reverse().map((e, i) => {
+      const cur = i === 0;
+      const t = tokenLabel(e);
+      const nOk = Math.round(e.pass_rate * e.runs);
+      const sha = (e.commit || "").slice(0, 9);
+      const shaCell = sha && repoOf(e)
+        ? `<a class="num" href="https://github.com/${esc(repoOf(e))}/commit/${esc(e.commit)}">${esc(sha)}</a>`
+        : `<span class="num" style="color:var(--mut)">${esc(sha || "—")}</span>`;
+      return `<tr${cur ? ' class="current"' : ""}>` +
+        `<td><span class="qid">${esc(e.tag)}</span>${cur ? " <span style='color:var(--ok)'>●</span>" : ""}${e.prerelease ? ' <span class="badge pre">pre</span>' : ""}` +
+        (e.commit_message ? `<div class="commit-msg" title="${esc(e.commit_message)}">${esc(e.commit_message)}</div>` : "") +
+        `</td>` +
+        `<td class="num">${fDate(e.created_at)}</td>` +
+        `<td class="r">${fPct(e.pass_rate)} <span style="color:var(--faint)">(${nOk}/${e.runs})</span></td>` +
+        `<td class="r">${e.mean_score != null ? e.mean_score.toFixed(3) : '<span style="color:var(--faint)">—</span>'}</td>` +
+        `<td class="r"${e.efficiency_vs ? ` title="vs ${esc(e.efficiency_vs.ref_tag)} · parity ${(0.25 * e.pass_rate).toFixed(3)}"` : ""}>` +
+        `${e.efficiency_vs ? e.efficiency_vs.score.toFixed(3) : '<span style="color:var(--faint)">—</span>'}</td>` +
+        `<td class="r">${t.isP50 ? "" : "≈"}${fTok(t.v)}</td>` +
+        `<td class="r">${e.runs}</td>` +
+        `<td>${shaCell}</td>` +
+        `<td class="num" style="color:var(--mut)">${esc(e.cases || "")}</td></tr>`;
+    }).join("");
+    $("#rel-table").innerHTML =
+      `<thead><tr><th>${UNIT}</th><th>date</th><th class="r">pass rate</th><th class="r">mean score</th>` +
+      `<th class="r" title="${esc(EFF_EXPLAIN)} (each release vs its own predecessor)">eff vs prev</th>` +
+      `<th class="r">tok p50</th><th class="r">runs</th><th>commit</th><th>cases</th></tr></thead>` +
+      `<tbody>${rows}</tbody>`;
+  })();
+
+  /* ── token beeswarm ───────────────────────────────────────────────────── */
+  function renderSwarm() {
+    const host = $("#swarm-chart");
+    host.innerHTML = "";
+    const W = Math.max(280, Math.round(host.getBoundingClientRect().width));
+    const ml = 16, mr = 36, R = 6;
+    const tokMax = Math.max(1, ...runs.map(r => r.tokens || 0)) * 1.04;
+    const x = v => ml + (W - ml - mr) * (v / tokMax);
+
+    /* greedy beeswarm placement */
+    const pts = [...runs].sort((a, b) => (a.tokens || 0) - (b.tokens || 0)).map(r => ({ r, px: x(r.tokens || 0), py: 0 }));
+    const placed = [];
+    for (const p of pts) {
+      const cands = [0];
+      for (const q of placed) {
+        const dx = Math.abs(p.px - q.px);
+        if (dx < 2 * R + 1) {
+          const dy = Math.sqrt(Math.max(0, (2 * R + 1) ** 2 - dx * dx));
+          cands.push(q.py + dy, q.py - dy);
+        }
+      }
+      cands.sort((a, b) => Math.abs(a) - Math.abs(b));
+      for (const c of cands) {
+        if (placed.every(q => (p.px - q.px) ** 2 + (c - q.py) ** 2 >= (2 * R) ** 2)) { p.py = c; break; }
+      }
+      placed.push(p);
+    }
+    const ext = Math.max(40, ...placed.map(p => Math.abs(p.py) + R));
+    const axisY = ext * 2 + 62;
+    const H = axisY + 24;
+    const cy0 = ext + 44;
+    const svg = sv("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}` });
+
+    /* axis + ticks */
+    const ax = sv("g", { class: "axis-strong" });
+    ax.appendChild(sv("line", { x1: ml, x2: W - mr, y1: axisY, y2: axisY }));
+    svg.appendChild(ax);
+    const dataMax = Math.max(1, ...runs.map(r => r.tokens || 0));
+    const step = tokMax > 60000 ? 20000 : 10000;
+    for (let v = 0; v <= tokMax; v += step) {
+      if (x(dataMax) - x(v) < 52 && v !== 0) continue;
+      svg.appendChild(sv("line", { x1: x(v), x2: x(v), y1: axisY, y2: axisY + 4, class: "axis-strong", stroke: "var(--line)" }));
+      svg.appendChild(svText(x(v), axisY + 17, fTok(v), { "text-anchor": "middle" }));
+    }
+    /* the true max is always on the scale */
+    svg.appendChild(sv("line", { x1: x(dataMax), x2: x(dataMax), y1: axisY, y2: axisY + 5, class: "axis-strong", stroke: "var(--line)" }));
+    svg.appendChild(svText(x(dataMax), axisY + 17, fTok(dataMax), { "text-anchor": "middle", "font-weight": 700, fill: "var(--ink)" }));
+    /* percentile rules (correct runs, matches the record) */
+    const tp = record.token_percentiles || {};
+    for (const [k, lift] of [["p50", 0], ["p90", 15], ["p99", 30]]) {
+      if (!tp[k]) continue;
+      const px = x(tp[k]);
+      svg.appendChild(sv("line", { x1: px, x2: px, y1: 4 + lift, y2: axisY, class: "pct-rule" }));
+      svg.appendChild(svText(px + 5, 12 + lift, k + " " + fTok(tp[k]), { "font-size": 11 }));
+    }
+
+    for (const p of placed) {
+      const c = sv("circle", {
+        cx: p.px.toFixed(1), cy: (cy0 + p.py).toFixed(1), r: R,
+        class: `dot-run ${p.r.correct ? "ok" : "bad"}`, "data-i": p.r._i,
+      });
+      c.addEventListener("mousemove", ev => showTip(
+        `<b>${esc(p.r.id)}</b><br>` +
+        `<span class="${p.r.correct ? "ok" : "bad"}">${runStatus(p.r)}</span>` +
+        ` · ${fInt(p.r.tokens || 0)} tok · ${p.r.tools ?? "?"} tools · score ${(p.r.score ?? 0).toFixed(3)}<br>` +
+        `<span style="color:var(--faint)">click to inspect</span>`,
+        ev.clientX, ev.clientY));
+      c.addEventListener("mouseleave", hideTip);
+      c.addEventListener("click", () => { hideTip(); selectRun(p.r._i, { scroll: true }); });
+      svg.appendChild(c);
+    }
+    host.appendChild(svg);
+    syncSelectionDots();
+
+    const nOk = runs.filter(r => r.correct).length;
+    $("#swarm-legend").innerHTML =
+      `<span><span class="sw dotc" style="background:var(--ok)"></span>correct (${nOk})</span>` +
+      `<span><span class="sw dotc" style="background:var(--bad)"></span>failed (${runs.length - nOk})</span>` +
+      `<span>percentile rules computed over correct runs</span>`;
+  }
+
+  /* ── categories: token box plots, color = pass rate ──────────────────── */
+  function renderCats() {
+    const host = $("#cat-chart");
+    host.innerHTML = "";
+    if (!cats.length) { host.innerHTML = '<p class="note">no tag metadata for this cases file</p>'; return; }
+    const W = Math.max(280, Math.round(host.getBoundingClientRect().width));
+    const narrow = W < 560;
+    const rowH = narrow ? 30 : 36;
+    const lblW = Math.min(narrow ? 92 : 200, W * (narrow ? .3 : .25));
+    const valW = narrow ? 96 : 290;
+    const barX = lblW + (narrow ? 8 : 14), barW = Math.max(narrow ? 36 : 80, W - barX - valW);
+    const axisH = 30;
+    const H = cats.length * rowH + 8 + axisH;
+    const svg = sv("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}` });
+    const maxTok = Math.max(1, ...runs.filter(r => r.correct).map(r => r.tokens || 0));
+    const x = v => barX + barW * (v / (maxTok * 1.06));
+    /* pass rate as a 3-stop color ramp: green ≥ all pass, through amber, to red */
+    const colorOf = rate => rate >= .999 ? "var(--ok)" :
+      rate >= .5 ? `color-mix(in srgb, var(--ok) ${Math.round((rate - .5) * 160)}%, var(--amber))`
+                 : `color-mix(in srgb, var(--amber) ${Math.round(rate * 160)}%, var(--bad))`;
+
+    cats.forEach((c, i) => {
+      const yTop = i * rowH + 4, mid = yTop + 14;
+      const g = sv("g", { class: "cat-row", "data-tag": c.tag });
+      g.appendChild(svText(lblW, mid + 4, c.tag, { "text-anchor": "end", class: "lbl", "font-size": 12 }));
+      g.appendChild(sv("rect", { x: barX, y: yTop, width: barW, height: rowH - 8, fill: "transparent" }));
+      const col = colorOf(c.rate);
+      const vals = [...c.toks].sort((a, b) => a - b);
+      if (!vals.length) {
+        g.appendChild(svText(barX + 2, mid + 4, "no correct runs", { fill: "var(--bad)", "font-size": 11 }));
+      } else if (vals.length < 4) {
+        for (const v of vals) g.appendChild(sv("circle", { cx: x(v), cy: mid, r: 5.5, fill: col, "fill-opacity": .85 }));
+      } else {
+        const q1 = pctl(vals, .25), q3 = pctl(vals, .75), med = median(vals);
+        g.appendChild(sv("line", { x1: x(vals[0]), x2: x(vals[vals.length - 1]), y1: mid, y2: mid, stroke: col, "stroke-width": 1.6, opacity: .7 }));
+        g.appendChild(sv("rect", { x: x(q1), y: mid - 8, width: Math.max(3, x(q3) - x(q1)), height: 16, fill: col, "fill-opacity": .8, rx: 2 }));
+        g.appendChild(sv("line", { x1: x(med), x2: x(med), y1: mid - 9, y2: mid + 9, stroke: "var(--ink)", "stroke-width": 2 }));
+      }
+      g.appendChild(svText(barX + barW + 12, mid + 4,
+        narrow
+          ? `${fPct(c.rate)}` + (c.medTok > 0 ? ` · ${fTok(c.medTok)}` : "")
+          : `${c.correct}/${c.runs} · ${fPct(c.rate)} · ${c.qids.size}q` + (c.medTok > 0 ? ` · med ${fTok(c.medTok)} tok` : ""),
+        { "font-size": narrow ? 9.5 : 11.5 }));
+      g.addEventListener("click", () => {
+        const on = state.tags.has(c.tag);
+        state.tags.clear();
+        if (!on) state.tags.add(c.tag);
+        renderExplorer();
+        document.getElementById("explorer").scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      g.addEventListener("mousemove", ev => showTip(
+        `<b>${esc(c.tag)}</b><br>${c.correct}/${c.runs} runs pass (${fPct(c.rate)}) across ${c.qids.size} question${c.qids.size > 1 ? "s" : ""}<br>` +
+        (c.toks.length ? `tokens per correct run: median ${fTok(c.medTok)}` : "no correct runs") +
+        `<br><span style="color:var(--faint)">click to filter the run explorer</span>`,
+        ev.clientX, ev.clientY));
+      g.addEventListener("mouseleave", hideTip);
+      svg.appendChild(g);
+    });
+
+    /* shared token axis */
+    const axisY = cats.length * rowH + 10;
+    svg.appendChild(sv("line", { x1: barX, x2: barX + barW, y1: axisY, y2: axisY, class: "axis-strong", stroke: "var(--line)" }));
+    for (const v of [0, maxTok / 2, maxTok]) {
+      svg.appendChild(sv("line", { x1: x(v), x2: x(v), y1: axisY, y2: axisY + 5, stroke: "var(--line)" }));
+      svg.appendChild(svText(x(v), axisY + 18, fTok(v), {
+        "text-anchor": "middle",
+        ...(v === maxTok ? { "font-weight": 700, fill: "var(--ink)" } : {}),
+      }));
+    }
+    host.appendChild(svg);
+    syncCatActive();
+  }
+  function syncCatActive() {
+    document.querySelectorAll(".cat-row").forEach(g =>
+      g.classList.toggle("active", state.tags.has(g.dataset.tag)));
+  }
+
+  /* ── question matrix: each question across the comparison history ────── */
+  function renderMatrix() {
+    const histIdx = releases.slice(0, -1).map((_, i) => i).slice(-7);
+    const histCell = (entry, qid) => {
+      const q = (entry.questions || {})[qid];
+      if (!q || !q.runs) return `<td class="mxh none">·</td>`;
+      const frac = q.correct / q.runs;
+      const cls = frac >= .999 ? "ok" : (frac <= 0 ? "bad" : "mid");
+      const txt = q.runs > 1 ? `${q.correct}/${q.runs}` : (q.correct ? "✓" : "✕");
+      return `<td class="mxh ${cls}" title="${esc(entry.tag)}: ${q.correct}/${q.runs}">${txt}</td>`;
+    };
+    const rows = questionIds.map(qid => {
+      const rs = byQ.get(qid);
+      const nOk = rs.filter(r => r.correct).length;
+      const cells = rs.map((r, j) =>
+        `<button class="mx-cell ${r.correct ? "ok" : "bad"}" data-i="${r._i}" ` +
+        `aria-label="run ${j + 1} ${runStatus(r)}">${r.correct ? "✓" : "✕"}</button>`).join("");
+      const tagsHtml = rs[0].tags.map(t => esc(t)).join(" · ");
+      const ref = prevRefs.get(qid);
+      let effCell = `<td class="r" data-label="eff" style="color:var(--faint)">—</td>`;
+      if (ref != null) {
+        const qEff = rs.reduce((a, r) => a + runEff(r), 0) / rs.length;
+        const par = 0.25 * (nOk / rs.length);
+        effCell = `<td class="r" data-label="eff" style="color:${qEff < par ? "var(--amber)" : "var(--mut)"}" ` +
+          `title="mean over runs vs ref ${fInt(ref)} tok (${esc(prev.tag)})${qEff < par ? " · below parity: heavier than the reference" : ""}">${qEff.toFixed(3)}</td>`;
+      }
+      return `<tr><td class="mxq"><button class="qid" data-q="${esc(qid)}" title="filter run explorer to this question">${esc(qid)}</button>` +
+        `<div style="font:11px var(--mono);color:var(--mut);margin-top:3px">${tagsHtml}</div></td>` +
+        histIdx.map(i => histCell(releases[i], qid)).join("") +
+        `<td class="r" data-label="pass" style="color:${nOk === rs.length ? "var(--ok)" : "var(--bad)"}">${nOk}/${rs.length}</td>` +
+        effCell +
+        `<td data-label="this run"><div class="mx-cells">${cells}</div></td></tr>`;
+    }).join("");
+    $("#mx-table").innerHTML =
+      `<thead><tr><th>question</th>` +
+      histIdx.map(i => `<th class="mxh-lbl" title="${esc(releases[i].tag)}">${esc(entryLabel(i))}</th>`).join("") +
+      `<th class="r">pass</th>` +
+      `<th class="r" title="${esc(EFF_EXPLAIN)}">eff</th>` +
+      `<th>this run</th></tr></thead><tbody>${rows}</tbody>`;
+
+    $("#mx-table").querySelectorAll(".mx-cell").forEach(b => {
+      const r = runs[+b.dataset.i];
+      b.addEventListener("click", () => { hideTip(); selectRun(r._i, { scroll: false }); });
+      b.addEventListener("mousemove", ev => showTip(
+        (r.question
+          ? `<span style="color:var(--ink)">“${esc(r.question.slice(0, 160))}${r.question.length > 160 ? "…" : ""}”</span>${r.question_canonical ? " °" : ""}<br>`
+          : "") +
+        `<b>${esc(r.id)}</b> · <span class="${r.correct ? "ok" : "bad"}">${runStatus(r)}</span>` +
+        ` · ${fInt(r.tokens || 0)} tok · ${r.tools ?? "?"} tools<br>` +
+        `${esc((r.grader_reason || "").slice(0, 220))}${(r.grader_reason || "").length > 220 ? "…" : ""}<br>` +
+        `<span style="color:var(--faint)">click for full verdict</span>`,
+        ev.clientX, ev.clientY));
+      b.addEventListener("mouseleave", hideTip);
+    });
+    $("#mx-table").querySelectorAll("button.qid").forEach(b =>
+      b.addEventListener("click", () => {
+        state.q = b.dataset.q;
+        renderExplorer();
+        document.getElementById("explorer").scrollIntoView({ behavior: "smooth", block: "start" });
+      }));
+  }
+
+  /* ── run explorer ─────────────────────────────────────────────────────── */
+  const state = (() => {
+    const sp = new URLSearchParams(location.search);
+    return {
+      q: sp.get("q") || "",
+      status: ["pass", "fail"].includes(sp.get("status")) ? sp.get("status") : "all",
+      tags: new Set((sp.get("tags") || "").split(",").filter(Boolean)),
+      search: sp.get("search") || "",
+    };
+  })();
+  function syncExplorerURL() {
+    syncURL([
+      ["q", state.q, ""],
+      ["status", state.status, "all"],
+      ["tags", [...state.tags].join(","), ""],
+      ["search", state.search, ""],
+    ]);
+  }
+  const sort = { key: "id", dir: 1 };
+  const SORTKEY = {
+    id: r => r.id,
+    subject: r => r.subject || "",
+    status: r => r.crashed ? 2 : (r.correct ? 0 : 1),
+    score: r => r.score ?? 0,
+    tokens: r => r.tokens ?? 0,
+    eff: r => runEff(r) ?? -1,
+    tools: r => r.tools ?? 0,
+  };
+
+  function filteredRuns() {
+    const s = state.search.trim().toLowerCase();
+    return runs.filter(r => {
+      if (state.q && r.id !== state.q) return false;
+      if (state.status === "pass" && !r.correct) return false;
+      if (state.status === "fail" && r.correct) return false;
+      if (state.tags.size && ![...state.tags].some(t => r.tags.includes(t))) return false;
+      if (s && !(`${r.id} ${r.subject} ${r.grader_reason || ""} ${r.question || ""} ${r.answer || ""}`).toLowerCase().includes(s)) return false;
+      return true;
+    });
+  }
+
+  function renderFilters() {
+    /* question select */
+    const sel = $("#f-question");
+    sel.innerHTML = `<option value="">all questions (${byQ.size})</option>` +
+      questionIds.map(q => {
+        const rs = byQ.get(q), nOk = rs.filter(r => r.correct).length;
+        return `<option value="${esc(q)}"${state.q === q ? " selected" : ""}>${esc(q)} · ${nOk}/${rs.length}</option>`;
+      }).join("");
+    /* status segmented */
+    $("#f-status").querySelectorAll("button").forEach(b =>
+      b.classList.toggle("on", b.dataset.v === state.status));
+    /* tag chips */
+    $("#chips").innerHTML = cats.map(c =>
+      `<button class="chip${state.tags.has(c.tag) ? " on" : ""}" data-tag="${esc(c.tag)}">` +
+      `${esc(c.tag)}<span class="n">${c.runs}</span></button>`).join("");
+    $("#chips").querySelectorAll(".chip").forEach(b =>
+      b.addEventListener("click", () => {
+        const t = b.dataset.tag;
+        state.tags.has(t) ? state.tags.delete(t) : state.tags.add(t);
+        renderExplorer();
+      }));
+    const active = state.q || state.search || state.status !== "all" || state.tags.size;
+    $("#reset-filters").hidden = !active;
+  }
+
+  function renderTable(rows) {
+    const arrow = k => k === sort.key ? (sort.dir === 1 ? " asc" : " desc") : "";
+    const head =
+      `<thead><tr>` +
+      `<th class="sortable${arrow("id")}" data-key="id">question</th>` +
+      `<th class="sortable${arrow("subject")}" data-key="subject">subject</th>` +
+      `<th class="sortable${arrow("status")}" data-key="status">status</th>` +
+      `<th class="sortable r${arrow("score")}" data-key="score" title="correctness-gated token efficiency: a correct run at reference cost ≈ 0.25, leaner is higher, wrong = 0">score</th>` +
+      `<th class="sortable r${arrow("tokens")}" data-key="tokens">tokens</th>` +
+      `<th class="sortable r${arrow("eff")}" data-key="eff" title="${esc(EFF_EXPLAIN)}">eff</th>` +
+      `<th class="sortable r${arrow("tools")}" data-key="tools">tools</th>` +
+      `<th>grader reason</th><th>trace</th></tr></thead>`;
+    const body = rows.map(r => {
+      const st = runStatus(r);
+      const eff = runEff(r);
+      return `<tr data-i="${r._i}" class="${selectedIdx === r._i ? "selected" : ""}">` +
+        `<td class="qcell"><span class="qid">${esc(r.id)}</span>${canonMark(r)}` +
+        `<span class="qtext" title="${esc(r.question || "")}">${esc(r.question || "")}</span></td>` +
+        `<td class="subj" data-label="subject" title="${esc(r.subject)}">${esc(shortSubject(r.subject))}</td>` +
+        `<td data-label="status"><span class="pill ${st === "pass" ? "ok" : (st === "crash" ? "crash" : "bad")}">${st === "pass" ? "✓ pass" : (st === "crash" ? "✕ crash" : "✕ fail")}</span></td>` +
+        `<td class="r" data-label="score">${(r.score ?? 0).toFixed(3)}</td>` +
+        `<td class="r" data-label="tokens">${fInt(r.tokens || 0)}</td>` +
+        `<td class="r" data-label="eff">${eff == null ? '<span style="color:var(--faint)">—</span>' : eff.toFixed(3)}</td>` +
+        `<td class="r" data-label="tools">${r.tools ?? ""}</td>` +
+        `<td class="reason-cell" data-label="grader reason" title="${esc((r.grader_reason || "").slice(0, 500))}">${esc(r.grader_reason || "")}</td>` +
+        `<td data-label="trace">${r.trace_url ? `<a href="${esc(r.trace_url)}" target="_blank" rel="noopener">↗</a>` : ""}</td></tr>`;
+    }).join("");
+    $("#run-table").innerHTML = head + `<tbody>${body || `<tr><td colspan="9" style="color:var(--faint);font-family:var(--mono)">no runs match the current filter</td></tr>`}</tbody>`;
+
+    $("#run-table").querySelectorAll("th.sortable").forEach(th =>
+      th.addEventListener("click", () => {
+        const k = th.dataset.key;
+        if (sort.key === k) sort.dir = -sort.dir;
+        else { sort.key = k; sort.dir = ["tokens", "score", "eff", "tools"].includes(k) ? -1 : 1; }
+        renderExplorer();
+      }));
+    $("#run-table").querySelectorAll("tbody tr[data-i]").forEach(tr => {
+      tr.addEventListener("click", ev => {
+        if (ev.target.closest("a")) return;
+        selectRun(+tr.dataset.i, { scroll: false });
+      });
+    });
+  }
+
+  function renderAgg(rows) {
+    const nOk = rows.filter(r => r.correct).length;
+    const toks = rows.map(r => r.tokens || 0).filter(t => t > 0);
+    const p50 = pctl(toks, .5);
+    const sum = toks.reduce((a, b) => a + b, 0);
+    const effVals = rows.map(runEff).filter(v => v != null);
+    $("#agg").innerHTML =
+      `<span><b>${rows.length}</b> / ${runs.length} runs</span>` +
+      `<span>pass <b>${rows.length ? fPct(nOk / rows.length) : "—"}</b> (${nOk}/${rows.length})</span>` +
+      `<span>tokens p50 <b>${fTok(p50)}</b></span>` +
+      `<span>Σ tokens <b>${fTok(sum)}</b></span>` +
+      (effVals.length
+        ? `<span title="${esc(EFF_EXPLAIN)}">eff <b>${(effVals.reduce((a, b) => a + b, 0) / effVals.length).toFixed(3)}</b></span>`
+        : "") +
+      (state.tags.size ? `<span style="color:var(--faint)">tags: any of [${[...state.tags].map(esc).join(", ")}]</span>` : "");
+  }
+
+  function renderExplorer() {
+    syncExplorerURL();
+    renderFilters();
+    const rows = filteredRuns().sort((a, b) => {
+      const ka = SORTKEY[sort.key](a), kb = SORTKEY[sort.key](b);
+      const c = ka < kb ? -1 : ka > kb ? 1 : (a._i - b._i);
+      return c * sort.dir;
+    });
+    renderAgg(rows);
+    renderTable(rows);
+    syncCatActive();
+  }
+
+  $("#f-search").value = state.search;
+  $("#f-search").addEventListener("input", ev => { state.search = ev.target.value; renderExplorer(); });
+  $("#f-question").addEventListener("change", ev => { state.q = ev.target.value; renderExplorer(); });
+  $("#f-status").querySelectorAll("button").forEach(b =>
+    b.addEventListener("click", () => { state.status = b.dataset.v; renderExplorer(); }));
+  $("#reset-filters").addEventListener("click", () => {
+    state.q = ""; state.status = "all"; state.tags.clear(); state.search = "";
+    $("#f-search").value = "";
+    renderExplorer();
+  });
+
+  /* ── selection + drawer ───────────────────────────────────────────────── */
+  let selectedIdx = -1;
+  function syncSelectionDots() {
+    document.querySelectorAll(".dot-run").forEach(c =>
+      c.classList.toggle("selected", +c.dataset.i === selectedIdx));
+    document.querySelectorAll(".mx-cell").forEach(c =>
+      c.classList.toggle("selected", +c.dataset.i === selectedIdx));
+  }
+
+  function selectRun(i, { scroll } = {}) {
+    selectedIdx = i;
+    const r = runs[i];
+    /* make sure the run is visible in the explorer */
+    if (!filteredRuns().some(x => x._i === i)) {
+      state.q = ""; state.status = "all"; state.tags.clear(); state.search = "";
+      $("#f-search").value = "";
+    }
+    renderExplorer();
+    syncSelectionDots();
+    openDrawer(r);
+    if (scroll) {
+      const tr = $(`#run-table tr[data-i="${i}"]`);
+      if (tr) {
+        tr.scrollIntoView({ behavior: "smooth", block: "center" });
+        tr.classList.add("flash");
+        setTimeout(() => tr.classList.remove("flash"), 1700);
+      }
+    }
+  }
+
+  const drawer = $("#drawer");
+  /* compact tool-call log: name + the head of its arguments. Older payloads
+     predate per-run tool capture and simply have no section. */
+  function toolCallsHtml(r) {
+    const calls = r.tool_calls || [];
+    if (!calls.length) {
+      return (r.tools ?? 0) > 0
+        ? `<div class="canon-note" style="color:var(--faint)">tool-call log not captured in this payload (run predates capture)</div>`
+        : "";
+    }
+    const nErr = calls.filter(t => t.error).length;
+    const more = (r.tools ?? calls.length) - calls.length;
+    const rows = calls.map(t =>
+      `<div class="tc${t.error ? " is-err" : ""}"><span class="tc-name">${esc(t.name)}</span>` +
+      `<span class="tc-args">${esc((t.args || "").slice(0, 90))}${(t.args || "").length > 90 ? "…" : ""}</span></div>`).join("");
+    return `<details class="toolcalls"><summary>${calls.length} tool call${calls.length === 1 ? "" : "s"}` +
+      (nErr ? ` · <span style="color:var(--bad)">${nErr} error${nErr === 1 ? "" : "s"}</span>` : "") +
+      (more > 0 ? ` · first ${calls.length} of ${r.tools}` : "") +
+      `</summary>${rows}</details>`;
+  }
+
+  function openDrawer(r) {
+    const st = runStatus(r);
+    const eff = runEff(r);
+    const ref = prevRefs.get(r.id);
+    const effDd = eff == null
+      ? `<span style="color:var(--faint)">— no reference${prev ? "" : " release"}</span>`
+      : `${eff.toFixed(3)} <span style="color:var(--faint)">vs ref ${fInt(ref)} tok (${esc(prev.tag)})</span>`;
+    $("#drawer-title").textContent = r.id;
+    const sibs = byQ.get(r.id).map((s, j) =>
+      `<button class="mx-cell ${s.correct ? "ok" : "bad"}${s._i === r._i ? " selected" : ""}" data-i="${s._i}" title="run ${j + 1}: ${runStatus(s)} · ${fInt(s.tokens || 0)} tok">${s.correct ? "✓" : "✕"}</button>`).join("");
+    $("#drawer-body").innerHTML =
+      `<span class="pill ${st === "pass" ? "ok" : (st === "crash" ? "crash" : "bad")}">${st === "pass" ? "✓ pass" : "✕ " + st}</span>` +
+      `<div class="drawer-label">question${r.question_canonical ? ' <span class="canon" title="' + CANON_TIP + '">°</span>' : ""}</div>` +
+      `<div class="qblock">${esc(r.question || "(question text not recorded)")}</div>` +
+      (r.question_canonical ? `<div class="canon-note">° ${CANON_TIP}</div>` : "") +
+      toolCallsHtml(r) +
+      `<div class="drawer-label">final answer</div>` +
+      (r.answer
+        ? `<div class="answer">${esc(r.answer)}</div>`
+        : `<div class="answer empty">${r.answer == null
+            ? "final answer not recorded for this record"
+            : "no output — the run produced no final response"}</div>`) +
+      `<dl class="kv">` +
+      `<dt>subject</dt><dd>${esc(r.subject)}</dd>` +
+      `<dt>score</dt><dd>${(r.score ?? 0).toFixed(4)}</dd>` +
+      `<dt>correctness</dt><dd>${(r.correctness ?? 0).toFixed(2)}</dd>` +
+      `<dt>tokens</dt><dd>${fInt(r.tokens || 0)}</dd>` +
+      `<dt>efficiency</dt><dd title="${esc(EFF_EXPLAIN)}">${effDd}</dd>` +
+      `<dt>tool calls</dt><dd>${r.tools ?? "—"}</dd>` +
+      `<dt>tags</dt><dd><div class="tagset">${r.tags.map(t => `<span>${esc(t)}</span>`).join("")}</div></dd>` +
+      `</dl>` +
+      `<div class="drawer-label">grader verdict</div>` +
+      `<div class="reason ${r.correct ? "ok" : "bad"}">${esc(r.grader_reason || (r.crashed ? "run crashed — no grader output" : "no reason recorded"))}</div>` +
+      (r.trace_url ? `<a class="trace-btn" href="${esc(r.trace_url)}" target="_blank" rel="noopener">open langfuse trace ↗</a>` : "") +
+      `<div class="drawer-label">runs of this question</div>` +
+      `<div class="sibs">${sibs}</div>`;
+    $("#drawer-body").querySelectorAll(".sibs .mx-cell").forEach(b =>
+      b.addEventListener("click", () => selectRun(+b.dataset.i, { scroll: true })));
+    drawer.classList.add("open");
+  }
+  function closeDrawer() {
+    drawer.classList.remove("open");
+    selectedIdx = -1;
+    syncSelectionDots();
+    document.querySelectorAll("#run-table tr.selected").forEach(tr => tr.classList.remove("selected"));
+  }
+  $("#drawer-close").addEventListener("click", closeDrawer);
+  document.addEventListener("keydown", ev => { if (ev.key === "Escape") closeDrawer(); });
+
+  /* ── footer ───────────────────────────────────────────────────────────── */
+  $("#foot").innerHTML = CI
+    ? `Single-pass smoke run of <b>${esc(record.tag)}</b> — small headline-score moves are noise; ` +
+      `per-question flips are the signal. History comes from this branch's published smoke runs, ` +
+      `the master baseline, and the most recent release's qualification record (restricted to the ` +
+      `questions this run asked).`
+    : `Qualification of <b>${esc(record.tag)}</b> — small headline-score moves are noise; ` +
+      `per-question flips are the signal. History comes from prior releases' ` +
+      `<code>eval-qualification.json</code> assets. This page is fully self-contained: no external fetches.`;
+
+  /* ── theme toggle ─────────────────────────────────────────────────────── */
+  (() => {
+    const KEY = "panda-eval-theme", MODES = ["auto", "light", "dark"];
+    const btn = $("#theme-toggle");
+    let mode = "auto";
+    try { mode = MODES.includes(localStorage.getItem(KEY)) ? localStorage.getItem(KEY) : "auto"; } catch (e) {}
+    btn.textContent = mode;
+    btn.addEventListener("click", () => {
+      mode = MODES[(MODES.indexOf(mode) + 1) % MODES.length];
+      if (mode === "auto") delete document.documentElement.dataset.theme;
+      else document.documentElement.dataset.theme = mode;
+      try { mode === "auto" ? localStorage.removeItem(KEY) : localStorage.setItem(KEY, mode); } catch (e) {}
+      btn.textContent = mode;
+    });
+  })();
+
+  /* ── boot + resize ────────────────────────────────────────────────────── */
+  renderTrend();
+  renderSwarm();
+  renderCats();
+  renderMatrix();
+  renderExplorer();
+
+  let rT;
+  window.addEventListener("resize", () => {
+    clearTimeout(rT);
+    rT = setTimeout(() => { renderTrend(); renderSwarm(); renderCats(); }, 140);
+  });
+})();
+</script>
+</body>
+</html>
