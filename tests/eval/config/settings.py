@@ -1,6 +1,7 @@
 """Pydantic settings for ethpandaops-panda evaluation harness."""
 
 import os
+import uuid
 from pathlib import Path
 
 from pydantic import Field
@@ -39,6 +40,9 @@ DEFAULT_EVALUATOR_MODEL = "qwen3.7-plus"
 # The zen gateway is OpenAI-compatible; promptfoo grades through its generic
 # openai:chat driver pointed at this base URL.
 OPENCODE_ZEN_BASE_URL = "https://opencode.ai/zen/go/v1"
+# Keep the judge's gateway route stable for the lifetime of one eval process.
+# OpenCode Go requires a session header on OpenAI-compatible grader calls.
+OPENCODE_JUDGE_SESSION = uuid.uuid4().hex
 # A LiteLLM proxy is OpenAI-compatible the same way, so both the subject and the
 # judge can ride one when the zen gateway drops a model (or to bench a model zen
 # does not carry). LITELLM_PROXY_URL is the proxy root, without /v1.
@@ -100,6 +104,10 @@ def grader_for(model: str) -> dict:
         "config": {
             "apiBaseUrl": OPENCODE_ZEN_BASE_URL,
             "apiKeyEnvar": _opencode_key_envar(),
+            "headers": {
+                "x-opencode-session": OPENCODE_JUDGE_SESSION,
+                "User-Agent": "panda-eval/1.0",
+            },
         },
     }
 

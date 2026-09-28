@@ -363,20 +363,28 @@ def wallet(private_key: str | None = None) -> dict[str, str]:
 # Faucet
 # ---------------------------------------------------------------------------
 
-def faucet(network: str, address: str) -> str:
+def faucet(network: str, address: str, amount_wei: int | None = None) -> str:
     """Mine the network's PoW faucet and claim test ETH to address.
 
     Runs the full agent proof-of-work flow server-side — no browser, WebSocket,
     or captcha — and waits for the claim transaction to land on-chain, so the
     balance is readable as soon as this returns. If the transaction had not been
     included yet, a warning is printed and the hash is still returned.
+    amount_wei requests an exact payout; mining may earn slightly more because
+    each valid share has a fixed reward. Large claims need a longer panda
+    execute --timeout (for example, --timeout 900).
     Requires panda auth (run 'panda auth login'). Source:
-    https://github.com/pk910/PoWFaucet
+    https://github.com/qu0b/powfaucet/tree/qu0b/agent-rest-api
     """
     _require_available()
+    if amount_wei is not None and (isinstance(amount_wei, bool) or not isinstance(amount_wei, int) or amount_wei <= 0):
+        raise ValueError("amount_wei must be a positive integer")
+    args = {"network": network, "address": address}
+    if amount_wei is not None:
+        args["amount_wei"] = str(amount_wei)
     result = _runtime.invoke_data(
         "evm.faucet",
-        {"network": network, "address": address},
+        args,
     )
     if not isinstance(result, dict) or not result.get("claim_hash"):
         raise ValueError(f"faucet claim did not return a tx hash: {result!r}")

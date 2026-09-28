@@ -9,6 +9,9 @@ def test_bare_model_uses_opencode_go_gateway():
     assert g["config"]["apiBaseUrl"].endswith("/zen/go/v1")
     # opencode-go path is keyed off an API key, not a file provider.
     assert "apiKeyEnvar" in g["config"]
+    assert len(g["config"]["headers"]["x-opencode-session"]) == 32
+    assert g["config"]["headers"]["User-Agent"] == "panda-eval/1.0"
+    assert grader_for("qwen3.7-plus")["config"]["headers"]["x-opencode-session"] == g["config"]["headers"]["x-opencode-session"]
 
 
 def test_codex_prefix_uses_direct_codex_judge():

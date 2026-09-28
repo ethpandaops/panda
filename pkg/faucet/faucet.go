@@ -46,6 +46,17 @@ type Result struct {
 	BlockNumber uint64 `json:"block_number,omitempty"`
 }
 
+// HTTPError preserves an upstream status so callers can distinguish faucet
+// throttling from transport failures.
+type HTTPError struct {
+	Status int
+	Body   string
+}
+
+func (e *HTTPError) Error() string {
+	return fmt.Sprintf("faucet returned %d: %s", e.Status, e.Body)
+}
+
 // Transport issues one faucet HTTP request and returns the response body and
 // status code. It lets the mining flow run either against a faucet URL directly
 // (tests, CLI) or through the panda proxy — the only authenticated network path
@@ -69,36 +80,80 @@ func New(baseURL string, httpClient *http.Client) *Client {
 	return NewWithTransport(newHTTPTransport(baseURL, httpClient))
 }
 
-// Claim runs the full agent flow for address: start a session, mine PoW shares
-// until the balance covers the minimum drop, close the session, submit the
-// claim, and poll until the faucet reports the claim transaction submitted. It
-// returns the claim transaction hash.
+// Claim requests the faucet's minimum drop for address.
 //
 // The faucet flips claimStatus to "confirmed" once it has broadcast the
 // transaction, which can precede inclusion — so Result.Confirmed is left false
 // here. Callers with chain access should wait for the receipt themselves.
 func (c *Client) Claim(ctx context.Context, address string) (*Result, error) {
+	return c.ClaimAmount(ctx, address, nil)
+}
+
+// ClaimAmount mines enough shares for amountWei and asks the faucet to pay
+// exactly that amount. A nil amount requests the faucet's minimum drop.
+func (c *Client) ClaimAmount(ctx context.Context, address string, amountWei *big.Int) (result *Result, err error) {
 	session, err := c.startSession(ctx, address)
 	if err != nil {
 		return nil, err
 	}
+	claimSubmitted := false
+	defer func() {
+		if err == nil {
+			return
+		}
+		if !claimSubmitted {
+			// Release the wallet's one active session even when the caller times out.
+			// The original context may already be canceled, so use a short new one.
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			_ = c.post(cleanupCtx, "/api/powCloseSession?session="+session, nil, nil)
+		}
+		err = fmt.Errorf("%w (faucet session %s)", err, session)
+	}()
 
-	minClaim, err := c.minClaim(ctx, session)
+	minClaim, maxClaim, err := c.claimLimits(ctx, session)
 	if err != nil {
 		return nil, err
 	}
+	target := minClaim
+	if amountWei != nil {
+		if maxClaim == nil {
+			return nil, fmt.Errorf("faucet did not advertise a maximum claim")
+		}
+		if amountWei.Cmp(minClaim) < 0 || amountWei.Cmp(maxClaim) > 0 {
+			return nil, fmt.Errorf("requested amount %s wei is outside faucet limits [%s, %s]", amountWei, minClaim, maxClaim)
+		}
+		target = amountWei
+	}
 
-	if err := c.mine(ctx, session, minClaim); err != nil {
+	if err := c.mine(ctx, session, target); err != nil {
 		return nil, err
 	}
 
-	if err := c.post(ctx, "/api/powCloseSession?session="+session, nil, nil); err != nil {
+	var closeResult struct {
+		Status       string `json:"status"`
+		FailedReason string `json:"failedReason"`
+	}
+	if err := c.post(ctx, "/api/powCloseSession?session="+session, nil, &closeResult); err != nil {
 		return nil, fmt.Errorf("closing session: %w", err)
 	}
+	if closeResult.Status != "claimable" {
+		return nil, fmt.Errorf("faucet session did not become claimable: status %q, reason %q", closeResult.Status, closeResult.FailedReason)
+	}
 
-	if err := c.post(ctx, "/api/claimReward", map[string]string{"session": session}, nil); err != nil {
+	claimBody := map[string]string{"session": session, "amountWei": target.String()}
+	var claimResult struct {
+		Status       string `json:"status"`
+		FailedCode   string `json:"failedCode"`
+		FailedReason string `json:"failedReason"`
+	}
+	if err := c.post(ctx, "/api/claimReward", claimBody, &claimResult); err != nil {
 		return nil, fmt.Errorf("submitting claim: %w", err)
 	}
+	if claimResult.Status != "claiming" && claimResult.Status != "finished" {
+		return nil, fmt.Errorf("faucet refused claim: %s (%s)", claimResult.FailedReason, claimResult.FailedCode)
+	}
+	claimSubmitted = true
 
 	return c.awaitClaim(ctx, session, address)
 }
@@ -127,14 +182,15 @@ func (c *Client) startSession(ctx context.Context, address string) (string, erro
 	return resp.Session, nil
 }
 
-// minClaim reads the minimum claimable amount (wei) for the session.
-func (c *Client) minClaim(ctx context.Context, session string) (*big.Int, error) {
+// claimLimits reads the minimum and maximum payout amounts in wei.
+func (c *Client) claimLimits(ctx context.Context, session string) (*big.Int, *big.Int, error) {
 	var resp struct {
 		MinClaim json.Number `json:"minClaim"`
+		MaxClaim json.Number `json:"maxClaim"`
 	}
 
 	if err := c.get(ctx, "/api/getFaucetConfig?session="+session, &resp); err != nil {
-		return nil, fmt.Errorf("reading faucet config: %w", err)
+		return nil, nil, fmt.Errorf("reading faucet config: %w", err)
 	}
 
 	minClaim, ok := new(big.Int).SetString(resp.MinClaim.String(), 10)
@@ -143,7 +199,11 @@ func (c *Client) minClaim(ctx context.Context, session string) (*big.Int, error)
 		minClaim, _ = new(big.Int).SetString("1000000000000000000", 10)
 	}
 
-	return minClaim, nil
+	maxClaim, ok := new(big.Int).SetString(resp.MaxClaim.String(), 10)
+	if !ok || maxClaim.Sign() <= 0 {
+		maxClaim = nil
+	}
+	return minClaim, maxClaim, nil
 }
 
 // powChallenge is a single mining assignment from the faucet.
@@ -203,8 +263,16 @@ func (c *Client) mine(ctx context.Context, session string, minClaim *big.Int) er
 		}
 
 		body := map[string]any{"session": session, "nonce": nonce}
-		if err := c.post(ctx, "/api/powSubmit", body, &sub); err != nil {
-			return fmt.Errorf("submitting share: %w", err)
+		for attempt := 0; ; attempt++ {
+			if err := c.post(ctx, "/api/powSubmit", body, &sub); err != nil {
+				return fmt.Errorf("submitting share: %w", err)
+			}
+			if sub.Valid || !strings.Contains(strings.ToLower(sub.Error), "rate limit") || attempt >= 3 {
+				break
+			}
+			if err := wait(ctx, time.Duration(1<<attempt)*2*time.Second); err != nil {
+				return err
+			}
 		}
 
 		if !sub.Valid {
@@ -272,14 +340,18 @@ func difficultyMask(difficulty int) string {
 func (c *Client) awaitClaim(ctx context.Context, session, address string) (*Result, error) {
 	for attempt := 0; attempt < pollAttempts; attempt++ {
 		var st struct {
-			Status      string `json:"status"`
-			ClaimStatus string `json:"claimStatus"`
-			ClaimHash   string `json:"claimHash"`
-			Balance     string `json:"balance"`
+			Status       string `json:"status"`
+			ClaimStatus  string `json:"claimStatus"`
+			ClaimHash    string `json:"claimHash"`
+			Balance      string `json:"balance"`
+			FailedReason string `json:"failedReason"`
 		}
 
 		if err := c.get(ctx, "/api/getSessionStatus?session="+session, &st); err != nil {
 			return nil, fmt.Errorf("polling claim: %w", err)
+		}
+		if st.Status == "failed" {
+			return nil, fmt.Errorf("faucet session failed: %s", st.FailedReason)
 		}
 
 		switch st.ClaimStatus {
@@ -320,13 +392,23 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 		payload = encoded
 	}
 
-	data, status, err := c.t.Do(ctx, method, path, payload)
-	if err != nil {
-		return err
-	}
-
-	if status < 200 || status >= 300 {
-		return fmt.Errorf("faucet returned %d: %s", status, strings.TrimSpace(string(data)))
+	var data []byte
+	for attempt := 0; ; attempt++ {
+		response, status, err := c.t.Do(ctx, method, path, payload)
+		if err != nil {
+			return err
+		}
+		if status == http.StatusTooManyRequests && strings.HasPrefix(path, "/api/pow") && attempt < 3 {
+			if err := wait(ctx, time.Duration(1<<attempt)*2*time.Second); err != nil {
+				return err
+			}
+			continue
+		}
+		if status < 200 || status >= 300 {
+			return &HTTPError{Status: status, Body: strings.TrimSpace(string(response))}
+		}
+		data = response
+		break
 	}
 
 	if out == nil {
@@ -338,6 +420,17 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	}
 
 	return nil
+}
+
+func wait(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 // httpTransport talks to a faucet base URL directly.
