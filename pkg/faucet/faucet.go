@@ -130,13 +130,28 @@ func (c *Client) ClaimAmount(ctx context.Context, address string, amountWei *big
 		return nil, err
 	}
 
-	if err := c.post(ctx, "/api/powCloseSession?session="+session, nil, nil); err != nil {
+	var closeResult struct {
+		Status       string `json:"status"`
+		FailedReason string `json:"failedReason"`
+	}
+	if err := c.post(ctx, "/api/powCloseSession?session="+session, nil, &closeResult); err != nil {
 		return nil, fmt.Errorf("closing session: %w", err)
+	}
+	if closeResult.Status != "claimable" {
+		return nil, fmt.Errorf("faucet session did not become claimable: status %q, reason %q", closeResult.Status, closeResult.FailedReason)
 	}
 
 	claimBody := map[string]string{"session": session, "amountWei": target.String()}
-	if err := c.post(ctx, "/api/claimReward", claimBody, nil); err != nil {
+	var claimResult struct {
+		Status       string `json:"status"`
+		FailedCode   string `json:"failedCode"`
+		FailedReason string `json:"failedReason"`
+	}
+	if err := c.post(ctx, "/api/claimReward", claimBody, &claimResult); err != nil {
 		return nil, fmt.Errorf("submitting claim: %w", err)
+	}
+	if claimResult.Status != "claiming" && claimResult.Status != "finished" {
+		return nil, fmt.Errorf("faucet refused claim: %s (%s)", claimResult.FailedReason, claimResult.FailedCode)
 	}
 	claimSubmitted = true
 
@@ -325,14 +340,18 @@ func difficultyMask(difficulty int) string {
 func (c *Client) awaitClaim(ctx context.Context, session, address string) (*Result, error) {
 	for attempt := 0; attempt < pollAttempts; attempt++ {
 		var st struct {
-			Status      string `json:"status"`
-			ClaimStatus string `json:"claimStatus"`
-			ClaimHash   string `json:"claimHash"`
-			Balance     string `json:"balance"`
+			Status       string `json:"status"`
+			ClaimStatus  string `json:"claimStatus"`
+			ClaimHash    string `json:"claimHash"`
+			Balance      string `json:"balance"`
+			FailedReason string `json:"failedReason"`
 		}
 
 		if err := c.get(ctx, "/api/getSessionStatus?session="+session, &st); err != nil {
 			return nil, fmt.Errorf("polling claim: %w", err)
+		}
+		if st.Status == "failed" {
+			return nil, fmt.Errorf("faucet session failed: %s", st.FailedReason)
 		}
 
 		switch st.ClaimStatus {

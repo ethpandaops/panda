@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"golang.org/x/crypto/argon2"
@@ -36,6 +37,7 @@ type mockFaucet struct {
 	claimed       bool
 	closed        bool
 	failChallenge bool
+	failClaim     bool
 }
 
 func (m *mockFaucet) handler() http.Handler {
@@ -97,6 +99,10 @@ func (m *mockFaucet) handler() http.Handler {
 	})
 
 	mux.HandleFunc("/api/claimReward", func(w http.ResponseWriter, r *http.Request) {
+		if m.failClaim {
+			writeJSONResp(w, map[string]any{"status": "failed", "failedCode": "BALANCE_LIMIT", "failedReason": "Claim would exceed the maximum wallet balance"})
+			return
+		}
 		var body struct {
 			AmountWei string `json:"amountWei"`
 		}
@@ -106,7 +112,7 @@ func (m *mockFaucet) handler() http.Handler {
 			m.paid, _ = strconv.ParseInt(body.AmountWei, 10, 64)
 		}
 		m.claimed = true
-		writeJSONResp(w, map[string]any{"claimStatus": "queue"})
+		writeJSONResp(w, map[string]any{"status": "claiming", "claimStatus": "queue"})
 	})
 
 	mux.HandleFunc("/api/getSessionStatus", func(w http.ResponseWriter, _ *http.Request) {
@@ -219,6 +225,22 @@ func TestClaimAmountClosesSessionOnMiningFailure(t *testing.T) {
 	_, err := New(srv.URL, srv.Client()).Claim(context.Background(), "0xTarget")
 	if err == nil || !mock.closed {
 		t.Fatalf("expected mining error and session cleanup, got error %v, closed %v", err, mock.closed)
+	}
+}
+
+func TestClaimAmountReportsFaucetClaimRejection(t *testing.T) {
+	mock := &mockFaucet{
+		difficulty: 6, timeCost: 1, memoryCost: 512, keyLength: 16,
+		preimage: []byte("12345678"), shareReward: 2_000_000_000_000_000_000,
+		minClaim: 1_000_000_000_000_000_000, maxClaim: 5_000_000_000_000_000_000,
+		failClaim: true,
+	}
+	srv := httptest.NewServer(mock.handler())
+	defer srv.Close()
+
+	_, err := New(srv.URL, srv.Client()).Claim(context.Background(), "0xTarget")
+	if err == nil || !strings.Contains(err.Error(), "BALANCE_LIMIT") || !mock.closed {
+		t.Fatalf("expected immediate balance-limit error after closing the session, got %v", err)
 	}
 }
 
