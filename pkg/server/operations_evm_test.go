@@ -67,6 +67,17 @@ func TestFaucetAuthenticatedResolution(t *testing.T) {
 		require.True(t, svc.handleEVMOperation("evm.faucet", rec, newNetworkOpRequest(t, args)))
 		require.Equal(t, http.StatusBadRequest, rec.Code)
 	})
+
+	t.Run("invalid amount arg", func(t *testing.T) {
+		svc := authedService(t)
+		rec := httptest.NewRecorder()
+		args := map[string]any{
+			"network": "fusaka-devnet-3", "address": "0x1111111111111111111111111111111111111111",
+			"amount_wei": "-1",
+		}
+		require.True(t, svc.handleEVMOperation("evm.faucet", rec, newNetworkOpRequest(t, args)))
+		require.Equal(t, http.StatusBadRequest, rec.Code)
+	})
 }
 
 // The faucet reports a claim confirmed once it has broadcast the transaction,

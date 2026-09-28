@@ -111,8 +111,8 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 					Description: "Generate a new keypair or derive address from an existing private key. Returns {address, private_key}.",
 				},
 				"faucet": {
-					Signature:   "faucet(network, address) -> str",
-					Description: "Mine the network's PoW faucet and claim test ETH to address; returns the claim tx hash once the transaction is on-chain, so the balance is readable as soon as it returns. Runs the full agent PoW flow server-side (no browser, WebSocket, or captcha). Requires panda auth.",
+					Signature:   "faucet(network, address, amount_wei=None) -> str",
+					Description: "Mine the network's PoW faucet and claim test ETH to address; amount_wei requests an exact payout (the default is the faucet minimum). Returns the claim tx hash once on-chain. Large claims need panda execute --timeout 900. Requires panda auth.",
 				},
 			},
 		},

@@ -151,6 +151,18 @@ evm_deploy_and_fuzz:
         tx = evm.faucet(network, w["address"])
         print(f"funded {w['address']} on {network}: {tx}")
 
+    - name: Claim an exact amount of devnet ETH
+      description: Mine one faucet session and request an exact payout in wei; use panda execute --timeout 900 for a large claim
+      query: |
+        from ethpandaops import evm, networks
+
+        network = next(n["id"] for n in networks.list()
+                       if n["devnet_group"] == "glamsterdam" and n["status"] == "active")
+        wallet = evm.wallet()
+        print("Devnet private key:", wallet["private_key"])
+        tx = evm.faucet(network, wallet["address"], amount_wei=100 * 10**18)
+        print("Address:", wallet["address"], "Claimed 100 ETH:", tx)
+
     - name: Deploy raw bytecode and check receipt
       description: Build a wallet, fund it via the faucet, deploy a contract, and read the receipt
       query: |

@@ -3,8 +3,10 @@ package server
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"regexp"
 	"time"
@@ -16,8 +18,8 @@ import (
 )
 
 // faucetClaimTimeout bounds a single claim so a slow or stuck faucet cannot hang
-// the request. Argon2id/16MiB mining plus on-chain confirmation fits comfortably.
-const faucetClaimTimeout = 5 * time.Minute
+// the request. Larger payouts can require several Argon2id shares.
+const faucetClaimTimeout = 12 * time.Minute
 
 // The faucet reports a claim "confirmed" as soon as it has broadcast the
 // transaction, which can precede inclusion — so the operation waits for the
@@ -89,6 +91,19 @@ func (s *service) handleEVMFaucet(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+	var amountWei *big.Int
+	if raw, ok := req.Args["amount_wei"]; ok && raw != nil {
+		value, valid := raw.(string)
+		if !valid || value == "" {
+			writeAPIError(w, http.StatusBadRequest, "amount_wei must be a decimal wei string")
+			return
+		}
+		amountWei, valid = new(big.Int).SetString(value, 10)
+		if !valid || amountWei.Sign() <= 0 {
+			writeAPIError(w, http.StatusBadRequest, "amount_wei must be a positive decimal wei string")
+			return
+		}
+	}
 
 	if s.cartographoorClient != nil {
 		if _, ok := s.cartographoorClient.GetNetwork(network); !ok {
@@ -103,9 +118,14 @@ func (s *service) handleEVMFaucet(w http.ResponseWriter, r *http.Request) {
 
 	client := faucet.NewWithTransport(&proxyFaucetTransport{s: s, network: network})
 
-	result, err := client.Claim(ctx, address)
+	result, err := client.ClaimAmount(ctx, address, amountWei)
 	if err != nil {
-		writeAPIError(w, http.StatusBadGateway, "faucet claim failed: "+err.Error())
+		status := http.StatusBadGateway
+		var upstream *faucet.HTTPError
+		if errors.As(err, &upstream) && upstream.Status == http.StatusTooManyRequests {
+			status = http.StatusTooManyRequests
+		}
+		writeAPIError(w, status, "faucet claim failed: "+err.Error())
 
 		return
 	}
