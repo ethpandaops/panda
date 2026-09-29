@@ -319,9 +319,6 @@ type fakeRouterClient struct {
 	model     string
 	ready     bool
 
-	workflowEnabled bool
-	workflowWebURL  string
-
 	starts    int
 	stops     int
 	discovers int
@@ -395,10 +392,6 @@ func (f *fakeRouterClient) EthNodeDatasourceInfo() []types.DatasourceInfo {
 func (f *fakeRouterClient) EmbeddingAvailable() bool { return f.embedding }
 func (f *fakeRouterClient) EmbeddingModel() string   { return "" }
 
-func (f *fakeRouterClient) WorkflowInfo() (bool, string) {
-	return f.workflowEnabled, f.workflowWebURL
-}
-
 func (f *fakeRouterClient) Discover(_ context.Context) error {
 	f.discovers++
 
@@ -407,10 +400,7 @@ func (f *fakeRouterClient) Discover(_ context.Context) error {
 
 func (f *fakeRouterClient) EnsureAuthenticated(_ context.Context) error { return nil }
 
-var (
-	_ Client               = (*fakeRouterClient)(nil)
-	_ WorkflowInfoProvider = (*fakeRouterClient)(nil)
-)
+var _ Client = (*fakeRouterClient)(nil)
 
 type failingRoundTripper struct{}
 
