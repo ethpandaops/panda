@@ -320,7 +320,6 @@ func (a *App) proxyClientConfig(proxyCfg config.ProxyConfig, onDiscover func()) 
 	cfg.IssuerURL = proxyCfg.ResolvedAuthIssuerURL()
 	cfg.ClientID = proxyCfg.Auth.ClientID
 	cfg.Resource = proxyCfg.ResolvedAuthResource()
-	cfg.Scopes = proxyCfg.Auth.Scopes
 	cfg.RefreshTokenTTL = proxyCfg.Auth.RefreshTokenTTL
 	cfg.AuthMode = strings.TrimSpace(proxyCfg.Auth.Mode)
 	cfg.Username = strings.TrimSpace(proxyCfg.Auth.Username)

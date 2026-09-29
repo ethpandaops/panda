@@ -9,7 +9,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/ethpandaops/panda/pkg/proxy/handlers"
-	"github.com/ethpandaops/panda/pkg/workflowrelay"
 )
 
 const (
@@ -177,17 +176,9 @@ func (s *server) metricsMiddleware(next http.Handler) http.Handler {
 		ProxyRequestsTotal.WithLabelValues(
 			dsType, ds, method, statusCode,
 		).Inc()
-
-		// Skip the duration histogram for workflow SSE responses: the middleware
-		// blocks for the whole stream lifetime, so duration is the stream
-		// lifetime (minutes+), not request latency, and would swamp the +Inf
-		// bucket. The counter above still covers every response.
-		if dsType != "workflow" || !workflowrelay.IsEventStream(mrw.Header().Get("Content-Type")) {
-			ProxyRequestDurationSeconds.WithLabelValues(
-				dsType, ds, method,
-			).Observe(duration)
-		}
-
+		ProxyRequestDurationSeconds.WithLabelValues(
+			dsType, ds, method,
+		).Observe(duration)
 		ProxyResponseSizeBytes.WithLabelValues(
 			dsType,
 		).Observe(float64(mrw.bytesWritten))
@@ -260,13 +251,6 @@ func (w *responseCapture) Flush() {
 	}
 }
 
-// Unwrap exposes the underlying writer to http.ResponseController so a handler
-// (e.g. the workflow passthrough) can clear the write deadline for long-lived
-// SSE streams through this wrapper.
-func (w *responseCapture) Unwrap() http.ResponseWriter {
-	return w.ResponseWriter
-}
-
 // extractDatasourceType extracts the datasource type from the request path.
 func extractDatasourceType(path string) string {
 	trimmed := strings.TrimPrefix(path, "/")
@@ -288,8 +272,6 @@ func extractDatasourceType(path string) string {
 		return "benchmarkoor"
 	case "compute":
 		return "compute"
-	case "workflow":
-		return "workflow"
 	case "github":
 		return "github"
 	case "uploads":
