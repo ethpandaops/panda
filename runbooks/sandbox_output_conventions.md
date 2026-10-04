@@ -26,7 +26,8 @@ reused session — as the task requires.
 - **Charts:** use the ethpandaops **chartkit** charting library and produce a real
   saved image artifact (chartkit replaces matplotlib, plotly, and ASCII art here).
   Look up the exact API by searching the examples index for "chartkit <chart type>";
-  if the index misses, read the chartkit docs surface.
+  if the index misses, read the chartkit docs surface. For design quality — chart
+  form, colors, anti-patterns — follow `runbooks://chartkit_chart_design`.
 - **Files / sharing:** upload with the ethpandaops **storage** library —
   `storage.upload(path, remote_name=...)` returns `.url` and `.host_path`; surface
   both. Search the examples index for "storage upload file url"; if the index
