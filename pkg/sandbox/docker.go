@@ -636,7 +636,7 @@ func (b *DockerBackend) execInContainer(
 	}
 
 	execConfig := client.ExecCreateOptions{
-		Cmd:          []string{"python", scriptPath},
+		Cmd:          []string{"python", "-c", dockerSessionRunner, scriptPath},
 		AttachStdout: true,
 		AttachStderr: true,
 		Env:          execEnv,
@@ -646,6 +646,18 @@ func (b *DockerBackend) execInContainer(
 	if err != nil {
 		return nil, fmt.Errorf("creating exec: %w", err)
 	}
+
+	// Terminate on every return path, including attach errors and disconnects.
+	defer func() {
+		if err := b.stopSessionExecution(session.Handle, scriptPath); err != nil {
+			log.WithError(err).Error("Could not stop execution; killing session container")
+			killCtx, killCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer killCancel()
+			if _, killErr := b.client.ContainerKill(killCtx, session.Handle, client.ContainerKillOptions{Signal: "SIGKILL"}); killErr != nil {
+				log.WithError(killErr).Error("Could not kill session container")
+			}
+		}
+	}()
 
 	// Attach to get output.
 	attachResp, err := b.client.ExecAttach(execCtx, execResp.ID, client.ExecAttachOptions{})
@@ -670,21 +682,7 @@ func (b *DockerBackend) execInContainer(
 			log.WithError(err).Warn("Error reading exec output")
 		}
 	case <-execCtx.Done():
-		log.Warn("Execution timed out, cleaning up script file")
-
-		// Cleanup script file even on timeout to prevent disk space leaks.
-		// Use a fresh context since execCtx is cancelled.
-		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cleanupCancel()
-
-		cleanupCmd := []string{"rm", "-f", scriptPath}
-		cleanupConfig := client.ExecCreateOptions{
-			Cmd: cleanupCmd,
-		}
-
-		if cleanupResp, err := b.client.ExecCreate(cleanupCtx, session.Handle, cleanupConfig); err == nil {
-			_, _ = b.client.ExecStart(cleanupCtx, cleanupResp.ID, client.ExecStartOptions{})
-		}
+		log.Warn("Execution canceled or timed out; terminating Python process group")
 
 		return nil, fmt.Errorf("execution timed out after %s", timeout)
 	}
@@ -696,18 +694,6 @@ func (b *DockerBackend) execInContainer(
 	}
 
 	duration := time.Since(startTime).Seconds()
-
-	// Cleanup the script file.
-	cleanupCmd := []string{"rm", "-f", scriptPath}
-
-	cleanupConfig := client.ExecCreateOptions{
-		Cmd: cleanupCmd,
-	}
-
-	cleanupResp, err := b.client.ExecCreate(ctx, session.Handle, cleanupConfig)
-	if err == nil {
-		_, _ = b.client.ExecStart(ctx, cleanupResp.ID, client.ExecStartOptions{})
-	}
 
 	log.WithFields(logrus.Fields{
 		"exit_code": inspectResp.ExitCode,
