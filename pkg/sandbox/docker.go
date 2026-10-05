@@ -648,8 +648,13 @@ func (b *DockerBackend) execInContainer(
 	}
 
 	// Terminate on every return path, including attach errors and disconnects.
+	executionFinished := false
 	defer func() {
 		if err := b.stopSessionExecution(session.Handle, scriptPath); err != nil {
+			if executionFinished {
+				log.WithError(err).Warn("Could not clean up completed execution files")
+				return
+			}
 			log.WithError(err).Error("Could not stop execution; killing session container")
 			killCtx, killCancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer killCancel()
@@ -692,6 +697,8 @@ func (b *DockerBackend) execInContainer(
 	if err != nil {
 		return nil, fmt.Errorf("inspecting exec: %w", err)
 	}
+
+	executionFinished = !inspectResp.Running
 
 	duration := time.Since(startTime).Seconds()
 

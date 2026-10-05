@@ -69,4 +69,17 @@ print("session still usable; canceled parents and children stopped")
 	require.NoError(t, err)
 	require.Zero(t, result.ExitCode, result.Stderr)
 	require.Contains(t, result.Stdout, "session still usable")
+	// Simulate failed post-success cleanup by making its marker unwritable as
+	// a file. The completed execution must not kill the healthy session.
+	result, err = b.execInContainer(ctx, session, "cleanup-failure", `import os
+os.mkdir("/tmp/script_cleanup-failure.py.cancel")
+print("finished successfully")
+`, 5*time.Second, nil)
+	require.NoError(t, err)
+	require.Zero(t, result.ExitCode)
+	result, err = b.execInContainer(ctx, session, "still-healthy", `print("healthy session preserved")`, 5*time.Second, nil)
+	require.NoError(t, err)
+	require.Zero(t, result.ExitCode)
+	require.Contains(t, result.Stdout, "healthy session preserved")
+
 }
