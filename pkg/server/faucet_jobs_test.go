@@ -2,9 +2,11 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"math/big"
 	"net/http"
+	"net/http/httptest"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/ethpandaops/panda/pkg/attribution"
 	"github.com/ethpandaops/panda/pkg/faucet"
+	"github.com/ethpandaops/panda/pkg/operations"
 )
 
 func TestFaucetJobsDisconnectDuplicatesAndDelayedReceipt(t *testing.T) {
@@ -140,4 +143,41 @@ func TestFaucetJobsExplicitRejection(t *testing.T) {
 	failed, _ := j.get(job.ID)
 	require.Equal(t, "failed", failed.State)
 	require.Equal(t, "daily limit", failed.Error)
+}
+
+func TestFaucetStatusRecoversReceiptAfterBackgroundDeadline(t *testing.T) {
+	s := newEthNodeOperationService(true)
+	s.credentials = authedService(t).credentials
+	s.proxyService.(*ethNodeOperationProxy).url = "https://proxy.example"
+	transport := &recordingTransport{body: `{"jsonrpc":"2.0","id":1,"result":null}`, contentType: "application/json"}
+	s.httpClient = &http.Client{Transport: transport}
+	result := &faucet.Result{Session: "session", Target: "0x1111111111111111111111111111111111111111", ClaimHash: "0xdelayed", AmountWei: "1"}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	require.NoError(t, s.awaitFaucetReceipt(ctx, "fusaka-devnet-3", result))
+	require.False(t, result.Confirmed)
+	require.Equal(t, "0xdelayed", result.ClaimHash)
+	j := newFaucetJobs(func(_ context.Context, _, _ string, _ *big.Int, update func(faucet.Progress)) error {
+		update(faucet.Progress{Session: result.Session, Submitted: true, Result: result})
+		return context.DeadlineExceeded
+	})
+	t.Cleanup(j.stop)
+	s.faucetJobsOnce.Do(func() { s.faucetJobsInst = j })
+	job, _, err := j.start(context.Background(), "fusaka-devnet-3", result.Target, big.NewInt(1), "")
+	require.NoError(t, err)
+	require.Eventually(t, func() bool { v, _ := j.get(job.ID); return v.Terminal }, time.Second, time.Millisecond)
+	transport.body = `{"jsonrpc":"2.0","id":1,"result":{"status":"0x1","blockNumber":"0x2a"}}`
+	rec := httptest.NewRecorder()
+	s.handleEVMFaucetStatus(rec, newNetworkOpRequest(t, map[string]any{"job_id": job.ID}))
+	require.Equal(t, http.StatusOK, rec.Code)
+	var response operations.Response
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
+	data, ok := response.Data.(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "confirmed", data["state"])
+	require.Equal(t, float64(42), data["block_number"])
+	require.Equal(t, "/execution/fusaka-devnet-3/lb/", transport.last.URL.Path)
+	recovered, _, err := j.start(context.Background(), "fusaka-devnet-3", result.Target, big.NewInt(1), "")
+	require.NoError(t, err)
+	require.Equal(t, job.ID, recovered.ID, "receipt recovery must not start a second claim")
 }
