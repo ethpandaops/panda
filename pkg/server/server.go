@@ -72,6 +72,9 @@ type service struct {
 	done                 chan struct{}
 	running              bool
 
+	faucetJobsOnce sync.Once
+	faucetJobsInst *faucetJobs
+
 	blockArchiveCacheOnce         sync.Once
 	blockArchiveNetworksCacheInst *blockArchiveNetworksCache
 }
@@ -177,6 +180,7 @@ func (s *service) Stop() error {
 		s.credentials.Stop()
 	}
 
+	s.faucetJobStore().stop()
 	close(s.done)
 	s.running = false
 

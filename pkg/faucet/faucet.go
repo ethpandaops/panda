@@ -13,6 +13,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -92,9 +93,25 @@ func (c *Client) Claim(ctx context.Context, address string) (*Result, error) {
 // ClaimAmount mines enough shares for amountWei and asks the faucet to pay
 // exactly that amount. A nil amount requests the faucet's minimum drop.
 func (c *Client) ClaimAmount(ctx context.Context, address string, amountWei *big.Int) (result *Result, err error) {
+	return c.ClaimAmountWithProgress(ctx, address, amountWei, nil)
+}
+
+// Progress exposes the session and submission boundary without treating broadcast as inclusion.
+type Progress struct {
+	Session   string
+	Submitted bool
+	Rejected  bool
+	Result    *Result
+}
+
+// ClaimAmountWithProgress is ClaimAmount with progress notifications for server jobs.
+func (c *Client) ClaimAmountWithProgress(ctx context.Context, address string, amountWei *big.Int, progress func(Progress)) (result *Result, err error) {
 	session, err := c.startSession(ctx, address)
 	if err != nil {
 		return nil, err
+	}
+	if progress != nil {
+		progress(Progress{Session: session})
 	}
 	claimSubmitted := false
 	defer func() {
@@ -147,15 +164,28 @@ func (c *Client) ClaimAmount(ctx context.Context, address string, amountWei *big
 		FailedCode   string `json:"failedCode"`
 		FailedReason string `json:"failedReason"`
 	}
+	// A lost reply cannot prove that submission failed. Keep the session for recovery.
+	claimSubmitted = true
+	if progress != nil {
+		progress(Progress{Session: session, Submitted: true})
+	}
 	if err := c.post(ctx, "/api/claimReward", claimBody, &claimResult); err != nil {
 		return nil, fmt.Errorf("submitting claim: %w", err)
 	}
 	if claimResult.Status != "claiming" && claimResult.Status != "finished" {
+		if progress != nil {
+			progress(Progress{Session: session, Rejected: true})
+		}
 		return nil, fmt.Errorf("faucet refused claim: %s (%s)", claimResult.FailedReason, claimResult.FailedCode)
 	}
-	claimSubmitted = true
-
-	return c.awaitClaim(ctx, session, address)
+	result, err = c.awaitClaim(ctx, session, address)
+	if errors.Is(err, ErrClaimRejected) && progress != nil {
+		progress(Progress{Session: session, Rejected: true})
+	}
+	if result != nil && progress != nil {
+		progress(Progress{Session: session, Submitted: true, Result: result})
+	}
+	return result, err
 }
 
 // startSession opens a PoW session for the target address and returns its id.
@@ -336,38 +366,41 @@ func difficultyMask(difficulty int) string {
 	return fmt.Sprintf("%0*x", byteCount*2, maxValue)
 }
 
-// awaitClaim polls session status until the claim confirms or fails.
+// ErrClaimRejected distinguishes an explicit rejection from an uncertain transport failure.
+var ErrClaimRejected = errors.New("faucet rejected claim")
+
+// PollClaim reads a session once. A nil result with no error means still pending.
+func (c *Client) PollClaim(ctx context.Context, session, address string) (*Result, error) {
+	var st struct {
+		Status       string `json:"status"`
+		ClaimStatus  string `json:"claimStatus"`
+		ClaimHash    string `json:"claimHash"`
+		Balance      string `json:"balance"`
+		FailedReason string `json:"failedReason"`
+	}
+	if err := c.get(ctx, "/api/getSessionStatus?session="+session, &st); err != nil {
+		return nil, fmt.Errorf("polling claim: %w", err)
+	}
+	if st.Status == "failed" || st.ClaimStatus == "failed" {
+		return nil, fmt.Errorf("%w: %s (tx %s)", ErrClaimRejected, st.FailedReason, st.ClaimHash)
+	}
+	if st.ClaimHash != "" {
+		return &Result{Session: session, Target: address, ClaimHash: st.ClaimHash, AmountWei: st.Balance}, nil
+	}
+	return nil, nil
+}
+
+// awaitClaim polls until the faucet supplies a transaction hash or rejects it.
 func (c *Client) awaitClaim(ctx context.Context, session, address string) (*Result, error) {
 	for attempt := 0; attempt < pollAttempts; attempt++ {
-		var st struct {
-			Status       string `json:"status"`
-			ClaimStatus  string `json:"claimStatus"`
-			ClaimHash    string `json:"claimHash"`
-			Balance      string `json:"balance"`
-			FailedReason string `json:"failedReason"`
+		result, err := c.PollClaim(ctx, session, address)
+		if err != nil || result != nil {
+			return result, err
 		}
-
-		if err := c.get(ctx, "/api/getSessionStatus?session="+session, &st); err != nil {
-			return nil, fmt.Errorf("polling claim: %w", err)
-		}
-		if st.Status == "failed" {
-			return nil, fmt.Errorf("faucet session failed: %s", st.FailedReason)
-		}
-
-		switch st.ClaimStatus {
-		case "confirmed":
-			return &Result{Session: session, Target: address, ClaimHash: st.ClaimHash, AmountWei: st.Balance}, nil
-		case "failed":
-			return nil, fmt.Errorf("claim failed (tx %s)", st.ClaimHash)
-		}
-
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(pollInterval):
+		if err := wait(ctx, pollInterval); err != nil {
+			return nil, err
 		}
 	}
-
 	return nil, fmt.Errorf("claim not confirmed after %d polls", pollAttempts)
 }
 

@@ -110,9 +110,17 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 					Signature:   "wallet(private_key=None) -> dict",
 					Description: "Generate a new keypair or derive address from an existing private key. Returns {address, private_key}.",
 				},
+				"faucet_start": {
+					Signature:   "faucet_start(network, address, amount_wei=None, request_id=None) -> dict",
+					Description: "Start or recover a bounded server-owned faucet job; returns job_id and state immediately. Duplicate network/address/amount recovers the same job for one hour after completion. Use a new request_id only for an intentional additional claim after checking balance. Jobs do not survive local server restart. Save the wallet before funding.",
+				},
+				"faucet_status": {
+					Signature:   "faucet_status(job_id) -> dict",
+					Description: "Poll mining/submitted/confirmed/failed state, session ID and transaction hash. Submitted does not prove funding; confirmed requires a successful on-chain receipt. Terminal means background work stopped; status can recover delayed receipts.",
+				},
 				"faucet": {
 					Signature:   "faucet(network, address, amount_wei=None) -> str",
-					Description: "Mine the network's PoW faucet and claim test ETH to address; amount_wei requests an exact payout (the default is the faucet minimum). Returns a submitted tx hash that may be unconfirmed; check its receipt and balance before spending or retrying. Save the wallet before funding. The execution default is 60s, with --timeout up to 600s. Requires panda auth.",
+					Description: "Mine the network's PoW faucet and claim test ETH to address; amount_wei requests an exact payout (the default is the faucet minimum). Returns a submitted tx hash that may be unconfirmed; check its receipt and balance before spending or retrying. Save the wallet before funding. Uses recoverable server jobs. The execution default is 60s, with --timeout up to 600s; faucet_start/status work across executions. Requires panda auth.",
 				},
 			},
 		},

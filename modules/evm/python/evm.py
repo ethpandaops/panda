@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from typing import Any
 
 from ethpandaops import _runtime
@@ -363,41 +364,57 @@ def wallet(private_key: str | None = None) -> dict[str, str]:
 # Faucet
 # ---------------------------------------------------------------------------
 
-def faucet(network: str, address: str, amount_wei: int | None = None) -> str:
-    """Mine the network's PoW faucet and claim test ETH to address.
+def faucet_start(network: str, address: str, amount_wei: int | None = None,
+                 request_id: str | None = None) -> dict[str, Any]:
+    """Start or recover a server-owned claim and return its job snapshot.
 
-    Runs the full agent proof-of-work flow server-side — no browser, WebSocket,
-    or captcha. Returns a submitted transaction hash; it may be unconfirmed.
-    Check its receipt and the original address balance before spending or retrying.
-    Save the wallet before funding, in a separate execution, so timeout recovery
-    does not depend on a lost execution result.
-    amount_wei requests an exact payout; mining may earn slightly more because
-    each valid share has a fixed reward. Large claims need a longer panda
-    execute --timeout (for example, --timeout 600; the maximum is 600 seconds).
-    The default is 60 seconds. HTTP disconnects may cancel synchronous mining;
-    an existing session alone does not prove that funds were sent.
-    Requires panda auth (run 'panda auth login'). Source:
-    https://github.com/qu0b/powfaucet/tree/qu0b/agent-rest-api
+    Mining runs independently for at most 12 minutes. Repeating the same
+    network/address/amount recovers the existing job for one hour after it ends.
+    Supply a new request_id only for an intentional additional claim, after
+    checking balance/receipt. Jobs do not survive a local server restart.
+    Save the wallet in a separate execution before funding.
     """
     _require_available()
     if amount_wei is not None and (isinstance(amount_wei, bool) or not isinstance(amount_wei, int) or amount_wei <= 0):
         raise ValueError("amount_wei must be a positive integer")
-    args = {"network": network, "address": address}
+    args: dict[str, Any] = {"network": network, "address": address}
     if amount_wei is not None:
         args["amount_wei"] = str(amount_wei)
-    result = _runtime.invoke_data(
-        "evm.faucet",
-        args,
-    )
-    if not isinstance(result, dict) or not result.get("claim_hash"):
-        raise ValueError(f"faucet claim did not return a tx hash: {result!r}")
+    if request_id is not None:
+        args["request_id"] = request_id
+    return _runtime.invoke_data("evm.faucet_start", args)
 
-    claim_hash = result["claim_hash"]
-    if not result.get("confirmed"):
-        print(
-            f"warning: faucet claim {claim_hash} was submitted but is not on-chain yet; "
-            f"the balance of {address} may lag — poll it before spending",
-            file=sys.stderr,
-        )
 
-    return claim_hash
+def faucet_status(job_id: str) -> dict[str, Any]:
+    """Read mining/submitted/confirmed/failed state, session ID and available hash.
+
+    Submitted is not proof of funding. Check receipt/balance before spending.
+    A terminal submitted job stopped background work; polling can still recover
+    a delayed hash or receipt without a second claim.
+    """
+    _require_available()
+    return _runtime.invoke_data("evm.faucet_status", {"job_id": job_id})
+
+
+def faucet(network: str, address: str, amount_wei: int | None = None) -> str:
+    """Start/recover a faucet job and wait for a submitted transaction hash.
+
+    Save the wallet before funding. Execution defaults to 60s, with --timeout
+    up to 600s; a timeout stops this wait, while the server-owned job continues.
+    Use faucet_start and faucet_status for long claims across executions.
+    The hash may be unconfirmed; check its receipt/balance before spending.
+    Requires panda auth (run 'panda auth login').
+    """
+    job = faucet_start(network, address, amount_wei)
+    print(f"Faucet job: {job['job_id']} (poll with evm.faucet_status)", file=sys.stderr, flush=True)
+    while True:
+        if job["state"] == "failed":
+            raise ValueError(f"faucet job {job['job_id']} failed: {job.get('error', '')}")
+        if job.get("claim_hash"):
+            if job["state"] != "confirmed":
+                print(f"warning: faucet claim {job['claim_hash']} is submitted; check receipt/balance before spending", file=sys.stderr)
+            return job["claim_hash"]
+        if job.get("terminal"):
+            raise ValueError(f"faucet job {job['job_id']} stopped: {job.get('error', '')}; check the original address balance before retrying")
+        time.sleep(2)
+        job = faucet_status(job["job_id"])
