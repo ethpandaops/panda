@@ -46,7 +46,7 @@ All waiting happens INSIDE your current agent turn: keep issuing poll calls (bou
 For a known-ETA wait (an epoch target time), sleep the computed remainder in one
 bounded call and confirm with a single poll — reserve the short-interval loop for
 unknown durations (operations, image pulls). Never end your turn to wait on a timer
-or a background watcher — in workflow-worker harnesses, ending the turn signals task
+or a background watcher — in headless agent harnesses, ending the turn signals task
 completion and your output is collected immediately.
 
 ## Clock and boot flavor

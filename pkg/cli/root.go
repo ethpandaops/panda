@@ -46,10 +46,7 @@ tables, columns, or query syntax:
 
 Most topic words are search terms, not subcommands. Full guide:
 
-  panda getting-started
-
-Not a data question? Drive the workflow engine with ` + "`panda workflow`" + ` (authoring
-and running multi-step agent workflows), not Ethereum data queries.`
+  panda getting-started`
 
 // updateResult carries the latest version from the background check.
 // A nil value means the check failed or was skipped.
