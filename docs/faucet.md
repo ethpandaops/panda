@@ -52,3 +52,20 @@ expiry or restart, check balance/receipt before starting again.
 The local server bounds work to eight active jobs, 256 retained jobs and 1,024
 recovery keys. These resource limits supplement the faucet/proxy abuse limits;
 they do not replace address quotas or wallet ceilings.
+
+## CLI
+
+The CLI uses the same server jobs, without a sandbox execution timeout:
+
+```bash
+panda ethnode networks
+address=$(python3 -c 'import json; print(json.load(open("wallet.json"))["address"])')
+panda evm faucet glamsterdam-devnet-8 "$address" --amount-wei 100000000000000000000 --no-wait > claim.json
+job_id=$(python3 -c 'import json; print(json.load(open("claim.json"))["job_id"])')
+panda evm faucet-status "$job_id" --wait
+```
+
+Omit `--no-wait` to wait directly for confirmation. The CLI prints the job ID
+before waiting, and `--wait-timeout` bounds only that wait. A CLI interrupt or
+sandbox execution timeout terminates the caller; it does not cancel a faucet
+job. Docker session cancellation explicitly kills the script's process group.
