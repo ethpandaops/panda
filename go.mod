@@ -5,6 +5,7 @@ go 1.26.6
 require (
 	github.com/containerd/errdefs v1.0.0
 	github.com/coreos/go-oidc/v3 v3.20.0
+	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1
 	github.com/docker/go-units v0.5.0
 	github.com/ethpandaops/cartographoor v0.0.0-20260601034537-1072505afa69
 	github.com/ethpandaops/cbt v0.1.6

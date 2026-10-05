@@ -13,6 +13,7 @@ import (
 func init() {
 	evm := &cobra.Command{GroupID: groupDirect, Use: "evm", Short: "Fund saved wallets with recoverable faucet jobs"}
 	rootCmd.AddCommand(evm)
+	evm.AddCommand(newEVMWalletCommand())
 	var amount, requestID string
 	var noWait bool
 	var waitTimeout time.Duration

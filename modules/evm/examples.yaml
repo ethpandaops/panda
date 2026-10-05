@@ -136,13 +136,14 @@ evm_deploy_and_fuzz:
   name: Deploy and Fuzz
   description: Generate bytecode variants, deploy to devnet, observe on-chain behavior
   examples:
-    - name: Preserve a fresh wallet before funding
-      description: Run this separately and save stdout locally as wallet.json with umask 077 before starting a claim
+    - name: Start a minimum claim for a saved wallet
+      description: Create and save a wallet locally with panda evm wallet --output-file wallet.json first; send only its address to the faucet
       query: |
-        import json
-        from ethpandaops import evm
+        from ethpandaops import evm, networks
 
-        print(json.dumps(evm.wallet()))
+        network = next(n["id"] for n in networks.list()
+                       if n["devnet_group"] == "glamsterdam" and n["status"] == "active")
+        print(evm.faucet_start(network, "0xYourSavedWalletAddress"))
 
     - name: Start an exact claim without waiting for mining
       description: Use an address from a previously saved wallet; save the returned job_id and poll in later executions

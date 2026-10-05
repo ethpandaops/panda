@@ -7,10 +7,11 @@ assumed funding path.
 Save the wallet locally **before** starting a claim. For example:
 
 ```bash
-umask 077
-panda execute --code 'import json; from ethpandaops import evm; print(json.dumps(evm.wallet()))' > wallet.json
+panda evm wallet --output-file wallet.json
 ```
 
+This generates the key locally, writes a new mode-0600 file, and prints only
+the address and file path. Existing files are never overwritten.
 Read the address from that file and use it in a separate funding execution.
 Keep the private key private; the faucet only needs the address.
 

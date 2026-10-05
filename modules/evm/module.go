@@ -108,7 +108,7 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 				},
 				"wallet": {
 					Signature:   "wallet(private_key=None) -> dict",
-					Description: "Generate a new keypair or derive address from an existing private key. Returns {address, private_key}.",
+					Description: "Generate a new keypair or derive address from an existing private key. Returns {address, private_key}. For durable recovery without printing a key, prefer panda evm wallet --output-file wallet.json; it generates locally and prints only the address and file path.",
 				},
 				"faucet_start": {
 					Signature:   "faucet_start(network, address, amount_wei=None, request_id=None) -> dict",
