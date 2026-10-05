@@ -20,6 +20,7 @@ var (
 	buildRef       string
 	buildRepo      string
 	buildDockerTag string
+	buildPR        int
 	buildWait      bool
 )
 
@@ -46,7 +47,9 @@ Examples:
   panda build lighthouse --ref unstable
   panda build geth --wait                 # block until completion
   panda build geth --repo ethereum/go-ethereum --ref my-branch
-  panda build geth --ref my-branch --tag my-custom-tag`,
+  panda build geth --ref my-branch --tag my-custom-tag
+  panda build lodestar --pr 10265          # build PR head, tagged pr-10265
+  panda build geth --repo user/go-ethereum --pr 123`,
 	Args: cobra.ExactArgs(1),
 	RunE: runBuild,
 }
@@ -64,12 +67,26 @@ func init() {
 	buildCmd.Flags().StringVar(&buildRef, "ref", "", "branch, tag, or SHA to build from (uses workflow default if omitted)")
 	buildCmd.Flags().StringVar(&buildRepo, "repo", "", "source repository override (e.g. user/go-ethereum)")
 	buildCmd.Flags().StringVar(&buildDockerTag, "tag", "", "override target docker tag")
+	buildCmd.Flags().IntVar(&buildPR, "pr", 0, "pull request number to build from (tagged pr-<number> unless --tag is set)")
+	buildCmd.MarkFlagsMutuallyExclusive("ref", "pr")
 	buildCmd.Flags().BoolVar(&buildWait, "wait", false, "block until the build completes instead of returning immediately")
 }
 
 func runBuild(cmd *cobra.Command, args []string) error {
 	client := args[0]
 	ctx := cmd.Context()
+
+	if cmd.Flags().Changed("pr") {
+		if buildPR <= 0 {
+			return fmt.Errorf("invalid pull request number: %d", buildPR)
+		}
+
+		buildRef = fmt.Sprintf("refs/pull/%d/head", buildPR)
+
+		if buildDockerTag == "" {
+			buildDockerTag = fmt.Sprintf("pr-%d", buildPR)
+		}
+	}
 
 	resp, err := triggerBuild(ctx, serverapi.BuildTriggerRequest{
 		Client:     client,
