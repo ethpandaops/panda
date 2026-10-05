@@ -80,7 +80,7 @@ evm_fuzz_triage:
         # devnets come and go; ask cartographoor for one that is up right now
         network = next(n["id"] for n in networks.list()
                        if n["devnet_group"] == "glamsterdam" and n["status"] == "active")
-        instance = "geth-1"
+        instance = "lb"
         txhash = "0xabc123..."
 
         tx = ethnode.execution_rpc(network, instance, "eth_getTransactionByHash", [txhash])
@@ -102,7 +102,7 @@ evm_system_contracts:
         # devnets come and go; ask cartographoor for one that is up right now
         network = next(n["id"] for n in networks.list()
                        if n["devnet_group"] == "glamsterdam" and n["status"] == "active")
-        instance = "geth-1"
+        instance = "lb"
 
         # SHA256 precompile at 0x02
         result = evm.call(
@@ -120,7 +120,7 @@ evm_system_contracts:
         # devnets come and go; ask cartographoor for one that is up right now
         network = next(n["id"] for n in networks.list()
                        if n["devnet_group"] == "glamsterdam" and n["status"] == "active")
-        instance = "geth-1"
+        instance = "lb"
 
         # init code: PUSH20 <addr> SELFDESTRUCT — sends balance to caller
         selfdestruct_code = evm.assemble([
@@ -129,7 +129,8 @@ evm_system_contracts:
         ])
 
         w = evm.wallet()
-        # faucet() mines + claims and returns the tx hash once the funds land
+        # Save this wallet in a separate execution before funding.
+        # faucet() returns a submitted hash; check the receipt before spending.
         print("Funded via faucet, tx:", evm.faucet(network, w["address"]))
         txhash = evm.tx(network, instance, w["private_key"], to=None, data=selfdestruct_code)
 
@@ -147,12 +148,13 @@ evm_deploy_and_fuzz:
                        if n["devnet_group"] == "glamsterdam" and n["status"] == "active")
 
         w = evm.wallet()
-        # mines the faucet's PoW server-side and returns once the claim is on-chain
+        # Save this wallet before funding (see docs/faucet.md).
+        # Mining runs in panda-server. Check the returned hash's receipt.
         tx = evm.faucet(network, w["address"])
-        print(f"funded {w['address']} on {network}: {tx}")
+        print(f"submitted claim for {w['address']} on {network}: {tx}")
 
     - name: Claim an exact amount of devnet ETH
-      description: Mine one faucet session and request an exact payout in wei; use panda execute --timeout 900 for a large claim
+      description: Mine one faucet session and request an exact payout in wei; save the wallet first, use panda execute --timeout 600, and check the receipt
       query: |
         from ethpandaops import evm, networks
 
@@ -161,7 +163,7 @@ evm_deploy_and_fuzz:
         wallet = evm.wallet()
         print("Devnet private key:", wallet["private_key"])
         tx = evm.faucet(network, wallet["address"], amount_wei=100 * 10**18)
-        print("Address:", wallet["address"], "Claimed 100 ETH:", tx)
+        print("Address:", wallet["address"], "Submitted claim for 100 ETH:", tx)
 
     - name: Deploy raw bytecode and check receipt
       description: Build a wallet, fund it via the faucet, deploy a contract, and read the receipt
@@ -171,13 +173,16 @@ evm_deploy_and_fuzz:
         # devnets come and go; ask cartographoor for one that is up right now
         network = next(n["id"] for n in networks.list()
                        if n["devnet_group"] == "glamsterdam" and n["status"] == "active")
-        instance = "geth-1"
+        instance = "lb"
 
         w = evm.wallet()
         print("Address:", w["address"])
         print("Funded via faucet, tx:", evm.faucet(network, w["address"]))
 
-        # Funds have landed; deploy bytecode that LOGs a result (visible in receipt)
+        # Check funding before spending; a submitted hash may still be pending.
+        balance = ethnode.execution_rpc(network, "lb", "eth_getBalance", [w["address"], "latest"])
+        assert int(balance, 16) > 0, "Funding pending: check receipt/balance before retrying"
+        # Deploy bytecode that LOGs a result (visible in receipt)
         bytecode = evm.assemble([
             "PUSH1", 0x42,   # value to log
             "PUSH1", 0x00,   # memory offset

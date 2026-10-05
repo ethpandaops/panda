@@ -367,12 +367,15 @@ def faucet(network: str, address: str, amount_wei: int | None = None) -> str:
     """Mine the network's PoW faucet and claim test ETH to address.
 
     Runs the full agent proof-of-work flow server-side — no browser, WebSocket,
-    or captcha — and waits for the claim transaction to land on-chain, so the
-    balance is readable as soon as this returns. If the transaction had not been
-    included yet, a warning is printed and the hash is still returned.
+    or captcha. Returns a submitted transaction hash; it may be unconfirmed.
+    Check its receipt and the original address balance before spending or retrying.
+    Save the wallet before funding, in a separate execution, so timeout recovery
+    does not depend on a lost execution result.
     amount_wei requests an exact payout; mining may earn slightly more because
     each valid share has a fixed reward. Large claims need a longer panda
-    execute --timeout (for example, --timeout 900).
+    execute --timeout (for example, --timeout 600; the maximum is 600 seconds).
+    The default is 60 seconds. HTTP disconnects may cancel synchronous mining;
+    an existing session alone does not prove that funds were sent.
     Requires panda auth (run 'panda auth login'). Source:
     https://github.com/qu0b/powfaucet/tree/qu0b/agent-rest-api
     """

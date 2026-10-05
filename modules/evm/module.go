@@ -112,7 +112,7 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 				},
 				"faucet": {
 					Signature:   "faucet(network, address, amount_wei=None) -> str",
-					Description: "Mine the network's PoW faucet and claim test ETH to address; amount_wei requests an exact payout (the default is the faucet minimum). Returns the claim tx hash once on-chain. Large claims need panda execute --timeout 900. Requires panda auth.",
+					Description: "Mine the network's PoW faucet and claim test ETH to address; amount_wei requests an exact payout (the default is the faucet minimum). Returns a submitted tx hash that may be unconfirmed; check its receipt and balance before spending or retrying. Save the wallet before funding. The execution default is 60s, with --timeout up to 600s. Requires panda auth.",
 				},
 			},
 		},
