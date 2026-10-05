@@ -80,7 +80,7 @@ evm_fuzz_triage:
         # devnets come and go; ask cartographoor for one that is up right now
         network = next(n["id"] for n in networks.list()
                        if n["devnet_group"] == "glamsterdam" and n["status"] == "active")
-        instance = "geth-1"
+        instance = "lb"
         txhash = "0xabc123..."
 
         tx = ethnode.execution_rpc(network, instance, "eth_getTransactionByHash", [txhash])
@@ -102,7 +102,7 @@ evm_system_contracts:
         # devnets come and go; ask cartographoor for one that is up right now
         network = next(n["id"] for n in networks.list()
                        if n["devnet_group"] == "glamsterdam" and n["status"] == "active")
-        instance = "geth-1"
+        instance = "lb"
 
         # SHA256 precompile at 0x02
         result = evm.call(
@@ -120,7 +120,7 @@ evm_system_contracts:
         # devnets come and go; ask cartographoor for one that is up right now
         network = next(n["id"] for n in networks.list()
                        if n["devnet_group"] == "glamsterdam" and n["status"] == "active")
-        instance = "geth-1"
+        instance = "lb"
 
         # init code: PUSH20 <addr> SELFDESTRUCT — sends balance to caller
         selfdestruct_code = evm.assemble([
@@ -128,44 +128,67 @@ evm_system_contracts:
             "SELFDESTRUCT",
         ])
 
-        w = evm.wallet()
-        # faucet() mines + claims and returns the tx hash once the funds land
-        print("Funded via faucet, tx:", evm.faucet(network, w["address"]))
+        # Use the private key from your saved, confirmed funded wallet.
+        w = evm.wallet("0xYourSavedPrivateKey")
         txhash = evm.tx(network, instance, w["private_key"], to=None, data=selfdestruct_code)
 
 evm_deploy_and_fuzz:
   name: Deploy and Fuzz
   description: Generate bytecode variants, deploy to devnet, observe on-chain behavior
   examples:
-    - name: Fund a throwaway wallet with test ETH
-      description: Claim devnet ETH from the faucet onto a fresh keypair so it can pay for its own transactions
+    - name: Start a minimum claim for a saved wallet
+      description: Create and save a wallet locally with panda evm wallet --output-file wallet.json first; send only its address to the faucet
       query: |
         from ethpandaops import evm, networks
 
-        # devnets come and go; ask cartographoor for one that is up right now
         network = next(n["id"] for n in networks.list()
                        if n["devnet_group"] == "glamsterdam" and n["status"] == "active")
+        print(evm.faucet_start(network, "0xYourSavedWalletAddress"))
 
-        w = evm.wallet()
-        # mines the faucet's PoW server-side and returns once the claim is on-chain
-        tx = evm.faucet(network, w["address"])
-        print(f"funded {w['address']} on {network}: {tx}")
+    - name: Start an exact claim without waiting for mining
+      description: Use an address from a previously saved wallet; save the returned job_id and poll in later executions
+      query: |
+        from ethpandaops import evm, networks
+
+        network = next(n["id"] for n in networks.list()
+                       if n["devnet_group"] == "glamsterdam" and n["status"] == "active")
+        # Replace with the address from your saved wallet; never generate a new
+        # wallet when recovering a timed out claim.
+        address = "0xYourSavedWalletAddress"
+        job = evm.faucet_start(network, address, amount_wei=100 * 10**18)
+        print(job)
+        # A repeated start with the same network/address/amount recovers this job.
+
+    - name: Recover and check a long faucet claim
+      description: Poll a saved job_id; confirmed requires a successful receipt, while submitted can still be pending
+      query: |
+        from ethpandaops import evm, ethnode
+
+        job = evm.faucet_status("your-saved-job-id")
+        print(job)
+        balance = ethnode.execution_rpc(job["network"], "lb", "eth_getBalance",
+                                        [job["address"], "latest"])
+        print("Original address balance (wei):", int(balance, 16))
+        # Check this balance and any claim_hash receipt before retrying.
 
     - name: Deploy raw bytecode and check receipt
-      description: Build a wallet, fund it via the faucet, deploy a contract, and read the receipt
+      description: Use a saved funded wallet, deploy a contract, and read the receipt
       query: |
         from ethpandaops import evm, ethnode, networks
 
         # devnets come and go; ask cartographoor for one that is up right now
         network = next(n["id"] for n in networks.list()
                        if n["devnet_group"] == "glamsterdam" and n["status"] == "active")
-        instance = "geth-1"
+        instance = "lb"
 
-        w = evm.wallet()
+        # Use the private key from your saved wallet after funding is confirmed.
+        w = evm.wallet("0xYourSavedPrivateKey")
         print("Address:", w["address"])
-        print("Funded via faucet, tx:", evm.faucet(network, w["address"]))
 
-        # Funds have landed; deploy bytecode that LOGs a result (visible in receipt)
+        # Check funding before spending; a submitted hash may still be pending.
+        balance = ethnode.execution_rpc(network, "lb", "eth_getBalance", [w["address"], "latest"])
+        assert int(balance, 16) > 0, "Funding pending: check receipt/balance before retrying"
+        # Deploy bytecode that LOGs a result (visible in receipt)
         bytecode = evm.assemble([
             "PUSH1", 0x42,   # value to log
             "PUSH1", 0x00,   # memory offset

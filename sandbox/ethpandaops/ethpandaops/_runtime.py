@@ -29,7 +29,7 @@ def _check_api_config() -> None:
         )
 
 
-def _get_client(write_timeout: float = 60.0) -> httpx.Client:
+def _get_client(write_timeout: float = 60.0, read_timeout: float = 300.0) -> httpx.Client:
     _check_api_config()
 
     # Direct backend: no network route, so reach the server over a unix socket
@@ -39,7 +39,7 @@ def _get_client(write_timeout: float = 60.0) -> httpx.Client:
     return httpx.Client(
         base_url=_API_URL,
         headers={"Authorization": f"Bearer {_API_TOKEN}"},
-        timeout=httpx.Timeout(connect=5.0, read=300.0, write=write_timeout, pool=5.0),
+        timeout=httpx.Timeout(connect=5.0, read=read_timeout, write=write_timeout, pool=5.0),
         transport=transport,
     )
 
@@ -48,7 +48,10 @@ def _invoke_bytes(
     operation: str, args: dict[str, Any] | None = None
 ) -> tuple[bytes, str]:
     payload = {"args": args or {}}
-    with _get_client() as client:
+    # Compatibility synchronous faucet waits up to 600s. New faucet wrappers
+    # use short start/status calls, independently of the execution budget.
+    read_timeout = 615.0 if operation == "evm.faucet" else 300.0
+    with _get_client(read_timeout=read_timeout) as client:
         response = client.post(f"/api/v1/runtime/operations/{operation}", json=payload)
         body = response.read()
         if not response.is_success:

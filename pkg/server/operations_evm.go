@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"regexp"
 	"time"
@@ -16,17 +17,16 @@ import (
 )
 
 // faucetClaimTimeout bounds a single claim so a slow or stuck faucet cannot hang
-// the request. Argon2id/16MiB mining plus on-chain confirmation fits comfortably.
-const faucetClaimTimeout = 5 * time.Minute
+// the request. Larger payouts can require several Argon2id shares.
+const faucetClaimTimeout = 12 * time.Minute
 
 // The faucet reports a claim "confirmed" as soon as it has broadcast the
 // transaction, which can precede inclusion — so the operation waits for the
 // receipt itself before returning.
 //
-// The wait is deliberately short. Mining already burns most of the caller's
-// budget (sandbox.timeout defaults to 60s) and the claim is not lost if the
-// receipt is slow, so it is better to return an unconfirmed hash than to hold
-// the request until the sandbox kills it.
+// Each receipt poll batch is deliberately short. Mining already burns most of the caller's
+// budget (sandbox.timeout defaults to 60s). Jobs continue polling within
+// their own lifetime; synchronous compatibility can return an unconfirmed hash.
 const (
 	faucetReceiptTimeout      = 30 * time.Second
 	faucetReceiptPollInterval = 2 * time.Second
@@ -38,12 +38,20 @@ const (
 const faucetReceiptInstance = "lb"
 
 // faucetNetworkPattern guards the network segment used to build the proxy path.
-var faucetNetworkPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$`)
+var (
+	faucetNetworkPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$`)
+	faucetAddressPattern = regexp.MustCompile(`^0x[0-9a-fA-F]{40}$`)
+	faucetAmountPattern  = regexp.MustCompile(`^[0-9]+$`)
+)
 
 func (s *service) handleEVMOperation(operationID string, w http.ResponseWriter, r *http.Request) bool {
 	switch operationID {
 	case "evm.faucet":
 		s.handleEVMFaucet(w, r)
+	case "evm.faucet_start":
+		s.handleEVMFaucetStart(w, r)
+	case "evm.faucet_status":
+		s.handleEVMFaucetStatus(w, r)
 	default:
 		return false
 	}
@@ -56,70 +64,106 @@ func (s *service) handleEVMOperation(operationID string, w http.ResponseWriter, 
 // panda proxy (which authenticates the request), so it has no public surface —
 // the local auth check below is only a friendly fast-fail, not the boundary.
 func (s *service) handleEVMFaucet(w http.ResponseWriter, r *http.Request) {
+	network, address, amountWei, _, ok := s.decodeFaucetRequest(w, r)
+	if !ok {
+		return
+	}
+
+	job, status, err := s.faucetJobStore().start(r.Context(), network, address, amountWei, "")
+	if err != nil {
+		writeAPIError(w, status, err.Error())
+		return
+	}
+	// Compatibility endpoint: only the wait belongs to the HTTP request. The
+	// job survives disconnect, and repeated calls recover the same claim.
+	ctx, cancel := context.WithTimeout(r.Context(), 600*time.Second)
+	defer cancel()
+	for {
+		if job.State == "failed" {
+			writeAPIError(w, http.StatusBadGateway, "faucet job "+job.ID+" failed: "+job.Error)
+			return
+		}
+		if job.ClaimHash != "" {
+			result := &faucet.Result{Session: job.Session, Target: job.Address, ClaimHash: job.ClaimHash, AmountWei: job.AmountWei, Confirmed: job.State == "confirmed", BlockNumber: job.BlockNumber}
+			writeOperationResponse(s.log, w, http.StatusOK, operations.Response{Kind: operations.ResultKindObject, Data: result, Meta: map[string]any{"job_id": job.ID}})
+			return
+		}
+		if job.Terminal {
+			writeAPIError(w, http.StatusBadGateway, "faucet job "+job.ID+" stopped: "+job.Error+"; check original address balance before retrying")
+			return
+		}
+		select {
+		case <-ctx.Done():
+			writeAPIError(w, http.StatusGatewayTimeout, "faucet wait ended; job "+job.ID+" continues independently; poll evm.faucet_status")
+			return
+		case <-time.After(faucetReceiptPollInterval):
+		}
+		job, _ = s.faucetJobStore().get(job.ID)
+	}
+}
+
+// decodeFaucetRequest validates both synchronous and asynchronous claims.
+func (s *service) decodeFaucetRequest(w http.ResponseWriter, r *http.Request) (string, string, *big.Int, map[string]any, bool) {
 	if s.credentials == nil || !s.credentials.Status().Authenticated {
 		writeAPIError(w, http.StatusUnauthorized,
 			"panda auth required to use the faucet: run 'panda auth login' first")
 
-		return
+		return "", "", nil, nil, false
 	}
 
 	req, err := decodeOperationRequest(r)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, err.Error())
 
-		return
+		return "", "", nil, nil, false
 	}
 
 	network, err := requiredStringArg(req.Args, "network")
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, err.Error())
 
-		return
+		return "", "", nil, nil, false
 	}
 
 	if !faucetNetworkPattern.MatchString(network) {
 		writeAPIError(w, http.StatusBadRequest, "invalid network name")
 
-		return
+		return "", "", nil, nil, false
 	}
 
 	address, err := requiredStringArg(req.Args, "address")
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, err.Error())
 
-		return
+		return "", "", nil, nil, false
+	}
+	if !faucetAddressPattern.MatchString(address) {
+		writeAPIError(w, http.StatusBadRequest, "invalid Ethereum address")
+		return "", "", nil, nil, false
+	}
+	var amountWei *big.Int
+	if raw, ok := req.Args["amount_wei"]; ok && raw != nil {
+		value, valid := raw.(string)
+		if !valid || !faucetAmountPattern.MatchString(value) {
+			writeAPIError(w, http.StatusBadRequest, "amount_wei must be a decimal wei string")
+			return "", "", nil, nil, false
+		}
+		amountWei, valid = new(big.Int).SetString(value, 10)
+		if !valid || amountWei.Sign() <= 0 {
+			writeAPIError(w, http.StatusBadRequest, "amount_wei must be a positive decimal wei string")
+			return "", "", nil, nil, false
+		}
 	}
 
 	if s.cartographoorClient != nil {
 		if _, ok := s.cartographoorClient.GetNetwork(network); !ok {
 			writeAPIError(w, http.StatusNotFound, "network not found: "+network+". Use network.list for current ids.")
 
-			return
+			return "", "", nil, nil, false
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), faucetClaimTimeout)
-	defer cancel()
-
-	client := faucet.NewWithTransport(&proxyFaucetTransport{s: s, network: network})
-
-	result, err := client.Claim(ctx, address)
-	if err != nil {
-		writeAPIError(w, http.StatusBadGateway, "faucet claim failed: "+err.Error())
-
-		return
-	}
-
-	if err := s.awaitFaucetReceipt(ctx, network, result); err != nil {
-		writeAPIError(w, http.StatusBadGateway, "faucet claim failed: "+err.Error())
-
-		return
-	}
-
-	writeOperationResponse(s.log, w, http.StatusOK, operations.Response{
-		Kind: operations.ResultKindObject,
-		Data: result,
-	})
+	return network, address, amountWei, req.Args, true
 }
 
 // awaitFaucetReceipt polls the network's load-balanced execution RPC until the

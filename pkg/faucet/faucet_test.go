@@ -6,9 +6,11 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"golang.org/x/crypto/argon2"
@@ -26,11 +28,16 @@ type mockFaucet struct {
 	preimage    []byte // raw preimage bytes
 	shareReward int64
 	minClaim    int64
+	maxClaim    int64
 	claimHash   string
 
-	balance     int64
-	nonceCursor uint64
-	claimed     bool
+	balance       int64
+	paid          int64
+	nonceCursor   uint64
+	claimed       bool
+	closed        bool
+	failChallenge bool
+	failClaim     bool
 }
 
 func (m *mockFaucet) handler() http.Handler {
@@ -41,10 +48,14 @@ func (m *mockFaucet) handler() http.Handler {
 	})
 
 	mux.HandleFunc("/api/getFaucetConfig", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSONResp(w, map[string]any{"minClaim": m.minClaim})
+		writeJSONResp(w, map[string]any{"minClaim": m.minClaim, "maxClaim": m.maxClaim})
 	})
 
 	mux.HandleFunc("/api/powChallenge", func(w http.ResponseWriter, _ *http.Request) {
+		if m.failChallenge {
+			http.Error(w, "challenge unavailable", http.StatusBadGateway)
+			return
+		}
 		start := m.nonceCursor
 		m.nonceCursor += 100000
 
@@ -83,12 +94,25 @@ func (m *mockFaucet) handler() http.Handler {
 	})
 
 	mux.HandleFunc("/api/powCloseSession", func(w http.ResponseWriter, _ *http.Request) {
+		m.closed = true
 		writeJSONResp(w, map[string]any{"status": "claimable"})
 	})
 
-	mux.HandleFunc("/api/claimReward", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/api/claimReward", func(w http.ResponseWriter, r *http.Request) {
+		if m.failClaim {
+			writeJSONResp(w, map[string]any{"status": "failed", "failedCode": "BALANCE_LIMIT", "failedReason": "Claim would exceed the maximum wallet balance"})
+			return
+		}
+		var body struct {
+			AmountWei string `json:"amountWei"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		m.paid = m.balance
+		if body.AmountWei != "" {
+			m.paid, _ = strconv.ParseInt(body.AmountWei, 10, 64)
+		}
 		m.claimed = true
-		writeJSONResp(w, map[string]any{"claimStatus": "queue"})
+		writeJSONResp(w, map[string]any{"status": "claiming", "claimStatus": "queue"})
 	})
 
 	mux.HandleFunc("/api/getSessionStatus", func(w http.ResponseWriter, _ *http.Request) {
@@ -100,7 +124,7 @@ func (m *mockFaucet) handler() http.Handler {
 
 		writeJSONResp(w, map[string]any{
 			"status": "finished", "claimStatus": "confirmed",
-			"claimHash": m.claimHash, "balance": strconv.FormatInt(m.balance, 10),
+			"claimHash": m.claimHash, "balance": strconv.FormatInt(m.paid, 10),
 		})
 	})
 
@@ -123,6 +147,7 @@ func TestClaim(t *testing.T) {
 		preimage:    []byte("12345678"),
 		shareReward: 500_000_000_000_000_000,   // 0.5 ETH
 		minClaim:    1_000_000_000_000_000_000, // 1 ETH -> needs 2 shares
+		maxClaim:    5_000_000_000_000_000_000,
 		claimHash:   "0xabc123",
 	}
 
@@ -144,6 +169,78 @@ func TestClaim(t *testing.T) {
 
 	if mock.balance < mock.minClaim {
 		t.Fatalf("mined balance %d below minClaim %d", mock.balance, mock.minClaim)
+	}
+}
+
+func TestClaimAmountPaysRequestedWeiAfterMiningEnoughShares(t *testing.T) {
+	mock := &mockFaucet{
+		difficulty: 6, timeCost: 1, memoryCost: 512, keyLength: 16,
+		preimage: []byte("12345678"), shareReward: 1_000_000_000_000_000_000,
+		minClaim: 1_000_000_000_000_000_000, maxClaim: 5_000_000_000_000_000_000,
+		claimHash: "0xabc123",
+	}
+	srv := httptest.NewServer(mock.handler())
+	defer srv.Close()
+
+	want := big.NewInt(1_500_000_000_000_000_000)
+	res, err := New(srv.URL, srv.Client()).ClaimAmount(context.Background(), "0xTarget", want)
+	if err != nil {
+		t.Fatalf("ClaimAmount: %v", err)
+	}
+	if mock.balance != 2_000_000_000_000_000_000 || mock.paid != want.Int64() {
+		t.Fatalf("earned %d paid %d, want 2 ETH earned and %d paid", mock.balance, mock.paid, want.Int64())
+	}
+	if res.AmountWei != want.String() {
+		t.Fatalf("reported payout %s, want %s", res.AmountWei, want)
+	}
+}
+
+func TestClaimPaysMinimumWhenOneShareEarnsMore(t *testing.T) {
+	mock := &mockFaucet{
+		difficulty: 6, timeCost: 1, memoryCost: 512, keyLength: 16,
+		preimage: []byte("12345678"), shareReward: 2_000_000_000_000_000_000,
+		minClaim: 1_000_000_000_000_000_000, maxClaim: 5_000_000_000_000_000_000,
+		claimHash: "0xabc123",
+	}
+	srv := httptest.NewServer(mock.handler())
+	defer srv.Close()
+
+	res, err := New(srv.URL, srv.Client()).Claim(context.Background(), "0xTarget")
+	if err != nil {
+		t.Fatalf("Claim: %v", err)
+	}
+	if mock.balance != 2_000_000_000_000_000_000 || res.AmountWei != "1000000000000000000" {
+		t.Fatalf("earned %d, paid %s; want 2 ETH earned and 1 ETH paid", mock.balance, res.AmountWei)
+	}
+}
+
+func TestClaimAmountClosesSessionOnMiningFailure(t *testing.T) {
+	mock := &mockFaucet{
+		minClaim: 1_000_000_000_000_000_000, maxClaim: 5_000_000_000_000_000_000,
+		failChallenge: true,
+	}
+	srv := httptest.NewServer(mock.handler())
+	defer srv.Close()
+
+	_, err := New(srv.URL, srv.Client()).Claim(context.Background(), "0xTarget")
+	if err == nil || !mock.closed {
+		t.Fatalf("expected mining error and session cleanup, got error %v, closed %v", err, mock.closed)
+	}
+}
+
+func TestClaimAmountReportsFaucetClaimRejection(t *testing.T) {
+	mock := &mockFaucet{
+		difficulty: 6, timeCost: 1, memoryCost: 512, keyLength: 16,
+		preimage: []byte("12345678"), shareReward: 2_000_000_000_000_000_000,
+		minClaim: 1_000_000_000_000_000_000, maxClaim: 5_000_000_000_000_000_000,
+		failClaim: true,
+	}
+	srv := httptest.NewServer(mock.handler())
+	defer srv.Close()
+
+	_, err := New(srv.URL, srv.Client()).Claim(context.Background(), "0xTarget")
+	if err == nil || !strings.Contains(err.Error(), "BALANCE_LIMIT") || !mock.closed {
+		t.Fatalf("expected immediate balance-limit error after closing the session, got %v", err)
 	}
 }
 
