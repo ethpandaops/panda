@@ -17,7 +17,17 @@ import (
 )
 
 const (
-	remoteEmbedTimeout = 2 * time.Minute
+	// remoteEmbedTimeout bounds index-build embed calls. It outlasts the
+	// proxy's 2-minute per-sub-batch upstream timeout, so for a request the
+	// proxy serves in one upstream call its specific error surfaces here
+	// rather than a generic client timeout.
+	remoteEmbedTimeout = 130 * time.Second
+	// queryEmbedTimeout bounds the interactive search query embed. One short
+	// query embeds in well under a second; inheriting the build timeout meant
+	// a hung upstream blocked every search for two minutes (observed
+	// 2026-07-08). Build paths keep the longer budget — item count is not the
+	// signal, since a warm rebuild legitimately embeds a single document.
+	queryEmbedTimeout = 15 * time.Second
 	// maxBatchSize limits how many items are sent in a single embedding request.
 	// The proxy accepts up to 500 items and sub-batches to the upstream API internally.
 	maxBatchSize = 500
@@ -114,9 +124,12 @@ func NewRemote(
 	protocol Protocol,
 ) *RemoteEmbedder {
 	return &RemoteEmbedder{
-		log:          log.WithField("component", "remote-embedder"),
-		proxyURL:     proxyURL,
-		httpClient:   &http.Client{Timeout: remoteEmbedTimeout},
+		log:      log.WithField("component", "remote-embedder"),
+		proxyURL: proxyURL,
+		// Per-call deadlines are set via request contexts in doWithAuthRetry;
+		// the client stays unbounded so a query deadline is never silently
+		// stretched to the batch one.
+		httpClient:   &http.Client{},
 		tokenFn:      tokenFn,
 		invalidateFn: invalidateFn,
 		localCache:   localCache,
@@ -143,7 +156,7 @@ func (e *RemoteEmbedder) OnProgress(fn func(completed, total int)) {
 // Embed returns the L2-normalized QUERY embedding vector for a single
 // search-query string.
 func (e *RemoteEmbedder) Embed(text string) ([]float32, error) {
-	vectors, err := e.embedAll([]string{text}, e.queryTask())
+	vectors, err := e.embedAll([]string{text}, e.queryTask(), queryEmbedTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -157,13 +170,13 @@ func (e *RemoteEmbedder) Embed(text string) ([]float32, error) {
 
 // EmbedBatch returns L2-normalized DOCUMENT embedding vectors for multiple texts.
 func (e *RemoteEmbedder) EmbedBatch(texts []string) ([][]float32, error) {
-	return e.embedAll(texts, e.documentTask())
+	return e.embedAll(texts, e.documentTask(), remoteEmbedTimeout)
 }
 
 // EmbedQueryBatch returns L2-normalized QUERY embedding vectors for multiple
 // query-shaped texts. v1/v2 are symmetric, so this is equivalent to EmbedBatch.
 func (e *RemoteEmbedder) EmbedQueryBatch(texts []string) ([][]float32, error) {
-	return e.embedAll(texts, e.queryTask())
+	return e.embedAll(texts, e.queryTask(), remoteEmbedTimeout)
 }
 
 func (e *RemoteEmbedder) queryTask() string {
@@ -186,7 +199,7 @@ func (e *RemoteEmbedder) documentTask() string {
 // vectors are checked there first. Remaining misses are split into sub-batches
 // of maxBatchSize and sent to the proxy (which has its own Redis cache +
 // upstream API).
-func (e *RemoteEmbedder) embedAll(texts []string, task string) ([][]float32, error) {
+func (e *RemoteEmbedder) embedAll(texts []string, task string, timeout time.Duration) ([][]float32, error) {
 	if len(texts) == 0 {
 		return nil, nil
 	}
@@ -215,7 +228,7 @@ func (e *RemoteEmbedder) embedAll(texts []string, task string) ([][]float32, err
 			}
 		}
 
-		vecs, err := e.embedDirect(texts, hashes, hashToIndices, task)
+		vecs, err := e.embedDirect(texts, hashes, hashToIndices, task, timeout)
 		if err != nil {
 			return nil, err
 		}
@@ -341,7 +354,7 @@ func (e *RemoteEmbedder) embedAll(texts []string, task string) ([][]float32, err
 				"misses": len(missItems),
 			}).Info("Proxy cache stats")
 
-			resp, err := e.callEmbed(missItems, task)
+			resp, err := e.callEmbed(missItems, task, timeout)
 			if err != nil {
 				return nil, fmt.Errorf("embedding batch %d/%d: %w", batchNum, totalBatches, err)
 			}
@@ -447,13 +460,14 @@ func (e *RemoteEmbedder) embedDirect(
 	hashes []string,
 	hashToIndices map[string][]int,
 	task string,
+	timeout time.Duration,
 ) ([][]float32, error) {
 	items := make([]embedItem, len(texts))
 	for i, text := range texts {
 		items[i] = embedItem{Hash: hashes[i], Text: text}
 	}
 
-	resp, err := e.callEmbed(items, task)
+	resp, err := e.callEmbed(items, task, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -475,14 +489,19 @@ func (e *RemoteEmbedder) embedDirect(
 }
 
 // doWithAuthRetry POSTs jsonBody to the proxy path with the current auth token,
-// retrying once after invalidating the token on a 401/403.
-func (e *RemoteEmbedder) doWithAuthRetry(path string, jsonBody []byte) (*http.Response, error) {
-	send := func() (*http.Response, error) {
+// retrying once after invalidating the token on a 401/403. It reads the whole
+// response body so the per-call deadline covers the body too and the context
+// can be released before returning.
+func (e *RemoteEmbedder) doWithAuthRetry(path string, jsonBody []byte, timeout time.Duration) (int, []byte, error) {
+	send := func() (int, []byte, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+
 		req, err := http.NewRequestWithContext(
-			context.Background(), http.MethodPost, e.proxyURL+path, bytes.NewReader(jsonBody),
+			ctx, http.MethodPost, e.proxyURL+path, bytes.NewReader(jsonBody),
 		)
 		if err != nil {
-			return nil, err
+			return 0, nil, err
 		}
 
 		req.Header.Set("Content-Type", "application/json")
@@ -493,22 +512,32 @@ func (e *RemoteEmbedder) doWithAuthRetry(path string, jsonBody []byte) (*http.Re
 			}
 		}
 
-		return e.httpClient.Do(req)
+		resp, err := e.httpClient.Do(req)
+		if err != nil {
+			return 0, nil, err
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return 0, nil, err
+		}
+
+		return resp.StatusCode, body, nil
 	}
 
-	resp, err := send()
+	status, body, err := send()
 	if err != nil {
-		return nil, err
+		return 0, nil, err
 	}
 
-	if (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) && e.invalidateFn != nil {
-		_ = resp.Body.Close()
+	if (status == http.StatusUnauthorized || status == http.StatusForbidden) && e.invalidateFn != nil {
 		e.invalidateFn()
 
 		return send()
 	}
 
-	return resp, nil
+	return status, body, nil
 }
 
 // verifyEmbeddingSpace fails fast when the proxy's advertised embedding space
@@ -555,20 +584,17 @@ func (e *RemoteEmbedder) checkCached(hashes []string, task string) ([]embedResul
 		return nil, fmt.Errorf("marshaling check request: %w", err)
 	}
 
-	resp, err := e.doWithAuthRetry(e.checkPath(), reqBody)
+	status, body, err := e.doWithAuthRetry(e.checkPath(), reqBody, remoteEmbedTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("calling embed check: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-
-		return nil, fmt.Errorf("embed check returned status %d: %s", resp.StatusCode, string(body))
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("embed check returned status %d: %s", status, string(body))
 	}
 
 	var checkResp embedCheckResponse
-	if err := json.NewDecoder(resp.Body).Decode(&checkResp); err != nil {
+	if err := json.Unmarshal(body, &checkResp); err != nil {
 		return nil, fmt.Errorf("decoding check response: %w", err)
 	}
 
@@ -579,7 +605,7 @@ func (e *RemoteEmbedder) checkCached(hashes []string, task string) ([]embedResul
 	return checkResp.Cached, nil
 }
 
-func (e *RemoteEmbedder) callEmbed(items []embedItem, task string) (*embedResponse, error) {
+func (e *RemoteEmbedder) callEmbed(items []embedItem, task string, timeout time.Duration) (*embedResponse, error) {
 	req := embedRequest{Items: items}
 	if e.protocol == ProtocolV3 {
 		req.Task = task
@@ -590,20 +616,17 @@ func (e *RemoteEmbedder) callEmbed(items []embedItem, task string) (*embedRespon
 		return nil, fmt.Errorf("marshaling embed request: %w", err)
 	}
 
-	resp, err := e.doWithAuthRetry(e.embedPath(), reqBody)
+	status, body, err := e.doWithAuthRetry(e.embedPath(), reqBody, timeout)
 	if err != nil {
 		return nil, fmt.Errorf("calling proxy embed: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-
-		return nil, fmt.Errorf("proxy embed returned status %d: %s", resp.StatusCode, string(body))
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("proxy embed returned status %d: %s", status, string(body))
 	}
 
 	var embedResp embedResponse
-	if err := json.NewDecoder(resp.Body).Decode(&embedResp); err != nil {
+	if err := json.Unmarshal(body, &embedResp); err != nil {
 		return nil, fmt.Errorf("decoding embed response: %w", err)
 	}
 

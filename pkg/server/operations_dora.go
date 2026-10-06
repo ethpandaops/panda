@@ -27,6 +27,8 @@ func (s *service) handleDoraOperation(operationID string, w http.ResponseWriter,
 		s.handleDoraBaseURL(w, r)
 	case "dora.get_network_overview":
 		s.handleDoraNetworkOverview(w, r)
+	case "dora.get_clients":
+		s.handleDoraClients(w, r)
 	case "dora.get_validator":
 		s.handleDoraDataGetPassthrough(w, r, "index_or_pubkey", "/api/v1/validator/%s")
 	case "dora.get_validators":
@@ -94,6 +96,42 @@ func (s *service) handleDoraBaseURL(w http.ResponseWriter, r *http.Request) {
 	writeOperationResponse(s.log, w, http.StatusOK, operations.Response{
 		Kind: operations.ResultKindObject,
 		Data: map[string]any{"base_url": baseURL},
+	})
+}
+
+// handleDoraClients returns Dora's consensus client node list. Unlike the
+// data-enveloped v1 endpoints, /api/v1/clients/consensus responds with a bare
+// {clients, count} object. Each client_name is the per-node instance label
+// accepted by ethnode operations.
+func (s *service) handleDoraClients(w http.ResponseWriter, r *http.Request) {
+	req, err := decodeOperationRequest(r)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	baseURL, status, err := s.doraBaseURL(req.Args)
+	if err != nil {
+		writeAPIError(w, status, err.Error())
+		return
+	}
+
+	payload, status, err := s.doraAPIGet(r.Context(), baseURL, "/api/v1/clients/consensus", nil)
+	if err != nil {
+		writeAPIError(w, status, err.Error())
+		return
+	}
+
+	clients, ok := payload["clients"].([]any)
+	if !ok {
+		writeAPIError(w, http.StatusBadGateway, "Dora client list is missing the clients field")
+		return
+	}
+
+	writeOperationResponse(s.log, w, http.StatusOK, operations.Response{
+		Kind: operations.ResultKindObject,
+		Data: map[string]any{"clients": clients, "count": len(clients)},
+		Meta: map[string]any{"network": optionalStringArg(req.Args, "network")},
 	})
 }
 

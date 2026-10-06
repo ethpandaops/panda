@@ -29,13 +29,40 @@ def list_networks() -> list[dict[str, Any]]:
     """List active network ids reachable for direct node access.
 
     Entries include at least name and type. The name is the network id accepted
-    by ethnode calls. The per-node instance label cannot be enumerated and must
-    be supplied by the caller. Use instance="lb" for the load-balanced endpoint.
+    by ethnode calls. Use list_instances(network) to enumerate per-node instance
+    labels, or instance="lb" for the load-balanced endpoint.
     """
     _require_ethnode_available()
     data = _runtime.invoke_data("ethnode.list_networks") or {}
     networks = data.get("networks", [])
     return networks if isinstance(networks, list) else []
+
+
+def list_instances(network: str) -> list[dict[str, Any]]:
+    """List per-node instance labels for a network.
+
+    Entries have name (the instance argument accepted by other ethnode calls)
+    and status (online/offline), sourced from the network's Dora explorer,
+    which tracks every node. instance="lb" (load-balanced) also always works.
+    """
+    _require_ethnode_available()
+    from ethpandaops import dora as _dora
+
+    try:
+        clients = _dora.get_clients(network)
+    except Exception as err:
+        raise ValueError(
+            f"cannot enumerate instances for {network!r}: this reads the "
+            f"network's Dora explorer, which is unavailable ({err}). "
+            f'Use instance="lb" for the load-balanced endpoint.'
+        ) from err
+
+    instances = [
+        {"name": c.get("client_name", ""), "status": c.get("status", "")}
+        for c in clients
+        if c.get("client_name")
+    ]
+    return sorted(instances, key=lambda entry: entry["name"])
 
 
 def beacon_get(

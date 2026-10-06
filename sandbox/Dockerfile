@@ -9,7 +9,7 @@
 # hard error rather than an unlocked source compile, and no C toolchain is
 # needed in either stage.
 
-FROM python:3.11-slim@sha256:a3ab0b966bc4e91546a033e22093cb840908979487a9fc0e6e38295747e49ac0 AS builder
+FROM python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de AS builder
 
 # uv (build-time only; never copied into the final image)
 COPY --from=ghcr.io/astral-sh/uv:0.11.17@sha256:03bdc89bb9798628846e60c3a9ad19006c8c3c724ccd2985a33145c039a0577b /uv /uvx /bin/
@@ -37,7 +37,7 @@ COPY modules/*/python/*.py /opt/ethpandaops-pkg/ethpandaops/
 # so no toolchain is required to build it.
 RUN uv pip install --python /usr/local/bin/python3 --prefix /install --no-cache --no-deps /opt/ethpandaops-pkg
 
-FROM python:3.11-slim@sha256:a3ab0b966bc4e91546a033e22093cb840908979487a9fc0e6e38295747e49ac0
+FROM python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de
 
 # librsvg provides rsvg-convert, which the chartkit library uses to rasterise its
 # self-contained SVG charts. The chart font (Inter) is embedded as a data URI; the extra
