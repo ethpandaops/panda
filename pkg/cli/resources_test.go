@@ -252,9 +252,21 @@ func testCommand() *cobra.Command {
 
 func TestSearchFilterValuesDoNotReceiveRetryHints(t *testing.T) {
 	t.Parallel()
-	for _, value := range []string{"embedding query", "index not ready", "search index not available"} {
-		message := fmt.Sprintf("unknown category: %q. Available categories: valid", value)
-		assert.Empty(t, serverErrorHint(http.StatusBadRequest, message))
+	for _, filter := range []string{"category", "tag", "fork", "status", "type", "dataset"} {
+		for _, value := range []string{
+			"embedding query", "calling proxy embed", "index not ready", "search index not available",
+			"unknown dataset", "prometheus datasource not found", "UNKNOWN_TABLE", "JSON-RPC error -32601",
+		} {
+			for _, prefix := range []string{"", "search failed: "} {
+				message := fmt.Sprintf("%sunknown %s: %q. Available values: valid", prefix, filter, value)
+				hint := serverErrorHint(http.StatusBadRequest, message)
+				if filter == "dataset" {
+					assert.Contains(t, hint, "list valid datasets with 'panda datasets'", message)
+				} else {
+					assert.Empty(t, hint, message)
+				}
+			}
+		}
 	}
 	assert.Contains(t, serverErrorHint(http.StatusNotFound, "unknown operation: missing"), "panda resources")
 }

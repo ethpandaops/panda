@@ -67,10 +67,12 @@ func TestSearchErrorStatusCoversInactiveIndexes(t *testing.T) {
 
 func TestSearchFilterValuesCannotImpersonateServiceFailures(t *testing.T) {
 	t.Parallel()
-	for _, value := range []string{"embedding query", "index not ready", "search index not available"} {
-		for _, prefix := range []string{"", "search failed: "} {
-			err := fmt.Errorf("%sunknown category: %q. Available categories: valid", prefix, value)
-			assert.Equal(t, http.StatusBadRequest, searchErrorStatus(err))
+	for _, filter := range []string{"category", "tag", "fork", "status", "type", "dataset"} {
+		for _, value := range []string{"embedding query", "index not ready", "search index not available"} {
+			for _, prefix := range []string{"", "search failed: "} {
+				err := fmt.Errorf("%sunknown %s: %q. Available values: valid", prefix, filter, value)
+				assert.Equal(t, http.StatusBadRequest, searchErrorStatus(err))
+			}
 		}
 	}
 }
