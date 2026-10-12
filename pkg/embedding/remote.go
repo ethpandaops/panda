@@ -493,10 +493,11 @@ func (e *RemoteEmbedder) embedDirect(
 // response body so the per-call deadline covers the body too and the context
 // can be released before returning.
 func (e *RemoteEmbedder) doWithAuthRetry(path string, jsonBody []byte, timeout time.Duration) (int, []byte, error) {
-	send := func() (int, []byte, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
-		defer cancel()
+	// Authentication retries share the same budget as the initial request.
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
 
+	send := func() (int, []byte, error) {
 		req, err := http.NewRequestWithContext(
 			ctx, http.MethodPost, e.proxyURL+path, bytes.NewReader(jsonBody),
 		)

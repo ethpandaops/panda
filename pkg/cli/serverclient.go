@@ -281,6 +281,13 @@ func serverErrorHint(status int, message string) string {
 		return "the first Prometheus argument must be a live datasource name; list them with 'panda prometheus list-datasources' or 'panda datasources --type prometheus'"
 	}
 
+	filterMessage := strings.TrimPrefix(normalized, "search failed: ")
+	for _, prefix := range []string{"unknown category:", "unknown tag:", "unknown fork:", "unknown status:", "unknown type:"} {
+		if strings.HasPrefix(filterMessage, prefix) {
+			return ""
+		}
+	}
+
 	if strings.Contains(normalized, "embedding query") || strings.Contains(normalized, "calling proxy embed") {
 		return "semantic search could not reach its embedding upstream; the query is fine — retry shortly, and if it persists check proxy connectivity with 'panda auth status'"
 	}
@@ -290,14 +297,14 @@ func serverErrorHint(status int, message string) string {
 	}
 
 	// A JSON-RPC error rode back on a healthy node connection: the node
-	// processed and rejected the request, so the gateway-status hint below
-	// ("retry") would misread a deterministic failure as transient.
+	// processed and rejected the request. Its message determines whether
+	// it is a capability gap, a bad request, or a transient node condition.
 	if strings.Contains(message, "JSON-RPC error -32601") {
 		return "the node answered but does not expose this RPC method; that is a capability gap of this client, not an outage — try another instance or client instead of retrying"
 	}
 
 	if strings.Contains(message, "JSON-RPC error ") {
-		return "the node processed the request and rejected it; adjust the method, params, or request scope rather than retrying unchanged — any (data: ...) payload carries the node's reason (e.g. a revert)"
+		return "the node processed the request and rejected it; inspect the message and any (data: ...) payload for its reason. Unsupported methods, invalid params, and reverts require a changed request; retry only for a transient condition such as a node rate limit"
 	}
 
 	switch status {

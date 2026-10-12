@@ -2,6 +2,7 @@ package server
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -61,5 +62,15 @@ func TestSearchErrorStatusCoversInactiveIndexes(t *testing.T) {
 		`unknown tag: "bogus". Available tags: a, b`,
 	} {
 		assert.Equal(t, http.StatusBadRequest, searchErrorStatus(errors.New(message)), message)
+	}
+}
+
+func TestSearchFilterValuesCannotImpersonateServiceFailures(t *testing.T) {
+	t.Parallel()
+	for _, value := range []string{"embedding query", "index not ready", "search index not available"} {
+		for _, prefix := range []string{"", "search failed: "} {
+			err := fmt.Errorf("%sunknown category: %q. Available categories: valid", prefix, value)
+			assert.Equal(t, http.StatusBadRequest, searchErrorStatus(err))
+		}
 	}
 }

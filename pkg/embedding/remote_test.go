@@ -5,8 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -671,4 +673,38 @@ func TestRemoteEmbedder_HonorsPerCallDeadline(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
 	assert.Less(t, time.Since(start), upstreamLatency)
+}
+
+type remoteRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f remoteRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func TestRemoteEmbedder_AuthRetrySharesDeadline(t *testing.T) {
+	t.Parallel()
+	var deadlines []time.Time
+	var invalidations int
+	embedder := NewRemote(logrus.New(), "https://proxy.example", nil,
+		func() { invalidations++ }, nil, "", 8, ProtocolV3)
+	embedder.httpClient.Transport = remoteRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		deadline, ok := req.Context().Deadline()
+		require.True(t, ok)
+		deadlines = append(deadlines, deadline)
+		status := http.StatusOK
+		if len(deadlines) == 1 {
+			status = http.StatusUnauthorized
+		}
+		return &http.Response{
+			StatusCode: status,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{}`)),
+		}, nil
+	})
+	status, _, err := embedder.doWithAuthRetry("/embed", []byte(`{}`), queryEmbedTimeout)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, status)
+	assert.Equal(t, 1, invalidations)
+	require.Len(t, deadlines, 2)
+	assert.Equal(t, deadlines[0], deadlines[1], "authentication must not restart the query's timeout budget")
 }

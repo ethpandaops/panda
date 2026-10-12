@@ -154,7 +154,12 @@ func (s *service) handleAPIDatasources(w http.ResponseWriter, r *http.Request) {
 // failure on the query. Filter-value rejections ("unknown category/tag/...")
 // stay 400, since only the caller can fix those.
 func searchErrorStatus(err error) int {
-	message := err.Error()
+	message := strings.TrimPrefix(err.Error(), "search failed: ")
+	// Filter values are caller-controlled and can themselves contain the
+	// service-condition phrases below.
+	if strings.HasPrefix(message, "unknown ") {
+		return http.StatusBadRequest
+	}
 	for _, serviceCondition := range []string{
 		"embedding query",            // embedding upstream unreachable
 		"index not ready",            // index still building after start

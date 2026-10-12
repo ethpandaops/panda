@@ -249,3 +249,20 @@ func testCommand() *cobra.Command {
 
 	return cmd
 }
+
+func TestSearchFilterValuesDoNotReceiveRetryHints(t *testing.T) {
+	t.Parallel()
+	for _, value := range []string{"embedding query", "index not ready", "search index not available"} {
+		message := fmt.Sprintf("unknown category: %q. Available categories: valid", value)
+		assert.Empty(t, serverErrorHint(http.StatusBadRequest, message))
+	}
+	assert.Contains(t, serverErrorHint(http.StatusNotFound, "unknown operation: missing"), "panda resources")
+}
+
+func TestJSONRPCHintDoesNotTreatEveryNodeErrorAsPermanent(t *testing.T) {
+	t.Parallel()
+	hint := serverErrorHint(http.StatusBadRequest, "JSON-RPC error -32005: rate limit exceeded")
+	assert.Contains(t, hint, "retry only for a transient condition")
+	assert.NotContains(t, hint, "rather than retrying unchanged")
+	assert.NotContains(t, hint, "temporarily unreachable")
+}
