@@ -8,7 +8,7 @@ anyio==4.13.0 \
     --hash=sha256:08b310f9e24a9594186fd75b4f73f4a4152069e3853f1ed8bfbf58369f4ad708 \
     --hash=sha256:334b70e641fd2221c1505b3890c69882fe4a2df910cba14d97019b90b24439dc
     # via httpx
-backports-zstd==1.7.0 \
+backports-zstd==1.7.0 ; python_full_version < '3.14' \
     --hash=sha256:02c4458f25f884131c59d54549a3bdfd649ca3384f1dd15204762171d9e24739 \
     --hash=sha256:02f2f6649a342d0901ddb35596ddadb7c3bb1cf6bb54d691e5e0285f1fa0674f \
     --hash=sha256:09f1ecac082932870df519818e88eb938a03573245f629e34979141583112123 \
@@ -205,7 +205,7 @@ bitarray==3.8.2 \
 boto3==1.43.98 \
     --hash=sha256:1ec732e023fb29c12dc8520f925b5bbbed29eeb36b5764b5a5c26052d7c721f7 \
     --hash=sha256:7454f666a9e852a56db0a7fa23be33a899f64e27828930eac43c3edba7b34e17
-    # via -r requirements.in
+    # via -r sandbox/requirements.in
 botocore==1.43.108 \
     --hash=sha256:ab9d16c6b4350aaa54ed28202dfa2998b2d735fdbf3247eb60af469d8d48a5b8 \
     --hash=sha256:ee4f75cf3bdbb0da7912e089950e8112f692016539d939312c771499958e6cfd
@@ -347,7 +347,7 @@ clickhouse-connect==1.8.0 \
     --hash=sha256:eca852eef9e5de0d3bc5797a0f9358a59ed3965693a1c7f116266066c8f00e09 \
     --hash=sha256:f143e86a50d6096f4a0e2e4650ad65f61fcdb2eb80f4f61810b3e09ce1872b76 \
     --hash=sha256:f45b8f01dc4cdc238c44d816e4307f8b6b67237fbbbde0650bdf08e3b95bca8a
-    # via -r requirements.in
+    # via -r sandbox/requirements.in
 contourpy==1.3.3 \
     --hash=sha256:023b44101dfe49d7d53932be418477dba359649246075c996866106da069af69 \
     --hash=sha256:07ce5ed73ecdc4a03ffe3e1b3e3c1166db35ae7584be76f65dbbe28a7791b0cc \
@@ -561,7 +561,7 @@ cycler==0.12.1 \
     --hash=sha256:85cef7cff222d8644161529808465972e51340599459b8ac3ccbac5a854e0d30 \
     --hash=sha256:88bb128f02ba341da8ef447245a9e138fae777f6a23943da4540077d3601eb1c
     # via matplotlib
-cytoolz==1.1.0 \
+cytoolz==1.1.0 ; implementation_name == 'cpython' \
     --hash=sha256:02feeeda93e1fa3b33414eb57c2b0aefd1db8f558dd33fdfcce664a0f86056e4 \
     --hash=sha256:047defa7f5f9a32f82373dbc3957289562e8a3fa58ae02ec8e4dca4f43a33a21 \
     --hash=sha256:0499c5e0a8e688ed367a2e51cc13792ae8f08226c15f7d168589fc44b9b9cada \
@@ -740,12 +740,12 @@ eth-abi==6.0.0 \
     --hash=sha256:05ad63b50bd5448cfac0079b3cc5464de7464b4336a2496bf368d5808c7f9e9f \
     --hash=sha256:e83a0ed91f2dadeeb50236d673736fe2edc6fcc0a1c1e13d461192d4b23d5bcc
     # via
-    #   -r requirements.in
+    #   -r sandbox/requirements.in
     #   eth-account
 eth-account==0.14.0 \
     --hash=sha256:2c8291b1a8fcbd29a55b07f75f0a0aaffd04704d3ec28d1396587f18a5541c6d \
     --hash=sha256:efdcb57f32f133e9152510e44772a4bcfe519317dfd8f7e7c5ead8189f73a2b6
-    # via -r requirements.in
+    # via -r sandbox/requirements.in
 eth-hash==0.8.0 \
     --hash=sha256:523718a51b369ab89866b929a5c93c52978cd866ea309192ad980dd8271f9fac \
     --hash=sha256:b009752b620da2e9c7668014849d1f5fadbe4f138603f1871cc5d4ca706896b1
@@ -839,7 +839,7 @@ fastparquet==2026.5.0 \
     --hash=sha256:f2e2452b9f8456b99a5ad2e53a08d0b359f9e23813e4ab1df5da3fd34353336e \
     --hash=sha256:f67845c5353799ecf1fba5f21361bad8b3a848ec0e21163cf03e9d13fd381490 \
     --hash=sha256:f82d9fad61c59a05b52ff091a6fadb468a4bf215e2526a8ed0422dd9eeabe2fb
-    # via -r requirements.in
+    # via -r sandbox/requirements.in
 fonttools==4.63.0 \
     --hash=sha256:032038247a96c1690f9f31e377c389383c902531b085aa4e4dabd6f57f870e69 \
     --hash=sha256:063e08bd17bd5a90127a14123de0d6a952dbc847695fd98b63c043d58057f90c \
@@ -913,7 +913,7 @@ httpcore==1.0.9 \
 httpx==0.28.1 \
     --hash=sha256:75e98c5f16b0f35b567856f597f06ff2270a374470a5c2392242528e3e3e42fc \
     --hash=sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad
-    # via -r requirements.in
+    # via -r sandbox/requirements.in
 idna==3.18 \
     --hash=sha256:7f952cbe720b688055e3f87de14f5c3e5fdaa8bc3928985c4077ca689de849a2 \
     --hash=sha256:ffb385a7e039654cef1ab9ef32c6fafe283c0c0467bba1d9029738ce4a14a848
@@ -1216,7 +1216,7 @@ matplotlib==3.11.2 \
     --hash=sha256:fea03cf56568cc1cba08b470be6a0559e71c3a5b688d54b7179bb35ba23d0821 \
     --hash=sha256:fea03cf56568cc1cba08b470be6a0559e71c3a5b688d54b7179bb35ba23d0821
     # via
-    #   -r requirements.in
+    #   -r sandbox/requirements.in
     #   seaborn
 mdurl==0.1.2 \
     --hash=sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8 \
@@ -1300,7 +1300,7 @@ numpy==2.4.6 \
     --hash=sha256:f407cb6b8e9d6d8c626bc73c945db1706035af8fd632295547bf1c9e46d092d6 \
     --hash=sha256:f74a575920ab21fe304421a3fc28793d82e299cae9eccb37084e9fc7f3617c20
     # via
-    #   -r requirements.in
+    #   -r sandbox/requirements.in
     #   contourpy
     #   fastparquet
     #   matplotlib
@@ -1432,7 +1432,7 @@ pandas==3.0.6 \
     --hash=sha256:ff51a4459ed036e93d1eb1bb5e6e7b28685d3cb6b7c12b91c05b31024e234729 \
     --hash=sha256:ff51a4459ed036e93d1eb1bb5e6e7b28685d3cb6b7c12b91c05b31024e234729
     # via
-    #   -r requirements.in
+    #   -r sandbox/requirements.in
     #   fastparquet
     #   seaborn
 parsimonious==0.10.0 \
@@ -1531,12 +1531,10 @@ pillow==12.3.0 \
 plotly==7.1.0 \
     --hash=sha256:dbb7fa18afce40d0a8e80d1bf162eceb3faa0ce5a77fe741ad09a74cf78f53f3 \
     --hash=sha256:f860166a4a3d78c69cb1f4a15f28a5c8283eade98a282a698f3bb853a449ace5
-    # via -r requirements.in
-py-ecc==9.0.0b1 \
-    --hash=sha256:42c8d4df108911f12466c8ecbeeec69343953dcba9abcbfe4085e9a71e0c91d5 \
-    --hash=sha256:42c8d4df108911f12466c8ecbeeec69343953dcba9abcbfe4085e9a71e0c91d5 \
-    --hash=sha256:6d2e5365e52c78c93e03bc35f0109e4de5a022f9d3ed3935342d52d666fe3b5f \
-    --hash=sha256:6d2e5365e52c78c93e03bc35f0109e4de5a022f9d3ed3935342d52d666fe3b5f
+    # via -r sandbox/requirements.in
+py-ecc==8.0.0 \
+    --hash=sha256:56aca19e5dc37294f60c1cc76666c03c2276e7666412b9a559fa0145d099933d \
+    --hash=sha256:c0b2dfc4bde67a55122a392591a10e851a986d5128f680628c80b405f7663e13
     # via eth-keyfile
 pycryptodome==3.23.0 \
     --hash=sha256:0011f7f00cdb74879142011f95133274741778abba114ceca229adbf8e62c3e4 \
@@ -1721,14 +1719,14 @@ python-dateutil==2.9.0.post0 \
     --hash=sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3 \
     --hash=sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427
     # via
-    #   -r requirements.in
+    #   -r sandbox/requirements.in
     #   botocore
     #   matplotlib
     #   pandas
 pytz==2026.3.post1 \
     --hash=sha256:2211d3fcf9a797d3405cac96ac7f61d80e6a644f72a3309607282fe8a2010c5d \
     --hash=sha256:dd95840dd199baea12d9cc096a1d452caa6596a1c1e4b5f3dbd1541855d5e815
-    # via -r requirements.in
+    # via -r sandbox/requirements.in
 regex==2026.5.9 \
     --hash=sha256:002205cafd2a9e78c6290c7d1df277bf3277b3b7a30e0b4bb0dac2e2e3f7cb2d \
     --hash=sha256:01f0f5f55f4b64dacec85dc116d3c05fd23ad3ff037bbc73a2085775953c2611 \
@@ -1848,7 +1846,7 @@ regex==2026.5.9 \
 rich==15.0.0 \
     --hash=sha256:33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb \
     --hash=sha256:edd07a4824c6b40189fb7ac9bc4c52536e9780fbbfbddf6f1e2502c31b068c36
-    # via -r requirements.in
+    # via -r sandbox/requirements.in
 rlp==4.1.0 \
     --hash=sha256:8eca394c579bad34ee0b937aecb96a57052ff3716e19c7a578883e767bc5da6f \
     --hash=sha256:be07564270a96f3e225e2c107db263de96b5bc1f27722d2855bd3459a08e95a9
@@ -1921,11 +1919,11 @@ scipy==1.17.1 \
     --hash=sha256:f590cd684941912d10becc07325a3eeb77886fe981415660d9265c4c418d0bea \
     --hash=sha256:f8885db0bc2bffa59d5c1b72fad7a6a92d3e80e7257f967dd81abb553a90d293 \
     --hash=sha256:fcb310ddb270a06114bb64bbe53c94926b943f5b7f0842194d585c65eb4edd76
-    # via -r requirements.in
+    # via -r sandbox/requirements.in
 seaborn==0.13.2 \
     --hash=sha256:636f8336facf092165e27924f223d3c62ca560b1f2bb5dff7ab7fad265361987 \
     --hash=sha256:93e60a40988f4d65e9f4885df477e2fdaff6b73a9ded434c1ab356dd57eefff7
-    # via -r requirements.in
+    # via -r sandbox/requirements.in
 six==1.17.0 \
     --hash=sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274 \
     --hash=sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81
@@ -1933,11 +1931,13 @@ six==1.17.0 \
 tabulate==0.10.0 \
     --hash=sha256:e2cfde8f79420f6deeffdeda9aaec3b6bc5abce947655d17ac662b126e48a60d \
     --hash=sha256:f0b0622e567335c8fabaaa659f1b33bcb6ddfe2e496071b743aa113f8774f2d3
-    # via -r requirements.in
-toolz==1.1.0 \
+    # via -r sandbox/requirements.in
+toolz==1.1.0 ; implementation_name == 'cpython' or implementation_name == 'pypy' \
     --hash=sha256:15ccc861ac51c53696de0a5d6d4607f99c210739caf987b5d2054f3efed429d8 \
     --hash=sha256:27a5c770d068c110d9ed9323f24f1543e83b2f300a687b7891c1a6d56b697b5b
-    # via cytoolz
+    # via
+    #   cytoolz
+    #   eth-utils
 typing-extensions==4.15.0 \
     --hash=sha256:0cea48d173cc12fa28ecabc3b837ea3cf6f38c6d1136f85cbaaf598984861466 \
     --hash=sha256:f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548
@@ -1951,6 +1951,12 @@ typing-inspection==0.4.2 \
     --hash=sha256:4ed1cacbdc298c220f1bd249ed5287caa16f34d44ef4e9c3d0cbad5b521545e7 \
     --hash=sha256:ba561c48a67c5958007083d386c3295464928b01faa735ab8547c5692e87f464
     # via pydantic
+tzdata==2026.5 ; sys_platform == 'emscripten' or sys_platform == 'win32' \
+    --hash=sha256:8cc73c0a0bfca7dbfa59235d60b2eff82231dee33f53d206db1acd9173cfc0a7 \
+    --hash=sha256:b683bd1b6659ddcd810ff02ad09ba821d4bf1065072805063eb35c49617905ac
+    # via
+    #   clickhouse-connect
+    #   pandas
 urllib3==2.7.0 \
     --hash=sha256:231e0ec3b63ceb14667c67be60f2f2c40a518cb38b03af60abc813da26505f4c \
     --hash=sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897
