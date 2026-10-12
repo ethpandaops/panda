@@ -1,6 +1,6 @@
 module github.com/ethpandaops/panda
 
-go 1.26.6
+go 1.26.9
 
 require (
 	github.com/containerd/errdefs v1.0.0
