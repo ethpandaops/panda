@@ -66,14 +66,13 @@ var skipUpdateCheckCommands = map[string]bool{
 	"help":       true,
 }
 
-// alwaysJSONCommands emit JSON regardless of --output, so they are machine
-// surfaces even without the flag.
-var alwaysJSONCommands = map[string]bool{
-	"panda clickhouse query-raw": true,
-	"panda evm faucet":           true,
-	"panda evm faucet-status":    true,
-	"panda evm wallet":           true,
-}
+// Output annotations live with each command's renderer. Some commands emit
+// JSON only for a detail argument or a nonnegative position flag.
+const (
+	commandOutputAnnotation  = "panda.output"
+	jsonOutputArgsAnnotation = "panda.json-min-args"
+	jsonOutputFlagAnnotation = "panda.json-nonnegative-flag"
+)
 
 // machineOutput reports whether this run's stdout is a JSON document destined
 // for a parser. In that mode the CLI owns error rendering: stdout carries
@@ -172,11 +171,11 @@ func executeWithSignals() error {
 // syntax errors follow the requested output format. Parse independent flag
 // values to avoid changing command state or consuming repeatable flags twice.
 func commandUsesJSON(root *cobra.Command, args []string) bool {
-	cmd, _, _ := root.Find(args)
+	cmd, commandArgs, _ := root.Find(args)
 	if cmd == nil {
 		cmd = root
 	}
-	if alwaysJSONCommands[cmd.CommandPath()] {
+	if cmd.Annotations[commandOutputAnnotation] == "json" {
 		return true
 	}
 
@@ -192,7 +191,19 @@ func commandUsesJSON(root *cobra.Command, args []string) bool {
 	}
 	cmd.Flags().VisitAll(copyFlag)
 	cmd.InheritedFlags().VisitAll(copyFlag)
-	_ = flags.Parse(args)
+	_ = flags.Parse(commandArgs)
+
+	if minimum, err := strconv.Atoi(cmd.Annotations[jsonOutputArgsAnnotation]); err == nil &&
+		minimum > 0 && len(flags.Args()) >= minimum {
+		return true
+	}
+	if name := cmd.Annotations[jsonOutputFlagAnnotation]; name != "" {
+		value, _ := flags.GetString(name)
+		position, err := strconv.ParseInt(value, 10, 64)
+		if (err == nil && position >= 0) || (err != nil && flags.Changed(name)) {
+			return true
+		}
+	}
 
 	format, _ := flags.GetString("output")
 	jsonFlag, _ := flags.GetString("json")

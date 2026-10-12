@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -226,4 +227,15 @@ func TestNestedMap(t *testing.T) {
 	t.Run("non-map value returns nil", func(t *testing.T) {
 		assert.Nil(t, nestedMap("not a map", "data"))
 	})
+}
+
+func TestJSONOutputReportsWriteFailures(t *testing.T) {
+	original := os.Stdout
+	writer, err := os.CreateTemp(t.TempDir(), "closed-output")
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+	os.Stdout = writer
+	t.Cleanup(func() { os.Stdout = original })
+	require.Error(t, printJSON(map[string]string{"value": "fixture"}))
+	require.Error(t, printJSONBytes([]byte(`{"value":"fixture"}`)))
 }

@@ -82,8 +82,9 @@ Examples:
 }
 
 var clickhouseQueryRawCmd = &cobra.Command{
-	Use:   "query-raw <datasource> <sql>",
-	Short: "Execute a SQL query and return raw rows (always JSON)",
+	Annotations: map[string]string{commandOutputAnnotation: "json"},
+	Use:         "query-raw <datasource> <sql>",
+	Short:       "Execute a SQL query and return raw rows (always JSON)",
 	Long: `Execute a SQL query and return raw rows as JSON.
 
 Failures are also JSON on stdout ({"error": ...}, exit code 1), so piping into

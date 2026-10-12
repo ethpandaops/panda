@@ -137,9 +137,10 @@ var tracoorNetworksCmd = &cobra.Command{
 }
 
 var tracoorConfigCmd = &cobra.Command{
-	Use:   "config <network>",
-	Short: "Show the instance's Ethereum network-config and tool settings (always JSON)",
-	Args:  cobra.ExactArgs(1),
+	Annotations: map[string]string{commandOutputAnnotation: "json"},
+	Use:         "config <network>",
+	Short:       "Show the instance's Ethereum network-config and tool settings (always JSON)",
+	Args:        cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		response, err := runServerOperationRaw(cmd, "tracoor.get_config", map[string]any{
 			"network": args[0],

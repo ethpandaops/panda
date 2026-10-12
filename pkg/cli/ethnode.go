@@ -324,8 +324,9 @@ var ethNodeBlockNumberCmd = &cobra.Command{
 }
 
 var ethNodeBeaconGetCmd = &cobra.Command{
-	Use:   "beacon-get <network> <instance> <path>",
-	Short: "GET any beacon API endpoint (always JSON)",
+	Annotations: map[string]string{commandOutputAnnotation: "json"},
+	Use:         "beacon-get <network> <instance> <path>",
+	Short:       "GET any beacon API endpoint (always JSON)",
 	Long: `Make a GET request to any beacon API endpoint.
 The path should start with / (e.g., /eth/v1/node/identity).
 

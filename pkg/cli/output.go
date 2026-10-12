@@ -26,9 +26,8 @@ func printJSON(v any) error {
 		return fmt.Errorf("marshaling JSON: %w", err)
 	}
 
-	fmt.Println(string(data))
-
-	return nil
+	_, err = fmt.Fprintln(os.Stdout, string(data))
+	return err
 }
 
 // printJSONBytes pretty-prints raw JSON bytes, preserving original number
@@ -36,9 +35,12 @@ func printJSON(v any) error {
 func printJSONBytes(data []byte) error {
 	var buf bytes.Buffer
 	if err := json.Indent(&buf, data, "", "  "); err != nil {
-		fmt.Println(string(data))
+		if machineOutput || isJSON() {
+			return fmt.Errorf("decoding JSON response: %w", err)
+		}
 
-		return nil
+		_, err := fmt.Fprintln(os.Stdout, string(data))
+		return err
 	}
 
 	buf.WriteByte('\n')

@@ -18,7 +18,8 @@ func init() {
 	var noWait bool
 	var waitTimeout time.Duration
 	claim := &cobra.Command{
-		Use: "faucet <network> <address>", Short: "Start or recover a claim; wait for a successful receipt",
+		Annotations: map[string]string{commandOutputAnnotation: "json"},
+		Use:         "faucet <network> <address>", Short: "Start or recover a claim; wait for a successful receipt",
 		Long: `Fund a previously saved wallet through a bounded server-owned job.
 Discover network IDs with 'panda ethnode networks'. The faucet needs the
 address only. Save the wallet before funding. Interrupting this CLI wait
@@ -78,7 +79,8 @@ Jobs do not survive a local server restart. --no-wait returns immediately.`,
 	var wait bool
 	var statusWaitTimeout time.Duration
 	status := &cobra.Command{
-		Use: "faucet-status <job-id>", Short: "Read claim progress or wait for receipt confirmation", Args: cobra.ExactArgs(1),
+		Annotations: map[string]string{commandOutputAnnotation: "json"},
+		Use:         "faucet-status <job-id>", Short: "Read claim progress or wait for receipt confirmation", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if wait {
 				return waitFaucetJob(cmd.Context(), args[0], statusWaitTimeout)

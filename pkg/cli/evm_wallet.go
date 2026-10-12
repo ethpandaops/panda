@@ -15,7 +15,8 @@ import (
 func newEVMWalletCommand() *cobra.Command {
 	var outputFile string
 	cmd := &cobra.Command{
-		Use: "wallet", Short: "Generate a wallet locally and save its key in a private file", Args: cobra.NoArgs,
+		Annotations: map[string]string{commandOutputAnnotation: "json"},
+		Use:         "wallet", Short: "Generate a wallet locally and save its key in a private file", Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			address, err := createEVMWallet(outputFile)
 			if err != nil {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -129,4 +131,115 @@ func TestMachineOutputReportedFailures(t *testing.T) {
 			assert.Contains(t, payload, tc.key)
 		})
 	}
+}
+
+// The documented format is a public contract: every always-JSON command must
+// also render syntax failures as one JSON document without a flag.
+func TestDocumentedJSONCommandsRenderSyntaxErrorsAsJSON(t *testing.T) {
+	var visit func(*cobra.Command)
+	visit = func(cmd *cobra.Command) {
+		if strings.Contains(cmd.Short, "(always JSON)") {
+			t.Run(cmd.CommandPath(), func(t *testing.T) {
+				args := strings.Fields(cmd.CommandPath())[1:]
+				stdout, stderr, code := runCLIProcess(t, args...)
+				assert.Equal(t, 1, code)
+				assert.Empty(t, stderr)
+				var payload map[string]any
+				require.NoError(t, json.Unmarshal([]byte(stdout), &payload))
+				assert.NotEmpty(t, payload["error"])
+			})
+		}
+		for _, child := range cmd.Commands() {
+			visit(child)
+		}
+	}
+	visit(rootCmd)
+}
+
+func TestJSONCommandResponsesAndUpstreamFailures(t *testing.T) {
+	commands := [][]string{
+		{"dora", "validator", "testnet", "1"},
+		{"dora", "slot", "testnet", "1"},
+		{"dora", "epoch", "testnet", "1"},
+		{"ethnode", "beacon-get", "testnet", "lb", "/eth/v1/node/identity"},
+		{"forky", "frame", "testnet", "1"},
+		{"tracoor", "config", "testnet"},
+		{"benchmarkoor", "run", "1"},
+		{"benchmarkoor", "suite-stats", "1"},
+		{"block-archive", "get", "testnet", "1", "0x123"},
+		{"cbt", "transformation", "testnet", "model"},
+		{"cbt", "intervals", "testnet"},
+		{"cbt", "external", "testnet", "model"},
+		{"cbt", "coverage", "testnet", "model", "--at", "0"},
+	}
+	for _, failure := range []bool{false, true} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			if failure {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"error":"upstream rejected the query"}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"value":9007199254740993}`))
+		}))
+		config := filepath.Join(t.TempDir(), "config.yaml")
+		require.NoError(t, os.WriteFile(config, []byte("server:\n  url: "+server.URL+"\n"), 0o600))
+		for _, args := range commands {
+			t.Run(fmt.Sprintf("%s/failure=%t", strings.Join(args, " "), failure), func(t *testing.T) {
+				stdout, stderr, code := runCLIProcess(t, append([]string{"--config", config}, args...)...)
+				assert.Empty(t, stderr)
+				var payload map[string]any
+				require.NoError(t, json.Unmarshal([]byte(stdout), &payload))
+				if failure {
+					assert.Equal(t, 1, code)
+					assert.Contains(t, payload["error"], "upstream rejected the query")
+				} else {
+					assert.Zero(t, code)
+					assert.Contains(t, stdout, "9007199254740993", "preserve upstream integer precision")
+				}
+			})
+		}
+		server.Close()
+	}
+}
+
+func TestConditionalJSONOutputKeepsCBTListsAsText(t *testing.T) {
+	for _, args := range [][]string{
+		{"cbt", "external", "testnet"},
+		{"cbt", "external", "testnet", "--database", "model"},
+		{"cbt", "coverage", "testnet", "model", "--at", "-1"},
+	} {
+		// Fail before making a request; a list invocation keeps text errors.
+		stdout, stderr, code := runCLIProcess(t, append(args, "--log-level", "invalid")...)
+		assert.Equal(t, 1, code)
+		assert.Empty(t, stdout)
+		assert.Contains(t, stderr, "Error:")
+	}
+	for _, args := range [][]string{
+		{"cbt", "external", "testnet", "model"},
+		{"cbt", "coverage", "testnet", "model", "--at", "0"},
+		{"cbt", "coverage", "testnet", "model", "--at", "invalid"},
+	} {
+		stdout, stderr, code := runCLIProcess(t, append(args, "--log-level", "invalid")...)
+		assert.Equal(t, 1, code)
+		assert.Empty(t, stderr)
+		var payload map[string]any
+		require.NoError(t, json.Unmarshal([]byte(stdout), &payload))
+		assert.NotEmpty(t, payload["error"])
+	}
+}
+
+func TestMachineOutputRejectsMalformedUpstreamJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`<html>upstream unavailable</html>`))
+	}))
+	defer server.Close()
+	config := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(config, []byte("server:\n  url: "+server.URL+"\n"), 0o600))
+	stdout, stderr, code := runCLIProcess(t, "--config", config, "dora", "validator", "testnet", "1")
+	assert.Equal(t, 1, code)
+	assert.Empty(t, stderr)
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal([]byte(stdout), &payload))
+	assert.Contains(t, payload["error"], "decoding JSON response")
 }
