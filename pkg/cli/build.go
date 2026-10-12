@@ -106,14 +106,17 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	if resp.RunID == 0 {
 		// Trigger succeeded but we couldn't find the run ID.
 		// Fall back to non-wait output.
-		fmt.Fprintf(os.Stderr, "Build triggered but run ID not available, cannot wait for completion\n")
+		if !isJSON() {
+			fmt.Fprintf(os.Stderr, "Build triggered but run ID not available, cannot wait for completion\n")
+		}
 		return printBuildTriggered(resp)
 	}
 
-	fmt.Fprintf(os.Stderr, "Build triggered for %s (run %d), waiting for completion...\n", resp.Client, resp.RunID)
-
-	if resp.RunURL != "" {
-		fmt.Fprintf(os.Stderr, "  url: %s\n", resp.RunURL)
+	if !isJSON() {
+		fmt.Fprintf(os.Stderr, "Build triggered for %s (run %d), waiting for completion...\n", resp.Client, resp.RunID)
+		if resp.RunURL != "" {
+			fmt.Fprintf(os.Stderr, "  url: %s\n", resp.RunURL)
+		}
 	}
 
 	result, err := pollBuildStatus(ctx, resp.RunID)
@@ -235,7 +238,9 @@ func pollBuildStatus(ctx context.Context, runID int64) (*serverapi.BuildStatusRe
 		case <-ticker.C:
 			status, err := getBuildStatus(ctx, runID)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "  (status check failed: %v, retrying...)\n", err)
+				if !isJSON() {
+					fmt.Fprintf(os.Stderr, "  (status check failed: %v, retrying...)\n", err)
+				}
 				continue
 			}
 
@@ -243,7 +248,9 @@ func pollBuildStatus(ctx context.Context, runID int64) (*serverapi.BuildStatusRe
 				return status, nil
 			}
 
-			fmt.Fprintf(os.Stderr, "  status: %s\n", status.Status)
+			if !isJSON() {
+				fmt.Fprintf(os.Stderr, "  status: %s\n", status.Status)
+			}
 		}
 	}
 }

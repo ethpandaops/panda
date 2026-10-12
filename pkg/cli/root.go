@@ -5,8 +5,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/ethpandaops/panda/internal/github"
 	"github.com/ethpandaops/panda/internal/version"
@@ -66,7 +69,10 @@ var skipUpdateCheckCommands = map[string]bool{
 // alwaysJSONCommands emit JSON regardless of --output, so they are machine
 // surfaces even without the flag.
 var alwaysJSONCommands = map[string]bool{
-	"query-raw": true,
+	"panda clickhouse query-raw": true,
+	"panda evm faucet":           true,
+	"panda evm faucet-status":    true,
+	"panda evm wallet":           true,
 }
 
 // machineOutput reports whether this run's stdout is a JSON document destined
@@ -96,15 +102,7 @@ var rootCmd = &cobra.Command{
 			outputFormat = "json"
 		}
 
-		machineOutput = isJSON() || alwaysJSONCommands[cmd.Name()]
-		if machineOutput {
-			// Execute renders the error as JSON on stdout instead. Reached
-			// via cmd, not rootCmd, which cannot be named inside its own
-			// initializer.
-			cmd.Root().SilenceErrors = true
-		}
-
-		if shouldCheckForUpdate(cmd) {
+		if !machineOutput && shouldCheckForUpdate(cmd) {
 			go backgroundUpdateCheck()
 		}
 
@@ -119,7 +117,8 @@ var rootCmd = &cobra.Command{
 
 		return nil
 	},
-	SilenceUsage: true,
+	SilenceUsage:  true,
+	SilenceErrors: true,
 }
 
 // Execute runs the root command and translates its error into a process
@@ -139,9 +138,11 @@ func Execute() {
 	// break the parse it is meant to protect, so the exit code speaks alone.
 	if machineOutput && !isExitCode {
 		_ = printJSON(map[string]any{"error": err.Error()})
+	} else if !machineOutput {
+		fmt.Fprintln(os.Stderr, "Error:", err)
 	}
 
-	if hint := unknownCommandHint(err); hint != "" {
+	if hint := unknownCommandHint(err); !machineOutput && hint != "" {
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintln(os.Stderr, hint)
 	}
@@ -162,8 +163,41 @@ func executeWithSignals() error {
 	// Once: wrapping is not idempotent, and every command is registered by
 	// now (subcommand init() order is not guaranteed relative to this file's).
 	attachUsageOnce.Do(func() { attachUsageToArgErrors(rootCmd) })
+	machineOutput = commandUsesJSON(rootCmd, os.Args[1:])
 
 	return rootCmd.ExecuteContext(ctx)
+}
+
+// commandUsesJSON runs before Cobra's validation and pre-run hooks, so even
+// syntax errors follow the requested output format. Parse independent flag
+// values to avoid changing command state or consuming repeatable flags twice.
+func commandUsesJSON(root *cobra.Command, args []string) bool {
+	cmd, _, _ := root.Find(args)
+	if cmd == nil {
+		cmd = root
+	}
+	if alwaysJSONCommands[cmd.CommandPath()] {
+		return true
+	}
+
+	flags := pflag.NewFlagSet("output-mode", pflag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	flags.ParseErrorsAllowlist.UnknownFlags = true
+	copyFlag := func(flag *pflag.Flag) {
+		if flags.Lookup(flag.Name) != nil {
+			return
+		}
+		flags.StringP(flag.Name, flag.Shorthand, flag.DefValue, "")
+		flags.Lookup(flag.Name).NoOptDefVal = flag.NoOptDefVal
+	}
+	cmd.Flags().VisitAll(copyFlag)
+	cmd.InheritedFlags().VisitAll(copyFlag)
+	_ = flags.Parse(args)
+
+	format, _ := flags.GetString("output")
+	jsonFlag, _ := flags.GetString("json")
+	jsonOutput, _ := strconv.ParseBool(jsonFlag)
+	return format == "json" || jsonOutput
 }
 
 var attachUsageOnce sync.Once

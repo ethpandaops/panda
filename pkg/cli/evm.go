@@ -63,7 +63,9 @@ Jobs do not survive a local server restart. --no-wait returns immediately.`,
 			if !ok || id == "" {
 				return fmt.Errorf("faucet returned no job_id")
 			}
-			fmt.Fprintf(os.Stderr, "Faucet job: %s; recover with panda evm faucet-status %s --wait\n", id, id)
+			if !machineOutput {
+				fmt.Fprintf(os.Stderr, "Faucet job: %s; recover with panda evm faucet-status %s --wait\n", id, id)
+			}
 			return waitFaucetJob(cmd.Context(), id, waitTimeout)
 		},
 	}
@@ -122,6 +124,9 @@ func waitFaucetJob(parent context.Context, id string, timeout time.Duration) err
 		if job["state"] == "failed" || job["terminal"] == true {
 			if err := printJSON(job); err != nil {
 				return err
+			}
+			if machineOutput {
+				return &exitCodeError{code: 1}
 			}
 			return fmt.Errorf("job %s ended without confirmation: %v; check the original balance/receipt before retrying", id, job["error"])
 		}
