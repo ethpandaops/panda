@@ -82,9 +82,13 @@ Examples:
 }
 
 var clickhouseQueryRawCmd = &cobra.Command{
-	Use:   "query-raw <datasource> <sql>",
-	Short: "Execute a SQL query and return raw rows (always JSON)",
+	Annotations: map[string]string{commandOutputAnnotation: "json"},
+	Use:         "query-raw <datasource> <sql>",
+	Short:       "Execute a SQL query and return raw rows (always JSON)",
 	Long: `Execute a SQL query and return raw rows as JSON.
+
+Failures are also JSON on stdout ({"error": ...}, exit code 1), so piping into
+a JSON parser surfaces the real error instead of a parse failure.
 
 Keep result sets bounded: aggregate in SQL or add a LIMIT when inspecting rows.
 For cross-source analysis, run separate bounded queries and combine them with

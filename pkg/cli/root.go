@@ -5,14 +5,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/ethpandaops/panda/internal/github"
 	"github.com/ethpandaops/panda/internal/version"
@@ -62,6 +66,21 @@ var skipUpdateCheckCommands = map[string]bool{
 	"help":       true,
 }
 
+// Output annotations live with each command's renderer. Some commands emit
+// JSON only for a detail argument or a nonnegative position flag.
+const (
+	commandOutputAnnotation  = "panda.output"
+	jsonOutputArgsAnnotation = "panda.json-min-args"
+	jsonOutputFlagAnnotation = "panda.json-nonnegative-flag"
+)
+
+// machineOutput reports whether this run's stdout is a JSON document destined
+// for a parser. In that mode the CLI owns error rendering: stdout carries
+// exactly one JSON document, stderr stays empty, and the exit code conveys
+// failure — consumers routinely merge stderr into the pipe, where an
+// "Error:" line or an update notice would corrupt the parse.
+var machineOutput bool
+
 var rootCmd = &cobra.Command{
 	Use:     "panda",
 	Short:   "Ethereum network analytics CLI",
@@ -82,14 +101,14 @@ var rootCmd = &cobra.Command{
 			outputFormat = "json"
 		}
 
-		if shouldCheckForUpdate(cmd) {
+		if !machineOutput && shouldCheckForUpdate(cmd) {
 			go backgroundUpdateCheck()
 		}
 
 		return nil
 	},
 	PersistentPostRunE: func(cmd *cobra.Command, _ []string) error {
-		if !shouldCheckForUpdate(cmd) {
+		if machineOutput || !shouldCheckForUpdate(cmd) {
 			return nil
 		}
 
@@ -97,7 +116,8 @@ var rootCmd = &cobra.Command{
 
 		return nil
 	},
-	SilenceUsage: true,
+	SilenceUsage:  true,
+	SilenceErrors: true,
 }
 
 // Execute runs the root command and translates its error into a process
@@ -108,13 +128,25 @@ func Execute() {
 		return
 	}
 
-	if hint := unknownCommandHint(err); hint != "" {
+	var exitErr *exitCodeError
+	isExitCode := errors.As(err, &exitErr)
+
+	// In machine mode cobra's stderr line is suppressed, so render the failure
+	// here. An exitCodeError means the command already wrote its own JSON
+	// payload and is only reporting the outcome — a second document would
+	// break the parse it is meant to protect, so the exit code speaks alone.
+	if machineOutput && !isExitCode {
+		_ = printJSON(map[string]any{"error": err.Error()})
+	} else if !machineOutput {
+		fmt.Fprintln(os.Stderr, "Error:", err)
+	}
+
+	if hint := unknownCommandHint(err); !machineOutput && hint != "" {
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintln(os.Stderr, hint)
 	}
 
-	var exitErr *exitCodeError
-	if errors.As(err, &exitErr) {
+	if isExitCode {
 		os.Exit(exitErr.code)
 	}
 
@@ -127,7 +159,78 @@ func executeWithSignals() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// Once: wrapping is not idempotent, and every command is registered by
+	// now (subcommand init() order is not guaranteed relative to this file's).
+	attachUsageOnce.Do(func() { attachUsageToArgErrors(rootCmd) })
+	machineOutput = commandUsesJSON(rootCmd, os.Args[1:])
+
 	return rootCmd.ExecuteContext(ctx)
+}
+
+// commandUsesJSON runs before Cobra's validation and pre-run hooks, so even
+// syntax errors follow the requested output format. Parse independent flag
+// values to avoid changing command state or consuming repeatable flags twice.
+func commandUsesJSON(root *cobra.Command, args []string) bool {
+	cmd, commandArgs, _ := root.Find(args)
+	if cmd == nil {
+		cmd = root
+	}
+	if cmd.Annotations[commandOutputAnnotation] == "json" {
+		return true
+	}
+
+	flags := pflag.NewFlagSet("output-mode", pflag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	flags.ParseErrorsAllowlist.UnknownFlags = true
+	copyFlag := func(flag *pflag.Flag) {
+		if flags.Lookup(flag.Name) != nil {
+			return
+		}
+		flags.StringP(flag.Name, flag.Shorthand, flag.DefValue, "")
+		flags.Lookup(flag.Name).NoOptDefVal = flag.NoOptDefVal
+	}
+	cmd.Flags().VisitAll(copyFlag)
+	cmd.InheritedFlags().VisitAll(copyFlag)
+	_ = flags.Parse(commandArgs)
+
+	if minimum, err := strconv.Atoi(cmd.Annotations[jsonOutputArgsAnnotation]); err == nil &&
+		minimum > 0 && len(flags.Args()) >= minimum {
+		return true
+	}
+	if name := cmd.Annotations[jsonOutputFlagAnnotation]; name != "" {
+		value, _ := flags.GetString(name)
+		position, err := strconv.ParseInt(value, 10, 64)
+		if (err == nil && position >= 0) || (err != nil && flags.Changed(name)) {
+			return true
+		}
+	}
+
+	format, _ := flags.GetString("output")
+	jsonFlag, _ := flags.GetString("json")
+	jsonOutput, _ := strconv.ParseBool(jsonFlag)
+	return format == "json" || jsonOutput
+}
+
+var attachUsageOnce sync.Once
+
+// attachUsageToArgErrors wraps every command's positional-arg validator so a
+// count/shape error carries the command's usage line. SilenceUsage hides the
+// usage block on runtime errors, which is right for HTTP failures but leaves
+// "accepts 1 arg(s), received 0" with no path to the correct invocation.
+func attachUsageToArgErrors(cmd *cobra.Command) {
+	if validate := cmd.Args; validate != nil {
+		cmd.Args = func(c *cobra.Command, args []string) error {
+			if err := validate(c, args); err != nil {
+				return fmt.Errorf("%w\n\nUsage: %s", err, c.UseLine())
+			}
+
+			return nil
+		}
+	}
+
+	for _, sub := range cmd.Commands() {
+		attachUsageToArgErrors(sub)
+	}
 }
 
 func unknownCommandHint(err error) string {
@@ -140,6 +243,16 @@ func unknownCommandHint(err error) string {
 
 func init() {
 	rootCmd.SetVersionTemplate("panda version {{.Version}}\n")
+
+	// SilenceUsage suppresses the usage block everywhere, so a flag typo
+	// would otherwise surface as a bare "unknown flag" with no correction
+	// path. Attach the one-line usage to the error itself.
+	rootCmd.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
+		return fmt.Errorf(
+			"%w\n\nUsage: %s\nRun '%s --help' for available flags",
+			err, cmd.UseLine(), cmd.CommandPath(),
+		)
+	})
 
 	rootCmd.AddGroup(
 		&cobra.Group{ID: groupWorkflow, Title: "Workflow:"},

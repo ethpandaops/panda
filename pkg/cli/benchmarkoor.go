@@ -178,9 +178,10 @@ var benchmarkoorRunsCmd = &cobra.Command{
 }
 
 var benchmarkoorRunCmd = &cobra.Command{
-	Use:   "run <run_id>",
-	Short: "Get one benchmark run with per-step stats (always JSON)",
-	Args:  cobra.ExactArgs(1),
+	Annotations: map[string]string{commandOutputAnnotation: "json"},
+	Use:         "run <run_id>",
+	Short:       "Get one benchmark run with per-step stats (always JSON)",
+	Args:        cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		opArgs := map[string]any{"run_id": args[0]}
 		setIfNotEmpty(opArgs, "datasource", benchmarkoorDatasource)
@@ -225,9 +226,10 @@ var benchmarkoorSuitesCmd = &cobra.Command{
 }
 
 var benchmarkoorSuiteStatsCmd = &cobra.Command{
-	Use:   "suite-stats <suite_hash>",
-	Short: "Per-test duration/gas history for a suite across clients (always JSON)",
-	Args:  cobra.ExactArgs(1),
+	Annotations: map[string]string{commandOutputAnnotation: "json"},
+	Use:         "suite-stats <suite_hash>",
+	Short:       "Per-test duration/gas history for a suite across clients (always JSON)",
+	Args:        cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		opArgs := map[string]any{"suite_hash": args[0]}
 		setIfNotEmpty(opArgs, "datasource", benchmarkoorDatasource)

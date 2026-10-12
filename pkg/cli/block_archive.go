@@ -79,9 +79,10 @@ Use --out to write the bytes to a local file; otherwise bytes are written to std
 }
 
 var blockArchiveGetCmd = &cobra.Command{
-	Use:   "get <network> <slot> <block-root>",
-	Short: "Get the decoded JSON SignedBeaconBlock (always JSON)",
-	Args:  cobra.ExactArgs(3),
+	Annotations: map[string]string{commandOutputAnnotation: "json"},
+	Use:         "get <network> <slot> <block-root>",
+	Short:       "Get the decoded JSON SignedBeaconBlock (always JSON)",
+	Args:        cobra.ExactArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		response, err := runServerOperationRaw(cmd, "block_archive.get_block_json", map[string]any{
 			"network":    args[0],

@@ -98,6 +98,7 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 				"list_networks":        {Signature: "list_networks() -> list[dict]", Description: "List networks with Dora explorers"},
 				"get_base_url":         {Signature: "get_base_url(network) -> str", Description: "Get Dora base URL for a network"},
 				"get_network_overview": {Signature: "get_network_overview(network) -> dict", Description: "Get current and finalized epoch, slot, finality status (finalizing), validator counts, and participation when Dora provides it"},
+				"get_clients":          {Signature: "get_clients(network) -> list[dict]", Description: "List client nodes tracked by Dora; client_name is the ethnode instance label, status is online/offline"},
 				"get_validator":        {Signature: "get_validator(network, index_or_pubkey) -> dict", Description: "Get validator by index or pubkey"},
 				"get_validators":       {Signature: "get_validators(network, status=None, limit=100) -> list", Description: "List validators with optional filter"},
 				"get_slot":             {Signature: "get_slot(network, slot_or_hash) -> dict", Description: "Get slot by number or hash"},

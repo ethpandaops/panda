@@ -18,7 +18,8 @@ func init() {
 	var noWait bool
 	var waitTimeout time.Duration
 	claim := &cobra.Command{
-		Use: "faucet <network> <address>", Short: "Start or recover a claim; wait for a successful receipt",
+		Annotations: map[string]string{commandOutputAnnotation: "json"},
+		Use:         "faucet <network> <address>", Short: "Start or recover a claim; wait for a successful receipt",
 		Long: `Fund a previously saved wallet through a bounded server-owned job.
 Discover network IDs with 'panda ethnode networks'. The faucet needs the
 address only. Save the wallet before funding. Interrupting this CLI wait
@@ -63,7 +64,9 @@ Jobs do not survive a local server restart. --no-wait returns immediately.`,
 			if !ok || id == "" {
 				return fmt.Errorf("faucet returned no job_id")
 			}
-			fmt.Fprintf(os.Stderr, "Faucet job: %s; recover with panda evm faucet-status %s --wait\n", id, id)
+			if !machineOutput {
+				fmt.Fprintf(os.Stderr, "Faucet job: %s; recover with panda evm faucet-status %s --wait\n", id, id)
+			}
 			return waitFaucetJob(cmd.Context(), id, waitTimeout)
 		},
 	}
@@ -76,7 +79,8 @@ Jobs do not survive a local server restart. --no-wait returns immediately.`,
 	var wait bool
 	var statusWaitTimeout time.Duration
 	status := &cobra.Command{
-		Use: "faucet-status <job-id>", Short: "Read claim progress or wait for receipt confirmation", Args: cobra.ExactArgs(1),
+		Annotations: map[string]string{commandOutputAnnotation: "json"},
+		Use:         "faucet-status <job-id>", Short: "Read claim progress or wait for receipt confirmation", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if wait {
 				return waitFaucetJob(cmd.Context(), args[0], statusWaitTimeout)
@@ -122,6 +126,9 @@ func waitFaucetJob(parent context.Context, id string, timeout time.Duration) err
 		if job["state"] == "failed" || job["terminal"] == true {
 			if err := printJSON(job); err != nil {
 				return err
+			}
+			if machineOutput {
+				return &exitCodeError{code: 1}
 			}
 			return fmt.Errorf("job %s ended without confirmation: %v; check the original balance/receipt before retrying", id, job["error"])
 		}

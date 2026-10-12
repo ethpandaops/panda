@@ -134,9 +134,10 @@ var cbtModelsCmd = &cobra.Command{
 }
 
 var cbtExternalCmd = &cobra.Command{
-	Use:   "external <network> [id]",
-	Short: "List external source models, or get one by ID (detail is always JSON)",
-	Args:  cobra.RangeArgs(1, 2),
+	Annotations: map[string]string{jsonOutputArgsAnnotation: "2"},
+	Use:         "external <network> [id]",
+	Short:       "List external source models, or get one by ID (detail is always JSON)",
+	Args:        cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) == 2 {
 			response, err := runServerOperationRaw(cmd, "cbt.get_external_model", map[string]any{
@@ -258,9 +259,10 @@ var cbtTransformationsCmd = &cobra.Command{
 }
 
 var cbtTransformationCmd = &cobra.Command{
-	Use:   "transformation <network> <id>",
-	Short: "Get a transformation's definition: SQL, schedules, dependencies (always JSON)",
-	Args:  cobra.ExactArgs(2),
+	Annotations: map[string]string{commandOutputAnnotation: "json"},
+	Use:         "transformation <network> <id>",
+	Short:       "Get a transformation's definition: SQL, schedules, dependencies (always JSON)",
+	Args:        cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		response, err := runServerOperationRaw(cmd, "cbt.get_transformation", map[string]any{
 			"network": args[0],
@@ -275,9 +277,10 @@ var cbtTransformationCmd = &cobra.Command{
 }
 
 var cbtCoverageCmd = &cobra.Command{
-	Use:   "coverage <network> [id]",
-	Short: "Show processed (position, interval) ranges for transformations",
-	Args:  cobra.RangeArgs(1, 2),
+	Annotations: map[string]string{jsonOutputFlagAnnotation: "at"},
+	Use:         "coverage <network> [id]",
+	Short:       "Show processed (position, interval) ranges for transformations",
+	Args:        cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if cbtCoverageAt >= 0 {
 			if len(args) != 2 {
@@ -389,9 +392,10 @@ var cbtRunsCmd = &cobra.Command{
 }
 
 var cbtIntervalsCmd = &cobra.Command{
-	Use:   "intervals <network>",
-	Short: "Show interval type definitions mapping positions to human units (always JSON)",
-	Args:  cobra.ExactArgs(1),
+	Annotations: map[string]string{commandOutputAnnotation: "json"},
+	Use:         "intervals <network>",
+	Short:       "Show interval type definitions mapping positions to human units (always JSON)",
+	Args:        cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		response, err := runServerOperationRaw(cmd, "cbt.get_interval_types", map[string]any{
 			"network": args[0],

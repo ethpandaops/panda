@@ -233,6 +233,20 @@ func decodeAPIError(status int, data []byte) error {
 }
 
 func serverErrorHint(status int, message string) string {
+	const datasetHint = "datasets are knowledge-pack IDs, not datasource names; list valid datasets with 'panda datasets'. Use 'panda datasources' for datasource names and 'panda schema <cluster>' for ClickHouse table discovery"
+	normalized := strings.ToLower(message)
+	filterMessage := strings.TrimPrefix(normalized, "search failed: ")
+	// Classify filters before inspecting caller-controlled values for other
+	// error signatures. Dataset errors retain their discovery guidance.
+	if strings.HasPrefix(filterMessage, "unknown dataset:") {
+		return datasetHint
+	}
+	for _, prefix := range []string{"unknown category:", "unknown tag:", "unknown fork:", "unknown status:", "unknown type:"} {
+		if strings.HasPrefix(filterMessage, prefix) {
+			return ""
+		}
+	}
+
 	// Error classification is the ClickHouse module's knowledge; the CLI only
 	// owns the command-idiom wording per class.
 	switch clickhousemodule.ClassifyQueryError(message) {
@@ -261,7 +275,6 @@ func serverErrorHint(status int, message string) string {
 	case clickhousemodule.QueryErrorUnknown:
 	}
 
-	normalized := strings.ToLower(message)
 	if strings.Contains(normalized, "clickhouse://tables/") &&
 		strings.Contains(normalized, "invalid identifier") {
 		return "schema resource paths use concrete ClickHouse identifiers in /<cluster>/<database>/<table>; dataset names, placeholders, and SQL clauses are not identifiers. Read 'panda datasets <name>' for placement/syntax, then substitute concrete names"
@@ -274,11 +287,30 @@ func serverErrorHint(status int, message string) string {
 	}
 
 	if strings.Contains(normalized, "unknown dataset") {
-		return "datasets are knowledge-pack IDs, not datasource names; list valid datasets with 'panda datasets'. Use 'panda datasources' for datasource names and 'panda schema <cluster>' for ClickHouse table discovery"
+		return datasetHint
 	}
 
 	if strings.Contains(normalized, "prometheus datasource") && strings.Contains(normalized, "not found") {
 		return "the first Prometheus argument must be a live datasource name; list them with 'panda prometheus list-datasources' or 'panda datasources --type prometheus'"
+	}
+
+	if strings.Contains(normalized, "embedding query") || strings.Contains(normalized, "calling proxy embed") {
+		return "semantic search could not reach its embedding upstream; the query is fine — retry shortly, and if it persists check proxy connectivity with 'panda auth status'"
+	}
+
+	if strings.Contains(normalized, "index not ready") || strings.Contains(normalized, "search index not available") {
+		return "the semantic search index is not serving yet (still warming after server start, or never activated because the proxy advertises no embedding model); the query is fine — retry, then check 'panda datasources'"
+	}
+
+	// A JSON-RPC error rode back on a healthy node connection: the node
+	// processed and rejected the request. Its message determines whether
+	// it is a capability gap, a bad request, or a transient node condition.
+	if strings.Contains(message, "JSON-RPC error -32601") {
+		return "the node answered but does not expose this RPC method; that is a capability gap of this client, not an outage — try another instance or client instead of retrying"
+	}
+
+	if strings.Contains(message, "JSON-RPC error ") {
+		return "the node processed the request and rejected it; inspect the message and any (data: ...) payload for its reason. Unsupported methods, invalid params, and reverts require a changed request; retry only for a transient condition such as a node rate limit"
 	}
 
 	switch status {

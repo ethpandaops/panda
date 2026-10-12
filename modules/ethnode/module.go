@@ -98,6 +98,7 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 				// Discovery functions.
 				"list_datasources": {Signature: "list_datasources() -> list[dict]", Description: "List available ethnode datasources"},
 				"list_networks":    {Signature: "list_networks() -> list[dict]", Description: "List active network ids reachable for direct node access. Use instance='lb' for the load-balanced endpoint."},
+				"list_instances":   {Signature: "list_instances(network) -> list[dict]", Description: "List per-node instance labels (name, status) for a network via its Dora explorer; pass name as the instance argument of other ethnode calls"},
 				// Beacon node (CL) functions.
 				"get_node_version":         {Signature: "get_node_version(network, instance) -> dict", Description: "Get beacon node software version"},
 				"get_node_syncing":         {Signature: "get_node_syncing(network, instance) -> dict", Description: "Get beacon node sync status"},

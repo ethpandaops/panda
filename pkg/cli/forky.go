@@ -240,9 +240,10 @@ var forkyFramesCmd = &cobra.Command{
 }
 
 var forkyFrameCmd = &cobra.Command{
-	Use:   "frame <network> <frame-id>",
-	Short: "Get a full fork-choice frame by ID (always JSON)",
-	Args:  cobra.ExactArgs(2),
+	Annotations: map[string]string{commandOutputAnnotation: "json"},
+	Use:         "frame <network> <frame-id>",
+	Short:       "Get a full fork-choice frame by ID (always JSON)",
+	Args:        cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		response, err := runServerOperationRaw(cmd, "forky.get_frame", map[string]any{
 			"network":  args[0],

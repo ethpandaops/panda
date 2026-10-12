@@ -106,6 +106,21 @@ func TestServerErrorHintUsesExistingResourcesCommand(t *testing.T) {
 	assert.NotContains(t, hint, "panda resources list")
 }
 
+func TestServerErrorHintClassifiesJSONRPCErrors(t *testing.T) {
+	// Method-not-found is a permanent capability gap of the client; the hint
+	// must steer away from the gateway-status "retry" framing, whatever the
+	// HTTP status an old or new server wrapped it in.
+	for _, status := range []int{http.StatusBadRequest, http.StatusBadGateway} {
+		hint := serverErrorHint(status, "JSON-RPC error -32601: the method debug_chainConfig does not exist/is not available")
+		assert.Contains(t, hint, "capability gap")
+		assert.NotContains(t, hint, "temporarily unreachable")
+	}
+
+	hint := serverErrorHint(http.StatusBadRequest, "JSON-RPC error -32000: execution reverted (data: 0x08c379a0)")
+	assert.Contains(t, hint, "rejected it")
+	assert.Contains(t, hint, "(data: ...)")
+}
+
 func TestServerErrorHintClassifiesClickHouseErrors(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -233,4 +248,33 @@ func testCommand() *cobra.Command {
 	cmd.SetContext(context.Background())
 
 	return cmd
+}
+
+func TestSearchFilterValuesDoNotReceiveRetryHints(t *testing.T) {
+	t.Parallel()
+	for _, filter := range []string{"category", "tag", "fork", "status", "type", "dataset"} {
+		for _, value := range []string{
+			"embedding query", "calling proxy embed", "index not ready", "search index not available",
+			"unknown dataset", "prometheus datasource not found", "UNKNOWN_TABLE", "JSON-RPC error -32601",
+		} {
+			for _, prefix := range []string{"", "search failed: "} {
+				message := fmt.Sprintf("%sunknown %s: %q. Available values: valid", prefix, filter, value)
+				hint := serverErrorHint(http.StatusBadRequest, message)
+				if filter == "dataset" {
+					assert.Contains(t, hint, "list valid datasets with 'panda datasets'", message)
+				} else {
+					assert.Empty(t, hint, message)
+				}
+			}
+		}
+	}
+	assert.Contains(t, serverErrorHint(http.StatusNotFound, "unknown operation: missing"), "panda resources")
+}
+
+func TestJSONRPCHintDoesNotTreatEveryNodeErrorAsPermanent(t *testing.T) {
+	t.Parallel()
+	hint := serverErrorHint(http.StatusBadRequest, "JSON-RPC error -32005: rate limit exceeded")
+	assert.Contains(t, hint, "retry only for a transient condition")
+	assert.NotContains(t, hint, "rather than retrying unchanged")
+	assert.NotContains(t, hint, "temporarily unreachable")
 }

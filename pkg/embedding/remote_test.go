@@ -5,10 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
@@ -625,4 +628,83 @@ func TestRemoteEmbedder_V1IgnoresSpaceEcho(t *testing.T) {
 	vec, err := embedder.Embed("hello")
 	require.NoError(t, err)
 	assert.Equal(t, []float32{1, 0}, vec)
+}
+
+// TestRemoteEmbedder_HonorsPerCallDeadline pins the timeout routing: each
+// embed path is bounded by the deadline it was handed, so an index build that
+// happens to embed exactly one document (the warm-rebuild case) is not
+// clamped to the much tighter interactive-query deadline.
+func TestRemoteEmbedder_HonorsPerCallDeadline(t *testing.T) {
+	t.Parallel()
+
+	const upstreamLatency = 300 * time.Millisecond
+
+	srv := newMockProxy(t, func(w http.ResponseWriter, r *http.Request) {
+		var req embedRequest
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+
+		time.Sleep(upstreamLatency)
+
+		results := make([]embedResult, 0, len(req.Items))
+		for _, item := range req.Items {
+			results = append(results, embedResult{Hash: item.Hash, Vector: []float32{1}})
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(embedResponse{Dimensions: 8, Results: results})
+	}, nil)
+
+	embedder := NewRemote(logrus.New(), srv.URL, func() string { return "" }, nil, nil, "", 8, ProtocolV3)
+
+	assert.Less(t, queryEmbedTimeout, remoteEmbedTimeout,
+		"an interactive query must be bounded more tightly than an index build")
+
+	// A single-document build with a build-sized budget completes, even though
+	// it is one item — item count must not select the deadline.
+	vecs, err := embedder.embedAll([]string{"one document"}, taskDocument, 10*upstreamLatency)
+	require.NoError(t, err)
+	require.Len(t, vecs, 1)
+
+	// The caller's deadline is authoritative even for a one-item request: if
+	// the deadline were re-derived from item count, this single-item call
+	// would silently get the query budget and succeed instead of expiring.
+	start := time.Now()
+	_, err = embedder.embedAll([]string{"one document"}, taskDocument, upstreamLatency/6)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Less(t, time.Since(start), upstreamLatency)
+}
+
+type remoteRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f remoteRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func TestRemoteEmbedder_AuthRetrySharesDeadline(t *testing.T) {
+	t.Parallel()
+	var deadlines []time.Time
+	var invalidations int
+	embedder := NewRemote(logrus.New(), "https://proxy.example", nil,
+		func() { invalidations++ }, nil, "", 8, ProtocolV3)
+	embedder.httpClient.Transport = remoteRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		deadline, ok := req.Context().Deadline()
+		require.True(t, ok)
+		deadlines = append(deadlines, deadline)
+		status := http.StatusOK
+		if len(deadlines) == 1 {
+			status = http.StatusUnauthorized
+		}
+		return &http.Response{
+			StatusCode: status,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{}`)),
+		}, nil
+	})
+	status, _, err := embedder.doWithAuthRetry("/embed", []byte(`{}`), queryEmbedTimeout)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, status)
+	assert.Equal(t, 1, invalidations)
+	require.Len(t, deadlines, 2)
+	assert.Equal(t, deadlines[0], deadlines[1], "authentication must not restart the query's timeout budget")
 }

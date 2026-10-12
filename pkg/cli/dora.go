@@ -131,9 +131,10 @@ func formatDoraWarnings(value any) string {
 }
 
 var doraValidatorCmd = &cobra.Command{
-	Use:   "validator <network> <index-or-pubkey>",
-	Short: "Get validator details (always JSON)",
-	Args:  cobra.ExactArgs(2),
+	Annotations: map[string]string{commandOutputAnnotation: "json"},
+	Use:         "validator <network> <index-or-pubkey>",
+	Short:       "Get validator details (always JSON)",
+	Args:        cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		response, err := runServerOperationRaw(cmd, "dora.get_validator", map[string]any{
 			"network":         args[0],
@@ -148,9 +149,10 @@ var doraValidatorCmd = &cobra.Command{
 }
 
 var doraSlotCmd = &cobra.Command{
-	Use:   "slot <network> <slot-or-hash>",
-	Short: "Get slot details (always JSON)",
-	Args:  cobra.ExactArgs(2),
+	Annotations: map[string]string{commandOutputAnnotation: "json"},
+	Use:         "slot <network> <slot-or-hash>",
+	Short:       "Get slot details (always JSON)",
+	Args:        cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		response, err := runServerOperationRaw(cmd, "dora.get_slot", map[string]any{
 			"network":      args[0],
@@ -165,8 +167,9 @@ var doraSlotCmd = &cobra.Command{
 }
 
 var doraEpochCmd = &cobra.Command{
-	Use:   "epoch <network> <epoch>",
-	Short: "Get epoch summary (always JSON)",
+	Annotations: map[string]string{commandOutputAnnotation: "json"},
+	Use:         "epoch <network> <epoch>",
+	Short:       "Get epoch summary (always JSON)",
 	Long: `Get the Dora summary for a single epoch (always JSON).
 
 The summary fields are nested under the top-level "data" key and use lowercase

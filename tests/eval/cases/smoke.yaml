@@ -153,7 +153,7 @@
         on the server.
 
   - id: evm_faucet_fund_throwaway_address                    # 💬 how do I get test ETH for an address
-    description: name the sandbox call that funds an address from a devnet's
+    description: name the panda call that funds an address from a devnet's
       agent faucet
     tags: [smoke, execution]
     input: "I need test ETH on a live glamsterdam devnet for a fresh throwaway
@@ -162,13 +162,18 @@
     assert:
       - type: llm-rubric
         value: >
-          Points at the sandbox EVM library: evm.faucet(network, address) from the
-          ethpandaops package (an `from ethpandaops import evm` style import), passing
-          the network id and the target address, and gets the throwaway address from
-          evm.wallet() rather than inventing one. Mentioning that the claim is mined
-          server-side and returns a transaction hash is a plus. Sending the user to a
-          faucet website, a browser flow, a WebSocket, or any API panda does not have
-          fails, as does answering with no concrete call.
+          Gives a concrete supported panda faucet call with a network id and the
+          target address. Accept either the sandbox Python library
+          (from ethpandaops import evm; evm.faucet(network, address), or
+          evm.faucet_start with evm.faucet_status) or the CLI
+          (panda evm faucet <network> <address>). Gets the throwaway address from
+          evm.wallet() or panda evm wallet --output-file <file>, rather than
+          inventing one, and saves the wallet before funding. The answer only
+          explains the workflow; it must not actually claim funds. Mentioning
+          server-side mining and checking the receipt or balance is a plus.
+          Sending the user to a faucet website, a browser flow, a WebSocket, or
+          any API panda does not have fails, as does answering with no concrete
+          call. A valid CLI answer must not fail just for omitting Python.
 
     variations:
       - How do I get test ETH onto a brand-new address on a live glamsterdam devnet using
