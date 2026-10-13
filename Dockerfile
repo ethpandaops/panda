@@ -9,7 +9,7 @@
 # =============================================================================
 # Stage 1: Go builder
 # =============================================================================
-FROM golang:1.26.9-bookworm@sha256:d9c68c2c51161e12fd77e4c6320687c9cd86e1af1e3ad6e6cd63ff970641453c AS builder
+FROM golang:1.27.0-bookworm@sha256:ded31c68586d2e49e760acc2e65a884b23d032e9bbbed0ae0c55abd3fcaf4452 AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git ca-certificates && \
