@@ -233,3 +233,62 @@ func TestServeFilePathTraversal(t *testing.T) {
 	svc.ServeFile(w, r, "../../etc/passwd")
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
+
+// breaksAfter is a reader that returns n bytes and then a fixed error,
+// simulating a source stream (a live sandbox HTTP body, in production) that
+// breaks partway through.
+type breaksAfter struct {
+	data []byte
+	err  error
+}
+
+func (r *breaksAfter) Read(p []byte) (int, error) {
+	if len(r.data) == 0 {
+		return 0, r.err
+	}
+
+	n := copy(p, r.data)
+	r.data = r.data[n:]
+
+	return n, nil
+}
+
+func TestUploadFailureLeavesPriorFileUntouched(t *testing.T) {
+	t.Parallel()
+
+	svc, fs := newTestService()
+
+	_, err := svc.Upload(Scope{ExecutionID: "exec-1"}, "output.txt", bytes.NewBufferString("the original good contents"))
+	require.NoError(t, err)
+
+	_, err = svc.Upload(Scope{ExecutionID: "exec-1"}, "output.txt", &breaksAfter{
+		data: []byte("partial"),
+		err:  assert.AnError,
+	})
+	require.Error(t, err)
+
+	contents, err := afero.ReadFile(fs, "/data/exec-1/output.txt")
+	require.NoError(t, err)
+	assert.Equal(t, "the original good contents", string(contents),
+		"a failed re-upload to the same key must not disturb the existing file")
+
+	files, err := svc.List(Scope{ExecutionID: "exec-1"}, "")
+	require.NoError(t, err)
+	require.Len(t, files, 1, "no leftover temp file should remain after a failed upload")
+}
+
+func TestUploadFailureOnNewKeyLeavesNoFile(t *testing.T) {
+	t.Parallel()
+
+	svc, _ := newTestService()
+
+	_, err := svc.Upload(Scope{ExecutionID: "exec-1"}, "output.txt", &breaksAfter{
+		data: []byte("partial"),
+		err:  assert.AnError,
+	})
+	require.Error(t, err)
+
+	files, err := svc.List(Scope{ExecutionID: "exec-1"}, "")
+	require.NoError(t, err)
+	assert.Empty(t, files, "a failed upload to a brand-new key should leave nothing behind")
+}
