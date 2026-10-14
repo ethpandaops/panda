@@ -744,7 +744,16 @@ func TestAutodiscoverReconcilesClickHouseDatasource(t *testing.T) {
 		t.Fatalf("/datasources ClickHouseInfo[0].Description = %q, want custom description", datasources.ClickHouseInfo[0].Description)
 	}
 
+	// A transient probe error must not remove a healthy datasource.
 	pingOK = false
+	srv.reconcileClickHouseAutodiscover(t.Context(), entry, &present)
+	if !present || !srv.clickhouseHandler.HasCluster("local-kurtosis") {
+		t.Fatal("expected datasource to survive a transient probe error")
+	}
+	pingOK = true
+
+	// A successful probe that reports the database absent removes it.
+	databaseExists = false
 	srv.reconcileClickHouseAutodiscover(t.Context(), entry, &present)
 	if present {
 		t.Fatal("expected datasource to become absent")
@@ -756,7 +765,7 @@ func TestAutodiscoverReconcilesClickHouseDatasource(t *testing.T) {
 		t.Fatalf("ClickHouseDatasourceInfo() after removal = %v, want empty", got)
 	}
 
-	pingOK = true
+	databaseExists = true
 	srv.reconcileClickHouseAutodiscover(t.Context(), entry, &present)
 	if !present {
 		t.Fatal("expected datasource to become present again")
