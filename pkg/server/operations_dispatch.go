@@ -24,6 +24,7 @@ func (s *service) dispatchOperation(operationID string, w http.ResponseWriter, r
 		s.handleBlockArchiveOperation,
 		s.handleNetworkOperation,
 		s.handleEVMOperation,
+		s.handleRolloorOperation,
 	} {
 		if handler(operationID, w, r) {
 			return true
