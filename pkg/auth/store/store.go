@@ -42,6 +42,12 @@ var ErrCredentialDowngrade = errors.New("refusing to overwrite a refreshable cre
 // lock wait. The caller should retry shortly rather than clobber the rotation.
 var ErrCredentialBusy = errors.New("credentials are being refreshed by another process; retry shortly")
 
+// ErrReauthRequired is returned once the provider has rejected the stored
+// refresh token as invalid_grant. With a rotating provider this is terminal:
+// no retry with the same token can succeed, so the store stops calling the
+// token endpoint until a new credential is written (e.g. `panda auth login`).
+var ErrReauthRequired = errors.New("re-authentication required: run 'panda auth login'")
+
 // Store manages local credential storage.
 type Store interface {
 	// Path returns the resolved credentials file path.
@@ -107,6 +113,13 @@ type store struct {
 	tokens       *client.Tokens
 	forceRefresh bool
 	refreshMu    sync.Mutex
+
+	// deadRefreshToken is the refresh token the provider last rejected with
+	// invalid_grant. While the on-disk credential still carries this token,
+	// refresh attempts fail fast with ErrReauthRequired instead of calling the
+	// token endpoint again; a credential written with any other refresh token
+	// clears it.
+	deadRefreshToken string
 }
 
 // New creates a new credential store.
@@ -247,6 +260,7 @@ func (s *store) writeTokens(tokens *client.Tokens) error {
 	}
 
 	s.tokens = tokens
+	s.deadRefreshToken = ""
 	s.log.Debug("Saved credentials")
 
 	return nil
@@ -294,6 +308,7 @@ func (s *store) Clear() error {
 	}
 
 	s.tokens = nil
+	s.deadRefreshToken = ""
 	s.log.Debug("Cleared credentials")
 
 	return nil
@@ -347,6 +362,33 @@ func (s *store) forceRefreshRequested() bool {
 	defer s.mu.RUnlock()
 
 	return s.forceRefresh
+}
+
+// deadRefreshTokenValue returns the refresh token last rejected as
+// invalid_grant, or "" when none is recorded.
+func (s *store) deadRefreshTokenValue() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.deadRefreshToken
+}
+
+// markDeadRefreshToken records a refresh token the provider rejected as
+// invalid_grant so later refresh attempts fail fast until a new credential
+// is written.
+func (s *store) markDeadRefreshToken(refreshToken string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.deadRefreshToken = refreshToken
+}
+
+// clearDeadRefreshToken forgets a recorded invalid_grant rejection.
+func (s *store) clearDeadRefreshToken() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.deadRefreshToken = ""
 }
 
 // clearForceRefresh clears the forced-refresh flag after a successful refresh.
@@ -486,6 +528,21 @@ func (s *store) refresh(prior *client.Tokens) (*client.Tokens, error) {
 		prior = reloaded
 	}
 
+	// A refresh token the provider already rejected as invalid_grant can never
+	// succeed again under rotation; fail fast without another token-endpoint
+	// call. Any different token on disk means a new credential landed (fresh
+	// login, or another process won the rotation), which supersedes the
+	// rejection.
+	if dead := s.deadRefreshTokenValue(); dead != "" {
+		if prior.RefreshToken == dead {
+			s.log.Debug("Refresh token was already rejected as invalid_grant; waiting for re-authentication")
+
+			return nil, ErrReauthRequired
+		}
+
+		s.clearDeadRefreshToken()
+	}
+
 	priorIssuedAt := prior.RefreshTokenIssuedAt
 
 	s.log.WithField("expires_at", prior.ExpiresAt.Format(time.RFC3339)).Debug("Refreshing access token")
@@ -493,14 +550,17 @@ func (s *store) refresh(prior *client.Tokens) (*client.Tokens, error) {
 	newTokens, err := s.cfg.AuthClient.Refresh(context.Background(), prior.RefreshToken)
 	if err != nil {
 		if isInvalidGrant(err) {
+			s.markDeadRefreshToken(prior.RefreshToken)
 			s.log.WithError(err).Warn(
-				"Refresh token rejected (invalid_grant); it was likely rotated by another " +
-					"refresher sharing these credentials, or revoked — re-authentication may be " +
+				"Refresh token rejected (invalid_grant); it was rotated by another " +
+					"refresher sharing these credentials, or revoked — re-authentication is " +
 					"required (panda auth login)",
 			)
-		} else {
-			s.log.WithError(err).Warn("Failed to refresh access token")
+
+			return nil, fmt.Errorf("%w: %v", ErrReauthRequired, err)
 		}
+
+		s.log.WithError(err).Warn("Failed to refresh access token")
 
 		return nil, fmt.Errorf("refreshing token: %w", err)
 	}
