@@ -436,7 +436,9 @@ func (b *DirectBackend) CreateSession(ctx context.Context, ownerID string, _ map
 		return "", fmt.Errorf("sessions are disabled")
 	}
 
-	canCreate, count, maxAllowed := b.sessionManager.CanCreateSession(ctx, ownerID)
+	canCreate, release, count, maxAllowed := b.sessionManager.ReserveSession(ctx, ownerID)
+	defer release()
+
 	if !canCreate {
 		return "", fmt.Errorf(
 			"maximum sessions limit reached (%d/%d). Use manage_session with operation 'list' to see sessions, then 'destroy' to free up a slot",
