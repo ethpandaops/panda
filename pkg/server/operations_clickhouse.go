@@ -1,10 +1,12 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/ethpandaops/panda/pkg/operations"
@@ -135,6 +137,10 @@ func formatClickHouseParamValue(value any) string {
 			return "1"
 		}
 		return "0"
+	case json.Number:
+		return v.String()
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64)
 	default:
 		return fmt.Sprint(v)
 	}
@@ -164,6 +170,10 @@ func formatClickHouseArrayLiteral(value any) string {
 		return "0"
 	case string:
 		return quoteClickHouseStringLiteral(v)
+	case json.Number:
+		return v.String()
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64)
 	default:
 		return fmt.Sprint(v)
 	}
