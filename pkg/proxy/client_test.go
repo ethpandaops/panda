@@ -96,6 +96,49 @@ func TestDiscoverNilOnDiscoverIsSafe(t *testing.T) {
 	}
 }
 
+// TestDiscoverRecoversFromOnDiscoverPanic verifies a panic inside the
+// OnDiscover hook (e.g. a bug in module activation reacting to a newly
+// discovered datasource) does not escape Discover and crash the process. The
+// client must stay usable for subsequent calls afterward.
+func TestDiscoverRecoversFromOnDiscoverPanic(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(DatasourcesResponse{})
+	}))
+	t.Cleanup(srv.Close)
+
+	log := logrus.New()
+	log.SetOutput(io.Discard)
+
+	var hookCalls atomic.Int32
+
+	client := NewClient(log, ClientConfig{
+		URL: srv.URL,
+		OnDiscover: func() {
+			hookCalls.Add(1)
+			panic("boom")
+		},
+	}).(*proxyClient)
+
+	if err := client.Discover(context.Background()); err != nil {
+		t.Fatalf("Discover error = %v", err)
+	}
+
+	if got := hookCalls.Load(); got != 1 {
+		t.Fatalf("hookCalls after first Discover = %d, want 1", got)
+	}
+
+	// A second Discover proves the client is still usable after the panic.
+	if err := client.Discover(context.Background()); err != nil {
+		t.Fatalf("second Discover error = %v", err)
+	}
+
+	if got := hookCalls.Load(); got != 2 {
+		t.Fatalf("hookCalls after second Discover = %d, want 2", got)
+	}
+}
+
 func TestDatasourceInfoIncludesProxyName(t *testing.T) {
 	t.Parallel()
 
