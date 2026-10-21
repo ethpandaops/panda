@@ -346,3 +346,15 @@ func TestUploadsHandlerDeleteRefusesObjectWithoutUploader(t *testing.T) {
 		t.Fatalf("delete legacy object: status = %d, want 403", got)
 	}
 }
+
+func TestUploadsHandlerRepublishDoesNotAdoptOwnerlessObject(t *testing.T) {
+	h, backend := fakeS3UploadsHandler(t)
+	key := uploadAs(t, h, "alice", "<p>legacy</p>")
+	backend.objects["/test-bucket/"+key] = http.Header{}
+
+	uploadAs(t, h, "mallory", "<p>legacy</p>")
+
+	if got := deleteAs(h, "mallory", key); got != http.StatusForbidden {
+		t.Fatalf("delete after re-publishing ownerless object: status = %d, want 403", got)
+	}
+}

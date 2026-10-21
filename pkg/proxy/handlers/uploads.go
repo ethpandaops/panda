@@ -190,13 +190,11 @@ func (h *UploadsHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 
 	key := prefix + hex.EncodeToString(hasher.Sum(nil))[:6] + "/" + name
 
-	// Identical bytes map to the same key, so a re-publish must not hand
-	// ownership of someone else's object to the caller.
+	// Identical bytes map to the same key, so a re-publish keeps the existing
+	// owner — or lack of one: ownerless legacy objects must not be adoptable.
 	uploader := uploaderFrom(r.Context())
 	if info, err := h.client.StatObject(r.Context(), h.cfg.Bucket, key, minio.StatObjectOptions{}); err == nil {
-		if owner := info.UserMetadata[uploaderMetaKey]; owner != "" {
-			uploader = owner
-		}
+		uploader = info.UserMetadata[uploaderMetaKey]
 	} else if minio.ToErrorResponse(err).Code != "NoSuchKey" {
 		h.fail(w, http.StatusBadGateway, "checking object", err)
 		return
@@ -246,7 +244,8 @@ func (h *UploadsHandler) deletableKey(key string) bool {
 
 // handleDelete removes a single published object by ?key=. Only the identity
 // recorded at publish time may delete; objects without one are undeletable
-// and age out via the bucket lifecycle rule.
+// and age out via the bucket lifecycle rule. Identity is the token subject, so
+// callers sharing a service account (client_credentials) share ownership.
 func (h *UploadsHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	key := strings.TrimSpace(r.URL.Query().Get("key"))
 	if key == "" {

@@ -77,7 +77,9 @@ identical bytes dedup and every public URL is immutable.
   rule on the bucket (configured in the platform repo).
 - **Deletion** (`panda upload delete <url>`) is restricted to the original
   uploader (recorded as `x-amz-meta-uploader` at publish; objects without it
-  are undeletable) and is confirmed interactively unless `--yes` is passed.
+  are undeletable, including after a re-publish of the same bytes) and is
+  confirmed interactively unless `--yes` is passed. Ownership is the token
+  subject, so callers sharing a client_credentials service account share it.
   Publishing a new version never requires deleting the old one.
 
 ## Abuse guards
