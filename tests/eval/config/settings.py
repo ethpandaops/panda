@@ -28,15 +28,16 @@ DEFAULT_SUBJECT = f"{DEFAULT_AGENT_MODEL}:{DEFAULT_AGENT_ROUTE}"
 # group found". Add a second non-Claude model here when one is available — with a single
 # subject a harness change can pass by suiting one vendor.
 DEFAULT_SUBJECTS = [DEFAULT_SUBJECT]
-# Judge quality matters more than judge cost (~$0.003/grade): a flaky judge contaminates
-# the harden gates, so the judge must be a reliable rubric-follower AND family-distinct
-# from the subjects (a judge scoring its own family is a self-preference risk — that rules
-# out the subjects' own families here). qwen3.7-plus rides opencode-go rather than the
+# Judge quality matters more than judge cost: a flaky judge contaminates the harden
+# gates, so the judge must be a reliable rubric-follower AND family-distinct from the
+# subjects (a judge scoring its own family is a self-preference risk — that rules out the
+# subjects' own families here). The Qwen judge rides EF inference rather than the
 # subjects' proxy, which keeps judge and subject on separate gateways as well as separate
-# families — and it is the half of the eval that never broke; benched clean over 60 smoke grades,
-# where minimax-m3 and deepseek-v4-pro both emitted malformed rubric JSON (false
-# negatives) through this same path.
-DEFAULT_EVALUATOR_MODEL = "qwen3.7-plus"
+# families. qwen3.7-plus benched clean over 60 smoke grades on opencode-go, where
+# minimax-m3 and deepseek-v4-pro both emitted malformed rubric JSON (false negatives);
+# qwen3.8-27b on EF gave identical well-formed verdicts across three re-grades of a
+# smoke run.
+DEFAULT_EVALUATOR_MODEL = "ef/qwen3.8-27b"
 # The zen gateway is OpenAI-compatible; promptfoo grades through its generic
 # openai:chat driver pointed at this base URL.
 OPENCODE_ZEN_BASE_URL = "https://opencode.ai/zen/go/v1"
@@ -49,6 +50,12 @@ OPENCODE_JUDGE_SESSION = uuid.uuid4().hex
 LITELLM_PREFIX = "litellm/"
 LITELLM_URL_ENVAR = "LITELLM_PROXY_URL"
 LITELLM_KEY_ENVAR = "LITELLM_PROXY_API_KEY"
+# EF inference (inference.ethereum.foundation) is a LiteLLM proxy in front of vLLM.
+EF_PREFIX = "ef/"
+EF_INFERENCE_BASE_URL = "https://inference.ethereum.foundation/v1"
+EF_KEY_ENVAR = "EF_INFERENCE_API_KEY"
+# A rubric verdict needs no thinking; reasoning on only adds tokens and latency.
+EF_JUDGE_REASONING_EFFORT = "none"
 
 
 def litellm_base_url() -> str:
@@ -73,9 +80,23 @@ def grader_for(model: str) -> dict:
       The ``codex/`` prefix is stripped and the remainder is passed as the model id.
     - a ``litellm/<model>`` prefix grades through the LiteLLM proxy named by
       ``LITELLM_PROXY_URL``, authenticating with ``LITELLM_PROXY_API_KEY``.
+    - an ``ef/<model>`` prefix (e.g. ``ef/qwen3.8-27b``) grades through EF inference,
+      authenticating with ``EF_INFERENCE_API_KEY``, with reasoning off.
     - any other model name (e.g. ``qwen3.7-plus``) grades through the opencode-go zen gateway
       via promptfoo's generic ``openai:chat`` driver + the opencode-go API key.
     """
+    if model.startswith(EF_PREFIX):
+        spec = model[len(EF_PREFIX) :]
+        return {
+            "id": f"openai:chat:{spec}",
+            "label": f"judge:ef/{spec}",
+            "config": {
+                "apiBaseUrl": EF_INFERENCE_BASE_URL,
+                "apiKeyEnvar": EF_KEY_ENVAR,
+                # promptfoo only sends its own reasoning_effort for OpenAI reasoning models.
+                "passthrough": {"reasoning_effort": EF_JUDGE_REASONING_EFFORT},
+            },
+        }
     if model.startswith(LITELLM_PREFIX):
         spec = model[len(LITELLM_PREFIX) :]
         base = litellm_base_url()

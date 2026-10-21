@@ -1,6 +1,20 @@
 """grader_for routes judge specs to the right promptfoo grading provider."""
 
-from config.settings import CODEX_JUDGE_REASONING_EFFORT, grader_for
+from config.settings import CODEX_JUDGE_REASONING_EFFORT, DEFAULT_GRADER, grader_for
+
+
+def test_ef_prefix_uses_ef_inference_with_reasoning_off():
+    g = grader_for("ef/qwen3.8-27b")
+    assert g["id"] == "openai:chat:qwen3.8-27b"
+    assert g["label"] == "judge:ef/qwen3.8-27b"
+    assert g["config"]["apiBaseUrl"] == "https://inference.ethereum.foundation/v1"
+    assert g["config"]["apiKeyEnvar"] == "EF_INFERENCE_API_KEY"
+    # promptfoo drops a top-level reasoning_effort for non-OpenAI models; passthrough reaches the body.
+    assert g["config"]["passthrough"] == {"reasoning_effort": "none"}
+
+
+def test_default_judge_rides_ef_inference():
+    assert DEFAULT_GRADER == grader_for("ef/qwen3.8-27b")
 
 
 def test_bare_model_uses_opencode_go_gateway():

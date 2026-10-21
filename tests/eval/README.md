@@ -38,12 +38,16 @@ uv run python -m scripts.repl
 ```
 
 Required environment:
-- `OPENCODE_GO_API_KEY` — the agent subject (opencode-go provider).
-- `LITELLM_PROXY_URL` + `LITELLM_PROXY_API_KEY` — only for `litellm/<model>` subjects or
-  judges, which ride an OpenAI-compatible LiteLLM proxy instead of the zen gateway. Useful
-  when zen drops a model: `--subject litellm/starflinger-anthropic:cli`.
+- `LITELLM_PROXY_URL` + `LITELLM_PROXY_API_KEY` — the default subject
+  (`litellm/starflinger-anthropic:cli`) and any other `litellm/<model>` subject or judge,
+  which ride an OpenAI-compatible LiteLLM proxy instead of the zen gateway.
+- `EF_INFERENCE_API_KEY` — the default judge (`ef/qwen3.8-27b`).
+- `OPENCODE_GO_API_KEY` — only for `opencode-go/<model>` subjects or bare-name judges.
 - The promptfoo grader (`--judge-model`):
-  - a bare model name (default `qwen3.7-plus`) grades through the opencode-go zen gateway —
+  - an `ef/<model>` prefix (default `ef/qwen3.8-27b`) grades through EF inference
+    (`inference.ethereum.foundation`) with reasoning off, authenticating with
+    `EF_INFERENCE_API_KEY`.
+  - a bare model name (e.g. `qwen3.7-plus`) grades through the opencode-go zen gateway —
     `OPENCODE_GO_API_KEY` covers it.
   - a `litellm/<model>` prefix grades through the LiteLLM proxy at `LITELLM_PROXY_URL`,
     authenticating with `LITELLM_PROXY_API_KEY`.
