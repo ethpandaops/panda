@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -20,6 +21,22 @@ import (
 
 // DefaultMaxObjectBytes caps a single upload at 100 MiB.
 const DefaultMaxObjectBytes int64 = 100 << 20
+
+// uploaderMetaKey is the object metadata key (x-amz-meta-uploader) recording
+// who published an object; only that identity may delete it.
+const uploaderMetaKey = "Uploader"
+
+type uploaderContextKey struct{}
+
+// WithUploader stores the authenticated caller identity for the uploads route.
+func WithUploader(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, uploaderContextKey{}, id)
+}
+
+func uploaderFrom(ctx context.Context) string {
+	id, _ := ctx.Value(uploaderContextKey{}).(string)
+	return id
+}
 
 // UploadsConfig configures the R2 (S3-compatible) bucket backing the /uploads route.
 type UploadsConfig struct {
@@ -173,7 +190,20 @@ func (h *UploadsHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 
 	key := prefix + hex.EncodeToString(hasher.Sum(nil))[:6] + "/" + name
 
+	// Identical bytes map to the same key, so a re-publish keeps the existing
+	// owner — or lack of one: ownerless legacy objects must not be adoptable.
+	uploader := uploaderFrom(r.Context())
+	if info, err := h.client.StatObject(r.Context(), h.cfg.Bucket, key, minio.StatObjectOptions{}); err == nil {
+		uploader = info.UserMetadata[uploaderMetaKey]
+	} else if minio.ToErrorResponse(err).Code != "NoSuchKey" {
+		h.fail(w, http.StatusBadGateway, "checking object", err)
+		return
+	}
+
 	opts := minio.PutObjectOptions{ContentType: contentType}
+	if uploader != "" {
+		opts.UserMetadata = map[string]string{uploaderMetaKey: uploader}
+	}
 	// Types a browser would execute in the bucket origin (HTML, SVG, JS) are
 	// forced to download — defuses phishing/XSS on a public bucket while charts,
 	// PDFs and text render inline. The one exception is text/html when RenderHTML
@@ -212,7 +242,10 @@ func (h *UploadsHandler) deletableKey(key string) bool {
 	return h.cfg.TeamKeyPrefix != "" && strings.HasPrefix(key, h.cfg.TeamKeyPrefix)
 }
 
-// handleDelete removes a single published object by ?key=.
+// handleDelete removes a single published object by ?key=. Only the identity
+// recorded at publish time may delete; objects without one are undeletable
+// and age out via the bucket lifecycle rule. Identity is the token subject, so
+// callers sharing a service account (client_credentials) share ownership.
 func (h *UploadsHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	key := strings.TrimSpace(r.URL.Query().Get("key"))
 	if key == "" {
@@ -226,7 +259,8 @@ func (h *UploadsHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Distinguish "deleted" from "never existed" so the caller gets an honest 404.
-	if _, err := h.client.StatObject(r.Context(), h.cfg.Bucket, key, minio.StatObjectOptions{}); err != nil {
+	info, err := h.client.StatObject(r.Context(), h.cfg.Bucket, key, minio.StatObjectOptions{})
+	if err != nil {
 		if minio.ToErrorResponse(err).Code == "NoSuchKey" {
 			h.fail(w, http.StatusNotFound, "object not found", nil)
 			return
@@ -234,6 +268,12 @@ func (h *UploadsHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 
 		h.fail(w, http.StatusBadGateway, "checking object", err)
 
+		return
+	}
+
+	caller, owner := uploaderFrom(r.Context()), info.UserMetadata[uploaderMetaKey]
+	if caller == "" || caller != owner {
+		h.fail(w, http.StatusForbidden, "only the original uploader can delete this object", nil)
 		return
 	}
 

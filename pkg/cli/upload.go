@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 var (
@@ -21,6 +23,7 @@ var (
 	uploadPublic bool
 	uploadTeam   bool
 	uploadNoOpen bool
+	uploadDelYes bool
 )
 
 var uploadCmd = &cobra.Command{
@@ -167,13 +170,29 @@ func publishUpload(cmd *cobra.Command, id, visibility string) error {
 
 var uploadDeleteCmd = &cobra.Command{
 	Use:   "delete <url>...",
-	Short: "Delete published upload(s) by URL (requires proxy auth)",
-	Long: `Delete published upload(s). Takes the public URL (or object key) — knowing the
-URL is the capability: there is deliberately no way to list what others shared.`,
+	Short: "Permanently delete your published upload(s) by URL",
+	Long: `Permanently delete published upload(s) you published. Takes the public URL (or
+object key). Only the original uploader can delete an object, and each deletion
+is confirmed interactively unless --yes is given.
+
+Publishing a new version does not require deleting the old one: every publish
+gets its own URL, and links to the old version may already be shared.`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if !uploadDelYes && !term.IsTerminal(int(os.Stdin.Fd())) {
+			return fmt.Errorf("refusing to delete in a non-interactive session: deletion is permanent " +
+				"and breaks every shared link; run it from a terminal, or pass --yes only if the human owner asked for it")
+		}
+
+		in := bufio.NewScanner(cmd.InOrStdin())
+
 		for _, arg := range args {
 			key := uploadKeyFromArg(arg)
+
+			if !uploadDelYes && !confirmDelete(in, key) {
+				fmt.Printf("kept %s\n", key)
+				continue
+			}
 
 			query := url.Values{}
 			query.Set("key", key)
@@ -192,6 +211,20 @@ URL is the capability: there is deliberately no way to list what others shared.`
 
 		return nil
 	},
+}
+
+// confirmDelete asks before a permanent delete; anything but y/yes (including
+// EOF) keeps the object.
+func confirmDelete(in *bufio.Scanner, key string) bool {
+	fmt.Fprintf(os.Stderr, "Permanently delete %s? Shared links will break and it cannot be restored. [y/N] ", key)
+
+	if !in.Scan() {
+		return false
+	}
+
+	answer := strings.ToLower(strings.TrimSpace(in.Text()))
+
+	return answer == "y" || answer == "yes"
 }
 
 // uploadKeyFromArg accepts either an object key or the full public URL and
@@ -220,6 +253,8 @@ func openBrowser(target string) error {
 func init() {
 	rootCmd.AddCommand(uploadCmd)
 	uploadCmd.AddCommand(uploadDeleteCmd)
+	uploadDeleteCmd.Flags().BoolVarP(&uploadDelYes, "yes", "y", false,
+		"Skip the confirmation prompt (required when not running in a terminal)")
 	uploadCmd.Flags().StringVar(&uploadName, "name", "",
 		"Object filename; its extension sets Content-Type (required for stdin)")
 	uploadCmd.Flags().BoolVar(&uploadPublic, "public", false,

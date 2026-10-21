@@ -1,11 +1,14 @@
 package handlers
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
@@ -200,5 +203,158 @@ func TestDeletableKeyCoversBothPrefixes(t *testing.T) {
 		if got := h.deletableKey(key); got != want {
 			t.Errorf("deletableKey(%q) = %v, want %v", key, got, want)
 		}
+	}
+}
+
+// fakeS3 is a minimal path-style S3 backend: enough of HEAD/PUT/DELETE for the
+// uploads handler, keeping only each object's x-amz-meta-* headers.
+type fakeS3 struct {
+	mu      sync.Mutex
+	objects map[string]http.Header
+}
+
+func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if _, ok := r.URL.Query()["location"]; ok {
+		_, _ = io.WriteString(w, `<LocationConstraint>us-east-1</LocationConstraint>`)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodHead:
+		meta, ok := f.objects[r.URL.Path]
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		for k, v := range meta {
+			w.Header()[k] = v
+		}
+		w.Header().Set("Last-Modified", time.Now().UTC().Format(http.TimeFormat))
+		w.Header().Set("ETag", `"etag"`)
+	case http.MethodPut:
+		_, _ = io.Copy(io.Discard, r.Body)
+		meta := http.Header{}
+		for k, v := range r.Header {
+			if strings.HasPrefix(k, "X-Amz-Meta-") {
+				meta[k] = v
+			}
+		}
+		f.objects[r.URL.Path] = meta
+		w.Header().Set("ETag", `"etag"`)
+	case http.MethodDelete:
+		delete(f.objects, r.URL.Path)
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func fakeS3UploadsHandler(t *testing.T) (*UploadsHandler, *fakeS3) {
+	t.Helper()
+
+	backend := &fakeS3{objects: map[string]http.Header{}}
+	srv := httptest.NewServer(backend)
+	t.Cleanup(srv.Close)
+
+	log := logrus.New()
+	log.SetOutput(io.Discard)
+
+	h, err := NewUploadsHandler(log, UploadsConfig{
+		Bucket:        "test-bucket",
+		KeyPrefix:     "uploads/",
+		PublicBaseURL: "https://data.example.io",
+		Endpoint:      srv.URL,
+		AccessKeyID:   "key",
+		SecretKey:     "secret",
+	})
+	if err != nil {
+		t.Fatalf("NewUploadsHandler: %v", err)
+	}
+
+	return h, backend
+}
+
+func uploadAs(t *testing.T, h *UploadsHandler, who, body string) string {
+	t.Helper()
+
+	req := httptest.NewRequest(http.MethodPost, "/uploads?name=report.html", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req.WithContext(WithUploader(req.Context(), who)))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("upload as %q: status = %d, body = %s", who, rec.Code, rec.Body.String())
+	}
+
+	var resp uploadResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding upload response: %v", err)
+	}
+
+	return resp.Key
+}
+
+func deleteAs(h *UploadsHandler, who, key string) int {
+	req := httptest.NewRequest(http.MethodDelete, "/uploads?key="+key, nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req.WithContext(WithUploader(req.Context(), who)))
+
+	return rec.Code
+}
+
+func TestUploadsHandlerDeleteOnlyByUploader(t *testing.T) {
+	h, _ := fakeS3UploadsHandler(t)
+	key := uploadAs(t, h, "alice", "<p>v1</p>")
+
+	for _, who := range []string{"bob", ""} {
+		if got := deleteAs(h, who, key); got != http.StatusForbidden {
+			t.Fatalf("delete as %q: status = %d, want 403", who, got)
+		}
+	}
+
+	if got := deleteAs(h, "alice", key); got != http.StatusNoContent {
+		t.Fatalf("delete as alice: status = %d, want 204", got)
+	}
+
+	if got := deleteAs(h, "alice", key); got != http.StatusNotFound {
+		t.Fatalf("second delete: status = %d, want 404", got)
+	}
+}
+
+func TestUploadsHandlerRepublishKeepsOriginalUploader(t *testing.T) {
+	h, _ := fakeS3UploadsHandler(t)
+	key := uploadAs(t, h, "alice", "<p>v1</p>")
+
+	if again := uploadAs(t, h, "bob", "<p>v1</p>"); again != key {
+		t.Fatalf("identical bytes produced key %q, want %q", again, key)
+	}
+
+	if got := deleteAs(h, "bob", key); got != http.StatusForbidden {
+		t.Fatalf("delete as republisher: status = %d, want 403", got)
+	}
+
+	if got := deleteAs(h, "alice", key); got != http.StatusNoContent {
+		t.Fatalf("delete as original uploader: status = %d, want 204", got)
+	}
+}
+
+func TestUploadsHandlerDeleteRefusesObjectWithoutUploader(t *testing.T) {
+	h, backend := fakeS3UploadsHandler(t)
+	backend.objects["/test-bucket/uploads/abc123/legacy.html"] = http.Header{}
+
+	if got := deleteAs(h, "alice", "uploads/abc123/legacy.html"); got != http.StatusForbidden {
+		t.Fatalf("delete legacy object: status = %d, want 403", got)
+	}
+}
+
+func TestUploadsHandlerRepublishDoesNotAdoptOwnerlessObject(t *testing.T) {
+	h, backend := fakeS3UploadsHandler(t)
+	key := uploadAs(t, h, "alice", "<p>legacy</p>")
+	backend.objects["/test-bucket/"+key] = http.Header{}
+
+	uploadAs(t, h, "mallory", "<p>legacy</p>")
+
+	if got := deleteAs(h, "mallory", key); got != http.StatusForbidden {
+		t.Fatalf("delete after re-publishing ownerless object: status = %d, want 403", got)
 	}
 }
