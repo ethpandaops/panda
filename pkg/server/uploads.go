@@ -422,8 +422,8 @@ async function publish(btn,visibility,statusText){
   out.innerHTML='<span class="meta" style="color:#b00">'+e.message+'</span>';
  }
 }
-pub.addEventListener('click',()=>publish(pub,'public','Public · expires in 60 days'));
-team.addEventListener('click',()=>publish(team,'team','Team-only · GitHub login required · expires in 60 days'));
+pub.addEventListener('click',()=>publish(pub,'public','Public · expires in 1 year'));
+team.addEventListener('click',()=>publish(team,'team','Team-only · GitHub login required · expires in 1 year'));
 </script>
 </body>
 </html>`))

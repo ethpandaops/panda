@@ -384,7 +384,9 @@ func (s *server) registerRoutes() {
 		// A dedicated per-user limiter (keyed on the authenticated subject, so it
 		// runs inside chain() after auth) throttles uploads tighter than the
 		// generic request limiter, since each upload writes bytes to R2.
-		uploads := http.Handler(s.uploadsHandler)
+		var uploads http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			s.uploadsHandler.ServeHTTP(w, r.WithContext(handlers.WithUploader(r.Context(), GetUserID(r.Context()))))
+		})
 		if s.uploadsLimiter != nil {
 			uploads = s.uploadsLimiter.Middleware()(uploads)
 		}

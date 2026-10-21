@@ -243,7 +243,7 @@ loki:
 # Built-in abuse guards: a per-user rate limit, a size cap (max_object_bytes),
 # filename sanitization, and forced download (Content-Disposition: attachment)
 # for scriptable types (html/svg/js) so a public bucket can't serve them inline.
-# Set a 60-day object lifecycle scoped to key_prefix for retention.
+# Set a 1-year object lifecycle scoped to key_prefix for retention.
 #
 # render_html serves uploaded text/html inline (so HTML/markdown diagnostics
 # render in the browser) instead of downloading. Turn it on ONLY after adding a

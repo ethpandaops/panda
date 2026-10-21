@@ -22,7 +22,7 @@ The preview page renders the file and shows a **Make public** button. Clicking i
 promotes the file to the public bucket and shows the durable link:
 
 ```
-https://data.ethpandaops.io/panda/uploads/9f3ca1/report.html   (expires in 60 days)
+https://data.ethpandaops.io/panda/uploads/9f3ca1/report.html   (expires in 1 year)
 ```
 
 - **Private by default.** The upload is held **in memory** in the local server
@@ -73,8 +73,12 @@ identical bytes dedup and every public URL is immutable.
 - **Private previews** live only in the local server's memory (session lifetime),
   bounded to the most recent 32 uploads and 256 MiB total (oldest evicted first),
   so worst-case memory is capped regardless of upload size.
-- **Public objects** expire **60 days** after publication via an R2 lifecycle
+- **Public objects** expire **1 year** after publication via an R2 lifecycle
   rule on the bucket (configured in the platform repo).
+- **Deletion** (`panda upload delete <url>`) is restricted to the original
+  uploader (recorded as `x-amz-meta-uploader` at publish; objects without it
+  are undeletable) and is confirmed interactively unless `--yes` is passed.
+  Publishing a new version never requires deleting the old one.
 
 ## Abuse guards
 
@@ -96,7 +100,7 @@ local server's origin.
 
 ## Prerequisite (platform repo)
 
-An R2 writer key scoped RW to just the target bucket + the 60-day lifecycle rule
+An R2 writer key scoped RW to just the target bucket + the 1-year lifecycle rule
 + the proxy `uploads:` config. See ethpandaops/platform#365.
 
 ## Deliberately out of scope
