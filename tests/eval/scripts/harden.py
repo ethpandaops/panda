@@ -174,7 +174,7 @@ def main() -> None:
     ap.add_argument(
         "--judge-model",
         default=DEFAULT_EVALUATOR_MODEL,
-        help="grader model. An ef/<model> prefix (e.g. ef/qwen3.8-27b) grades via EF "
+        help="grader model. An ef/<model> prefix (e.g. ef/deepseek-v4.1-flash) grades via EF "
         "inference with EF_INFERENCE_API_KEY; a bare name (e.g. qwen3.7-plus) grades via "
         "the opencode-go gateway; a codex/<model> prefix (e.g. codex/gpt-5.4) grades through "
         "the Codex Responses API directly using ~/.codex/auth.json — no OpenAI API key needed.",

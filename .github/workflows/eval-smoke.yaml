@@ -249,7 +249,7 @@ jobs:
           LITELLM_PROXY_URL: ${{ vars.LITELLM_PROXY_URL }}
           LITELLM_PROXY_API_KEY: ${{ secrets.LITELLM_PROXY_API_KEY }}
           # promptfoo grades each case's llm-rubric asserts via the judge model on EF
-          # inference: a separate gateway from the subject, and a family-distinct (Qwen)
+          # inference: a separate gateway from the subject, and a family-distinct (DeepSeek)
           # judge for a Claude subject.
           EF_INFERENCE_API_KEY: ${{ secrets.EF_INFERENCE_API_KEY }}
           MCP_EVAL_REASONING_EFFORT: high

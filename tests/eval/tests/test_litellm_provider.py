@@ -33,7 +33,7 @@ def test_judge_without_a_url_says_which_var(monkeypatch):
         grader_for("litellm/starflinger-anthropic")
 
 
-@pytest.mark.parametrize("model", ["qwen3.7-plus", "codex/gpt-5.4", "ef/qwen3.8-27b"])
+@pytest.mark.parametrize("model", ["qwen3.7-plus", "codex/gpt-5.4", "ef/deepseek-v4.1-flash"])
 def test_other_transports_are_untouched(monkeypatch, model):
     monkeypatch.setenv("LITELLM_PROXY_URL", "https://ai.example.com")
     spec = grader_for(model)
