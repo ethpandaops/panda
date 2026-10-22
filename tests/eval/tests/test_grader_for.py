@@ -3,18 +3,20 @@
 from config.settings import CODEX_JUDGE_REASONING_EFFORT, DEFAULT_GRADER, grader_for
 
 
-def test_ef_prefix_uses_ef_inference_with_reasoning_off():
-    g = grader_for("ef/qwen3.8-27b")
-    assert g["id"] == "openai:chat:qwen3.8-27b"
-    assert g["label"] == "judge:ef/qwen3.8-27b"
+def test_ef_prefix_uses_ef_inference_with_reasoning_on():
+    g = grader_for("ef/deepseek-v4.1-flash")
+    assert g["id"] == "openai:chat:deepseek-v4.1-flash"
+    assert g["label"] == "judge:ef/deepseek-v4.1-flash"
     assert g["config"]["apiBaseUrl"] == "https://inference.ethereum.foundation/v1"
     assert g["config"]["apiKeyEnvar"] == "EF_INFERENCE_API_KEY"
     # promptfoo drops a top-level reasoning_effort for non-OpenAI models; passthrough reaches the body.
-    assert g["config"]["passthrough"] == {"reasoning_effort": "none"}
+    assert g["config"]["passthrough"] == {"reasoning_effort": "high"}
+    # reasoning must not eat promptfoo's 1024-token default before the verdict is written
+    assert g["config"]["max_tokens"] >= 8192
 
 
 def test_default_judge_rides_ef_inference():
-    assert DEFAULT_GRADER == grader_for("ef/qwen3.8-27b")
+    assert DEFAULT_GRADER == grader_for("ef/deepseek-v4.1-flash")
 
 
 def test_bare_model_uses_opencode_go_gateway():

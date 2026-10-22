@@ -41,11 +41,11 @@ Required environment:
 - `LITELLM_PROXY_URL` + `LITELLM_PROXY_API_KEY` — the default subject
   (`litellm/starflinger-anthropic:cli`) and any other `litellm/<model>` subject or judge,
   which ride an OpenAI-compatible LiteLLM proxy instead of the zen gateway.
-- `EF_INFERENCE_API_KEY` — the default judge (`ef/qwen3.8-27b`).
+- `EF_INFERENCE_API_KEY` — the default judge (`ef/deepseek-v4.1-flash`).
 - `OPENCODE_GO_API_KEY` — only for `opencode-go/<model>` subjects or bare-name judges.
 - The promptfoo grader (`--judge-model`):
-  - an `ef/<model>` prefix (default `ef/qwen3.8-27b`) grades through EF inference
-    (`inference.ethereum.foundation`) with reasoning off, authenticating with
+  - an `ef/<model>` prefix (default `ef/deepseek-v4.1-flash`) grades through EF inference
+    (`inference.ethereum.foundation`) with high reasoning, authenticating with
     `EF_INFERENCE_API_KEY`.
   - a bare model name (e.g. `qwen3.7-plus`) grades through the opencode-go zen gateway —
     `OPENCODE_GO_API_KEY` covers it.

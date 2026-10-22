@@ -31,13 +31,10 @@ DEFAULT_SUBJECTS = [DEFAULT_SUBJECT]
 # Judge quality matters more than judge cost: a flaky judge contaminates the harden
 # gates, so the judge must be a reliable rubric-follower AND family-distinct from the
 # subjects (a judge scoring its own family is a self-preference risk — that rules out the
-# subjects' own families here). The Qwen judge rides EF inference rather than the
+# subjects' own families here). The DeepSeek judge rides EF inference rather than the
 # subjects' proxy, which keeps judge and subject on separate gateways as well as separate
-# families. qwen3.7-plus benched clean over 60 smoke grades on opencode-go, where
-# minimax-m3 and deepseek-v4-pro both emitted malformed rubric JSON (false negatives);
-# qwen3.8-27b on EF gave identical well-formed verdicts across three re-grades of a
-# smoke run.
-DEFAULT_EVALUATOR_MODEL = "ef/qwen3.8-27b"
+# families.
+DEFAULT_EVALUATOR_MODEL = "ef/deepseek-v4.1-flash"
 # The zen gateway is OpenAI-compatible; promptfoo grades through its generic
 # openai:chat driver pointed at this base URL.
 OPENCODE_ZEN_BASE_URL = "https://opencode.ai/zen/go/v1"
@@ -54,8 +51,9 @@ LITELLM_KEY_ENVAR = "LITELLM_PROXY_API_KEY"
 EF_PREFIX = "ef/"
 EF_INFERENCE_BASE_URL = "https://inference.ethereum.foundation/v1"
 EF_KEY_ENVAR = "EF_INFERENCE_API_KEY"
-# A rubric verdict needs no thinking; reasoning on only adds tokens and latency.
-EF_JUDGE_REASONING_EFFORT = "none"
+EF_JUDGE_REASONING_EFFORT = "high"
+# promptfoo caps non-OpenAI models at 1024 output tokens, which reasoning exhausts before the verdict.
+EF_JUDGE_MAX_TOKENS = 16384
 
 
 def litellm_base_url() -> str:
@@ -80,8 +78,8 @@ def grader_for(model: str) -> dict:
       The ``codex/`` prefix is stripped and the remainder is passed as the model id.
     - a ``litellm/<model>`` prefix grades through the LiteLLM proxy named by
       ``LITELLM_PROXY_URL``, authenticating with ``LITELLM_PROXY_API_KEY``.
-    - an ``ef/<model>`` prefix (e.g. ``ef/qwen3.8-27b``) grades through EF inference,
-      authenticating with ``EF_INFERENCE_API_KEY``, with reasoning off.
+    - an ``ef/<model>`` prefix (e.g. ``ef/deepseek-v4.1-flash``) grades through EF inference,
+      authenticating with ``EF_INFERENCE_API_KEY``, with high reasoning.
     - any other model name (e.g. ``qwen3.7-plus``) grades through the opencode-go zen gateway
       via promptfoo's generic ``openai:chat`` driver + the opencode-go API key.
     """
@@ -93,6 +91,7 @@ def grader_for(model: str) -> dict:
             "config": {
                 "apiBaseUrl": EF_INFERENCE_BASE_URL,
                 "apiKeyEnvar": EF_KEY_ENVAR,
+                "max_tokens": EF_JUDGE_MAX_TOKENS,
                 # promptfoo only sends its own reasoning_effort for OpenAI reasoning models.
                 "passthrough": {"reasoning_effort": EF_JUDGE_REASONING_EFFORT},
             },
