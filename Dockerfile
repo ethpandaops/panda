@@ -83,7 +83,7 @@ COPY --from=builder /app/panda-proxy /app/panda-proxy
 # default (docker/gvisor) image stays lean — uv + python3 are the only always-on
 # cost. requirements.txt + ethpandaops are the SAME files the sandbox image uses
 # (wildcard COPY matches sandbox/Dockerfile + scripts/sandbox-hash.sh — no drift).
-COPY --from=ghcr.io/astral-sh/uv:0.11.17@sha256:03bdc89bb9798628846e60c3a9ad19006c8c3c724ccd2985a33145c039a0577b /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.13.5@sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff /uv /uvx /bin/
 COPY sandbox/requirements.txt /opt/panda-sandbox/requirements.txt
 COPY sandbox/ethpandaops /opt/panda-sandbox/ethpandaops-pkg
 COPY modules/*/python/*.py /opt/panda-sandbox/ethpandaops-pkg/ethpandaops/

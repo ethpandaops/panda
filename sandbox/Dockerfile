@@ -12,7 +12,7 @@
 FROM python:3.11-slim@sha256:a3ab0b966bc4e91546a033e22093cb840908979487a9fc0e6e38295747e49ac0 AS builder
 
 # uv (build-time only; never copied into the final image)
-COPY --from=ghcr.io/astral-sh/uv:0.11.17@sha256:03bdc89bb9798628846e60c3a9ad19006c8c3c724ccd2985a33145c039a0577b /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.13.5@sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff /uv /uvx /bin/
 
 # Install Python dependencies into a staging prefix. requirements.txt is compiled
 # from requirements.in with hashes (`uv pip compile --generate-hashes
@@ -48,6 +48,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-dejavu-core \
     fonts-noto-color-emoji \
     && rm -rf /var/lib/apt/lists/*
+
+# The base image ships pip 24.0, whose vendored certifi trusts the compromised eMudhra
+# CAs; replace it from a hash-pinned wheel so in-sandbox pip installs verify TLS correctly.
+RUN python -m pip install --no-cache-dir --root-user-action=ignore \
+    "pip @ https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl#sha256=fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70"
 
 # Create non-root user and runtime directories.
 RUN useradd -m -s /bin/bash sandbox && \
