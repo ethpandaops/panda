@@ -192,17 +192,24 @@ func (h *UploadsHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 
 	// Identical bytes map to the same key, so a re-publish keeps the existing
 	// owner — or lack of one: ownerless legacy objects must not be adoptable.
-	uploader := uploaderFrom(r.Context())
+	uploader, exists := uploaderFrom(r.Context()), false
 	if info, err := h.client.StatObject(r.Context(), h.cfg.Bucket, key, minio.StatObjectOptions{}); err == nil {
-		uploader = info.UserMetadata[uploaderMetaKey]
+		uploader, exists = info.UserMetadata[uploaderMetaKey], true
 	} else if minio.ToErrorResponse(err).Code != "NoSuchKey" {
 		h.fail(w, http.StatusBadGateway, "checking object", err)
 		return
 	}
 
-	opts := minio.PutObjectOptions{ContentType: contentType}
+	// Single-part so R2 evaluates If-None-Match atomically (it does not for
+	// multipart); objects are capped well below R2's 5 GiB single-PUT limit.
+	opts := minio.PutObjectOptions{ContentType: contentType, DisableMultipart: true}
 	if uploader != "" {
 		opts.UserMetadata = map[string]string{uploaderMetaKey: uploader}
+	}
+	// A first publish only creates: of two concurrent first publishes, the
+	// later one must not overwrite the earlier one's ownership.
+	if !exists {
+		opts.SetMatchETagExcept("*")
 	}
 	// Types a browser would execute in the bucket origin (HTML, SVG, JS) are
 	// forced to download — defuses phishing/XSS on a public bucket while charts,
@@ -213,7 +220,10 @@ func (h *UploadsHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 		opts.ContentDisposition = fmt.Sprintf("attachment; filename=%q", name)
 	}
 
-	if _, err := h.client.PutObject(r.Context(), h.cfg.Bucket, key, tmp, size, opts); err != nil {
+	// Losing the create race is success: the key is content-addressed, so the
+	// winner stored these exact bytes under this name.
+	if _, err := h.client.PutObject(r.Context(), h.cfg.Bucket, key, tmp, size, opts); err != nil &&
+		(exists || minio.ToErrorResponse(err).StatusCode != http.StatusPreconditionFailed) {
 		h.fail(w, http.StatusBadGateway, "putting object", err)
 		return
 	}
