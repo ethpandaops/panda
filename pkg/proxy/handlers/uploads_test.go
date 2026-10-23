@@ -207,10 +207,12 @@ func TestDeletableKeyCoversBothPrefixes(t *testing.T) {
 }
 
 // fakeS3 is a minimal path-style S3 backend: enough of HEAD/PUT/DELETE for the
-// uploads handler, keeping only each object's x-amz-meta-* headers.
+// uploads handler, keeping only each object's x-amz-meta-* headers. beforePut,
+// when set, runs once ahead of the next PUT to stage a concurrent writer.
 type fakeS3 struct {
-	mu      sync.Mutex
-	objects map[string]http.Header
+	mu        sync.Mutex
+	objects   map[string]http.Header
+	beforePut func(objects map[string]http.Header, path string)
 }
 
 func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -236,6 +238,15 @@ func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("ETag", `"etag"`)
 	case http.MethodPut:
 		_, _ = io.Copy(io.Discard, r.Body)
+		if f.beforePut != nil {
+			f.beforePut(f.objects, r.URL.Path)
+			f.beforePut = nil
+		}
+		if _, exists := f.objects[r.URL.Path]; exists && r.Header.Get("If-None-Match") == "*" {
+			w.WriteHeader(http.StatusPreconditionFailed)
+			_, _ = io.WriteString(w, `<Error><Code>PreconditionFailed</Code><Message>At least one of the pre-conditions you specified did not hold</Message></Error>`)
+			return
+		}
 		meta := http.Header{}
 		for k, v := range r.Header {
 			if strings.HasPrefix(k, "X-Amz-Meta-") {
@@ -356,5 +367,23 @@ func TestUploadsHandlerRepublishDoesNotAdoptOwnerlessObject(t *testing.T) {
 
 	if got := deleteAs(h, "mallory", key); got != http.StatusForbidden {
 		t.Fatalf("delete after re-publishing ownerless object: status = %d, want 403", got)
+	}
+}
+
+func TestUploadsHandlerConcurrentFirstPublishKeepsFirstOwner(t *testing.T) {
+	h, backend := fakeS3UploadsHandler(t)
+
+	// alice's identical publish lands between mallory's stat and put.
+	backend.beforePut = func(objects map[string]http.Header, path string) {
+		objects[path] = http.Header{"X-Amz-Meta-Uploader": {"alice"}}
+	}
+	key := uploadAs(t, h, "mallory", "<p>shared</p>")
+
+	if got := deleteAs(h, "mallory", key); got != http.StatusForbidden {
+		t.Fatalf("delete as race loser: status = %d, want 403", got)
+	}
+
+	if got := deleteAs(h, "alice", key); got != http.StatusNoContent {
+		t.Fatalf("delete as race winner: status = %d, want 204", got)
 	}
 }
