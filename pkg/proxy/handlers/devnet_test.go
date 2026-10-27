@@ -205,3 +205,66 @@ func TestParseDevnetPath(t *testing.T) {
 	_, _, _, ok = ParseDevnetPath("/devnet/spamoor")
 	assert.False(t, ok)
 }
+
+// stallingMint blocks mints for one label until released; everything else
+// answers immediately.
+type stallingMint struct {
+	devnetUpstream
+	stallHost string
+	release   chan struct{}
+	stalled   chan struct{}
+	stallOnce sync.Once
+	stalls    int
+	stallMu   sync.Mutex
+}
+
+func (s *stallingMint) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.URL.Host == s.stallHost {
+		s.stallMu.Lock()
+		s.stalls++
+		s.stallMu.Unlock()
+		s.stallOnce.Do(func() { close(s.stalled) })
+		<-s.release
+	}
+
+	return s.devnetUpstream.RoundTrip(req)
+}
+
+func TestDevnetHandlerSlowMintDoesNotStallOtherDevnets(t *testing.T) {
+	upstream := &stallingMint{
+		stallHost: "auth.slow-devnet.ethpandaops.io",
+		release:   make(chan struct{}),
+		stalled:   make(chan struct{}),
+	}
+	h := newDevnetHandler(logrus.New(), DevnetConfig{
+		Services: []string{"spamoor"}, CFAccessClientID: "cf-id", CFAccessClientSecret: "cf-secret",
+	}, upstream)
+
+	require.Equal(t, http.StatusOK, serveDevnet(h, http.MethodGet, "/devnet/spamoor/fast-devnet/api/spammers").Code)
+
+	var wg sync.WaitGroup
+	for range 3 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			assert.Equal(t, http.StatusOK, serveDevnet(h, http.MethodGet, "/devnet/spamoor/slow-devnet/api/spammers").Code)
+		}()
+	}
+
+	<-upstream.stalled
+
+	done := make(chan int, 1)
+	go func() { done <- serveDevnet(h, http.MethodGet, "/devnet/spamoor/fast-devnet/api/spammers").Code }()
+
+	select {
+	case code := <-done:
+		assert.Equal(t, http.StatusOK, code)
+	case <-time.After(2 * time.Second):
+		t.Fatal("a stalled mint for one devnet blocked a cached devnet")
+	}
+
+	close(upstream.release)
+	wg.Wait()
+
+	assert.Equal(t, 1, upstream.stalls, "concurrent requests for one devnet share a single mint")
+}
