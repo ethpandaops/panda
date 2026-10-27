@@ -1,0 +1,71 @@
+devnet_spamoor:
+  name: Spamoor Transaction Spammers
+  description: Inspect and drive spamoor transaction spammers on a devnet through the proxy relay
+  examples:
+    - name: Find devnets with spamoor and assertoor
+      description: >-
+        Answer "which devnets run spamoor/assertoor" and whether the relay can
+        reach them (relayed=True means writes go through the proxy)
+      query: |
+        from ethpandaops import devnet
+
+        for net in devnet.list_networks():
+            services = net["extra"]["services"]
+            print(net["name"], {name: svc["relayed"] for name, svc in services.items()})
+
+    - name: List spammers on a devnet
+      description: >-
+        Show every spammer with its scenario and status
+        (0=paused, 1=running, 2=finished, 3=failed)
+      query: |
+        from ethpandaops import devnet
+
+        status = {0: "paused", 1: "running", 2: "finished", 3: "failed"}
+        for s in devnet.request("glamsterdam-devnet-8", "spamoor", "GET", "/api/spammers"):
+            print(f"{s['id']:>4}  {status.get(s['status'], s['status']):9} {s['scenario']:20} {s['name']}")
+
+    - name: Pause and resume a spammer
+      description: >-
+        Write example: pause a running spammer, then start it again. Writes
+        need the relay (your account must be allowed for the spamoor service)
+      query: |
+        from ethpandaops import devnet
+
+        network, spammer_id = "glamsterdam-devnet-8", 12
+        devnet.request(network, "spamoor", "POST", f"/api/spammer/{spammer_id}/pause")
+        devnet.request(network, "spamoor", "POST", f"/api/spammer/{spammer_id}/start")
+        print(devnet.request(network, "spamoor", "GET", f"/api/spammer/{spammer_id}")["status"])
+
+devnet_assertoor:
+  name: Assertoor Test Runs
+  description: Inspect assertoor tests and runs on a devnet through the proxy relay
+  examples:
+    - name: Recent assertoor test runs
+      description: List assertoor test runs with their outcome on a devnet
+      query: |
+        from ethpandaops import devnet
+
+        runs = devnet.request("glamsterdam-devnet-8", "assertoor", "GET", "/api/v1/test_runs")["data"]
+        for run in runs:
+            print(f"{run['run_id']:>4}  {run['status']:9} {run['test_id']}")
+
+    - name: Schedule an assertoor test
+      description: >-
+        Write example: schedule a registered test by id and poll its status
+      query: |
+        import time
+        from ethpandaops import devnet
+
+        network = "glamsterdam-devnet-8"
+        tests = devnet.request(network, "assertoor", "GET", "/api/v1/tests")["data"]
+        test_id = tests[0]["id"]
+
+        run = devnet.request(network, "assertoor", "POST", "/api/v1/test_runs/schedule",
+                             json={"test_id": test_id, "allow_duplicate": False})["data"]
+        for _ in range(10):
+            # /status returns the bare status string as data
+            status = devnet.request(network, "assertoor", "GET", f"/api/v1/test_run/{run['run_id']}/status")["data"]
+            print(status)
+            if status not in ("pending", "running"):
+                break
+            time.sleep(30)

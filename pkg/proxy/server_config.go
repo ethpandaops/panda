@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -48,6 +49,10 @@ type ServerConfig struct {
 
 	// Compute holds compute API instance configurations.
 	Compute []ComputeInstanceConfig `yaml:"compute,omitempty"`
+
+	// DevnetServices configures the /devnet relay to devnet service APIs
+	// (spamoor, assertoor).
+	DevnetServices *DevnetServicesConfig `yaml:"devnet_services,omitempty"`
 
 	// RateLimiting holds rate limiting configuration.
 	RateLimiting RateLimitConfig `yaml:"rate_limiting"`
@@ -371,6 +376,19 @@ type ComputeInstanceConfig struct {
 	URL                  string `yaml:"url"`
 }
 
+// DevnetServicesConfig configures the /devnet relay. The proxy trades the CF
+// Access service token for a per-devnet authenticatoor JWT and injects it on
+// every service API call; StaticToken replaces minting for local/dev use.
+// Each service entry is a datasource named after the service, so
+// allowed_orgs gates who may use it.
+type DevnetServicesConfig struct {
+	CFAccessClientID     string                 `yaml:"cf_access_client_id,omitempty"`
+	CFAccessClientSecret string                 `yaml:"cf_access_client_secret,omitempty"`
+	StaticToken          string                 `yaml:"static_token,omitempty"`
+	DomainSuffix         string                 `yaml:"domain_suffix,omitempty"`
+	Services             []BaseDatasourceConfig `yaml:"services"`
+}
+
 // RateLimitConfig holds rate limiting configuration.
 type RateLimitConfig struct {
 	// Enabled controls whether rate limiting is active.
@@ -625,8 +643,13 @@ func (c *ServerConfig) Validate() error {
 	}
 
 	// Validate at least one datasource is configured.
-	if len(c.ClickHouse) == 0 && len(c.Prometheus) == 0 && len(c.Loki) == 0 && c.EthNode == nil && len(c.Benchmarkoor) == 0 && len(c.Compute) == 0 {
-		return fmt.Errorf("at least one datasource (clickhouse, prometheus, loki, ethnode, benchmarkoor, or compute) must be configured")
+	if len(c.ClickHouse) == 0 && len(c.Prometheus) == 0 && len(c.Loki) == 0 && c.EthNode == nil &&
+		len(c.Benchmarkoor) == 0 && len(c.Compute) == 0 && c.DevnetServices == nil {
+		return fmt.Errorf("at least one datasource (clickhouse, prometheus, loki, ethnode, benchmarkoor, compute, or devnet_services) must be configured")
+	}
+
+	if err := c.DevnetServices.validate(); err != nil {
+		return err
 	}
 
 	// Validate ClickHouse configs.
@@ -758,6 +781,68 @@ func (c *ServerConfig) Validate() error {
 	}
 
 	return nil
+}
+
+// devnetDomainSuffix matches a DNS zone such as "ethpandaops.io".
+var devnetDomainSuffix = regexp.MustCompile(`^[a-z0-9-]+(\.[a-z0-9-]+)+$`)
+
+func (d *DevnetServicesConfig) validate() error {
+	if d == nil {
+		return nil
+	}
+
+	hasCF := d.CFAccessClientID != "" || d.CFAccessClientSecret != ""
+
+	switch {
+	case d.StaticToken != "" && hasCF:
+		return fmt.Errorf("devnet_services: set either static_token or cf_access_client_id/secret, not both")
+	case d.StaticToken == "" && (d.CFAccessClientID == "" || d.CFAccessClientSecret == ""):
+		return fmt.Errorf("devnet_services: cf_access_client_id and cf_access_client_secret are required (or static_token for local use)")
+	}
+
+	if d.DomainSuffix != "" && !devnetDomainSuffix.MatchString(d.DomainSuffix) {
+		return fmt.Errorf("devnet_services.domain_suffix %q is not a DNS zone", d.DomainSuffix)
+	}
+
+	if len(d.Services) == 0 {
+		return fmt.Errorf("devnet_services.services must list at least one of %v", handlers.DevnetServiceNames)
+	}
+
+	seen := make(map[string]struct{}, len(d.Services))
+	for i, svc := range d.Services {
+		if !slices.Contains(handlers.DevnetServiceNames, svc.Name) {
+			return fmt.Errorf("devnet_services.services[%d].name %q is not one of %v", i, svc.Name, handlers.DevnetServiceNames)
+		}
+
+		if _, dup := seen[svc.Name]; dup {
+			return fmt.Errorf("devnet_services.services[%d].name %q is duplicated", i, svc.Name)
+		}
+
+		seen[svc.Name] = struct{}{}
+	}
+
+	return nil
+}
+
+// ToDevnetHandlerConfig converts the devnet_services block to the handler
+// config, or nil when the relay is not configured.
+func (c *ServerConfig) ToDevnetHandlerConfig() *handlers.DevnetConfig {
+	if c.DevnetServices == nil {
+		return nil
+	}
+
+	names := make([]string, 0, len(c.DevnetServices.Services))
+	for _, svc := range c.DevnetServices.Services {
+		names = append(names, svc.Name)
+	}
+
+	return &handlers.DevnetConfig{
+		Services:             names,
+		CFAccessClientID:     c.DevnetServices.CFAccessClientID,
+		CFAccessClientSecret: c.DevnetServices.CFAccessClientSecret,
+		StaticToken:          c.DevnetServices.StaticToken,
+		DomainSuffix:         c.DevnetServices.DomainSuffix,
+	}
 }
 
 // ToBenchmarkoorHandlerConfigs converts the benchmarkoor instance configs to
