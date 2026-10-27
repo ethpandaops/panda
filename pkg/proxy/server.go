@@ -78,6 +78,7 @@ type server struct {
 	ethNodeHandler      *handlers.EthNodeHandler
 	faucetHandler       *handlers.FaucetHandler
 	benchmarkoorHandler *handlers.BenchmarkoorHandler
+	devnetHandler       *handlers.DevnetHandler
 	computeHandler      *handlers.ComputeHandler
 	uploadsHandler      *handlers.UploadsHandler
 	uploadsLimiter      *RateLimiter
@@ -214,6 +215,10 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 
 	if computeConfigs := cfg.ToComputeHandlerConfigs(); len(computeConfigs) > 0 {
 		s.computeHandler = handlers.NewComputeHandler(log, computeConfigs)
+	}
+
+	if devnetConfig := cfg.ToDevnetHandlerConfig(); devnetConfig != nil {
+		s.devnetHandler = handlers.NewDevnetHandler(log, *devnetConfig)
 	}
 
 	if uploadsCfg := cfg.ToUploadsHandlerConfig(); uploadsCfg != nil {
@@ -376,6 +381,10 @@ func (s *server) registerRoutes() {
 		s.handleSubtreeRoute("/compute", s.metricsMiddleware(chain(s.computeHandler)))
 	}
 
+	if s.devnetHandler != nil {
+		s.handleSubtreeRoute("/devnet", s.metricsMiddleware(chain(s.devnetHandler)))
+	}
+
 	if s.githubHandler != nil {
 		s.handleSubtreeRoute("/github", s.metricsMiddleware(chain(s.githubHandler)))
 	}
@@ -444,6 +453,7 @@ type DatasourcesResponse struct {
 	LokiInfo           []types.DatasourceInfo `json:"loki_info,omitempty"`
 	BenchmarkoorInfo   []types.DatasourceInfo `json:"benchmarkoor_info,omitempty"`
 	ComputeInfo        []types.DatasourceInfo `json:"compute_info,omitempty"`
+	DevnetInfo         []types.DatasourceInfo `json:"devnet_info,omitempty"`
 	EthNodeAvailable   bool                   `json:"ethnode_available,omitempty"`
 	EmbeddingAvailable bool                   `json:"embedding_available,omitempty"`
 	EmbeddingModel     string                 `json:"embedding_model,omitempty"`
@@ -460,6 +470,7 @@ type datasourcesResponseWire struct {
 	LokiInfo           []types.DatasourceInfo `json:"loki_info,omitempty"`
 	BenchmarkoorInfo   []types.DatasourceInfo `json:"benchmarkoor_info,omitempty"`
 	ComputeInfo        []types.DatasourceInfo `json:"compute_info,omitempty"`
+	DevnetInfo         []types.DatasourceInfo `json:"devnet_info,omitempty"`
 	EthNodeAvailable   bool                   `json:"ethnode_available,omitempty"`
 	EmbeddingAvailable bool                   `json:"embedding_available,omitempty"`
 	EmbeddingModel     string                 `json:"embedding_model,omitempty"`
@@ -477,6 +488,7 @@ func (d DatasourcesResponse) MarshalJSON() ([]byte, error) {
 		LokiInfo:           d.LokiInfo,
 		BenchmarkoorInfo:   d.BenchmarkoorInfo,
 		ComputeInfo:        d.ComputeInfo,
+		DevnetInfo:         d.DevnetInfo,
 		EthNodeAvailable:   d.EthNodeAvailable,
 		EmbeddingAvailable: d.EmbeddingAvailable,
 		EmbeddingModel:     d.EmbeddingModel,
@@ -496,6 +508,7 @@ func (d *DatasourcesResponse) UnmarshalJSON(data []byte) error {
 	d.LokiInfo = infoFromWire("loki", wire.LokiInfo, wire.Loki)
 	d.BenchmarkoorInfo = normalizeInfo("benchmarkoor", wire.BenchmarkoorInfo, "")
 	d.ComputeInfo = normalizeInfo("compute", wire.ComputeInfo, "")
+	d.DevnetInfo = normalizeInfo("devnet", wire.DevnetInfo, "")
 	d.EthNodeAvailable = wire.EthNodeAvailable
 	d.EmbeddingAvailable = wire.EmbeddingAvailable
 	d.EmbeddingModel = wire.EmbeddingModel
@@ -538,6 +551,7 @@ func (s *server) handleDatasources(w http.ResponseWriter, r *http.Request) {
 		LokiInfo:           s.LokiDatasourceInfo(),
 		BenchmarkoorInfo:   s.BenchmarkoorDatasourceInfo(),
 		ComputeInfo:        s.ComputeDatasourceInfo(),
+		DevnetInfo:         s.DevnetDatasourceInfo(),
 		EthNodeAvailable:   s.EthNodeAvailable(),
 		EmbeddingAvailable: s.EmbeddingAvailable(),
 		EmbeddingModel:     s.EmbeddingModel(),
@@ -1187,6 +1201,29 @@ func (s *server) ComputeDatasourceInfo() []types.DatasourceInfo {
 			Type:        "compute",
 			Name:        comp.Name,
 			Description: comp.Description,
+		})
+	}
+
+	return result
+}
+
+// DevnetDatasourceInfo returns one datasource per relayed devnet service.
+func (s *server) DevnetDatasourceInfo() []types.DatasourceInfo {
+	if s.cfg.DevnetServices == nil {
+		return nil
+	}
+
+	// The domain suffix lets the server check a network's service URL is the
+	// exact host this proxy will reach before relaying.
+	suffix := s.cfg.ToDevnetHandlerConfig().ResolvedSuffix()
+
+	result := make([]types.DatasourceInfo, 0, len(s.cfg.DevnetServices.Services))
+	for _, svc := range s.cfg.DevnetServices.Services {
+		result = append(result, types.DatasourceInfo{
+			Type:        "devnet",
+			Name:        svc.Name,
+			Description: svc.Description,
+			Metadata:    map[string]string{"domain_suffix": suffix},
 		})
 	}
 

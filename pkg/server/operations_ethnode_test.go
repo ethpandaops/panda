@@ -137,6 +137,9 @@ func (p *ethNodeOperationProxy) BenchmarkoorDatasourceInfo() []types.DatasourceI
 func (p *ethNodeOperationProxy) ComputeDatasourceInfo() []types.DatasourceInfo {
 	return nil
 }
+func (p *ethNodeOperationProxy) DevnetDatasourceInfo() []types.DatasourceInfo {
+	return nil
+}
 func (p *ethNodeOperationProxy) EthNodeAvailable() bool { return p.ethnodeAvailable }
 func (p *ethNodeOperationProxy) EthNodeDatasourceInfo() []types.DatasourceInfo {
 	if !p.ethnodeAvailable {

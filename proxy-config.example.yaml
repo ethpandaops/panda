@@ -196,6 +196,26 @@ loki:
 #     allowed_orgs:
 #       - ethpandaops:Core
 
+# Devnet service relay: spamoor and assertoor APIs on every devnet, reached as
+# https://{service}.{devnet}.{domain_suffix}. The proxy trades the CF Access
+# service token for the devnet authenticatoor's JWT (auth.{devnet}/auth/token;
+# the auth app needs an any_valid_service_token policy) and injects it, so
+# callers can write (start/pause spammers, schedule tests) without a cookie.
+# Gate who may write with allowed_orgs. static_token replaces minting for local use.
+# devnet_services:
+#   cf_access_client_id: "${DEVNET_CF_ACCESS_CLIENT_ID}"
+#   cf_access_client_secret: "${DEVNET_CF_ACCESS_CLIENT_SECRET}"
+#   # domain_suffix: "ethpandaops.io"
+#   services:
+#     - name: spamoor
+#       description: "Devnet transaction spammers"
+#       allowed_orgs:
+#         - ethpandaops:Core
+#     - name: assertoor
+#       description: "Devnet test runner"
+#       allowed_orgs:
+#         - ethpandaops:Core
+
 # Ethereum node API access (beacon and execution nodes)
 # Single credential pair for all bn-*.srv.*.ethpandaops.io and rpc-*.srv.*.ethpandaops.io endpoints
 # ethnode:

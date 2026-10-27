@@ -42,6 +42,7 @@ def __getattr__(name):
         "cbt",
         "clickhouse",
         "compute",
+        "devnet",
         "prometheus",
         "loki",
         "dora",
