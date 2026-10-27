@@ -38,7 +38,7 @@ func init() {
 	datasourcesCmd.Flags().BoolVar(&datasourcesDetails, "details", false, "Include datasource descriptions in text output")
 
 	_ = datasourcesCmd.RegisterFlagCompletionFunc("type", cobra.FixedCompletions(
-		[]string{"clickhouse", "prometheus", "loki", "ethnode", "benchmarkoor", "compute"}, cobra.ShellCompDirectiveNoFileComp,
+		[]string{"clickhouse", "prometheus", "loki", "ethnode", "benchmarkoor", "compute", "devnet"}, cobra.ShellCompDirectiveNoFileComp,
 	))
 }
 

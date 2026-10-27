@@ -287,6 +287,13 @@ func (r *routerClient) ComputeDatasourceInfo() []types.DatasourceInfo {
 	return infos
 }
 
+// DevnetDatasourceInfo returns merged devnet service info.
+func (r *routerClient) DevnetDatasourceInfo() []types.DatasourceInfo {
+	infos, _ := r.mergeDatasourceInfo("devnet")
+
+	return infos
+}
+
 // EthNodeAvailable returns primary-proxy ethnode availability.
 func (r *routerClient) EthNodeAvailable() bool {
 	primary := r.Primary()
@@ -410,6 +417,8 @@ func routeDatasourceInfo(client Client, datasourceType string) []types.Datasourc
 		return client.BenchmarkoorDatasourceInfo()
 	case "compute":
 		return client.ComputeDatasourceInfo()
+	case "devnet":
+		return client.DevnetDatasourceInfo()
 	default:
 		return nil
 	}

@@ -17,7 +17,7 @@ panda -> server -> proxy/proxies -> datasources
 
 - `panda`: local CLI that talks to `server` over HTTP.
 - `server`: runs MCP transports, the CLI-facing HTTP API, sandboxes, sessions, and search.
-- `proxy`: credential boundary for ClickHouse, Prometheus, Loki, and ethnode. The server can route across multiple configured proxies plus its embedded local proxy.
+- `proxy`: credential boundary for ClickHouse, Prometheus, Loki, ethnode, benchmarkoor, compute, and devnet services (spamoor, assertoor). The server can route across multiple configured proxies plus its embedded local proxy.
 - `modules`: datasource integrations, docs, resources, examples, and schema discovery.
 
 ## Local Docker Compose

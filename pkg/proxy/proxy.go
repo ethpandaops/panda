@@ -65,6 +65,10 @@ type Service interface {
 	// ComputeDatasourceInfo returns detailed compute datasource info.
 	ComputeDatasourceInfo() []types.DatasourceInfo
 
+	// DevnetDatasourceInfo returns the devnet services (spamoor, assertoor)
+	// the proxy relays, one datasource per service.
+	DevnetDatasourceInfo() []types.DatasourceInfo
+
 	// EthNodeAvailable returns true if ethnode proxy access is configured.
 	EthNodeAvailable() bool
 	// EthNodeDatasourceInfo returns the ethnode datasource info when ethnode
