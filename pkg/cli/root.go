@@ -46,7 +46,10 @@ tables, columns, or query syntax:
 
 Most topic words are search terms, not subcommands. Full guide:
 
-  panda getting-started`
+  panda getting-started
+
+Most commands reach data through the ethPandaOps proxy and need a one-time
+GitHub sign-in: panda auth login`
 
 // updateResult carries the latest version from the background check.
 // A nil value means the check failed or was skipped.
@@ -108,11 +111,6 @@ func Execute() {
 		return
 	}
 
-	if hint := unknownCommandHint(err); hint != "" {
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, hint)
-	}
-
 	var exitErr *exitCodeError
 	if errors.As(err, &exitErr) {
 		os.Exit(exitErr.code)
@@ -123,11 +121,27 @@ func Execute() {
 
 // executeWithSignals runs the root command with a context that is canceled
 // on SIGINT or SIGTERM, so in-flight work aborts when the user hits Ctrl+C.
+// A failure is followed by at most one hint on stderr.
 func executeWithSignals() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	return rootCmd.ExecuteContext(ctx)
+	cmd, err := rootCmd.ExecuteContextC(ctx)
+	if err == nil {
+		return nil
+	}
+
+	hint := unknownCommandHint(err)
+	if hint == "" && ctx.Err() == nil {
+		hint = authRequiredHint(ctx, cmd)
+	}
+
+	if hint != "" {
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, hint)
+	}
+
+	return err
 }
 
 func unknownCommandHint(err error) string {

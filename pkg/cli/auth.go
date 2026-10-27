@@ -18,6 +18,9 @@ const defaultProxyAuthClientID = "panda"
 // completion, regardless of the provider's advertised interval.
 const minLoginPollInterval = 2 * time.Second
 
+// authHintTimeout bounds the auth-status probe made after a failed command.
+const authHintTimeout = 3 * time.Second
+
 var authCmd = &cobra.Command{
 	GroupID: groupSetup,
 	Use:     "auth",
@@ -185,4 +188,41 @@ func printRefreshTokenStatus(st *serverapi.AuthStatusResponse) {
 			st.RefreshTokenIssuedAt.Format(time.RFC3339),
 		)
 	}
+}
+
+// authRequiredHint points at 'panda auth login' after a failed command when the
+// server holds no usable proxy credentials. Missing auth surfaces as anything
+// from a 401 to an undiscovered datasource, so it keys on auth state, not on
+// the error. Setup commands manage auth themselves and are skipped.
+func authRequiredHint(ctx context.Context, cmd *cobra.Command) string {
+	if cmd == nil || topLevelCommand(cmd).GroupID == groupSetup {
+		return ""
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, authHintTimeout)
+	defer cancel()
+
+	var st serverapi.AuthStatusResponse
+	if err := serverGetJSON(ctx, "/api/v1/auth/status", nil, &st); err != nil || !st.Enabled {
+		return ""
+	}
+
+	switch {
+	case !st.Authenticated:
+		return "Tip: you are not signed in to the ethPandaOps proxy, which most panda commands need. " +
+			"Run 'panda auth login' to sign in with GitHub; requests then run with the proxy's credentials, not your GitHub account's."
+	case st.Expired && !st.RefreshTokenPresent:
+		return "Tip: your ethPandaOps proxy session has expired. Run 'panda auth login' to sign in again."
+	default:
+		return ""
+	}
+}
+
+// topLevelCommand returns the ancestor of cmd that sits directly under root.
+func topLevelCommand(cmd *cobra.Command) *cobra.Command {
+	for cmd.HasParent() && cmd.Parent().HasParent() {
+		cmd = cmd.Parent()
+	}
+
+	return cmd
 }

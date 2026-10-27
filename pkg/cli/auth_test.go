@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -156,4 +157,60 @@ func TestRunAuthLogout(t *testing.T) {
 	})
 
 	assert.Contains(t, output, "Removed")
+}
+
+func TestAuthRequiredHint(t *testing.T) {
+	tests := []struct {
+		name   string
+		status serverapi.AuthStatusResponse
+		want   string
+	}{
+		{"auth disabled", serverapi.AuthStatusResponse{}, ""},
+		{"signed in", serverapi.AuthStatusResponse{Enabled: true, Authenticated: true}, ""},
+		{"not signed in", serverapi.AuthStatusResponse{Enabled: true}, "not signed in"},
+		{"expired, refreshable", serverapi.AuthStatusResponse{Enabled: true, Authenticated: true, Expired: true, RefreshTokenPresent: true}, ""},
+		{"expired, no refresh token", serverapi.AuthStatusResponse{Enabled: true, Authenticated: true, Expired: true}, "session has expired"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				require.Equal(t, "/api/v1/auth/status", r.URL.Path)
+				_ = json.NewEncoder(w).Encode(tt.status)
+			}))
+			defer server.Close()
+
+			setClientConfig(t, server.URL)
+
+			hint := authRequiredHint(context.Background(), buildCmd)
+			if tt.want == "" {
+				assert.Empty(t, hint)
+
+				return
+			}
+
+			assert.Contains(t, hint, tt.want)
+			assert.Contains(t, hint, "panda auth login")
+		})
+	}
+}
+
+func TestAuthRequiredHintSkipsSetupCommandsWithoutProbing(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		t.Error("setup commands must not probe auth status")
+	}))
+	defer server.Close()
+
+	setClientConfig(t, server.URL)
+
+	assert.Empty(t, authRequiredHint(context.Background(), authStatusCmd))
+	assert.Empty(t, authRequiredHint(context.Background(), initCmd))
+}
+
+func TestAuthRequiredHintIgnoresUnreachableServer(t *testing.T) {
+	server := httptest.NewServer(http.NotFoundHandler())
+	setClientConfig(t, server.URL)
+	server.Close()
+
+	assert.Empty(t, authRequiredHint(context.Background(), buildStatusCmd))
 }
