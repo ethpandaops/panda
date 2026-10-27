@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -75,6 +76,7 @@ type DevnetHandler struct {
 
 	mu     sync.Mutex
 	tokens map[string]devnetToken
+	mints  singleflight.Group
 
 	proxyMu sync.RWMutex
 	proxies map[string]*httputil.ReverseProxy
@@ -174,27 +176,39 @@ func (h *DevnetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // bearerFor returns the static token when configured, else a cached-or-minted
-// authenticatoor JWT for the devnet label.
+// authenticatoor JWT for the devnet label. Mints are deduplicated per label
+// and run outside the cache lock, so one slow devnet never stalls the others.
 func (h *DevnetHandler) bearerFor(ctx context.Context, label string) (string, error) {
 	if h.cfg.StaticToken != "" {
 		return h.cfg.StaticToken, nil
 	}
 
 	h.mu.Lock()
-	defer h.mu.Unlock()
+	cached, ok := h.tokens[label]
+	h.mu.Unlock()
 
-	if cached, ok := h.tokens[label]; ok && time.Now().Before(cached.expires.Add(-devnetTokenSkew)) {
+	if ok && time.Now().Before(cached.expires.Add(-devnetTokenSkew)) {
 		return cached.token, nil
 	}
 
-	minted, err := h.mintToken(ctx, label)
+	// Detached from the first caller's cancellation: its result is shared.
+	token, err, _ := h.mints.Do(label, func() (any, error) {
+		minted, err := h.mintToken(context.WithoutCancel(ctx), label)
+		if err != nil {
+			return "", err
+		}
+
+		h.mu.Lock()
+		h.tokens[label] = minted
+		h.mu.Unlock()
+
+		return minted.token, nil
+	})
 	if err != nil {
 		return "", err
 	}
 
-	h.tokens[label] = minted
-
-	return minted.token, nil
+	return token.(string), nil //nolint:forcetypeassert // the Do closure only returns strings
 }
 
 // forgetToken drops the cached JWT for label so the next request re-mints,
