@@ -818,6 +818,12 @@ func (d *DevnetServicesConfig) validate() error {
 			return fmt.Errorf("devnet_services.services[%d].name %q is duplicated", i, svc.Name)
 		}
 
+		// Minted tokens carry write authority on every devnet: an ungated
+		// service would hand it to anyone who can reach the proxy.
+		if hasCF && len(svc.AllowedOrgs) == 0 {
+			return fmt.Errorf("devnet_services.services[%d] (%s): allowed_orgs is required with cf_access credentials", i, svc.Name)
+		}
+
 		seen[svc.Name] = struct{}{}
 	}
 

@@ -18,8 +18,7 @@ func devnetTestConfig() ServerConfig {
 	cfg := ServerConfig{
 		Auth: AuthConfig{Mode: AuthModeNone},
 		DevnetServices: &DevnetServicesConfig{
-			CFAccessClientID:     "id",
-			CFAccessClientSecret: "secret",
+			StaticToken: "token",
 			Services: []BaseDatasourceConfig{
 				{Name: "spamoor", AllowedOrgs: []string{"ethpandaops:Core"}},
 				{Name: "assertoor"},
@@ -33,13 +32,15 @@ func devnetTestConfig() ServerConfig {
 
 func TestDevnetServicesConfigValidate(t *testing.T) {
 	services := []BaseDatasourceConfig{{Name: "spamoor"}}
+	gated := []BaseDatasourceConfig{{Name: "spamoor", AllowedOrgs: []string{"ethpandaops:Core"}}}
 
 	tests := []struct {
 		name    string
 		cfg     DevnetServicesConfig
 		wantErr string
 	}{
-		{"cf credential", DevnetServicesConfig{CFAccessClientID: "id", CFAccessClientSecret: "s", Services: services}, ""},
+		{"cf credential", DevnetServicesConfig{CFAccessClientID: "id", CFAccessClientSecret: "s", Services: gated}, ""},
+		{"cf credential ungated", DevnetServicesConfig{CFAccessClientID: "id", CFAccessClientSecret: "s", Services: services}, "allowed_orgs is required"},
 		{"static token", DevnetServicesConfig{StaticToken: "t", Services: services}, ""},
 		{"no credential", DevnetServicesConfig{Services: services}, "cf_access_client_id and cf_access_client_secret are required"},
 		{"half cf credential", DevnetServicesConfig{CFAccessClientID: "id", Services: services}, "are required"},
