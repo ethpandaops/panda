@@ -87,6 +87,15 @@ func NewAuthorizer(log logrus.FieldLogger, cfg ServerConfig) *Authorizer {
 		}}
 	}
 
+	if cfg.DevnetServices != nil {
+		for _, svc := range cfg.DevnetServices.Services {
+			a.rules[ruleKey("devnet", svc.Name)] = []datasourceVariantRule{{
+				routeName:   svc.Name,
+				allowedOrgs: append([]string(nil), svc.AllowedOrgs...),
+			}}
+		}
+	}
+
 	// Type-level feature rules. Built whenever the feature is configured so an
 	// empty allowed_orgs denies rather than leaving the route without a rule.
 	if cfg.EthNode != nil {
@@ -159,6 +168,13 @@ func (a *Authorizer) Middleware() func(http.Handler) http.Handler {
 			dsType := extractDatasourceType(r.URL.Path)
 			dsName := r.Header.Get(handlers.DatasourceHeader)
 
+			// The devnet handler routes on the service in the path, so the
+			// rule must key on the same value: a header naming an allowed
+			// service must not unlock another one.
+			if dsType == "devnet" {
+				dsName, _, _, _ = handlers.ParseDevnetPath(r.URL.Path)
+			}
+
 			routeName, ok := a.routeName(r.Context(), dsType, dsName)
 			if !ok {
 				http.Error(w, "forbidden: insufficient org membership for this datasource", http.StatusForbidden)
@@ -198,6 +214,7 @@ func (a *Authorizer) FilterDatasources(ctx context.Context, resp DatasourcesResp
 	filtered.LokiInfo = a.filterDatasourceList(userOrgs, hasUser, "loki", resp.LokiInfo)
 	filtered.BenchmarkoorInfo = a.filterDatasourceList(userOrgs, hasUser, "benchmarkoor", resp.BenchmarkoorInfo)
 	filtered.ComputeInfo = a.filterDatasourceList(userOrgs, hasUser, "compute", resp.ComputeInfo)
+	filtered.DevnetInfo = a.filterDatasourceList(userOrgs, hasUser, "devnet", resp.DevnetInfo)
 
 	return filtered
 }
