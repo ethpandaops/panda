@@ -414,6 +414,8 @@ func (h *DevnetHandler) mint(ctx context.Context, exchanged, label string) (devn
 
 	switch {
 	case status == http.StatusOK:
+	case status == http.StatusTooManyRequests:
+		return devnetCred{}, fmt.Errorf("authenticatoor at %s is rate limited (HTTP 429)", tokenURL)
 	case status == http.StatusNotFound:
 		return refusal(fmt.Sprintf(
 			"%s has no /%s/token endpoint: the devnet's authenticatoor predates bearer support or lacks the %q provider",

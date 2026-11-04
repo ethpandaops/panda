@@ -289,6 +289,16 @@ func TestDevnetHandlerInfrastructureFailuresFail(t *testing.T) {
 		assert.Empty(t, upstream.seen)
 	})
 
+	t.Run("authenticatoor rate limited is not a refusal", func(t *testing.T) {
+		upstream := &devnetUpstream{mintStatus: map[string]int{"auth.dev-1.ethpandaops.io": http.StatusTooManyRequests}}
+		h := newTestDevnetHandler(DevnetConfig{Identity: testIdentity()}, upstream)
+
+		rec := serveDevnet(h, http.MethodGet, "/devnet/spamoor/dev-1/api/spammers")
+		assert.Equal(t, http.StatusBadGateway, rec.Code)
+		assert.Contains(t, rec.Body.String(), "rate limited")
+		assert.Empty(t, upstream.seen)
+	})
+
 	t.Run("authenticatoor error", func(t *testing.T) {
 		upstream := &devnetUpstream{mintStatus: map[string]int{"auth.dev-1.ethpandaops.io": http.StatusInternalServerError}}
 		h := newTestDevnetHandler(DevnetConfig{Identity: testIdentity()}, upstream)
