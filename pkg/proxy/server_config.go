@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"regexp"
 	"slices"
@@ -376,17 +377,24 @@ type ComputeInstanceConfig struct {
 	URL                  string `yaml:"url"`
 }
 
-// DevnetServicesConfig configures the /devnet relay. The proxy trades the CF
-// Access service token for a per-devnet authenticatoor JWT and injects it on
-// every service API call; StaticToken replaces minting for local/dev use.
-// Each service entry is a datasource named after the service, so
-// allowed_orgs gates who may use it.
+// DevnetServicesConfig configures the /devnet relay. Each service entry is a
+// datasource named after the service, so allowed_orgs can gate who may use
+// the relay at all; who may write is decided by the IdP through Identity.
 type DevnetServicesConfig struct {
-	CFAccessClientID     string                 `yaml:"cf_access_client_id,omitempty"`
-	CFAccessClientSecret string                 `yaml:"cf_access_client_secret,omitempty"`
-	StaticToken          string                 `yaml:"static_token,omitempty"`
-	DomainSuffix         string                 `yaml:"domain_suffix,omitempty"`
-	Services             []BaseDatasourceConfig `yaml:"services"`
+	DomainSuffix string                 `yaml:"domain_suffix,omitempty"`
+	Identity     *DevnetIdentityConfig  `yaml:"identity,omitempty"`
+	Services     []BaseDatasourceConfig `yaml:"services"`
+}
+
+// DevnetIdentityConfig lets the relay act as the caller on devnets: it
+// exchanges the caller's token at the IdP (TokenURL, for ClientID) and uses
+// the result at the devnet authenticatoor's bearer provider. Without it every
+// request is relayed anonymously. See handlers.DevnetIdentityConfig.
+type DevnetIdentityConfig struct {
+	TokenURL               string   `yaml:"token_url"`
+	ClientID               string   `yaml:"client_id"`
+	Scopes                 []string `yaml:"scopes,omitempty"`
+	AuthenticatoorProvider string   `yaml:"authenticatoor_provider,omitempty"`
 }
 
 // RateLimitConfig holds rate limiting configuration.
@@ -786,22 +794,20 @@ func (c *ServerConfig) Validate() error {
 // devnetDomainSuffix matches a DNS zone such as "ethpandaops.io".
 var devnetDomainSuffix = regexp.MustCompile(`^[a-z0-9-]+(\.[a-z0-9-]+)+$`)
 
+// devnetProviderName matches an authenticatoor provider instance name.
+var devnetProviderName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
+
 func (d *DevnetServicesConfig) validate() error {
 	if d == nil {
 		return nil
 	}
 
-	hasCF := d.CFAccessClientID != "" || d.CFAccessClientSecret != ""
-
-	switch {
-	case d.StaticToken != "" && hasCF:
-		return fmt.Errorf("devnet_services: set either static_token or cf_access_client_id/secret, not both")
-	case d.StaticToken == "" && (d.CFAccessClientID == "" || d.CFAccessClientSecret == ""):
-		return fmt.Errorf("devnet_services: cf_access_client_id and cf_access_client_secret are required (or static_token for local use)")
-	}
-
 	if d.DomainSuffix != "" && !devnetDomainSuffix.MatchString(d.DomainSuffix) {
 		return fmt.Errorf("devnet_services.domain_suffix %q is not a DNS zone", d.DomainSuffix)
+	}
+
+	if err := d.Identity.validate(); err != nil {
+		return err
 	}
 
 	if len(d.Services) == 0 {
@@ -818,13 +824,29 @@ func (d *DevnetServicesConfig) validate() error {
 			return fmt.Errorf("devnet_services.services[%d].name %q is duplicated", i, svc.Name)
 		}
 
-		// Minted tokens carry write authority on every devnet: an ungated
-		// service would hand it to anyone who can reach the proxy.
-		if hasCF && len(svc.AllowedOrgs) == 0 {
-			return fmt.Errorf("devnet_services.services[%d] (%s): allowed_orgs is required with cf_access credentials", i, svc.Name)
-		}
-
 		seen[svc.Name] = struct{}{}
+	}
+
+	return nil
+}
+
+func (i *DevnetIdentityConfig) validate() error {
+	if i == nil {
+		return nil
+	}
+
+	u, err := url.Parse(i.TokenURL)
+	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
+		return fmt.Errorf("devnet_services.identity.token_url %q must be an absolute http(s) URL", i.TokenURL)
+	}
+
+	if strings.TrimSpace(i.ClientID) == "" {
+		return fmt.Errorf("devnet_services.identity.client_id is required")
+	}
+
+	if i.AuthenticatoorProvider != "" && !devnetProviderName.MatchString(i.AuthenticatoorProvider) {
+		return fmt.Errorf("devnet_services.identity.authenticatoor_provider %q must match %s",
+			i.AuthenticatoorProvider, devnetProviderName.String())
 	}
 
 	return nil
@@ -842,13 +864,21 @@ func (c *ServerConfig) ToDevnetHandlerConfig() *handlers.DevnetConfig {
 		names = append(names, svc.Name)
 	}
 
-	return &handlers.DevnetConfig{
-		Services:             names,
-		CFAccessClientID:     c.DevnetServices.CFAccessClientID,
-		CFAccessClientSecret: c.DevnetServices.CFAccessClientSecret,
-		StaticToken:          c.DevnetServices.StaticToken,
-		DomainSuffix:         c.DevnetServices.DomainSuffix,
+	cfg := &handlers.DevnetConfig{
+		Services:     names,
+		DomainSuffix: c.DevnetServices.DomainSuffix,
 	}
+
+	if id := c.DevnetServices.Identity; id != nil {
+		cfg.Identity = &handlers.DevnetIdentityConfig{
+			TokenURL:               id.TokenURL,
+			ClientID:               id.ClientID,
+			Scopes:                 id.Scopes,
+			AuthenticatoorProvider: id.AuthenticatoorProvider,
+		}
+	}
+
+	return cfg
 }
 
 // ToBenchmarkoorHandlerConfigs converts the benchmarkoor instance configs to

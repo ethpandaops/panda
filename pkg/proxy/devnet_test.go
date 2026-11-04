@@ -18,7 +18,6 @@ func devnetTestConfig() ServerConfig {
 	cfg := ServerConfig{
 		Auth: AuthConfig{Mode: AuthModeNone},
 		DevnetServices: &DevnetServicesConfig{
-			StaticToken: "token",
 			Services: []BaseDatasourceConfig{
 				{Name: "spamoor", AllowedOrgs: []string{"ethpandaops:Core"}},
 				{Name: "assertoor"},
@@ -32,24 +31,45 @@ func devnetTestConfig() ServerConfig {
 
 func TestDevnetServicesConfigValidate(t *testing.T) {
 	services := []BaseDatasourceConfig{{Name: "spamoor"}}
-	gated := []BaseDatasourceConfig{{Name: "spamoor", AllowedOrgs: []string{"ethpandaops:Core"}}}
+	identity := func(mutate func(*DevnetIdentityConfig)) *DevnetIdentityConfig {
+		id := &DevnetIdentityConfig{
+			TokenURL: "https://authentik.example/application/o/token/",
+			ClientID: "devnet-authenticatoor",
+		}
+		if mutate != nil {
+			mutate(id)
+		}
+
+		return id
+	}
 
 	tests := []struct {
 		name    string
 		cfg     DevnetServicesConfig
 		wantErr string
 	}{
-		{"cf credential", DevnetServicesConfig{CFAccessClientID: "id", CFAccessClientSecret: "s", Services: gated}, ""},
-		{"cf credential ungated", DevnetServicesConfig{CFAccessClientID: "id", CFAccessClientSecret: "s", Services: services}, "allowed_orgs is required"},
-		{"static token", DevnetServicesConfig{StaticToken: "t", Services: services}, ""},
-		{"no credential", DevnetServicesConfig{Services: services}, "cf_access_client_id and cf_access_client_secret are required"},
-		{"half cf credential", DevnetServicesConfig{CFAccessClientID: "id", Services: services}, "are required"},
-		{"both credentials", DevnetServicesConfig{StaticToken: "t", CFAccessClientID: "id", Services: services}, "not both"},
-		{"no services", DevnetServicesConfig{StaticToken: "t"}, "must list at least one"},
-		{"unknown service", DevnetServicesConfig{StaticToken: "t", Services: []BaseDatasourceConfig{{Name: "dora"}}}, `"dora" is not one of`},
-		{"duplicate service", DevnetServicesConfig{StaticToken: "t", Services: []BaseDatasourceConfig{{Name: "spamoor"}, {Name: "spamoor"}}}, "duplicated"},
-		{"bad suffix", DevnetServicesConfig{StaticToken: "t", DomainSuffix: "evil.com/x", Services: services}, "not a DNS zone"},
-		{"single-label suffix", DevnetServicesConfig{StaticToken: "t", DomainSuffix: "io", Services: services}, "not a DNS zone"},
+		{"anonymous relay", DevnetServicesConfig{Services: services}, ""},
+		{"identity", DevnetServicesConfig{Identity: identity(nil), Services: services}, ""},
+		{"identity with provider", DevnetServicesConfig{Identity: identity(func(i *DevnetIdentityConfig) {
+			i.AuthenticatoorProvider = "authentik"
+		}), Services: services}, ""},
+		{"relative token url", DevnetServicesConfig{Identity: identity(func(i *DevnetIdentityConfig) {
+			i.TokenURL = "/application/o/token/"
+		}), Services: services}, "token_url"},
+		{"non-http token url", DevnetServicesConfig{Identity: identity(func(i *DevnetIdentityConfig) {
+			i.TokenURL = "ftp://authentik.example/token"
+		}), Services: services}, "token_url"},
+		{"no client id", DevnetServicesConfig{Identity: identity(func(i *DevnetIdentityConfig) {
+			i.ClientID = " "
+		}), Services: services}, "client_id is required"},
+		{"bad provider name", DevnetServicesConfig{Identity: identity(func(i *DevnetIdentityConfig) {
+			i.AuthenticatoorProvider = "../auth"
+		}), Services: services}, "authenticatoor_provider"},
+		{"no services", DevnetServicesConfig{}, "must list at least one"},
+		{"unknown service", DevnetServicesConfig{Services: []BaseDatasourceConfig{{Name: "dora"}}}, `"dora" is not one of`},
+		{"duplicate service", DevnetServicesConfig{Services: []BaseDatasourceConfig{{Name: "spamoor"}, {Name: "spamoor"}}}, "duplicated"},
+		{"bad suffix", DevnetServicesConfig{DomainSuffix: "evil.com/x", Services: services}, "not a DNS zone"},
+		{"single-label suffix", DevnetServicesConfig{DomainSuffix: "io", Services: services}, "not a DNS zone"},
 	}
 
 	for _, tt := range tests {
@@ -75,6 +95,19 @@ func TestDevnetServicesAloneIsAValidProxyConfig(t *testing.T) {
 	require.NotNil(t, hc)
 	assert.Equal(t, []string{"spamoor", "assertoor"}, hc.Services)
 	assert.Equal(t, "ethpandaops.io", hc.ResolvedSuffix())
+	assert.Nil(t, hc.Identity, "without identity the relay is anonymous")
+
+	cfg.DevnetServices.Identity = &DevnetIdentityConfig{
+		TokenURL:               "https://authentik.example/application/o/token/",
+		ClientID:               "devnet-authenticatoor",
+		AuthenticatoorProvider: "authentik",
+	}
+	require.NoError(t, cfg.Validate())
+	assert.Equal(t, &handlers.DevnetIdentityConfig{
+		TokenURL:               "https://authentik.example/application/o/token/",
+		ClientID:               "devnet-authenticatoor",
+		AuthenticatoorProvider: "authentik",
+	}, cfg.ToDevnetHandlerConfig().Identity)
 }
 
 func TestAuthorizerGatesDevnetServiceFromPath(t *testing.T) {

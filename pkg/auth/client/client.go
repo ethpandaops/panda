@@ -259,6 +259,10 @@ func (c *client) Refresh(ctx context.Context, refreshToken string) (*Tokens, err
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
+	if tokenResp.AccessToken == "" {
+		return nil, fmt.Errorf("token endpoint returned no access token")
+	}
+
 	resolvedRefreshToken := tokenResp.RefreshToken
 	refreshTokenIssuedAt := time.Now()
 
@@ -270,7 +274,7 @@ func (c *client) Refresh(ctx context.Context, refreshToken string) (*Tokens, err
 	}
 
 	return &Tokens{
-		AccessToken:          bearerTokenFromResponse(tokenResp),
+		AccessToken:          tokenResp.AccessToken,
 		RefreshToken:         resolvedRefreshToken,
 		TokenType:            tokenResp.TokenType,
 		ExpiresIn:            tokenResp.ExpiresIn,
@@ -513,8 +517,12 @@ func (c *client) exchangeDeviceCode(ctx context.Context, deviceCode string) (tok
 			return nil, false, fmt.Errorf("decoding token response: %w", err)
 		}
 
+		if tokenResp.AccessToken == "" {
+			return nil, false, fmt.Errorf("token endpoint returned no access token")
+		}
+
 		return &Tokens{
-			AccessToken:          bearerTokenFromResponse(tokenResp),
+			AccessToken:          tokenResp.AccessToken,
 			RefreshToken:         tokenResp.RefreshToken,
 			TokenType:            tokenResp.TokenType,
 			ExpiresIn:            tokenResp.ExpiresIn,
@@ -546,19 +554,14 @@ func (c *client) exchangeDeviceCode(ctx context.Context, deviceCode string) (tok
 	}
 }
 
-// tokenResponse is the OAuth token endpoint response.
+// tokenResponse is the OAuth token endpoint response. The access token is
+// the bearer credential: it is what the proxy and its upstreams verify, and
+// what an IdP can exchange for tokens to other applications (Authentik JWT
+// federation looks tokens up by their access-token value). Authentik and dex
+// issue it as a JWT carrying the ID token's claims and audience.
 type tokenResponse struct {
 	AccessToken  string `json:"access_token"`
-	IDToken      string `json:"id_token,omitempty"`
 	RefreshToken string `json:"refresh_token,omitempty"`
 	TokenType    string `json:"token_type"`
 	ExpiresIn    int    `json:"expires_in"`
-}
-
-func bearerTokenFromResponse(resp tokenResponse) string {
-	if resp.IDToken != "" {
-		return resp.IDToken
-	}
-
-	return resp.AccessToken
 }

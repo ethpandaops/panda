@@ -5,7 +5,7 @@ devnet_spamoor:
     - name: Find devnets with spamoor and assertoor
       description: >-
         Answer "which devnets run spamoor/assertoor" and whether the relay can
-        reach them (relayed=True means writes go through the proxy)
+        reach them (relayed=True means the proxy relays the service)
       query: |
         from ethpandaops import devnet
 
@@ -27,7 +27,7 @@ devnet_spamoor:
     - name: Pause and resume a spammer
       description: >-
         Write example: pause a running spammer, then start it again. Writes
-        need the relay (your account must be allowed for the spamoor service)
+        run as you and need devnet access (the ethPandaOps team)
       query: |
         from ethpandaops import devnet
 

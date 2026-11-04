@@ -108,7 +108,7 @@ Fifteen compiled-in modules are registered in `pkg/app/app.go`:
 - `cbt`
 - `benchmarkoor`
 - `compute`
-- `devnet` (spamoor/assertoor API relay; the proxy holds the credential that authorizes writes)
+- `devnet` (spamoor/assertoor API relay; the proxy acts as the caller via an IdP token exchange)
 - `tracoor`
 - `block_archive`
 - `datasets` (dataset knowledge packs, lives in `datasets/` at the repo root)

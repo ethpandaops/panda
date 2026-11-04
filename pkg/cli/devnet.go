@@ -16,9 +16,9 @@ var devnetCmd = &cobra.Command{
 	Use:     "devnet",
 	Short:   "Call spamoor and assertoor APIs on a devnet through the proxy",
 	Long: `Call devnet service APIs (spamoor transaction spammers, assertoor test runs)
-through the proxy, which holds the credential the services require for writes.
-No devnet cookie or token is needed; your account must be allowed for the
-service on the proxy.
+through the proxy, which acts as you on the devnet. No devnet cookie or token
+is needed: writes need devnet access (granted by the IdP, e.g. the ethPandaOps
+team); without it requests run anonymously and only public reads succeed.
 
 Paths are the service's own API routes:
   spamoor    /api/spammers, /api/spammer/{id}, /api/spammer/{id}/start|pause, /api/scenarios

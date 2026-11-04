@@ -204,7 +204,7 @@ func (s *service) handleDevnetRequest(w http.ResponseWriter, r *http.Request) {
 	if !relayed {
 		writeAPIError(w, http.StatusForbidden, fmt.Sprintf(
 			"devnet service %q is not available through the proxy: it is not configured under devnet_services, or your account is not in its allowed_orgs. "+
-				"Read-only endpoints are public at the service URL from devnet.list_networks", req.service))
+				"Public endpoints are reachable at the service URL from devnet.list_networks", req.service))
 
 		return
 	}
@@ -252,7 +252,7 @@ func (s *service) handleDevnetRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if status < 200 || status >= 300 {
-		writeAPIError(w, status, devnetErrorMessage(req.service, status, data))
+		writeAPIError(w, status, devnetErrorMessage(req.service, status, data, respHeaders))
 		return
 	}
 
@@ -261,15 +261,19 @@ func (s *service) handleDevnetRequest(w http.ResponseWriter, r *http.Request) {
 
 // devnetErrorMessage adds the remedy for the relay's own failure modes to an
 // upstream error body.
-func devnetErrorMessage(service string, status int, body []byte) string {
+func devnetErrorMessage(service string, status int, body []byte, header http.Header) string {
 	message := strings.TrimSpace(string(body))
+	identity := header.Get(handlers.DevnetIdentityHeader)
 
 	switch {
 	case status == http.StatusForbidden && strings.HasPrefix(message, "forbidden: insufficient org membership"):
 		return fmt.Sprintf("%s: your account is not in the allowed_orgs for the %s relay", message, service)
+	case status == http.StatusUnauthorized && identity == "anonymous":
+		return fmt.Sprintf("%s requires a devnet identity for this endpoint (HTTP 401: %s), and the request ran anonymously: %s",
+			service, message, header.Get(handlers.DevnetIdentityReasonHeader))
 	case status == http.StatusUnauthorized:
-		return fmt.Sprintf("%s rejected the relay's token (HTTP 401: %s); the proxy's devnet_services credential "+
-			"is invalid for this devnet or its authenticatoor does not accept it", service, message)
+		return fmt.Sprintf("%s rejected the devnet token minted for %s (HTTP 401: %s); the relay mints a fresh one on the next request",
+			service, identity, message)
 	default:
 		return message
 	}

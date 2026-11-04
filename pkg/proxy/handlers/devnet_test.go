@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -15,46 +16,70 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// devnetUpstream stands in for both authenticatoor and the services: the
-// handler's transport is pointed at it, so the URL host, Host header and
-// headers it sees are exactly what would go on the wire.
+const (
+	testTokenURL   = "https://idp.example/application/o/token/"
+	coreCaller     = "core-caller-token"
+	outsiderCaller = "outsider-caller-token"
+)
+
+// devnetUpstream stands in for the IdP token endpoint, every devnet
+// authenticatoor and every service: the handler's transport is pointed at
+// it, so URLs, Host headers and headers are exactly what would go on the wire.
 type devnetUpstream struct {
-	mu         sync.Mutex
-	mints      int
-	mintHeader http.Header
-	seen       []*http.Request
-	mintStatus int
-	upstream   int
+	mu sync.Mutex
+
+	exchanges     []url.Values
+	exchangeError int // non-zero: the IdP answers this status
+
+	mints      []*http.Request
+	mintStatus map[string]int // auth host -> status override
+
+	seen     []*http.Request
+	upstream int
 }
 
 func (u *devnetUpstream) RoundTrip(req *http.Request) (*http.Response, error) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 
-	respond := func(status int, body string, header http.Header) *http.Response {
-		if header == nil {
-			header = http.Header{}
-		}
-
+	respond := func(status int, body string) *http.Response {
 		return &http.Response{
 			StatusCode: status,
-			Header:     header,
+			Header:     http.Header{"Content-Type": {"application/json"}},
 			Body:       io.NopCloser(strings.NewReader(body)),
 			Request:    req,
 		}
 	}
 
-	if strings.HasPrefix(req.URL.Host, "auth.") {
-		u.mints++
-		u.mintHeader = req.Header.Clone()
+	switch {
+	case req.URL.String() == testTokenURL:
+		body, _ := io.ReadAll(req.Body)
+		form, _ := url.ParseQuery(string(body))
+		u.exchanges = append(u.exchanges, form)
 
-		if u.mintStatus != 0 {
-			return respond(u.mintStatus, "", http.Header{"Location": []string{"https://team.cloudflareaccess.com/login"}}), nil
+		if u.exchangeError != 0 {
+			return respond(u.exchangeError, `upstream failure`), nil
 		}
 
-		body := fmt.Sprintf(`{"token":"jwt-%d","user":"svc","expr":%d,"now":0}`, u.mints, time.Now().Add(time.Hour).Unix())
+		if form.Get("client_assertion") != coreCaller {
+			return respond(http.StatusBadRequest, `{"error":"invalid_grant"}`), nil
+		}
 
-		return respond(http.StatusOK, body, nil), nil
+		return respond(http.StatusOK, fmt.Sprintf(`{"access_token":"devnet-at-%d","expires_in":300}`, len(u.exchanges))), nil
+
+	case strings.HasPrefix(req.URL.Host, "auth."):
+		u.mints = append(u.mints, req.Clone(req.Context()))
+
+		if status := u.mintStatus[req.URL.Host]; status != 0 {
+			return respond(status, ``), nil
+		}
+
+		if !strings.HasPrefix(req.Header.Get("Authorization"), "Bearer devnet-at-") {
+			return respond(http.StatusUnauthorized, ``), nil
+		}
+
+		return respond(http.StatusOK, fmt.Sprintf(`{"token":"jwt-%d","user":"alice@example.com","expr":%d,"now":0}`,
+			len(u.mints), time.Now().Add(30*time.Minute).Unix())), nil
 	}
 
 	u.seen = append(u.seen, req.Clone(req.Context()))
@@ -64,24 +89,34 @@ func (u *devnetUpstream) RoundTrip(req *http.Request) (*http.Response, error) {
 		status = u.upstream
 	}
 
-	return respond(status, `{"ok":true}`, nil), nil
+	return respond(status, `{"ok":true}`), nil
 }
 
-func newTestDevnetHandler(cfg DevnetConfig, upstream *devnetUpstream) *DevnetHandler {
+func (u *devnetUpstream) counts() (exchanges, mints, seen int) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+
+	return len(u.exchanges), len(u.mints), len(u.seen)
+}
+
+func testIdentity() *DevnetIdentityConfig {
+	return &DevnetIdentityConfig{TokenURL: testTokenURL, ClientID: "devnet-authenticatoor"}
+}
+
+func newTestDevnetHandler(cfg DevnetConfig, upstream http.RoundTripper) *DevnetHandler {
 	if cfg.Services == nil {
 		cfg.Services = []string{"spamoor", "assertoor"}
-	}
-
-	if cfg.StaticToken == "" {
-		cfg.CFAccessClientID, cfg.CFAccessClientSecret = "cf-id", "cf-secret"
 	}
 
 	return newDevnetHandler(logrus.New(), cfg, upstream)
 }
 
-func serveDevnet(h http.Handler, method, target string) *httptest.ResponseRecorder {
+func serveDevnetAs(h http.Handler, caller, method, target string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, target, nil)
-	req.Header.Set("Authorization", "Bearer caller-proxy-token")
+	if caller != "" {
+		req.Header.Set("Authorization", "Bearer "+caller)
+	}
+
 	req.Header.Set("Cookie", "session=browser")
 
 	rec := httptest.NewRecorder()
@@ -90,9 +125,13 @@ func serveDevnet(h http.Handler, method, target string) *httptest.ResponseRecord
 	return rec
 }
 
+func serveDevnet(h http.Handler, method, target string) *httptest.ResponseRecorder {
+	return serveDevnetAs(h, coreCaller, method, target)
+}
+
 func TestDevnetHandlerRejectsPaths(t *testing.T) {
 	upstream := &devnetUpstream{}
-	h := newTestDevnetHandler(DevnetConfig{Services: []string{"spamoor"}}, upstream)
+	h := newTestDevnetHandler(DevnetConfig{Services: []string{"spamoor"}, Identity: testIdentity()}, upstream)
 
 	tests := []struct {
 		name   string
@@ -117,22 +156,34 @@ func TestDevnetHandlerRejectsPaths(t *testing.T) {
 		})
 	}
 
-	assert.Zero(t, upstream.mints, "rejected paths must not mint")
-	assert.Empty(t, upstream.seen, "rejected paths must not reach a service")
+	exchanges, mints, seen := upstream.counts()
+	assert.Zero(t, exchanges+mints, "rejected paths must not acquire tokens")
+	assert.Zero(t, seen, "rejected paths must not reach a service")
 }
 
-func TestDevnetHandlerMintsCachesAndInjects(t *testing.T) {
+func TestDevnetHandlerActsAsTheCaller(t *testing.T) {
 	upstream := &devnetUpstream{}
-	h := newTestDevnetHandler(DevnetConfig{}, upstream)
+	h := newTestDevnetHandler(DevnetConfig{Identity: testIdentity()}, upstream)
 
 	for range 2 {
 		rec := serveDevnet(h, http.MethodPost, "/devnet/spamoor/heze-devnet-2/api/spammer/7/pause?x=1")
 		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		assert.Equal(t, "alice@example.com", rec.Header().Get(DevnetIdentityHeader))
+		assert.Empty(t, rec.Header().Get(DevnetIdentityReasonHeader))
 	}
 
-	assert.Equal(t, 1, upstream.mints, "the token is cached per label")
-	assert.Equal(t, "cf-id", upstream.mintHeader.Get("CF-Access-Client-Id"))
-	assert.Equal(t, "cf-secret", upstream.mintHeader.Get("CF-Access-Client-Secret"))
+	require.Len(t, upstream.exchanges, 1, "the exchanged token is cached per caller")
+	ex := upstream.exchanges[0]
+	assert.Equal(t, "client_credentials", ex.Get("grant_type"))
+	assert.Equal(t, "devnet-authenticatoor", ex.Get("client_id"))
+	assert.Equal(t, "urn:ietf:params:oauth:client-assertion-type:jwt-bearer", ex.Get("client_assertion_type"))
+	assert.Equal(t, coreCaller, ex.Get("client_assertion"))
+	assert.Equal(t, "openid email profile groups", ex.Get("scope"))
+
+	require.Len(t, upstream.mints, 1, "the devnet token is cached per caller and devnet")
+	mint := upstream.mints[0]
+	assert.Equal(t, "https://auth.heze-devnet-2.ethpandaops.io/authentik/token", mint.URL.String())
+	assert.Equal(t, "Bearer devnet-at-1", mint.Header.Get("Authorization"), "devnets only see the exchanged token")
 
 	require.Len(t, upstream.seen, 2)
 	out := upstream.seen[0]
@@ -145,45 +196,119 @@ func TestDevnetHandlerMintsCachesAndInjects(t *testing.T) {
 	assert.Equal(t, "Bearer jwt-1", out.Header.Get("Authorization"), "caller bearer is replaced")
 	assert.Empty(t, out.Header.Get("Cookie"))
 
-	// A second devnet mints its own token.
+	// A second devnet reuses the exchanged token but mints its own JWT.
 	rec := serveDevnet(h, http.MethodGet, "/devnet/assertoor/glamsterdam-devnet-8/api/v1/tests")
 	require.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, 2, upstream.mints)
+	assert.Len(t, upstream.exchanges, 1)
+	assert.Len(t, upstream.mints, 2)
 	assert.Equal(t, "assertoor.glamsterdam-devnet-8.ethpandaops.io", upstream.seen[2].Host)
 }
 
-func TestDevnetHandlerDomainSuffix(t *testing.T) {
+func TestDevnetHandlerNeverSharesTokensAcrossCallers(t *testing.T) {
 	upstream := &devnetUpstream{}
-	h := newTestDevnetHandler(DevnetConfig{DomainSuffix: "example.org"}, upstream)
+	h := newTestDevnetHandler(DevnetConfig{Identity: testIdentity()}, upstream)
+
+	require.Equal(t, http.StatusOK, serveDevnet(h, http.MethodPost, "/devnet/spamoor/dev-1/api/spammer/1/start").Code)
+
+	rec := serveDevnetAs(h, outsiderCaller, http.MethodPost, "/devnet/spamoor/dev-1/api/spammer/1/start")
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "anonymous", rec.Header().Get(DevnetIdentityHeader))
+	assert.Empty(t, upstream.seen[1].Header.Get("Authorization"), "an outsider never rides on a member's cached token")
+}
+
+func TestDevnetHandlerRefusedExchangeRelaysAnonymously(t *testing.T) {
+	upstream := &devnetUpstream{}
+	h := newTestDevnetHandler(DevnetConfig{Identity: testIdentity()}, upstream)
+
+	for range 2 {
+		rec := serveDevnetAs(h, outsiderCaller, http.MethodGet, "/devnet/spamoor/dev-1/api/spammers")
+		require.Equal(t, http.StatusOK, rec.Code, "public reads still work")
+		assert.Equal(t, "anonymous", rec.Header().Get(DevnetIdentityHeader))
+		assert.Contains(t, rec.Header().Get(DevnetIdentityReasonHeader), "refused the devnet token exchange (invalid_grant)")
+	}
+
+	exchanges, mints, seen := upstream.counts()
+	assert.Equal(t, 1, exchanges, "a refusal is cached")
+	assert.Zero(t, mints)
+	require.Equal(t, 2, seen)
+	assert.Empty(t, upstream.seen[0].Header.Get("Authorization"))
+}
+
+func TestDevnetHandlerDevnetWithoutBearerProviderRelaysAnonymously(t *testing.T) {
+	upstream := &devnetUpstream{mintStatus: map[string]int{"auth.old-devnet.ethpandaops.io": http.StatusNotFound}}
+	h := newTestDevnetHandler(DevnetConfig{Identity: testIdentity()}, upstream)
+
+	rec := serveDevnet(h, http.MethodGet, "/devnet/spamoor/old-devnet/api/spammers")
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "anonymous", rec.Header().Get(DevnetIdentityHeader))
+	assert.Contains(t, rec.Header().Get(DevnetIdentityReasonHeader), "predates bearer support")
+	assert.Empty(t, upstream.seen[0].Header.Get("Authorization"))
+}
+
+func TestDevnetHandlerInfrastructureFailuresFail(t *testing.T) {
+	t.Run("idp error", func(t *testing.T) {
+		upstream := &devnetUpstream{exchangeError: http.StatusBadGateway}
+		h := newTestDevnetHandler(DevnetConfig{Identity: testIdentity()}, upstream)
+
+		rec := serveDevnet(h, http.MethodGet, "/devnet/spamoor/dev-1/api/spammers")
+		assert.Equal(t, http.StatusBadGateway, rec.Code)
+		assert.Contains(t, rec.Body.String(), "token exchange")
+		assert.Empty(t, upstream.seen, "no silent downgrade to anonymous")
+	})
+
+	t.Run("authenticatoor error", func(t *testing.T) {
+		upstream := &devnetUpstream{mintStatus: map[string]int{"auth.dev-1.ethpandaops.io": http.StatusInternalServerError}}
+		h := newTestDevnetHandler(DevnetConfig{Identity: testIdentity()}, upstream)
+
+		rec := serveDevnet(h, http.MethodGet, "/devnet/spamoor/dev-1/api/spammers")
+		assert.Equal(t, http.StatusBadGateway, rec.Code)
+		assert.Empty(t, upstream.seen)
+	})
+}
+
+func TestDevnetHandlerAnonymousWithoutIdentity(t *testing.T) {
+	tests := []struct {
+		name   string
+		cfg    DevnetConfig
+		caller string
+		reason string
+	}{
+		{"no identity configured", DevnetConfig{}, coreCaller, "no devnet identity exchange configured"},
+		{"no caller token", DevnetConfig{Identity: testIdentity()}, "", "carried no caller token"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			upstream := &devnetUpstream{}
+			h := newTestDevnetHandler(tt.cfg, upstream)
+
+			rec := serveDevnetAs(h, tt.caller, http.MethodGet, "/devnet/spamoor/dev-1/api/spammers")
+			require.Equal(t, http.StatusOK, rec.Code)
+			assert.Equal(t, "anonymous", rec.Header().Get(DevnetIdentityHeader))
+			assert.Contains(t, rec.Header().Get(DevnetIdentityReasonHeader), tt.reason)
+			assert.Empty(t, upstream.exchanges)
+			assert.Empty(t, upstream.seen[0].Header.Get("Authorization"))
+		})
+	}
+}
+
+func TestDevnetHandlerConfiguredProviderAndSuffix(t *testing.T) {
+	upstream := &devnetUpstream{}
+	id := testIdentity()
+	id.AuthenticatoorProvider = "ethpandaops"
+	id.Scopes = []string{"openid", "groups"}
+	h := newTestDevnetHandler(DevnetConfig{DomainSuffix: "example.org", Identity: id}, upstream)
 
 	rec := serveDevnet(h, http.MethodGet, "/devnet/spamoor/dev-1/api/spammers")
 	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "openid groups", upstream.exchanges[0].Get("scope"))
+	assert.Equal(t, "https://auth.dev-1.example.org/ethpandaops/token", upstream.mints[0].URL.String())
 	assert.Equal(t, "spamoor.dev-1.example.org", upstream.seen[0].Host)
-}
-
-func TestDevnetHandlerStaticTokenSkipsMinting(t *testing.T) {
-	upstream := &devnetUpstream{}
-	h := newTestDevnetHandler(DevnetConfig{StaticToken: "static"}, upstream)
-
-	rec := serveDevnet(h, http.MethodDelete, "/devnet/spamoor/dev-1/api/spammer/3")
-	require.Equal(t, http.StatusOK, rec.Code)
-	assert.Zero(t, upstream.mints)
-	assert.Equal(t, "Bearer static", upstream.seen[0].Header.Get("Authorization"))
-}
-
-func TestDevnetHandlerMintRedirectIsAnError(t *testing.T) {
-	upstream := &devnetUpstream{mintStatus: http.StatusFound}
-	h := newTestDevnetHandler(DevnetConfig{}, upstream)
-
-	rec := serveDevnet(h, http.MethodGet, "/devnet/spamoor/dev-1/api/spammers")
-	assert.Equal(t, http.StatusBadGateway, rec.Code)
-	assert.Contains(t, rec.Body.String(), "no service-token policy")
-	assert.Empty(t, upstream.seen, "no token, no upstream call")
 }
 
 func TestDevnetHandlerUpstream401ForgetsToken(t *testing.T) {
 	upstream := &devnetUpstream{upstream: http.StatusUnauthorized}
-	h := newTestDevnetHandler(DevnetConfig{}, upstream)
+	h := newTestDevnetHandler(DevnetConfig{Identity: testIdentity()}, upstream)
 
 	rec := serveDevnet(h, http.MethodPost, "/devnet/spamoor/dev-1/api/spammer/1/start")
 	assert.Equal(t, http.StatusUnauthorized, rec.Code, "upstream status passes through")
@@ -191,7 +316,8 @@ func TestDevnetHandlerUpstream401ForgetsToken(t *testing.T) {
 	upstream.upstream = 0
 	rec = serveDevnet(h, http.MethodPost, "/devnet/spamoor/dev-1/api/spammer/1/start")
 	require.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, 2, upstream.mints, "a rejected token is re-minted")
+	assert.Len(t, upstream.mints, 2, "a rejected token is re-minted")
+	assert.Len(t, upstream.exchanges, 1, "the exchanged token is still valid")
 	assert.Equal(t, "Bearer jwt-2", upstream.seen[1].Header.Get("Authorization"))
 }
 
@@ -206,8 +332,8 @@ func TestParseDevnetPath(t *testing.T) {
 	assert.False(t, ok)
 }
 
-// stallingMint blocks mints for one label until released; everything else
-// answers immediately.
+// stallingMint blocks mints for one auth host until released; everything
+// else answers immediately.
 type stallingMint struct {
 	devnetUpstream
 	stallHost string
@@ -236,9 +362,7 @@ func TestDevnetHandlerSlowMintDoesNotStallOtherDevnets(t *testing.T) {
 		release:   make(chan struct{}),
 		stalled:   make(chan struct{}),
 	}
-	h := newDevnetHandler(logrus.New(), DevnetConfig{
-		Services: []string{"spamoor"}, CFAccessClientID: "cf-id", CFAccessClientSecret: "cf-secret",
-	}, upstream)
+	h := newTestDevnetHandler(DevnetConfig{Services: []string{"spamoor"}, Identity: testIdentity()}, upstream)
 
 	require.Equal(t, http.StatusOK, serveDevnet(h, http.MethodGet, "/devnet/spamoor/fast-devnet/api/spammers").Code)
 
