@@ -11,14 +11,12 @@ import (
 	"github.com/ethpandaops/panda/pkg/proxy/handlers"
 )
 
-var devnetCmd = &cobra.Command{
-	GroupID: groupDirect,
-	Use:     "devnet",
-	Short:   "Call spamoor and assertoor APIs on a devnet through the proxy",
-	Long: `Call devnet service APIs (spamoor transaction spammers, assertoor test runs)
-through the proxy, which acts as you on the devnet. No devnet cookie or token
-is needed: writes need devnet access (granted by the IdP, e.g. the ethPandaOps
-team); without it requests run anonymously and only public reads succeed.
+// The relay commands live under the existing `devnets` command (pkg/cli/
+// networks.go) rather than a new top-level `devnet`, which that command
+// already claims as an alias.
+const devnetRelayHelp = `The proxy acts as you on the devnet. No devnet cookie or token is needed:
+writes need devnet access (granted by the IdP, e.g. the ethPandaOps team);
+without it requests run anonymously and only public reads succeed.
 
 Paths are the service's own API routes:
   spamoor    /api/spammers, /api/spammer/{id}, /api/spammer/{id}/start|pause, /api/scenarios
@@ -26,28 +24,29 @@ Paths are the service's own API routes:
              /api/v1/test_runs/schedule, /api/v1/test_run/{id}/cancel
 
 Examples:
-  panda devnet networks
-  panda devnet request glamsterdam-devnet-8 spamoor GET /api/spammers
-  panda devnet request glamsterdam-devnet-8 spamoor POST /api/spammer/12/pause
-  panda devnet request glamsterdam-devnet-8 assertoor POST /api/v1/test_runs/schedule \
-    --data '{"test_id": "deploy-eip8282-contracts"}'`,
-}
+  panda devnets services
+  panda devnets request glamsterdam-devnet-8 spamoor GET /api/spammers
+  panda devnets request glamsterdam-devnet-8 spamoor POST /api/spammer/12/pause
+  panda devnets request glamsterdam-devnet-8 assertoor POST /api/v1/test_runs/schedule \
+    --data '{"test_id": "deploy-eip8282-contracts"}'`
 
 var (
 	devnetRequestData  string
 	devnetRequestQuery []string
 )
 
-var devnetNetworksCmd = &cobra.Command{
-	Use:   "networks",
-	Short: "List active networks running spamoor or assertoor",
+var devnetServicesCmd = &cobra.Command{
+	Use:   "services",
+	Short: "List active devnets running spamoor or assertoor, and whether the proxy relays them",
+	Long:  "List active devnets running spamoor or assertoor.\n\n" + devnetRelayHelp,
 	Args:  cobra.NoArgs,
-	RunE:  runDevnetNetworks,
+	RunE:  runDevnetServices,
 }
 
 var devnetRequestCmd = &cobra.Command{
 	Use:   "request <network> <service> <method> <path>",
-	Short: "Call a spamoor or assertoor API path on a devnet",
+	Short: "Call a spamoor or assertoor API path on a devnet through the proxy",
+	Long:  "Call a spamoor or assertoor API path on a devnet through the proxy.\n\n" + devnetRelayHelp,
 	Args:  cobra.ExactArgs(4),
 	ValidArgsFunction: func(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
 		switch len(args) {
@@ -63,14 +62,13 @@ var devnetRequestCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(devnetCmd)
-	devnetCmd.AddCommand(devnetNetworksCmd, devnetRequestCmd)
+	devnetsCmd.AddCommand(devnetServicesCmd, devnetRequestCmd)
 
 	devnetRequestCmd.Flags().StringVar(&devnetRequestData, "data", "", "JSON request body")
 	devnetRequestCmd.Flags().StringArrayVar(&devnetRequestQuery, "query", nil, "query parameter key=value; repeatable")
 }
 
-func runDevnetNetworks(cmd *cobra.Command, _ []string) error {
+func runDevnetServices(cmd *cobra.Command, _ []string) error {
 	response, err := runServerOperation(cmd, "devnet.list_networks", nil)
 	if err != nil {
 		return err

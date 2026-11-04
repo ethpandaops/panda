@@ -156,7 +156,6 @@ CLI commands and groups include:
 - `config`
 - `datasets`
 - `datasources`
-- `devnet`
 - `docs`
 - `dora`
 - `ethnode`

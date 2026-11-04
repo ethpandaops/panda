@@ -251,6 +251,23 @@ func TestDevnetHandlerDevnetWithoutBearerProviderRelaysAnonymously(t *testing.T)
 	assert.Empty(t, upstream.seen[0].Header.Get("Authorization"))
 }
 
+func TestDevnetHandlerUpstream401KeepsCachedRefusal(t *testing.T) {
+	upstream := &devnetUpstream{
+		mintStatus: map[string]int{"auth.old-devnet.ethpandaops.io": http.StatusNotFound},
+		upstream:   http.StatusUnauthorized,
+	}
+	h := newTestDevnetHandler(DevnetConfig{Identity: testIdentity()}, upstream)
+
+	for range 3 {
+		rec := serveDevnet(h, http.MethodPost, "/devnet/spamoor/old-devnet/api/spammer/1/start")
+		assert.Equal(t, http.StatusUnauthorized, rec.Code)
+		assert.Equal(t, "anonymous", rec.Header().Get(DevnetIdentityHeader))
+	}
+
+	_, mints, _ := upstream.counts()
+	assert.Equal(t, 1, mints, "a 401 on an anonymous write must not evict the cached refusal")
+}
+
 func TestDevnetHandlerInfrastructureFailuresFail(t *testing.T) {
 	t.Run("idp error", func(t *testing.T) {
 		upstream := &devnetUpstream{exchangeError: http.StatusBadGateway}
