@@ -32,3 +32,17 @@ func TestDevnetRequestArgsRejectsBadInput(t *testing.T) {
 	_, err = devnetRequestArgs([]string{"n", "spamoor", "GET", "/api/spammers"}, "", []string{"novalue"})
 	assert.ErrorContains(t, err, "must be key=value")
 }
+
+func TestDevnetRelayCommandsLiveUnderDevnets(t *testing.T) {
+	for _, name := range []string{"services", "request"} {
+		cmd, _, err := rootCmd.Find([]string{"devnets", name})
+		require.NoError(t, err)
+		assert.Equal(t, name, cmd.Name())
+	}
+
+	// `devnet` is an alias of `devnets`, so it must keep reaching that command.
+	cmd, _, err := rootCmd.Find([]string{"devnet", "list"})
+	require.NoError(t, err)
+	assert.Equal(t, "list", cmd.Name())
+	assert.Equal(t, "devnets", cmd.Parent().Name())
+}

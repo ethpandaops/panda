@@ -316,8 +316,12 @@ func (h *DevnetHandler) identityFor(ctx context.Context, caller, label string) (
 	minted, err := h.minted.get(ctx, mintKey, func(ctx context.Context) (devnetCred, error) {
 		return h.mint(ctx, exchanged.token, label)
 	})
+	if err != nil || minted.token == "" {
+		// A cached refusal must outlive an upstream 401: there is no token to forget.
+		return devnetRequest{cred: minted}, err
+	}
 
-	return devnetRequest{cred: minted, mintKey: mintKey}, err
+	return devnetRequest{cred: minted, mintKey: mintKey}, nil
 }
 
 // exchange trades the caller's IdP token for a devnet-access token via a
