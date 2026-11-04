@@ -361,6 +361,8 @@ func (h *DevnetHandler) exchange(ctx context.Context, caller string) (devnetCred
 
 	switch {
 	case status == http.StatusOK:
+	case status == http.StatusTooManyRequests:
+		return devnetCred{}, fmt.Errorf("token exchange at %s is rate limited (HTTP 429)", id.TokenURL)
 	case status >= 400 && status < 500:
 		code := payload.Error
 		if !oauthErrorCode.MatchString(code) {
@@ -495,7 +497,10 @@ func (h *DevnetHandler) proxyFor(host string) *httputil.ReverseProxy {
 	rp.ModifyResponse = func(resp *http.Response) error {
 		req, _ := resp.Request.Context().Value(devnetRequestKey{}).(devnetRequest)
 
+		// Both headers are the relay's own: an upstream must not be able to
+		// plant one.
 		resp.Header.Set(DevnetIdentityHeader, req.identity())
+		resp.Header.Del(DevnetIdentityReasonHeader)
 
 		if req.cred.refused != "" {
 			resp.Header.Set(DevnetIdentityReasonHeader, req.cred.refused)

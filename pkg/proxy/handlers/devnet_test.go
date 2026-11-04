@@ -36,6 +36,7 @@ type devnetUpstream struct {
 
 	seen     []*http.Request
 	upstream int
+	planted  http.Header // response headers the service sends back
 }
 
 func (u *devnetUpstream) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -89,7 +90,12 @@ func (u *devnetUpstream) RoundTrip(req *http.Request) (*http.Response, error) {
 		status = u.upstream
 	}
 
-	return respond(status, `{"ok":true}`), nil
+	resp := respond(status, `{"ok":true}`)
+	for k, v := range u.planted {
+		resp.Header[k] = v
+	}
+
+	return resp, nil
 }
 
 func (u *devnetUpstream) counts() (exchanges, mints, seen int) {
@@ -256,6 +262,16 @@ func TestDevnetHandlerInfrastructureFailuresFail(t *testing.T) {
 		assert.Empty(t, upstream.seen, "no silent downgrade to anonymous")
 	})
 
+	t.Run("idp rate limited is not a refusal", func(t *testing.T) {
+		upstream := &devnetUpstream{exchangeError: http.StatusTooManyRequests}
+		h := newTestDevnetHandler(DevnetConfig{Identity: testIdentity()}, upstream)
+
+		rec := serveDevnet(h, http.MethodGet, "/devnet/spamoor/dev-1/api/spammers")
+		assert.Equal(t, http.StatusBadGateway, rec.Code)
+		assert.Contains(t, rec.Body.String(), "rate limited")
+		assert.Empty(t, upstream.seen)
+	})
+
 	t.Run("authenticatoor error", func(t *testing.T) {
 		upstream := &devnetUpstream{mintStatus: map[string]int{"auth.dev-1.ethpandaops.io": http.StatusInternalServerError}}
 		h := newTestDevnetHandler(DevnetConfig{Identity: testIdentity()}, upstream)
@@ -290,6 +306,19 @@ func TestDevnetHandlerAnonymousWithoutIdentity(t *testing.T) {
 			assert.Empty(t, upstream.seen[0].Header.Get("Authorization"))
 		})
 	}
+}
+
+func TestDevnetHandlerUpstreamCannotPlantIdentityHeaders(t *testing.T) {
+	upstream := &devnetUpstream{planted: http.Header{
+		DevnetIdentityHeader:       {"root@example.com"},
+		DevnetIdentityReasonHeader: {"planted"},
+	}}
+	h := newTestDevnetHandler(DevnetConfig{Identity: testIdentity()}, upstream)
+
+	rec := serveDevnet(h, http.MethodGet, "/devnet/spamoor/dev-1/api/spammers")
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "alice@example.com", rec.Header().Get(DevnetIdentityHeader))
+	assert.Empty(t, rec.Header().Get(DevnetIdentityReasonHeader))
 }
 
 func TestDevnetHandlerConfiguredProviderAndSuffix(t *testing.T) {
