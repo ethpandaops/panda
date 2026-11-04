@@ -1,7 +1,9 @@
 """Call devnet service APIs (spamoor, assertoor) through the proxy relay.
 
-The proxy holds the credential the services require for writes, so code here
-never handles a devnet token or cookie. ``path`` is the service's own API
+The proxy acts as you on the devnet, so code here never handles a devnet
+token or cookie. Writes need devnet access (granted by the IdP, e.g. the
+ethPandaOps team); without it requests run anonymously and only public
+reads succeed — the error then says why. ``path`` is the service's own API
 route, e.g. ``/api/spammers`` (spamoor) or ``/api/v1/test_runs`` (assertoor);
 ``network`` is a cartographoor network name such as ``glamsterdam-devnet-8``.
 """

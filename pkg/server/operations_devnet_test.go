@@ -151,19 +151,43 @@ func TestDevnetRequestFailsFast(t *testing.T) {
 }
 
 func TestDevnetRequestErrorRemedies(t *testing.T) {
-	transport := &recordingTransport{status: http.StatusUnauthorized, body: "unauthorized"}
-	rec := postDevnetOperation(devnetTestService(t, transport, devnetTestSpamoor), "devnet.request",
-		`{"network":"focil-devnet-2","service":"spamoor","method":"POST","path":"/api/spammer/1/pause"}`)
+	tests := []struct {
+		name    string
+		status  int
+		body    string
+		header  http.Header
+		message string
+	}{
+		{
+			name: "anonymous write", status: http.StatusUnauthorized, body: "unauthorized",
+			header: http.Header{
+				handlers.DevnetIdentityHeader:       {"anonymous"},
+				handlers.DevnetIdentityReasonHeader: {"the IdP refused the devnet token exchange (invalid_grant)"},
+			},
+			message: "requires a devnet identity for this endpoint (HTTP 401: unauthorized), and the request ran anonymously: " +
+				"the IdP refused the devnet token exchange (invalid_grant)",
+		},
+		{
+			name: "rejected token", status: http.StatusUnauthorized, body: "unauthorized",
+			header:  http.Header{handlers.DevnetIdentityHeader: {"alice@example.com"}},
+			message: "rejected the devnet token minted for alice@example.com",
+		},
+		{
+			name: "allowed_orgs", status: http.StatusForbidden, body: "forbidden: insufficient org membership for this datasource\n",
+			message: "not in the allowed_orgs for the spamoor relay",
+		},
+	}
 
-	assert.Equal(t, http.StatusUnauthorized, rec.Code)
-	assert.Contains(t, rec.Body.String(), "devnet_services credential")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			transport := &recordingTransport{status: tt.status, body: tt.body, header: tt.header}
+			rec := postDevnetOperation(devnetTestService(t, transport, devnetTestSpamoor), "devnet.request",
+				`{"network":"focil-devnet-2","service":"spamoor","method":"POST","path":"/api/spammer/1/pause"}`)
 
-	transport = &recordingTransport{status: http.StatusForbidden, body: "forbidden: insufficient org membership for this datasource\n"}
-	rec = postDevnetOperation(devnetTestService(t, transport, devnetTestSpamoor), "devnet.request",
-		`{"network":"focil-devnet-2","service":"spamoor","path":"/api/spammers"}`)
-
-	assert.Equal(t, http.StatusForbidden, rec.Code)
-	assert.Contains(t, rec.Body.String(), "not in the allowed_orgs for the spamoor relay")
+			assert.Equal(t, tt.status, rec.Code)
+			assert.Contains(t, rec.Body.String(), tt.message)
+		})
+	}
 }
 
 func TestDevnetListNetworksMarksRelayedServices(t *testing.T) {

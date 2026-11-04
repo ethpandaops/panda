@@ -203,6 +203,7 @@ type recordingTransport struct {
 	status      int
 	body        string
 	contentType string
+	header      http.Header
 
 	last     *http.Request
 	lastBody []byte
@@ -224,9 +225,14 @@ func (t *recordingTransport) RoundTrip(req *http.Request) (*http.Response, error
 		status = http.StatusOK
 	}
 
+	header := t.header.Clone()
+	if header == nil {
+		header = make(http.Header)
+	}
+
 	resp := &http.Response{
 		StatusCode: status,
-		Header:     make(http.Header),
+		Header:     header,
 		Body:       io.NopCloser(bytes.NewBufferString(t.body)),
 	}
 	if t.contentType != "" {

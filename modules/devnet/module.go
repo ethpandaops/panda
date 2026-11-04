@@ -1,5 +1,5 @@
 // Package devnet relays API calls to devnet services (spamoor, assertoor)
-// through the proxy, which holds the credential that authorizes writes. The
+// through the proxy, which acts on the devnet as the caller. The
 // module is active when the proxy advertises at least one devnet service to
 // the caller; network-to-service resolution comes from cartographoor.
 package devnet
@@ -131,7 +131,8 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 	return map[string]types.ModuleDoc{
 		"devnet": {
 			Description: "Call spamoor (transaction spammers) and assertoor (test runner) APIs on a devnet through the proxy, " +
-				"which authorizes writes. Paths are the service's own /api/... routes; " +
+				"which acts as you on the devnet: writes need devnet access (ethpandaops team), other callers run anonymously " +
+				"with public reads only. Paths are the service's own /api/... routes; " +
 				"spamoor: GET /api/spammers, /api/scenarios, /api/spammer/{id}, /api/spammer/{id}/logs, /api/clients; " +
 				"POST /api/spammer {name, description, scenario, config (YAML string), startImmediately}, " +
 				"/api/spammer/{id}/start, /api/spammer/{id}/pause; PUT /api/spammer/{id} {name, description, config}; " +
