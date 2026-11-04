@@ -210,6 +210,14 @@ func (s *server) metricsDatasourceLabel(dsType, candidate string) string {
 				return candidate
 			}
 		}
+	case "devnet":
+		if s.cfg.DevnetServices != nil {
+			for _, svc := range s.cfg.DevnetServices.Services {
+				if svc.Name == candidate {
+					return candidate
+				}
+			}
+		}
 	}
 
 	return "unknown"
@@ -272,6 +280,8 @@ func extractDatasourceType(path string) string {
 		return "benchmarkoor"
 	case "compute":
 		return "compute"
+	case "devnet":
+		return "devnet"
 	case "github":
 		return "github"
 	case "uploads":

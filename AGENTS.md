@@ -93,19 +93,22 @@ uv run python -m scripts.repl
 2. `server` builds a credential-free sandbox environment with server runtime tokens and datasource metadata
 3. sandbox code calls back into `server` for operations and storage
 4. `server` stores uploaded files locally via the storage service (`~/.panda/data/storage/`)
-5. `server` routes through the proxy client/router for credentialed upstream access to ClickHouse, Prometheus, Loki, Ethnode, and Benchmarkoor
+5. `server` routes through the proxy client/router for credentialed upstream access to ClickHouse, Prometheus, Loki, Ethnode, Benchmarkoor, compute, and devnet services (spamoor, assertoor)
 
 ### Module System
 
-Twelve compiled-in modules are registered in `pkg/app/app.go`:
+Fifteen compiled-in modules are registered in `pkg/app/app.go`:
 - `clickhouse`
 - `prometheus`
 - `loki`
 - `dora`
 - `forky`
 - `ethnode`
+- `evm`
 - `cbt`
 - `benchmarkoor`
+- `compute`
+- `devnet` (spamoor/assertoor API relay; the proxy acts as the caller via an IdP token exchange)
 - `tracoor`
 - `block_archive`
 - `datasets` (dataset knowledge packs, lives in `datasets/` at the repo root)
@@ -261,6 +264,9 @@ modules/
   ethnode/         # Ethnode module
   cbt/             # CBT module
   benchmarkoor/    # Benchmarkoor module
+  compute/         # Compute module
+  devnet/          # Devnet service relay module (spamoor, assertoor)
+  evm/             # EVM module
   tracoor/         # Tracoor module
   block_archive/   # Block archive module
 runbooks/          # Embedded markdown runbooks

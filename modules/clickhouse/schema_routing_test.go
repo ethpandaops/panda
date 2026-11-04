@@ -139,6 +139,7 @@ func (c *schemaProxyClient) LokiDatasourceInfo() []types.DatasourceInfo         
 func (c *schemaProxyClient) BenchmarkoorDatasourceInfo() []types.DatasourceInfo { return nil }
 
 func (c *schemaProxyClient) ComputeDatasourceInfo() []types.DatasourceInfo { return nil }
+func (c *schemaProxyClient) DevnetDatasourceInfo() []types.DatasourceInfo  { return nil }
 func (c *schemaProxyClient) EthNodeAvailable() bool                        { return false }
 func (c *schemaProxyClient) EthNodeDatasourceInfo() []types.DatasourceInfo {
 	return nil

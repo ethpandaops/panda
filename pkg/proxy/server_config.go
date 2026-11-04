@@ -2,8 +2,10 @@ package proxy
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -48,6 +50,10 @@ type ServerConfig struct {
 
 	// Compute holds compute API instance configurations.
 	Compute []ComputeInstanceConfig `yaml:"compute,omitempty"`
+
+	// DevnetServices configures the /devnet relay to devnet service APIs
+	// (spamoor, assertoor).
+	DevnetServices *DevnetServicesConfig `yaml:"devnet_services,omitempty"`
 
 	// RateLimiting holds rate limiting configuration.
 	RateLimiting RateLimitConfig `yaml:"rate_limiting"`
@@ -371,6 +377,26 @@ type ComputeInstanceConfig struct {
 	URL                  string `yaml:"url"`
 }
 
+// DevnetServicesConfig configures the /devnet relay. Each service entry is a
+// datasource named after the service, so allowed_orgs can gate who may use
+// the relay at all; who may write is decided by the IdP through Identity.
+type DevnetServicesConfig struct {
+	DomainSuffix string                 `yaml:"domain_suffix,omitempty"`
+	Identity     *DevnetIdentityConfig  `yaml:"identity,omitempty"`
+	Services     []BaseDatasourceConfig `yaml:"services"`
+}
+
+// DevnetIdentityConfig lets the relay act as the caller on devnets: it
+// exchanges the caller's token at the IdP (TokenURL, for ClientID) and uses
+// the result at the devnet authenticatoor's bearer provider. Without it every
+// request is relayed anonymously. See handlers.DevnetIdentityConfig.
+type DevnetIdentityConfig struct {
+	TokenURL               string   `yaml:"token_url"`
+	ClientID               string   `yaml:"client_id"`
+	Scopes                 []string `yaml:"scopes,omitempty"`
+	AuthenticatoorProvider string   `yaml:"authenticatoor_provider,omitempty"`
+}
+
 // RateLimitConfig holds rate limiting configuration.
 type RateLimitConfig struct {
 	// Enabled controls whether rate limiting is active.
@@ -625,8 +651,13 @@ func (c *ServerConfig) Validate() error {
 	}
 
 	// Validate at least one datasource is configured.
-	if len(c.ClickHouse) == 0 && len(c.Prometheus) == 0 && len(c.Loki) == 0 && c.EthNode == nil && len(c.Benchmarkoor) == 0 && len(c.Compute) == 0 {
-		return fmt.Errorf("at least one datasource (clickhouse, prometheus, loki, ethnode, benchmarkoor, or compute) must be configured")
+	if len(c.ClickHouse) == 0 && len(c.Prometheus) == 0 && len(c.Loki) == 0 && c.EthNode == nil &&
+		len(c.Benchmarkoor) == 0 && len(c.Compute) == 0 && c.DevnetServices == nil {
+		return fmt.Errorf("at least one datasource (clickhouse, prometheus, loki, ethnode, benchmarkoor, compute, or devnet_services) must be configured")
+	}
+
+	if err := c.DevnetServices.validate(); err != nil {
+		return err
 	}
 
 	// Validate ClickHouse configs.
@@ -758,6 +789,96 @@ func (c *ServerConfig) Validate() error {
 	}
 
 	return nil
+}
+
+// devnetDomainSuffix matches a DNS zone such as "ethpandaops.io".
+var devnetDomainSuffix = regexp.MustCompile(`^[a-z0-9-]+(\.[a-z0-9-]+)+$`)
+
+// devnetProviderName matches an authenticatoor provider instance name.
+var devnetProviderName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
+
+func (d *DevnetServicesConfig) validate() error {
+	if d == nil {
+		return nil
+	}
+
+	if d.DomainSuffix != "" && !devnetDomainSuffix.MatchString(d.DomainSuffix) {
+		return fmt.Errorf("devnet_services.domain_suffix %q is not a DNS zone", d.DomainSuffix)
+	}
+
+	if err := d.Identity.validate(); err != nil {
+		return err
+	}
+
+	if len(d.Services) == 0 {
+		return fmt.Errorf("devnet_services.services must list at least one of %v", handlers.DevnetServiceNames)
+	}
+
+	seen := make(map[string]struct{}, len(d.Services))
+	for i, svc := range d.Services {
+		if !slices.Contains(handlers.DevnetServiceNames, svc.Name) {
+			return fmt.Errorf("devnet_services.services[%d].name %q is not one of %v", i, svc.Name, handlers.DevnetServiceNames)
+		}
+
+		if _, dup := seen[svc.Name]; dup {
+			return fmt.Errorf("devnet_services.services[%d].name %q is duplicated", i, svc.Name)
+		}
+
+		seen[svc.Name] = struct{}{}
+	}
+
+	return nil
+}
+
+func (i *DevnetIdentityConfig) validate() error {
+	if i == nil {
+		return nil
+	}
+
+	u, err := url.Parse(i.TokenURL)
+	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
+		return fmt.Errorf("devnet_services.identity.token_url %q must be an absolute http(s) URL", i.TokenURL)
+	}
+
+	if strings.TrimSpace(i.ClientID) == "" {
+		return fmt.Errorf("devnet_services.identity.client_id is required")
+	}
+
+	if i.AuthenticatoorProvider != "" && !devnetProviderName.MatchString(i.AuthenticatoorProvider) {
+		return fmt.Errorf("devnet_services.identity.authenticatoor_provider %q must match %s",
+			i.AuthenticatoorProvider, devnetProviderName.String())
+	}
+
+	return nil
+}
+
+// ToDevnetHandlerConfig converts the devnet_services block to the handler
+// config, or nil when the relay is not configured.
+func (c *ServerConfig) ToDevnetHandlerConfig() *handlers.DevnetConfig {
+	if c.DevnetServices == nil {
+		return nil
+	}
+
+	names := make([]string, 0, len(c.DevnetServices.Services))
+	for _, svc := range c.DevnetServices.Services {
+		names = append(names, svc.Name)
+	}
+
+	cfg := &handlers.DevnetConfig{
+		Services:     names,
+		DomainSuffix: c.DevnetServices.DomainSuffix,
+	}
+
+	if id := c.DevnetServices.Identity; id != nil {
+		cfg.Identity = &handlers.DevnetIdentityConfig{
+			TokenURL:               id.TokenURL,
+			ClientID:               id.ClientID,
+			Scopes:                 id.Scopes,
+			AuthenticatoorProvider: id.AuthenticatoorProvider,
+		}
+	}
+
+	return cfg
 }
 
 // ToBenchmarkoorHandlerConfigs converts the benchmarkoor instance configs to

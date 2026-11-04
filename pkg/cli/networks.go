@@ -53,7 +53,9 @@ Examples:
   panda networks --devnets
   panda devnets -o json
   panda devnets info fusaka-devnet-3
-  panda devnets endpoints fusaka-devnet-3`,
+  panda devnets endpoints fusaka-devnet-3
+  panda devnets services
+  panda devnets request glamsterdam-devnet-8 spamoor GET /api/spammers`,
 	Args: cobra.NoArgs,
 	RunE: runDevnets,
 }

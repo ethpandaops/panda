@@ -469,6 +469,14 @@ func (c *proxyClient) ComputeDatasourceInfo() []types.DatasourceInfo {
 	return normalizeInfo("compute", c.datasources.ComputeInfo, c.cfg.Name)
 }
 
+// DevnetDatasourceInfo returns the devnet services this proxy relays.
+func (c *proxyClient) DevnetDatasourceInfo() []types.DatasourceInfo {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return normalizeInfo("devnet", c.datasources.DevnetInfo, c.cfg.Name)
+}
+
 // EthNodeAvailable returns true if the proxy has ethnode credentials configured.
 func (c *proxyClient) EthNodeAvailable() bool {
 	c.mu.RLock()

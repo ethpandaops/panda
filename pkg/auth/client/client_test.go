@@ -54,16 +54,44 @@ func TestDiscoverFallsBackToOAuthAuthorizationServer(t *testing.T) {
 	}
 }
 
-func TestBearerTokenFromResponsePrefersIDToken(t *testing.T) {
+func TestRefreshStoresAccessTokenAsBearer(t *testing.T) {
 	t.Parallel()
 
-	resp := tokenResponse{
-		AccessToken: "access-token",
-		IDToken:     "id-token",
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/.well-known/openid-configuration":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"issuer":         server.URL,
+				"token_endpoint": server.URL + "/token",
+			})
+		case "/token":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"access_token":  "access-token",
+				"id_token":      "id-token",
+				"refresh_token": "rotated-refresh-token",
+				"token_type":    "Bearer",
+				"expires_in":    3600,
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	c := New(logrus.New(), Config{IssuerURL: server.URL, ClientID: "panda-proxy"})
+
+	tokens, err := c.Refresh(context.Background(), "refresh-token")
+	if err != nil {
+		t.Fatalf("Refresh failed: %v", err)
 	}
 
-	if got := bearerTokenFromResponse(resp); got != "id-token" {
-		t.Fatalf("expected id_token to be preferred, got %q", got)
+	if tokens.AccessToken != "access-token" {
+		t.Fatalf("the access token must be the bearer, got %q", tokens.AccessToken)
+	}
+
+	if tokens.RefreshToken != "rotated-refresh-token" {
+		t.Fatalf("unexpected refresh token: %q", tokens.RefreshToken)
 	}
 }
 
