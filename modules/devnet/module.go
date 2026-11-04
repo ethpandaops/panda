@@ -142,7 +142,7 @@ func (m *Module) PythonAPIDocs() map[string]types.ModuleDoc {
 				"Streaming (/stream, /events) endpoints are not supported.",
 			Functions: map[string]types.FunctionDoc{
 				"list_services": {Signature: "list_services() -> list[str]", Description: "Devnet services the proxy relays for you (e.g. ['assertoor', 'spamoor'])"},
-				"list_networks": {Signature: "list_networks() -> list[dict]", Description: "Active networks with spamoor/assertoor: each {name, services: {service: {url, relayed}}}"},
+				"list_networks": {Signature: "list_networks() -> list[dict]", Description: "Active networks with spamoor/assertoor: each {name, type, extra: {services: {service: {url, relayed}}}}"},
 				"request":       {Signature: "request(network, service, method, path, json=None, params=None) -> Any", Description: "Call a service API path (e.g. 'POST', '/api/spammer/12/start'); JSON responses are parsed, others return text. Raises on non-2xx"},
 			},
 		},

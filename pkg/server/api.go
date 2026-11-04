@@ -849,13 +849,28 @@ func (s *service) proxyRequestWithService(
 
 	// One invalidate-and-retry on auth rejection covers a token revoked
 	// server-side before the local refresh buffer kicks in.
-	if status == http.StatusUnauthorized || status == http.StatusForbidden {
+	if proxyRejectedCredentials(status, header, data) {
 		proxySvc.Invalidate()
 
 		return send()
 	}
 
 	return data, status, header, nil
+}
+
+// proxyRejectedCredentials reports a rejection by the proxy itself, as opposed
+// to an upstream status relayed through it (a devnet service refusing an
+// anonymous write, say). The proxy's authenticators answer 401 with an RFC
+// 6750 invalid_token challenge; its authorizer answers 403 with a fixed body.
+func proxyRejectedCredentials(status int, header http.Header, body []byte) bool {
+	switch status {
+	case http.StatusUnauthorized:
+		return strings.Contains(header.Get("WWW-Authenticate"), `error="invalid_token"`)
+	case http.StatusForbidden:
+		return bytes.HasPrefix(body, []byte("forbidden:"))
+	default:
+		return false
+	}
 }
 
 func (s *service) primaryProxyService() (proxy.Service, error) {
