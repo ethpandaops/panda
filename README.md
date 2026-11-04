@@ -132,9 +132,11 @@ Install [agent skills](https://github.com/vercel-labs/skills) for AI coding assi
 npx skills add ethpandaops/panda              # the user-facing skills
 npx skills add ethpandaops/panda --skill install-mcp    # register panda as an MCP server
 npx skills add ethpandaops/panda --skill install-panda  # installation guide
+npx skills add ethpandaops/panda --skill maintaining-lean-projects  # large Lean 4 / Lake projects
 ```
 
-The user-facing skills are `install-panda`, `install-mcp`, `query`, and `investigate`.
+The user-facing skills are `install-panda`, `install-mcp`, `query`, `investigate`, and
+`maintaining-lean-projects`.
 The repo-contributor skills (`self-play`, `create-runbook`, `create-module`) are marked
 `metadata.internal: true`, so they stay in this repo for development and are excluded
 from `npx skills add` unless you set `INSTALL_INTERNAL_SKILLS=1`.
