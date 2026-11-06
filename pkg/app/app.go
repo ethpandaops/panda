@@ -31,6 +31,7 @@ import (
 	ethnodemodule "github.com/ethpandaops/panda/modules/ethnode"
 	evmmodule "github.com/ethpandaops/panda/modules/evm"
 	forkymodule "github.com/ethpandaops/panda/modules/forky"
+	hivemodule "github.com/ethpandaops/panda/modules/hive"
 	lokimodule "github.com/ethpandaops/panda/modules/loki"
 	prometheusmodule "github.com/ethpandaops/panda/modules/prometheus"
 	tracoormodule "github.com/ethpandaops/panda/modules/tracoor"
@@ -229,6 +230,7 @@ func (a *App) registerModules() *module.Registry {
 	reg.Add(ethnodemodule.New())
 	reg.Add(evmmodule.New())
 	reg.Add(forkymodule.New())
+	reg.Add(hivemodule.New())
 	reg.Add(lokimodule.New())
 	reg.Add(prometheusmodule.New())
 	reg.Add(tracoormodule.New())

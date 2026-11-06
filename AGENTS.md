@@ -11,7 +11,7 @@ The architecture is:
 - `server` routes through `proxy`/`proxies`
 - each `proxy` talks to the datasources it advertises
 
-Modules provide integration-specific metadata and behavior for ClickHouse, Prometheus, Loki, Dora, Forky, Ethnode, CBT, and block archive.
+Modules provide integration-specific metadata and behavior for ClickHouse, Prometheus, Loki, Dora, Forky, Ethnode, CBT, block archive, and hive test results.
 
 See `docs/architecture.md` for the canonical boundary definition.
 
@@ -97,12 +97,13 @@ uv run python -m scripts.repl
 
 ### Module System
 
-Twelve compiled-in modules are registered in `pkg/app/app.go`:
+Thirteen compiled-in modules are registered in `pkg/app/app.go`:
 - `clickhouse`
 - `prometheus`
 - `loki`
 - `dora`
 - `forky`
+- `hive` (hive test results from hive.ethpandaops.io, public, no proxy)
 - `ethnode`
 - `cbt`
 - `benchmarkoor`
@@ -159,6 +160,7 @@ CLI commands and groups include:
 - `execute`
 - `forky`
 - `getting-started`
+- `hive`
 - `init`
 - `loki`
 - `prometheus`
@@ -238,6 +240,7 @@ pkg/
   app/             # Shared server-side application kernel
   attribution/     # Caller attribution (on-behalf-of) carried CLI -> server -> proxy
   cli/             # CLI command definitions
+  hive/            # Hive test results store: fetches, caches and queries hive.ethpandaops.io
   module/          # Module interface and registry
   server/          # Server builder, HTTP API, MCP transport
   proxy/           # Proxy client/server, auth, handlers
@@ -258,6 +261,7 @@ modules/
   loki/            # Loki module
   dora/            # Dora module
   forky/           # Forky module
+  hive/            # Hive test results module
   ethnode/         # Ethnode module
   cbt/             # CBT module
   benchmarkoor/    # Benchmarkoor module
