@@ -77,6 +77,7 @@ type server struct {
 	lokiHandler         *handlers.LokiHandler
 	ethNodeHandler      *handlers.EthNodeHandler
 	faucetHandler       *handlers.FaucetHandler
+	rolloorHandler      *handlers.RolloorHandler
 	benchmarkoorHandler *handlers.BenchmarkoorHandler
 	computeHandler      *handlers.ComputeHandler
 	uploadsHandler      *handlers.UploadsHandler
@@ -207,6 +208,9 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 	if faucetConfig := cfg.ToFaucetHandlerConfig(); faucetConfig != nil {
 		s.faucetHandler = handlers.NewFaucetHandler(log, *faucetConfig)
 	}
+
+	// rolloor holds no credential: it forwards the caller's own token.
+	s.rolloorHandler = handlers.NewRolloorHandler(log)
 
 	if benchConfigs := cfg.ToBenchmarkoorHandlerConfigs(); len(benchConfigs) > 0 {
 		s.benchmarkoorHandler = handlers.NewBenchmarkoorHandler(log, benchConfigs)
@@ -367,6 +371,8 @@ func (s *server) registerRoutes() {
 		faucetLimiter := newFaucetSessionRateLimiter(faucetSessionLimit, faucetSessionWindow)
 		s.handleSubtreeRoute("/faucet", s.metricsMiddleware(chain(faucetLimiter.middleware(s.faucetHandler))))
 	}
+
+	s.handleSubtreeRoute("/rolloor", s.metricsMiddleware(chain(s.rolloorHandler)))
 
 	if s.benchmarkoorHandler != nil {
 		s.handleSubtreeRoute("/benchmarkoor", s.metricsMiddleware(chain(s.benchmarkoorHandler)))
