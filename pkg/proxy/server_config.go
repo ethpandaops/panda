@@ -402,7 +402,7 @@ type DevnetServicesConfig struct {
 
 // DevnetIdentityConfig lets the relay act as the caller on devnets: it
 // exchanges the caller's token at the IdP (TokenURL, for ClientID) and uses
-// the result at the devnet authenticatoor's bearer provider. Without it every
+// the result at the devnet authenticatoor's oidc.bearer endpoint. Without it every
 // request is relayed anonymously. See handlers.DevnetIdentityConfig.
 type DevnetIdentityConfig struct {
 	TokenURL               string   `yaml:"token_url"`

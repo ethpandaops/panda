@@ -251,6 +251,17 @@ func TestDevnetHandlerDevnetWithoutBearerProviderRelaysAnonymously(t *testing.T)
 	assert.Empty(t, upstream.seen[0].Header.Get("Authorization"))
 }
 
+func TestDevnetHandlerCallerWithoutGrantRelaysAnonymously(t *testing.T) {
+	upstream := &devnetUpstream{mintStatus: map[string]int{"auth.dev-1.ethpandaops.io": http.StatusForbidden}}
+	h := newTestDevnetHandler(DevnetConfig{Identity: testIdentity()}, upstream)
+
+	rec := serveDevnet(h, http.MethodGet, "/devnet/spamoor/dev-1/api/spammers")
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "anonymous", rec.Header().Get(DevnetIdentityHeader))
+	assert.Contains(t, rec.Header().Get(DevnetIdentityReasonHeader), "no access group in the devnet's grants")
+	assert.Empty(t, upstream.seen[0].Header.Get("Authorization"))
+}
+
 func TestDevnetHandlerUpstream401KeepsCachedRefusal(t *testing.T) {
 	upstream := &devnetUpstream{
 		mintStatus: map[string]int{"auth.old-devnet.ethpandaops.io": http.StatusNotFound},

@@ -27,7 +27,7 @@ const (
 	devnetTokenSkew = 60 * time.Second
 
 	// devnetRefusalTTL caches a refusal (caller not authorized, devnet
-	// without a bearer provider) so anonymous traffic doesn't re-ask the
+	// without oidc.bearer) so anonymous traffic doesn't re-ask the
 	// IdP and the authenticatoor on every request.
 	devnetRefusalTTL = time.Minute
 
@@ -76,11 +76,12 @@ type DevnetConfig struct {
 //  1. Token exchange at the IdP (Authentik JWT federation): a
 //     client_credentials grant for ClientID with the caller's token as
 //     client_assertion. The IdP evaluates ClientID's access policy for the
-//     caller and returns a short-lived token for that audience — the IdP is
-//     the authority on who may act on devnets.
+//     caller and returns a short-lived token for that audience — the IdP
+//     decides who may get a devnet token at all.
 //  2. That token buys an authenticatoor JWT at
-//     https://auth.{label}.{suffix}/{AuthenticatoorProvider}/token, the
-//     devnet authenticatoor's bearer provider trusting ClientID's audience.
+//     https://auth.{label}.{suffix}/{AuthenticatoorProvider}/token, whose
+//     oidc provider trusts ClientID's audience (oidc.bearer). The devnet's
+//     grants decide which services and features the JWT unlocks.
 //
 // Devnets therefore only ever see tokens scoped to devnet access, never the
 // caller's proxy token.
@@ -290,7 +291,7 @@ func (h *DevnetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // identityFor resolves the credential the request runs with upstream.
-// Refusals (caller not authorized, devnet without a bearer provider) yield
+// Refusals (caller not authorized, devnet without oidc.bearer) yield
 // an anonymous request — the service then serves what it serves publicly —
 // while infrastructure failures are returned as errors.
 func (h *DevnetHandler) identityFor(ctx context.Context, caller, label string) (devnetRequest, error) {
@@ -418,11 +419,14 @@ func (h *DevnetHandler) mint(ctx context.Context, exchanged, label string) (devn
 		return devnetCred{}, fmt.Errorf("authenticatoor at %s is rate limited (HTTP 429)", tokenURL)
 	case status == http.StatusNotFound:
 		return refusal(fmt.Sprintf(
-			"%s has no /%s/token endpoint: the devnet's authenticatoor predates bearer support or lacks the %q provider",
-			authHost, provider, provider)), nil
+			"%s has no /%s/token endpoint: the devnet's authenticatoor predates bearer support, lacks the %q provider, "+
+				"or that provider has no oidc.bearer block", authHost, provider, provider)), nil
 	case status >= 300 && status < 400:
 		return refusal(fmt.Sprintf("%s redirected /%s/token to a login page: edge protection covers the bearer endpoint",
 			authHost, provider)), nil
+	case status == http.StatusForbidden:
+		return refusal(fmt.Sprintf("%s issued no token for the caller (HTTP 403): no access group in the devnet's grants "+
+			"names them, or its %q provider's allowedGroups excludes them", authHost, provider)), nil
 	case status >= 400 && status < 500:
 		return refusal(fmt.Sprintf("%s rejected the devnet identity (HTTP %d): its %q provider does not trust this IdP application",
 			authHost, status, provider)), nil
