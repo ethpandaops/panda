@@ -47,6 +47,15 @@ type Runtime struct {
 	builtDims     int
 	builtProtocol embedding.Protocol
 
+	// reindexIncomplete is set when the last reindex attempt left one or more
+	// indices parked not-ready because their rebuild failed. While set, the
+	// background refresher retries reindex on every tick regardless of
+	// whether the served model still differs from builtModel — otherwise a
+	// served model that reverts to builtModel before a retry succeeds would
+	// satisfy the model-change guard trivially and the parked indices would
+	// never be retried.
+	reindexIncomplete bool
+
 	// activated reports whether search has been brought online (indices built
 	// and the background refresher started). activating is a single-flight guard
 	// so concurrent discovery events don't trigger overlapping activation builds.
@@ -342,7 +351,9 @@ func (r *Runtime) startRefresh(initialSig uint64) {
 				return
 			case <-ticker.C:
 				model, dims, protocol := resolveModel(context.Background(), r.proxyService)
-				if model != "" && embeddingSpaceChanged(r.builtModel, r.builtDims, r.builtProtocol, model, dims, protocol) {
+				spaceChanged := embeddingSpaceChanged(r.builtModel, r.builtDims, r.builtProtocol, model, dims, protocol)
+
+				if model != "" && (spaceChanged || r.reindexIncomplete) {
 					r.reindex(model, dims, protocol)
 					lastSig = exampleSignature(resource.GetQueryExamples(r.moduleRegistry))
 
@@ -461,11 +472,28 @@ func (r *Runtime) reindex(model string, dims int, protocol embedding.Protocol) {
 	}
 
 	if !ok {
-		// Don't advance builtModel — the next tick will re-detect the model
-		// change and retry. Any index that failed stays not-ready (never mixing
-		// model spaces) until a retry rebuilds it.
+		// Don't advance builtModel — the next tick retries. Re-park every index,
+		// including the ones that rebuilt fine above: builtModel isn't advancing,
+		// so leaving them live would mean a live index in a space builtModel no
+		// longer records, exactly the desync a partial failure must not cause.
+		r.ExampleIndex.Swap(nil)
+
+		if r.RunbookIndex != nil {
+			r.RunbookIndex.Swap(nil)
+		}
+
+		if r.EIPIndex != nil {
+			r.EIPIndex.Swap(nil)
+		}
+
+		if r.SpecsIndex != nil {
+			r.SpecsIndex.Swap(nil)
+		}
+
+		r.reindexIncomplete = true
+
 		r.log.WithField("model", model).
-			Warn("Re-index incomplete; some indices failed to rebuild — will retry on the next tick")
+			Warn("Re-index incomplete; some indices failed to rebuild — will retry every tick until it fully succeeds")
 
 		return
 	}
@@ -474,6 +502,7 @@ func (r *Runtime) reindex(model string, dims int, protocol embedding.Protocol) {
 	r.builtModel = model
 	r.builtDims = dims
 	r.builtProtocol = protocol
+	r.reindexIncomplete = false
 
 	r.log.WithFields(logrus.Fields{"model": model, "dims": dims, "protocol": protocol}).Info("Re-index complete")
 }
