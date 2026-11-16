@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -176,8 +177,8 @@ func signedRSAToken(t *testing.T, privateKey *rsa.PrivateKey, issuer, audience, 
 func TestOIDCAuthenticatorAcceptsMultipleIssuers(t *testing.T) {
 	t.Parallel()
 
-	primaryServer, primaryKey := newTestOIDCProvider(t)
-	additionalServer, additionalKey := newTestOIDCProvider(t)
+	primaryServer, primaryKey, _ := newTestOIDCProvider(t)
+	additionalServer, additionalKey, _ := newTestOIDCProvider(t)
 
 	authenticator, err := NewOIDCAuthenticator(logrus.New(), OIDCAuthenticatorConfig{
 		Issuers: []OIDCIssuerConfig{
@@ -241,7 +242,58 @@ func TestOIDCAuthenticatorAcceptsMultipleIssuers(t *testing.T) {
 	}
 }
 
-func newTestOIDCProvider(t *testing.T) (*httptest.Server, *rsa.PrivateKey) {
+// A token from one trusted issuer must never trigger a JWKS fetch from another:
+// go-oidc refetches JWKS on every unknown kid, which once made each request
+// carrying a fallback-issuer token cost a fetch from the primary IdP.
+func TestOIDCAuthenticatorDoesNotFetchOtherIssuersJWKS(t *testing.T) {
+	t.Parallel()
+
+	primaryServer, _, primaryJWKSFetches := newTestOIDCProvider(t)
+	fallbackServer, fallbackKey, fallbackJWKSFetches := newTestOIDCProvider(t)
+
+	authenticator, err := NewOIDCAuthenticator(logrus.New(), OIDCAuthenticatorConfig{
+		Issuers: []OIDCIssuerConfig{
+			{IssuerURL: primaryServer.URL, ClientID: "panda-proxy"},
+			{IssuerURL: fallbackServer.URL, ClientID: "panda-proxy"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewOIDCAuthenticator failed: %v", err)
+	}
+	if err := authenticator.Start(context.Background()); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	handler := authenticator.Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	tokens := map[string]int{
+		signedRSAToken(t, fallbackKey, fallbackServer.URL, "panda-proxy", "legacy-user"): http.StatusNoContent,
+		signedRSAToken(t, fallbackKey, "https://untrusted.example", "panda-proxy", "x"):  http.StatusUnauthorized,
+	}
+	for range 10 {
+		for token, want := range tokens {
+			req := httptest.NewRequest(http.MethodGet, "/clickhouse/query", nil)
+			req.Header.Set("Authorization", "Bearer "+token)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+
+			if rec.Code != want {
+				t.Fatalf("expected status %d, got %d: %s", want, rec.Code, rec.Body.String())
+			}
+		}
+	}
+
+	if got := primaryJWKSFetches.Load(); got != 0 {
+		t.Fatalf("expected no primary JWKS fetches, got %d", got)
+	}
+	if got := fallbackJWKSFetches.Load(); got != 1 {
+		t.Fatalf("expected one cached fallback JWKS fetch, got %d", got)
+	}
+}
+
+func newTestOIDCProvider(t *testing.T) (*httptest.Server, *rsa.PrivateKey, *atomic.Int64) {
 	t.Helper()
 
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -259,7 +311,9 @@ func newTestOIDCProvider(t *testing.T) (*httptest.Server, *rsa.PrivateKey) {
 			"jwks_uri": server.URL + "/keys",
 		})
 	})
+	var jwksFetches atomic.Int64
 	mux.HandleFunc("/keys", func(w http.ResponseWriter, _ *http.Request) {
+		jwksFetches.Add(1)
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"keys": []map[string]string{
 				{
@@ -274,7 +328,7 @@ func newTestOIDCProvider(t *testing.T) (*httptest.Server, *rsa.PrivateKey) {
 		})
 	})
 
-	return server, privateKey
+	return server, privateKey, &jwksFetches
 }
 
 func TestOIDCAuthenticatorAcceptsTrailingSlashIssuer(t *testing.T) {
