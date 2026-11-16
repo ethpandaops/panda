@@ -141,6 +141,47 @@ func TestAuthorizerMiddlewareDefaultDeny(t *testing.T) {
 			assert.Equal(t, http.StatusForbidden, rec.Code)
 		})
 	}
+
+	// An authenticated identity without groups (CI accounts, some Dex tokens)
+	// must not be mistaken for auth mode "none".
+	for _, groups := range [][]string{nil, {}} {
+		for _, datasource := range []string{"restricted", "unset"} {
+			rec := httptest.NewRecorder()
+			req := requestWithProxyUser(http.MethodPost, "/clickhouse", groups)
+			req.Header.Set("X-Datasource", datasource)
+			srv.mux.ServeHTTP(rec, req)
+
+			assert.Equal(t, http.StatusForbidden, rec.Code, "groups %#v on %s", groups, datasource)
+		}
+	}
+}
+
+func TestAuthorizerDeniesMissingUserWhenAuthRequired(t *testing.T) {
+	t.Parallel()
+
+	cfg := testConfig()
+	cfg.Auth.Mode = AuthModeOIDC
+
+	a := NewAuthorizer(logrus.New(), cfg)
+	ctx := context.Background() // no user in context
+
+	for _, tt := range []struct{ dsType, dsName string }{
+		{"clickhouse", "public"},
+		{"clickhouse", "unset"},
+		{"ethnode", ""},
+		{"datasources", ""},
+		{"embed", ""},
+		{"unknown", ""},
+	} {
+		assert.False(t, a.isAllowed(ctx, tt.dsType, tt.dsName), "%s/%s without a user", tt.dsType, tt.dsName)
+	}
+
+	resp := a.FilterDatasources(ctx, DatasourcesResponse{
+		ClickHouseInfo:   []types.DatasourceInfo{{Name: "public"}},
+		EthNodeAvailable: true,
+	})
+	assert.Empty(t, resp.ClickHouseInfo)
+	assert.False(t, resp.EthNodeAvailable)
 }
 
 func TestAuthorizerMiddlewareAllowsNoAuthUser(t *testing.T) {

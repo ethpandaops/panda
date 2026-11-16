@@ -26,8 +26,12 @@ const AllowAllAuthenticated = "*"
 // every authenticated user. Requests without an authenticated user (auth mode
 // "none") are not restricted.
 type Authorizer struct {
-	log   logrus.FieldLogger
-	rules map[string][]datasourceVariantRule // "type:name" -> variants; "type" for type-level rules (ethnode, github, uploads, faucet)
+	log logrus.FieldLogger
+	// authRequired is true when the proxy runs with authentication. A request
+	// without a user in its context is then denied rather than treated as
+	// auth mode "none", so a missing or group-less identity never fails open.
+	authRequired bool
+	rules        map[string][]datasourceVariantRule // "type:name" -> variants; "type" for type-level rules (ethnode, github, uploads, faucet)
 }
 
 type datasourceVariantRule struct {
@@ -40,8 +44,9 @@ type datasourceVariantRule struct {
 // NewAuthorizer creates an Authorizer from the server config.
 func NewAuthorizer(log logrus.FieldLogger, cfg ServerConfig) *Authorizer {
 	a := &Authorizer{
-		log:   log.WithField("component", "authorizer"),
-		rules: make(map[string][]datasourceVariantRule, len(cfg.ClickHouse)+len(cfg.Prometheus)+len(cfg.Loki)+4),
+		log:          log.WithField("component", "authorizer"),
+		authRequired: cfg.Auth.Mode != AuthModeNone && cfg.Auth.Mode != "",
+		rules:        make(map[string][]datasourceVariantRule, len(cfg.ClickHouse)+len(cfg.Prometheus)+len(cfg.Loki)+4),
 	}
 
 	for _, ds := range cfg.ClickHouse {
@@ -109,7 +114,7 @@ func NewAuthorizer(log logrus.FieldLogger, cfg ServerConfig) *Authorizer {
 
 	// Without authentication there is no user to authorize, so empty
 	// allowed_orgs only makes something unreachable in authenticated modes.
-	if cfg.Auth.Mode != AuthModeNone && cfg.Auth.Mode != "" {
+	if a.authRequired {
 		a.warnUnreachable()
 	}
 
@@ -175,6 +180,10 @@ func (a *Authorizer) Middleware() func(http.Handler) http.Handler {
 func (a *Authorizer) FilterDatasources(ctx context.Context, resp DatasourcesResponse) DatasourcesResponse {
 	userOrgs, hasUser := getUserOrgs(ctx)
 	if !hasUser {
+		if a.authRequired {
+			return DatasourcesResponse{}
+		}
+
 		return resp // no auth → return everything
 	}
 
@@ -221,6 +230,9 @@ func (a *Authorizer) isAllowed(ctx context.Context, dsType, dsName string) bool 
 
 func (a *Authorizer) routeName(ctx context.Context, dsType, dsName string) (string, bool) {
 	userOrgs, hasUser := getUserOrgs(ctx)
+	if !hasUser && a.authRequired {
+		return "", false
+	}
 
 	switch dsType {
 	case "datasources", "embed":
