@@ -164,9 +164,13 @@
         value: >
           Points at the sandbox EVM library: evm.faucet(network, address) from the
           ethpandaops package (an `from ethpandaops import evm` style import), passing
-          the network id and the target address, and gets the throwaway address from
-          evm.wallet() rather than inventing one. Mentioning that the claim is mined
-          server-side and returns a transaction hash is a plus. Sending the user to a
+          the network id and the target address. The throwaway address comes from a
+          wallet panda generates, either saved locally first with
+          `panda evm wallet --output-file wallet.json` (the documented way) or from
+          evm.wallet(); an address placeholder in the snippet is fine as long as the
+          answer says to take the address from such a wallet. Mentioning that the
+          claim is mined server-side and returns a transaction hash, or the
+          evm.faucet_start / evm.faucet_status variant, is a plus. Sending the user to a
           faucet website, a browser flow, a WebSocket, or any API panda does not have
           fails, as does answering with no concrete call.
 
