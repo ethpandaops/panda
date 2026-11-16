@@ -293,6 +293,50 @@ func TestOIDCAuthenticatorDoesNotFetchOtherIssuersJWKS(t *testing.T) {
 	}
 }
 
+// Two entries may share an issuer URL with different client IDs (e.g. several
+// Dex static clients); tokens for either audience must verify, from one JWKS.
+func TestOIDCAuthenticatorAcceptsSameIssuerWithMultipleClientIDs(t *testing.T) {
+	t.Parallel()
+
+	server, key, jwksFetches := newTestOIDCProvider(t)
+
+	authenticator, err := NewOIDCAuthenticator(logrus.New(), OIDCAuthenticatorConfig{
+		Issuers: []OIDCIssuerConfig{
+			{IssuerURL: server.URL, ClientID: "panda-proxy"},
+			{IssuerURL: server.URL, ClientID: "panda-eval"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewOIDCAuthenticator failed: %v", err)
+	}
+	if err := authenticator.Start(context.Background()); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	handler := authenticator.Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	for audience, want := range map[string]int{
+		"panda-proxy": http.StatusNoContent,
+		"panda-eval":  http.StatusNoContent,
+		"other":       http.StatusUnauthorized,
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/clickhouse/query", nil)
+		req.Header.Set("Authorization", "Bearer "+signedRSAToken(t, key, server.URL, audience, "user"))
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != want {
+			t.Fatalf("audience %q: expected status %d, got %d: %s", audience, want, rec.Code, rec.Body.String())
+		}
+	}
+
+	if got := jwksFetches.Load(); got != 1 {
+		t.Fatalf("expected one shared JWKS fetch, got %d", got)
+	}
+}
+
 func newTestOIDCProvider(t *testing.T) (*httptest.Server, *rsa.PrivateKey, *atomic.Int64) {
 	t.Helper()
 

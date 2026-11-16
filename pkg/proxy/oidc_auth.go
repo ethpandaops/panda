@@ -41,7 +41,7 @@ type oidcAuthenticator struct {
 	httpClient *http.Client
 
 	mu        sync.RWMutex
-	verifiers map[string]*oidc.IDTokenVerifier
+	verifiers map[string][]*oidc.IDTokenVerifier
 }
 
 type oidcTokenClaims struct {
@@ -93,16 +93,25 @@ func NewOIDCAuthenticator(log logrus.FieldLogger, cfg OIDCAuthenticatorConfig) (
 func (a *oidcAuthenticator) Start(ctx context.Context) error {
 	ctx = oidc.ClientContext(ctx, a.httpClient)
 
-	verifiers := make(map[string]*oidc.IDTokenVerifier, len(a.issuers))
+	// Entries may share an issuer URL with different client IDs. Discover each
+	// issuer once so its verifiers share one cached JWKS.
+	providers := make(map[string]*oidc.Provider, len(a.issuers))
+	verifiers := make(map[string][]*oidc.IDTokenVerifier, len(a.issuers))
 	for _, issuer := range a.issuers {
-		// NewProvider fails unless the advertised issuer equals issuerURL, so it
-		// is the exact value a token's iss claim must carry.
-		provider, err := oidc.NewProvider(ctx, issuer.issuerURL)
-		if err != nil {
-			return fmt.Errorf("discovering OIDC provider %q: %w", issuer.issuerURL, err)
+		provider, ok := providers[issuer.issuerURL]
+		if !ok {
+			// NewProvider fails unless the advertised issuer equals issuerURL, so
+			// it is the exact value a token's iss claim must carry.
+			var err error
+			provider, err = oidc.NewProvider(ctx, issuer.issuerURL)
+			if err != nil {
+				return fmt.Errorf("discovering OIDC provider %q: %w", issuer.issuerURL, err)
+			}
+			providers[issuer.issuerURL] = provider
 		}
 
-		verifiers[issuer.issuerURL] = provider.Verifier(&oidc.Config{ClientID: issuer.clientID})
+		verifiers[issuer.issuerURL] = append(verifiers[issuer.issuerURL],
+			provider.Verifier(&oidc.Config{ClientID: issuer.clientID}))
 	}
 
 	a.mu.Lock()
@@ -151,14 +160,23 @@ func (a *oidcAuthenticator) Middleware() func(http.Handler) http.Handler {
 				return
 			}
 
-			verifier, ok := verifiers[unverified.Issuer]
+			issuerVerifiers, ok := verifiers[unverified.Issuer]
 			if !ok {
 				a.log.WithField("iss", unverified.Issuer).Debug("OIDC token from untrusted issuer")
 				writeBearerError(w, http.StatusUnauthorized, "untrusted token issuer")
 				return
 			}
 
-			token, verifyErr := verifier.Verify(oidc.ClientContext(r.Context(), a.httpClient), rawToken)
+			// Same-issuer verifiers share one key set, so trying each client ID
+			// costs no extra JWKS fetch.
+			verifyCtx := oidc.ClientContext(r.Context(), a.httpClient)
+			var token *oidc.IDToken
+			var verifyErr error
+			for _, verifier := range issuerVerifiers {
+				if token, verifyErr = verifier.Verify(verifyCtx, rawToken); verifyErr == nil {
+					break
+				}
+			}
 			if verifyErr != nil {
 				a.log.WithError(verifyErr).Debug("OIDC token verification failed")
 				writeBearerError(w, http.StatusUnauthorized, "invalid token")
