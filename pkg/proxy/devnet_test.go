@@ -20,7 +20,7 @@ func devnetTestConfig() ServerConfig {
 		DevnetServices: &DevnetServicesConfig{
 			Services: []BaseDatasourceConfig{
 				{Name: "spamoor", AllowedOrgs: []string{"ethpandaops:Core"}},
-				{Name: "assertoor"},
+				{Name: "assertoor", AllowedOrgs: []string{AllowAllAuthenticated}},
 			},
 		},
 	}
@@ -125,7 +125,7 @@ func TestAuthorizerGatesDevnetServiceFromPath(t *testing.T) {
 		{"core member reaches spamoor", "/devnet/spamoor/dev-1/api/spammers", "spamoor", []string{"ethpandaops:Core"}, http.StatusTeapot},
 		{"outsider denied spamoor", "/devnet/spamoor/dev-1/api/spammers", "spamoor", []string{"sigp"}, http.StatusForbidden},
 		{"header cannot unlock another service", "/devnet/spamoor/dev-1/api/spammers", "assertoor", []string{"sigp"}, http.StatusForbidden},
-		{"unrestricted assertoor open to all", "/devnet/assertoor/dev-1/api/v1/tests", "", []string{"sigp"}, http.StatusTeapot},
+		{"assertoor open to every authenticated user", "/devnet/assertoor/dev-1/api/v1/tests", "", []string{"sigp"}, http.StatusTeapot},
 	}
 
 	for _, tt := range tests {
@@ -173,4 +173,16 @@ func TestDevnetDatasourcesAdvertAndFilter(t *testing.T) {
 
 	assert.Equal(t, []string{"spamoor", "assertoor"}, names([]string{"ethpandaops:Core"}))
 	assert.Equal(t, []string{"assertoor"}, names([]string{"sigp"}), "restricted services are not advertised")
+}
+
+func TestAuthorizerDeniesDevnetServiceWithoutAllowedOrgs(t *testing.T) {
+	cfg := devnetTestConfig()
+	cfg.DevnetServices.Services = []BaseDatasourceConfig{{Name: "spamoor"}}
+	mw := NewAuthorizer(logrus.New(), cfg).Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+	}))
+
+	rec := httptest.NewRecorder()
+	mw.ServeHTTP(rec, requestWithProxyUser(http.MethodGet, "/devnet/spamoor/dev-1/api/spammers", []string{"ethpandaops:Core"}))
+	assert.Equal(t, http.StatusForbidden, rec.Code)
 }

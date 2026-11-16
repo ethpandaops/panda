@@ -218,8 +218,8 @@ loki:
 # grants decide which services and features it unlocks. Callers the IdP or
 # the devnet refuses, and devnets without oidc.bearer, are relayed anonymously
 # (public reads only). The proxy holds no devnet credential. Without identity,
-# every request is anonymous. allowed_orgs optionally limits who may use the
-# relay at all.
+# every request is anonymous. allowed_orgs decides who may use the relay at all
+# ("*": every authenticated user; empty: nobody).
 # devnet_services:
 #   # domain_suffix: "ethpandaops.io"
 #   identity:
@@ -230,8 +230,10 @@ loki:
 #   services:
 #     - name: spamoor
 #       description: "Devnet transaction spammers"
+#       allowed_orgs: ["*"]
 #     - name: assertoor
 #       description: "Devnet test runner"
+#       allowed_orgs: ["*"]
 
 # Ethereum node API access (beacon and execution nodes)
 # Single credential pair for all bn-*.srv.*.ethpandaops.io and rpc-*.srv.*.ethpandaops.io endpoints

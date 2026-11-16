@@ -259,7 +259,7 @@ func (a *Authorizer) routeName(ctx context.Context, dsType, dsName string) (stri
 	case "ethnode", "github", "uploads", "faucet":
 		// Type-level rules (no per-name granularity).
 		return "", a.orgsMatch(userOrgs, hasUser, ruleKey(dsType, ""))
-	case "clickhouse", "prometheus", "loki", "benchmarkoor", "compute":
+	case "clickhouse", "prometheus", "loki", "benchmarkoor", "compute", "devnet":
 		variant, ok := a.matchingVariant(userOrgs, hasUser, ruleKey(dsType, dsName))
 		if !ok {
 			return "", false
