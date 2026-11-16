@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"sync"
 	"time"
 
@@ -16,8 +17,17 @@ const dockerResolveTimeout = 5 * time.Second
 
 var errPublishedPortNotFound = errors.New("no running container publishes the port")
 
+type publishedPortProbe func(ctx context.Context, host string, port int) error
+
 type publishedPortResolver interface {
-	Resolve(ctx context.Context, hostPort int) (string, int, error)
+	Resolve(ctx context.Context, hostPort int, probe publishedPortProbe) (string, int, error)
+}
+
+type publishedPortCandidate struct {
+	networkName string
+	networkID   string
+	host        string
+	port        int
 }
 
 type dockerPublishedPortResolver struct {
@@ -29,7 +39,7 @@ func newDockerPublishedPortResolver() *dockerPublishedPortResolver {
 	return &dockerPublishedPortResolver{}
 }
 
-func (r *dockerPublishedPortResolver) Resolve(ctx context.Context, hostPort int) (string, int, error) {
+func (r *dockerPublishedPortResolver) Resolve(ctx context.Context, hostPort int, probe publishedPortProbe) (string, int, error) {
 	ctx, cancel := context.WithTimeout(ctx, dockerResolveTimeout)
 	defer cancel()
 
@@ -53,25 +63,49 @@ func (r *dockerPublishedPortResolver) Resolve(ctx context.Context, hostPort int)
 		return "", 0, fmt.Errorf("listing containers: %w", err)
 	}
 
-	networkName, networkID, host, privatePort, err := findPublishedPort(list.Items, hostPort)
-	if err != nil {
-		return "", 0, err
-	}
-
-	attached := false
+	attached := make(map[string]struct{})
 	if self.Container.NetworkSettings != nil {
-		_, attached = self.Container.NetworkSettings.Networks[networkName]
-	}
-
-	if !attached {
-		if _, err := cli.NetworkConnect(ctx, networkID, client.NetworkConnectOptions{
-			Container: self.Container.ID,
-		}); err != nil {
-			return "", 0, fmt.Errorf("connecting to network %q: %w", networkName, err)
+		for name := range self.Container.NetworkSettings.Networks {
+			attached[name] = struct{}{}
 		}
 	}
 
-	return host, privatePort, nil
+	candidates := publishedPortCandidates(list.Items, hostPort, self.Container.ID, attached)
+	if len(candidates) == 0 {
+		return "", 0, fmt.Errorf("%w: %d", errPublishedPortNotFound, hostPort)
+	}
+
+	errs := make([]error, 0, len(candidates))
+
+	for _, candidate := range candidates {
+		_, wasAttached := attached[candidate.networkName]
+		if !wasAttached {
+			if _, err := cli.NetworkConnect(ctx, candidate.networkID, client.NetworkConnectOptions{
+				Container: self.Container.ID,
+			}); err != nil {
+				errs = append(errs, fmt.Errorf("connecting to network %q: %w", candidate.networkName, err))
+
+				continue
+			}
+		}
+
+		probeErr := probe(ctx, candidate.host, candidate.port)
+		if probeErr == nil {
+			return candidate.host, candidate.port, nil
+		}
+
+		errs = append(errs, fmt.Errorf("probing %s:%d on network %q: %w", candidate.host, candidate.port, candidate.networkName, probeErr))
+
+		if !wasAttached {
+			if _, err := cli.NetworkDisconnect(ctx, candidate.networkID, client.NetworkDisconnectOptions{
+				Container: self.Container.ID,
+			}); err != nil {
+				errs = append(errs, fmt.Errorf("disconnecting from network %q: %w", candidate.networkName, err))
+			}
+		}
+	}
+
+	return "", 0, errors.Join(errs...)
 }
 
 func (r *dockerPublishedPortResolver) dockerClient() (*client.Client, error) {
@@ -92,26 +126,58 @@ func (r *dockerPublishedPortResolver) dockerClient() (*client.Client, error) {
 	return cli, nil
 }
 
-func findPublishedPort(containers []container.Summary, hostPort int) (networkName, networkID, host string, privatePort int, err error) {
+func publishedPortCandidates(containers []container.Summary, hostPort int, selfID string, attached map[string]struct{}) []publishedPortCandidate {
+	candidates := make([]publishedPortCandidate, 0, 1)
+
 	for _, ctr := range containers {
-		for _, port := range ctr.Ports {
-			if int(port.PublicPort) != hostPort || port.Type != "tcp" {
+		if ctr.ID == selfID || ctr.NetworkSettings == nil || !publishesTCPPort(ctr, hostPort) {
+			continue
+		}
+
+		privatePort := publishedPrivatePort(ctr, hostPort)
+
+		for name, endpoint := range ctr.NetworkSettings.Networks {
+			if endpoint == nil || !endpoint.IPAddress.IsValid() {
 				continue
 			}
 
-			if ctr.NetworkSettings == nil {
-				continue
-			}
-
-			for name, endpoint := range ctr.NetworkSettings.Networks {
-				if endpoint == nil || !endpoint.IPAddress.IsValid() {
-					continue
-				}
-
-				return name, endpoint.NetworkID, endpoint.IPAddress.String(), int(port.PrivatePort), nil
-			}
+			candidates = append(candidates, publishedPortCandidate{
+				networkName: name,
+				networkID:   endpoint.NetworkID,
+				host:        endpoint.IPAddress.String(),
+				port:        privatePort,
+			})
 		}
 	}
 
-	return "", "", "", 0, fmt.Errorf("%w: %d", errPublishedPortNotFound, hostPort)
+	sort.SliceStable(candidates, func(i, j int) bool {
+		_, iAttached := attached[candidates[i].networkName]
+		_, jAttached := attached[candidates[j].networkName]
+
+		if iAttached != jAttached {
+			return iAttached
+		}
+
+		if candidates[i].networkName != candidates[j].networkName {
+			return candidates[i].networkName < candidates[j].networkName
+		}
+
+		return candidates[i].host < candidates[j].host
+	})
+
+	return candidates
+}
+
+func publishesTCPPort(ctr container.Summary, hostPort int) bool {
+	return publishedPrivatePort(ctr, hostPort) != 0
+}
+
+func publishedPrivatePort(ctr container.Summary, hostPort int) int {
+	for _, port := range ctr.Ports {
+		if int(port.PublicPort) == hostPort && port.Type == "tcp" {
+			return int(port.PrivatePort)
+		}
+	}
+
+	return 0
 }

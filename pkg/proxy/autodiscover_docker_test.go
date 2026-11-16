@@ -2,10 +2,10 @@ package proxy
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"slices"
 	"testing"
 
 	"github.com/moby/moby/api/types/container"
@@ -22,42 +22,70 @@ type fakePublishedPortResolver struct {
 	calls []int
 }
 
-func (f *fakePublishedPortResolver) Resolve(_ context.Context, hostPort int) (string, int, error) {
+func (f *fakePublishedPortResolver) Resolve(ctx context.Context, hostPort int, probe publishedPortProbe) (string, int, error) {
 	f.calls = append(f.calls, hostPort)
 
-	return f.host, f.port, f.err
+	if f.err != nil {
+		return "", 0, f.err
+	}
+
+	if err := probe(ctx, f.host, f.port); err != nil {
+		return "", 0, err
+	}
+
+	return f.host, f.port, nil
 }
 
-func TestFindPublishedPort(t *testing.T) {
+func TestPublishedPortCandidates(t *testing.T) {
+	endpoint := func(id, ip string) *network.EndpointSettings {
+		return &network.EndpointSettings{NetworkID: id, IPAddress: netip.MustParseAddr(ip)}
+	}
+
 	containers := []container.Summary{
 		{
+			ID:    "udp-only",
 			Ports: []container.PortSummary{{PrivatePort: 8123, PublicPort: 18123, Type: "udp"}},
 			NetworkSettings: &container.NetworkSettingsSummary{Networks: map[string]*network.EndpointSettings{
-				"other": {NetworkID: "net-other", IPAddress: netip.MustParseAddr("172.20.0.9")},
+				"other": endpoint("net-other", "172.20.0.9"),
 			}},
 		},
 		{
+			ID:    "self",
+			Ports: []container.PortSummary{{PrivatePort: 8123, PublicPort: 18123, Type: "tcp"}},
+			NetworkSettings: &container.NetworkSettingsSummary{Networks: map[string]*network.EndpointSettings{
+				"internal": endpoint("net-internal", "172.30.0.2"),
+			}},
+		},
+		{
+			ID: "clickhouse",
 			Ports: []container.PortSummary{
 				{PrivatePort: 9000},
 				{PrivatePort: 8123, PublicPort: 18123, Type: "tcp"},
 			},
 			NetworkSettings: &container.NetworkSettingsSummary{Networks: map[string]*network.EndpointSettings{
-				"bridge": {NetworkID: "net-bridge", IPAddress: netip.MustParseAddr("172.17.0.5")},
+				"bridge":   endpoint("net-bridge", "172.17.0.5"),
+				"alpha":    endpoint("net-alpha", "172.19.0.5"),
+				"internal": endpoint("net-internal", "172.30.0.5"),
+				"no-ip":    {NetworkID: "net-no-ip"},
 			}},
 		},
 	}
 
-	networkName, networkID, host, port, err := findPublishedPort(containers, 18123)
-	if err != nil {
-		t.Fatalf("findPublishedPort: %v", err)
+	want := []publishedPortCandidate{
+		{networkName: "internal", networkID: "net-internal", host: "172.30.0.5", port: 8123},
+		{networkName: "alpha", networkID: "net-alpha", host: "172.19.0.5", port: 8123},
+		{networkName: "bridge", networkID: "net-bridge", host: "172.17.0.5", port: 8123},
 	}
 
-	if networkName != "bridge" || networkID != "net-bridge" || host != "172.17.0.5" || port != 8123 {
-		t.Fatalf("got %s %s %s:%d", networkName, networkID, host, port)
+	for range 20 {
+		got := publishedPortCandidates(containers, 18123, "self", map[string]struct{}{"internal": {}})
+		if !slices.Equal(got, want) {
+			t.Fatalf("candidates = %+v, want %+v", got, want)
+		}
 	}
 
-	if _, _, _, _, err := findPublishedPort(containers, 19999); !errors.Is(err, errPublishedPortNotFound) {
-		t.Fatalf("err = %v, want errPublishedPortNotFound", err)
+	if got := publishedPortCandidates(containers, 19999, "self", nil); len(got) != 0 {
+		t.Fatalf("candidates = %+v, want none", got)
 	}
 }
 

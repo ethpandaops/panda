@@ -154,10 +154,6 @@ func (s *server) clickHouseAutodiscoverAvailable(ctx context.Context, entry Clic
 			return false, target, errors.Join(err, resolveErr)
 		}
 
-		if err := s.clickHousePing(ctx, resolved, entry); err != nil {
-			return false, target, err
-		}
-
 		target = resolved
 	}
 
@@ -174,7 +170,22 @@ func (s *server) resolvePublishedClickHouseTarget(ctx context.Context, entry Cli
 		return clickHouseAutodiscoverTarget{}, errors.New("no published port resolver")
 	}
 
-	host, port, err := s.autodiscoverPortResolver.Resolve(ctx, entry.Port)
+	anonymous := entry
+	anonymous.Username = ""
+	anonymous.Password = ""
+
+	host, port, err := s.autodiscoverPortResolver.Resolve(ctx, entry.Port, func(ctx context.Context, host string, port int) error {
+		candidate := anonymous
+		candidate.Host = host
+		candidate.Port = port
+
+		target, err := newClickHouseAutodiscoverTarget(candidate)
+		if err != nil {
+			return err
+		}
+
+		return s.clickHousePing(ctx, target, candidate)
+	})
 	if err != nil {
 		return clickHouseAutodiscoverTarget{}, err
 	}
