@@ -46,7 +46,12 @@ type SessionManager struct {
 	lastUsed map[string]time.Time
 	// activeExecs tracks sessions with running executions to prevent TTL purging mid-execution.
 	activeExecs map[string]int
-	mu          sync.RWMutex
+	// reserved tracks in-flight session creations that have passed the cap
+	// check but are not yet visible via store.List, keyed by owner ("" for the
+	// unauthenticated/global bucket). This closes the gap between deciding a
+	// session can be created and the store reflecting it.
+	reserved map[string]int
+	mu       sync.RWMutex
 
 	done     chan struct{}
 	stopOnce sync.Once
@@ -63,6 +68,7 @@ func NewSessionManager(cfg config.SessionConfig, log logrus.FieldLogger, store S
 		log:         log.WithField("component", "session-manager"),
 		lastUsed:    make(map[string]time.Time, cfg.MaxSessions),
 		activeExecs: make(map[string]int, cfg.MaxSessions),
+		reserved:    make(map[string]int),
 		done:        make(chan struct{}),
 		store:       store,
 	}
@@ -344,6 +350,68 @@ func (m *SessionManager) CanCreateSession(ctx context.Context, ownerID string) (
 	}
 
 	return count < maxSessions, count, maxSessions
+}
+
+// ReserveSession atomically checks the session cap and reserves a slot for a
+// new session, for backends that actually create one. Unlike CanCreateSession,
+// which only inspects a point-in-time count, ReserveSession accounts for
+// creations that are already in flight but not yet visible via store.List, so
+// concurrent callers cannot all observe room under the cap and overshoot it.
+//
+// On success the caller owns the returned release function and must call it
+// exactly once, whether or not the session was actually created (a defer right
+// after a successful reservation covers both the success and failure paths).
+func (m *SessionManager) ReserveSession(ctx context.Context, ownerID string) (canCreate bool, release func(), count int, maxAllowed int) {
+	noop := func() {}
+
+	if !m.cfg.IsEnabled() {
+		return false, noop, 0, 0
+	}
+
+	maxSessions := m.cfg.MaxSessions
+	if maxSessions <= 0 {
+		// No limit configured.
+		return true, noop, 0, 0
+	}
+
+	sessions, err := m.store.List(ctx)
+	if err != nil {
+		m.log.WithError(err).Warn("Failed to list sessions for limit check")
+		// Be conservative and allow creation on error.
+		return true, noop, 0, maxSessions
+	}
+
+	known := 0
+	for _, s := range sessions {
+		if ownerID == "" || s.OwnerID == ownerID {
+			known++
+		}
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	total := known + m.reserved[ownerID]
+	if total >= maxSessions {
+		return false, noop, total, maxSessions
+	}
+
+	m.reserved[ownerID]++
+
+	var once sync.Once
+	release = func() {
+		once.Do(func() {
+			m.mu.Lock()
+			defer m.mu.Unlock()
+
+			m.reserved[ownerID]--
+			if m.reserved[ownerID] <= 0 {
+				delete(m.reserved, ownerID)
+			}
+		})
+	}
+
+	return true, release, total, maxSessions
 }
 
 // MaxSessions returns the configured maximum number of sessions.
