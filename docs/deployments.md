@@ -71,6 +71,29 @@ This is the recommended external-user shape when you do not want to execute code
   - datasource credentials
   - proxy auth/rate-limit/audit settings
 
+## Proxy Access Control
+
+With proxy auth enabled (`auth.mode: oauth` or `oidc`), the proxy authorizes
+every request default-deny against `allowed_orgs`:
+
+- each datasource (`clickhouse`, `prometheus`, `loki`, `benchmarkoor`,
+  `compute`), or each of its `variants`, needs its own `allowed_orgs`
+- the type-level features `ethnode`, `faucet`, `github` and `uploads` each need
+  `allowed_orgs` too; `faucet.allowed_orgs` is required even when the faucet
+  reuses the ethnode credential
+- an empty or omitted `allowed_orgs` means no authenticated user can use it;
+  the proxy logs a startup warning for each such entry
+- `"*"` allows every authenticated user, including identities that carry no
+  org group (for example CI service accounts or Dex tokens with only
+  `org:team` groups); any other entry must exactly match one of the user's
+  groups (`ethpandaops`, `ethpandaops:Core`, ...)
+- requests for unknown datasource names or unrecognised routes are denied
+- `/datasources` (filtered to what the caller may use) and the embedding routes
+  are open to every authenticated user
+
+With `auth.mode: none` (all-local mode) there is no user and `allowed_orgs` is
+not enforced.
+
 ## Notes
 
 - there is no client-side `proxy.mode`

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/sirupsen/logrus"
+	logtest "github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -22,13 +23,14 @@ func testConfig() ServerConfig {
 		Auth: AuthConfig{Mode: AuthModeNone},
 		ClickHouse: []ClickHouseClusterConfig{
 			{BaseDatasourceConfig: BaseDatasourceConfig{Name: "restricted", AllowedOrgs: []string{"ethpandaops"}}, Host: "example.com", Port: 8123, Username: "u", Password: "p"},
-			{BaseDatasourceConfig: BaseDatasourceConfig{Name: "public"}, Host: "example.com", Port: 8123, Username: "u", Password: "p"},
+			{BaseDatasourceConfig: BaseDatasourceConfig{Name: "public", AllowedOrgs: []string{AllowAllAuthenticated}}, Host: "example.com", Port: 8123, Username: "u", Password: "p"},
+			{BaseDatasourceConfig: BaseDatasourceConfig{Name: "unset"}, Host: "example.com", Port: 8123, Username: "u", Password: "p"},
 		},
 		Prometheus: []PrometheusInstanceConfig{
 			{BaseDatasourceConfig: BaseDatasourceConfig{Name: "internal", AllowedOrgs: []string{"ethpandaops", "sigp"}}, URL: "https://prom.example.com"},
 		},
 		Loki: []LokiInstanceConfig{
-			{BaseDatasourceConfig: BaseDatasourceConfig{Name: "logs"}, URL: "https://loki.example.com"},
+			{BaseDatasourceConfig: BaseDatasourceConfig{Name: "logs", AllowedOrgs: []string{AllowAllAuthenticated}}, URL: "https://loki.example.com"},
 		},
 	}
 	cfg.ApplyDefaults()
@@ -94,20 +96,51 @@ func TestAuthorizerMiddlewareDeniesNonMatchingOrg(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, rec.Code)
 }
 
-func TestAuthorizerMiddlewareAllowsUnrestrictedDatasource(t *testing.T) {
+func TestAuthorizerMiddlewareWildcardAllowsAnyAuthenticatedUser(t *testing.T) {
 	t.Parallel()
 
 	cfg := testConfig()
 	srv, err := newServer(logrus.New(), cfg, "http://proxy.test", "18081")
 	require.NoError(t, err)
 
-	// User in any org accessing public clickhouse (no allowed_orgs).
-	rec := httptest.NewRecorder()
-	req := requestWithProxyUser(http.MethodPost, "/clickhouse", []string{"random-org"})
-	req.Header.Set("X-Datasource", "public")
-	srv.mux.ServeHTTP(rec, req)
+	// "*" admits identities that carry no org group at all (CI accounts,
+	// Dex tokens with only org:team groups).
+	for _, groups := range [][]string{{"panda-ci"}, {"ethpandaops:Core"}, nil} {
+		rec := httptest.NewRecorder()
+		req := requestWithProxyUser(http.MethodPost, "/clickhouse", groups)
+		req.Header.Set("X-Datasource", "public")
+		srv.mux.ServeHTTP(rec, req)
 
-	assert.NotEqual(t, http.StatusForbidden, rec.Code, "unrestricted datasource should be accessible")
+		assert.NotEqual(t, http.StatusForbidden, rec.Code, "groups %v should reach a \"*\" datasource", groups)
+	}
+}
+
+func TestAuthorizerMiddlewareDefaultDeny(t *testing.T) {
+	t.Parallel()
+
+	cfg := testConfig()
+	srv, err := newServer(logrus.New(), cfg, "http://proxy.test", "18081")
+	require.NoError(t, err)
+
+	for _, tt := range []struct {
+		name       string
+		datasource string
+	}{
+		{name: "datasource without allowed_orgs", datasource: "unset"},
+		{name: "unknown datasource name", datasource: "does-not-exist"},
+		{name: "missing datasource header", datasource: ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := requestWithProxyUser(http.MethodPost, "/clickhouse", []string{"ethpandaops"})
+			if tt.datasource != "" {
+				req.Header.Set("X-Datasource", tt.datasource)
+			}
+			srv.mux.ServeHTTP(rec, req)
+
+			assert.Equal(t, http.StatusForbidden, rec.Code)
+		})
+	}
 }
 
 func TestAuthorizerMiddlewareAllowsNoAuthUser(t *testing.T) {
@@ -117,13 +150,17 @@ func TestAuthorizerMiddlewareAllowsNoAuthUser(t *testing.T) {
 	srv, err := newServer(logrus.New(), cfg, "http://proxy.test", "18081")
 	require.NoError(t, err)
 
-	// No auth user (none mode) — should pass through.
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/clickhouse", nil)
-	req.Header.Set("X-Datasource", "restricted")
-	srv.mux.ServeHTTP(rec, req)
+	// No auth user (none mode) — allowed_orgs is not enforced, so even
+	// datasources without allowed_orgs and unknown names pass through to the
+	// handler (which 404s the unknown one).
+	for _, datasource := range []string{"restricted", "unset", "does-not-exist"} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/clickhouse", nil)
+		req.Header.Set("X-Datasource", datasource)
+		srv.mux.ServeHTTP(rec, req)
 
-	assert.NotEqual(t, http.StatusForbidden, rec.Code, "no auth user should pass through")
+		assert.NotEqual(t, http.StatusForbidden, rec.Code, "no auth user should pass through for %q", datasource)
+	}
 }
 
 func TestAuthorizerMiddlewareOAuthMode(t *testing.T) {
@@ -157,7 +194,7 @@ func TestAuthorizerFilterDatasources(t *testing.T) {
 	authorizer := NewAuthorizer(logrus.New(), cfg)
 
 	resp := DatasourcesResponse{
-		ClickHouseInfo:     []types.DatasourceInfo{{Type: "clickhouse", Name: "restricted"}, {Type: "clickhouse", Name: "public"}},
+		ClickHouseInfo:     []types.DatasourceInfo{{Type: "clickhouse", Name: "restricted"}, {Type: "clickhouse", Name: "public"}, {Type: "clickhouse", Name: "unset"}, {Type: "clickhouse", Name: "unconfigured"}},
 		PrometheusInfo:     []types.DatasourceInfo{{Type: "prometheus", Name: "internal"}},
 		LokiInfo:           []types.DatasourceInfo{{Type: "loki", Name: "logs"}},
 		EmbeddingAvailable: true,
@@ -172,7 +209,8 @@ func TestAuthorizerFilterDatasources(t *testing.T) {
 		assert.Equal(t, "openai/text-embedding-3-small", filtered.EmbeddingModel)
 	}
 
-	// User in ethpandaops — should see everything.
+	// User in ethpandaops — sees everything that has allowed_orgs set and
+	// matching; never "unset" (empty allowed_orgs) or "unconfigured" (no rule).
 	ctx := withAuthUser(context.Background(), &AuthUser{Groups: []string{"ethpandaops"}})
 	filtered := authorizer.FilterDatasources(ctx, resp)
 	assert.Equal(t, []string{"restricted", "public"}, datasourceNames(filtered.ClickHouseInfo))
@@ -180,7 +218,7 @@ func TestAuthorizerFilterDatasources(t *testing.T) {
 	assert.Equal(t, []string{"logs"}, datasourceNames(filtered.LokiInfo))
 	assertEmbeddingPreserved(t, filtered)
 
-	// User in sigp — should see public clickhouse + internal prometheus + logs.
+	// User in sigp — should see public clickhouse + internal prometheus + logs ("*").
 	ctx = withAuthUser(context.Background(), &AuthUser{Groups: []string{"sigp"}})
 	filtered = authorizer.FilterDatasources(ctx, resp)
 	assert.Equal(t, []string{"public"}, datasourceNames(filtered.ClickHouseInfo))
@@ -188,7 +226,7 @@ func TestAuthorizerFilterDatasources(t *testing.T) {
 	assert.Equal(t, []string{"logs"}, datasourceNames(filtered.LokiInfo))
 	assertEmbeddingPreserved(t, filtered)
 
-	// User in unknown org — only unrestricted datasources.
+	// User in unknown org — only "*" datasources.
 	ctx = withAuthUser(context.Background(), &AuthUser{Groups: []string{"unknown"}})
 	filtered = authorizer.FilterDatasources(ctx, resp)
 	assert.Equal(t, []string{"public"}, datasourceNames(filtered.ClickHouseInfo))
@@ -220,16 +258,18 @@ func TestAuthorizerFilterDatasourcesEndpoint(t *testing.T) {
 	assert.Contains(t, datasourceNames(resp.ClickHouseInfo), "restricted")
 	assert.Contains(t, datasourceNames(resp.ClickHouseInfo), "public")
 
-	// User in unknown org — should only see unrestricted datasources.
+	assert.NotContains(t, datasourceNames(resp.ClickHouseInfo), "unset")
+
+	// User in unknown org — should only see "*" datasources.
 	rec = httptest.NewRecorder()
 	req = requestWithProxyUser(http.MethodGet, "/datasources", []string{"unknown"})
 	srv.mux.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
 
+	resp = DatasourcesResponse{}
 	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
-	assert.NotContains(t, datasourceNames(resp.ClickHouseInfo), "restricted")
-	assert.Contains(t, datasourceNames(resp.ClickHouseInfo), "public")
+	assert.Equal(t, []string{"public"}, datasourceNames(resp.ClickHouseInfo))
 }
 
 func TestAuthorizerSelectsDatasourceVariants(t *testing.T) {
@@ -242,7 +282,7 @@ func TestAuthorizerSelectsDatasourceVariants(t *testing.T) {
 				BaseDatasourceConfig: BaseDatasourceConfig{Name: "clickhouse-raw"},
 				Variants: []ClickHouseClusterVariantConfig{
 					{AllowedOrgs: []string{"ethpandaops:Core"}, Host: "internal.example.com", Database: "internal", Username: "internal", Password: "secret"},
-					{Host: "external.example.com", Database: "external", Username: "external", Password: "secret"},
+					{AllowedOrgs: []string{AllowAllAuthenticated}, Host: "external.example.com", Database: "external", Username: "external", Password: "secret"},
 				},
 			},
 		},
@@ -457,7 +497,7 @@ func TestDatasourceVariantMiddlewareRoutesToSelectedBackend(t *testing.T) {
 							BaseDatasourceConfig: BaseDatasourceConfig{Name: "clickhouse-raw"},
 							Variants: []ClickHouseClusterVariantConfig{
 								{AllowedOrgs: []string{"ethpandaops:Core"}, Host: internalHost, Port: internalPort, Username: "internal", Password: "secret"},
-								{Host: externalHost, Port: externalPort, Username: "external", Password: "secret"},
+								{AllowedOrgs: []string{AllowAllAuthenticated}, Host: externalHost, Port: externalPort, Username: "external", Password: "secret"},
 							},
 						},
 					},
@@ -476,7 +516,7 @@ func TestDatasourceVariantMiddlewareRoutesToSelectedBackend(t *testing.T) {
 							BaseDatasourceConfig: BaseDatasourceConfig{Name: "prometheus-main"},
 							Variants: []PrometheusInstanceVariantConfig{
 								{AllowedOrgs: []string{"ethpandaops:Core"}, URL: internal.URL, Username: "internal"},
-								{URL: external.URL, Username: "external"},
+								{AllowedOrgs: []string{AllowAllAuthenticated}, URL: external.URL, Username: "external"},
 							},
 						},
 					},
@@ -495,7 +535,7 @@ func TestDatasourceVariantMiddlewareRoutesToSelectedBackend(t *testing.T) {
 							BaseDatasourceConfig: BaseDatasourceConfig{Name: "loki-main"},
 							Variants: []LokiInstanceVariantConfig{
 								{AllowedOrgs: []string{"ethpandaops:Core"}, URL: internal.URL, Username: "internal"},
-								{URL: external.URL, Username: "external"},
+								{AllowedOrgs: []string{AllowAllAuthenticated}, URL: external.URL, Username: "external"},
 							},
 						},
 					},
@@ -545,33 +585,238 @@ func TestDatasourceVariantMiddlewareRoutesToSelectedBackend(t *testing.T) {
 func TestAuthorizerEthnode(t *testing.T) {
 	t.Parallel()
 
+	const beaconPath = "/beacon/mainnet/lighthouse/eth/v1/node/version"
+
+	for _, tt := range []struct {
+		name        string
+		allowedOrgs []string
+		groups      []string
+		wantAllowed bool
+	}{
+		{name: "matching org", allowedOrgs: []string{"ethpandaops"}, groups: []string{"ethpandaops"}, wantAllowed: true},
+		{name: "wrong org", allowedOrgs: []string{"ethpandaops"}, groups: []string{"other"}},
+		{name: "no allowed_orgs denies everyone", groups: []string{"ethpandaops"}},
+		{name: "wildcard allows group-less identity", allowedOrgs: []string{AllowAllAuthenticated}, groups: []string{"panda-ci"}, wantAllowed: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := ServerConfig{
+				Auth: AuthConfig{Mode: AuthModeNone},
+				ClickHouse: []ClickHouseClusterConfig{
+					{BaseDatasourceConfig: BaseDatasourceConfig{Name: "ch", AllowedOrgs: []string{AllowAllAuthenticated}}, Host: "example.com", Port: 8123, Username: "u", Password: "p"},
+				},
+				EthNode: &EthNodeInstanceConfig{
+					BaseDatasourceConfig: BaseDatasourceConfig{AllowedOrgs: tt.allowedOrgs},
+					Username:             "u",
+					Password:             "p",
+				},
+			}
+			cfg.ApplyDefaults()
+
+			srv, err := newServer(logrus.New(), cfg, "http://proxy.test", "18081")
+			require.NoError(t, err)
+
+			rec := httptest.NewRecorder()
+			req := requestWithProxyUser(http.MethodGet, beaconPath, tt.groups)
+			srv.mux.ServeHTTP(rec, req)
+
+			if tt.wantAllowed {
+				assert.NotEqual(t, http.StatusForbidden, rec.Code)
+			} else {
+				assert.Equal(t, http.StatusForbidden, rec.Code)
+			}
+
+			// The listing must agree with the route.
+			rec = httptest.NewRecorder()
+			req = requestWithProxyUser(http.MethodGet, "/datasources", tt.groups)
+			srv.mux.ServeHTTP(rec, req)
+			require.Equal(t, http.StatusOK, rec.Code)
+
+			var resp DatasourcesResponse
+			require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+			assert.Equal(t, tt.wantAllowed, resp.EthNodeAvailable)
+
+			// None mode (no user) is unrestricted.
+			ctx := context.Background()
+			assert.True(t, srv.authorizer.isAllowed(ctx, "ethnode", ""))
+			assert.True(t, srv.authorizer.FilterDatasources(ctx, DatasourcesResponse{EthNodeAvailable: true}).EthNodeAvailable)
+		})
+	}
+}
+
+func TestAuthorizerVariantWithoutAllowedOrgsIsUnreachable(t *testing.T) {
+	t.Parallel()
+
 	cfg := ServerConfig{
 		Auth: AuthConfig{Mode: AuthModeNone},
 		ClickHouse: []ClickHouseClusterConfig{
-			{BaseDatasourceConfig: BaseDatasourceConfig{Name: "ch"}, Host: "example.com", Port: 8123, Username: "u", Password: "p"},
+			{
+				BaseDatasourceConfig: BaseDatasourceConfig{Name: "clickhouse-raw"},
+				Variants: []ClickHouseClusterVariantConfig{
+					{AllowedOrgs: []string{"ethpandaops:Core"}, Host: "internal.example.com", Database: "internal", Username: "internal", Password: "secret"},
+					{Host: "external.example.com", Database: "external", Username: "external", Password: "secret"},
+				},
+			},
 		},
+	}
+	cfg.ApplyDefaults()
+	require.NoError(t, cfg.Validate())
+
+	authorizer := NewAuthorizer(logrus.New(), cfg)
+	chConfigs, _, _, _ := cfg.ToHandlerConfigs()
+
+	// The variant without allowed_orgs is not a catch-all.
+	otherCtx := withAuthUser(context.Background(), &AuthUser{Groups: []string{"other-org"}})
+	assert.False(t, authorizer.isAllowed(otherCtx, "clickhouse", "clickhouse-raw"))
+
+	coreCtx := withAuthUser(context.Background(), &AuthUser{Groups: []string{"ethpandaops:Core"}})
+	assert.Equal(t, "internal", clickHouseUsernameForRoute(chConfigs, authorizer, coreCtx))
+
+	// None mode still selects the first variant.
+	assert.Equal(t, "internal", clickHouseUsernameForRoute(chConfigs, authorizer, context.Background()))
+}
+
+func TestAuthorizerRouteTypes(t *testing.T) {
+	t.Parallel()
+
+	gated := ServerConfig{
+		Auth: AuthConfig{Mode: AuthModeNone},
 		EthNode: &EthNodeInstanceConfig{
 			BaseDatasourceConfig: BaseDatasourceConfig{AllowedOrgs: []string{"ethpandaops"}},
 			Username:             "u",
 			Password:             "p",
 		},
+		Faucet:  &FaucetInstanceConfig{AllowedOrgs: []string{"ethpandaops:Core"}},
+		GitHub:  &GitHubAPIConfig{Token: "t", AllowedOrgs: []string{"ethpandaops"}},
+		Uploads: &UploadsConfig{Bucket: "b", AllowedOrgs: []string{AllowAllAuthenticated}},
 	}
-	cfg.ApplyDefaults()
 
-	srv, err := newServer(logrus.New(), cfg, "http://proxy.test", "18081")
-	require.NoError(t, err)
+	// Features configured without allowed_orgs. The faucet is enabled through
+	// the ethnode credential fallback; ethnode's "*" must not extend to it.
+	unset := ServerConfig{
+		Auth: AuthConfig{Mode: AuthModeNone},
+		EthNode: &EthNodeInstanceConfig{
+			BaseDatasourceConfig: BaseDatasourceConfig{AllowedOrgs: []string{AllowAllAuthenticated}},
+			Username:             "u",
+			Password:             "p",
+		},
+		GitHub:  &GitHubAPIConfig{Token: "t"},
+		Uploads: &UploadsConfig{Bucket: "b"},
+	}
 
-	// User in ethpandaops — should pass through to handler.
-	rec := httptest.NewRecorder()
-	req := requestWithProxyUser(http.MethodGet, "/beacon/mainnet/lighthouse/eth/v1/node/version", []string{"ethpandaops"})
-	srv.mux.ServeHTTP(rec, req)
-	assert.NotEqual(t, http.StatusForbidden, rec.Code)
+	noUser := []string{"<none>"}
 
-	// User in wrong org — should get 403.
-	rec = httptest.NewRecorder()
-	req = requestWithProxyUser(http.MethodGet, "/beacon/mainnet/lighthouse/eth/v1/node/version", []string{"other"})
-	srv.mux.ServeHTTP(rec, req)
-	assert.Equal(t, http.StatusForbidden, rec.Code)
+	for _, tt := range []struct {
+		name        string
+		cfg         ServerConfig
+		path        string
+		groups      []string // noUser = no authenticated user (auth mode none)
+		wantAllowed bool
+	}{
+		{name: "github matching org", cfg: gated, path: "/github/workflows/dispatch", groups: []string{"ethpandaops"}, wantAllowed: true},
+		{name: "github other org", cfg: gated, path: "/github/workflows/dispatch", groups: []string{"panda-ci"}},
+		{name: "uploads wildcard", cfg: gated, path: "/uploads", groups: []string{"panda-ci"}, wantAllowed: true},
+		{name: "faucet matching org", cfg: gated, path: "/faucet/mainnet/claim", groups: []string{"ethpandaops:Core"}, wantAllowed: true},
+		{name: "faucet other org", cfg: gated, path: "/faucet/mainnet/claim", groups: []string{"ethpandaops"}},
+		{name: "ethnode execution route", cfg: gated, path: "/execution/mainnet/geth", groups: []string{"panda-ci"}},
+		{name: "datasources listing", cfg: gated, path: "/datasources", groups: []string{"panda-ci"}, wantAllowed: true},
+		{name: "embed v1", cfg: gated, path: "/embed", groups: []string{"panda-ci"}, wantAllowed: true},
+		{name: "embedding v2 check", cfg: gated, path: "/v2/embedding/check", groups: []string{}, wantAllowed: true},
+		{name: "embedding v3", cfg: gated, path: "/v3/embedding", groups: []string{"panda-ci"}, wantAllowed: true},
+		{name: "unrecognised path", cfg: gated, path: "/something-else", groups: []string{"ethpandaops"}},
+		{name: "unrecognised embedding version", cfg: gated, path: "/v4/embedding", groups: []string{"ethpandaops"}},
+		{name: "github without allowed_orgs", cfg: unset, path: "/github/workflows/dispatch", groups: []string{"ethpandaops"}},
+		{name: "uploads without allowed_orgs", cfg: unset, path: "/uploads", groups: []string{"ethpandaops"}},
+		{name: "faucet without allowed_orgs", cfg: unset, path: "/faucet/mainnet/claim", groups: []string{"ethpandaops"}},
+		{name: "ethnode wildcard", cfg: unset, path: "/beacon/mainnet/lighthouse", groups: []string{"panda-ci"}, wantAllowed: true},
+		{name: "none mode github", cfg: unset, path: "/github/workflows/dispatch", groups: noUser, wantAllowed: true},
+		{name: "none mode uploads", cfg: unset, path: "/uploads", groups: noUser, wantAllowed: true},
+		{name: "none mode faucet", cfg: unset, path: "/faucet/mainnet/claim", groups: noUser, wantAllowed: true},
+		{name: "none mode unrecognised path", cfg: unset, path: "/something-else", groups: noUser, wantAllowed: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			authorizer := NewAuthorizer(logrus.New(), tt.cfg)
+			handler := authorizer.Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			}))
+
+			req := httptest.NewRequest(http.MethodPost, tt.path, nil)
+			if len(tt.groups) != 1 || tt.groups[0] != noUser[0] {
+				req = requestWithProxyUser(http.MethodPost, tt.path, tt.groups)
+			}
+
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+
+			if tt.wantAllowed {
+				assert.Equal(t, http.StatusOK, rec.Code)
+			} else {
+				assert.Equal(t, http.StatusForbidden, rec.Code)
+			}
+		})
+	}
+}
+
+func TestNewAuthorizerWarnsAboutUnreachableRules(t *testing.T) {
+	t.Parallel()
+
+	cfg := ServerConfig{
+		ClickHouse: []ClickHouseClusterConfig{
+			{BaseDatasourceConfig: BaseDatasourceConfig{Name: "unset"}},
+			{BaseDatasourceConfig: BaseDatasourceConfig{Name: "set", AllowedOrgs: []string{AllowAllAuthenticated}}},
+		},
+		Prometheus: []PrometheusInstanceConfig{
+			{
+				BaseDatasourceConfig: BaseDatasourceConfig{Name: "prom"},
+				Variants: []PrometheusInstanceVariantConfig{
+					{AllowedOrgs: []string{"ethpandaops:Core"}, URL: "https://internal.example.com"},
+					{URL: "https://external.example.com"},
+				},
+			},
+		},
+		EthNode: &EthNodeInstanceConfig{Username: "u", Password: "p"},
+		GitHub:  &GitHubAPIConfig{Token: "t", AllowedOrgs: []string{"ethpandaops"}},
+	}
+
+	warnings := func(mode AuthMode) []*logrus.Entry {
+		cfg := cfg
+		cfg.Auth.Mode = mode
+
+		log, hook := logtest.NewNullLogger()
+		NewAuthorizer(log, cfg)
+
+		var entries []*logrus.Entry
+		for _, entry := range hook.AllEntries() {
+			if entry.Level == logrus.WarnLevel {
+				entries = append(entries, entry)
+			}
+		}
+
+		return entries
+	}
+
+	// ethnode, then the faucet that inherits the ethnode credential.
+	entries := warnings(AuthModeOIDC)
+	require.Len(t, entries, 4)
+
+	got := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		key, _ := entry.Data["rule"].(string)
+		if variant, ok := entry.Data["variant"]; ok {
+			key += " variant " + strconv.Itoa(variant.(int))
+		}
+
+		got = append(got, key)
+		assert.Contains(t, entry.Message, `"*"`)
+	}
+
+	assert.Equal(t, []string{"clickhouse:unset", "ethnode", "faucet", "prometheus:prom variant 1"}, got)
+
+	// Without authentication nothing is unreachable, so nothing is logged.
+	assert.Empty(t, warnings(AuthModeNone))
 }
 
 func upstreamAuthServer(label string) *httptest.Server {
