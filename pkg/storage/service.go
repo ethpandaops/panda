@@ -90,18 +90,35 @@ func (s *service) Upload(scope Scope, name string, body io.Reader) (UploadResult
 
 	filePath := filepath.Join(dir, filepath.FromSlash(rel))
 
-	f, err := s.fs.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	// Write to a temp file in the same directory and rename it over the
+	// destination only once the copy fully succeeds, so a failed or
+	// interrupted upload (a normal occurrence: the source is a live sandbox
+	// HTTP stream that can break mid-transfer) can never truncate or corrupt
+	// whatever was already stored at this key. Same directory keeps the
+	// rename on one filesystem, which is what makes it atomic.
+	tmp, err := afero.TempFile(s.fs, dir, ".upload-*")
 	if err != nil {
-		return UploadResult{}, fmt.Errorf("creating file: %w", err)
+		return UploadResult{}, fmt.Errorf("creating temp file: %w", err)
 	}
+	tmpPath := tmp.Name()
 
-	if _, err := io.Copy(f, body); err != nil {
-		_ = f.Close()
+	if _, err := io.Copy(tmp, body); err != nil {
+		_ = tmp.Close()
+		_ = s.fs.Remove(tmpPath)
+
 		return UploadResult{}, fmt.Errorf("writing file: %w", err)
 	}
 
-	if err := f.Close(); err != nil {
+	if err := tmp.Close(); err != nil {
+		_ = s.fs.Remove(tmpPath)
+
 		return UploadResult{}, fmt.Errorf("closing file: %w", err)
+	}
+
+	if err := s.fs.Rename(tmpPath, filePath); err != nil {
+		_ = s.fs.Remove(tmpPath)
+
+		return UploadResult{}, fmt.Errorf("finalizing file: %w", err)
 	}
 
 	return UploadResult{
