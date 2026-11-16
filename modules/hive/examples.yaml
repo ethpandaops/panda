@@ -1,0 +1,71 @@
+hive_client_results:
+  name: Hive Test Results
+  description: Check which EELS tests each execution client passes and fails in hive CI
+  examples:
+    - name: Summarise a group
+      description: Pass and fail counts per client for a fork or devnet group
+      query: |
+        from ethpandaops import hive
+
+        groups = [g["name"] for g in hive.list_groups()]
+        print(f"Groups: {groups}")
+
+        summary = hive.get_summary("glamsterdam-quick")
+        print(f"Last run: {summary['last_run']}")
+        for client, counts in sorted(summary["clients"].items()):
+            print(f"{client:<12} {counts['version']:<30} pass {counts['pass']:>6} fail {counts['fail']:>4}")
+
+    - name: List a client's failing tests
+      description: Failing tests for one client, grouped by EIP test directory, with links
+      query: |
+        from collections import Counter
+        from ethpandaops import hive
+
+        result = hive.list_tests("glamsterdam-quick", client="reth", limit=500)
+        print(f"{result['total']} failing tests")
+
+        by_dir = Counter(t["module"].split("/")[2] for t in result["tests"] if t["module"].count("/") >= 2)
+        for directory, count in by_dir.most_common(10):
+            print(f"{count:>4}  {directory}")
+
+        for test in result["tests"][:3]:
+            print(test["pytest_id"])
+            print(f"  {test['hive_url']}")
+
+    - name: Find tests that fail in several clients
+      description: Tests failing in two or more clients often point at a test or spec problem rather than a client bug
+      query: |
+        from collections import defaultdict
+        from ethpandaops import hive
+
+        result = hive.list_tests("glamsterdam-quick", limit=0)
+        clients = defaultdict(set)
+        for test in result["tests"]:
+            clients[test["function"]].add(test["client"])
+
+        for function, names in sorted(clients.items(), key=lambda kv: -len(kv[1])):
+            if len(names) > 1:
+                print(f"{function}: {', '.join(sorted(names))}")
+
+    - name: Inspect one failure
+      description: Error, logs and reproduce commands for one failing test
+      query: |
+        from ethpandaops import hive
+
+        detail = hive.find_test("glamsterdam-quick", filter="test_bal_", client="reth")
+        print(detail["pytest_id"])
+        print(f"Error: {detail.get('error', '')[:500]}")
+        print(f"Fill:  {detail['fill_command']}")
+        print(f"Hive:  {detail.get('hive_command', '')}")
+        print(f"Page:  {detail['hive_url']}")
+
+    - name: What changed since the previous run
+      description: New failures and fixes per client between the latest two runs
+      query: |
+        from ethpandaops import hive
+
+        diff = hive.get_diff("glamsterdam-quick")
+        print(f"From {diff['from_run']} to {diff['to_run']}")
+        for section in ("regressions", "fixes"):
+            totals = {client: entry["total"] for client, entry in diff[section].items()}
+            print(f"{section}: {totals}")

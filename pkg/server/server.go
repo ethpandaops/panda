@@ -20,6 +20,7 @@ import (
 	"github.com/ethpandaops/panda/pkg/config"
 	"github.com/ethpandaops/panda/pkg/consensusspecs"
 	"github.com/ethpandaops/panda/pkg/execsvc"
+	"github.com/ethpandaops/panda/pkg/hive"
 	"github.com/ethpandaops/panda/pkg/module"
 	"github.com/ethpandaops/panda/pkg/observability"
 	"github.com/ethpandaops/panda/pkg/proxy"
@@ -76,6 +77,9 @@ type service struct {
 
 	blockArchiveCacheOnce         sync.Once
 	blockArchiveNetworksCacheInst *blockArchiveNetworksCache
+
+	hiveOnce sync.Once
+	hiveInst *hive.Store
 }
 
 // NewService creates a new MCP server service.
