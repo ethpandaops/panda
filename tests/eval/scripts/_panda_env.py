@@ -50,6 +50,9 @@ def write_scratch_config(port: int, *, source: Path | None = None) -> Path:
     cfg["server"]["port"] = port
     cfg["server"]["base_url"] = f"http://localhost:{port}"
     cfg["server"]["sandbox_url"] = f"http://host.docker.internal:{port}"
+    # This scratch server runs unauthenticated; the per-test owner-scoped cleanup
+    # below relies on the X-Panda-On-Behalf-Of header actually scoping sessions.
+    cfg["server"]["attribution_session_scoping"] = True
     sb = cfg.setdefault("sandbox", {})
     sb["image"] = "ethpandaops-panda-sandbox:latest"
     sb["network"] = "ethpandaops-panda-harden"
