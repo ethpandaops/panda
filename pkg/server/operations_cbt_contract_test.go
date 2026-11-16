@@ -39,7 +39,7 @@ var cbtSpecRoutes = []struct {
 func TestCBTRoutesMatchSpec(t *testing.T) {
 	t.Parallel()
 
-	spec, err := cbtapi.GetSwagger()
+	spec, err := cbtapi.GetSpec()
 	require.NoError(t, err)
 
 	for _, route := range cbtSpecRoutes {
@@ -72,7 +72,7 @@ func TestCBTRoutesMatchSpec(t *testing.T) {
 func TestCBTSpecServesAPIV1(t *testing.T) {
 	t.Parallel()
 
-	spec, err := cbtapi.GetSwagger()
+	spec, err := cbtapi.GetSpec()
 	require.NoError(t, err)
 
 	require.NotEmpty(t, spec.Servers)
