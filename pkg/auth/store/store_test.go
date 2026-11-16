@@ -125,6 +125,56 @@ func TestGetAccessTokenFallsBackWhenRefreshFailsButTokenIsStillValid(t *testing.
 	}
 }
 
+func TestGetAccessTokenStopsRefreshingAfterInvalidGrant(t *testing.T) {
+	t.Parallel()
+
+	client := &stubAuthClient{
+		refreshErr: errors.New(`oauth2: "invalid_grant" "Refresh token revoked"`),
+	}
+	store := New(logrus.New(), Config{
+		Path:       filepath.Join(t.TempDir(), "creds.json"),
+		AuthClient: client,
+	}).(*store)
+
+	if err := store.Save(&authclient.Tokens{
+		AccessToken:          "expired",
+		RefreshToken:         "revoked",
+		RefreshTokenIssuedAt: time.Now().Add(-time.Hour),
+		ExpiresAt:            time.Now().Add(-time.Minute),
+	}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	// Mirror refreshSource.Token: reload from disk, then fetch the access token.
+	for range 5 {
+		if _, err := store.Load(); err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if _, err := store.GetAccessToken(); err == nil {
+			t.Fatal("expected an error for an expired access token with a revoked refresh token")
+		}
+	}
+
+	if client.refreshCalls != 1 {
+		t.Fatalf("expected the revoked refresh token to be tried once, got %d", client.refreshCalls)
+	}
+
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.RefreshToken != "" || !got.RefreshTokenIssuedAt.IsZero() {
+		t.Fatalf("expected the rejected refresh token to be dropped, got %+v", got)
+	}
+
+	// A fresh login must still be able to store a refreshable credential.
+	if err := store.Save(&authclient.Tokens{
+		AccessToken: "new", RefreshToken: "new-refresh", ExpiresAt: time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("Save after re-login: %v", err)
+	}
+}
+
 func TestGetAccessTokenRefreshesAtRefreshTokenHalfLife(t *testing.T) {
 	t.Parallel()
 

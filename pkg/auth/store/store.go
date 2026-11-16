@@ -494,10 +494,15 @@ func (s *store) refresh(prior *client.Tokens) (*client.Tokens, error) {
 	if err != nil {
 		if isInvalidGrant(err) {
 			s.log.WithError(err).Warn(
-				"Refresh token rejected (invalid_grant); it was likely rotated by another " +
-					"refresher sharing these credentials, or revoked — re-authentication may be " +
-					"required (panda auth login)",
+				"Refresh token rejected (invalid_grant); it was rotated by another refresher " +
+					"sharing these credentials, or revoked — dropping it; run `panda auth login`",
 			)
+
+			// invalid_grant is permanent for this token: drop it so later calls stop
+			// hitting the token endpoint instead of retrying it on every request.
+			if dropErr := s.dropRefreshToken(prior.RefreshToken); dropErr != nil {
+				s.log.WithError(dropErr).Warn("Failed to drop rejected refresh token")
+			}
 		} else {
 			s.log.WithError(err).Warn("Failed to refresh access token")
 		}
@@ -526,6 +531,26 @@ func (s *store) refresh(prior *client.Tokens) (*client.Tokens, error) {
 	}).Info("Refreshed access token")
 
 	return newTokens, nil
+}
+
+// dropRefreshToken removes rejected from the stored credential, keeping the
+// access token until it expires. Callers must hold the credentials file lock.
+// A credential rotated on disk since rejected was read is left untouched.
+func (s *store) dropRefreshToken(rejected string) error {
+	current, err := s.Load()
+	if err != nil {
+		return err
+	}
+
+	if current == nil || current.RefreshToken != rejected {
+		return nil
+	}
+
+	current.RefreshToken = ""
+	current.RefreshTokenIssuedAt = time.Time{}
+	s.clearForceRefresh()
+
+	return s.writeTokens(current)
 }
 
 // isInvalidGrant reports whether a refresh error is an OAuth invalid_grant

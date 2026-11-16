@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/sirupsen/logrus"
 
 	"github.com/ethpandaops/panda/internal/version"
@@ -34,18 +35,13 @@ type oidcIssuer struct {
 	clientID  string
 }
 
-type oidcVerifier struct {
-	issuerURL string
-	verifier  *oidc.IDTokenVerifier
-}
-
 type oidcAuthenticator struct {
 	log        logrus.FieldLogger
 	issuers    []oidcIssuer
 	httpClient *http.Client
 
 	mu        sync.RWMutex
-	verifiers []oidcVerifier
+	verifiers map[string][]*oidc.IDTokenVerifier
 }
 
 type oidcTokenClaims struct {
@@ -97,17 +93,25 @@ func NewOIDCAuthenticator(log logrus.FieldLogger, cfg OIDCAuthenticatorConfig) (
 func (a *oidcAuthenticator) Start(ctx context.Context) error {
 	ctx = oidc.ClientContext(ctx, a.httpClient)
 
-	verifiers := make([]oidcVerifier, 0, len(a.issuers))
+	// Entries may share an issuer URL with different client IDs. Discover each
+	// issuer once so its verifiers share one cached JWKS.
+	providers := make(map[string]*oidc.Provider, len(a.issuers))
+	verifiers := make(map[string][]*oidc.IDTokenVerifier, len(a.issuers))
 	for _, issuer := range a.issuers {
-		provider, err := oidc.NewProvider(ctx, issuer.issuerURL)
-		if err != nil {
-			return fmt.Errorf("discovering OIDC provider %q: %w", issuer.issuerURL, err)
+		provider, ok := providers[issuer.issuerURL]
+		if !ok {
+			// NewProvider fails unless the advertised issuer equals issuerURL, so
+			// it is the exact value a token's iss claim must carry.
+			var err error
+			provider, err = oidc.NewProvider(ctx, issuer.issuerURL)
+			if err != nil {
+				return fmt.Errorf("discovering OIDC provider %q: %w", issuer.issuerURL, err)
+			}
+			providers[issuer.issuerURL] = provider
 		}
 
-		verifiers = append(verifiers, oidcVerifier{
-			issuerURL: issuer.issuerURL,
-			verifier:  provider.Verifier(&oidc.Config{ClientID: issuer.clientID}),
-		})
+		verifiers[issuer.issuerURL] = append(verifiers[issuer.issuerURL],
+			provider.Verifier(&oidc.Config{ClientID: issuer.clientID}))
 	}
 
 	a.mu.Lock()
@@ -146,15 +150,30 @@ func (a *oidcAuthenticator) Middleware() func(http.Handler) http.Handler {
 				return
 			}
 
-			// Accept the token if it verifies against any trusted issuer. Each
-			// verifier checks issuer, signature, and audience, so a token only
-			// passes for the issuer that actually minted it.
+			// Route by the unverified iss claim, then fully verify against that
+			// issuer only. go-oidc checks the signature before the issuer and
+			// refetches JWKS on every unknown kid, so trying each issuer in turn
+			// costs a JWKS fetch from the wrong IdP per request.
+			var unverified jwt.RegisteredClaims
+			if _, _, err := jwt.NewParser().ParseUnverified(rawToken, &unverified); err != nil {
+				writeBearerError(w, http.StatusUnauthorized, "malformed token")
+				return
+			}
+
+			issuerVerifiers, ok := verifiers[unverified.Issuer]
+			if !ok {
+				a.log.WithField("iss", unverified.Issuer).Debug("OIDC token from untrusted issuer")
+				writeBearerError(w, http.StatusUnauthorized, "untrusted token issuer")
+				return
+			}
+
+			// Same-issuer verifiers share one key set, so trying each client ID
+			// costs no extra JWKS fetch.
 			verifyCtx := oidc.ClientContext(r.Context(), a.httpClient)
 			var token *oidc.IDToken
 			var verifyErr error
-			for _, v := range verifiers {
-				token, verifyErr = v.verifier.Verify(verifyCtx, rawToken)
-				if verifyErr == nil {
+			for _, verifier := range issuerVerifiers {
+				if token, verifyErr = verifier.Verify(verifyCtx, rawToken); verifyErr == nil {
 					break
 				}
 			}
