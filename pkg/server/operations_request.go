@@ -16,7 +16,12 @@ func decodeOperationRequest(r *http.Request) (operations.Request, error) {
 	defer func() { _ = r.Body.Close() }()
 
 	var req operations.Request
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	decoder := json.NewDecoder(r.Body)
+	// Decode numbers as json.Number so integer parameters keep their exact
+	// value. Without this they become float64, which loses precision above
+	// 2^53 and renders large values in scientific notation.
+	decoder.UseNumber()
+	if err := decoder.Decode(&req); err != nil {
 		return operations.Request{}, fmt.Errorf("invalid request body: %w", err)
 	}
 
@@ -77,6 +82,11 @@ func optionalSliceArg(args map[string]any, key string) []any {
 
 func optionalIntArg(args map[string]any, key string, fallback int) int {
 	switch value := args[key].(type) {
+	case json.Number:
+		if n, err := value.Int64(); err == nil {
+			return int(n)
+		}
+		return fallback
 	case float64:
 		return int(value)
 	case int:
