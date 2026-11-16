@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -107,13 +108,19 @@ func (s *server) reconcileClickHouseAutodiscover(ctx context.Context, entry Clic
 		return
 	}
 
+	if available && *present && s.autodiscoveredClickHouseTarget(entry.Name) != target.baseURL {
+		s.removeAutodiscoveredClickHouseCluster(entry.Name)
+		*present = false
+	}
+
 	if available && !*present {
 		if !s.addAutodiscoveredClickHouseCluster(target.cluster) {
 			return
 		}
 
+		s.setAutodiscoveredClickHouseTarget(entry.Name, target.baseURL)
 		*present = true
-		logger.Info("ClickHouse autodiscovery datasource became available")
+		logger.WithField("target", target.baseURL).Info("ClickHouse autodiscovery datasource became available")
 
 		return
 	}
@@ -142,7 +149,16 @@ func (s *server) clickHouseAutodiscoverAvailable(ctx context.Context, entry Clic
 	}
 
 	if err := s.clickHousePing(ctx, target, entry); err != nil {
-		return false, target, err
+		resolved, resolveErr := s.resolvePublishedClickHouseTarget(ctx, entry)
+		if resolveErr != nil {
+			return false, target, errors.Join(err, resolveErr)
+		}
+
+		if err := s.clickHousePing(ctx, resolved, entry); err != nil {
+			return false, target, err
+		}
+
+		target = resolved
 	}
 
 	exists, err := s.clickHouseDatabaseExists(ctx, target, entry)
@@ -151,6 +167,40 @@ func (s *server) clickHouseAutodiscoverAvailable(ctx context.Context, entry Clic
 	}
 
 	return exists, target, nil
+}
+
+func (s *server) resolvePublishedClickHouseTarget(ctx context.Context, entry ClickHouseClusterConfig) (clickHouseAutodiscoverTarget, error) {
+	if s.autodiscoverPortResolver == nil {
+		return clickHouseAutodiscoverTarget{}, errors.New("no published port resolver")
+	}
+
+	host, port, err := s.autodiscoverPortResolver.Resolve(ctx, entry.Port)
+	if err != nil {
+		return clickHouseAutodiscoverTarget{}, err
+	}
+
+	entry.Host = host
+	entry.Port = port
+
+	return newClickHouseAutodiscoverTarget(entry)
+}
+
+func (s *server) autodiscoveredClickHouseTarget(name string) string {
+	s.autodiscoverMu.Lock()
+	defer s.autodiscoverMu.Unlock()
+
+	return s.autodiscoverTargets[name]
+}
+
+func (s *server) setAutodiscoveredClickHouseTarget(name, baseURL string) {
+	s.autodiscoverMu.Lock()
+	defer s.autodiscoverMu.Unlock()
+
+	if s.autodiscoverTargets == nil {
+		s.autodiscoverTargets = make(map[string]string, 1)
+	}
+
+	s.autodiscoverTargets[name] = baseURL
 }
 
 func (s *server) clickHousePing(ctx context.Context, target clickHouseAutodiscoverTarget, entry ClickHouseClusterConfig) error {

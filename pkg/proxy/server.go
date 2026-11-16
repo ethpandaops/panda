@@ -85,13 +85,15 @@ type server struct {
 	embeddingServiceV2  *EmbeddingService
 	githubHandler       *handlers.GitHubHandler
 
-	autodiscoverHTTPClient  *http.Client
-	autodiscoverCancel      context.CancelFunc
-	autodiscoverWG          sync.WaitGroup
-	autodiscoverMu          sync.Mutex
-	staticClickHouseNames   map[string]struct{}
-	dynamicClickHouseNames  map[string]struct{}
-	staticAutodiscoverWarns map[string]struct{}
+	autodiscoverHTTPClient   *http.Client
+	autodiscoverPortResolver publishedPortResolver
+	autodiscoverTargets      map[string]string
+	autodiscoverCancel       context.CancelFunc
+	autodiscoverWG           sync.WaitGroup
+	autodiscoverMu           sync.Mutex
+	staticClickHouseNames    map[string]struct{}
+	dynamicClickHouseNames   map[string]struct{}
+	staticAutodiscoverWarns  map[string]struct{}
 
 	mu        sync.RWMutex
 	started   bool
@@ -108,7 +110,14 @@ var (
 func NewServer(log logrus.FieldLogger, cfg ServerConfig) (Server, error) {
 	hostURL, port := advertisedURLs(cfg.Server.ListenAddr)
 
-	return newServer(log, cfg, hostURL, port)
+	s, err := newServer(log, cfg, hostURL, port)
+	if err != nil {
+		return nil, err
+	}
+
+	s.autodiscoverPortResolver = newDockerPublishedPortResolver()
+
+	return s, nil
 }
 
 func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (*server, error) {
