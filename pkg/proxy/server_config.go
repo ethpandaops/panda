@@ -93,6 +93,10 @@ type UploadsConfig struct {
 	// Enable only after the bucket domain has the Cloudflare CSP-sandbox rule
 	// (see UploadsConfig.RenderHTML in pkg/proxy/handlers).
 	RenderHTML bool `yaml:"render_html,omitempty"`
+
+	// AllowedOrgs lists the groups allowed to use /uploads. Empty denies every
+	// authenticated user; "*" allows all of them.
+	AllowedOrgs []string `yaml:"allowed_orgs,omitempty"`
 }
 
 // ToUploadsHandlerConfig maps the uploads block to its handler config, or nil
@@ -129,6 +133,11 @@ func normalizeKeyPrefix(p string) string {
 type GitHubAPIConfig struct {
 	// Token is a GitHub personal access token or app token with actions:write permission.
 	Token string `yaml:"token"`
+
+	// AllowedOrgs lists the groups allowed to use /github (builds and
+	// workflow triggers). Empty denies every authenticated user; "*" allows
+	// all of them.
+	AllowedOrgs []string `yaml:"allowed_orgs,omitempty"`
 }
 
 // HTTPServerConfig holds HTTP server configuration.
@@ -333,6 +342,11 @@ type EthNodeInstanceConfig struct {
 type FaucetInstanceConfig struct {
 	Username string `yaml:"username"`
 	Password string `yaml:"password"`
+
+	// AllowedOrgs lists the groups allowed to use /faucet. Empty denies every
+	// authenticated user; "*" allows all of them. Set it even when the faucet
+	// reuses the ethnode credential (username omitted).
+	AllowedOrgs []string `yaml:"allowed_orgs,omitempty"`
 }
 
 // ToFaucetHandlerConfig returns the credential the faucet passthrough attaches

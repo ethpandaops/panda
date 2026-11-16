@@ -9,6 +9,17 @@
 # single `proxy.url` form is still accepted when used alone.
 #
 # Environment variables can be substituted using ${VAR_NAME} or ${VAR_NAME:-default} syntax.
+#
+# Access control (auth modes "oauth" and "oidc") is DEFAULT-DENY. Every
+# datasource (or each of its variants) and the ethnode, faucet, github and
+# uploads features need an explicit `allowed_orgs` list:
+#   - empty or omitted  -> no authenticated user can use it
+#   - "*"               -> every authenticated user (including identities with
+#                          no org group, e.g. CI service accounts)
+#   - anything else     -> exact match against the user's groups/orgs
+#                          (e.g. "ethpandaops" or "ethpandaops:Core")
+# The proxy logs a warning at startup for each entry left unreachable. With
+# auth mode "none" there is no user, so allowed_orgs is not enforced.
 
 server:
   # Address to listen on
@@ -48,7 +59,8 @@ auth:
   #   client_id: "${GITHUB_CLIENT_ID}"
   #   client_secret: "${GITHUB_CLIENT_SECRET}"
 
-  # Limit remote access to selected GitHub orgs
+  # Limit login (mode "oauth") to selected GitHub orgs. Per-datasource access
+  # is controlled separately by each datasource's allowed_orgs below.
   # allowed_orgs:
   #   - ethpandaops
   #   - sigp
@@ -112,10 +124,10 @@ clickhouse:
       - dataset: otel-logs
         params: { database: internal }
         notes: "Operator platform/infrastructure logs (k8s clusters, sentries, services)."
-    # Restrict access to members of specific GitHub orgs.
-    # Omit or leave empty to allow all authenticated users.
-    # allowed_orgs:
-    #   - ethpandaops
+    # Who may use this datasource. Required: omitted/empty denies everyone.
+    # Use "*" for every authenticated user.
+    allowed_orgs:
+      - ethpandaops
 
   - name: clickhouse-refined
     description: "Refined ClickHouse cluster with pre-aggregated Ethereum data (distributed: wrap subqueries you JOIN against in GLOBAL)"
@@ -130,8 +142,8 @@ clickhouse:
     contains:
       - dataset: xatu-cbt
         params: { database_pattern: "*" } # per-network databases (mainnet, holesky, …)
-    # allowed_orgs:
-    #   - ethpandaops
+    allowed_orgs:
+      - "*" # every authenticated user
 
   # Optional dynamic local datasource. The prober adds it only while /ping
   # returns "Ok." and the configured database exists.
@@ -142,6 +154,7 @@ clickhouse:
   #   database: otel
   #   autodiscover: true
   #   autodiscover_interval: 10s
+  #   allowed_orgs: ["*"]
   #   contains:
   #     - dataset: otel-logs
   #       params: { database: otel }
@@ -154,16 +167,16 @@ prometheus:
     url: "${PROMETHEUS_PLATFORM_URL}"
     username: "${PROMETHEUS_PLATFORM_USERNAME}"
     password: "${PROMETHEUS_PLATFORM_PASSWORD}"
-    # allowed_orgs:
-    #   - ethpandaops
+    allowed_orgs:
+      - ethpandaops
 
   - name: devnets
     description: "Devnets Prometheus instance"
     url: "${PROMETHEUS_DEVNETS_URL}"
     username: "${PROMETHEUS_DEVNETS_USERNAME}"
     password: "${PROMETHEUS_DEVNETS_PASSWORD}"
-    # allowed_orgs:
-    #   - ethpandaops
+    allowed_orgs:
+      - ethpandaops
 
 # Loki instances
 loki:
@@ -172,8 +185,8 @@ loki:
     url: "${LOKI_URL}"
     username: "${LOKI_USERNAME}"
     password: "${LOKI_PASSWORD}"
-    # allowed_orgs:
-    #   - ethpandaops
+    allowed_orgs:
+      - ethpandaops
 
 # Benchmarkoor: execution-client benchmark results (read-only API key, bmk_...)
 # benchmarkoor:
@@ -182,8 +195,8 @@ loki:
 #     url: "https://benchmarkoor-api.core.ethpandaops.io"
 #     ui_url: "https://benchmarkoor.core.ethpandaops.io"
 #     api_key: "${BENCHMARKOOR_API_KEY}"
-#     # allowed_orgs:
-#     #   - ethpandaops
+#     allowed_orgs:
+#       - "*"
 
 # Compute: ephemeral-sandbox control plane (core ethpandaops members only).
 # The proxy verifies the caller's OIDC token, gates access via allowed_orgs, and
@@ -204,13 +217,17 @@ loki:
 #   allowed_orgs:
 #     - ethpandaops
 
-# Dedicated basic-auth credential for the agent faucet ingress
-# (faucet-agents.*.ethpandaops.io). Optional: when omitted, the ethnode
-# credential above is used. Set it to keep faucet access rotatable
+# Agent faucet ingress (faucet-agents.*.ethpandaops.io). The /faucet route is
+# enabled whenever ethnode or faucet credentials are set, but authenticated
+# users can only use it when faucet.allowed_orgs is set (ethnode's allowed_orgs
+# do not apply). username/password are optional: when omitted, the ethnode
+# credential above is used. Set them to keep faucet access rotatable
 # independently of node access.
 # faucet:
 #   username: "${ETHPANDAOPS_FAUCET_USERNAME}"
 #   password: "${ETHPANDAOPS_FAUCET_PASSWORD}"
+#   allowed_orgs:
+#     - ethpandaops
 
 # Embedding API v1 (optional — enables legacy symmetric remote embedding).
 # embedding:
@@ -236,6 +253,8 @@ loki:
 # GitHub API (optional — enables triggering GitHub Actions workflows)
 # github:
 #   token: "${GITHUB_TOKEN}"  # PAT or app token with actions:write permission
+#   allowed_orgs:             # who may trigger builds/workflows
+#     - ethpandaops
 
 # Uploads (optional — the publish target for `panda upload`). Private previews
 # stay in the local server; this bucket holds only files the user chose to make
@@ -268,6 +287,8 @@ loki:
 #   # domain (GitHub org login) instead of the public one. Set both or neither.
 #   team_key_prefix: "panda/team/"
 #   team_base_url: "https://panda-notes.example.io"
+#   allowed_orgs:                           # who may publish uploads
+#     - ethpandaops
 
 # Rate limiting
 rate_limiting:

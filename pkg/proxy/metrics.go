@@ -255,6 +255,12 @@ func (w *responseCapture) Flush() {
 func extractDatasourceType(path string) string {
 	trimmed := strings.TrimPrefix(path, "/")
 
+	for _, embedding := range []string{"v2/embedding", "v3/embedding"} {
+		if trimmed == embedding || strings.HasPrefix(trimmed, embedding+"/") {
+			return "embed"
+		}
+	}
+
 	if idx := strings.IndexByte(trimmed, '/'); idx > 0 {
 		trimmed = trimmed[:idx]
 	}
@@ -276,6 +282,8 @@ func extractDatasourceType(path string) string {
 		return "github"
 	case "uploads":
 		return "uploads"
+	case "faucet":
+		return "faucet"
 	case "datasources":
 		return "datasources"
 	case "embed":
