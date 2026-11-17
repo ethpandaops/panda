@@ -597,13 +597,53 @@ func (c *clickhouseSchemaClient) discoverClusterSchema(
 		LastUpdated: time.Now(),
 	}
 
+	// Fetch each database's schemas in one query. Tables the bulk query does
+	// not return fall back to one SHOW CREATE TABLE per table below.
+	byDatabase := make(map[string][]discoveredTable)
+	for _, dt := range discovered {
+		byDatabase[dt.Database] = append(byDatabase[dt.Database], dt)
+	}
+
+	fallback := make([]discoveredTable, 0)
+
+	for database, tables := range byDatabase {
+		schemas, err := c.fetchDatabaseSchemas(ctx, datasourceName, database)
+		if err != nil {
+			c.log.WithError(err).WithField("database", database).
+				Debug("Bulk schema fetch failed, falling back to per-table queries")
+
+			fallback = append(fallback, tables...)
+
+			continue
+		}
+
+		for _, dt := range tables {
+			schema, ok := schemas[dt.Name]
+			if !ok {
+				fallback = append(fallback, dt)
+
+				continue
+			}
+
+			schema.Database = dt.Database
+
+			if shouldFetchLocalBackingKeys(schema) {
+				if localName, ok := localBackingTableName(dt.Name); ok {
+					copyMissingKeyClauses(schema, schemas[localName])
+				}
+			}
+
+			clusterTables.Tables[tableKey(dt.Database, dt.Name)] = schema
+		}
+	}
+
 	sem := make(chan struct{}, schemaQueryConcurrency)
 
 	var wg sync.WaitGroup
 
 	var mu sync.Mutex
 
-	for _, dt := range discovered {
+	for _, dt := range fallback {
 		wg.Add(1)
 
 		go func(dt discoveredTable) {
@@ -969,6 +1009,50 @@ func validateDatabaseIdentifier(name string) error {
 	}
 
 	return nil
+}
+
+// fetchDatabaseSchemas fetches every table schema in a database with a single
+// query, keyed by table name. formatQuery renders create_table_query exactly as
+// SHOW CREATE TABLE does, so parseCreateTable sees the same input. Local
+// backing tables are included so Distributed tables can borrow their keys.
+func (c *clickhouseSchemaClient) fetchDatabaseSchemas(
+	ctx context.Context,
+	datasourceName string,
+	database string,
+) (map[string]*TableSchema, error) {
+	if err := validateDatabaseIdentifier(database); err != nil {
+		return nil, fmt.Errorf("validating database name: %w", err)
+	}
+
+	query := fmt.Sprintf(
+		"SELECT name, formatQuery(create_table_query) AS statement FROM system.tables WHERE database = '%s'",
+		database,
+	)
+
+	result, err := c.queryJSON(ctx, datasourceName, query)
+	if err != nil {
+		return nil, fmt.Errorf("executing bulk schema query: %w", err)
+	}
+
+	schemas := make(map[string]*TableSchema, len(result.Data))
+
+	for _, row := range result.Data {
+		name := strings.TrimSpace(asString(row["name"]))
+		statement := strings.TrimSpace(asString(row["statement"]))
+
+		if validateIdentifier(name) != nil || statement == "" {
+			continue
+		}
+
+		schema, err := parseCreateTable(name, statement)
+		if err != nil {
+			continue
+		}
+
+		schemas[name] = schema
+	}
+
+	return schemas, nil
 }
 
 // fetchTableSchema fetches the schema for a specific table.
