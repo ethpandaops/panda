@@ -209,6 +209,32 @@ loki:
 #     allowed_orgs:
 #       - ethpandaops:Core
 
+# Devnet service relay: spamoor and assertoor APIs on every devnet, reached as
+# https://{service}.{devnet}.{domain_suffix}. Requests run as the caller: the
+# proxy exchanges the caller's token at the IdP for a token of the identity
+# client (Authentik JWT federation; that application's policy decides who may
+# get a devnet token at all), then trades it for the devnet authenticatoor's
+# JWT at auth.{devnet}/{authenticatoor_provider}/token, where the devnet's
+# grants decide which services and features it unlocks. Callers the IdP or
+# the devnet refuses, and devnets without oidc.bearer, are relayed anonymously
+# (public reads only). The proxy holds no devnet credential. Without identity,
+# every request is anonymous. allowed_orgs decides who may use the relay at all
+# ("*": every authenticated user; empty: nobody).
+# devnet_services:
+#   # domain_suffix: "ethpandaops.io"
+#   identity:
+#     token_url: "https://authentik.example/application/o/token/"
+#     client_id: "devnet-authenticatoor"
+#     # authenticatoor_provider: "authentik"
+#     # scopes: [openid, email, profile, groups]
+#   services:
+#     - name: spamoor
+#       description: "Devnet transaction spammers"
+#       allowed_orgs: ["*"]
+#     - name: assertoor
+#       description: "Devnet test runner"
+#       allowed_orgs: ["*"]
+
 # Ethereum node API access (beacon and execution nodes)
 # Single credential pair for all bn-*.srv.*.ethpandaops.io and rpc-*.srv.*.ethpandaops.io endpoints
 # ethnode:
