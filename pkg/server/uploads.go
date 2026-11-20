@@ -20,7 +20,7 @@ import (
 )
 
 // maxLocalUploadBytes caps a single upload held in memory.
-const maxLocalUploadBytes int64 = 100 << 20
+const maxLocalUploadBytes int64 = 1 << 30
 
 // Private uploads live only in memory for the server's lifetime ("just for the
 // session") — nothing touches disk or leaves the machine until the user
