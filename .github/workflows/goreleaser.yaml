@@ -10,14 +10,16 @@ permissions:
 
 jobs:
   release:
-    runs-on:
-      - self-hosted-ghr
-      - size-l-x64
+    runs-on: ubuntu-latest
     permissions:
       contents: write       # create the GitHub release
       packages: write        # push images
       id-token: write        # keyless cosign signing + provenance via OIDC
       attestations: write    # actions/attest-build-provenance
+    outputs:
+      image: ${{ steps.attest.outputs.image }}
+      digests: ${{ steps.attest.outputs.digests }}
+      sandbox-digests: ${{ steps.attest-sandbox.outputs.digests }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -59,13 +61,15 @@ jobs:
       # Syft for SBOM generation (GoReleaser shells out to it).
       - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
 
-      - name: Login to DockerHub
+      - name: Login to GHCR
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
 
       - name: Build and push sandbox image
+        id: sandbox
         run: |
           TAG=${GITHUB_REF#refs/tags/}
           # Strip the leading "v" so sandbox tags match goreleaser's
@@ -78,10 +82,14 @@ jobs:
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --file sandbox/Dockerfile \
-            --tag "ethpandaops/panda:sandbox-${VERSION}" \
-            --tag "ethpandaops/panda:sandbox-${VERSION}-${SHORT_SHA}" \
-            --tag "ethpandaops/panda:sandbox-${LATEST_TAG}" \
+            --tag "ghcr.io/ethpandaops/panda:sandbox-${VERSION}" \
+            --tag "ghcr.io/ethpandaops/panda:sandbox-${VERSION}-${SHORT_SHA}" \
+            --tag "ghcr.io/ethpandaops/panda:sandbox-${LATEST_TAG}" \
+            --metadata-file "$RUNNER_TEMP/sandbox-metadata.json" \
             --push .
+
+          echo "tags=sandbox-${VERSION} sandbox-${VERSION}-${SHORT_SHA} sandbox-${LATEST_TAG}" >> "$GITHUB_OUTPUT"
+          echo "digest=$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/sandbox-metadata.json")" >> "$GITHUB_OUTPUT"
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
@@ -115,10 +123,43 @@ jobs:
           TAG=${GITHUB_REF#refs/tags/}
           VERSION=${TAG#v}
           for ref in \
-            "ethpandaops/panda:${VERSION}" \
-            "ethpandaops/panda:server-${VERSION}" \
-            "ethpandaops/panda:proxy-${VERSION}" \
-            "ethpandaops/panda:sandbox-${VERSION}"; do
+            "ghcr.io/ethpandaops/panda:${VERSION}" \
+            "ghcr.io/ethpandaops/panda:server-${VERSION}" \
+            "ghcr.io/ethpandaops/panda:proxy-${VERSION}" \
+            "ghcr.io/ethpandaops/panda:sandbox-${VERSION}"; do
             echo "Signing ${ref}"
             cosign sign --recursive "${ref}"
           done
+
+      - name: Attest images
+        id: attest
+        uses: ethpandaops/actions/mirror-image@738aeadbcdc54f1c9af659d35f8ef29dd5c0fae6
+        with:
+          goreleaser-artifacts: dist/artifacts.json
+          mirror: "false"
+
+      - name: Attest sandbox image
+        id: attest-sandbox
+        uses: ethpandaops/actions/mirror-image@738aeadbcdc54f1c9af659d35f8ef29dd5c0fae6
+        with:
+          tags: ${{ steps.sandbox.outputs.tags }}
+          digest: ${{ steps.sandbox.outputs.digest }}
+          mirror: "false"
+
+  # Separate job, so "Re-run failed jobs" retries only the mirror and never
+  # rebuilds the images.
+  mirror:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      id-token: write      # authenticate to the image mirror
+    steps:
+      - name: Mirror to Docker Hub
+        uses: ethpandaops/actions/mirror-image@738aeadbcdc54f1c9af659d35f8ef29dd5c0fae6
+        with:
+          image: ${{ needs.release.outputs.image }}
+          tags: ${{ needs.release.outputs.digests }} ${{ needs.release.outputs.sandbox-digests }}
+          attest: "false"
+          mirror-url: ${{ secrets.IMAGE_MIRROR_URL }}

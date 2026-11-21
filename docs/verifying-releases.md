@@ -48,11 +48,14 @@ from a specific commit, rather than uploaded by hand.
 
 ## Verify a Docker image
 
+The signatures live next to the images on GHCR. The Docker Hub images are
+copies of the same digests, so verifying the GHCR image covers both.
+
 ```bash
 cosign verify \
   --certificate-identity-regexp 'https://github.com/ethpandaops/panda/.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ethpandaops/panda:<version>
+  ghcr.io/ethpandaops/panda:<version>
 ```
 
 Pin by digest (`ethpandaops/panda@sha256:...`) in production so a moved tag
