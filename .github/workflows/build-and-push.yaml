@@ -24,9 +24,7 @@ on:
         required: true
         type: string
     secrets:
-      DOCKERHUB_USERNAME:
-        required: true
-      DOCKERHUB_TOKEN:
+      IMAGE_MIRROR_URL:
         required: true
 
 permissions:
@@ -34,9 +32,12 @@ permissions:
 
 jobs:
   build:
-    runs-on:
-      - self-hosted-ghr
-      - size-l-x64
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write      # push to ghcr.io/ethpandaops
+      id-token: write      # attest, and authenticate to the image mirror
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -48,11 +49,12 @@ jobs:
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      - name: Login to DockerHub
+      - name: Login to GHCR
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
 
       - name: Build binaries
         env:
@@ -75,57 +77,86 @@ jobs:
           done
 
       - name: Build and push server image
+        id: server
         run: |
           TAGS=""
           IFS=',' read -ra TAG_ARRAY <<< "${{ inputs.server-tags }}"
           for TAG in "${TAG_ARRAY[@]}"; do
-            TAGS="${TAGS} --tag ethpandaops/panda:${TAG}"
+            TAGS="${TAGS} --tag ghcr.io/ethpandaops/panda:${TAG}"
           done
 
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --file goreleaser.server.Dockerfile \
             ${TAGS} \
+            --metadata-file "$RUNNER_TEMP/server-metadata.json" \
             --push .
 
+          DIGEST=$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/server-metadata.json")
+          echo "tags=$(printf "%s@${DIGEST} " "${TAG_ARRAY[@]}")" >> "$GITHUB_OUTPUT"
+
       - name: Build and push CLI image
+        id: cli
         run: |
           TAGS=""
           IFS=',' read -ra TAG_ARRAY <<< "${{ inputs.cli-tags }}"
           for TAG in "${TAG_ARRAY[@]}"; do
-            TAGS="${TAGS} --tag ethpandaops/panda:${TAG}"
+            TAGS="${TAGS} --tag ghcr.io/ethpandaops/panda:${TAG}"
           done
 
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --file goreleaser.panda.Dockerfile \
             ${TAGS} \
+            --metadata-file "$RUNNER_TEMP/cli-metadata.json" \
             --push .
 
+          DIGEST=$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/cli-metadata.json")
+          echo "tags=$(printf "%s@${DIGEST} " "${TAG_ARRAY[@]}")" >> "$GITHUB_OUTPUT"
+
       - name: Build and push proxy image
+        id: proxy
         run: |
           TAGS=""
           IFS=',' read -ra TAG_ARRAY <<< "${{ inputs.proxy-tags }}"
           for TAG in "${TAG_ARRAY[@]}"; do
-            TAGS="${TAGS} --tag ethpandaops/panda:${TAG}"
+            TAGS="${TAGS} --tag ghcr.io/ethpandaops/panda:${TAG}"
           done
 
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --file goreleaser.proxy.Dockerfile \
             ${TAGS} \
+            --metadata-file "$RUNNER_TEMP/proxy-metadata.json" \
             --push .
 
+          DIGEST=$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/proxy-metadata.json")
+          echo "tags=$(printf "%s@${DIGEST} " "${TAG_ARRAY[@]}")" >> "$GITHUB_OUTPUT"
+
       - name: Build and push sandbox image
+        id: sandbox
         run: |
           TAGS=""
           IFS=',' read -ra TAG_ARRAY <<< "${{ inputs.sandbox-tags }}"
           for TAG in "${TAG_ARRAY[@]}"; do
-            TAGS="${TAGS} --tag ethpandaops/panda:${TAG}"
+            TAGS="${TAGS} --tag ghcr.io/ethpandaops/panda:${TAG}"
           done
 
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --file sandbox/Dockerfile \
             ${TAGS} \
+            --metadata-file "$RUNNER_TEMP/sandbox-metadata.json" \
             --push .
+
+          DIGEST=$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/sandbox-metadata.json")
+          echo "tags=$(printf "%s@${DIGEST} " "${TAG_ARRAY[@]}")" >> "$GITHUB_OUTPUT"
+
+      # All four images were built in this job, so it attests every platform
+      # manifest behind them too (the default).
+      - name: Attest and mirror to Docker Hub
+        uses: ethpandaops/actions/mirror-image@738aeadbcdc54f1c9af659d35f8ef29dd5c0fae6
+        with:
+          image: panda
+          tags: ${{ steps.server.outputs.tags }} ${{ steps.cli.outputs.tags }} ${{ steps.proxy.outputs.tags }} ${{ steps.sandbox.outputs.tags }}
+          mirror-url: ${{ secrets.IMAGE_MIRROR_URL }}
