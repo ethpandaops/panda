@@ -32,8 +32,6 @@ permissions:
 
 jobs:
   build:
-    # GitHub-hosted: the image mirror only accepts attestations from
-    # GitHub-hosted runners.
     runs-on: ubuntu-latest
     permissions:
       contents: read
