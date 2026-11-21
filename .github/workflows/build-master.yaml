@@ -15,9 +15,7 @@ concurrency:
 
 jobs:
   meta:
-    runs-on:
-      - self-hosted-ghr
-      - size-m-x64
+    runs-on: ubuntu-latest
     outputs:
       short-sha: ${{ steps.sha.outputs.short }}
     steps:
