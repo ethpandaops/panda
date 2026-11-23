@@ -26,8 +26,8 @@ jobs:
     needs: meta
     permissions:
       contents: read
-      packages: write      # push to ghcr.io/ethpandaops
-      id-token: write      # attest, and authenticate to the image mirror
+      packages: write
+      id-token: write
       attestations: write
     uses: ./.github/workflows/build-and-push.yaml
     with:

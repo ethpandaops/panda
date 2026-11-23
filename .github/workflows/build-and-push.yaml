@@ -35,8 +35,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write      # push to ghcr.io/ethpandaops
-      id-token: write      # attest, and authenticate to the image mirror
+      packages: write
+      id-token: write
       attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
