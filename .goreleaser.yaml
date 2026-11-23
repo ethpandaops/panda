@@ -78,7 +78,7 @@ dockers_v2:
     extra_files:
       - docker-entrypoint.sh
     images:
-      - "ethpandaops/panda"
+      - "ghcr.io/ethpandaops/panda"
     tags:
       - "server-{{ .Version }}"
       - "server-{{ .Version }}-{{ .ShortCommit }}"
@@ -93,7 +93,7 @@ dockers_v2:
       - panda
     dockerfile: goreleaser.panda.Dockerfile
     images:
-      - "ethpandaops/panda"
+      - "ghcr.io/ethpandaops/panda"
     tags:
       - "{{ .Version }}"
       - "{{ .Version }}-{{ .ShortCommit }}"
@@ -108,7 +108,7 @@ dockers_v2:
       - panda-proxy
     dockerfile: goreleaser.proxy.Dockerfile
     images:
-      - "ethpandaops/panda"
+      - "ghcr.io/ethpandaops/panda"
     tags:
       - "proxy-{{ .Version }}"
       - "proxy-{{ .Version }}-{{ .ShortCommit }}"
