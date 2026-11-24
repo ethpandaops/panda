@@ -154,7 +154,7 @@ jobs:
     permissions:
       contents: read
       packages: read
-      id-token: write      # authenticate to the image mirror
+      id-token: write
     steps:
       - name: Mirror to Docker Hub
         uses: ethpandaops/actions/mirror-image@738aeadbcdc54f1c9af659d35f8ef29dd5c0fae6
