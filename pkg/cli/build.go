@@ -20,6 +20,7 @@ var (
 	buildRef       string
 	buildRepo      string
 	buildDockerTag string
+	buildMethod    string
 	buildPR        int
 	buildWait      bool
 )
@@ -49,7 +50,8 @@ Examples:
   panda build geth --repo ethereum/go-ethereum --ref my-branch
   panda build geth --ref my-branch --tag my-custom-tag
   panda build lodestar --pr 10265          # build PR head, tagged pr-10265
-  panda build geth --repo user/go-ethereum --pr 123`,
+  panda build geth --repo user/go-ethereum --pr 123
+  panda build prysm --ref my-branch --build-method go`,
 	Args: cobra.ExactArgs(1),
 	RunE: runBuild,
 }
@@ -68,6 +70,7 @@ func init() {
 	buildCmd.Flags().StringVar(&buildRepo, "repo", "", "source repository override (e.g. user/go-ethereum)")
 	buildCmd.Flags().StringVar(&buildDockerTag, "tag", "", "override target docker tag")
 	buildCmd.Flags().IntVar(&buildPR, "pr", 0, "pull request number to build from (tagged pr-<number> unless --tag is set)")
+	buildCmd.Flags().StringVar(&buildMethod, "build-method", "", "prysm only: build method, go or bazel (uses workflow default if omitted)")
 	buildCmd.MarkFlagsMutuallyExclusive("ref", "pr")
 	buildCmd.Flags().BoolVar(&buildWait, "wait", false, "block until the build completes instead of returning immediately")
 }
@@ -75,6 +78,10 @@ func init() {
 func runBuild(cmd *cobra.Command, args []string) error {
 	client := args[0]
 	ctx := cmd.Context()
+
+	if err := validateBuildMethod(client, buildMethod); err != nil {
+		return err
+	}
 
 	if cmd.Flags().Changed("pr") {
 		if buildPR <= 0 {
@@ -89,10 +96,11 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 
 	resp, err := triggerBuild(ctx, serverapi.BuildTriggerRequest{
-		Client:     client,
-		Repository: buildRepo,
-		Ref:        buildRef,
-		DockerTag:  buildDockerTag,
+		Client:      client,
+		Repository:  buildRepo,
+		Ref:         buildRef,
+		DockerTag:   buildDockerTag,
+		BuildMethod: buildMethod,
 	})
 	if err != nil {
 		return fmt.Errorf("triggering build: %w", err)
@@ -139,6 +147,22 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("build cancelled (run %d)", result.RunID)
 	default:
 		fmt.Fprintf(os.Stderr, "Build finished with conclusion: %s\n", result.Conclusion)
+	}
+
+	return nil
+}
+
+func validateBuildMethod(client, method string) error {
+	if method == "" {
+		return nil
+	}
+
+	if client != "prysm" {
+		return fmt.Errorf("--build-method is only supported for prysm, not %s", client)
+	}
+
+	if method != "go" && method != "bazel" {
+		return fmt.Errorf("invalid build method %q: must be go or bazel", method)
 	}
 
 	return nil
@@ -191,6 +215,10 @@ func printBuildTriggered(resp *serverapi.BuildTriggerResponse) error {
 
 	if buildDockerTag != "" {
 		fmt.Printf("  tag:       %s\n", buildDockerTag)
+	}
+
+	if buildMethod != "" {
+		fmt.Printf("  method:    %s\n", buildMethod)
 	}
 
 	if resp.RunID > 0 {

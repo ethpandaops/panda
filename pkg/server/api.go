@@ -623,6 +623,9 @@ func (s *service) handleAPIBuildTrigger(w http.ResponseWriter, r *http.Request) 
 	if req.DockerTag != "" {
 		inputs["docker_tag"] = req.DockerTag
 	}
+	if req.BuildMethod != "" {
+		inputs["build_method"] = req.BuildMethod
+	}
 
 	proxyReq := map[string]any{
 		"repository": "ethpandaops/eth-client-docker-image-builder",

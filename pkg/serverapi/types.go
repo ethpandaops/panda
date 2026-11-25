@@ -286,6 +286,8 @@ type BuildTriggerRequest struct {
 	Ref string `json:"ref,omitempty"`
 	// DockerTag is the target docker tag override (optional).
 	DockerTag string `json:"docker_tag,omitempty"`
+	// BuildMethod selects the build method for workflows that support it (optional).
+	BuildMethod string `json:"build_method,omitempty"`
 }
 
 // BuildTriggerResponse is the response from POST /api/v1/build/trigger.
