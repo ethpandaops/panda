@@ -100,7 +100,11 @@ func newTestAppKey(t *testing.T) *rsa.PrivateKey {
 func newTestTokenSource(t *testing.T, key *rsa.PrivateKey, apiBase string) *githubAppTokenSource {
 	t.Helper()
 
+	log := logrus.New()
+	log.SetOutput(io.Discard)
+
 	return newGitHubAppTokenSource(
+		log,
 		GitHubAppConfig{AppID: testAppID, InstallationID: testInstallationID, PrivateKey: key},
 		apiBase,
 		[]string{"eth-client-docker-image-builder"},
@@ -196,6 +200,55 @@ func TestGitHubAppTokenSourceCachesAndRefreshesBeforeExpiry(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "ghs_installation_2", refreshed)
 	fake.locked(func() { assert.Equal(t, 2, fake.tokenCalls) })
+}
+
+func TestGitHubAppTokenSourceServesCachedTokenWhenRefreshFails(t *testing.T) {
+	t.Parallel()
+
+	start := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	var mu sync.Mutex
+
+	failing := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		if failing {
+			http.Error(w, "unavailable", http.StatusServiceUnavailable)
+			return
+		}
+
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"token":      "ghs_cached",
+			"expires_at": start.Add(time.Hour).Format(time.RFC3339),
+		})
+	}))
+	t.Cleanup(srv.Close)
+
+	now := start
+	ts := newTestTokenSource(t, newTestAppKey(t), srv.URL)
+	ts.now = func() time.Time { return now }
+
+	_, err := ts.Token(context.Background())
+	require.NoError(t, err)
+
+	mu.Lock()
+	failing = true
+	mu.Unlock()
+
+	// Inside the refresh margin but before expiry: the cached token is served.
+	now = start.Add(58 * time.Minute)
+	token, err := ts.Token(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, "ghs_cached", token)
+
+	// Past expiry: the failure is returned.
+	now = start.Add(61 * time.Minute)
+	_, err = ts.Token(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "503")
 }
 
 func TestGitHubAppTokenSourceReportsExchangeFailure(t *testing.T) {

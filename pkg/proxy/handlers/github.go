@@ -121,6 +121,7 @@ func NewGitHubHandler(log logrus.FieldLogger, cfg GitHubConfig, globalLimiter Gl
 		h.log.Warn("Both github.token and github.app are configured; using github.token")
 	case cfg.App != nil:
 		h.appTokens = newGitHubAppTokenSource(
+			h.log,
 			*cfg.App,
 			githubAPIBase,
 			[]string{path.Base(defaultAllowedRepository)},

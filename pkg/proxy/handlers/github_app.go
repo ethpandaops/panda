@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -39,6 +40,7 @@ type GitHubAppConfig struct {
 // caches them until shortly before they expire. Every token it mints is
 // limited to the configured repositories and permissions.
 type githubAppTokenSource struct {
+	log          logrus.FieldLogger
 	cfg          GitHubAppConfig
 	apiBase      string
 	repositories []string
@@ -52,6 +54,7 @@ type githubAppTokenSource struct {
 }
 
 func newGitHubAppTokenSource(
+	log logrus.FieldLogger,
 	cfg GitHubAppConfig,
 	apiBase string,
 	repositories []string,
@@ -59,6 +62,7 @@ func newGitHubAppTokenSource(
 	httpClient *http.Client,
 ) *githubAppTokenSource {
 	return &githubAppTokenSource{
+		log:          log,
 		cfg:          cfg,
 		apiBase:      apiBase,
 		repositories: repositories,
@@ -69,7 +73,9 @@ func newGitHubAppTokenSource(
 }
 
 // Token returns a cached installation token, minting a new one when none is
-// cached or the cached one expires within githubAppTokenRefreshMargin.
+// cached or the cached one expires within githubAppTokenRefreshMargin. If
+// minting fails while the cached token is still valid, the cached token is
+// returned.
 func (s *githubAppTokenSource) Token(ctx context.Context) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -80,6 +86,12 @@ func (s *githubAppTokenSource) Token(ctx context.Context) (string, error) {
 
 	token, expiresAt, err := s.mint(ctx)
 	if err != nil {
+		if s.token != "" && s.now().Before(s.expiresAt) {
+			s.log.WithError(err).Warn("Refreshing GitHub App installation token failed; using cached token")
+
+			return s.token, nil
+		}
+
 		return "", err
 	}
 
