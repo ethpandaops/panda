@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -40,9 +41,12 @@ type GlobalTriggerRateLimiter interface {
 	Allow(key string) bool
 }
 
-// GitHubConfig holds GitHub API proxy configuration.
+// GitHubConfig holds GitHub API proxy configuration. Token, when set, is
+// sent as-is on every request. Otherwise App is used to mint installation
+// access tokens limited to defaultAllowedRepository with actions:write.
 type GitHubConfig struct {
 	Token string
+	App   *GitHubAppConfig
 }
 
 // GitHubTriggerRequest is the request body for triggering a workflow.
@@ -90,7 +94,9 @@ type gitHubWorkflowRun struct {
 // GitHubHandler handles GitHub API requests.
 type GitHubHandler struct {
 	log           logrus.FieldLogger
+	apiBase       string
 	token         string
+	appTokens     *githubAppTokenSource
 	httpClient    *http.Client
 	globalLimiter GlobalTriggerRateLimiter
 
@@ -101,13 +107,48 @@ type GitHubHandler struct {
 // NewGitHubHandler creates a new GitHub handler. globalLimiter enforces the
 // cross-workflow trigger budget; it may be nil to disable that budget.
 func NewGitHubHandler(log logrus.FieldLogger, cfg GitHubConfig, globalLimiter GlobalTriggerRateLimiter) *GitHubHandler {
-	return &GitHubHandler{
+	h := &GitHubHandler{
 		log:           log.WithField("handler", "github"),
+		apiBase:       githubAPIBase,
 		token:         cfg.Token,
 		httpClient:    &http.Client{},
 		globalLimiter: globalLimiter,
 		lastTrigger:   make(map[string]time.Time),
 	}
+
+	switch {
+	case cfg.Token != "" && cfg.App != nil:
+		h.log.Warn("Both github.token and github.app are configured; using github.token")
+	case cfg.App != nil:
+		h.appTokens = newGitHubAppTokenSource(
+			*cfg.App,
+			githubAPIBase,
+			[]string{path.Base(defaultAllowedRepository)},
+			map[string]string{"actions": "write"},
+			h.httpClient,
+		)
+	}
+
+	return h
+}
+
+// authorize sets the Authorization header on a GitHub API request, using the
+// static token or a GitHub App installation token.
+func (h *GitHubHandler) authorize(ctx context.Context, req *http.Request) error {
+	token := h.token
+
+	if h.appTokens != nil {
+		appToken, err := h.appTokens.Token(ctx)
+		if err != nil {
+			return fmt.Errorf("getting GitHub App installation token: %w", err)
+		}
+
+		token = appToken
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	return nil
 }
 
 // checkWorkflowCooldown returns an error message if the same workflow was
@@ -218,7 +259,7 @@ func (h *GitHubHandler) handleTriggerWorkflow(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	dispatchURL := fmt.Sprintf("%s/repos/%s/actions/workflows/%s/dispatches", githubAPIBase, req.Repository, req.Workflow)
+	dispatchURL := fmt.Sprintf("%s/repos/%s/actions/workflows/%s/dispatches", h.apiBase, req.Repository, req.Workflow)
 
 	ghReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, dispatchURL, bytes.NewReader(jsonBody))
 	if err != nil {
@@ -227,8 +268,14 @@ func (h *GitHubHandler) handleTriggerWorkflow(w http.ResponseWriter, r *http.Req
 	}
 
 	ghReq.Header.Set("Accept", "application/vnd.github.v3+json")
-	ghReq.Header.Set("Authorization", "Bearer "+h.token)
 	ghReq.Header.Set("Content-Type", "application/json")
+
+	if err := h.authorize(r.Context(), ghReq); err != nil {
+		h.log.WithError(err).Error("GitHub authentication failed")
+		writeError(w, http.StatusBadGateway, "github authentication failed: %v", err)
+
+		return
+	}
 
 	resp, err := h.httpClient.Do(ghReq)
 	if err != nil {
@@ -319,7 +366,7 @@ func (h *GitHubHandler) findTriggeredRun(ctx context.Context, repo, workflow str
 	deadline := time.After(runFindTimeout)
 	listURL := fmt.Sprintf(
 		"%s/repos/%s/actions/workflows/%s/runs?event=workflow_dispatch&per_page=5",
-		githubAPIBase, repo, workflow,
+		h.apiBase, repo, workflow,
 	)
 
 	for {
@@ -338,7 +385,11 @@ func (h *GitHubHandler) findTriggeredRun(ctx context.Context, repo, workflow str
 		}
 
 		req.Header.Set("Accept", "application/vnd.github.v3+json")
-		req.Header.Set("Authorization", "Bearer "+h.token)
+
+		if err := h.authorize(ctx, req); err != nil {
+			h.log.WithError(err).Warn("GitHub authentication failed while finding triggered run")
+			return nil
+		}
 
 		resp, err := h.httpClient.Do(req)
 		if err != nil {
@@ -382,7 +433,7 @@ func (h *GitHubHandler) findTriggeredRun(ctx context.Context, repo, workflow str
 
 // getRun fetches a specific workflow run by ID.
 func (h *GitHubHandler) getRun(ctx context.Context, repo string, runID int64) (*gitHubWorkflowRun, error) {
-	url := fmt.Sprintf("%s/repos/%s/actions/runs/%d", githubAPIBase, repo, runID)
+	url := fmt.Sprintf("%s/repos/%s/actions/runs/%d", h.apiBase, repo, runID)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -390,7 +441,10 @@ func (h *GitHubHandler) getRun(ctx context.Context, repo string, runID int64) (*
 	}
 
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	req.Header.Set("Authorization", "Bearer "+h.token)
+
+	if err := h.authorize(ctx, req); err != nil {
+		return nil, err
+	}
 
 	resp, err := h.httpClient.Do(req)
 	if err != nil {
