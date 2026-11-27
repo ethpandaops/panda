@@ -26,6 +26,9 @@ const (
 	// githubAppTokenRefreshMargin is how long before expiry a cached
 	// installation token is replaced. Installation tokens last one hour.
 	githubAppTokenRefreshMargin = 5 * time.Minute
+	// githubAppTokenMintTimeout bounds one token exchange, which runs while
+	// other callers wait for the cache.
+	githubAppTokenMintTimeout = 10 * time.Second
 )
 
 // GitHubAppConfig holds the GitHub App credentials used to mint installation
@@ -46,6 +49,7 @@ type githubAppTokenSource struct {
 	repositories []string
 	permissions  map[string]string
 	httpClient   *http.Client
+	mintTimeout  time.Duration
 	now          func() time.Time
 
 	mu        sync.Mutex
@@ -68,6 +72,7 @@ func newGitHubAppTokenSource(
 		repositories: repositories,
 		permissions:  permissions,
 		httpClient:   httpClient,
+		mintTimeout:  githubAppTokenMintTimeout,
 		now:          time.Now,
 	}
 }
@@ -84,7 +89,10 @@ func (s *githubAppTokenSource) Token(ctx context.Context) (string, error) {
 		return s.token, nil
 	}
 
-	token, expiresAt, err := s.mint(ctx)
+	mintCtx, cancel := context.WithTimeout(ctx, s.mintTimeout)
+	defer cancel()
+
+	token, expiresAt, err := s.mint(mintCtx)
 	if err != nil {
 		if s.token != "" && s.now().Before(s.expiresAt) {
 			s.log.WithError(err).Warn("Refreshing GitHub App installation token failed; using cached token")

@@ -251,6 +251,28 @@ func TestGitHubAppTokenSourceServesCachedTokenWhenRefreshFails(t *testing.T) {
 	assert.Contains(t, err.Error(), "503")
 }
 
+func TestGitHubAppTokenSourceBoundsTokenExchange(t *testing.T) {
+	t.Parallel()
+
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(release) })
+
+	ts := newTestTokenSource(t, newTestAppKey(t), srv.URL)
+	ts.mintTimeout = 50 * time.Millisecond
+
+	started := time.Now()
+	_, err := ts.Token(context.Background())
+	require.Error(t, err)
+	assert.Less(t, time.Since(started), 5*time.Second)
+}
+
 func TestGitHubAppTokenSourceReportsExchangeFailure(t *testing.T) {
 	t.Parallel()
 
