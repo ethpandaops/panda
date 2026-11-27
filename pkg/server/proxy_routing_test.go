@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/ethpandaops/panda/pkg/attribution"
 	"github.com/ethpandaops/panda/pkg/proxy"
@@ -203,13 +205,16 @@ type recordingTransport struct {
 	status      int
 	body        string
 	contentType string
+	header      http.Header
 
 	last     *http.Request
 	lastBody []byte
+	calls    int
 }
 
 func (t *recordingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	t.last = req.Clone(req.Context())
+	t.calls++
 
 	if req.Body != nil {
 		body, err := io.ReadAll(req.Body)
@@ -224,9 +229,14 @@ func (t *recordingTransport) RoundTrip(req *http.Request) (*http.Response, error
 		status = http.StatusOK
 	}
 
+	header := t.header.Clone()
+	if header == nil {
+		header = make(http.Header)
+	}
+
 	resp := &http.Response{
 		StatusCode: status,
-		Header:     make(http.Header),
+		Header:     header,
 		Body:       io.NopCloser(bytes.NewBufferString(t.body)),
 	}
 	if t.contentType != "" {
@@ -240,11 +250,14 @@ type routingProxyClient struct {
 	url   string
 	token string
 
+	invalidations int
+
 	clickhouse   []types.DatasourceInfo
 	prometheus   []types.DatasourceInfo
 	loki         []types.DatasourceInfo
 	benchmarkoor []types.DatasourceInfo
 	compute      []types.DatasourceInfo
+	devnet       []types.DatasourceInfo
 }
 
 func (c *routingProxyClient) Start(_ context.Context) error { return nil }
@@ -252,7 +265,7 @@ func (c *routingProxyClient) Stop(_ context.Context) error  { return nil }
 func (c *routingProxyClient) URL() string                   { return c.url }
 func (c *routingProxyClient) RegisterToken() string         { return c.token }
 func (c *routingProxyClient) Ready() bool                   { return true }
-func (c *routingProxyClient) Invalidate()                   {}
+func (c *routingProxyClient) Invalidate()                   { c.invalidations++ }
 func (c *routingProxyClient) RevokeToken()                  {}
 func (c *routingProxyClient) ClickHouseDatasources() []string {
 	return datasourceNames(c.ClickHouseDatasourceInfo())
@@ -277,6 +290,10 @@ func (c *routingProxyClient) BenchmarkoorDatasourceInfo() []types.DatasourceInfo
 }
 func (c *routingProxyClient) ComputeDatasourceInfo() []types.DatasourceInfo {
 	return append([]types.DatasourceInfo(nil), c.compute...)
+}
+
+func (c *routingProxyClient) DevnetDatasourceInfo() []types.DatasourceInfo {
+	return append([]types.DatasourceInfo(nil), c.devnet...)
 }
 func (c *routingProxyClient) EthNodeAvailable() bool { return false }
 func (c *routingProxyClient) EthNodeDatasourceInfo() []types.DatasourceInfo {
@@ -356,5 +373,39 @@ func TestAttributionMiddlewareLiftsHeader(t *testing.T) {
 
 	if seen != "discord:sam" {
 		t.Fatalf("attribution in context = %q, want discord:sam", seen)
+	}
+}
+
+// TestProxyRequestRetriesOnlyOnProxyRejection pins that an invalidate-and-retry
+// happens for the proxy's own credential rejections, not for upstream
+// 401/403s relayed through it (a devnet refusing an anonymous write, say).
+func TestProxyRequestRetriesOnlyOnProxyRejection(t *testing.T) {
+	tests := []struct {
+		name          string
+		status        int
+		header        http.Header
+		body          string
+		wantCalls     int
+		wantInvalidat int
+	}{
+		{"proxy invalid token", http.StatusUnauthorized,
+			http.Header{"Www-Authenticate": {`Bearer error="invalid_token", error_description="invalid token"`}}, "invalid token", 2, 1},
+		{"upstream 401", http.StatusUnauthorized, nil, "unauthorized", 1, 0},
+		{"proxy authorizer", http.StatusForbidden, nil, "forbidden: insufficient org membership for this datasource\n", 2, 1},
+		{"upstream 403", http.StatusForbidden, nil, `{"error":"spammer is locked"}`, 1, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			transport := &recordingTransport{status: tt.status, body: tt.body, header: tt.header}
+			client := &routingProxyClient{url: "https://hosted.proxy", token: "hosted-token"}
+			svc := testRoutingService(t, transport, []proxy.ClientRoute{{Name: "hosted", Client: client}})
+
+			_, status, _, err := svc.proxyRequestWithService(context.Background(), client, http.MethodPost, "/devnet/spamoor/dev-1/api/spammer/1/start", nil, nil)
+			require.NoError(t, err)
+			assert.Equal(t, tt.status, status)
+			assert.Equal(t, tt.wantCalls, transport.calls)
+			assert.Equal(t, tt.wantInvalidat, client.invalidations)
+		})
 	}
 }
