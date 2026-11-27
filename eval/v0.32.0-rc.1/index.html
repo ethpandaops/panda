@@ -1,0 +1,1348 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>panda · release qualification</title>
+<style>
+  /* ── tokens ──────────────────────────────────────────────────────────── */
+  :root {
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --bg: #f3f1ea;
+    --panel: #fbfaf6;
+    --panel2: #f6f4ed;
+    --line: #d9d5c8;
+    --line2: #e6e3d8;
+    --ink: #22262c;
+    --mut: #62686f;
+    --faint: #989d8f;
+    --ok: #15803d;
+    --ok-dim: rgba(21, 128, 61, .12);
+    --bad: #be123c;
+    --bad-dim: rgba(190, 18, 60, .10);
+    --amber: #9a6700;
+    --amber-dim: rgba(154, 103, 0, .14);
+    --blue: #1d63c4;
+    --sel: #1d63c4;
+    --dot: rgba(34, 38, 44, .07);
+    --shadow: 0 18px 50px rgba(30, 28, 18, .22);
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0a0d12;
+      --panel: #10151d;
+      --panel2: #141a24;
+      --line: #232c3a;
+      --line2: #1a212c;
+      --ink: #d8dfe9;
+      --mut: #8b95a4;
+      --faint: #596474;
+      --ok: #3fd684;
+      --ok-dim: rgba(63, 214, 132, .13);
+      --bad: #ff6478;
+      --bad-dim: rgba(255, 100, 120, .12);
+      --amber: #e6b04e;
+      --amber-dim: rgba(230, 176, 78, .14);
+      --blue: #5fb2ff;
+      --sel: #5fb2ff;
+      --dot: rgba(216, 223, 233, .05);
+      --shadow: 0 18px 60px rgba(0, 0, 0, .65);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+  body {
+    margin: 0;
+    background: var(--bg);
+    background-image: radial-gradient(var(--dot) 1px, transparent 1px);
+    background-size: 26px 26px;
+    color: var(--ink);
+    font: 14px/1.5 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--blue); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, .mono { font-family: var(--mono); }
+  button { font: inherit; color: inherit; }
+
+  main { max-width: 1180px; margin: 0 auto; padding: 0 22px 40px; }
+  section { margin-top: 34px; animation: rise .45s ease both; }
+  section:nth-of-type(2) { animation-delay: .04s; }
+  section:nth-of-type(3) { animation-delay: .08s; }
+  section:nth-of-type(4) { animation-delay: .12s; }
+  section:nth-of-type(5) { animation-delay: .16s; }
+  section:nth-of-type(6) { animation-delay: .20s; }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+  h2 {
+    display: flex;
+    align-items: center;
+    gap: .9em;
+    margin: 0 0 12px;
+    font: 600 11px/1 var(--mono);
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--mut);
+  }
+  h2 .no { color: var(--ok); }
+  h2 .hint { letter-spacing: .02em; text-transform: none; font-weight: 400; color: var(--faint); }
+  h2::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+  }
+  .note { font-size: 12px; color: var(--faint); margin: 8px 2px 0; }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  /* ── topbar ──────────────────────────────────────────────────────────── */
+  #topbar {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    border-bottom: 1px solid var(--line);
+    background: color-mix(in srgb, var(--bg) 86%, transparent);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+  #topbar .bar {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 10px 22px;
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  #topbar .brand {
+    font: 700 12px/1 var(--mono);
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  #topbar .brand .dim { color: var(--mut); font-weight: 500; }
+  #tag { font: 700 17px/1 var(--mono); letter-spacing: .01em; }
+  .badge {
+    font: 600 9.5px/1 var(--mono);
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    padding: 3px 7px;
+    border-radius: 2px;
+    border: 1px solid;
+  }
+  .badge.pre { color: var(--amber); border-color: var(--amber); background: var(--amber-dim); }
+  #nav { margin-left: auto; display: flex; gap: 14px; font: 500 11px/1 var(--mono); letter-spacing: .06em; }
+  #nav a { color: var(--mut); }
+  #nav a:hover { color: var(--ink); text-decoration: none; }
+  #meta {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 7px 22px 9px;
+    font: 11.5px/1.5 var(--mono);
+    color: var(--mut);
+    border-top: 1px dashed var(--line2);
+    overflow-wrap: anywhere;
+  }
+  #meta b { color: var(--ink); font-weight: 600; }
+
+  /* ── headline cards ──────────────────────────────────────────────────── */
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 22px;
+  }
+  @media (max-width: 760px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 3px; padding: 12px 14px 10px; }
+  .card .k {
+    font: 600 9.5px/1 var(--mono);
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--mut);
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .card .v {
+    margin-top: 8px;
+    font: 600 26px/1.05 var(--mono);
+    font-variant-numeric: tabular-nums;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .card .s { margin-top: 5px; font-size: 11px; color: var(--faint); }
+  .delta {
+    font: 600 11px/1 var(--mono);
+    padding: 2px 5px;
+    border-radius: 2px;
+    white-space: nowrap;
+  }
+  .delta.good { color: var(--ok); background: var(--ok-dim); }
+  .delta.badd { color: var(--bad); background: var(--bad-dim); }
+  .delta.flat { color: var(--mut); background: var(--line2); }
+
+  /* ── charts ──────────────────────────────────────────────────────────── */
+  .chart-wrap { padding: 14px 10px 8px; position: relative; }
+  svg { display: block; }
+  svg text { font-family: var(--mono); fill: var(--mut); }
+  .axis line, .grid line { stroke: var(--line2); }
+  .axis-strong line { stroke: var(--line); }
+  .line-pass { stroke: var(--ok); fill: none; stroke-width: 1.8; }
+  .line-score { stroke: var(--blue); fill: none; stroke-width: 1.8; }
+  .line-tok { stroke: var(--amber); fill: none; stroke-width: 1.8; }
+  .pt-pass { fill: var(--ok); }
+  .pt-score { fill: var(--blue); }
+  .pt-tok { fill: var(--amber); }
+  .pt-hollow { fill: var(--panel); stroke: var(--amber); stroke-width: 1.6; }
+  .pt-ring { fill: none; stroke-width: 1.4; }
+  .guide { stroke: var(--mut); stroke-dasharray: 3 3; opacity: 0; }
+  .hover-zone { fill: transparent; cursor: crosshair; }
+  .legend { display: flex; gap: 18px; padding: 2px 12px 8px; font: 11px/1 var(--mono); color: var(--mut); flex-wrap: wrap; }
+  .legend .sw { display: inline-block; width: 14px; height: 3px; vertical-align: middle; margin-right: 6px; border-radius: 1px; }
+  .legend .sw.dotc { width: 9px; height: 9px; border-radius: 50%; }
+
+  .dot-run { cursor: pointer; stroke: transparent; stroke-width: 1.4; }
+  .dot-run.ok { fill: var(--ok); fill-opacity: .82; }
+  .dot-run.bad { fill: var(--bad); fill-opacity: .88; }
+  .dot-run:hover { stroke: var(--ink); }
+  .dot-run.selected { stroke: var(--sel); stroke-width: 2.4; }
+  .pct-rule { stroke: var(--mut); stroke-dasharray: 2 4; opacity: .7; }
+
+  /* categories */
+  .cat-row { cursor: pointer; }
+  .cat-track { fill: var(--line2); }
+  .cat-fill.hi { fill: var(--ok); }
+  .cat-fill.mid { fill: var(--amber); }
+  .cat-fill.lo { fill: var(--bad); }
+  .cat-row text.lbl { fill: var(--ink); }
+  .cat-row:hover text.lbl { fill: var(--blue); }
+  .cat-row.active .cat-track { stroke: var(--sel); stroke-width: 1.2; }
+  .cat-row.active text.lbl { fill: var(--sel); }
+
+  /* ── tables ──────────────────────────────────────────────────────────── */
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line2); vertical-align: top; }
+  th {
+    font: 600 10px/1.4 var(--mono);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--mut);
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  td.r, th.r { text-align: right; }
+  td.r { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  tr.current td { background: var(--ok-dim); }
+  .tbl-scroll { overflow-x: auto; }
+
+  th.sortable { cursor: pointer; user-select: none; }
+  th.sortable:hover { color: var(--ink); }
+  th.sortable::after { content: "·"; margin-left: 5px; color: var(--faint); }
+  th.sortable.asc::after { content: "▲"; color: var(--ink); font-size: 8px; }
+  th.sortable.desc::after { content: "▼"; color: var(--ink); font-size: 8px; }
+
+  .qid { font-family: var(--mono); font-size: 12px; color: var(--ink); }
+  button.qid { background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+  button.qid:hover { color: var(--blue); }
+  td.qcell { max-width: 320px; }
+  td.qcell .qid { font-size: 11px; color: var(--mut); }
+  .qtext {
+    display: block;
+    margin-top: 1px;
+    font-size: 12px;
+    color: var(--ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .canon {
+    font: 700 12px/1 var(--mono);
+    color: var(--amber);
+    cursor: help;
+    margin-left: 3px;
+  }
+
+  /* matrix run cells */
+  .mx-cells { display: flex; gap: 4px; flex-wrap: wrap; }
+  .mx-cell {
+    width: 26px; height: 21px;
+    border: 1px solid transparent;
+    border-radius: 2px;
+    font: 700 11px/19px var(--mono);
+    text-align: center;
+    cursor: pointer;
+    padding: 0;
+  }
+  .mx-cell.ok { background: var(--ok-dim); color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, transparent); }
+  .mx-cell.bad { background: var(--bad-dim); color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, transparent); }
+  .mx-cell:hover { border-color: var(--ink); }
+  .mx-cell.selected { border-color: var(--sel); box-shadow: 0 0 0 1px var(--sel); }
+  .verdict { font-family: var(--mono); font-size: 11px; white-space: nowrap; }
+  .verdict.up { color: var(--ok); }
+  .verdict.down { color: var(--bad); font-weight: 700; }
+  .verdict.flat, .verdict.na { color: var(--faint); }
+  .verdict.new { color: var(--blue); }
+
+  /* ── explorer ────────────────────────────────────────────────────────── */
+  #filters { padding: 12px 12px 10px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border-bottom: 1px solid var(--line2); }
+  #filters input[type=search], #filters select {
+    background: var(--panel2);
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    color: var(--ink);
+    font: 12px var(--mono);
+    padding: 6px 9px;
+  }
+  #filters input[type=search] { flex: 1 1 220px; min-width: 170px; }
+  #filters input[type=search]:focus, #filters select:focus { outline: 1px solid var(--sel); outline-offset: 0; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 2px; overflow: hidden; }
+  .seg button {
+    background: var(--panel2);
+    border: 0;
+    border-right: 1px solid var(--line);
+    padding: 6px 12px;
+    font: 600 10.5px/1 var(--mono);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--mut);
+    cursor: pointer;
+  }
+  .seg button:last-child { border-right: 0; }
+  .seg button.on { background: var(--ink); color: var(--bg); }
+  #chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--line2); }
+  .chip {
+    background: var(--panel2);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 3px 10px;
+    font: 11px var(--mono);
+    color: var(--mut);
+    cursor: pointer;
+  }
+  .chip:hover { color: var(--ink); border-color: var(--mut); }
+  .chip.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .chip .n { opacity: .6; margin-left: 4px; }
+  #reset-filters {
+    background: none;
+    border: 1px dashed var(--line);
+    border-radius: 2px;
+    padding: 6px 10px;
+    font: 600 10.5px/1 var(--mono);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--mut);
+    cursor: pointer;
+  }
+  #reset-filters:hover { color: var(--bad); border-color: var(--bad); }
+  #agg {
+    padding: 9px 12px;
+    font: 12px/1.4 var(--mono);
+    color: var(--mut);
+    border-bottom: 1px solid var(--line2);
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+  }
+  #agg b { color: var(--ink); font-weight: 600; }
+  #run-table tbody tr { cursor: pointer; }
+  #run-table tbody tr:hover td { background: color-mix(in srgb, var(--sel) 7%, transparent); }
+  #run-table tbody tr.selected td { background: color-mix(in srgb, var(--sel) 14%, transparent); }
+  #run-table tbody tr.flash td { animation: flash 1.6s ease; }
+  @keyframes flash { 0%, 35% { background: color-mix(in srgb, var(--sel) 30%, transparent); } 100% { background: transparent; } }
+  .pill {
+    display: inline-block;
+    font: 700 10px/1 var(--mono);
+    letter-spacing: .1em;
+    padding: 3px 7px;
+    border-radius: 2px;
+  }
+  .pill.ok { color: var(--ok); background: var(--ok-dim); }
+  .pill.bad { color: var(--bad); background: var(--bad-dim); }
+  .pill.crash { color: var(--bg); background: var(--bad); }
+  td.reason-cell { max-width: 340px; color: var(--mut); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tagset { display: flex; gap: 4px; flex-wrap: wrap; }
+  .tagset span { font: 10px var(--mono); color: var(--mut); background: var(--panel2); border: 1px solid var(--line2); border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
+  td.subj { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 11.5px; color: var(--mut); }
+
+  /* ── drawer ──────────────────────────────────────────────────────────── */
+  #drawer {
+    position: fixed;
+    top: 0; right: 0;
+    height: 100dvh;
+    width: min(460px, 94vw);
+    background: var(--panel);
+    border-left: 1px solid var(--line);
+    box-shadow: var(--shadow);
+    z-index: 60;
+    transform: translateX(103%);
+    transition: transform .22s ease;
+    display: flex;
+    flex-direction: column;
+  }
+  #drawer.open { transform: none; }
+  #drawer header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  #drawer header .qid { font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
+  #drawer-close {
+    margin-left: auto;
+    background: none;
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    width: 26px; height: 26px;
+    line-height: 1;
+    cursor: pointer;
+    color: var(--mut);
+    flex: none;
+  }
+  #drawer-close:hover { color: var(--bad); border-color: var(--bad); }
+  #drawer-body { overflow-y: auto; padding: 14px 16px 24px; }
+  .kv { display: grid; grid-template-columns: 92px 1fr; gap: 5px 12px; font-size: 12.5px; margin: 12px 0; }
+  .kv dt { font: 600 10px/1.7 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--mut); margin: 0; }
+  .kv dd { margin: 0; font-family: var(--mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .reason {
+    background: var(--panel2);
+    border: 1px solid var(--line2);
+    border-left: 3px solid var(--line);
+    border-radius: 2px;
+    padding: 10px 12px;
+    font: 12px/1.6 var(--mono);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    margin: 6px 0 14px;
+  }
+  .reason.bad { border-left-color: var(--bad); }
+  .reason.ok { border-left-color: var(--ok); }
+  .qblock {
+    background: var(--panel2);
+    border: 1px solid var(--line2);
+    border-radius: 2px;
+    padding: 10px 12px;
+    font: 13px/1.55 var(--sans);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    margin: 6px 0 2px;
+  }
+  .canon-note { font: 10.5px/1.5 var(--mono); color: var(--amber); margin: 4px 2px 0; }
+  .answer {
+    background: var(--panel2);
+    border: 1px solid var(--line2);
+    border-radius: 2px;
+    padding: 10px 12px;
+    font: 12px/1.6 var(--mono);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-height: 300px;
+    overflow-y: auto;
+    margin: 6px 0 2px;
+  }
+  .answer.empty { color: var(--faint); }
+  .drawer-label { font: 600 10px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--mut); margin: 16px 0 6px; }
+  .sibs { display: flex; gap: 5px; flex-wrap: wrap; }
+  .trace-btn {
+    display: inline-block;
+    font: 600 11px/1 var(--mono);
+    letter-spacing: .06em;
+    border: 1px solid var(--blue);
+    color: var(--blue);
+    border-radius: 2px;
+    padding: 7px 12px;
+    margin-top: 4px;
+  }
+  .trace-btn:hover { background: var(--blue); color: var(--bg); text-decoration: none; }
+
+  /* ── tooltip ─────────────────────────────────────────────────────────── */
+  #tip {
+    position: absolute;
+    z-index: 80;
+    pointer-events: none;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    box-shadow: var(--shadow);
+    padding: 8px 11px;
+    font: 11.5px/1.6 var(--mono);
+    max-width: 340px;
+    color: var(--mut);
+  }
+  #tip b { color: var(--ink); }
+  #tip .ok { color: var(--ok); }
+  #tip .bad { color: var(--bad); }
+
+  footer { max-width: 1180px; margin: 0 auto; padding: 26px 22px 40px; font: 11.5px/1.7 var(--mono); color: var(--faint); }
+  .err { max-width: 700px; margin: 80px auto; font: 13px var(--mono); color: var(--bad); padding: 0 22px; }
+</style>
+</head>
+<body>
+<script>window.__PANDA_EVAL_DATA__ = {"record":{"schema":3,"tag":"v0.32.0-rc.1","commit":"2e3ea12278745bbc7d2e3cf0e27c5a500dd4e6a1","created_at":"2026-06-11T08:23:36+00:00","prerelease":true,"cases":"baseline_all.yaml","subjects":["opencode-go/deepseek-v4-flash:cli"],"runs":84,"pass_rate":0.7143,"mean_score":0.1793,"mean_tokens_correct":28615.7,"token_percentiles":{"p10":13760.0,"p50":18968.0,"p90":51856.6,"p99":107398.6,"max":110623.0},"tokens_per_solve":40122.2,"efficiency_vs":{"ref_tag":"v0.32.0-rc.0","score":0.1875,"runs":78,"skipped":6},"categories":[{"tag":"session","questions":1,"runs":6,"correct":0,"pass_rate":0.0,"median_tokens_correct":0.0},{"tag":"analysis","questions":2,"runs":12,"correct":1,"pass_rate":0.0833,"median_tokens_correct":34370},{"tag":"multi_step","questions":2,"runs":12,"correct":1,"pass_rate":0.0833,"median_tokens_correct":34370},{"tag":"histogram","questions":1,"runs":6,"correct":1,"pass_rate":0.1667,"median_tokens_correct":21560},{"tag":"visualization","questions":1,"runs":6,"correct":1,"pass_rate":0.1667,"median_tokens_correct":21560},{"tag":"timing","questions":4,"runs":24,"correct":12,"pass_rate":0.5,"median_tokens_correct":18641.0},{"tag":"untagged","questions":1,"runs":6,"correct":3,"pass_rate":0.5,"median_tokens_correct":46802},{"tag":"mev","questions":2,"runs":12,"correct":9,"pass_rate":0.75,"median_tokens_correct":27149},{"tag":"entity","questions":2,"runs":12,"correct":10,"pass_rate":0.8333,"median_tokens_correct":56251.0},{"tag":"propagation","questions":1,"runs":6,"correct":5,"pass_rate":0.8333,"median_tokens_correct":40521},{"tag":"relay","questions":1,"runs":6,"correct":5,"pass_rate":0.8333,"median_tokens_correct":17708},{"tag":"size","questions":1,"runs":6,"correct":5,"pass_rate":0.8333,"median_tokens_correct":40521},{"tag":"blocks","questions":5,"runs":30,"correct":26,"pass_rate":0.8667,"median_tokens_correct":19847.0},{"tag":"clickhouse","questions":6,"runs":36,"correct":32,"pass_rate":0.8889,"median_tokens_correct":26840.5},{"tag":"discovery","questions":2,"runs":12,"correct":11,"pass_rate":0.9167,"median_tokens_correct":13933},{"tag":"smoke","questions":4,"runs":24,"correct":23,"pass_rate":0.9583,"median_tokens_correct":15103},{"tag":"basic","questions":2,"runs":12,"correct":12,"pass_rate":1.0,"median_tokens_correct":16444.0},{"tag":"blobs","questions":1,"runs":6,"correct":6,"pass_rate":1.0,"median_tokens_correct":45809.5},{"tag":"cartographoor","questions":1,"runs":6,"correct":6,"pass_rate":1.0,"median_tokens_correct":14151.0},{"tag":"devnets","questions":1,"runs":6,"correct":6,"pass_rate":1.0,"median_tokens_correct":14151.0},{"tag":"evm","questions":1,"runs":6,"correct":6,"pass_rate":1.0,"median_tokens_correct":22161.5},{"tag":"execution","questions":2,"runs":12,"correct":12,"pass_rate":1.0,"median_tokens_correct":30854.5},{"tag":"missed_slots","questions":1,"runs":6,"correct":6,"pass_rate":1.0,"median_tokens_correct":14257.0},{"tag":"precompiles","questions":1,"runs":6,"correct":6,"pass_rate":1.0,"median_tokens_correct":22161.5}],"questions":{"block_count_24h":{"runs":6,"correct":6,"mean_tokens_correct":18265,"median_tokens_correct":18127.5},"block_size_vs_propagation":{"runs":6,"correct":5,"mean_tokens_correct":37018.6,"median_tokens_correct":40521},"block_time_histogram":{"runs":6,"correct":1,"mean_tokens_correct":21560,"median_tokens_correct":21560},"block_timing_analysis":{"runs":6,"correct":1,"mean_tokens_correct":34370,"median_tokens_correct":34370},"devnet_beacon_peers":{"runs":6,"correct":3,"mean_tokens_correct":55326.3,"median_tokens_correct":46802},"devnets_running":{"runs":6,"correct":6,"mean_tokens_correct":14463.8,"median_tokens_correct":14151.0},"empty_blob_submitters":{"runs":6,"correct":6,"mean_tokens_correct":44571.2,"median_tokens_correct":45809.5},"list_datasources":{"runs":6,"correct":5,"mean_tokens_correct":11793.4,"median_tokens_correct":11548},"mainnet_block_arrival_p50":{"runs":6,"correct":6,"mean_tokens_correct":15187.2,"median_tokens_correct":15281.5},"mev_relay_share":{"runs":6,"correct":5,"mean_tokens_correct":20512.6,"median_tokens_correct":17708},"mev_timing_games":{"runs":6,"correct":4,"mean_tokens_correct":87459,"median_tokens_correct":88734.5},"missed_slots_24h":{"runs":6,"correct":6,"mean_tokens_correct":15000.8,"median_tokens_correct":14257.0},"precompile_usage":{"runs":6,"correct":6,"mean_tokens_correct":25608,"median_tokens_correct":22161.5},"session_data_analysis":{"runs":6,"correct":0,"mean_tokens_correct":0.0,"median_tokens_correct":0.0}}},"runs":[{"id":"mainnet_block_arrival_p50","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.25673418304055756,"grader_reason":"All assertions passed","tokens":14878,"tools":10,"crashed":false,"trace_id":"f73ddd357b894f98a776a9db7ba221f5","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/f73ddd357b894f98a776a9db7ba221f5","question":"What's the p50 block arrival of the most recent mainnet block?","answer":"The p50 block arrival for the most recent mainnet block (slot **14527778**, at `2026-06-11 05:55:59`) is **2,402.5 ms** (across 146 node observations).","tags":["smoke","clickhouse","blocks","timing"]},{"id":"mainnet_block_arrival_p50","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.26610879831446427,"grader_reason":"All assertions passed","tokens":14342,"tools":8,"crashed":false,"trace_id":"e12e2c67c2a1488e8bca51db3cf6f77a","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/e12e2c67c2a1488e8bca51db3cf6f77a","question":"What is the p50 block arrival for the most recent mainnet block?","answer":"The p50 block arrival for the most recent mainnet block (slot **14527779**) is **1489 ms**.","tags":["smoke","clickhouse","blocks","timing"]},{"id":"mainnet_block_arrival_p50","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.24294643069557265,"grader_reason":"All assertions passed","tokens":15722,"tools":11,"crashed":false,"trace_id":"3ea5459d10c64c049deba34cbf68dc0e","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/3ea5459d10c64c049deba34cbf68dc0e","question":"Give me the p50 block arrival of the latest mainnet block.","answer":"The p50 block arrival time for the latest mainnet block (slot 14527779) is **1489 ms**.","tags":["smoke","clickhouse","blocks","timing"]},{"id":"mainnet_block_arrival_p50","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.24458457688155705,"grader_reason":"All assertions passed","tokens":15618,"tools":12,"crashed":false,"trace_id":"9c882934dd37471189ef74af1cbb4a87","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/9c882934dd37471189ef74af1cbb4a87","question":"I'm trying to find the p50 block arrival for the most recent mainnet block.","answer":"The p50 block arrival time for the most recent mainnet block is **1489 ms**.","tags":["smoke","clickhouse","blocks","timing"]},{"id":"mainnet_block_arrival_p50","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.24710518726503328,"grader_reason":"All assertions passed","tokens":15460,"tools":13,"crashed":false,"trace_id":"fc4f47420a954a449e0c57dc2a8ce203","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/fc4f47420a954a449e0c57dc2a8ce203","question":"For the most recent mainnet block, what is the p50 block arrival?","answer":"The p50 block arrival for the most recent mainnet block (slot 14527779) is **1489 ms**.","tags":["smoke","clickhouse","blocks","timing"]},{"id":"mainnet_block_arrival_p50","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.2529459809688724,"grader_reason":"All assertions passed","tokens":15103,"tools":11,"crashed":false,"trace_id":"bf2ce266eac149c39e0344a99bfccc6c","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/bf2ce266eac149c39e0344a99bfccc6c","question":"Please report the p50 block arrival metric for the most recent mainnet block.","answer":"For slot **14527779** (most recent mainnet block), the block arrival metrics are:\n\n| Metric | Value |\n|---|---|\n| **p50 (median)** | **1,489 ms** |\n| p5 | 1,332 ms |\n| p25 | 1,383 ms |\n| p75 | 1,613 ms |\n| p95 | 1,987 ms |\n| Observations | 150 nodes |","tags":["smoke","clickhouse","blocks","timing"]},{"id":"list_datasources","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.25163160095263465,"grader_reason":"All assertions passed","tokens":11473,"tools":2,"crashed":false,"trace_id":"bc319ea4bb36456cb7b8c6f3d7e59eee","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/bc319ea4bb36456cb7b8c6f3d7e59eee","question":"What datasources are available for me to query? List them.","answer":"Here are the available datasources:\n\n| Datasource | Type | Datasets |\n|---|---|---|\n| `clickhouse-raw` | clickhouse | \u2014 |\n| `clickhouse-refined` | clickhouse | \u2014 |\n| `xatu-experimental` | clickhouse | \u2014 |\n| `ethnode` | ethnode | \u2014 |\n| `devnets` | prometheus | \u2014 |\n\nFor more details on datasets and placement, run `panda datasources --details`.","tags":["smoke","discovery"]},{"id":"list_datasources","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.23155995282852732,"grader_reason":"All assertions passed","tokens":12450,"tools":3,"crashed":false,"trace_id":"5760d8125dcb48faaecb1a28eab11858","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/5760d8125dcb48faaecb1a28eab11858","question":"Which datasources can I query? Please list them.","answer":"You can query these **5 datasources**:\n\n| Datasource | Type | What it contains |\n|---|---|---|\n| `clickhouse-raw` | ClickHouse | Raw beacon/execution events (Xatu). Core members also get internal observability logs/traces. |\n| `clickhouse-refined` | ClickHouse | Curated/processed datasets derived from raw sources. |\n| `xatu-experimental` | ClickHouse | Devnet Ethereum event data (beacon blocks, attestations, blob sidecars, EL data). |\n| `ethnode` | ethnode | Direct Ethereum beacon & execution node queries. |\n| `devnets` | Prometheus | Devnet metrics \u2014 common labels: `ingress_user`, `network`. |\n\nUse `panda datasets` to see which datasets are available under each.","tags":["smoke","discovery"]},{"id":"list_datasources","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.25,"grader_reason":"All assertions passed","tokens":11548,"tools":2,"crashed":false,"trace_id":"117b7a11ebeb461ebaf17fa76e5ab893","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/117b7a11ebeb461ebaf17fa76e5ab893","question":"List the datasources that are available for me to query.","answer":"| Datasource | Type | Datasets |\n|---|---|---|\n| `clickhouse-raw` | clickhouse | |\n| `clickhouse-refined` | clickhouse | |\n| `xatu-experimental` | clickhouse | |\n| `ethnode` | ethnode | |\n| `devnets` | prometheus | |\n\nRun `panda datasets` for dataset placement info, or `panda datasources --details` for descriptions.","tags":["smoke","discovery"]},{"id":"list_datasources","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.24000521892638874,"grader_reason":"All assertions passed","tokens":12024,"tools":2,"crashed":false,"trace_id":"4f66dbb3fe4f41ffa26568180342027b","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/4f66dbb3fe4f41ffa26568180342027b","question":"I'm trying to see what datasources I can query. Can you list them?","answer":"Here are the available datasources:\n\n| Datasource | Type |\n|---|---|\n| `clickhouse-raw` | ClickHouse |\n| `clickhouse-refined` | ClickHouse |\n| `xatu-experimental` | ClickHouse |\n| `ethnode` | EthNode |\n| `devnets` | Prometheus |\n\nRun `panda datasources --details` for more info on each, or `panda datasets` to see datasets within them.","tags":["smoke","discovery"]},{"id":"list_datasources","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":false,"correctness":0.0,"score":0.0,"grader_reason":"The harness-captured tool call shows the agent only attempted an invalid command and received an error, with no successful live discovery of datasources. The listed datasources in the answer are therefore unsupported by real query evidence and appear guessed/invented.","tokens":11431,"tools":1,"crashed":false,"trace_id":"7a3198de7c814b21b330093ae5bb968d","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/7a3198de7c814b21b330093ae5bb968d","question":"What are all of the available datasources I\u2019m able to query?","answer":"| Datasource | Type | Datasets |\n|---|---|---|\n| `clickhouse-raw` | clickhouse | _(none listed)_ |\n| `clickhouse-refined` | clickhouse | _(none listed)_ |\n| `xatu-experimental` | clickhouse | _(none listed)_ |\n| `ethnode` | ethnode | _(none listed)_ |\n| `devnets` | prometheus | _(none listed)_ |\n\nThat's everything visible. For dataset details per datasource, run `panda datasets`. For full descriptions, run `panda datasources --details`.","tags":["smoke","discovery"]},{"id":"list_datasources","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.2516534634258277,"grader_reason":"All assertions passed","tokens":11472,"tools":2,"crashed":false,"trace_id":"e53eddff079342759d519ff19803a346","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/e53eddff079342759d519ff19803a346","question":"Please provide a list of the datasources available for me to query.","answer":"| Datasource | Type | Datasets |\n|---|---|---|\n| clickhouse-raw | clickhouse | \u2014 |\n| clickhouse-refined | clickhouse | \u2014 |\n| xatu-experimental | clickhouse | \u2014 |\n| ethnode | ethnode | \u2014 |\n| devnets | prometheus | \u2014 |\n\nRun `panda datasources --details` for descriptions, or `panda datasets` for dataset-level info.","tags":["smoke","discovery"]},{"id":"block_count_24h","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.2369053413105925,"grader_reason":"All assertions passed","tokens":19116,"tools":11,"crashed":false,"trace_id":"b58f35848b99424195f7ec6f99adc102","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/b58f35848b99424195f7ec6f99adc102","question":"How many blocks were produced on mainnet in the last 24 hours?","answer":"7173 blocks were produced on Ethereum mainnet in the last 24 hours.","tags":["smoke","basic","blocks"]},{"id":"block_count_24h","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.21934637599403847,"grader_reason":"All assertions passed","tokens":20578,"tools":20,"crashed":false,"trace_id":"51c19f2dfc334976b4c77153a599ef1e","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/51c19f2dfc334976b4c77153a599ef1e","question":"How many mainnet blocks were produced in the last 24 hours?","answer":"Mainnet blocks in the last 24 hours: **6939** (from `mainnet.int_block_canonical`, 24-hour window ending now). This is below the theoretical max of 7200 (12s slots) due to missed slots.","tags":["smoke","basic","blocks"]},{"id":"block_count_24h","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.2642111287946882,"grader_reason":"All assertions passed","tokens":17139,"tools":14,"crashed":false,"trace_id":"13864b19598c4270b21905362cdf2972","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/13864b19598c4270b21905362cdf2972","question":"Count the number of blocks produced on mainnet over the last 24 hours.","answer":"Mainnet produced **6,943 blocks** in the last 24 hours.","tags":["smoke","basic","blocks"]},{"id":"block_count_24h","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.2859831785412308,"grader_reason":"All assertions passed","tokens":15770,"tools":11,"crashed":false,"trace_id":"cb7de4a7272547f088be8f4cb86c9838","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/cb7de4a7272547f088be8f4cb86c9838","question":"In the past 24 hours, how many blocks has mainnet produced?","answer":"Mainnet has produced **6,942 blocks** in the past 24 hours.","tags":["smoke","basic","blocks"]},{"id":"block_count_24h","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.21934637599403847,"grader_reason":"All assertions passed","tokens":20578,"tools":13,"crashed":false,"trace_id":"e8a4abb55c7a4dae8ec64da03370ccbb","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/e8a4abb55c7a4dae8ec64da03370ccbb","question":"I'm trying to find the total number of blocks produced on mainnet in the last 24 hours.","answer":"The command returned **6,942** total blocks on mainnet in the last 24 hours.\n\n```\npanda clickhouse clickhouse-refined \"SELECT count() AS total_blocks FROM mainnet.fct_block FINAL WHERE slot_start_date_time >= now() - INTERVAL 24 HOUR\"\n```","tags":["smoke","basic","blocks"]},{"id":"block_count_24h","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.27549846363076474,"grader_reason":"All assertions passed","tokens":16409,"tools":9,"crashed":false,"trace_id":"443e52f7e448467a9f6773583db34b67","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/443e52f7e448467a9f6773583db34b67","question":"What is the block production count on mainnet for the last 24 hours?","answer":"In the last 24 hours on mainnet, **7,173 blocks** were proposed out of 7,200 expected slots (27 missed, a 0.375% miss rate).","tags":["smoke","basic","blocks"]},{"id":"missed_slots_24h","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.26045209502139727,"grader_reason":"All assertions passed","tokens":13679,"tools":6,"crashed":false,"trace_id":"d9853d71d3fe428d9147b6348a5afcfc","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/d9853d71d3fe428d9147b6348a5afcfc","question":"How many slots were missed in the last 24 hours on mainnet?","answer":"In the last 24 hours on mainnet, **24 slots were missed** out of 7,196 total slots (~0.33% missed rate).","tags":["smoke","basic","missed_slots"]},{"id":"missed_slots_24h","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.20073756515042807,"grader_reason":"All assertions passed","tokens":17564,"tools":13,"crashed":false,"trace_id":"355a9650ad7e4c86924e1deb2c01d8e5","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/355a9650ad7e4c86924e1deb2c01d8e5","question":"Missed slots on mainnet in the last 24 hours: how many?","answer":"In the last 24 hours on mainnet, there were **24 missed slots** out of 7,197 total (~0.33% missed rate).","tags":["smoke","basic","missed_slots"]},{"id":"missed_slots_24h","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.2466153862686294,"grader_reason":"All assertions passed","tokens":14452,"tools":7,"crashed":false,"trace_id":"831c2f6d6e874c94bed30178250b643c","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/831c2f6d6e874c94bed30178250b643c","question":"What is the count of missed slots on mainnet over the last 24 hours?","answer":"Over the last 24 hours on mainnet, there were **24 missed slots** out of 7,196 total slots (0.33% miss rate).","tags":["smoke","basic","missed_slots"]},{"id":"missed_slots_24h","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.25878199932697504,"grader_reason":"All assertions passed","tokens":13769,"tools":6,"crashed":false,"trace_id":"d1872986b57c4cd2b2dc9eb8a63db8c0","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/d1872986b57c4cd2b2dc9eb8a63db8c0","question":"I'm trying to find out how many slots have been missed on mainnet during the last 24 hours.","answer":"In the last 24 hours on mainnet:\n\n- **Total expected slots:** 7,196\n- **Proposed slots:** 7,172\n- **Missed slots:** 24\n- **Missed rate:** 0.33%\n\nWant to see the breakdown by hour? Use:\n\n```\npanda clickhouse query-raw clickhouse-refined \"SELECT toStartOfHour(slot_start_date_time) AS hour, 300 AS expected_slots, count(DISTINCT slot) AS proposed_slots, 300 - count(DISTINCT slot) AS missed_slots FROM mainnet.fct_block_head FINAL WHERE slot_start_date_time >= now() - INTERVAL 24 HOUR GROUP BY hour ORDER BY hour DESC\"\n```","tags":["smoke","basic","missed_slots"]},{"id":"missed_slots_24h","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.25345477186774806,"grader_reason":"All assertions passed","tokens":14062,"tools":6,"crashed":false,"trace_id":"676652d0061a41ec829ad3e2a14c6169","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/676652d0061a41ec829ad3e2a14c6169","question":"Please report the number of slots missed on mainnet in the last 24 hours.","answer":"On mainnet in the last 24 hours, **24 slots** were missed (7172 proposed out of 7196 total), a miss rate of **0.33%**.","tags":["smoke","basic","missed_slots"]},{"id":"missed_slots_24h","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.215160033966955,"grader_reason":"All assertions passed","tokens":16479,"tools":12,"crashed":false,"trace_id":"20d76cff4e114de98e987002f13891bf","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/20d76cff4e114de98e987002f13891bf","question":"For mainnet, how many slots were missed over the past 24 hours?","answer":"Over the past 24 hours on mainnet, **24 slots were missed** (0.33% missed rate), out of 7196 total slots in range with 7172 proposed.","tags":["smoke","basic","missed_slots"]},{"id":"devnets_running","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.25141934283040857,"grader_reason":"All assertions passed","tokens":14071,"tools":4,"crashed":false,"trace_id":"8186a098dd444e4c8bae28958e0def31","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/8186a098dd444e4c8bae28958e0def31","question":"What devnets are currently running?","answer":"The following devnets are currently active according to `panda`:\n\n| Devnet | Chain ID | Name |\n|---|---|---|\n| **bal-devnet-3** | 7098917910 | devnet-3 |\n| **bal-devnet-7** | 7071885124 | devnet-7 |\n| **blob-devnet-0** | 7073034301 | devnet-0 |\n| **glamsterdam-devnet-5** | 7095321190 | devnet-5 |\n| **hoodi** | 560048 | hoodi |\n| **perf-devnet-3** | 1 | devnet-3 |\n| **mainnet** | 1 | mainnet |\n| **sepolia** | 11155111 | sepolia |\n\nRun `panda resources networks://<id>` for full details on any of them.","tags":["discovery","cartographoor","devnets"]},{"id":"devnets_running","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.2502121340591893,"grader_reason":"All assertions passed","tokens":14139,"tools":5,"crashed":false,"trace_id":"e9a0744e92cd4f5f9dc785d60bf907b2","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/e9a0744e92cd4f5f9dc785d60bf907b2","question":"Which devnets are running right now?","answer":"The following devnets are currently active:\n\n| Devnet | Chain ID |\n|---|---|\n| **bal-devnet-3** | 7098917910 |\n| **bal-devnet-7** | 7071885124 |\n| **blob-devnet-0** | 7073034301 |\n| **glamsterdam-devnet-5** | 7095321190 |\n| **perf-devnet-3** | 1 |\n\n(Also active: mainnet, sepolia, and hoodi \u2014 but those are production/test networks, not devnets.)","tags":["discovery","cartographoor","devnets"]},{"id":"devnets_running","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.23558529048976576,"grader_reason":"All assertions passed","tokens":15004,"tools":11,"crashed":false,"trace_id":"3e238bf0ae9e4a528af1e402c9e3e6b0","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/3e238bf0ae9e4a528af1e402c9e3e6b0","question":"List the devnets that are currently running.","answer":"Currently active devnets (shipping logs within the last hour):\n\n- `bal-devnet-3`\n- `bal-devnet-7`\n- `blob-devnet-0`\n- `glamsterdam-devnet-5`\n- `hoodi`\n- `perf-devnet-3`\n\nAlso present are the public testnets `sepolia` and `mainnet`.","tags":["discovery","cartographoor","devnets"]},{"id":"devnets_running","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.2281848800310001,"grader_reason":"All assertions passed","tokens":15473,"tools":8,"crashed":false,"trace_id":"d3181f430ade493fa76a95f54b83f942","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/d3181f430ade493fa76a95f54b83f942","question":"What development networks are active at the moment?","answer":"Here are the active development networks from `networks://active`:\n\n| Network | Chain ID | ID |\n|---|---|---|\n| **bal-devnet-3** | 7098917910 | devnet-3 |\n| **bal-devnet-7** | 7071885124 | devnet-7 |\n| **blob-devnet-0** | 7073034301 | devnet-0 |\n| **glamsterdam-devnet-5** | 7095321190 | devnet-5 |\n| **hoodi** | 560048 | hoodi |\n| **mainnet** | 1 | mainnet |\n| **perf-devnet-3** | 1 | devnet-3 |\n| **sepolia** | 11155111 | sepolia |\n\n**Devnet groups available:** bal, berlinterop, blob, dencun, eof, epbs, fusaka, glamsterdam, mekong, nft, pectra, peerdas, perf, ssz\n\nUse `panda resources networks://<id>` for full details on any specific network.","tags":["discovery","cartographoor","devnets"]},{"id":"devnets_running","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.2538962773206009,"grader_reason":"All assertions passed","tokens":13933,"tools":6,"crashed":false,"trace_id":"36ed5d90963f4b03a5c44ac2c8268714","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/36ed5d90963f4b03a5c44ac2c8268714","question":"I'm trying to see which devnets are presently running.","answer":"Active devnets currently running:\n\n| Devnet | Name | Chain ID |\n|---|---|---|\n| `bal-devnet-3` | devnet-3 | 7098917910 |\n| `bal-devnet-7` | devnet-7 | 7071885124 |\n| `blob-devnet-0` | devnet-0 | 7073034301 |\n| `glamsterdam-devnet-5` | devnet-5 | 7095321190 |\n| `perf-devnet-3` | devnet-3 | 1 |\n\nPlus standard networks: mainnet, sepolia, hoodi.\n\nThe available devnet **groups** are: bal, berlinterop, blob, dencun, eof, epbs, fusaka, glamsterdam, mekong, nft, pectra, peerdas, perf, ssz.\n\nYou can get full details on any of them with:\n\n```\npanda resources read networks://<id>\n```\n\nFor example: `panda resources read networks://bal-devnet-7`","tags":["discovery","cartographoor","devnets"]},{"id":"devnets_running","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.24978813560273422,"grader_reason":"All assertions passed","tokens":14163,"tools":5,"crashed":false,"trace_id":"8fb5c9edf0334afc971c99b25191acab","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/8fb5c9edf0334afc971c99b25191acab","question":"Can you tell me which devnets are currently up and running?","answer":"Here are the active devnets currently up and running:\n\n| Devnet | Chain ID |\n|---|---|\n| **bal-devnet-3** | 7098917910 |\n| **bal-devnet-7** | 7071885124 |\n| **blob-devnet-0** | 7073034301 |\n| **glamsterdam-devnet-5** | 7095321190 |\n| **perf-devnet-3** | 1 |\n\nAlso active are the public testnets **hoodi** (560048), **sepolia** (11155111), and **mainnet** (1).\n\nAvailable devnet groups: `bal`, `blob`, `glamsterdam`, `perf`, `fusaka`, `pectra`, `peerdas`, `eof`, `epbs`, `dencun`, `berlinterop`, `mekong`, `nft`, `ssz`.","tags":["discovery","cartographoor","devnets"]},{"id":"devnet_beacon_peers","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.25,"grader_reason":"All assertions passed","tokens":46802,"tools":41,"crashed":false,"trace_id":"2cd5b75e538b40feb48fe3ad29f61d03","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/2cd5b75e538b40feb48fe3ad29f61d03","question":"What is the peer count of a beacon node on a devnet right now?","answer":"All beacon nodes on the devnets (`bal-devnet-7`, `bal-devnet-3`, `blob-devnet-0`) currently report **0 connected peers**.","tags":[]},{"id":"devnet_beacon_peers","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.10827649545691546,"grader_reason":"All assertions passed","tokens":95430,"tools":166,"crashed":false,"trace_id":"1a57fc56b46b41e1b5d707f6adebe297","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/1a57fc56b46b41e1b5d707f6adebe297","question":"How many peers does a beacon node on a devnet have right now?","answer":"The beacon node on bal-devnet-7 currently has **17 connected peers**.\n\n```\n{\"data\":{\"disconnected\":\"0\",\"connecting\":\"0\",\"connected\":\"17\",\"disconnecting\":\"0\"}}\n```\n\nThis was obtained via the public beacon RPC endpoint at `https://beacon.bal-devnet-7.ethpandaops.io/eth/v1/node/peer_count`.","tags":[]},{"id":"devnet_beacon_peers","subject":"opencode-go/deepseek-v4-flash:cli","correct":false,"correctness":0.0,"score":0.0,"grader_reason":"","tokens":0,"tools":0,"crashed":false,"trace_id":null,"trace_url":null,"question":"Report the current peer count for a beacon node on a devnet.","answer":"","tags":[]},{"id":"devnet_beacon_peers","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":false,"correctness":0.0,"score":0.0,"grader_reason":"The output does not report any current peer count, does not include a specific integer from a real Prometheus query, and instead only asks for the devnet and shows a command to run later. It fails the rubric's requirement for a current peer count on a devnet.","tokens":27445,"tools":13,"crashed":false,"trace_id":"c8a58c04475148c48536c9cb82b89f12","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/c8a58c04475148c48536c9cb82b89f12","question":"I\u2019m trying to find the peer count of a beacon node on a devnet at this moment.","answer":"Which devnet are you on? Here are the available ones from `panda ethnode networks`:\n\n- `bal-devnet-3`\n- `bal-devnet-7`\n- `blob-devnet-0`\n- `glamsterdam-devnet-5`\n- `perf-devnet-3`\n- `hoodi`, `mainnet`, `sepolia`\n\nOnce you tell me the devnet, I can look up the beacon node instance name and run:\n\n```\npanda ethnode peers <network-id> <instance>\n```","tags":[]},{"id":"devnet_beacon_peers","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.44009567452642867,"grader_reason":"All assertions passed","tokens":23747,"tools":31,"crashed":false,"trace_id":"b2c302494814498c8f4b353f033b7ce7","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/b2c302494814498c8f4b353f033b7ce7","question":"What is the current number of peers for a beacon node on a devnet?","answer":"The beacon nodes on the devnets currently report **0 peers**. I checked multiple instances across `bal-devnet-3`, `bal-devnet-7`, and `blob-devnet-0` \u2014 the reachable nodes all return 0 connected peers. Some nodes on `perf-devnet-3` and `glamsterdam-devnet-5` returned HTTP 502 errors (unreachable).\n\nFor example:\n```\n$ panda ethnode peers bal-devnet-3 lighthouse-geth-super-1\nConnected:      0\nDisconnected:   0\nConnecting:     0\nDisconnecting:  0\nTotal:          0\n```","tags":[]},{"id":"devnet_beacon_peers","subject":"opencode-go/deepseek-v4-flash:cli","correct":false,"correctness":0.0,"score":0.0,"grader_reason":"","tokens":0,"tools":0,"crashed":false,"trace_id":null,"trace_url":null,"question":"Right now, what peer count does a beacon node on a devnet show?","answer":"","tags":[]},{"id":"mev_timing_games","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.3035902534986408,"grader_reason":"All assertions passed","tokens":72311,"tools":126,"crashed":false,"trace_id":"3ef1ef3706fb483cab0aa57c950edd7e","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/3ef1ef3706fb483cab0aa57c950edd7e","question":"Which entities delay their block proposals the most to extract MEV on mainnet?","answer":"The entities that delay their block proposals the most for MEV on mainnet (past 30 days):\n\n| Entity | Avg Delay (ms) | MEV Blocks | Total MEV Value (ETH) |\n|--------|:-:|:-:|:-:|\n| **luno** | **3,336** | 155 | 3.74 |\n| whale_0x3878 | 3,179 | 56 | 0.94 |\n| whale_0x185d | 3,176 | 2 | 0.04 |\n| whale_0x75ff | 3,173 | 17 | 0.44 |\n| whale_0xfd67 | 3,168 | 262 | 5.71 |\n| whale_0x4b5e | 3,167 | 89 | 2.28 |\n| whale_0xc611 | 3,157 | 41 | 1.07 |\n| whale_0xf273 | 3,151 | 19 | 0.27 |\n| whale_0x8914 | 3,150 | 309 | 8.60 |\n| whale_0x6ddb | 3,139 | 32 | 0.97 |\n\n**Key takeaways:**\n- **luno** delays the most (~3.3s average), suggesting they wait nearly to the deadline to extract MEV\n- Most anonymous `whale_0x*` entities are among the top delayers (3,150\u20133,180 ms)\n- **everstake**, **p2porg**, **kiln**, and **blockdaemon_lido** are the largest MEV block proposers but have lower delays (~2,900\u20133,045 ms)\n- **blockdaemon_lido** and **revolut** have high p95 delays (3,444 ms and 3,396 ms), indicating they sometimes delay near the 4-second mark\n\nThe query joined `fct_block_mev_head`, `fct_block_first_seen_by_node`, and `fct_block_proposer_entity` using GLOBAL JOINs with a 30-day window on the distributed tables.","tags":["clickhouse","blocks","mev","timing","entity"]},{"id":"mev_timing_games","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":false,"correctness":0.2,"score":0.0,"grader_reason":"The answer names concrete mainnet entities (beaverbuild, Titan Builder, rsync) and discusses block proposal timing delays tied to MEV extraction. However, the harness-captured tool calls show no real query was successfully run: Panda could not start because Docker was unavailable, and no query output or timing evidence is present. Since the rubric requires supporting timing evidence backed by a real query, this does not satisfy the criterion.","tokens":13534,"tools":8,"crashed":false,"trace_id":"46e5767beb0f43ccade2c1a9b1218a5d","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/46e5767beb0f43ccade2c1a9b1218a5d","question":"On mainnet, which entities delay block proposals the most in order to extract MEV?","answer":"The panda server requires Docker, which isn't available in this environment, so I can't run queries directly. However, based on publicly available research data accessible through Ethereum datasets (which panda queries against), the entities most observed delaying block proposals for MEV extraction are:\n\n1. **beaverbuild** \u2014 Most consistently observed delaying proposals, often by multiple slots, to run MEV-Boost timing games and capture backrunning opportunities.\n2. **Titan Builder** \u2014 Also frequently delays, employing similar slot-timing strategies.\n3. **rsync** \u2014 Known for strategic delays, particularly around high-value MEV opportunities.\n\nThese entities use \"time-bandit\" attacks \u2014 intentionally missing their proposal slot to get a later slot where they can reorg or backrun profitable blocks. Research from block-level data (e.g., ClickHouse `beacon_blocks` tables queried via `panda clickhouse` and Dora) shows beaverbuild as the dominant actor in proposal delay games on mainnet.","tags":["clickhouse","blocks","mev","timing","entity"]},{"id":"mev_timing_games","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.34772515238629664,"grader_reason":"All assertions passed","tokens":61744,"tools":128,"crashed":false,"trace_id":"ff6e72b282a94bd49c3be3986e7fe52a","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/ff6e72b282a94bd49c3be3986e7fe52a","question":"Which mainnet entities are delaying their block proposals the most to capture MEV?","answer":"Based on the data queried via the panda CLI from `mainnet.fct_block_first_seen_by_node` over the last 7 days, here are the mainnet entities delaying block proposals the most (measured as avg ms from slot start to first block observation):\n\n## Top entities delaying proposals (avg delay > 3.0s)\n\n| Entity | Blocks | Avg Delay | Notes |\n|--------|--------|-----------|-------|\n| **whale_0xba8f** | 152 | **3.70s** | Anonymous whale, highest avg |\n| **luno** | 6,342 | **3.56s** | Fastest known entity |\n| **whale_0xf273** | 757 | 3.44s | Anonymous whale |\n| **whale_0xc611** | 2,422 | 3.43s | Anonymous whale |\n| **whale_0x4b5e** | 3,161 | 3.42s | Anonymous whale |\n| **whale_0x3878** | 1,970 | 3.41s | Anonymous whale |\n| **whale_0xfd67** | 10,550 | 3.40s | Anonymous whale |\n| **whale_0x8914** | 9,203 | 3.39s | Anonymous whale |\n| **p2porg\\_lido** | 41,930 | 3.29s | Known operator |\n| **p2porg** | 60,223 | 3.27s | Known operator |\n| **revolut** | 16,291 | 3.21s | Known operator |\n| **everstake** | 129,381 | 3.20s | Known operator |\n| **kiln** | 132,754 | 3.10s | Known operator |\n| **blockdaemon\\_lido** | 41,950 | 3.12s | Known operator |\n\n**Baseline avg**: ~1.95s across all 7.6M observations\n\nThe pattern is clear \u2014 **anonymous whale entities** (0x-prefixed) consistently show the highest delays (3.2\u20133.7s), strongly suggesting intentional MEV capture. Among named operators, **luno**, **p2porg**, **revolut**, **everstake**, and **kiln** show the most delay. In contrast, **coinbase** (2.44s) and **ether.fi** (1.84s) are much faster, likely using different MEV strategies (private orderflow rather than delayed public mempool).","tags":["clickhouse","blocks","mev","timing","entity"]},{"id":"mev_timing_games","subject":"opencode-go/deepseek-v4-flash:cli","correct":false,"correctness":0.0,"score":0.0,"grader_reason":"","tokens":0,"tools":0,"crashed":false,"trace_id":null,"trace_url":null,"question":"I'm trying to identify the entities on mainnet that most delay their block proposals for MEV extraction.","answer":"","tags":["clickhouse","blocks","mev","timing","entity"]},{"id":"mev_timing_games","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.1981161388589098,"grader_reason":"All assertions passed","tokens":110623,"tools":217,"crashed":false,"trace_id":"e3298b0d35544f0a8bdf6a9fc30ad914","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/e3298b0d35544f0a8bdf6a9fc30ad914","question":"List the entities that delay their block proposals the most to extract MEV on mainnet.","answer":"The results from mainnet on June 10, 2026 (last ~24h, 3264 proposals, 55.8 ETH total):\n\n```\nEntity                         Proposals    Avg Delay (ms)  Max Delay (ms)  Total Value (ETH)\n----------------------------------------------------------------------------------------------\nwhale_0x8ee5                   2            2000.0          2000.0          0.1255\nwhale_0x75ff                   2            2000.0          2000.0          0.0215\nluno                           1            2000.0          2000.0          0.0337\nwhale_0x3878                   1            2000.0          2000.0          0.0074\nwhale_0xfd67                   3            1666.7          2000.0          0.0382\neverstake                      53           1528.3          2000.0          0.9735\nkiln                           74           1527.0          2000.0          4.2614\nwhale_0x4b5e                   2            1500.0          2000.0          0.0189\nrevolut                        8            1375.0          3000.0          0.1035\nwhale_0x8914                   3            1333.3          2000.0          0.0379\nblockdaemon_lido               19           1210.5          2000.0          0.1822\nblockdaemon                    53           1132.1          2000.0          1.3606\nwhale_0x3ffa                   1            1000.0          1000.0          0.0079\nkelp                           3            1000.0          1000.0          0.0263\nxhash                          1            1000.0          1000.0          0.0099\nfrax_finance                   2            1000.0          1000.0          0.0338\ncsm_operator333_lido           1            1000.0          1000.0          0.0346\n```\n\n**Key findings:**\n- The top delayers are mostly **whale entities** (anonymous large validators with ~2s average delays) and **luno** (exchange, 2s delay)\n- Among major staking providers, **everstake** (1.53s avg), **kiln** (1.53s avg), and **blockdaemon** (1.13s avg) show the highest average delays\n- **revolut** had a max delay of 3s and averaged 1.38s\n- **kiln** captured the most MEV value at 4.26 ETH across 74 proposals\n\nThese delays represent how long after the slot start validators waited before their MEV-Boost bid was accepted, indicating intentional timing games to extract more MEV.","tags":["clickhouse","blocks","mev","timing","entity"]},{"id":"mev_timing_games","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.20944162184976114,"grader_reason":"All assertions passed","tokens":105158,"tools":161,"crashed":false,"trace_id":"5c82df93908f4d1eb60aa29a97d0c05f","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/5c82df93908f4d1eb60aa29a97d0c05f","question":"Formally, which entities exhibit the greatest block proposal delays for MEV extraction on mainnet?","answer":"Using the panda CLI, here are the entities with the greatest block proposal delays for MEV extraction on mainnet (May\u2013June 2025):\n\n**Highest average proposal delays (\u226510 blocks):**\n\n| Entity | Avg Prop Delay | Avg Bid Delay | Blocks |\n|---|---|---|---|\n| whale_0x746d | **3.004s** | 1.79s | 33 |\n| gateway.fmas_lido | **2.865s** | 0.29s | 402 |\n| **kiln** | **2.860s** | 1.71s | 5728 |\n| kiln_lido | 2.838s | 1.84s | 698 |\n| stakefish_lido | 2.582s | 0.25s | 452 |\n| luno | 2.536s | 1.65s | 104 |\n| kelp | 2.416s | 1.27s | 558 |\n| mantle | 2.373s | 0.74s | 1139 |\n| p2porg | 2.337s | 0.98s | 1399 |\n| blockdaemon_lido | 2.330s | 1.24s | 1021 |\n\n**Top entities by MEV value extracted (2025 YTD):**\n\n| Entity | Total MEV | Avg Prop Delay |\n|---|---|---|\n| binance | 435.8 ETH | 1.562s |\n| ether.fi | 375.1 ETH | 1.651s |\n| solo_stakers | 360.5 ETH | 1.563s |\n| coinbase | 347.8 ETH | 1.774s |\n| **kiln** | **317.0 ETH** | **2.860s** |\n| kraken | 233.5 ETH | 1.581s |\n| figment | 203.6 ETH | 1.550s |\n\n**Formal answer:** **Kiln** exhibits the greatest block proposal delays for MEV extraction among major entities, with an average proposal delay of **2.86s** (vs 1.5\u20131.8s for most top-tier operators) and the highest average bid delay (1.71s), indicating deliberate late-block publishing to maximize MEV. Among smaller operators, **whale_0x746d** leads at 3.00s average delay, and several Lido-affiliated sub-operators (gateway.fmas, stakefish, blockdaemon, p2porg) also show elevated delays above 2.3s. The `seen_slot_start_diff` from `mainnet.fct_block_first_seen_by_node` was used as the delay metric\u2014the minimum time from slot start to first network observation of the block, which captures the proposer's intentional delay.","tags":["clickhouse","blocks","mev","timing","entity"]},{"id":"block_size_vs_propagation","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":false,"correctness":0.0,"score":0.0,"grader_reason":"The answer does not present a real queried-data result quantifying the relationship between block payload size and propagation/arrival time on mainnet. The visible text explicitly says the ClickHouse module is not enabled and that it can't run the query. It then provides a speculative/general research statement and a hypothetical query, but no measured numbers, correlation, or grounded mainnet result from executed data. The harness-captured calls also show the data query could not be run because the ClickHouse module was unavailable.","tokens":19166,"tools":24,"crashed":false,"trace_id":"67f6fb1bd219447a98b15042a0daa7ce","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/67f6fb1bd219447a98b15042a0daa7ce","question":"How much does block payload size affect block propagation time on mainnet?","answer":"Unfortunately, the panda CLI's ClickHouse module is not enabled in this environment (`HTTP 404: module \"clickhouse\" is not enabled`), so I can't run the query against live mainnet data. Here's what I can tell you:\n\n**Known relationship from Ethereum research:** Block propagation time increases roughly linearly with block payload size, but the effect is modest for typical mainnet blocks. Additional gas used adds ~0.1\u20130.5ms per 1M gas in p50 propagation delay. At the p99 level the variance is much higher (network topology, peer distance, and bandwidth dominate). Blobs (EIP-4844) add a step increase since they're propagated separately.\n\n**What you'd run with panda (with a working ClickHouse datasource):**\n\n```python\npanda execute << 'PY'\nfrom ethpandaops import clickhouse\nimport pandas as pd\n\ndf = clickhouse.query(\n    \"clickhouse-default\",\n    \"\"\"\n    SELECT\n        slot_start_date_time,\n        slot,\n        block_size,\n        gas_used,\n        blob_count,\n        arrival_delay_ms\n    FROM mainnet.fct_block_head\n    WHERE slot_start_date_time >= now() - INTERVAL 7 DAY\n    \"\"\"\n)\n\n# Group by size buckets and compute avg propagation delay\ndf['size_bucket'] = pd.cut(df['block_size'], bins=20)\nresult = df.groupby('size_bucket')['arrival_delay_ms'].agg(['mean', 'p50', 'p95', 'p99'])\nprint(result)\nPY\n```\n\nThe key tables are `mainnet.fct_block_head` (or `_canonical`) in the `xatu-cbt` dataset, with columns like `block_size`, `gas_used`, and `arrival_delay_ms`.","tags":["clickhouse","blocks","propagation","size"]},{"id":"block_size_vs_propagation","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.25,"grader_reason":"All assertions passed","tokens":40521,"tools":60,"crashed":false,"trace_id":"d73e4491d1c34efc94b71d124ea80432","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/d73e4491d1c34efc94b71d124ea80432","question":"What effect does block payload size have on block propagation time on mainnet?","answer":"Based on mainnet data queried via `panda execute` (ClickHouse raw data, last ~7 days, 2.6M+ blocks):\n\n**Block payload size has negligible effect on block propagation time.** Key findings:\n\n| Metric | Value |\n|--------|-------|\n| Correlation (payload_size vs p50 time) | **r = -0.006** |\n| Small blocks <100KB: median p50 | ~1727 ms |\n| Large blocks >300KB: median p50 | ~1765 ms |\n\nThe median propagation time stays essentially flat (~1500\u20131916ms) across all payload size buckets from 0KB to 500KB+. The tiny 38ms difference between small and large blocks is within noise. This is because beacon blocks are gossiped before the execution payload is fully verified, and the payload size is small relative to network bandwidth. The p2p gossip layer, not execution payload size, is the dominant factor in block propagation latency.","tags":["clickhouse","blocks","propagation","size"]},{"id":"block_size_vs_propagation","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.20915269040191392,"grader_reason":"All assertions passed","tokens":48082,"tools":24,"crashed":false,"trace_id":"fb0622a7c1d844a08b23042002a9b147","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/fb0622a7c1d844a08b23042002a9b147","question":"Can you quantify how block payload size impacts block propagation time on mainnet?","answer":"## Analysis Complete\n\n**Data**: 1,573 mainnet slots over the last 6 hours, with 233,877 per-node arrival observations.\n\n### Key Findings\n\n| Size Metric | vs Avg (\u03c1) | vs P50 (\u03c1) | vs P95 (\u03c1) |\n|---|---|---|---|\n| Block bytes | 0.260 | 0.248 | **0.358** |\n| Tx count | 0.206 | 0.196 | 0.296 |\n| Gas used | 0.262 | 0.252 | 0.353 |\n| Tx bytes | 0.262 | 0.250 | 0.361 |\n\n### Takeaways\n\n- **Positive but weak-to-moderate correlation** \u2014 larger blocks do propagate slower, but size explains only ~13% of the variance (\u03c1\u00b2 \u2248 0.13).\n- **Impact on P95 (tail) is ~40% stronger** than on average \u2014 size disproportionately affects slow nodes.\n- **Block bytes have the most explanatory power** among size metrics; `gas_used` and `tx_bytes` are similar.\n- **Linear slope**: roughly **+2 ms per 100 KB** of block size on average arrival time.\n- The effect is real but modest \u2014 network topology, geographic distance, client implementation, and prior slot load likely play larger roles.\n\n### Bucketed View\n\n| Size Bucket | Slots | Mean Arrival | P50 | P95 |\n|---|---|---|---|---|\n| <50 KB | 45 | 1,568 ms | 1,529 | 1,779 |\n| 50\u2013100 KB | 163 | 1,701 ms | 1,655 | 1,969 |\n| 100\u2013150 KB | 280 | 1,933 ms | 1,882 | 2,257 |\n| 150\u2013200 KB | 351 | 1,860 ms | 1,805 | 2,207 |\n| 200\u2013300 KB | 508 | 1,997 ms | 1,935 | 2,384 |\n| 300\u2013500 KB | 222 | 2,185 ms | 2,117 | 2,636 |\n| 500K\u20131M | 4 | 2,051 ms | 1,969 | 2,565 |\n\nPlot saved locally (accessible if panda server is running): `http://localhost:2480/api/v1/storage/files/03687242-7623-4234-896c-0aee3ecb8a68/block_size_vs_propagation.png`","tags":["clickhouse","blocks","propagation","size"]},{"id":"block_size_vs_propagation","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.36519420937724856,"grader_reason":"All assertions passed","tokens":26532,"tools":21,"crashed":false,"trace_id":"cf53bab0e3bc451eaee1d01219edd44a","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/cf53bab0e3bc451eaee1d01219edd44a","question":"On mainnet, how strongly is block propagation time affected by block payload size?","answer":"Here's the data from the last 7 days on mainnet (via `fct_block_first_seen_by_node` joined with `fct_block`):\n\n| Block Size | Avg (ms) | P50 (ms) | P95 (ms) | Slots |\n|---|---|---|---|---|\n| < 50 KB | 1571 | 1459 | 2997 | 1285 |\n| 50\u2013100 KB | 1723 | 1571 | 3092 | 5541 |\n| 100\u2013150 KB | 1835 | 1645 | 3161 | 10159 |\n| 150\u2013200 KB | 1886 | 1660 | 3210 | 11997 |\n| >= 200 KB | 1970 | 1751 | 3262 | 20998 |\n\n**Block propagation time is positively correlated with payload size, but not strongly.** Moving from the smallest (<50 KB) to the largest (\u2265200 KB) buckets, avg latency increases by ~400 ms (+25%). The relationship is monotonic \u2014 each size tier adds ~50\u2013150 ms to the median. The effect is modest relative to the 12 s slot time, suggesting that for most payload sizes on mainnet, block propagation is not a bottleneck. The vast majority of blocks (63%) fall in the 150+ KB range.","tags":["clickhouse","blocks","propagation","size"]},{"id":"block_size_vs_propagation","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.3571175954524487,"grader_reason":"All assertions passed","tokens":27286,"tools":29,"crashed":false,"trace_id":"bb9b5c8e50524756b4dcf41fdb739766","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/bb9b5c8e50524756b4dcf41fdb739766","question":"I'm trying to understand how much block payload size influences block propagation time on mainnet.","answer":"Here are the results from querying 7 days of mainnet data via `panda clickhouse query-raw clickhouse-refined`:\n\n## Block Total Size vs Propagation Time\n\n| Size Bucket | Avg Bytes | P50 (ms) | P75 (ms) | P95 (ms) | Avg (ms) |\n|---|---|---|---|---|---|\n| <50 KB | 36,820 | 1,491 | 1,820 | 3,044 | 1,613 |\n| 50-100 KB | 78,223 | 1,606 | 1,989 | 3,142 | 1,773 |\n| 100-150 KB | 126,896 | 1,668 | 2,084 | 3,230 | 1,892 |\n| 150-200 KB | 174,584 | 1,706 | 2,152 | 3,269 | 1,948 |\n| 200-300 KB | 241,601 | 1,767 | 2,252 | 3,327 | 2,014 |\n| >300 KB | 358,431 | 1,849 | 2,395 | 3,411 | 2,100 |\n\n## Blob Count vs Propagation Time\n\n| Blob Count | Avg Bytes | P50 (ms) | P75 (ms) | P95 (ms) | Avg (ms) |\n|---|---|---|---|---|---|\n| 0 blobs | 171,328 | 1,620 | 2,022 | 3,183 | 1,841 |\n| 1 blob | 197,295 | 1,684 | 2,077 | 3,262 | 1,912 |\n| 2 blobs | 197,686 | 1,762 | 2,252 | 3,320 | 2,005 |\n| 3 blobs | 208,172 | 1,832 | 2,335 | 3,389 | 2,068 |\n| 4 blobs | 217,241 | 1,916 | 2,445 | 3,504 | 2,148 |\n| 5 blobs | 226,479 | 1,965 | 2,484 | 3,521 | 2,191 |\n| 6 blobs | 246,731 | 2,060 | 2,554 | 3,496 | 2,214 |\n\n## Key Takeaways\n\n- **Sub-linear relationship**: A ~10x increase in block size (37KB \u2192 358KB) increases median propagation time by only **~24%** (1,491 \u2192 1,849 ms). Bandwidth is not the bottleneck \u2014 gossip propagation latency is dominated by network hops and validation, not transfer time.\n- **Blobs add ~60-80ms each** at P50. Going from 0 \u2192 6 blobs adds ~440ms P50 (+27%), reflecting the extra data (blobs are ~128KB each) that must be gossiped via sidecars.\n- **P95 spread is wider**: The tail (P95) goes from ~3,044 ms (small blocks) to ~3,411 ms (large blocks) \u2014 only ~12% increase, suggesting the network handles large blocks without significantly worse tail latency.\n- **Transaction count matters more than raw bytes**: The compressed nature of gossip (blocks are snappy-compressed) means that many small transactions contribute less to propagation delay than a few large blobs or heavy tx payloads.\n\nThe data comes from joining `mainnet.int_block_canonical` (block metadata & size) with `mainnet.fct_block_first_seen_by_node` (per-node arrival times) over the last 7 days.","tags":["clickhouse","blocks","propagation","size"]},{"id":"block_size_vs_propagation","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.23723935688132267,"grader_reason":"All assertions passed","tokens":42672,"tools":27,"crashed":false,"trace_id":"4f75be01e9ea4ad8b9c25379d88ba3f7","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/4f75be01e9ea4ad8b9c25379d88ba3f7","question":"Determine the extent to which block payload size affects block propagation time on mainnet.","answer":"Here are the results from analyzing 1,791 mainnet blocks over the past 6 hours:\n\n**Block payload size has a modest but consistent positive effect on median (p50) propagation time.** The Pearson correlations are weak overall (r=0.13\u20130.20 for p50 against all payload metrics), but the bucketed analysis reveals a clear trend:\n\n| Gas Used | Blocks | p50 (ms) | Avg Block Size |\n|----------|--------|----------|----------------|\n| 0\u20135M     | 16     | 1,347    | 25 KB          |\n| 5\u201310M    | 64     | 1,550    | 56 KB          |\n| 10\u201315M   | 102    | 1,713    | 88 KB          |\n| 15\u201320M   | 193    | 1,651    | 119 KB         |\n| 20\u201325M   | 313    | 1,787    | 155 KB         |\n| 25\u201330M   | 303    | 1,779    | 190 KB         |\n| 30\u201335M   | 247    | 1,772    | 219 KB         |\n| 35\u201340M   | 174    | **1,876**    | 249 KB         |\n\nGoing from the lightest (0\u20135M gas, ~25KB) to the heaviest blocks (35\u201340M gas, ~249KB), median propagation increases **+39%** (1,347 \u2192 1,876 ms). Similarly, splitting at the gas median: high-gas blocks see **+8.3%** higher p50 and **+7.3%** higher first-seen time vs low-gas blocks.\n\n**However, correlation is much weaker for mean and p95 propagation** \u2014 those are dominated by outliers (network topology, peer count, geographic distance, mesh health). The top-10 slowest blocks by p50 are all *average-sized* blocks, and the 10 largest blocks have entirely normal propagation (1,500\u20132,900ms p50).\n\n**Key takeaway:** Payload size is a real but secondary factor in block propagation. A 10\u00d7 increase in payload bytes yields ~40% longer median propagation. The dominant variance drivers are network-level (GossipSub mesh connectivity, geographic peer distribution, client type) \u2014 payload size adds a small predictable overhead on top.","tags":["clickhouse","blocks","propagation","size"]},{"id":"empty_blob_submitters","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.17614067009298096,"grader_reason":"All assertions passed","tokens":63341,"tools":33,"crashed":false,"trace_id":"196aee1522d94939a2df9f0e90cfd660","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/196aee1522d94939a2df9f0e90cfd660","question":"Which entities submit blob transactions containing empty (zero-data) blobs on mainnet?","answer":"Based on the data, the entity **Aztec** is the primary submitter of blob transactions containing empty (zero-data) blobs on mainnet.\n\nAll 11 empty blobs detected in the last 7 days share the same versioned hash (`0x010657f37554c781402a22917dee2f75def7ab966d7b770905398eba3c444014`), which is overwhelmingly associated with Aztec across thousands of submissions. There have been isolated cases from **Morph** and **Lighter** using the same hash, but Aztec is the dominant and repeat submitter.\n\n> Note: The `dim_block_blob_submitter` table (max block `24634271`) lags behind the empty blob blocks (`25249273\u201325290859`), so the submitter for those specific recent blocks is inferred from the versioned hash ownership pattern.","tags":["clickhouse","blobs","execution","entity"]},{"id":"empty_blob_submitters","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.22503451129861904,"grader_reason":"All assertions passed","tokens":50758,"tools":33,"crashed":false,"trace_id":"58ff8141a0e3450cb0af13114c04cfde","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/58ff8141a0e3450cb0af13114c04cfde","question":"On mainnet, which entities are submitting blob transactions that include empty (zero-data) blobs?","answer":"Based on the data from `dim_block_blob_submitter` on mainnet (clickhouse-refined), the entities submitting blob transactions that include empty (zero-data) blobs \u2014 identified by the versioned hash `0x010657f37554c781402a22917dee2f75def7ab966d7b770905398eba3c444014` (hash of a 131KB all-zero blob) \u2014 are:\n\n| Entity | Transactions | Unique Addresses | Block Range |\n|---|---|---|---|\n| **Aztec** | 117,795 | 316 | 23,831,595 \u2013 24,634,301 |\n| **Unknown** (unlabeled) | 39,447 | 146 | 23,834,678 \u2013 24,634,311 |\n| **pk910** | 516 | 10 | 24,031,262 \u2013 24,227,279 |\n| **Lighter** | 6 | 1 | 23,098,852 \u2013 23,550,503 |\n| **Morph** | 6 | 3 | 23,047,944 \u2013 23,562,450 |\n| **Spire DA Builder** | 2 | 1 | 23,931,800 \u2013 23,931,801 |\n\n**Aztec** is the dominant submitter of empty blob transactions by a massive margin \u2014 over 117K transactions, roughly 3\u00d7 the combined total of all others. The empty blob versioned hash also appears in beacon blob sidecars across ~107 distinct slots in the last 30 days alone (all with the same `0x0106...` hash), confirming these zero-data blobs are being actively propagated on mainnet.","tags":["clickhouse","blobs","execution","entity"]},{"id":"empty_blob_submitters","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.38983424248528087,"grader_reason":"All assertions passed","tokens":27560,"tools":22,"crashed":false,"trace_id":"1373fa8116d24243abfb013f1328c2da","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/1373fa8116d24243abfb013f1328c2da","question":"Identify the entities that submit mainnet blob transactions containing empty (zero-data) blobs.","answer":"All **190,229** empty (zero-data) blobs on mainnet share the same versioned hash `0x010657f37554c781402a22917dee2f75def7ab966d7b770905398eba3c444014` \u2014 the \"zero blob\" hash. The entities submitting them:\n\n| Entity | Transactions | Blocks | Addresses |\n|--------|-------------|--------|-----------|\n| **Aztec** | 117,771 | 91,529 | 316 |\n| **Unknown** | 39,441 | 35,620 | 146 |\n| **pk910** | 516 | 497 | 10 |\n| **Morph** | 9 | 9 | 5 |\n| **Lighter** | 6 | 5 | 1 |\n| **Spire DA Builder** | 2 | 2 | 1 |\n\n**Aztec** is the dominant entity, responsible for ~75% of all empty-blob transactions. The **Unknown** addresses (25%) are unlabeled submitters that may also be Aztec-related or other protocols using zero-blob transactions for data availability proofs. **pk910**, **Morph**, **Lighter**, and **Spire DA Builder** have negligible volumes in comparison.","tags":["clickhouse","blobs","execution","entity"]},{"id":"empty_blob_submitters","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.3282326859352917,"grader_reason":"All assertions passed","tokens":34149,"tools":38,"crashed":false,"trace_id":"5f89915a2e064537b9c7188a38f9194b","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/5f89915a2e064537b9c7188a38f9194b","question":"I'm trying to find which entities on mainnet submit blob transactions with empty (zero-data) blobs.","answer":"Based on mainnet data from the last 30 days, **Aztec** is the primary entity submitting blob transactions with zero-data (empty) blobs \u2014 86 out of 119 such transactions found. The remaining 33 txs come from addresses not mapped to a known entity name in the submitter registry.\n\nThe query joins `canonical_beacon_block_execution_transaction` (where `blob_sidecars_empty_size = blob_sidecars_size`) with `dim_block_blob_submitter` to map sender addresses to entity names.","tags":["clickhouse","blobs","execution","entity"]},{"id":"empty_blob_submitters","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.25287606244658106,"grader_reason":"All assertions passed","tokens":45287,"tools":38,"crashed":false,"trace_id":"8114ef74d1364c4585b88816f99b70ea","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/8114ef74d1364c4585b88816f99b70ea","question":"Which mainnet entities have submitted blob transactions that contain empty (zero-data) blobs?","answer":"Here are the mainnet entities that have submitted blob transactions containing empty (zero-data) blobs:\n\n| Entity | Addresses | Empty Blob TXs | Empty Blobs | Block Range |\n|---|---|---|---|---|\n| **Aztec** | 316 | 117,778 | 117,811 | 23,831,595 \u2013 24,634,361 |\n| **Unknown** | 146 | 39,445 | 39,457 | 23,834,678 \u2013 24,634,355 |\n| **pk910** | 10 | 516 | 551 | 24,031,262 \u2013 24,227,279 |\n| **Morph** | 5 | 9 | 9 | 22,673,233 \u2013 23,562,450 |\n| **Lighter** | 1 | 6 | 6 | 23,098,852 \u2013 23,550,503 |\n| **Spire DA Builder** | 1 | 2 | 2 | 23,931,800 \u2013 23,931,801 |\n\n**Key findings:**\n- All 190,229 empty blobs (across 149,446 slots since Deneb genesis 2024-03-13) share the **same versioned hash** (`0x010657...`), suggesting they all contain identical zero-data blobs\n- **Aztec** is by far the dominant entity, accounting for ~75% of identified empty blob submissions (117,811 out of 157,836)\n- The submitter mapping only covers blocks \u2265 22,302,732 (~32K empty blobs in earlier blocks are not mapped to submitters)\n- Top Unknown addresses by volume: `0xb335E34E8B488718B70cDea29c4f8C2ea5c14bb4` (5,290 blobs), `0xeb41dd5963f4fbc8344fece272a6660999f54e26` (3,681), and `0x1702a028576b122358888dd10608441293d18392` (2,206)","tags":["clickhouse","blobs","execution","entity"]},{"id":"empty_blob_submitters","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.2471727259219971,"grader_reason":"All assertions passed","tokens":46332,"tools":31,"crashed":false,"trace_id":"d113733f4ffd4564ae9e41e2ff518489","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/d113733f4ffd4564ae9e41e2ff518489","question":"Please list the entities that submit blob transactions with empty (zero-data) blobs on mainnet.","answer":"Here are the entities that submit blob transactions with empty (zero-data) blobs on mainnet, based on the versioned hash `0x010657f37554c781402a22917dee2f75def7ab966d7b770905398eba3c444014` (a KZG commitment to all-zero data, 131072 bytes, fully empty):\n\n| Entity | Addresses | Total TXs | Block Range |\n|---|---|---|---|\n| **Aztec** | 316 | 117,815 | 23,831,595 \u2013 24,634,372 |\n| **Unknown** | 146 | 39,457 | 23,834,678 \u2013 24,634,355 |\n| **pk910** | 10 | 516 (multi-blob TXs) | 24,031,262 \u2013 24,227,279 |\n| **Morph** | 5 | 9 | 22,673,233 \u2013 23,562,450 |\n| **Lighter** | 1 | 6 | 23,098,852 \u2013 23,550,503 |\n| **Spire DA Builder** | 1 | 2 | 23,931,800 \u2013 23,931,801 |\n\n**Key details:**\n- **Aztec** is the dominant submitter (316 addresses, 117,815 single-blob TXs each with the empty blob).\n- **pk910** includes the empty blob alongside real blobs in multi-blob transactions (5 blobs per TX).\n- **Morph**, **Lighter**, and **Spire DA Builder** have small numbers of submissions.\n- **146 Unknown** addresses have no label assigned.\n- The empty blob first appeared around slot 8,626,225 and was seen **190,229 times** across mainnet.","tags":["clickhouse","blobs","execution","entity"]},{"id":"precompile_usage","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.2924304575668083,"grader_reason":"All assertions passed","tokens":18820,"tools":19,"crashed":false,"trace_id":"8919ee61e1834ed88403a9151f7e3e98","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/8919ee61e1834ed88403a9151f7e3e98","question":"Which EVM precompiles are used most on mainnet?","answer":"Here are the most-used EVM precompiles on mainnet (blocks 25M\u201325.3M, recent ~3M blocks):\n\n| Address | Name | Call Count | Total Gas |\n|---------|------|-----------|-----------|\n| `0x04` | **Identity (datacopy)** | **17,199,075** | 486M |\n| `0x01` | **ecrecover** | **15,042,762** | 45.1B |\n| `0x05` | **Modexp** | **9,092,758** | 36.0B |\n| `0x02` | **SHA2-256** | **6,503,356** | 584M |\n| `0x06` | **ecadd** | **3,421,849** | 513M |\n| `0x07` | **ecmul** | **3,406,729** | 20.4B |\n| `0x08` | **ecpairing** | **134,829** | 17.1B |\n| `0x0a** | **Point Eval** | **91,964** | 4.6B |\n| `0x09` | **Blake2f** | **2,031** | 24K |\n| `0x03` | **RIPEMD-160** | **343** | 295K |\n\nIdentity/datacopy (`0x04`) and ecrecover (`0x01`) dominate by call count, while Modexp (`0x05`) and ecmul (`0x07`) consume the most gas. RIPEMD-160 and Blake2f are rarely used.","tags":["clickhouse","execution","evm","precompiles"]},{"id":"precompile_usage","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.23219990737854782,"grader_reason":"All assertions passed","tokens":23829,"tools":19,"crashed":false,"trace_id":"aecd5f4308a24b0781eb0305d7423ad6","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/aecd5f4308a24b0781eb0305d7423ad6","question":"Which EVM precompiles see the most use on mainnet?","answer":"Based on the last ~190K blocks (25,100,000\u201325,291,972) on mainnet, here's the ranking of EVM precompiles by **call count**:\n\n| Rank | Address | Name | Calls | Total Gas |\n|------|---------|------|------:|----------:|\n| 1 | `0x04` | **identity** | 13,672,676 | 376M |\n| 2 | `0x01` | **ecrecover** | 8,724,046 | 26.1B |\n| 3 | `0x05` | **modexp** | 6,227,698 | 24.6B |\n| 4 | `0x02` | **sha256** | 3,833,441 | 348M |\n| 5 | `0x06` | **alt_bn128_add** | 2,280,952 | 342M |\n| 6 | `0x07` | **alt_bn128_mul** | 2,269,789 | 13.6B |\n| 7 | `0x08` | **alt_bn128_pairing** | 93,606 | 11.8B |\n| 8 | `0x0a` | **bls12_381_g1add** | 65,618 | 3.2B |\n| 9 | `0x0c` | **bls12_381_g1multiexp** | 4,514 | 239M |\n| 10 | `0x0b` | **bls12_381_g1mul** | 2,638 | 1M |\n| 11 | `0x0f` | **bls12_381_g2multiexp** | 1,378 | 408M |\n| 12 | `0x09` | **blake2f** | 403 | 4.8K |\n| 13 | `0x03` | **ripemd160** | 251 | 227K |\n| 14 | `0x10` | **bls12_381_pairing** | 100 | 550K |\n\nNo calls observed for `bls12_381_g2add` (0x0d), `bls12_381_g2mul` (0x0e), `bls12_381_map_fp_to_g1` (0x11), `bls12_381_map_fp2_to_g2` (0x12), or `point_evaluation` (0x13) in this range.\n\nBy far the most-called are **identity** (no-op / memcpy) and **ecrecover** (ECDSA public key recovery), while **modexp** and **alt_bn128_mul** consume the most gas per-call.","tags":["clickhouse","execution","evm","precompiles"]},{"id":"precompile_usage","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.25312559235905835,"grader_reason":"All assertions passed","tokens":21887,"tools":18,"crashed":false,"trace_id":"931737e78ce14e03ab534a117744b884","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/931737e78ce14e03ab534a117744b884","question":"On mainnet, which EVM precompiles are used the most?","answer":"Based on the `int_transaction_call_frame` table for blocks 24,120,001\u201325,291,972 on mainnet:\n\n| Precompile | Address | Calls | Total Gas |\n|---|---|---|---|\n| **Modexp** (BN254) | `0x05` | **53,701,943** | 214,767,243,236 |\n| **ecrecover** | `0x01` | **49,837,157** | 149,509,982,241 |\n| **Identity** (datacopy) | `0x04` | **48,285,375** | 1,331,177,234 |\n| **SHA256** | `0x02` | **25,589,709** | 2,287,552,836 |\n| **alt_bn128_G1_add** | `0x06` | **16,981,098** | 2,547,164,100 |\n| **alt_bn128_G1_mul** | `0x07` | **16,648,857** | 99,893,094,918 |\n| **alt_bn128_pairing** | `0x08` | 577,940 | 73,117,923,971 |\n| **PointEvaluation** (EIP-4844) | `0x0a` | 412,336 | 20,616,800,000 |\n| **Blake2f** | `0x09` | 24,225 | 290,688 |\n| **RIPEMD160** | `0x03` | 937 | 725,040 |\n\nTop 3 by call count: **Modexp**, **ecrecover**, and **Identity** \u2014 each with ~48\u201354M calls in recent mainnet history. RIPEMD160 is essentially unused.","tags":["clickhouse","execution","evm","precompiles"]},{"id":"precompile_usage","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.10153663561543347,"grader_reason":"All assertions passed","tokens":47387,"tools":70,"crashed":false,"trace_id":"c08d194ab4b94aa39d1537017d8e3ce2","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/c08d194ab4b94aa39d1537017d8e3ce2","question":"I'm trying to identify the most-used EVM precompiles on mainnet.","answer":"Here is the ranking of most-used EVM precompiles on mainnet (from `canonical_execution_traces` across all blocks):\n\n| Rank | Precompile | Address | Calls | Total Gas |\n|------|-----------|---------|-------|-----------|\n| 1 | **ecrecover** | `0x01` | 3,733 | 10.43M |\n| 2 | **SHA256** | `0x02` | 64 | 5.22K |\n| 3 | **RIPEMD160** | `0x03` | 58 | 42.84K |\n| 4 | **Identity (ID)** | `0x04` | 10 | 93 |\n| 5 | **Modexp** | `0x05` | 7 | 500 |\n| 6 | **Blake2f** | `0x09` | 6 | 0 |\n| 7 | **EC Mul** | `0x07` | 5 | 30K |\n| 8 | **EC Add** | `0x06` | 4 | 150 |\n| 9 | **Point Evaluation** | `0x0a` | 3 | 0 |\n| 10 | **EC Pairing** | `0x08` | 2 | 45K |\n\n**Note:** These counts only reflect calls that appeared as trace entries. The low absolute numbers suggest the Xatu trace data likely captures only top-level/shallow-depth calls \u2014 ecrecover is consistently the dominant one regardless.\n\nThe query used:\n\n```\npanda clickhouse query clickhouse-raw \"\nSELECT\n    action_to,\n    CASE action_to ...\n    END AS precompile_name,\n    count() AS call_count,\n    formatReadableQuantity(sum(result_gas_used)) AS total_gas\nFROM default.canonical_execution_traces\nWHERE meta_network_name = 'mainnet'\n  AND block_number > 0\n  AND action_type = 'call'\n  AND action_to IN ('0x0000000000000000000000000000000000000001', ...)\nGROUP BY action_to\nORDER BY call_count DESC\"\n```","tags":["clickhouse","execution","evm","precompiles"]},{"id":"precompile_usage","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.24693194440380734,"grader_reason":"All assertions passed","tokens":22436,"tools":24,"crashed":false,"trace_id":"ecae45c6b85047cc929006f1a6bf8d6e","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/ecae45c6b85047cc929006f1a6bf8d6e","question":"List the EVM precompiles with the highest usage on mainnet.","answer":"Here are the EVM precompiles on mainnet ranked by call count (dataset: `mainnet.int_transaction_call_frame`, all-time):\n\n| Precompile | Calls | Total Gas | Avg Gas |\n|---|---|---|---|\n| **05-modexp** | 53.70M | 200.02 GiB | 3,999 |\n| **01-ecrecover** | 49.84M | 139.24 GiB | 3,000 |\n| **04-identity** | 48.29M | 1.24 GiB | 28 |\n| **02-sha256** | 25.59M | 2.13 GiB | 89 |\n| **06-ecadd** | 16.98M | 2.37 GiB | 150 |\n| **07-ecmul** | 16.65M | 93.03 GiB | 6,000 |\n| **08-ecpairing** | 577.9K | 68.10 GiB | 126,515 |\n| **0a-pointeval** | 412.3K | 19.20 GiB | 50,000 |\n| **09-blake2f** | 24.2K | 283.88 KiB | 12 |\n| **03-ripemd160** | 937 | 708.05 KiB | 774 |\n\n**Top 3 by calls:** ModExp, ecrecover, and Identity dominate \u2014 each with ~50M+ calls. **Top 3 by gas consumed:** ModExp (200 GiB), ecrecover (139 GiB), ecMul (93 GiB). ecPairing is the most expensive per-call (avg 126K gas).","tags":["clickhouse","execution","evm","precompiles"]},{"id":"precompile_usage","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.28585036904418715,"grader_reason":"All assertions passed","tokens":19289,"tools":15,"crashed":false,"trace_id":"2baa30969ba342499413756207046d90","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/2baa30969ba342499413756207046d90","question":"Which EVM precompiled contracts have the greatest usage on mainnet?","answer":"Here are the results for recent ~92k mainnet blocks (25,200,000\u201325,291,972):\n\n| Addr | Precompile | Calls | Total Gas |\n|------|-----------|-------|-----------|\n| 0x01 | **EC Recover** (ecrecover) | 4,141,949 | **12.43 B** |\n| 0x05 | **Modexp** (bigint modular exp) | 3,085,416 | **12.20 B** |\n| 0x07 | **BN254 G1 Scalar Mul** | 1,168,328 | **7.01 B** |\n| 0x08 | **BN254 Pairing Check** | 49,136 | **6.19 B** |\n| 0x0a | **Point Evaluation** (EIP-4844) | 34,636 | **1.73 B** |\n| 0x04 | **Identity** (datacopy) | 9,398,033 | 251 M |\n| 0x02 | **SHA2-256** | 2,492,301 | 224 M |\n| 0x06 | **BN254 G1 Add** | 1,173,663 | 176 M |\n| 0x03 | **RIPEMD-160** | 63 | 46.8 K |\n| 0x09 | **BLAKE2f** | 0 | 0 |\n\n**Top 3 by gas usage:** EC Recover \u2192 Modexp \u2192 BN254 G1 Mul.\n\n**Top 3 by call count:** Identity (9.4M) \u2192 EC Recover (4.1M) \u2192 Modexp (3.1M). Identity is called the most but each call is very cheap (26 gas). BN254 Pairing is the inverse \u2014 few calls but extremely expensive per call (~126k gas avg).","tags":["clickhouse","execution","evm","precompiles"]},{"id":"mev_relay_share","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.25777208237042404,"grader_reason":"All assertions passed","tokens":17170,"tools":14,"crashed":false,"trace_id":"4867dd7773f94d238f0adc94f82a98e4","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/4867dd7773f94d238f0adc94f82a98e4","question":"What share of mainnet blocks over the last 24h were delivered via an MEV relay?","answer":"**95.6%** of mainnet blocks over the last 24h were delivered via an MEV relay (6,635 out of 6,942 blocks).\n\nBy relay market share:\n| Relay | Blocks |\n|---|---|\n| Ultra Sound | 4,535 |\n| Titan Relay | 3,300 |\n| BloXroute Max Profit | 2,275 |\n| BloXroute Regulated | 2,065 |\n| Aestus | 1,140 |\n| Flashbots | 502 |\n| Agnostic Gnosis | 395 |\n| EthGas | 151 |\n\nNote: blocks can appear under multiple relays (same block delivered by >1 relay), so the relay totals sum to more than 6,635.","tags":["clickhouse","blocks","mev","relay"]},{"id":"mev_relay_share","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.25,"grader_reason":"All assertions passed","tokens":17708,"tools":14,"crashed":false,"trace_id":"6901e701fff04c8a8986f4a1cb2e2817","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/6901e701fff04c8a8986f4a1cb2e2817","question":"What percentage of mainnet blocks in the last 24h were delivered through an MEV relay?","answer":"**92.53%** of mainnet blocks in the last 24h were delivered through an MEV relay (6,635 out of 7,171 blocks).","tags":["clickhouse","blocks","mev","relay"]},{"id":"mev_relay_share","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.2684862073892445,"grader_reason":"All assertions passed","tokens":16467,"tools":10,"crashed":false,"trace_id":"c3f28a8e2c2c4dfc8d834b462f196c0c","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/c3f28a8e2c2c4dfc8d834b462f196c0c","question":"Over the last 24h, what share of mainnet blocks came via an MEV relay?","answer":"Over the last 24h, **95.3%** of mainnet blocks (6,636 out of 6,964 canonical slots) were delivered via an MEV relay.","tags":["clickhouse","blocks","mev","relay"]},{"id":"mev_relay_share","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":false,"correctness":0.0,"score":0.0,"grader_reason":"The answer reports relay market shares and includes a real query in the harness-captured section, but the relevant figure is the percentage share of blocks delivered via an MEV relay overall. The listed shares sum to essentially 100% across relays, not the overall relay-delivered block share, and no 85\u201395% figure is provided. Therefore it fails the rubric.","tokens":15058,"tools":7,"crashed":false,"trace_id":"76f6a5a3e064484fbc59f8fa90f94483","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/76f6a5a3e064484fbc59f8fa90f94483","question":"I'm trying to find the share of mainnet blocks delivered via an MEV relay over the last 24h.","answer":"Here are the MEV relay market shares on mainnet over the last 24h:\n\n| Relay | Blocks | Share |\n|---|---|---|\n| Ultra Sound | 4,535 | 31.58% |\n| Titan Relay | 3,301 | 22.99% |\n| BloXroute Max Profit | 2,273 | 15.83% |\n| BloXroute Regulated | 2,063 | 14.37% |\n| Aestus | 1,139 | 7.93% |\n| Flashbots | 502 | 3.50% |\n| Agnostic Gnosis | 395 | 2.75% |\n| EthGas | 151 | 1.05% |\n\nUltra Sound leads with ~31.6%, followed by Titan Relay at ~23%.","tags":["clickhouse","blocks","mev","relay"]},{"id":"mev_relay_share","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.1796654321386315,"grader_reason":"All assertions passed","tokens":24069,"tools":21,"crashed":false,"trace_id":"2204baba267e4ff1b172e91bded684bf","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/2204baba267e4ff1b172e91bded684bf","question":"Calculate the proportion of mainnet blocks over the last 24h that were delivered via an MEV relay.","answer":"**92.49%** of mainnet blocks over the last 24h were delivered via an MEV relay (6,634 out of 7,173 unique slots with blocks).","tags":["clickhouse","blocks","mev","relay"]},{"id":"mev_relay_share","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.15583986980488457,"grader_reason":"All assertions passed","tokens":27149,"tools":18,"crashed":false,"trace_id":"6759930f030848f1a279c66e0c09cafd","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/6759930f030848f1a279c66e0c09cafd","question":"For mainnet blocks in the last 24h, what fraction were delivered via an MEV relay?","answer":"In the last 24h on mainnet, **92.5%** of blocks (6,442 out of 6,966) were delivered via an MEV relay, based on canonical chain data.","tags":["clickhouse","blocks","mev","relay"]},{"id":"session_data_analysis","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":false,"correctness":0.75,"score":0.0,"grader_reason":"The harness evidence shows the agent queried 1000 recent mainnet blocks, computed an average gas used per block of 30,389,576 (plausible and within the tens of millions range), and produced a gas usage histogram. However, there is no storage URL for an uploaded chart image anywhere in the output, so the criterion requiring a chart image URL is not met. The session id is present and reused across turns.","tokens":42960,"tools":17,"crashed":false,"trace_id":"fd207167ea514996a5d53b715931d8f0","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/fd207167ea514996a5d53b715931d8f0","question":"Query the last 1000 blocks on mainnet and save the data to a CSV file.","answer":"[Turn 1 | session=ses_14a944c8effeStyMvv7DUrXCnf] Query the last 1000 blocks on mainnet and save the data to a CSV file.\nData saved to `/tmp/opencode/mainnet_blocks_1000.csv` (1000 blocks + header). The file contains beacon block data from mainnet (slots 14526964\u201314527967), with columns: slot, epoch, slot_start_date_time, block_version, proposer_index, execution_payload_block_number, execution_payload_gas_used, execution_payload_gas_limit, execution_payload_base_fee_per_gas, execution_payload_transactions_count, execution_payload_blob_gas_used, execution_payload_excess_blob_gas, block_total_bytes.\n\n[Turn 2 | session=ses_14a944c8effeStyMvv7DUrXCnf] Now load that CSV and calculate the average gas used per block.\nAverage gas used per block: **30,389,576**\n\n[Turn 3 | session=ses_14a944c8effeStyMvv7DUrXCnf] Create a histogram of gas usage from the data.\n```\nGas Usage Histogram (last 1000 mainnet blocks):\n\n     0-5M | \u2588\u2588\u2588 12\n    5-10M | \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588 34\n   10-15M | \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588 52\n   15-20M | \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588 102\n   20-25M | \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588 168\n   25-30M | \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588 180\n   30-35M | \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588 133\n   35-40M | \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588 103\n   40-45M | \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588 73\n   45-50M | \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588 48\n   50-55M | \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588 36\n   55-60M | \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588 58\n```\n\nGas usage clusters around the 20\u201330M range, with a secondary bump at 55\u201360M (blocks hitting the gas limit).","tags":["multi_step","session","analysis"]},{"id":"session_data_analysis","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":false,"correctness":0.0,"score":0.0,"grader_reason":"The agent did query 1000 recent mainnet blocks and computed a plausible average gas used per block (30,312,662, which is in the tens of millions). It also produced a histogram of gas usage. The output shows a session_id being reused across turns (ses_14a93eaf2ffedlpSf8mzLuB6Ve). However, there is no storage URL for an uploaded chart image anywhere in the answer or harness evidence, so the rubric fails.","tokens":52214,"tools":27,"crashed":false,"trace_id":"80d140404d5e4bb3add1c3bc64f9627a","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/80d140404d5e4bb3add1c3bc64f9627a","question":"Fetch data for the most recent 1000 blocks on mainnet and write it to a CSV file.","answer":"[Turn 1 | session=ses_14a93eaf2ffedlpSf8mzLuB6Ve] Fetch data for the most recent 1000 blocks on mainnet and write it to a CSV file.\nDone. 1000 blocks written to `/tmp/panda-opencode-txjt4ycy/mainnet_blocks_1000.csv` (1001 lines: 1 header + 1000 data rows) with columns: `slot`, `epoch`, `block_root`, `block_version`, `block_total_bytes`, `parent_root`, `state_root`, `proposer_index`, `execution_payload_block_hash`, `execution_payload_block_number`, `execution_payload_fee_recipient`, `execution_payload_base_fee_per_gas`, `execution_payload_gas_limit`, `execution_payload_gas_used`, `execution_payload_blob_gas_used`, `execution_payload_excess_blob_gas`, `execution_payload_transactions_count`, `status`.\n\n[Turn 2 | session=ses_14a93eaf2ffedlpSf8mzLuB6Ve] Now load that CSV and calculate the average gas used per block.\nAverage gas used per block: **30,312,662**\n\n[Turn 3 | session=ses_14a93eaf2ffedlpSf8mzLuB6Ve] Create a histogram of gas usage from the data.\nGas histogram generated from the 1000 blocks:\n\n- **Range**: 0 to 59,999,971 (20 equal-width buckets)\n- **Mean**: 30,312,661\n- **Peak bucket**: 20,999,989 - 23,999,988 (106 blocks)\n- **Distribution**: roughly bimodal \u2014 clusters around 20-30M gas with a secondary peak near the max (blocks near the gas limit)","tags":["multi_step","session","analysis"]},{"id":"session_data_analysis","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":false,"correctness":0.4,"score":0.0,"grader_reason":"The harness-captured tool calls show the agent queried 1000 recent mainnet blocks, computed an average gas used per block of 30,389,576 (plausible, within the tens-of-millions range), and saved a histogram image at `/tmp/opencode/gas_histogram.png`. However, the output does not provide a storage URL for the chart image it uploaded, which the rubric requires. The session id `ses_14a93d518ffeT1eC8nJlLid0Ix` is present, so persistence was reused.","tokens":38461,"tools":42,"crashed":false,"trace_id":"a102565739474529bf93659b2cced8d0","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/a102565739474529bf93659b2cced8d0","question":"I'm trying to pull the last 1000 mainnet blocks and save the resulting data as a CSV.","answer":"[Turn 1 | session=ses_14a93d518ffeT1eC8nJlLid0Ix] I'm trying to pull the last 1000 mainnet blocks and save the resulting data as a CSV.\nDone. The file is saved at `/tmp/opencode/mainnet_blocks.csv` \u2014 1000 mainnet beacon blocks (latest first), 28 columns each. \n\nThe command I used:\n\n```bash\npanda clickhouse query-raw clickhouse-raw \"SELECT * FROM default.canonical_beacon_block WHERE meta_network_name = 'mainnet' ORDER BY slot DESC LIMIT 1000\" -o json | python3 -c \"\nimport json, csv, sys\ndata = json.load(sys.stdin)\nwriter = csv.writer(sys.stdout)\nwriter.writerow(data['columns'])\nfor row in data['rows']: writer.writerow(row)\n\" > mainnet_blocks.csv\n```\n\nData from the `canonical_beacon_block` table \u2014 columns include slot, epoch, block_root, proposer_index, execution payload details (block_number, gas_used, base_fee, blob_gas, etc.), and `meta_network_name`.\n\n[Turn 2 | session=ses_14a93d518ffeT1eC8nJlLid0Ix] Now load that CSV and calculate the average gas used per block.\nAverage gas used per block: **30,389,576** (over 1000 blocks).\n\n[Turn 3 | session=ses_14a93d518ffeT1eC8nJlLid0Ix] Create a histogram of gas usage from the data.\nThe histogram was saved to `/tmp/opencode/gas_histogram.png`. You can open it with any image viewer to see the distribution.","tags":["multi_step","session","analysis"]},{"id":"session_data_analysis","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":false,"correctness":0.4,"score":0.0,"grader_reason":"The harness-captured tool calls show the agent reused the same session ID across turns (ses_14a935dffffezVaIEt4D577tn4), queried 1000 recent mainnet blocks, computed an average gas used per block of 30,252,157, and generated a gas histogram image. However, the output does not provide any storage URL for the chart image it uploaded; it only gives a local file path (/tmp/opencode/gas_histogram.png). The rubric explicitly requires the storage URL of the chart image, so this fails.","tokens":31566,"tools":22,"crashed":false,"trace_id":"04bc7376771248a395f32b357ca2ee3f","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/04bc7376771248a395f32b357ca2ee3f","question":"Please query mainnet for the last 1000 blocks and export the data to CSV.","answer":"[Turn 1 | session=ses_14a935dffffezVaIEt4D577tn4] Please query mainnet for the last 1000 blocks and export the data to CSV.\nDone. Exported 1000 mainnet blocks to `/tmp/opencode/mainnet_last_1000_blocks.csv` (slots 14526808\u201314527807, plus header row). The data includes all 28 columns from `mainnet.fct_block` (slot, epoch, block_root, proposer_index, execution payload details, gas metrics, tx count, status, etc.).\n\n[Turn 2 | session=ses_14a935dffffezVaIEt4D577tn4] Now load that CSV and calculate the average gas used per block.\nAverage gas used per block across the last 1000 mainnet blocks: **30,252,157** (of a typical 30M\u201336M gas limit).\n\n[Turn 3 | session=ses_14a935dffffezVaIEt4D577tn4] Create a histogram of gas usage from the data.\nHistogram saved to `/tmp/opencode/gas_histogram.png` (1000 data points, mean: 30,312,662 gas). I can't render the image here, but you can open the file to view it.","tags":["multi_step","session","analysis"]},{"id":"session_data_analysis","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":false,"correctness":0.0,"score":0.0,"grader_reason":"The harness shows the agent queried 1000 recent mainnet blocks, computed an average gas used per block of 30,374,074 (plausible tens of millions), and generated a gas-usage histogram image. It also reused the same session_id across turns (`ses_14a925a99ffeYjc0mX8CIKcEXo`), satisfying persistence. However, the required storage URL of the uploaded chart image is not provided; the output only mentions a local file path (`gas_histogram.png` / `/tmp/.../gas_histogram.png`), not a storage URL. Therefore the rubric is not fully satisfied.","tokens":85439,"tools":65,"crashed":false,"trace_id":"1b9b87059afd41b9aaa6c64a8fc14886","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/1b9b87059afd41b9aaa6c64a8fc14886","question":"Can you retrieve data from the latest 1000 blocks on mainnet and store it in a CSV file?","answer":"[Turn 1 | session=ses_14a925a99ffeYjc0mX8CIKcEXo] Can you retrieve data from the latest 1000 blocks on mainnet and store it in a CSV file?\nDone. `latest_1000_blocks.csv` (226K) saved with 1000 mainnet beacon blocks (slots 14528026\u201314527026) from the `fct_block_head` table via `clickhouse-refined`.\n\nColumns: slot, epoch, execution_block_number, execution_block_hash, fee_recipient, gas_used, gas_limit, base_fee_per_gas, tx_count, blob_gas_used, excess_blob_gas, block_total_bytes, block_version, proposer_index.\n\n[Turn 2 | session=ses_14a925a99ffeYjc0mX8CIKcEXo] Now load that CSV and calculate the average gas used per block.\nAverage gas used per block: **30,374,074** (over the latest 1000 mainnet blocks).\n\n[Turn 3 | session=ses_14a925a99ffeYjc0mX8CIKcEXo] Create a histogram of gas usage from the data.\nThe histogram was generated successfully via `panda execute` using matplotlib in the sandbox and saved to **`gas_histogram.png`** (27K PNG).\n\nSummary:\n- **Mean gas used:** 30,374,074\n- **Min:** 0 (1 empty block)\n- **Max:** 60,052,696\n- **Bins:** 30\n\nYou can open `gas_histogram.png` to view it.","tags":["multi_step","session","analysis"]},{"id":"session_data_analysis","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":false,"correctness":0.2,"score":0.0,"grader_reason":"The harness-captured tool calls show a real query over the last ~1000 mainnet blocks (976 rows due to missed slots), calculation of average gas used per block as 30,325,537 (plausible tens of millions), and creation of a gas usage histogram saved to /tmp/opencode/gas_histogram.png. However, the required storage URL of the chart image was not provided; only a local filesystem path is shown, not an uploaded chart URL. The presence of session IDs indicates session reuse, so that criterion is met. Overall this fails on the missing chart URL.","tokens":50653,"tools":51,"crashed":false,"trace_id":"8e63d9319b9c438eb94fcb809a3e92e2","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/8e63d9319b9c438eb94fcb809a3e92e2","question":"Run a query over the last 1000 blocks on mainnet, then save the data into a CSV file.","answer":"[Turn 1 | session=ses_14a92111cffe4TSRhKXm9kw8Wz] Run a query over the last 1000 blocks on mainnet, then save the data into a CSV file.\nQuery completed. The CSV has been saved to `/tmp/opencode/last_1000_blocks.csv` with **976 blocks** (some slots were missed/skipped). It contains 18 columns including slot, timestamp, epoch, block root, version, proposer index, execution layer details, gas metrics, and transaction count.\n\nHere's a summary:\n- **976 rows** of canonical beacon blocks from mainnet\n- **Columns**: slot, slot_start_date_time, epoch, block_root, block_version, block_total_bytes, proposer_index, execution_payload_block_number, execution_payload_fee_recipient, execution_payload_base_fee_per_gas, execution_payload_blob_gas_used, execution_payload_excess_blob_gas, execution_payload_gas_limit, execution_payload_gas_used, execution_payload_transactions_count, execution_payload_transactions_total_bytes, parent_root, state_root\n- **Source**: `clickhouse-refined` \u2192 `mainnet.int_block_canonical`\n- **Format**: CSV with headers\n\n[Turn 2 | session=ses_14a92111cffe4TSRhKXm9kw8Wz] Now load that CSV and calculate the average gas used per block.\nThe average gas used per block across the last 976 blocks on mainnet is **30,325,537** (with min 0, max 59,999,971).\n\n[Turn 3 | session=ses_14a92111cffe4TSRhKXm9kw8Wz] Create a histogram of gas usage from the data.\nThe histogram has been created and saved to `/tmp/opencode/gas_histogram.png`. Here's the image:\n\n![Gas Usage Histogram](file:///tmp/opencode/gas_histogram.png)\n\nThe histogram shows the distribution of gas used per block across the last 976 blocks on mainnet, with statistics (mean, median, min, max, std) displayed in the top-right corner.","tags":["multi_step","session","analysis"]},{"id":"block_timing_analysis","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":false,"correctness":0.2,"score":0.0,"grader_reason":"The harness shows a real query for the last 100 mainnet slots, a per-client breakdown with mean and p95 arrival times in the expected millisecond range, and creation of a box plot image. However, the output does not provide the storage URL of the uploaded chart image; it only mentions a local path (/tmp/block_arrival_boxplot.png), not an uploaded storage URL. Therefore it fails the rubric.","tokens":32817,"tools":55,"crashed":false,"trace_id":"203fb1f7a87047cfa332e28a8000da37","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/203fb1f7a87047cfa332e28a8000da37","question":"Query block arrival times for the last 100 slots on mainnet.","answer":"[Turn 1 | session=ses_14a913460ffeHN4qhQlLfv68yx] Query block arrival times for the last 100 slots on mainnet.\nHere are the block arrival times for the last 100 slots on mainnet (slots `14527931`\u2013`14528030`). The `arrival_time_ms` column shows the minimum time (in milliseconds) after the slot start when the block was first observed by any node:\n\n| Metric | Value |\n|--------|-------|\n| Fastest arrival | **256 ms** (slot 14527969) |\n| Slowest arrival | **4384 ms** (slot 14527936) |\n| Average arrival | **~1700 ms** |\n| Median arrival | **~1475 ms** |\n\nThe query used `mainnet.fct_block_first_seen_by_node` from the `clickhouse-refined` datasource (Xatu CBT), aggregating `seen_slot_start_diff` across all observing nodes per slot.\n\n[Turn 2 | session=ses_14a913460ffeHN4qhQlLfv68yx] Group the data by observer consensus client and calculate the mean and p95 arrival time for each.\n| Client | Mean (ms) | P95 (ms) | Observations |\n|--------|-----------|----------|-------------|\n| (unknown) | 1856 | 3251 | 1100 |\n| prysm | 1862 | 3263 | 4439 |\n| caplin | 1870 | 3257 | 200 |\n| tysm | 1877 | 3227 | 26 |\n| lighthouse | 1944 | 3371 | 2384 |\n| grandine | 1988 | 3385 | 400 |\n| nimbus | 2046 | 3493 | 2889 |\n| teku | 2053 | 3418 | 1567 |\n| lodestar | 2132 | 3526 | 1999 |\n\n**prysm** was fastest on average (1862 ms), **lodestar** was slowest (2132 ms). The gap widens at P95 \u2014 nimbus and lodestar both exceed 3.5 s, while prysm and caplin stay under 3.27 s.\n\n[Turn 3 | session=ses_14a913460ffeHN4qhQlLfv68yx] Create a box plot comparing the arrival time distributions across clients.\nThe box plot was saved to `/tmp/block_arrival_boxplot.png`. Here's a summary of what it shows:\n\nThe plot visualizes arrival time distributions (ms) per consensus client for the last 100 slots on mainnet (~55k observations):\n\n- **prysm** has the tightest distribution and lowest median (~1750 ms)\n- **lodestar** and **teku** show higher medians (~2000 ms) and wider spreads\n- **grandine** has a higher median but relatively compact IQR\n- **caplin** and **tysm** have small sample sizes (200 and 26) so their distributions are less reliable\n- All clients have long upper tails extending toward ~4000 ms (excluded from box via `showfliers=False` for readability)\n\nNote: the `labels` \u2192 `tick_labels` deprecation warning was harmless and the plot rendered correctly.","tags":["multi_step","timing","analysis"]},{"id":"block_timing_analysis","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":false,"correctness":0.0,"score":0.0,"grader_reason":"The output includes a session_id reused across turns, shows a recent mainnet block arrival-time query, provides a per-client breakdown with mean and p95 values in a plausible millisecond range, and creates a box plot for the client distributions. However, it does not provide the storage URL of the uploaded chart image; it only mentions a local file path (/tmp/arrival_boxplot.png). Since the rubric requires the storage URL, this fails.","tokens":19599,"tools":18,"crashed":false,"trace_id":"ca5cbe141d7b4df8a4cb2c9c1a34e65e","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/ca5cbe141d7b4df8a4cb2c9c1a34e65e","question":"Get block arrival times for the last 100 slots on mainnet.","answer":"[Turn 1 | session=ses_14a9119a4ffe7xsS0v7q9nAUoh] Get block arrival times for the last 100 slots on mainnet.\nHere are the block arrival times for the last 100 slots on mainnet (slot 14527932\u201314528031):\n\n| Column | Description |\n|--------|-------------|\n| **slot** | Beacon chain slot number |\n| **arrival_time_ms** | Minimum time (ms) from slot start to first node seeing the block |\n| **observations** | Number of nodes that observed the block |\n\nQuick stats:\n- **Fastest arrival:** slot 14527969 \u2014 **256 ms**\n- **Slowest arrival:** slot 14527936 \u2014 **4384 ms**\n- **Median** (rough): ~**1400\u20131500 ms**\n- Most slots have **144\u2013151 observations** (active peer nodes).\n\nThe query used `mainnet.fct_block_first_seen_by_node FINAL` from the `xatu-cbt` dataset on `clickhouse-refined`.\n\n[Turn 2 | session=ses_14a9119a4ffe7xsS0v7q9nAUoh] Group the data by observer consensus client and calculate the mean and p95 arrival time for each.\n| Consensus Client | Observations | Mean (ms) | p95 (ms) |\n|---|---|---|---|\n| *(unknown)* | 1,100 | 1,860 | 3,251 |\n| **prysm** | 4,438 | 1,865 | 3,263 |\n| caplin | 200 | 1,872 | 3,257 |\n| tysm | 26 | 1,877 | 3,227 |\n| lighthouse | 2,384 | 1,947 | 3,371 |\n| grandine | 400 | 1,991 | 3,385 |\n| nimbus | 2,889 | 2,051 | 3,497 |\n| teku | 1,566 | 2,056 | 3,419 |\n| lodestar | 1,999 | 2,136 | 3,526 |\n\n**prysm** has the lowest mean arrival time (1,865 ms) and the most observations. **lodestar** is the slowest on average (~2,136 ms mean, ~3,526 ms p95).\n\n[Turn 3 | session=ses_14a9119a4ffe7xsS0v7q9nAUoh] Create a box plot comparing the arrival time distributions across clients.\nThe box plot has been saved to `/tmp/arrival_boxplot.png`. Here's a summary of what it shows:\n\n- **9 client groups** plotted: prysm, nimbus, lighthouse, lodestar, teku, grandine, caplin, unknown, tysm\n- **prysm** has the lowest median and tightest distribution\n- **lodestar** has the highest median and widest spread (largest IQR)\n- **nimbus** and **teku** show similar mid-range performance with moderate spread\n- **caplin** and **tysm** have small sample sizes but competitive medians\n- All clients show a similar floor (~0\u2013500 ms), but the upper tails vary significantly, with lodestar having the longest tail\n\nYou can open the file at `/tmp/arrival_boxplot.png` to view it.","tags":["multi_step","timing","analysis"]},{"id":"block_timing_analysis","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.25,"grader_reason":"All assertions passed","tokens":34370,"tools":39,"crashed":false,"trace_id":"8509124ab6dd4020966734dde359b249","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/8509124ab6dd4020966734dde359b249","question":"Can you query the block arrival times for the last 100 slots on mainnet?","answer":"[Turn 1 | session=ses_14a9089d9ffePpBsCTB5xptixv] Can you query the block arrival times for the last 100 slots on mainnet?\nHere are the block arrival times for the last 100 slots on mainnet (slots `14527935`\u2013`14528034`):\n\nColumns: `slot`, `min_arrival_ms`, `p50_arrival_ms`, `p95_arrival_ms`, `max_arrival_ms`, `observations`\n\n| Metric | Range |\n|---|---|\n| **Min arrival** | 256\u20134384 ms |\n| **Median (p50)** | 382\u20134494 ms |\n| **P95** | 605\u20134826 ms |\n| **Max arrival** | 1898\u201328135 ms (outliers) |\n| **Nodes per slot** | ~144\u2013151 |\n\nKey observations:\n- Most blocks are seen by the **fastest node** within ~1.2\u20131.8s of slot start.\n- **Median arrival** across all nodes is typically ~1.4\u20133.2s.\n- Slot **14527969** was the fastest (p50 = 382ms), while **14527936** was the slowest (p50 = 4494ms).\n- Several slots have outlier max arrival times (~28s at 14527920), suggesting some slow or lagging nodes.\n\nThe query used `mainnet.fct_block_first_seen_by_node` filtered on the last 30 minutes of `slot_start_date_time` via the `clickhouse-refined` ClickHouse datasource.\n\n[Turn 2 | session=ses_14a9089d9ffePpBsCTB5xptixv] Group the data by observer consensus client and calculate the mean and p95 arrival time for each.\n| Client | Observations | Mean (ms) | P95 (ms) |\n|---|---|---|---|\n| *(unknown)* | 1,617 | 1,878 | 3,293 |\n| **prysm** | 6,528 | 1,884 | 3,311 |\n| **caplin** | 294 | 1,891 | 3,289 |\n| **tysm** | 38 | 1,942 | 3,333 |\n| **lighthouse** | 3,512 | 1,962 | 3,385 |\n| **grandine** | 588 | 2,008 | 3,403 |\n| **nimbus** | 4,252 | 2,070 | 3,521 |\n| **teku** | 2,319 | 2,075 | 3,443 |\n| **lodestar** | 2,939 | 2,142 | 3,550 |\n\n**prysm** has the fastest mean arrival (1884ms) and the most observations. **lodestar** is the slowest (2142ms mean, 3550ms p95). There are also 1617 observations with no client label.\n\n[Turn 3 | session=ses_14a9089d9ffePpBsCTB5xptixv] Create a box plot comparing the arrival time distributions across clients.\nThe box plot was created and uploaded. Unfortunately I can't display images inline here.\n\n**Plot URL:** `http://localhost:2480/api/v1/storage/files/883beec1-05ed-4cfd-8521-58f95762aaa5/block_arrival_boxplot.png`\n\nHere's what it shows \u2014 a box plot of block arrival time (ms) per consensus client for the last ~100 slots on mainnet:\n\n- **Prysm** has the lowest median and tightest spread (fastest).\n- **Lodestar** has the highest median and widest spread (slowest).\n- **Nimbus**, **Teku**, and **Lighthouse** cluster in the middle with similar distributions.\n- All clients show a tail of outliers (slow observers), visible past the upper whiskers.\n\nIf you open that URL in a browser (or `curl` it), you'll see the full figure with labeled axes, colored boxes per client, and red diamonds marking the means.","tags":["multi_step","timing","analysis"]},{"id":"block_timing_analysis","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":false,"correctness":0.0,"score":0.0,"grader_reason":"The output includes recent mainnet slot block arrival times, a per-client breakdown with mean and p95 values in a plausible few-second range, and a box plot description. The harness-captured tool calls confirm a session_id was used (e.g. `ses_14a8fe08affe29jFM6VAWlRDRd`) and that the chart was saved locally to `/tmp/opencode/arrival_boxplot.png`. However, the output does not provide any storage URL for the uploaded chart image, which is explicitly required. Therefore it fails the rubric.","tokens":26335,"tools":36,"crashed":false,"trace_id":"de98929c82da4642ac715cb71c8e695d","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/de98929c82da4642ac715cb71c8e695d","question":"I'm trying to retrieve block arrival times over the last 100 slots on mainnet.","answer":"[Turn 1 | session=ses_14a8fe08affe29jFM6VAWlRDRd] I'm trying to retrieve block arrival times over the last 100 slots on mainnet.\nHere are the block arrival times for the last 100 slots on mainnet. Each row shows:\n- **slot** \u2014 the beacon slot number\n- **arrival_time_ms** \u2014 the fastest observed arrival time (ms after slot start) across all nodes\n- **observations** \u2014 how many node observations contributed\n\n```\nslot      arrival_time_ms  observations\n14528037             1531            151\n14528036             1775            151\n14528035             3129            150\n...\n```\n\nThe latest slot (`14528037`) arrived in ~1.5s, with most slots arriving between 1.2\u20133.3s after slot start, based on 144\u2013151 observations per slot.\n\nThe query uses the `mainnet.fct_block_first_seen_by_node` table from the `xatu-cbt` dataset on `clickhouse-refined`. To run it yourself:\n\n```bash\npanda clickhouse clickhouse-refined \\\n  \"SELECT slot, min(seen_slot_start_diff) as arrival_time_ms, count() as observations \\\n   FROM mainnet.fct_block_first_seen_by_node FINAL \\\n   WHERE slot_start_date_time >= now() - INTERVAL 4 HOUR \\\n     AND slot >= (SELECT max(slot) - 99 FROM mainnet.fct_block_first_seen_by_node FINAL WHERE slot_start_date_time >= now() - INTERVAL 4 HOUR) \\\n   GROUP BY slot ORDER BY slot DESC\"\n```\n\n[Turn 2 | session=ses_14a8fe08affe29jFM6VAWlRDRd] Group the data by observer consensus client and calculate the mean and p95 arrival time for each.\n```\ncl_client   mean_arrival_ms  p95_arrival_ms  observations\n(unknown)           1830.86          3214.15          1100\nprysm               1835.81          3185.20          4437\ncaplin              1839.46          3197.15           200\ntysm                1877.89          3298.40            28\nlighthouse          1917.17          3301.70          2384\ngrandine            1960.97          3350.15           400\nnimbus              2024.92          3465.00          2891\nteku                2045.57          3395.00          1571\nlodestar            2103.66          3471.20          1999\n```\n\nPrysm is fastest on average (~1.84s) and at p95 (~3.19s), while Lodestar is slowest (~2.10s mean, ~3.47s p95). The empty `cl_client` (1100 observations) likely represents nodes where the client wasn't reported.\n\n[Turn 3 | session=ses_14a8fe08affe29jFM6VAWlRDRd] Create a box plot comparing the arrival time distributions across clients.\nThe plot (saved at `/tmp/opencode/arrival_boxplot.png`) shows a box plot of block arrival time distributions (in ms) for each consensus client over the last 100 slots, ordered by mean arrival time:\n\n- **Prysm** \u2014 fastest; tight distribution, low spread, lowest p95 (~3.19s)\n- **Caplin** \u2014 similar to Prysm but with fewer observations (200)\n- **Tysm** \u2014 small sample (28 obs), wider spread\n- **Lighthouse** \u2014 moderate spread, median ~1.9s\n- **Grandine** \u2014 median ~1.96s, noticeable upper whisker at ~3.35s\n- **Nimbus** \u2014 higher median (~2.0s), p95 at ~3.47s\n- **Teku** \u2014 similar to Nimbus, p95 ~3.40s\n- **Lodestar** \u2014 slowest; highest median (~2.1s) and widest spread, p95 ~3.47s\n\nThe script used `ethpandaops.clickhouse.query()` with `seaborn.boxplot`. You can regenerate it anytime with:\n\n```bash\npanda execute --file /tmp/opencode/boxplot_arrival.py --timeout 180 | base64 -d > plot.png\n```","tags":["multi_step","timing","analysis"]},{"id":"block_timing_analysis","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":false,"correctness":0.0,"score":0.0,"grader_reason":"The output includes a session_id across turns, shows a real query for recent mainnet slot block arrival times, provides a per-client breakdown with mean and p95 values in a plausible millisecond range, and reports that a box plot was saved. However, it does not provide a storage URL for the chart image it uploaded; it only gives a local /tmp path. The rubric requires the storage URL, so this fails.","tokens":28502,"tools":21,"crashed":false,"trace_id":"dd30608feda740a79fa6a4373c9dff68","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/dd30608feda740a79fa6a4373c9dff68","question":"Please query mainnet block arrival times for the last 100 slots.","answer":"[Turn 1 | session=ses_14a8ea2fdffeyusgB7BIZJsUnu] Please query mainnet block arrival times for the last 100 slots.\nDone. Here are the mainnet block arrival times for the last 100 slots (14527945\u201314528044). The `arrival_time_ms` column shows the minimum observed arrival time in milliseconds after the slot start, and `observations` is the number of beacon nodes that reported seeing the block:\n\n| Metric | Value |\n|---|---|\n| Fastest arrival | 256 ms (slot 14527969) |\n| Slowest arrival | 3340 ms (slot 14527978) |\n| Median arrival | ~1470 ms |\n| Average observations per slot | ~150 nodes |\n\nThe query used was against `mainnet.fct_block_first_seen_by_node FINAL` in the `clickhouse-refined` datasource.\n\n[Turn 2 | session=ses_14a8ea2fdffeyusgB7BIZJsUnu] Group the data by observer consensus client and calculate the mean and p95 arrival time for each.\nHere are the mean and p95 block arrival times (ms) for the last 100 slots, grouped by consensus client:\n\n| Client | Observations | Mean (ms) | p95 (ms) |\n|---|---|---|---|\n| *(unknown)* | 1,100 | 1856.1 | 3273.0 |\n| **prysm** | 4,439 | 1863.1 | 3286.1 |\n| caplin | 200 | 1865.8 | 3264.6 |\n| tysm | 28 | 1877.9 | 3298.4 |\n| lighthouse | 2,384 | 1945.1 | 3380.0 |\n| grandine | 400 | 1988.2 | 3391.3 |\n| nimbus | 2,891 | 2056.9 | 3527.5 |\n| teku | 1,576 | 2060.6 | 3437.5 |\n| lodestar | 1,999 | 2135.8 | 3531.5 |\n\n**Key takeaways:**\n- **prysm** has the lowest mean arrival time (~1863 ms) and the most observations (4,439)\n- **lodestar** is the slowest on average (~2136 ms)\n- **nimbus** and **lodestar** have the highest p95 values (~3528\u20133532 ms), meaning their tail latency is worst\n- The blank client row (1,100 observations) likely represents nodes where the consensus client couldn't be identified\n\n[Turn 3 | session=ses_14a8ea2fdffeyusgB7BIZJsUnu] Create a box plot comparing the arrival time distributions across clients.\nThe box plot has been saved to `/tmp/block_arrivals_boxplot.png`. It shows the arrival time distributions for all consensus clients sorted by median. Key observations:\n\n- **prysm** and **caplin** have the lowest medians and tightest distributions\n- **lodestar**, **nimbus**, and **teku** show higher medians and longer tails\n- All clients show outliers extending well into the thousands of milliseconds\n- The dashed green lines in the violin-like shapes show the median for each client","tags":["multi_step","timing","analysis"]},{"id":"block_timing_analysis","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":false,"correctness":0.0,"score":0.0,"grader_reason":"The output includes a recent mainnet slot block-arrival table, a per-client breakdown with mean and p95 arrival times in plausible millisecond ranges, and it reports that a box plot was generated and saved. It also shows a session identifier (`session=ses_14a8dd850ffeBa0V5bwXTIBq7Y`), satisfying the persistence requirement. However, it does not provide any storage URL for the chart image it uploaded; it only gives a local path (`/tmp/boxplot.png`). Since the rubric explicitly requires the storage URL, this fails.","tokens":30587,"tools":37,"crashed":false,"trace_id":"18774670cc9b407f9ddec062a9f438e0","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/18774670cc9b407f9ddec062a9f438e0","question":"Fetch the arrival times of blocks for the last 100 slots on mainnet.","answer":"[Turn 1 | session=ses_14a8dd850ffeBa0V5bwXTIBq7Y] Fetch the arrival times of blocks for the last 100 slots on mainnet.\nHere are the block arrival times for the last 100 slots on mainnet:\n\n| Slot | Arrival (ms) | Observations | | Slot | Arrival (ms) | Observations |\n|------|-------------|-------------|------|------|-------------|-------------|\n| 14528048 | 1755 | 151 | | 14527998 | 2936 | 150 |\n| 14528047 | 3373 | 151 | | 14527997 | 1302 | 150 |\n| 14528046 | 1451 | 150 | | 14527996 | 1479 | 151 |\n| 14528045 | 3437 | 151 | | 14527995 | 2533 | 151 |\n| 14528044 | 1697 | 151 | | 14527994 | 1472 | 151 |\n| 14528043 | 1353 | 151 | | 14527993 | 3251 | 151 |\n| 14528042 | 1454 | 151 | | 14527992 | 1253 | 151 |\n| 14528041 | 1662 | 150 | | 14527991 | 1327 | 151 |\n| 14528040 | 1729 | 151 | | 14527990 | 1509 | 151 |\n| 14528039 | 1324 | 150 | | 14527989 | 1242 | 150 |\n| 14528038 | 1524 | 150 | | 14527988 | 1929 | 150 |\n| 14528037 | 1531 | 151 | | 14527987 | 1321 | 150 |\n| 14528036 | 1775 | 151 | | 14527986 | 1425 | 151 |\n| 14528035 | 3129 | 150 | | 14527985 | 1727 | 151 |\n| 14528034 | 1340 | 151 | | 14527984 | 1292 | 150 |\n| 14528033 | 1398 | 151 | | 14527983 | 1155 | 151 |\n| 14528032 | 1567 | 151 | | 14527982 | 2085 | 151 |\n| 14528031 | 1278 | 150 | | 14527981 | 1235 | 150 |\n| 14528030 | 1740 | 151 | | 14527980 | 1320 | 151 |\n| 14528029 | 1423 | 151 | | 14527979 | 2584 | 151 |\n| 14528028 | 3079 | 151 | | 14527978 | 3340 | 151 |\n| 14528027 | 1481 | 151 | | 14527977 | 1589 | 151 |\n| 14528026 | 1578 | 151 | | 14527976 | 3048 | 151 |\n| 14528025 | 1425 | 151 | | 14527975 | 1547 | 151 |\n| 14528024 | 2939 | 150 | | 14527974 | 1321 | 150 |\n| 14528023 | 1211 | 150 | | 14527973 | 1421 | 151 |\n| 14528022 | 2245 | 151 | | 14527972 | 1777 | 151 |\n| 14528021 | 1348 | 151 | | 14527971 | 2580 | 150 |\n| 14528020 | 2820 | 151 | | 14527970 | 1452 | 150 |\n| 14528019 | 1360 | 151 | | 14527969 | 256 | 149 |\n| 14528018 | 1534 | 151 | | 14527968 | 1521 | 149 |\n| 14528017 | 2659 | 150 | | 14527967 | 1260 | 151 |\n| 14528016 | 1787 | 151 | | 14527966 | 2987 | 151 |\n| 14528015 | 1626 | 150 | | 14527965 | 1076 | 151 |\n| 14528014 | 1374 | 151 | | 14527964 | 2316 | 151 |\n| 14528013 | 1298 | 151 | | 14527963 | 1321 | 151 |\n| 14528012 | 1363 | 148 | | 14527962 | 1392 | 151 |\n| 14528011 | 1517 | 146 | | 14527961 | 2650 | 150 |\n| 14528010 | 1323 | 146 | | 14527960 | 1321 | 149 |\n| 14528009 | 1543 | 145 | | 14527959 | 1952 | 151 |\n| 14528008 | 1320 | 145 | | 14527958 | 1523 | 150 |\n| 14528007 | 1270 | 145 | | 14527957 | 1549 | 151 |\n| 14528006 | 3090 | 144 | | 14527956 | 1500 | 150 |\n| 14528005 | 2153 | 145 | | 14527955 | 1581 | 151 |\n| 14528004 | 1799 | 150 | | 14527954 | 1317 | 150 |\n| 14528003 | 3306 | 149 | | 14527953 | 1356 | 151 |\n| 14528002 | 1237 | 150 | | 14527952 | 1255 | 151 |\n| 14528001 | 1369 | 149 | | 14527951 | 1351 | 150 |\n| 14528000 | 1469 | 149 | | 14527950 | 1389 | 151 |\n| 14527999 | 1326 | 151 | | 14527949 | 1486 | 150 |\n\nThe `arrival_time_ms` is the minimum `seen_slot_start_diff` (time from slot start to first observation) in milliseconds, and `observations` is the number of nodes that reported seeing the block. The fastest arrival was slot **14527969 at 256ms**, and the slowest was **14528045 at 3437ms**.\n\n[Turn 2 | session=ses_14a8dd850ffeBa0V5bwXTIBq7Y] Group the data by observer consensus client and calculate the mean and p95 arrival time for each.\nHere are the block arrival times for the last 100 slots, grouped by consensus client:\n\n| Client | Mean (ms) | P95 (ms) | Observations |\n|--------|-----------|----------|-------------|\n| (unknown) | 1876.8 | 3328.3 | 1100 |\n| **tysm** | **1877.9** | **3298.4** | 28 |\n| **prysm** | **1886.4** | **3347.1** | 4439 |\n| caplin | 1887.6 | 3299.8 | 200 |\n| lighthouse | 1967.9 | 3438.7 | 2384 |\n| grandine | 2009.5 | 3443.4 | 400 |\n| teku | 2059.8 | 3471.5 | 1576 |\n| nimbus | 2077.8 | 3590.0 | 2891 |\n| lodestar | 2156.3 | 3566.0 | 1999 |\n\n**Summary:** `tysm`, `prysm`, and `caplin` are the fastest by mean arrival time (~1877-1888ms), while `nimbus` and `lodestar` are the slowest (~2078-2156ms). `prysm` has the most observations (4439), and `tysm` is the least represented (28).\n\n[Turn 3 | session=ses_14a8dd850ffeBa0V5bwXTIBq7Y] Create a box plot comparing the arrival time distributions across clients.\nThe box plot was generated and saved to `/tmp/boxplot.png`. I'm unable to display images directly, but you can open it from there. \n\nFor reference, the plot shows arrival time distributions ordered by mean: `tysm`, `prysm`, and `caplin` (fastest) through `nimbus` and `lodestar` (slowest), with each client's box colored distinctly.","tags":["multi_step","timing","analysis"]},{"id":"block_time_histogram","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":false,"correctness":0.0,"score":0.0,"grader_reason":"The output includes a textual histogram and summary based on real queried data in the harness-captured section, but it does not provide any returned chart URL, saved image, or storage URL of an uploaded image. The rubric explicitly requires a histogram visualization artifact and the storage URL, so this fails.","tokens":27608,"tools":28,"crashed":false,"trace_id":"aa215ed8085d4983bf07b21dc8c7440a","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/aa215ed8085d4983bf07b21dc8c7440a","question":"Create a histogram showing the distribution of block arrival times for the last 1000 blocks on mainnet.","answer":"Here's the block arrival time histogram for the last ~1000 blocks on mainnet:\n\n```\n=== Block Arrival Time Distribution (Last 1000 Blocks on Mainnet) ===\nBlocks analyzed: 999\n\nBucket (ms)        Count    Distribution\n-----------------------------------------------------------------\n200     -399     4        \n400     -599     4        \n600     -799     2        \n800     -999     4        \n1000    -1199    31       \u2588\u2588\u2588\n1200    -1399    349      \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\n1400    -1599    183      \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\n1600    -1799    124      \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\n1800    -1999    64       \u2588\u2588\u2588\u2588\u2588\u2588\u2588\n2000    -2199    28       \u2588\u2588\u2588\n2200    -2399    41       \u2588\u2588\u2588\u2588\n2400    -2599    43       \u2588\u2588\u2588\u2588\n2600    -2799    22       \u2588\u2588\n2800    -2999    34       \u2588\u2588\u2588\n3000    -3199    42       \u2588\u2588\u2588\u2588\n3200    -3399    15       \u2588\n3400    -3599    6        \n3600    -3799    1        \n3800    -3999    1        \n4200    -4399    1        \n```\n\n**Summary:**\n- p25: 1323 ms | p50: 1493 ms | p75: 1950 ms | p90: 2798 ms | p95: 3052 ms | p99: 3375 ms\n\nThe distribution is heavily right-skewed. Most blocks are seen within 1200-2000 ms of slot start, with a long tail out to ~4200 ms.","tags":["visualization","histogram","timing"]},{"id":"block_time_histogram","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":true,"correctness":1.0,"score":0.25,"grader_reason":"All assertions passed","tokens":21560,"tools":20,"crashed":false,"trace_id":"ce67341a8ac3434d9c16e9184858cab8","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/ce67341a8ac3434d9c16e9184858cab8","question":"Plot a histogram of block arrival times using the last 1000 blocks on mainnet.","answer":"Here's the histogram of beacon block arrival times for the last 1,000 mainnet slots:\n\n- **149,573 observations** across **999 slots**\n- **Min:** 220 ms | **Median:** 1,734 ms | **Mean:** 1,966 ms | **Max:** 35,277 ms\n\nThe image was saved to the session at `/workspace/block_arrival_histogram.png`. You can access it locally at:\n\n`http://localhost:2480/api/v1/storage/files/b7f9d758-ca66-41c3-a7cc-413ed15ad766/block_arrival_histogram.png`\n\nThe histogram shows a right-skewed distribution \u2014 most blocks arrive within ~1\u20133 seconds of the slot start, with a long tail of slower arrivals.","tags":["visualization","histogram","timing"]},{"id":"block_time_histogram","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":false,"correctness":0.0,"score":0.0,"grader_reason":"The output includes a saved image path for the histogram (`/tmp/opencode/block_arrival_histogram.png`) and the harness-captured tool calls show the histogram was built from real queried mainnet data. However, the rubric explicitly requires the storage URL of the image it uploaded, and the output does not provide any storage URL or uploaded chart link\u2014only a local file path. Therefore it fails the requirement.","tokens":48209,"tools":49,"crashed":false,"trace_id":"586162f5696842e89d5610455bbfaf6a","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/586162f5696842e89d5610455bbfaf6a","question":"Show the distribution of block arrival times for mainnet's last 1000 blocks as a histogram.","answer":"I can't display the image directly here, but here's the text histogram and summary:\n\n```\n======================================================================\nBlock Arrival Time Distribution \u2014 Mainnet (Last 1000 Slots)\n======================================================================\nBucket              Count    Pct  Histogram\n----------------------------------------------------------------------\n  0-200ms                0   0.0%  \n200-400ms             358   0.2%  \n400-600ms             415   0.3%  \n600-800ms             451   0.3%  \n800-1000ms            292   0.2%  \n1000-1250ms          2427   1.6%  \u2588\u2588\n1250-1500ms         34566  23.1%  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\n1500-1750ms         37893  25.3%  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\n1750-2000ms         23707  15.8%  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\n2000-2500ms         20084  13.4%  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\n2500-3000ms         12662   8.5%  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\n3000-4000ms         15620  10.4%  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\n4000-6000ms           969   0.6%  \u2588\n6000+ms               136   0.1%  \n----------------------------------------------------------------------\nTotal observations: 149,580\n```\n\nKey stats:\n- **Median**: ~1,736ms \u2014 half of blocks are seen within ~1.7s of slot start\n- **Peak**: 1,500\u20131,750ms bucket (25.3% of observations)\n- **P95**: ~3,327ms \u2014 95% of blocks arrive within ~3.3s\n- **Tail**: only 0.1% take longer than 6s\n\nThe histogram image was saved to `/tmp/opencode/block_arrival_histogram.png`.","tags":["visualization","histogram","timing"]},{"id":"block_time_histogram","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":false,"correctness":0.0,"score":0.0,"grader_reason":"The response describes a saved histogram image at a local path, but it does not provide a storage URL of an uploaded image. The harness evidence shows the histogram was generated from a real ClickHouse query and saved locally, but there is no returned chart URL or uploaded storage link, which the rubric explicitly requires.","tokens":28146,"tools":38,"crashed":false,"trace_id":"2f840d13062e43a1a153234e889d1a3f","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/2f840d13062e43a1a153234e889d1a3f","question":"I'm trying to visualize how block arrival times are distributed across the last 1000 mainnet blocks in a histogram.","answer":"Here's the histogram output saved to `/tmp/opencode/block_arrival_histogram.png`:\n\n**Block Arrival Time Distribution (Last 1000 Mainnet Slots)**\n- **Observations:** 149,502 (across all nodes that observed the blocks)\n- **Median:** 1,737 ms\n- **Mean:** 1,960 ms\n- **p95:** 3,316 ms\n\nThe distribution shows that most blocks are seen within ~1\u20133 seconds of the slot start, with a right tail. There's a peak around 1.5\u20132 seconds and a long tail extending past 4\u20135 seconds (some stragglers up to 12s).\n\nThe script queried `mainnet.fct_block_first_seen_by_node` for the last 1000 slots, extracting all raw `seen_slot_start_diff` values \u2014 the time in ms from slot start to when each node first observed the block.","tags":["visualization","histogram","timing"]},{"id":"block_time_histogram","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":false,"correctness":0.0,"score":0.0,"grader_reason":"The output includes only a textual histogram and summary; it does not provide a chart URL or any saved/uploaded image artifact. Although the tool-captured section shows a real query was attempted, the criterion explicitly requires a histogram visualization with a storage URL for the uploaded image, which is missing.","tokens":42444,"tools":19,"crashed":false,"trace_id":"ea6ff01cb4d8417fadcaa0d6fb1583d5","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/ea6ff01cb4d8417fadcaa0d6fb1583d5","question":"Generate a histogram that displays the distribution of block arrival times for the most recent 1000 blocks on mainnet.","answer":"Here's the block arrival time distribution for the last ~999 blocks on mainnet:\n\n```\n==============================================================\n  Block Arrival Time Distribution (Last 1000 Blocks)\n  Mainnet \u2014 First seen time relative to slot start\n==============================================================\n  Total blocks: 999\n  Min: 220 ms  |  Max: 4384 ms  |  Mean: 1734 ms\n  Median: 1490 ms  |  Stdev: 608 ms\n\n       0-200 ms |                                             0 (  0.0%)\n     200-400 ms |                                             4 (  0.4%)\n     400-600 ms |                                             4 (  0.4%)\n     600-800 ms |                                             2 (  0.2%)\n    800-1000 ms |                                             4 (  0.4%)\n   1000-1200 ms | \u2588\u2588\u2588                                        31 (  3.1%)\n   1200-1400 ms | \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588  352 ( 35.2%)\n   1400-1600 ms | \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588                      182 ( 18.2%)\n   1600-1800 ms | \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588                             123 ( 12.3%)\n   1800-2000 ms | \u2588\u2588\u2588\u2588\u2588\u2588\u2588                                    64 (  6.4%)\n   2000-2500 ms | \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588                                 89 (  8.9%)\n   2500-3000 ms | \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588                                   78 (  7.8%)\n   3000-3500 ms | \u2588\u2588\u2588\u2588\u2588\u2588\u2588                                    62 (  6.2%)\n   3500-4000 ms |                                             3 (  0.3%)\n   4000-5000 ms |                                             1 (  0.1%)\n```\n\n**Key insights:**\n- The vast majority of blocks (\u224853%) arrive within **1200\u20131600 ms** of the slot start\n- **35%** arrive between 1200\u20131400 ms (the peak bucket)\n- The mean arrival time is **~1.73s** with a median of **~1.49s**\n- There's a long tail \u2014 ~6% of blocks take >3000 ms to arrive\n- Data sourced from `mainnet.fct_block_first_seen_by_node`, measuring `min(seen_slot_start_diff)` per slot across all observing nodes","tags":["visualization","histogram","timing"]},{"id":"block_time_histogram","subject":"opencode:opencode-go/deepseek-v4-flash:cli","correct":false,"correctness":0.0,"score":0.0,"grader_reason":"The response includes a textual histogram and real-query evidence in the tool calls, but it does not provide a returned chart URL, saved image, or storage URL of an uploaded image. The rubric explicitly requires a histogram visualization artifact with the storage URL, so this fails.","tokens":18211,"tools":12,"crashed":false,"trace_id":"adf771603c0c4e33a145b093fe990865","trace_url":"https://langfuse.analytics.production.platform.ethpandaops.io/project/panda-eval/traces/adf771603c0c4e33a145b093fe990865","question":"For the last 1000 blocks on mainnet, create a histogram of their block arrival times.","answer":"Here's the block arrival time histogram for the last 999 slots (slots 14527058\u201314528057) on mainnet:\n\n| Bucket | Count | Histogram |\n|--------|-------|-----------|\n| 0-250ms | 10 | |\n| 250-500ms | 538 | \u258e |\n| 500-1000ms | 968 | \u258d |\n| **1-2s** | **98,233** | \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588 |\n| 2-3s | 33,263 | \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2589 |\n| 3-4s | 15,586 | \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2589 |\n| >4s | 981 | \u258d |\n\n**Key takeaways:**\n- The vast majority of blocks arrive **between 1\u20132 seconds** after slot start\n- Very few blocks arrive before 500ms (548) or after 4s (981)\n- Blocks arriving before the slot start (0-250ms: 10) are likely due to clock drift or early propagation\n- The counts include all sentry node observations (each block is seen by multiple nodes), which is why they sum to more than 999","tags":["visualization","histogram","timing"]}],"history":[{"schema":1,"tag":"v0.32.0-rc.0","commit":"ff7d860f2e5415af15dbf4147f03f0eb000d6c55","created_at":"2026-06-11T06:09:51+00:00","prerelease":true,"cases":"baseline_all.yaml","subjects":["opencode-go/deepseek-v4-flash:cli"],"runs":84,"pass_rate":0.7857,"mean_score":0.1996,"mean_tokens_correct":25317.1,"questions":{"block_count_24h":{"runs":6,"correct":6,"mean_tokens_correct":16096.5},"block_size_vs_propagation":{"runs":6,"correct":5,"mean_tokens_correct":26841.2},"block_time_histogram":{"runs":6,"correct":2,"mean_tokens_correct":18999.5},"block_timing_analysis":{"runs":6,"correct":2,"mean_tokens_correct":27820},"devnet_beacon_peers":{"runs":6,"correct":3,"mean_tokens_correct":26133.3},"devnets_running":{"runs":6,"correct":6,"mean_tokens_correct":13534.2},"empty_blob_submitters":{"runs":6,"correct":6,"mean_tokens_correct":84350},"list_datasources":{"runs":6,"correct":6,"mean_tokens_correct":11708.3},"mainnet_block_arrival_p50":{"runs":6,"correct":6,"mean_tokens_correct":15715.8},"mev_relay_share":{"runs":6,"correct":6,"mean_tokens_correct":23212.3},"mev_timing_games":{"runs":6,"correct":6,"mean_tokens_correct":24573.8},"missed_slots_24h":{"runs":6,"correct":6,"mean_tokens_correct":15201.8},"precompile_usage":{"runs":6,"correct":6,"mean_tokens_correct":23054.8},"session_data_analysis":{"runs":6,"correct":0,"mean_tokens_correct":0.0}}}]};</script>
+
+<header id="topbar">
+  <div class="bar">
+    <span class="brand">🐼 panda <span class="dim">/ release qualification</span></span>
+    <span id="tag" class="num"></span>
+    <span id="prerelease-badge" class="badge pre" hidden>pre-release</span>
+    <nav id="nav">
+      <a href="#trend">releases</a>
+      <a href="#tokens">tokens</a>
+      <a href="#categories">categories</a>
+      <a href="#matrix">questions</a>
+      <a href="#explorer">runs</a>
+    </nav>
+  </div>
+  <div id="meta"></div>
+</header>
+
+<main>
+  <section id="headline" style="margin-top:0">
+    <div class="cards" id="cards"></div>
+    <p class="note" id="cards-note"></p>
+  </section>
+
+  <section id="trend">
+    <h2><span class="no">01</span> releases <span class="hint">hover for numbers</span></h2>
+    <div class="panel">
+      <div class="chart-wrap"><div id="trend-chart"></div></div>
+      <div class="legend" id="trend-legend"></div>
+    </div>
+    <div class="panel tbl-scroll" style="margin-top:10px"><table id="rel-table"></table></div>
+    <p class="note" id="trend-note"></p>
+  </section>
+
+  <section id="tokens">
+    <h2><span class="no">02</span> token distribution <span class="hint">every run · click a point to inspect it</span></h2>
+    <div class="panel">
+      <div class="chart-wrap"><div id="swarm-chart"></div></div>
+      <div class="legend" id="swarm-legend"></div>
+    </div>
+  </section>
+
+  <section id="categories">
+    <h2><span class="no">03</span> categories <span class="hint">click a bar to filter the run explorer</span></h2>
+    <div class="panel"><div class="chart-wrap"><div id="cat-chart"></div></div></div>
+  </section>
+
+  <section id="matrix">
+    <h2><span class="no">04</span> questions × runs <span class="hint">click any cell for the full grader verdict</span></h2>
+    <div class="panel tbl-scroll"><table id="mx-table"></table></div>
+  </section>
+
+  <section id="explorer">
+    <h2><span class="no">05</span> run explorer <span class="hint">filtering is analysis — the aggregate follows the filter</span></h2>
+    <div class="panel">
+      <div id="filters">
+        <input id="f-search" type="search" placeholder="search questions, answers, grader reasons, subjects…" autocomplete="off">
+        <select id="f-question"></select>
+        <span class="seg" id="f-status">
+          <button data-v="all" class="on">all</button>
+          <button data-v="pass">pass</button>
+          <button data-v="fail">fail</button>
+        </span>
+        <button id="reset-filters" hidden>× reset</button>
+      </div>
+      <div id="chips"></div>
+      <div id="agg"></div>
+      <div class="tbl-scroll"><table id="run-table"></table></div>
+    </div>
+  </section>
+</main>
+
+<aside id="drawer" aria-label="run detail">
+  <header>
+    <span class="qid" id="drawer-title"></span>
+    <button id="drawer-close" title="close (esc)">×</button>
+  </header>
+  <div id="drawer-body"></div>
+</aside>
+
+<div id="tip" hidden></div>
+
+<footer id="foot"></footer>
+
+<script>
+"use strict";
+(() => {
+  const RAW = window.__PANDA_EVAL_DATA__;
+  if (!RAW || !RAW.record) {
+    document.body.innerHTML = '<div class="err">no payload injected — this template must be built by scripts/release_report.py</div>';
+    return;
+  }
+
+  /* ── data ─────────────────────────────────────────────────────────────── */
+  const record = RAW.record;
+  const runs = RAW.runs.map((r, i) => ({
+    ...r,
+    _i: i,
+    tags: (r.tags && r.tags.length) ? r.tags : ["untagged"],
+  }));
+  const history = [...(RAW.history || [])].sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
+  const prev = history.length ? history[history.length - 1] : null;
+  const releases = [...history, record];
+
+  /* previous release's per-question token references (median, mean for older
+     schemas) — the anchor for every efficiency number on this page */
+  const prevRefs = new Map();
+  if (prev) for (const [qid, q] of Object.entries(prev.questions || {})) {
+    const ref = q.median_tokens_correct || q.mean_tokens_correct || 0;
+    if (ref > 0) prevRefs.set(qid, ref);
+  }
+  /* harden-loop score vs prev ref: wrong = 0, correct = (ref/(ref+tokens))²;
+     null when the previous release has no reference for this question */
+  const runEff = r => {
+    const ref = prevRefs.get(r.id);
+    if (ref == null) return null;
+    return (r.correct && (r.tokens || 0) > 0) ? (ref / (ref + r.tokens)) ** 2 : 0;
+  };
+  const EFF_EXPLAIN = "harden-loop score vs previous release's per-question cost: " +
+    "wrong = 0, correct = (ref/(ref+tokens))²; 0.25 × pass-rate = parity";
+
+  const byQ = new Map();
+  for (const r of runs) {
+    if (!byQ.has(r.id)) byQ.set(r.id, []);
+    byQ.get(r.id).push(r);
+  }
+  const passFrac = (rs) => rs.reduce((n, r) => n + (r.correct ? 1 : 0), 0) / rs.length;
+  const questionIds = [...byQ.keys()].sort((a, b) =>
+    passFrac(byQ.get(a)) - passFrac(byQ.get(b)) || (a < b ? -1 : 1));
+
+  const cats = (() => {
+    const m = new Map();
+    for (const r of runs) for (const t of r.tags) {
+      if (!m.has(t)) m.set(t, { tag: t, qids: new Set(), runs: 0, correct: 0, toks: [] });
+      const c = m.get(t);
+      c.runs++; c.qids.add(r.id);
+      if (r.correct) { c.correct++; if (r.tokens > 0) c.toks.push(r.tokens); }
+    }
+    return [...m.values()]
+      .map(c => ({ ...c, rate: c.correct / c.runs, medTok: median(c.toks) }))
+      .sort((a, b) => a.rate - b.rate || (a.tag < b.tag ? -1 : 1));
+  })();
+
+  /* ── helpers ──────────────────────────────────────────────────────────── */
+  function median(xs) {
+    if (!xs.length) return 0;
+    const o = [...xs].sort((a, b) => a - b), m = o.length >> 1;
+    return o.length % 2 ? o[m] : (o[m - 1] + o[m]) / 2;
+  }
+  function pctl(xs, q) {
+    if (!xs.length) return 0;
+    const o = [...xs].sort((a, b) => a - b);
+    if (o.length === 1) return o[0];
+    const pos = (o.length - 1) * q, lo = Math.floor(pos), hi = Math.min(lo + 1, o.length - 1);
+    return o[lo] + (o[hi] - o[lo]) * (pos - lo);
+  }
+  const nf = new Intl.NumberFormat("en-US");
+  const fInt = n => nf.format(Math.round(n));
+  const fTok = n => n >= 9999.5 ? (n / 1000).toFixed(1).replace(/\.0$/, "") + "k" : fInt(n);
+  const fPct = x => (x * 100).toFixed(x * 100 % 1 ? 1 : 0) + "%";
+  const fDate = s => (s || "").slice(0, 10);
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const $ = (sel, el) => (el || document).querySelector(sel);
+
+  function el(tag, attrs, html) {
+    const e = document.createElement(tag);
+    if (attrs) for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    if (html != null) e.innerHTML = html;
+    return e;
+  }
+  const SVGNS = "http://www.w3.org/2000/svg";
+  function sv(tag, attrs) {
+    const e = document.createElementNS(SVGNS, tag);
+    if (attrs) for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    return e;
+  }
+  function svText(x, y, str, attrs) {
+    const t = sv("text", { x, y, "font-size": 10, ...(attrs || {}) });
+    t.textContent = str;
+    return t;
+  }
+
+  /* shared tooltip */
+  const tip = $("#tip");
+  function showTip(html, cx, cy) {
+    tip.innerHTML = html;
+    tip.hidden = false;
+    const r = tip.getBoundingClientRect();
+    let x = cx + window.scrollX + 14, y = cy + window.scrollY + 14;
+    if (cx + 14 + r.width > window.innerWidth - 8) x = cx + window.scrollX - r.width - 12;
+    if (cy + 14 + r.height > window.innerHeight - 8) y = cy + window.scrollY - r.height - 12;
+    tip.style.left = x + "px";
+    tip.style.top = y + "px";
+  }
+  const hideTip = () => { tip.hidden = true; };
+
+  const tokenLabel = (e) => {
+    const p = e.token_percentiles;
+    return (p && p.p50) ? { v: p.p50, isP50: true } : { v: e.mean_tokens_correct || 0, isP50: false };
+  };
+  const runStatus = r => r.crashed ? "crash" : (r.correct ? "pass" : "fail");
+  const shortSubject = s => String(s || "").replace(/^[a-z0-9_-]+:/i, "");
+  const CANON_TIP = "exact per-run phrasing unavailable for this record; canonical wording shown";
+  const canonMark = r => r.question_canonical ? `<span class="canon" title="${CANON_TIP}">°</span>` : "";
+
+  /* ── topbar ───────────────────────────────────────────────────────────── */
+  document.title = `panda eval — ${record.tag}`;
+  $("#tag").textContent = record.tag;
+  $("#prerelease-badge").hidden = !record.prerelease;
+  $("#meta").innerHTML =
+    `commit <b>${esc((record.commit || "").slice(0, 9) || "—")}</b>` +
+    ` · ${esc((record.created_at || "").replace("T", " ").slice(0, 16))} UTC` +
+    ` · cases <b>${esc(record.cases || "—")}</b>` +
+    ` · subject <b>${esc((record.subjects || []).join(", "))}</b>` +
+    ` · ${byQ.size} questions · ${runs.length} runs` +
+    (prev ? ` · vs <b>${esc(prev.tag)}</b>` : " · first qualified release");
+
+  /* ── headline cards ───────────────────────────────────────────────────── */
+  function deltaChip(cur, prv, { fmt, goodWhen = "up", neutral = false } = {}) {
+    if (prv == null || !isFinite(prv)) return "";
+    const d = cur - prv;
+    if (Math.abs(d) < 1e-9) return `<span class="delta flat">=</span>`;
+    const arrow = d > 0 ? "▲" : "▼";
+    const cls = neutral ? "flat" : ((d > 0) === (goodWhen === "up") ? "good" : "badd");
+    return `<span class="delta ${cls}" title="vs ${esc(prev ? prev.tag : "")}">${arrow} ${fmt(Math.abs(d))}</span>`;
+  }
+  function card(k, v, sub, chip, title) {
+    return `<div class="card"${title ? ` title="${esc(title)}"` : ""}><div class="k"><span>${k}</span></div>` +
+      `<div class="v">${v}${chip || ""}</div><div class="s">${sub}</div></div>`;
+  }
+  (() => {
+    const nOk = runs.filter(r => r.correct).length;
+    const tp = record.token_percentiles || {};
+    const ptp = prev && prev.token_percentiles;
+    const fmtPP = d => (d * 100).toFixed(1) + "pp";
+    const fmtAbs = d => d.toFixed(3);
+    const fmtRel = base => d => Math.round(d / base * 100) + "%";
+    const eff = record.efficiency_vs;
+    const parity = 0.25 * record.pass_rate;
+    const effCard = eff
+      ? card("efficiency",
+          `<span style="color:${eff.score >= parity ? "var(--ok)" : "var(--bad)"}">${eff.score.toFixed(3)}</span>`,
+          `vs ${esc(eff.ref_tag)} · ${parity.toFixed(3)} = parity` +
+            (eff.skipped ? ` · ${eff.skipped} runs w/o ref` : ""),
+          "", EFF_EXPLAIN)
+      : card("efficiency", `<span style="color:var(--faint)">—</span>`, "no reference release", "", EFF_EXPLAIN);
+    const tps = record.tokens_per_solve ||
+      (nOk ? runs.reduce((a, r) => a + (r.tokens || 0), 0) / nOk : 0);
+    const ptps = prev && prev.tokens_per_solve;
+    const html = [
+      card("pass rate", fPct(record.pass_rate), `${nOk}/${runs.length} runs correct`,
+        deltaChip(record.pass_rate, prev && prev.pass_rate, { fmt: fmtPP })),
+      card("mean score", record.mean_score.toFixed(3), "token-efficiency, correctness-gated",
+        deltaChip(record.mean_score, prev && prev.mean_score, { fmt: fmtAbs })),
+      effCard,
+      card("tokens / solve", fTok(tps), "all spend ÷ correct answers",
+        ptps ? deltaChip(tps, ptps, { fmt: fmtRel(ptps), goodWhen: "down" }) : ""),
+      card("tokens p50", fTok(tp.p50 || 0), "per correct run",
+        ptp && ptp.p50 ? deltaChip(tp.p50, ptp.p50, { fmt: fmtRel(ptp.p50), goodWhen: "down" }) : ""),
+      card("tokens p90", fTok(tp.p90 || 0), "per correct run",
+        ptp && ptp.p90 ? deltaChip(tp.p90, ptp.p90, { fmt: fmtRel(ptp.p90), goodWhen: "down" }) : ""),
+      card("questions", String(byQ.size), esc(record.cases || ""),
+        deltaChip(byQ.size, prev && Object.keys(prev.questions || {}).length, { fmt: d => String(d), neutral: true })),
+      card("runs", String(runs.length), "canonical + paraphrase variations, single pass",
+        deltaChip(runs.length, prev && prev.runs, { fmt: d => String(d), neutral: true })),
+    ].join("");
+    $("#cards").innerHTML = html;
+    $("#cards-note").textContent = "efficiency = " + EFF_EXPLAIN +
+      " · refs come from the previous release's per-question median tokens over correct runs";
+  })();
+
+  /* ── trend chart ──────────────────────────────────────────────────────── */
+  function renderTrend() {
+    const host = $("#trend-chart");
+    host.innerHTML = "";
+    const W = Math.max(340, host.parentElement.getBoundingClientRect().width - 20);
+    const ml = 46, mr = 18;
+    const p1t = 14, p1b = 178;          /* pane 1: rates */
+    const p2t = 206, p2b = 286;         /* pane 2: tokens */
+    const effs = releases.map(e => e.efficiency_vs || null);
+    const hasEff = effs.some(Boolean);
+    const p3t = 312, p3b = 360;         /* pane 3: chained efficiency (when present) */
+    const axisB = hasEff ? p3b : p2b;
+    const lblH = 58;
+    const H = axisB + lblH;
+    const svg = sv("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}` });
+    const n = releases.length;
+    const x = i => n === 1 ? (ml + (W - ml - mr) / 2) : ml + (W - ml - mr) * i / (n - 1);
+    const y1 = v => p1b - (p1b - p1t) * v;
+    const toks = releases.map(tokenLabel);
+    const tokMax = Math.max(1, ...toks.map(t => t.v)) * 1.15;
+    const y2 = v => p2b - (p2b - p2t) * (v / tokMax);
+    const parityOf = e => 0.25 * e.pass_rate;
+    const effMax = Math.max(0.3,
+      ...effs.map(f => f ? f.score : 0),
+      ...releases.filter((e, i) => effs[i]).map(parityOf)) * 1.2;
+    const y3 = v => p3b - (p3b - p3t) * (v / effMax);
+
+    /* gridlines pane 1 */
+    for (const v of [0, .25, .5, .75, 1]) {
+      const g = sv("g", { class: "grid" });
+      g.appendChild(sv("line", { x1: ml, x2: W - mr, y1: y1(v), y2: y1(v) }));
+      svg.appendChild(g);
+      svg.appendChild(svText(ml - 7, y1(v) + 3, Math.round(v * 100) + "%", { "text-anchor": "end", "font-size": 9 }));
+    }
+    /* gridlines pane 2 */
+    for (const v of [0, tokMax / 1.15]) {
+      const g = sv("g", { class: "grid" });
+      g.appendChild(sv("line", { x1: ml, x2: W - mr, y1: y2(v), y2: y2(v) }));
+      svg.appendChild(g);
+      svg.appendChild(svText(ml - 7, y2(v) + 3, fTok(v), { "text-anchor": "end", "font-size": 9 }));
+    }
+    svg.appendChild(svText(ml, p2t - 7, "tokens p50 (correct runs)", { "font-size": 9 }));
+
+    /* pane 3: efficiency vs prev — each point is anchored to ITS previous release,
+       so this is a per-step indicator, not a level; no connecting line on purpose */
+    if (hasEff) {
+      const g0 = sv("g", { class: "grid" });
+      g0.appendChild(sv("line", { x1: ml, x2: W - mr, y1: y3(0), y2: y3(0) }));
+      svg.appendChild(g0);
+      svg.appendChild(svText(ml - 7, y3(0) + 3, "0", { "text-anchor": "end", "font-size": 9 }));
+      svg.appendChild(svText(ml - 7, y3(effMax / 1.2) + 3, (effMax / 1.2).toFixed(2),
+        { "text-anchor": "end", "font-size": 9 }));
+      svg.appendChild(svText(ml, p3t - 7,
+        "efficiency vs prev release (chained — each dot scored against its own predecessor)",
+        { "font-size": 9 }));
+      releases.forEach((e, i) => {
+        const f = effs[i];
+        if (!f) return;
+        const px = x(i), par = parityOf(e);
+        const good = f.score >= par;
+        svg.appendChild(sv("line", {
+          x1: px, x2: px, y1: y3(0), y2: y3(f.score),
+          stroke: good ? "var(--ok)" : "var(--bad)", "stroke-width": 1, opacity: .45,
+        }));
+        svg.appendChild(sv("line", {
+          x1: px - 6, x2: px + 6, y1: y3(par), y2: y3(par),
+          stroke: "var(--mut)", "stroke-width": 1.4, "stroke-dasharray": "2 2",
+        }));
+        svg.appendChild(sv("circle", {
+          cx: px, cy: y3(f.score), r: 3.4,
+          fill: good ? "var(--ok)" : "var(--bad)",
+        }));
+      });
+    }
+
+    /* series */
+    const path = (vals, yfn, cls) => {
+      if (n === 1) return;
+      const d = vals.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${yfn(v).toFixed(1)}`).join("");
+      svg.appendChild(sv("path", { d, class: cls }));
+    };
+    path(releases.map(e => e.pass_rate), y1, "line-pass");
+    path(releases.map(e => e.mean_score), y1, "line-score");
+    path(toks.map(t => t.v), y2, "line-tok");
+
+    releases.forEach((e, i) => {
+      svg.appendChild(sv("circle", { cx: x(i), cy: y1(e.pass_rate), r: 3.2, class: "pt-pass" }));
+      svg.appendChild(sv("circle", { cx: x(i), cy: y1(e.mean_score), r: 3.2, class: "pt-score" }));
+      svg.appendChild(sv("circle", {
+        cx: x(i), cy: y2(toks[i].v), r: 3.2,
+        class: toks[i].isP50 ? "pt-tok" : "pt-hollow",
+      }));
+      if (i === n - 1) { /* ring the current release */
+        for (const cy of [y1(e.pass_rate), y1(e.mean_score), y2(toks[i].v)]) {
+          svg.appendChild(sv("circle", { cx: x(i), cy, r: 6.2, class: "pt-ring", stroke: "currentColor", opacity: .55 }));
+        }
+      }
+      /* x labels */
+      const showLbl = n <= 14 || i % 2 === (n - 1) % 2;
+      if (showLbl) {
+        const t = svText(0, 0, e.tag, { "font-size": 9.5, "text-anchor": "end", transform: `translate(${x(i) + 3},${axisB + 14}) rotate(-42)` });
+        if (i === n - 1) t.setAttribute("font-weight", "700");
+        svg.appendChild(t);
+      }
+    });
+
+    /* hover */
+    const guide = sv("line", { y1: p1t, y2: axisB, class: "guide" });
+    svg.appendChild(guide);
+    const zone = sv("rect", { x: ml - 10, y: p1t, width: W - ml - mr + 20, height: axisB - p1t, class: "hover-zone" });
+    zone.addEventListener("mousemove", ev => {
+      const bx = svg.getBoundingClientRect();
+      const px = ev.clientX - bx.left;
+      let best = 0, bd = Infinity;
+      for (let i = 0; i < n; i++) { const d = Math.abs(px - x(i)); if (d < bd) { bd = d; best = i; } }
+      const e = releases[best], t = toks[best];
+      guide.setAttribute("x1", x(best)); guide.setAttribute("x2", x(best));
+      guide.style.opacity = 1;
+      const nOk = Math.round(e.pass_rate * e.runs);
+      showTip(
+        `<b>${esc(e.tag)}</b>${best === n - 1 ? " · current" : ""}${e.prerelease ? " · pre" : ""}<br>` +
+        `${fDate(e.created_at)} · ${e.runs} runs · ${esc(e.cases || "")}<br>` +
+        `pass <b class="ok">${fPct(e.pass_rate)}</b> (${nOk}/${e.runs}) · score <b>${e.mean_score.toFixed(3)}</b><br>` +
+        `tokens ${t.isP50 ? "p50" : "≈mean"} <b>${fTok(t.v)}</b> per correct run` +
+        (e.efficiency_vs
+          ? `<br>eff vs ${esc(e.efficiency_vs.ref_tag)} <b class="${e.efficiency_vs.score >= parityOf(e) ? "ok" : "bad"}">${e.efficiency_vs.score.toFixed(3)}</b> · parity ${parityOf(e).toFixed(3)}`
+          : ""),
+        ev.clientX, ev.clientY);
+    });
+    zone.addEventListener("mouseleave", () => { guide.style.opacity = 0; hideTip(); });
+    svg.appendChild(zone);
+    host.appendChild(svg);
+
+    $("#trend-legend").innerHTML =
+      `<span><span class="sw" style="background:var(--ok)"></span>pass rate</span>` +
+      `<span><span class="sw" style="background:var(--blue)"></span>mean score</span>` +
+      `<span><span class="sw" style="background:var(--amber)"></span>tokens p50 (correct)</span>` +
+      (toks.some(t => !t.isP50) ? `<span><span class="sw dotc" style="border:1.5px solid var(--amber)"></span>mean fallback (older record)</span>` : "") +
+      (hasEff ? `<span><span class="sw dotc" style="background:var(--ok)"></span>efficiency vs prev (dashed tick = parity; chained, not a level)</span>` : "");
+    $("#trend-note").textContent = prev
+      ? "Single-pass runs: small headline moves are noise — per-question flips (section 04) are the signal."
+      : "First qualified release — no prior eval-qualification.json records to compare against.";
+  }
+
+  /* releases table */
+  (() => {
+    const rows = [...releases].reverse().map((e, i) => {
+      const cur = i === 0;
+      const t = tokenLabel(e);
+      const nOk = Math.round(e.pass_rate * e.runs);
+      return `<tr${cur ? ' class="current"' : ""}>` +
+        `<td class="qid">${esc(e.tag)}${cur ? " <span style='color:var(--ok)'>●</span>" : ""}${e.prerelease ? ' <span class="badge pre">pre</span>' : ""}</td>` +
+        `<td class="num">${fDate(e.created_at)}</td>` +
+        `<td class="r">${fPct(e.pass_rate)} <span style="color:var(--faint)">(${nOk}/${e.runs})</span></td>` +
+        `<td class="r">${e.mean_score.toFixed(3)}</td>` +
+        `<td class="r"${e.efficiency_vs ? ` title="vs ${esc(e.efficiency_vs.ref_tag)} · parity ${(0.25 * e.pass_rate).toFixed(3)}"` : ""}>` +
+        `${e.efficiency_vs ? e.efficiency_vs.score.toFixed(3) : '<span style="color:var(--faint)">—</span>'}</td>` +
+        `<td class="r">${t.isP50 ? "" : "≈"}${fTok(t.v)}</td>` +
+        `<td class="r">${e.runs}</td>` +
+        `<td class="num" style="color:var(--mut)">${esc((e.commit || "").slice(0, 9))}</td>` +
+        `<td class="num" style="color:var(--mut)">${esc(e.cases || "")}</td></tr>`;
+    }).join("");
+    $("#rel-table").innerHTML =
+      `<thead><tr><th>release</th><th>date</th><th class="r">pass rate</th><th class="r">mean score</th>` +
+      `<th class="r" title="${esc(EFF_EXPLAIN)} (each release vs its own predecessor)">eff vs prev</th>` +
+      `<th class="r">tok p50</th><th class="r">runs</th><th>commit</th><th>cases</th></tr></thead>` +
+      `<tbody>${rows}</tbody>`;
+  })();
+
+  /* ── token beeswarm ───────────────────────────────────────────────────── */
+  function renderSwarm() {
+    const host = $("#swarm-chart");
+    host.innerHTML = "";
+    const W = Math.max(340, host.parentElement.getBoundingClientRect().width - 20);
+    const ml = 16, mr = 16, R = 5;
+    const tokMax = Math.max(1, ...runs.map(r => r.tokens || 0)) * 1.04;
+    const x = v => ml + (W - ml - mr) * (v / tokMax);
+
+    /* greedy beeswarm placement */
+    const pts = [...runs].sort((a, b) => (a.tokens || 0) - (b.tokens || 0)).map(r => ({ r, px: x(r.tokens || 0), py: 0 }));
+    const placed = [];
+    for (const p of pts) {
+      const cands = [0];
+      for (const q of placed) {
+        const dx = Math.abs(p.px - q.px);
+        if (dx < 2 * R + 1) {
+          const dy = Math.sqrt(Math.max(0, (2 * R + 1) ** 2 - dx * dx));
+          cands.push(q.py + dy, q.py - dy);
+        }
+      }
+      cands.sort((a, b) => Math.abs(a) - Math.abs(b));
+      for (const c of cands) {
+        if (placed.every(q => (p.px - q.px) ** 2 + (c - q.py) ** 2 >= (2 * R) ** 2)) { p.py = c; break; }
+      }
+      placed.push(p);
+    }
+    const ext = Math.max(20, ...placed.map(p => Math.abs(p.py) + R));
+    const axisY = ext * 2 + 26;
+    const H = axisY + 22;
+    const cy0 = ext + 8;
+    const svg = sv("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}` });
+
+    /* axis + ticks */
+    const ax = sv("g", { class: "axis-strong" });
+    ax.appendChild(sv("line", { x1: ml, x2: W - mr, y1: axisY, y2: axisY }));
+    svg.appendChild(ax);
+    const step = tokMax > 60000 ? 20000 : 10000;
+    for (let v = 0; v <= tokMax; v += step) {
+      svg.appendChild(sv("line", { x1: x(v), x2: x(v), y1: axisY, y2: axisY + 4, class: "axis-strong", stroke: "var(--line)" }));
+      svg.appendChild(svText(x(v), axisY + 15, fTok(v), { "text-anchor": "middle", "font-size": 9 }));
+    }
+    /* percentile rules (correct runs, matches the record) */
+    const tp = record.token_percentiles || {};
+    for (const [k, lift] of [["p50", 0], ["p90", 0], ["p99", 0]]) {
+      if (!tp[k]) continue;
+      const px = x(tp[k]);
+      svg.appendChild(sv("line", { x1: px, x2: px, y1: 4 + lift, y2: axisY, class: "pct-rule" }));
+      svg.appendChild(svText(px + 4, 11 + lift, k + " " + fTok(tp[k]), { "font-size": 9 }));
+    }
+
+    for (const p of placed) {
+      const c = sv("circle", {
+        cx: p.px.toFixed(1), cy: (cy0 + p.py).toFixed(1), r: R,
+        class: `dot-run ${p.r.correct ? "ok" : "bad"}`, "data-i": p.r._i,
+      });
+      c.addEventListener("mousemove", ev => showTip(
+        `<b>${esc(p.r.id)}</b><br>` +
+        `<span class="${p.r.correct ? "ok" : "bad"}">${runStatus(p.r)}</span>` +
+        ` · ${fInt(p.r.tokens || 0)} tok · ${p.r.tools ?? "?"} tools · score ${(p.r.score ?? 0).toFixed(3)}<br>` +
+        `<span style="color:var(--faint)">click to inspect</span>`,
+        ev.clientX, ev.clientY));
+      c.addEventListener("mouseleave", hideTip);
+      c.addEventListener("click", () => { hideTip(); selectRun(p.r._i, { scroll: true }); });
+      svg.appendChild(c);
+    }
+    host.appendChild(svg);
+    syncSelectionDots();
+
+    const nOk = runs.filter(r => r.correct).length;
+    $("#swarm-legend").innerHTML =
+      `<span><span class="sw dotc" style="background:var(--ok)"></span>correct (${nOk})</span>` +
+      `<span><span class="sw dotc" style="background:var(--bad)"></span>failed (${runs.length - nOk})</span>` +
+      `<span style="color:var(--faint)">percentile rules computed over correct runs</span>`;
+  }
+
+  /* ── categories ───────────────────────────────────────────────────────── */
+  function renderCats() {
+    const host = $("#cat-chart");
+    host.innerHTML = "";
+    if (!cats.length) { host.innerHTML = '<p class="note">no tag metadata for this cases file</p>'; return; }
+    const W = Math.max(340, host.parentElement.getBoundingClientRect().width - 20);
+    const rowH = 27, lblW = Math.min(180, W * .25), valW = 250;
+    const barX = lblW + 12, barW = Math.max(60, W - barX - valW);
+    const H = cats.length * rowH + 6;
+    const svg = sv("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}` });
+    cats.forEach((c, i) => {
+      const y = i * rowH + 4;
+      const g = sv("g", { class: "cat-row", "data-tag": c.tag });
+      const lbl = svText(lblW, y + 13, c.tag, { "text-anchor": "end", class: "lbl", "font-size": 11 });
+      g.appendChild(lbl);
+      g.appendChild(sv("rect", { x: barX, y: y + 3, width: barW, height: 13, class: "cat-track", rx: 1 }));
+      const cls = c.rate >= .999 ? "hi" : (c.rate >= .5 ? "mid" : "lo");
+      g.appendChild(sv("rect", { x: barX, y: y + 3, width: Math.max(2, barW * c.rate), height: 13, class: `cat-fill ${cls}`, rx: 1 }));
+      g.appendChild(svText(barX + barW + 10, y + 13,
+        `${c.correct}/${c.runs} · ${fPct(c.rate)} · ${c.qids.size}q · med ${fTok(c.medTok)} tok`,
+        { "font-size": 10 }));
+      g.addEventListener("click", () => {
+        const on = state.tags.has(c.tag);
+        state.tags.clear();
+        if (!on) state.tags.add(c.tag);
+        renderExplorer();
+        document.getElementById("explorer").scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      g.addEventListener("mousemove", ev => showTip(
+        `<b>${esc(c.tag)}</b><br>${c.correct}/${c.runs} runs pass (${fPct(c.rate)}) across ${c.qids.size} question${c.qids.size > 1 ? "s" : ""}<br>` +
+        `median ${fTok(c.medTok)} tok per correct run · click to filter`,
+        ev.clientX, ev.clientY));
+      g.addEventListener("mouseleave", hideTip);
+      svg.appendChild(g);
+    });
+    host.appendChild(svg);
+    syncCatActive();
+  }
+  function syncCatActive() {
+    document.querySelectorAll(".cat-row").forEach(g =>
+      g.classList.toggle("active", state.tags.has(g.dataset.tag)));
+  }
+
+  /* ── question matrix ──────────────────────────────────────────────────── */
+  function renderMatrix() {
+    const prevQ = (prev && prev.questions) || {};
+    const rows = questionIds.map(qid => {
+      const rs = byQ.get(qid);
+      const nOk = rs.filter(r => r.correct).length;
+      const cells = rs.map((r, j) =>
+        `<button class="mx-cell ${r.correct ? "ok" : "bad"}" data-i="${r._i}" ` +
+        `aria-label="run ${j + 1} ${runStatus(r)}">${r.correct ? "✓" : "✕"}</button>`).join("");
+      let verdict;
+      const p = prevQ[qid];
+      if (!prev) verdict = `<span class="verdict na">—</span>`;
+      else if (!p) verdict = `<span class="verdict new">NEW</span>`;
+      else {
+        const pf = p.runs ? p.correct / p.runs : 0, cf = nOk / rs.length;
+        if (cf > pf) verdict = `<span class="verdict up" title="was ${p.correct}/${p.runs}">▲ ${p.correct}/${p.runs} → ${nOk}/${rs.length}</span>`;
+        else if (cf < pf) verdict = `<span class="verdict down" title="was ${p.correct}/${p.runs}">▼ ${p.correct}/${p.runs} → ${nOk}/${rs.length}</span>`;
+        else verdict = `<span class="verdict flat">·</span>`;
+      }
+      const tagsHtml = byQ.get(qid)[0].tags.map(t => esc(t)).join(" · ");
+      const ref = prevRefs.get(qid);
+      let effCell = `<td class="r" style="color:var(--faint)">—</td>`;
+      if (ref != null) {
+        const qEff = rs.reduce((a, r) => a + runEff(r), 0) / rs.length;
+        const par = 0.25 * (nOk / rs.length);
+        effCell = `<td class="r" style="color:${qEff < par ? "var(--amber)" : "var(--mut)"}" ` +
+          `title="mean over runs vs ref ${fInt(ref)} tok (${esc(prev.tag)})${qEff < par ? " · below parity: heavier than the previous release" : ""}">${qEff.toFixed(3)}</td>`;
+      }
+      return `<tr><td><button class="qid" data-q="${esc(qid)}" title="filter run explorer to this question">${esc(qid)}</button>` +
+        `<div style="font:10px var(--mono);color:var(--faint);margin-top:2px">${tagsHtml}</div></td>` +
+        `<td class="r" style="color:${nOk === rs.length ? "var(--ok)" : "var(--bad)"}">${nOk}/${rs.length}</td>` +
+        effCell +
+        `<td><div class="mx-cells">${cells}</div></td>` +
+        `<td>${verdict}</td></tr>`;
+    }).join("");
+    $("#mx-table").innerHTML =
+      `<thead><tr><th>question</th><th class="r">pass</th>` +
+      `<th class="r" title="${esc(EFF_EXPLAIN)}">eff</th>` +
+      `<th>runs · canonical + variations</th>` +
+      `<th>Δ vs ${prev ? esc(prev.tag) : "—"}</th></tr></thead><tbody>${rows}</tbody>`;
+
+    $("#mx-table").querySelectorAll(".mx-cell").forEach(b => {
+      const r = runs[+b.dataset.i];
+      b.addEventListener("click", () => { hideTip(); selectRun(r._i, { scroll: false }); });
+      b.addEventListener("mousemove", ev => showTip(
+        (r.question
+          ? `<span style="color:var(--ink)">“${esc(r.question.slice(0, 160))}${r.question.length > 160 ? "…" : ""}”</span>${r.question_canonical ? " °" : ""}<br>`
+          : "") +
+        `<b>${esc(r.id)}</b> · <span class="${r.correct ? "ok" : "bad"}">${runStatus(r)}</span>` +
+        ` · ${fInt(r.tokens || 0)} tok · ${r.tools ?? "?"} tools<br>` +
+        `${esc((r.grader_reason || "").slice(0, 220))}${(r.grader_reason || "").length > 220 ? "…" : ""}<br>` +
+        `<span style="color:var(--faint)">click for full verdict</span>`,
+        ev.clientX, ev.clientY));
+      b.addEventListener("mouseleave", hideTip);
+    });
+    $("#mx-table").querySelectorAll("button.qid").forEach(b =>
+      b.addEventListener("click", () => {
+        state.q = b.dataset.q;
+        renderExplorer();
+        document.getElementById("explorer").scrollIntoView({ behavior: "smooth", block: "start" });
+      }));
+  }
+
+  /* ── run explorer ─────────────────────────────────────────────────────── */
+  const state = { q: "", status: "all", tags: new Set(), search: "" };
+  const sort = { key: "id", dir: 1 };
+  const SORTKEY = {
+    id: r => r.id,
+    subject: r => r.subject || "",
+    status: r => r.crashed ? 2 : (r.correct ? 0 : 1),
+    score: r => r.score ?? 0,
+    tokens: r => r.tokens ?? 0,
+    eff: r => runEff(r) ?? -1,
+    tools: r => r.tools ?? 0,
+  };
+
+  function filteredRuns() {
+    const s = state.search.trim().toLowerCase();
+    return runs.filter(r => {
+      if (state.q && r.id !== state.q) return false;
+      if (state.status === "pass" && !r.correct) return false;
+      if (state.status === "fail" && r.correct) return false;
+      if (state.tags.size && ![...state.tags].some(t => r.tags.includes(t))) return false;
+      if (s && !(`${r.id} ${r.subject} ${r.grader_reason || ""} ${r.question || ""} ${r.answer || ""}`).toLowerCase().includes(s)) return false;
+      return true;
+    });
+  }
+
+  function renderFilters() {
+    /* question select */
+    const sel = $("#f-question");
+    sel.innerHTML = `<option value="">all questions (${byQ.size})</option>` +
+      questionIds.map(q => {
+        const rs = byQ.get(q), nOk = rs.filter(r => r.correct).length;
+        return `<option value="${esc(q)}"${state.q === q ? " selected" : ""}>${esc(q)} · ${nOk}/${rs.length}</option>`;
+      }).join("");
+    /* status segmented */
+    $("#f-status").querySelectorAll("button").forEach(b =>
+      b.classList.toggle("on", b.dataset.v === state.status));
+    /* tag chips */
+    $("#chips").innerHTML = cats.map(c =>
+      `<button class="chip${state.tags.has(c.tag) ? " on" : ""}" data-tag="${esc(c.tag)}">` +
+      `${esc(c.tag)}<span class="n">${c.runs}</span></button>`).join("");
+    $("#chips").querySelectorAll(".chip").forEach(b =>
+      b.addEventListener("click", () => {
+        const t = b.dataset.tag;
+        state.tags.has(t) ? state.tags.delete(t) : state.tags.add(t);
+        renderExplorer();
+      }));
+    const active = state.q || state.search || state.status !== "all" || state.tags.size;
+    $("#reset-filters").hidden = !active;
+  }
+
+  function renderTable(rows) {
+    const arrow = k => k === sort.key ? (sort.dir === 1 ? " asc" : " desc") : "";
+    const head =
+      `<thead><tr>` +
+      `<th class="sortable${arrow("id")}" data-key="id">question</th>` +
+      `<th class="sortable${arrow("subject")}" data-key="subject">subject</th>` +
+      `<th class="sortable${arrow("status")}" data-key="status">status</th>` +
+      `<th class="sortable r${arrow("score")}" data-key="score">score</th>` +
+      `<th class="sortable r${arrow("tokens")}" data-key="tokens">tokens</th>` +
+      `<th class="sortable r${arrow("eff")}" data-key="eff" title="${esc(EFF_EXPLAIN)}">eff</th>` +
+      `<th class="sortable r${arrow("tools")}" data-key="tools">tools</th>` +
+      `<th>grader reason</th><th>trace</th></tr></thead>`;
+    const body = rows.map(r => {
+      const st = runStatus(r);
+      const eff = runEff(r);
+      return `<tr data-i="${r._i}" class="${selectedIdx === r._i ? "selected" : ""}">` +
+        `<td class="qcell"><span class="qid">${esc(r.id)}</span>${canonMark(r)}` +
+        `<span class="qtext" title="${esc(r.question || "")}">${esc(r.question || "")}</span></td>` +
+        `<td class="subj" title="${esc(r.subject)}">${esc(shortSubject(r.subject))}</td>` +
+        `<td><span class="pill ${st === "pass" ? "ok" : (st === "crash" ? "crash" : "bad")}">${st === "pass" ? "✓ pass" : (st === "crash" ? "✕ crash" : "✕ fail")}</span></td>` +
+        `<td class="r">${(r.score ?? 0).toFixed(3)}</td>` +
+        `<td class="r">${fInt(r.tokens || 0)}</td>` +
+        `<td class="r">${eff == null ? '<span style="color:var(--faint)">—</span>' : eff.toFixed(3)}</td>` +
+        `<td class="r">${r.tools ?? ""}</td>` +
+        `<td class="reason-cell" title="${esc((r.grader_reason || "").slice(0, 500))}">${esc(r.grader_reason || "")}</td>` +
+        `<td>${r.trace_url ? `<a href="${esc(r.trace_url)}" target="_blank" rel="noopener">↗</a>` : ""}</td></tr>`;
+    }).join("");
+    $("#run-table").innerHTML = head + `<tbody>${body || `<tr><td colspan="9" style="color:var(--faint);font-family:var(--mono)">no runs match the current filter</td></tr>`}</tbody>`;
+
+    $("#run-table").querySelectorAll("th.sortable").forEach(th =>
+      th.addEventListener("click", () => {
+        const k = th.dataset.key;
+        if (sort.key === k) sort.dir = -sort.dir;
+        else { sort.key = k; sort.dir = ["tokens", "score", "eff", "tools"].includes(k) ? -1 : 1; }
+        renderExplorer();
+      }));
+    $("#run-table").querySelectorAll("tbody tr[data-i]").forEach(tr => {
+      tr.addEventListener("click", ev => {
+        if (ev.target.closest("a")) return;
+        selectRun(+tr.dataset.i, { scroll: false });
+      });
+    });
+  }
+
+  function renderAgg(rows) {
+    const nOk = rows.filter(r => r.correct).length;
+    const toks = rows.map(r => r.tokens || 0).filter(t => t > 0);
+    const p50 = pctl(toks, .5);
+    const sum = toks.reduce((a, b) => a + b, 0);
+    const effVals = rows.map(runEff).filter(v => v != null);
+    $("#agg").innerHTML =
+      `<span><b>${rows.length}</b> / ${runs.length} runs</span>` +
+      `<span>pass <b>${rows.length ? fPct(nOk / rows.length) : "—"}</b> (${nOk}/${rows.length})</span>` +
+      `<span>tokens p50 <b>${fTok(p50)}</b></span>` +
+      `<span>Σ tokens <b>${fTok(sum)}</b></span>` +
+      (effVals.length
+        ? `<span title="${esc(EFF_EXPLAIN)}">eff <b>${(effVals.reduce((a, b) => a + b, 0) / effVals.length).toFixed(3)}</b></span>`
+        : "") +
+      (state.tags.size ? `<span style="color:var(--faint)">tags: any of [${[...state.tags].map(esc).join(", ")}]</span>` : "");
+  }
+
+  function renderExplorer() {
+    renderFilters();
+    const rows = filteredRuns().sort((a, b) => {
+      const ka = SORTKEY[sort.key](a), kb = SORTKEY[sort.key](b);
+      const c = ka < kb ? -1 : ka > kb ? 1 : (a._i - b._i);
+      return c * sort.dir;
+    });
+    renderAgg(rows);
+    renderTable(rows);
+    syncCatActive();
+  }
+
+  $("#f-search").addEventListener("input", ev => { state.search = ev.target.value; renderExplorer(); });
+  $("#f-question").addEventListener("change", ev => { state.q = ev.target.value; renderExplorer(); });
+  $("#f-status").querySelectorAll("button").forEach(b =>
+    b.addEventListener("click", () => { state.status = b.dataset.v; renderExplorer(); }));
+  $("#reset-filters").addEventListener("click", () => {
+    state.q = ""; state.status = "all"; state.tags.clear(); state.search = "";
+    $("#f-search").value = "";
+    renderExplorer();
+  });
+
+  /* ── selection + drawer ───────────────────────────────────────────────── */
+  let selectedIdx = -1;
+  function syncSelectionDots() {
+    document.querySelectorAll(".dot-run").forEach(c =>
+      c.classList.toggle("selected", +c.dataset.i === selectedIdx));
+    document.querySelectorAll(".mx-cell").forEach(c =>
+      c.classList.toggle("selected", +c.dataset.i === selectedIdx));
+  }
+
+  function selectRun(i, { scroll } = {}) {
+    selectedIdx = i;
+    const r = runs[i];
+    /* make sure the run is visible in the explorer */
+    if (!filteredRuns().some(x => x._i === i)) {
+      state.q = ""; state.status = "all"; state.tags.clear(); state.search = "";
+      $("#f-search").value = "";
+    }
+    renderExplorer();
+    syncSelectionDots();
+    openDrawer(r);
+    if (scroll) {
+      const tr = $(`#run-table tr[data-i="${i}"]`);
+      if (tr) {
+        tr.scrollIntoView({ behavior: "smooth", block: "center" });
+        tr.classList.add("flash");
+        setTimeout(() => tr.classList.remove("flash"), 1700);
+      }
+    }
+  }
+
+  const drawer = $("#drawer");
+  function openDrawer(r) {
+    const st = runStatus(r);
+    const eff = runEff(r);
+    const ref = prevRefs.get(r.id);
+    const effDd = eff == null
+      ? `<span style="color:var(--faint)">— no reference${prev ? "" : " release"}</span>`
+      : `${eff.toFixed(3)} <span style="color:var(--faint)">vs ref ${fInt(ref)} tok (${esc(prev.tag)})</span>`;
+    $("#drawer-title").textContent = r.id;
+    const sibs = byQ.get(r.id).map((s, j) =>
+      `<button class="mx-cell ${s.correct ? "ok" : "bad"}${s._i === r._i ? " selected" : ""}" data-i="${s._i}" title="run ${j + 1}: ${runStatus(s)} · ${fInt(s.tokens || 0)} tok">${s.correct ? "✓" : "✕"}</button>`).join("");
+    $("#drawer-body").innerHTML =
+      `<span class="pill ${st === "pass" ? "ok" : (st === "crash" ? "crash" : "bad")}">${st === "pass" ? "✓ pass" : "✕ " + st}</span>` +
+      `<div class="drawer-label">question${r.question_canonical ? ' <span class="canon" title="' + CANON_TIP + '">°</span>' : ""}</div>` +
+      `<div class="qblock">${esc(r.question || "(question text not recorded)")}</div>` +
+      (r.question_canonical ? `<div class="canon-note">° ${CANON_TIP}</div>` : "") +
+      `<div class="drawer-label">final answer</div>` +
+      (r.answer
+        ? `<div class="answer">${esc(r.answer)}</div>`
+        : `<div class="answer empty">${r.answer == null
+            ? "final answer not recorded for this record"
+            : "no output — the run produced no final response"}</div>`) +
+      `<dl class="kv">` +
+      `<dt>subject</dt><dd>${esc(r.subject)}</dd>` +
+      `<dt>score</dt><dd>${(r.score ?? 0).toFixed(4)}</dd>` +
+      `<dt>correctness</dt><dd>${(r.correctness ?? 0).toFixed(2)}</dd>` +
+      `<dt>tokens</dt><dd>${fInt(r.tokens || 0)}</dd>` +
+      `<dt>efficiency</dt><dd title="${esc(EFF_EXPLAIN)}">${effDd}</dd>` +
+      `<dt>tool calls</dt><dd>${r.tools ?? "—"}</dd>` +
+      `<dt>tags</dt><dd><div class="tagset">${r.tags.map(t => `<span>${esc(t)}</span>`).join("")}</div></dd>` +
+      `</dl>` +
+      `<div class="drawer-label">grader verdict</div>` +
+      `<div class="reason ${r.correct ? "ok" : "bad"}">${esc(r.grader_reason || (r.crashed ? "run crashed — no grader output" : "no reason recorded"))}</div>` +
+      (r.trace_url ? `<a class="trace-btn" href="${esc(r.trace_url)}" target="_blank" rel="noopener">open langfuse trace ↗</a>` : "") +
+      `<div class="drawer-label">runs of this question</div>` +
+      `<div class="sibs">${sibs}</div>`;
+    $("#drawer-body").querySelectorAll(".sibs .mx-cell").forEach(b =>
+      b.addEventListener("click", () => selectRun(+b.dataset.i, { scroll: true })));
+    drawer.classList.add("open");
+  }
+  function closeDrawer() {
+    drawer.classList.remove("open");
+    selectedIdx = -1;
+    syncSelectionDots();
+    document.querySelectorAll("#run-table tr.selected").forEach(tr => tr.classList.remove("selected"));
+  }
+  $("#drawer-close").addEventListener("click", closeDrawer);
+  document.addEventListener("keydown", ev => { if (ev.key === "Escape") closeDrawer(); });
+
+  /* ── footer ───────────────────────────────────────────────────────────── */
+  $("#foot").innerHTML =
+    `Single-pass qualification of <b>${esc(record.tag)}</b> — small headline-score moves are noise; ` +
+    `per-question flips are the signal. History comes from prior releases' ` +
+    `<code>eval-qualification.json</code> assets. This page is fully self-contained: no external fetches.`;
+
+  /* ── boot + resize ────────────────────────────────────────────────────── */
+  renderTrend();
+  renderSwarm();
+  renderCats();
+  renderMatrix();
+  renderExplorer();
+
+  let rT;
+  window.addEventListener("resize", () => {
+    clearTimeout(rT);
+    rT = setTimeout(() => { renderTrend(); renderSwarm(); renderCats(); }, 140);
+  });
+})();
+</script>
+</body>
+</html>
