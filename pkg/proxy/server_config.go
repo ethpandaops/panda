@@ -1,12 +1,15 @@
 package proxy
 
 import (
+	"encoding/base64"
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"gopkg.in/yaml.v3"
 
 	"github.com/ethpandaops/panda/pkg/auth"
@@ -129,15 +132,95 @@ func normalizeKeyPrefix(p string) string {
 	return strings.TrimRight(p, "/") + "/"
 }
 
-// GitHubAPIConfig holds GitHub API configuration for the proxy.
+// GitHubAPIConfig holds GitHub API configuration for the proxy. Set either
+// Token or App; when both are set, Token is used.
 type GitHubAPIConfig struct {
 	// Token is a GitHub personal access token or app token with actions:write permission.
 	Token string `yaml:"token"`
+
+	// App authenticates as a GitHub App installation instead of with Token.
+	App *GitHubAppAuthConfig `yaml:"app,omitempty"`
 
 	// AllowedOrgs lists the groups allowed to use /github (builds and
 	// workflow triggers). Empty denies every authenticated user; "*" allows
 	// all of them.
 	AllowedOrgs []string `yaml:"allowed_orgs,omitempty"`
+}
+
+// GitHubAppAuthConfig holds GitHub App credentials. The App needs the
+// "Actions: read and write" repository permission and must be installed on the
+// repository the proxy dispatches workflows to.
+type GitHubAppAuthConfig struct {
+	// AppID is the GitHub App's numeric ID.
+	AppID string `yaml:"app_id"`
+
+	// InstallationID is the numeric ID of the App's installation on the org.
+	InstallationID string `yaml:"installation_id"`
+
+	// PrivateKey is the App's private key, either PEM or base64-encoded PEM.
+	PrivateKey string `yaml:"private_key,omitempty"`
+
+	// PrivateKeyFile is a path to a PEM file holding the App's private key.
+	PrivateKeyFile string `yaml:"private_key_file,omitempty"`
+}
+
+// IsSet reports whether any App setting is present.
+func (c *GitHubAppAuthConfig) IsSet() bool {
+	return c != nil && (strings.TrimSpace(c.AppID) != "" ||
+		strings.TrimSpace(c.InstallationID) != "" ||
+		strings.TrimSpace(c.PrivateKey) != "" ||
+		strings.TrimSpace(c.PrivateKeyFile) != "")
+}
+
+// ToHandlerConfig parses the App settings into the handler config, loading and
+// parsing the private key.
+func (c *GitHubAppAuthConfig) ToHandlerConfig() (*handlers.GitHubAppConfig, error) {
+	appID, err := strconv.ParseInt(strings.TrimSpace(c.AppID), 10, 64)
+	if err != nil || appID <= 0 {
+		return nil, fmt.Errorf("github.app.app_id must be a positive integer")
+	}
+
+	installationID, err := strconv.ParseInt(strings.TrimSpace(c.InstallationID), 10, 64)
+	if err != nil || installationID <= 0 {
+		return nil, fmt.Errorf("github.app.installation_id must be a positive integer")
+	}
+
+	keyPEM := strings.TrimSpace(c.PrivateKey)
+	keyFile := strings.TrimSpace(c.PrivateKeyFile)
+
+	switch {
+	case keyPEM != "" && keyFile != "":
+		return nil, fmt.Errorf("github.app.private_key and github.app.private_key_file are mutually exclusive")
+	case keyFile != "":
+		data, err := os.ReadFile(keyFile)
+		if err != nil {
+			return nil, fmt.Errorf("reading github.app.private_key_file: %w", err)
+		}
+
+		keyPEM = strings.TrimSpace(string(data))
+	case keyPEM == "":
+		return nil, fmt.Errorf("github.app.private_key or github.app.private_key_file is required")
+	}
+
+	if !strings.HasPrefix(keyPEM, "-----BEGIN") {
+		decoded, err := base64.StdEncoding.DecodeString(keyPEM)
+		if err != nil {
+			return nil, fmt.Errorf("github.app private key is neither PEM nor base64-encoded PEM")
+		}
+
+		keyPEM = string(decoded)
+	}
+
+	key, err := jwt.ParseRSAPrivateKeyFromPEM([]byte(keyPEM))
+	if err != nil {
+		return nil, fmt.Errorf("parsing github.app private key: %w", err)
+	}
+
+	return &handlers.GitHubAppConfig{
+		AppID:          appID,
+		InstallationID: installationID,
+		PrivateKey:     key,
+	}, nil
 }
 
 // HTTPServerConfig holds HTTP server configuration.
@@ -635,6 +718,12 @@ func (c *ServerConfig) Validate() error {
 
 		if c.EmbeddingV2.Cache.Backend == "redis" && c.EmbeddingV2.Cache.RedisURL == "" {
 			return fmt.Errorf("embedding_v2.cache.redis_url is required when cache backend is 'redis'")
+		}
+	}
+
+	if c.GitHub != nil && c.GitHub.App.IsSet() {
+		if _, err := c.GitHub.App.ToHandlerConfig(); err != nil {
+			return err
 		}
 	}
 

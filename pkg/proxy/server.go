@@ -281,15 +281,24 @@ func newServer(log logrus.FieldLogger, cfg ServerConfig, hostURL, port string) (
 	}
 
 	// Create GitHub handler if configured.
-	if cfg.GitHub != nil && cfg.GitHub.Token != "" {
+	if cfg.GitHub != nil && (cfg.GitHub.Token != "" || cfg.GitHub.App.IsSet()) {
+		githubCfg := handlers.GitHubConfig{Token: cfg.GitHub.Token}
+
+		if cfg.GitHub.App.IsSet() {
+			appCfg, err := cfg.GitHub.App.ToHandlerConfig()
+			if err != nil {
+				return nil, fmt.Errorf("configuring GitHub App: %w", err)
+			}
+
+			githubCfg.App = appCfg
+		}
+
 		s.githubTriggerLimiter = NewRateLimiter(log, RateLimiterConfig{
 			RequestsPerMinute: githubTriggerRefillPerMinute,
 			BurstSize:         githubTriggerBurst,
 		})
 
-		s.githubHandler = handlers.NewGitHubHandler(log, handlers.GitHubConfig{
-			Token: cfg.GitHub.Token,
-		}, s.githubTriggerLimiter)
+		s.githubHandler = handlers.NewGitHubHandler(log, githubCfg, s.githubTriggerLimiter)
 	}
 
 	if s.url == "" {

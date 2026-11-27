@@ -68,6 +68,9 @@ This is the recommended external-user shape when you do not want to execute code
   - deprecated `proxy:` single-proxy form, promoted to `proxies[0]` when used alone
 - `proxy` config:
   - optional hosted GitHub auth config
+  - optional `github` workflow-dispatch credentials: `github.token`, or
+    `github.app` (`app_id`, `installation_id`, and `private_key` or
+    `private_key_file`) to authenticate as a GitHub App installation
   - datasource credentials
   - proxy auth/rate-limit/audit settings
 

@@ -251,8 +251,20 @@ loki:
 #     # redis_url: "redis://localhost:6379"
 
 # GitHub API (optional — enables triggering GitHub Actions workflows)
+# Authenticate with either a token or a GitHub App; if both are set, token is
+# used. The App needs the "Actions: read and write" repository permission and
+# must be installed on ethpandaops/eth-client-docker-image-builder. The proxy
+# mints installation tokens limited to that repository with actions:write,
+# caches them, and refreshes them 5 minutes before they expire.
 # github:
 #   token: "${GITHUB_TOKEN}"  # PAT or app token with actions:write permission
+#   # app:
+#   #   app_id: "${GITHUB_APP_ID}"
+#   #   installation_id: "${GITHUB_APP_INSTALLATION_ID}"
+#   #   # PEM or base64-encoded PEM. A PEM with newlines cannot be substituted
+#   #   # into a quoted value, so pass it base64-encoded or use private_key_file.
+#   #   private_key: "${GITHUB_APP_PRIVATE_KEY}"
+#   #   # private_key_file: /etc/panda-proxy/github-app.pem
 #   allowed_orgs:             # who may trigger builds/workflows
 #     - ethpandaops
 
